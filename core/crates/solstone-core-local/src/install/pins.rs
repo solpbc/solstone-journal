@@ -61,6 +61,8 @@ pub const MLX_MODELS: &[(&str, &str, &str, u64)] = &[
         15641241224,
     ),
 ];
+pub const METAL_CANDIDATE_MODEL_ID: &str = "qwen3.5:9b";
+pub const METAL_CANDIDATE_MODEL_SLUG: &str = "qwen3.5-9b";
 
 // Parakeet pins mirror LLAMA_SERVER_PINS's (artifact_key, release_tag,
 // filename, sha256, binary_name) shape, split by backend the same way
@@ -183,6 +185,8 @@ pub fn cuda_pin(key: &str) -> Option<(&'static str, &'static str, u64)> {
         .find(|pin| pin.0 == key)
         .map(|pin| (pin.1, pin.2, pin.3))
 }
+/// The unit is the mirrored origin namespace, not a backend assertion about
+/// the archive selected for this platform.
 pub fn vulkan_identity(key: &str) -> Option<Value> {
     vulkan_pin(key).map(|(release_tag, filename, sha256, binary_name)| json!({"unit":"llama-server-vulkan","artifact_key":key,"release_tag":release_tag,"filename":filename,"sha256":sha256,"binary_name":binary_name}))
 }
@@ -196,6 +200,9 @@ pub fn cuda_identity(key: &str) -> Option<Value> {
 }
 pub fn model_identity(model_id: &str) -> Option<Value> {
     (model_id == "local/qwen3.5-4b").then(|| json!({"unit":"local-model","model_id":"local/qwen3.5-4b","repo":"unsloth/Qwen3.5-4B-GGUF","revision":"main","filename":"Qwen3.5-4B-Q4_K_M.gguf","sha256":"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4","mmproj_filename":"mmproj-F16.gguf","mmproj_sha256":"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864"}))
+}
+pub fn metal_candidate_model_identity() -> Value {
+    json!({"unit":"local-model","model_id":METAL_CANDIDATE_MODEL_ID,"repo":"unsloth/Qwen3.5-9B-GGUF","revision":"3885219b6810b007914f3a7950a8d1b469d598a5","filename":"Qwen3.5-9B-Q8_0.gguf","sha256":"809626574d0cb43d4becfa56169980da2bb448f2299270f7be443cb89d0a6ae4","mmproj_filename":"mmproj-F16.gguf","mmproj_sha256":"f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f"})
 }
 
 pub fn parakeet_vulkan_pin(

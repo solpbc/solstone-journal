@@ -56,6 +56,8 @@ pub struct PlanInput {
     pub mlx_interpreter_path: Option<String>,
     pub cuda_binary_path: Option<String>,
     pub vulkan_binary_path: Option<String>,
+    pub metal_binary_path: Option<String>,
+    pub metal_unified_memory_mib: Option<u64>,
     pub lib_dir: Option<String>,
     pub inherited_ld_library_path: Option<String>,
     pub nvidia_probe: Option<NvidiaProbe>,
@@ -76,6 +78,7 @@ pub enum PlanBackend {
     Cuda,
     Vulkan,
     Mlx,
+    Metal,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -98,6 +101,8 @@ pub struct LaunchPlan {
     pub context_tokens: Option<u32>,
     pub parallel_slots: Option<u32>,
     pub prompt_cache_mib: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metal_tier: Option<MetalTierMetadata>,
     pub visible_devices_env_name: Option<String>,
     pub visible_devices_env_value: Option<String>,
     pub extra_env: BTreeMap<String, String>,
@@ -117,10 +122,16 @@ pub enum PlanOutcome {
 }
 
 #[derive(Clone, Copy)]
-struct Tier {
-    context_tokens: u32,
-    parallel_slots: u32,
-    prompt_cache_mib: u32,
+pub(crate) struct Tier {
+    pub(crate) context_tokens: u32,
+    pub(crate) parallel_slots: u32,
+    pub(crate) prompt_cache_mib: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct MetalTierMetadata {
+    pub source: &'static str,
+    pub unified_memory_mib: Option<u64>,
 }
 
 struct BackendDetails {
@@ -146,11 +157,35 @@ fn tier(memory_mib: u64) -> Tier {
     }
 }
 
+pub(crate) fn metal_tier(memory_mib: Option<u64>) -> (Tier, MetalTierMetadata) {
+    match memory_mib {
+        Some(memory_mib) => (
+            tier(memory_mib),
+            MetalTierMetadata {
+                source: "supplied_measurement",
+                unified_memory_mib: Some(memory_mib),
+            },
+        ),
+        None => (
+            Tier {
+                context_tokens: FLOOR_CONTEXT_TOKENS,
+                parallel_slots: FLOOR_PARALLEL_SLOTS,
+                prompt_cache_mib: FLOOR_PROMPT_CACHE_MIB,
+            },
+            MetalTierMetadata {
+                source: "no_measurement_floor",
+                unified_memory_mib: None,
+            },
+        ),
+    }
+}
+
 pub fn plan(input: PlanInput) -> PlanOutcome {
     if input.schema != INPUT_SCHEMA {
         return rejected("unsupported plan input schema");
     }
     match input.platform {
+        Platform::Darwin if input.backend_override == Some(PlanBackend::Metal) => plan_metal(input),
         Platform::Darwin => plan_mlx(input),
         Platform::Linux => plan_linux(input),
     }
@@ -183,6 +218,7 @@ fn plan_mlx(input: PlanInput) -> PlanOutcome {
         },
         argv,
         None,
+        None,
     )))
 }
 
@@ -209,10 +245,22 @@ fn plan_linux(input: PlanInput) -> PlanOutcome {
                     gpu_vram_mib: Some(memory),
                     reason: "backend explicitly selected by caller".into(),
                 };
-                llama_plan(input, PlanBackend::Cuda, details)
+                let Some(binary) = input.cuda_binary_path.clone() else {
+                    return rejected("cuda binary path is required");
+                };
+                llama_plan(
+                    input,
+                    PlanBackend::Cuda,
+                    details,
+                    binary,
+                    tier(memory),
+                    Some("CUDA0"),
+                    None,
+                )
             }
             PlanBackend::Vulkan => plan_vulkan(input, "backend explicitly selected by caller"),
             PlanBackend::Mlx => rejected("MLX backend override is not valid on Linux"),
+            PlanBackend::Metal => rejected("Metal backend override is not valid on Linux"),
         };
     }
     let cuda_candidate = if let Some(probe) = input.nvidia_probe.as_ref() {
@@ -253,6 +301,9 @@ fn plan_linux(input: PlanInput) -> PlanOutcome {
         None
     };
     if let Some((index, name, memory, reason)) = cuda_candidate {
+        let Some(binary) = input.cuda_binary_path.clone() else {
+            return rejected("cuda binary path is required");
+        };
         return llama_plan(
             input,
             PlanBackend::Cuda,
@@ -262,6 +313,10 @@ fn plan_linux(input: PlanInput) -> PlanOutcome {
                 gpu_vram_mib: Some(memory),
                 reason,
             },
+            binary,
+            tier(memory),
+            Some("CUDA0"),
+            None,
         );
     }
     plan_vulkan(input, "Vulkan selected from Python enumeration")
@@ -288,6 +343,9 @@ fn plan_vulkan(input: PlanInput, reason: &str) -> PlanOutcome {
         return rejected("selected Vulkan GPU does not match enumerated device");
     }
     let device = (device.index, device.name.clone(), device.vram_mib);
+    let Some(binary) = input.vulkan_binary_path.clone() else {
+        return rejected("vulkan binary path is required");
+    };
     llama_plan(
         input,
         PlanBackend::Vulkan,
@@ -297,27 +355,51 @@ fn plan_vulkan(input: PlanInput, reason: &str) -> PlanOutcome {
             gpu_vram_mib: Some(device.2),
             reason: reason.into(),
         },
+        binary,
+        tier(device.2),
+        Some("Vulkan0"),
+        None,
     )
 }
 
-fn llama_plan(input: PlanInput, backend: PlanBackend, details: BackendDetails) -> PlanOutcome {
-    let binary = match backend {
-        PlanBackend::Cuda => match input.cuda_binary_path.clone() {
-            Some(path) => path,
-            None => return rejected("cuda binary path is required"),
-        },
-        PlanBackend::Vulkan => match input.vulkan_binary_path.clone() {
-            Some(path) => path,
-            None => return rejected("vulkan binary path is required"),
-        },
-        PlanBackend::Mlx => unreachable!("llama plan backend"),
+fn plan_metal(input: PlanInput) -> PlanOutcome {
+    let Some(binary) = input.metal_binary_path.clone() else {
+        return rejected("metal binary path is required");
     };
-    let selected_tier = tier(details.gpu_vram_mib.expect("llama plan memory"));
-    let device = if backend == PlanBackend::Cuda {
-        "CUDA0"
+    if input.mmproj_path.is_none() {
+        return rejected("metal mmproj path is required");
+    }
+    let (selected_tier, metal_tier) = metal_tier(input.metal_unified_memory_mib);
+    let reason = if metal_tier.unified_memory_mib.is_some() {
+        "Darwin Metal runtime with supplied unified-memory measurement"
     } else {
-        "Vulkan0"
+        "Darwin Metal runtime; unified-memory measurement was not supplied"
     };
+    llama_plan(
+        input,
+        PlanBackend::Metal,
+        BackendDetails {
+            gpu_index: None,
+            gpu_name: None,
+            gpu_vram_mib: None,
+            reason: reason.into(),
+        },
+        binary,
+        selected_tier,
+        None,
+        Some(metal_tier),
+    )
+}
+
+fn llama_plan(
+    input: PlanInput,
+    backend: PlanBackend,
+    details: BackendDetails,
+    binary: String,
+    selected_tier: Tier,
+    device: Option<&str>,
+    metal_tier: Option<MetalTierMetadata>,
+) -> PlanOutcome {
     let mut argv = vec![
         binary.clone(),
         "-m".into(),
@@ -339,14 +421,22 @@ fn llama_plan(input: PlanInput, backend: PlanBackend, details: BackendDetails) -
         "--cache-ram".into(),
         selected_tier.prompt_cache_mib.to_string(),
         "--no-context-shift".into(),
-        "--device".into(),
-        device.into(),
     ];
+    if let Some(device) = device {
+        argv.extend(["--device".into(), device.into()]);
+    }
     if let Some(mmproj) = input.mmproj_path.as_ref() {
         argv.extend(["--mmproj".into(), mmproj.clone()]);
     }
     let inherited_ld_library_path = input.inherited_ld_library_path.clone();
-    let mut plan = base_plan(input, backend, details, argv, Some(selected_tier));
+    let mut plan = base_plan(
+        input,
+        backend,
+        details,
+        argv,
+        Some(selected_tier),
+        metal_tier,
+    );
     if plan.backend == PlanBackend::Cuda {
         plan.visible_devices_env_name = Some("CUDA_VISIBLE_DEVICES".into());
         plan.visible_devices_env_value = plan.gpu_index.map(|value| value.to_string());
@@ -373,6 +463,7 @@ fn base_plan(
     details: BackendDetails,
     argv: Vec<String>,
     selected_tier: Option<Tier>,
+    metal_tier: Option<MetalTierMetadata>,
 ) -> LaunchPlan {
     LaunchPlan {
         schema: LAUNCH_SCHEMA,
@@ -382,6 +473,7 @@ fn base_plan(
         binary_path: match backend {
             PlanBackend::Cuda => input.cuda_binary_path,
             PlanBackend::Vulkan => input.vulkan_binary_path,
+            PlanBackend::Metal => input.metal_binary_path,
             PlanBackend::Mlx => None,
         },
         model_path: input.model_path,
@@ -396,6 +488,7 @@ fn base_plan(
         context_tokens: selected_tier.map(|tier| tier.context_tokens),
         parallel_slots: selected_tier.map(|tier| tier.parallel_slots),
         prompt_cache_mib: selected_tier.map(|tier| tier.prompt_cache_mib),
+        metal_tier,
         visible_devices_env_name: None,
         visible_devices_env_value: None,
         extra_env: BTreeMap::new(),
@@ -447,6 +540,8 @@ mod tests {
             mlx_interpreter_path: None,
             cuda_binary_path: Some("/cuda-bin".into()),
             vulkan_binary_path: Some("/vulkan-bin".into()),
+            metal_binary_path: None,
+            metal_unified_memory_mib: None,
             lib_dir: Some("/lib".into()),
             inherited_ld_library_path: Some("/oldlib".into()),
             nvidia_probe: Some(probe(Some(memory), None)),
@@ -776,8 +871,59 @@ mod tests {
         let mut ipv6 = input(1);
         ipv6.bind_address = LoopbackAddr::IPV6_LOOPBACK;
         assert_eq!(launch(ipv6).argv[6], "::1");
-        let value = serde_json::json!({"schema":INPUT_SCHEMA,"platform":"linux","backend_override":null,"bind_address":"0.0.0.0","port":1,"desired_fingerprint_json":{},"desired_fingerprint_sha256":"x","model_id":"m","model_path":"m","mmproj_path":null,"runtime_dir":null,"mlx_interpreter_path":null,"cuda_binary_path":null,"vulkan_binary_path":null,"lib_dir":null,"inherited_ld_library_path":null,"nvidia_probe":null,"cuda_embedded_arch_set":[],"cuda_min_driver_version":null,"cuda_artifact_trust":null,"cuda_persisted_installed_cuda_target":null,"vulkan_devices":null,"vulkan_selected_gpu_index":null,"vulkan_selected_gpu_name":null,"vulkan_selected_vram_mib":null,"vram_before_mib":null});
+        let value = serde_json::json!({"schema":INPUT_SCHEMA,"platform":"linux","backend_override":null,"bind_address":"0.0.0.0","port":1,"desired_fingerprint_json":{},"desired_fingerprint_sha256":"x","model_id":"m","model_path":"m","mmproj_path":null,"runtime_dir":null,"mlx_interpreter_path":null,"cuda_binary_path":null,"vulkan_binary_path":null,"metal_binary_path":null,"metal_unified_memory_mib":null,"lib_dir":null,"inherited_ld_library_path":null,"nvidia_probe":null,"cuda_embedded_arch_set":[],"cuda_min_driver_version":null,"cuda_artifact_trust":null,"cuda_persisted_installed_cuda_target":null,"vulkan_devices":null,"vulkan_selected_gpu_index":null,"vulkan_selected_gpu_name":null,"vulkan_selected_vram_mib":null,"vram_before_mib":null});
         assert!(serde_json::from_value::<PlanInput>(value).is_err());
+    }
+    #[test]
+    fn metal_plan_is_darwin_only_omits_device_and_records_tiering() {
+        let mut capable = input(1);
+        capable.platform = Platform::Darwin;
+        capable.backend_override = Some(PlanBackend::Metal);
+        capable.model_id = "qwen3.5:9b".into();
+        capable.metal_binary_path = Some("/metal-bin".into());
+        capable.metal_unified_memory_mib = Some(16_000);
+        let plan = launch(capable);
+        assert_eq!(plan.backend, PlanBackend::Metal);
+        assert_eq!(plan.runtime_dir, None);
+        assert_eq!(plan.gpu_vram_mib, None);
+        assert_eq!(plan.context_tokens, Some(32_768));
+        assert_eq!(
+            plan.metal_tier,
+            Some(MetalTierMetadata {
+                source: "supplied_measurement",
+                unified_memory_mib: Some(16_000),
+            })
+        );
+        assert!(!plan.argv.iter().any(|arg| arg == "--device"));
+        assert!(!plan.argv.iter().any(|arg| arg.contains("mlx")));
+        assert_eq!(plan.argv.last(), Some(&"/mm".to_owned()));
+        assert!(plan.visible_devices_env_name.is_none());
+        assert!(plan.extra_env.is_empty());
+
+        let mut floor = input(1);
+        floor.platform = Platform::Darwin;
+        floor.backend_override = Some(PlanBackend::Metal);
+        floor.metal_binary_path = Some("/metal-bin".into());
+        floor.metal_unified_memory_mib = Some(15_999);
+        assert_eq!(launch(floor).context_tokens, Some(16_384));
+
+        let mut absent = input(1);
+        absent.platform = Platform::Darwin;
+        absent.backend_override = Some(PlanBackend::Metal);
+        absent.metal_binary_path = Some("/metal-bin".into());
+        let absent = launch(absent);
+        assert_eq!(absent.context_tokens, Some(16_384));
+        assert_eq!(
+            absent.metal_tier,
+            Some(MetalTierMetadata {
+                source: "no_measurement_floor",
+                unified_memory_mib: None,
+            })
+        );
+
+        let mut linux = input(1);
+        linux.backend_override = Some(PlanBackend::Metal);
+        assert_rejected(linux, "Metal backend override is not valid on Linux");
     }
     #[test]
     fn plan_is_repeatable_without_side_effects() {

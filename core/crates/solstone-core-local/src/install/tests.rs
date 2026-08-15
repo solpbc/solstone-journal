@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use super::mlx::SnapshotSource as _;
 use super::{
     InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, coreml_install, dispatch,
-    download_artifact, fingerprint, lease, local_backend_choice, manifest, mlx,
+    download_artifact, fingerprint, lease, local_backend_choice, manifest, metal_candidate, mlx,
     parakeet_target_for_install, pins, publish_staged_tree_with, readiness, status,
     write_parakeet_model_manifest,
 };
@@ -309,6 +309,296 @@ fn fixture_artifact(url: String, filename: &'static str, body: &[u8]) -> Artifac
         backend: None,
         extracted_binary_sha256: None,
     }
+}
+
+fn candidate_runtime_archive() -> Vec<u8> {
+    let encoder = GzEncoder::new(Vec::new(), Compression::default());
+    let mut builder = tar::Builder::new(encoder);
+    let bytes = b"#!/bin/sh\nexit 0\n";
+    let mut header = tar::Header::new_gnu();
+    header.set_size(bytes.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    builder
+        .append_data(&mut header, "llama-server", &bytes[..])
+        .unwrap();
+    builder.into_inner().unwrap().finish().unwrap()
+}
+
+fn candidate_server(bodies: Vec<Vec<u8>>, status: u16) -> (String, thread::JoinHandle<usize>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let mut requests = 0;
+        for body in bodies {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 2048];
+            let _ = stream.read(&mut request).unwrap();
+            write!(
+                stream,
+                "HTTP/1.1 {status} TEST\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
+            stream.write_all(&body).unwrap();
+            requests += 1;
+        }
+        requests
+    });
+    (format!("http://{address}"), server)
+}
+
+fn candidate_request(root: &PathBuf) -> serde_json::Map<String, Value> {
+    serde_json::from_value(json!({
+        "journal": root,
+        "backend": "metal",
+        "metal_unified_memory_mib": 16000,
+    }))
+    .unwrap()
+}
+
+fn candidate_fixture_artifacts(base: &str, runtime: &[u8]) -> (Artifact, Artifact, Artifact) {
+    (
+        fixture_artifact(
+            format!("{base}/runtime"),
+            "llama-b10068-bin-macos-arm64.tar.gz",
+            runtime,
+        ),
+        fixture_artifact(
+            format!("{base}/model"),
+            "Qwen3.5-9B-Q8_0.gguf",
+            b"candidate model",
+        ),
+        fixture_artifact(
+            format!("{base}/projector"),
+            "mmproj-F16.gguf",
+            b"candidate projector",
+        ),
+    )
+}
+
+#[test]
+fn metal_candidate_requires_explicit_supported_platform_without_provider_state() {
+    let root = temp("metal-candidate-platform");
+    let error = dispatch(
+        InstallVerb::RunLocal,
+        json!({"journal": root, "backend": "metal"}),
+    )
+    .unwrap_err();
+    assert_eq!(error.exit_code, 65);
+    assert_eq!(
+        error.envelope.error.unwrap().reason_code,
+        "unsupported_platform"
+    );
+    assert!(!status::status_path(&root, "local").exists());
+    assert!(!lease::lease_path(&root, "local").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn metal_candidate_installs_proves_and_discards_stale_parts_atomically() {
+    let root = temp("metal-candidate-install");
+    let runtime_staging = pins::cache_root(&root).join("bin/aarch64-apple-darwin/.b10068.staging");
+    fs::create_dir_all(&runtime_staging).unwrap();
+    fs::write(
+        runtime_staging.join(".llama-b10068-bin-macos-arm64.tar.gz.part"),
+        b"stale",
+    )
+    .unwrap();
+    let runtime = candidate_runtime_archive();
+    let (base, server) = candidate_server(
+        vec![
+            runtime.clone(),
+            b"candidate model".to_vec(),
+            b"candidate projector".to_vec(),
+        ],
+        200,
+    );
+    let (runtime, model, projector) = candidate_fixture_artifacts(&base, &runtime);
+    let policy = loopback_download_policy(&base);
+    let result = metal_candidate::run_with(
+        &candidate_request(&root),
+        &policy,
+        "aarch64-apple-darwin",
+        &runtime,
+        &model,
+        &projector,
+    )
+    .unwrap();
+    assert_eq!(server.join().unwrap(), 3);
+    assert_eq!(result["ready"], true);
+    assert_eq!(result["backend"], "metal");
+    assert!(result["proof"]["server_binary"]["status"] == "ready");
+    assert!(result["proof"]["model_gguf"]["status"] == "ready");
+    assert!(result["proof"]["projector"]["status"] == "ready");
+    assert!(!runtime_staging.exists());
+    assert!(!status::status_path(&root, "local").exists());
+    assert!(!lease::lease_path(&root, "local").exists());
+    assert_eq!(
+        manifest::prove_manifest(
+            &manifest::artifact_manifest_path(&pins::cache_root(&root).join("models/qwen3.5-9b")),
+            &pins::metal_candidate_model_identity(),
+        )["status"],
+        "ready"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn metal_candidate_inspect_is_pure_and_reports_component_reasons_and_fit() {
+    let root = temp("metal-candidate-inspect");
+    let runtime = candidate_runtime_archive();
+    let (base, server) = candidate_server(
+        vec![
+            runtime.clone(),
+            b"candidate model".to_vec(),
+            b"candidate projector".to_vec(),
+        ],
+        200,
+    );
+    let (runtime, model, projector) = candidate_fixture_artifacts(&base, &runtime);
+    metal_candidate::run_with(
+        &candidate_request(&root),
+        &loopback_download_policy(&base),
+        "aarch64-apple-darwin",
+        &runtime,
+        &model,
+        &projector,
+    )
+    .unwrap();
+    server.join().unwrap();
+    let before = archive::snapshot_tree(&pins::cache_root(&root)).unwrap();
+    let ready =
+        metal_candidate::inspect_with(&candidate_request(&root), "aarch64-apple-darwin").unwrap();
+    assert_eq!(ready["fit"]["measurement"], "unmeasured");
+    assert_eq!(ready["fit"]["tier"]["source"], "supplied_measurement");
+    assert_eq!(ready["fit"]["tier"]["unified_memory_mib"], 16000);
+    assert!(ready["fit"].get("ram_requirement_mib").is_none());
+    assert!(ready["fit"].get("threshold_mib").is_none());
+    assert_eq!(
+        archive::snapshot_tree(&pins::cache_root(&root)).unwrap(),
+        before
+    );
+
+    fs::remove_file(pins::cache_root(&root).join("models/qwen3.5-9b/Qwen3.5-9B-Q8_0.gguf"))
+        .unwrap();
+    let missing =
+        metal_candidate::inspect_with(&candidate_request(&root), "aarch64-apple-darwin").unwrap();
+    assert_eq!(missing["failed_component"], "model_gguf");
+    assert_eq!(missing["reason_code"], "inventory_member_missing");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn metal_candidate_origin_failures_are_explicit_and_never_publish_ready_state() {
+    for (name, status, body, expected) in [
+        ("missing", 404, Vec::new(), "download_origin_unreachable"),
+        ("short", 200, b"short".to_vec(), "download_size_mismatch"),
+        (
+            "wrong-digest",
+            200,
+            vec![b'x'; candidate_runtime_archive().len()],
+            "download_digest_mismatch",
+        ),
+    ] {
+        let root = temp(&format!("metal-candidate-{name}"));
+        let runtime_bytes = candidate_runtime_archive();
+        let (base, server) = candidate_server(vec![body], status);
+        let (runtime, model, projector) = candidate_fixture_artifacts(&base, &runtime_bytes);
+        let error = metal_candidate::run_with(
+            &candidate_request(&root),
+            &loopback_download_policy(&base),
+            "aarch64-apple-darwin",
+            &runtime,
+            &model,
+            &projector,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.envelope.error.unwrap().reason_code,
+            expected,
+            "{name}"
+        );
+        assert_eq!(server.join().unwrap(), 1, "{name}");
+        let inspect =
+            metal_candidate::inspect_with(&candidate_request(&root), "aarch64-apple-darwin")
+                .unwrap();
+        assert_eq!(inspect["ready"], false, "{name}");
+        assert!(!status::status_path(&root, "local").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn metal_candidate_preserves_incumbent_mlx_owner_state() {
+    let root = temp("metal-candidate-incumbent-mlx");
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(
+        root.join("config/journal.json"),
+        br#"{"providers":{"active":{"provider":"local","model":"qwen3.5:9b"}}}"#,
+    )
+    .unwrap();
+    let mlx_source = temp("metal-candidate-mlx-source");
+    let policy = loopback_download_policy("http://127.0.0.1:1");
+    super::dispatch_with_download_policy(
+        InstallVerb::RunMlx,
+        json!({
+            "journal": root,
+            "model_id": "qwen3.5:9b",
+            "source_snapshot": mlx_source,
+            "lfs_sha256": {},
+        }),
+        &policy,
+    )
+    .unwrap();
+    fs::remove_file(lease::lease_path(&root, "local")).unwrap();
+    let status_path = status::status_path(&root, "local");
+    let status_before = fs::read(&status_path).unwrap();
+    let config_before = fs::read(root.join("config/journal.json")).unwrap();
+    let mlx_base = pins::cache_root(&root)
+        .join("mlx/mlx-community--Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6");
+    let mlx_before = archive::snapshot_tree(&mlx_base).unwrap();
+    let mlx_input: serde_json::Map<String, Value> = serde_json::from_value(json!({
+        "journal": root,
+        "model_id": "qwen3.5:9b",
+        "platform_supported": true,
+        "mlx_vlm_importable": true,
+    }))
+    .unwrap();
+    let readiness_before = readiness::inspect_mlx(mlx_input.clone());
+
+    let runtime_bytes = candidate_runtime_archive();
+    let (base, server) = candidate_server(
+        vec![
+            runtime_bytes.clone(),
+            b"candidate model".to_vec(),
+            b"candidate projector".to_vec(),
+        ],
+        200,
+    );
+    let (runtime, model, projector) = candidate_fixture_artifacts(&base, &runtime_bytes);
+    metal_candidate::run_with(
+        &candidate_request(&root),
+        &loopback_download_policy(&base),
+        "aarch64-apple-darwin",
+        &runtime,
+        &model,
+        &projector,
+    )
+    .unwrap();
+    server.join().unwrap();
+
+    assert_eq!(fs::read(status_path).unwrap(), status_before);
+    assert_eq!(
+        fs::read(root.join("config/journal.json")).unwrap(),
+        config_before
+    );
+    assert_eq!(archive::snapshot_tree(&mlx_base).unwrap(), mlx_before);
+    assert_eq!(readiness::inspect_mlx(mlx_input), readiness_before);
+    assert!(!lease::lease_path(&root, "local").exists());
+    assert_eq!(resolve("local-model", None, None).len(), 2);
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(mlx_source);
 }
 
 fn assert_manifest_proves_preflip_identity(root: &std::path::Path, unit: &str, identity: Value) {
@@ -2783,7 +3073,7 @@ fn registry_binds_local_model_artifacts_without_mutating_manifest_identity() {
             .iter()
             .filter(|row| row.unit == "local-model")
             .count(),
-        2
+        4
     );
 }
 

@@ -4,16 +4,21 @@
 use std::collections::BTreeSet;
 use std::io::{Read, Write};
 use std::net::TcpListener;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Local;
 use serde_json::{Value, json};
-use solstone_core_generate::contract;
-use solstone_core_generate_wire::{LaneOutcome, refusal_for};
+use solstone_core_generate::{ContentPart, GenerateRequest, contract};
+use solstone_core_generate_wire::{
+    ConverseMessage, ConverseToolSpec, EndpointRuntime, LaneOutcome, bundled_converse, refusal_for,
+    resolve_lane,
+};
 
 static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
 
@@ -23,7 +28,7 @@ fn root(name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    let root = std::env::temp_dir().join(format!(
+    let root = Path::new("/var/tmp").join(format!(
         "solstone-core-generate-wire-{name}-{stamp}-{suffix}"
     ));
     std::fs::create_dir_all(root.join("health")).expect("create health directory");
@@ -76,6 +81,115 @@ fn serve(completion: &str) -> (u16, thread::JoinHandle<usize>) {
         requests
     });
     (port, handle)
+}
+
+#[derive(Debug)]
+struct RecordedRequest {
+    path: String,
+    body: String,
+}
+
+/// A loopback llama-compatible endpoint that records every request.  It exits
+/// after the client has been idle briefly, so tests can assert the complete
+/// observed request set without guessing how many capacity probes a client makes.
+fn serve_recording(
+    completions: Vec<(u16, String)>,
+) -> (u16, thread::JoinHandle<Vec<RecordedRequest>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind recording server");
+    listener
+        .set_nonblocking(true)
+        .expect("make recording server nonblocking");
+    let port = listener
+        .local_addr()
+        .expect("recording server address")
+        .port();
+    let handle = thread::spawn(move || {
+        let mut requests = Vec::new();
+        let mut completion_index = 0;
+        let started = Instant::now();
+        let mut last_request = None;
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .expect("set request read timeout");
+                    let request = read_recorded_request(&mut stream);
+                    let (status, body) =
+                        match request.path.as_str() {
+                            "/health" => (200, r#"{"loaded_model":"served"}"#.to_owned()),
+                            "/props" => (200, r#"{"n_ctx":16384,"total_slots":1}"#.to_owned()),
+                            "/tokenize" => (200, r#"{"tokens":[1]}"#.to_owned()),
+                            "/v1/chat/completions" => {
+                                let response =
+                                    completions.get(completion_index).cloned().unwrap_or_else(
+                                        || (500, r#"{"error":"unexpected completion"}"#.into()),
+                                    );
+                                completion_index += 1;
+                                response
+                            }
+                            _ => (404, r#"{"error":"unexpected path"}"#.to_owned()),
+                        };
+                    stream
+                        .write_all(http_response(status, &body).as_bytes())
+                        .expect("write recording response");
+                    requests.push(request);
+                    last_request = Some(Instant::now());
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if last_request.is_some_and(|time| time.elapsed() >= Duration::from_millis(150))
+                    {
+                        return requests;
+                    }
+                    assert!(
+                        started.elapsed() < Duration::from_secs(5),
+                        "recording server received no request"
+                    );
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("accept recording request: {error}"),
+            }
+        }
+    });
+    (port, handle)
+}
+
+fn read_recorded_request(stream: &mut std::net::TcpStream) -> RecordedRequest {
+    let mut bytes = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    let header_end = loop {
+        let read = stream.read(&mut chunk).expect("read recorded request");
+        assert!(read > 0, "request ended before HTTP headers");
+        bytes.extend_from_slice(&chunk[..read]);
+        if let Some(end) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
+            break end + 4;
+        }
+    };
+    let header = std::str::from_utf8(&bytes[..header_end]).expect("ASCII HTTP headers");
+    let path = header
+        .split_whitespace()
+        .nth(1)
+        .expect("HTTP request path")
+        .to_owned();
+    let content_length = header
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim())
+        })
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+    while bytes.len() < header_end + content_length {
+        let read = stream.read(&mut chunk).expect("read recorded request body");
+        assert!(read > 0, "request ended before HTTP body");
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    RecordedRequest {
+        path,
+        body: String::from_utf8(bytes[header_end..header_end + content_length].to_vec())
+            .expect("UTF-8 request body"),
+    }
 }
 
 fn serve_endpoint() -> (u16, thread::JoinHandle<usize>) {
@@ -132,14 +246,26 @@ fn run(root: &Path, args: &[&str], input: Option<&Value>) -> Output {
 }
 
 fn run_bytes(root: &Path, args: &[&str], input: Option<&[u8]>) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+    run_bytes_with_path(root, args, input, None)
+}
+
+fn run_bytes_with_path(
+    root: &Path,
+    args: &[&str],
+    input: Option<&[u8]>,
+    path: Option<&Path>,
+) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
+    command
         .args(args)
         .env("SOLSTONE_JOURNAL", root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("start solstone-core generate");
+        .stderr(Stdio::piped());
+    if let Some(path) = path {
+        command.env("PATH", path);
+    }
+    let mut child = command.spawn().expect("start solstone-core generate");
     if let Some(input) = input {
         child
             .stdin
@@ -149,6 +275,27 @@ fn run_bytes(root: &Path, args: &[&str], input: Option<&[u8]>) -> Output {
             .expect("write generate input");
     }
     child.wait_with_output().expect("wait for generate")
+}
+
+#[cfg(unix)]
+fn poison_mlx_commands(root: &Path) -> (PathBuf, PathBuf) {
+    let bin = root.join("poison-bin");
+    let marker = root.join("mlx-poisoned");
+    std::fs::create_dir_all(&bin).expect("create poison bin");
+    for command in ["python", "python3", "mlx-vlm-server"] {
+        let path = bin.join(command);
+        std::fs::write(
+            &path,
+            format!("#!/bin/sh\nprintf x >> {}\n", marker.display()),
+        )
+        .expect("write poison command");
+        let mut permissions = std::fs::metadata(&path)
+            .expect("poison command metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&path, permissions).expect("make poison command executable");
+    }
+    (bin, marker)
 }
 
 fn one_shot(root: &Path, input: &Value) -> Output {
@@ -187,6 +334,41 @@ fn token_entries(journal: &Path) -> Vec<Value> {
         .lines()
         .map(|line| serde_json::from_str(line).expect("usage JSON"))
         .collect()
+}
+
+fn bundled_request() -> GenerateRequest {
+    GenerateRequest {
+        id: None,
+        context: "test.generate".into(),
+        contents: vec![ContentPart::Text {
+            text: "weather in Denver".into(),
+        }],
+        system_instruction: None,
+        temperature: 0.2,
+        max_output_tokens: 64,
+        thinking_budget: None,
+        timeout_s: Some(5.0),
+        json_output: false,
+        json_schema: None,
+        enforce_responsiveness: true,
+        attempt_index: 0,
+        exclusive_admission: false,
+        transport_retries: None,
+    }
+}
+
+fn assert_only_local_requests(requests: &[RecordedRequest]) {
+    assert!(!requests.is_empty(), "loopback server observed no requests");
+    for request in requests {
+        assert!(
+            matches!(
+                request.path.as_str(),
+                "/health" | "/props" | "/tokenize" | "/v1/chat/completions"
+            ),
+            "unaccounted loopback request: {}",
+            request.path
+        );
+    }
 }
 
 #[test]
@@ -232,6 +414,228 @@ fn bundled_generation_emits_generated_response_and_hints() {
         assert_eq!(server.join().expect("join server"), 6);
         let _ = std::fs::remove_dir_all(journal);
     }
+}
+
+#[test]
+fn bundled_candidate_loopback_enforces_schema_output_and_sends_multimodal_response_format() {
+    let schema = json!({
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+    });
+    let cases = [
+        (
+            "valid",
+            completion_body(
+                r#"{"answer":"OK"}"#,
+                "stop",
+                Some(json!({"prompt_tokens": 2, "completion_tokens": 1})),
+            ),
+            "generated",
+        ),
+        ("invalid", r#"{"choices":"not an array"}"#.into(), "refused"),
+        (
+            "empty",
+            completion_body(
+                "",
+                "stop",
+                Some(json!({"prompt_tokens": 2, "completion_tokens": 1})),
+            ),
+            "refused",
+        ),
+    ];
+    for (name, completion, expected_outcome) in cases {
+        let journal = root(&format!("candidate-schema-{name}"));
+        write_config(&journal, bundled_config(false));
+        let (port, server) = serve_recording(vec![(200, completion)]);
+        std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+        let mut request = fixture_vector("generated")["request"].clone();
+        request["contents"] = json!([
+            {"type": "text", "text": "describe this image"},
+            {"type": "image", "mime_type": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4AWP4z8AAAAMBAQDbfS68AAAAAElFTkSuQmCC"},
+        ]);
+        request["json_output"] = json!(true);
+        request["json_schema"] = schema.clone();
+
+        let response = stdout_json(&one_shot(&journal, &request));
+        assert_eq!(response["outcome"], expected_outcome, "{name}");
+        if expected_outcome == "generated" {
+            assert_eq!(response["schema_validation"]["valid"], true);
+            assert_eq!(response["text"], r#"{"answer":"OK"}"#);
+        } else {
+            assert_eq!(response["provider"], "local");
+        }
+        let requests = server.join().expect("join recording server");
+        assert_only_local_requests(&requests);
+        let chat = requests
+            .iter()
+            .find(|request| request.path == "/v1/chat/completions")
+            .expect("chat completion request");
+        let body: Value = serde_json::from_str(&chat.body).expect("chat request JSON");
+        assert_eq!(body["response_format"]["type"], "json_schema");
+        assert_eq!(
+            body["response_format"]["json_schema"]["schema"], schema,
+            "{name} response format"
+        );
+        assert_eq!(body["messages"][0]["content"][1]["type"], "image_url");
+        let _ = std::fs::remove_dir_all(journal);
+    }
+}
+
+#[test]
+fn bundled_candidate_loopback_converse_preserves_tool_results_and_rejects_prose_tools() {
+    let journal = root("candidate-converse");
+    let first = json!({
+        "choices": [{
+            "message": {"content": "", "tool_calls": [{
+                "id": "call-1",
+                "type": "function",
+                "function": {"name": "weather", "arguments": "{\"city\":\"Denver\"}"},
+            }]},
+            "finish_reason": "tool_calls",
+        }],
+        "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
+    })
+    .to_string();
+    let second = completion_body(
+        "Denver is sunny.",
+        "stop",
+        Some(json!({"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6})),
+    );
+    let (port, server) = serve_recording(vec![(200, first), (200, second)]);
+    std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+    let request = bundled_request();
+    let config = bundled_config(false)
+        .as_object()
+        .expect("bundled config")
+        .clone();
+    let runtime = EndpointRuntime::default();
+    let tools = vec![ConverseToolSpec {
+        name: "weather".into(),
+        description: "get weather".into(),
+        parameters: json!({"type": "object", "required": ["city"]}),
+    }];
+    let first_turn = bundled_converse(
+        &request,
+        &[ConverseMessage::User {
+            text: "weather in Denver".into(),
+        }],
+        &tools,
+        &journal,
+        &config,
+        &runtime,
+    )
+    .expect("first local turn");
+    assert_eq!(first_turn.finish_reason, "tool_calls");
+    assert_eq!(first_turn.tool_calls.len(), 1);
+    let call = first_turn.tool_calls[0].clone();
+    let second_turn = bundled_converse(
+        &request,
+        &[
+            ConverseMessage::User {
+                text: "weather in Denver".into(),
+            },
+            ConverseMessage::Assistant {
+                text: first_turn.text,
+                tool_calls: vec![call.clone()],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: call.id.clone(),
+                tool_name: call.name,
+                output: "sunny".into(),
+            },
+        ],
+        &tools,
+        &journal,
+        &config,
+        &runtime,
+    )
+    .expect("second local turn");
+    assert_eq!(second_turn.text, "Denver is sunny.");
+    let requests = server.join().expect("join converse server");
+    assert_only_local_requests(&requests);
+    let chat_requests = requests
+        .iter()
+        .filter(|request| request.path == "/v1/chat/completions")
+        .collect::<Vec<_>>();
+    assert_eq!(chat_requests.len(), 2);
+    let second_body: Value =
+        serde_json::from_str(&chat_requests[1].body).expect("second chat JSON");
+    assert_eq!(second_body["messages"][2]["role"], "tool");
+    assert_eq!(second_body["messages"][2]["tool_call_id"], "call-1");
+    assert_eq!(second_body["messages"][2]["content"], "sunny");
+    let _ = std::fs::remove_dir_all(journal);
+
+    let prose_journal = root("candidate-converse-prose");
+    let prose = json!({
+        "choices": [{"message": {"content": "<tool_call>{}</tool_call>"}, "finish_reason": "stop"}],
+    })
+    .to_string();
+    let (port, server) = serve_recording(vec![(200, prose)]);
+    std::fs::write(prose_journal.join("health/local.port"), port.to_string())
+        .expect("write prose port");
+    let failure = bundled_converse(
+        &request,
+        &[ConverseMessage::User {
+            text: "use a tool".into(),
+        }],
+        &tools,
+        &prose_journal,
+        &config,
+        &runtime,
+    )
+    .expect_err("prose tool calls are invalid");
+    assert_eq!(failure.reason_code, "tool_call_synthesized_as_prose");
+    assert_only_local_requests(&server.join().expect("join prose server"));
+    let _ = std::fs::remove_dir_all(prose_journal);
+}
+
+#[cfg(unix)]
+#[test]
+fn refusing_candidate_endpoint_stays_local_and_never_spawns_mlx() {
+    let journal = root("candidate-refusing");
+    write_config(&journal, bundled_config(false));
+    let config = bundled_config(false)
+        .as_object()
+        .expect("bundled config")
+        .clone();
+    assert_eq!(
+        resolve_lane(&config),
+        ("local".into(), LaneOutcome::BundledLocal)
+    );
+    let (port, server) = serve_recording(vec![(200, r#"{"choices":"candidate refused"}"#.into())]);
+    std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
+    let (poison_bin, marker) = poison_mlx_commands(&journal);
+    let input = fixture_vector("generated")["request"].to_string();
+    let output = run_bytes_with_path(
+        &journal,
+        &["generate", "--one-shot"],
+        Some(input.as_bytes()),
+        Some(&poison_bin),
+    );
+    assert_eq!(output.status.code(), Some(0));
+    let response = stdout_json(&output);
+    assert_eq!(response["outcome"], "refused");
+    assert_eq!(response["provider"], "local");
+    assert!(response["reason_code"].is_string(), "explicit local error");
+    let requests = server.join().expect("join refusing server");
+    assert_only_local_requests(&requests);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.path == "/v1/chat/completions")
+            .count(),
+        1,
+        "the loopback fake accounted for the only completion request"
+    );
+    assert!(
+        !marker.exists()
+            || std::fs::read(&marker)
+                .expect("read poison marker")
+                .is_empty(),
+        "candidate request spawned an MLX command"
+    );
+    let _ = std::fs::remove_dir_all(journal);
 }
 
 #[test]

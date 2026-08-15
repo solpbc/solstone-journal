@@ -169,6 +169,8 @@ pub static ARTIFACTS: &[Artifact] = &[
         backend: None,
         extracted_binary_sha256: None,
     },
+    // This unit is the mirrored origin namespace, not a claim that the macOS
+    // archive launches with the Vulkan backend.
     Artifact {
         unit: "llama-server-vulkan",
         version: "b10068",
@@ -218,6 +220,32 @@ pub static ARTIFACTS: &[Artifact] = &[
         origin_key: "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
         artifact_key: None,
         platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "local-model",
+        version: "3885219b6810b007914f3a7950a8d1b469d598a5",
+        filename: "Qwen3.5-9B-Q8_0.gguf",
+        sha256: "809626574d0cb43d4becfa56169980da2bb448f2299270f7be443cb89d0a6ae4",
+        size_bytes: 9527502048,
+        upstream_url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q8_0.gguf",
+        origin_key: "assets/local-model/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q8_0.gguf",
+        artifact_key: None,
+        platform: Some(Platform::MacosArm64),
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "local-model",
+        version: "3885219b6810b007914f3a7950a8d1b469d598a5",
+        filename: "mmproj-F16.gguf",
+        sha256: "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f",
+        size_bytes: 918166080,
+        upstream_url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/mmproj-F16.gguf",
+        origin_key: "assets/local-model/3885219b6810b007914f3a7950a8d1b469d598a5/mmproj-F16.gguf",
+        artifact_key: None,
+        platform: Some(Platform::MacosArm64),
         backend: None,
         extracted_binary_sha256: None,
     },
@@ -1066,6 +1094,14 @@ mod tests {
                 672423616,
             ),
             (
+                "809626574d0cb43d4becfa56169980da2bb448f2299270f7be443cb89d0a6ae4",
+                9527502048,
+            ),
+            (
+                "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f",
+                918166080,
+            ),
+            (
                 "4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757",
                 940663680,
             ),
@@ -1294,7 +1330,7 @@ mod tests {
             .iter()
             .map(|artifact| (artifact.sha256, artifact.size_bytes))
             .collect();
-        assert_eq!(catalog().len(), 68);
+        assert_eq!(catalog().len(), 70);
         assert_eq!(actual, expected);
     }
 
@@ -1329,6 +1365,15 @@ mod tests {
     #[test]
     fn selectors_return_complete_file_sets_without_ordering_contracts() {
         assert_eq!(resolve("local-model", None, None).len(), 2);
+        let metal = resolve("local-model", Some(Platform::MacosArm64), None);
+        assert_eq!(metal.len(), 2);
+        assert_eq!(
+            metal
+                .iter()
+                .map(|artifact| artifact.filename)
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["Qwen3.5-9B-Q8_0.gguf", "mmproj-F16.gguf"])
+        );
         assert_eq!(resolve("rerank-model", None, None).len(), 2);
         assert_eq!(
             resolve("llama-server-cuda", Some(Platform::LinuxX64), None).len(),

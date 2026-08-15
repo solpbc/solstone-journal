@@ -123,6 +123,16 @@ pub fn write_manifest(path: &Path, manifest: &Value) -> Result<Value, String> {
 }
 
 pub fn prove_manifest(path: &Path, pin_identity: &Value) -> Value {
+    prove_manifest_inner(path, pin_identity, None)
+}
+
+/// Prove one named inventory member while preserving the manifest proof's
+/// status and reason-code vocabulary.
+pub fn prove_manifest_member(path: &Path, pin_identity: &Value, member: &str) -> Value {
+    prove_manifest_inner(path, pin_identity, Some(member))
+}
+
+fn prove_manifest_inner(path: &Path, pin_identity: &Value, wanted_member: Option<&str>) -> Value {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -146,10 +156,15 @@ pub fn prove_manifest(path: &Path, pin_identity: &Value) -> Value {
     let Some(inventory) = manifest.get("inventory").and_then(Value::as_array) else {
         return proof("missing-or-mismatched", "manifest_malformed");
     };
+    let mut found_member = wanted_member.is_none();
     for entry in inventory {
         let Some(relative) = entry.get("relative_path").and_then(Value::as_str) else {
             return proof("missing-or-mismatched", "inventory_malformed");
         };
+        if wanted_member.is_some_and(|member| member != relative) {
+            continue;
+        }
+        found_member = true;
         let relative = Path::new(relative);
         if relative.is_absolute()
             || relative.components().any(|component| {
@@ -174,6 +189,9 @@ pub fn prove_manifest(path: &Path, pin_identity: &Value) -> Value {
         if sha256_file(&member).ok().as_deref() != Some(expected_hash) {
             return proof("missing-or-mismatched", "sha256_mismatch");
         }
+    }
+    if !found_member {
+        return proof("missing-or-mismatched", "inventory_member_missing");
     }
     proof("ready", "ready")
 }

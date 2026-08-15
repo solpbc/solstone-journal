@@ -18,6 +18,7 @@ pub mod fingerprint;
 pub mod fit_report;
 pub mod lease;
 pub mod manifest;
+pub mod metal_candidate;
 pub mod migration;
 pub mod mlx;
 pub mod pins;
@@ -211,11 +212,17 @@ fn dispatch_with_download_policy(
         InstallVerb::ManifestVulkan => write_manifest("vulkan", &object)?,
         InstallVerb::ManifestCuda => write_manifest("cuda", &object)?,
         InstallVerb::ManifestModel => write_manifest("model", &object)?,
-        InstallVerb::InspectLocal => readiness::inspect_local(object),
+        InstallVerb::InspectLocal => match local_backend(&object)? {
+            LocalBackend::Existing => readiness::inspect_local(object),
+            LocalBackend::Metal => metal_candidate::inspect(&object)?,
+        },
         InstallVerb::InspectMlx => readiness::inspect_mlx(object),
         InstallVerb::InspectParakeet => readiness::inspect_parakeet(object),
         InstallVerb::ProbeBinary => readiness::probe_binary(&object),
-        InstallVerb::RunLocal => run_local(&object, policy)?,
+        InstallVerb::RunLocal => match local_backend(&object)? {
+            LocalBackend::Existing => run_local(&object, policy)?,
+            LocalBackend::Metal => metal_candidate::run(&object, policy)?,
+        },
         InstallVerb::RunMlx => run_mlx(&object, policy)?,
         InstallVerb::PinsParakeet => pins::parakeet_pins_json(),
         InstallVerb::PathsParakeet => {
@@ -230,6 +237,24 @@ fn dispatch_with_download_policy(
         InstallVerb::RunParakeet => run_parakeet(&object, policy)?,
     };
     Ok(InstallEnvelope::ok(result))
+}
+
+enum LocalBackend {
+    Existing,
+    Metal,
+}
+
+fn local_backend(object: &Map<String, Value>) -> Result<LocalBackend, DispatchError> {
+    match object.get("backend") {
+        None => Ok(LocalBackend::Existing),
+        Some(Value::String(value)) if value == "metal" => Ok(LocalBackend::Metal),
+        Some(_) => Err(failure(
+            "input",
+            "unsupported_backend",
+            "backend must be \"metal\" when supplied",
+            65,
+        )),
+    }
 }
 
 fn parakeet_key(object: &Map<String, Value>) -> Result<String, DispatchError> {
