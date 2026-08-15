@@ -1241,10 +1241,73 @@ fn fingerprint_parakeet_matches_host_support() {
 
 #[test]
 fn parakeet_model_identity_matches_pinned_model_tuple() {
-    let (repo, filename, revision, sha256, size_bytes) = pins::PARAKEET_MODEL;
+    let (repo, filename, revision, sha256, _size_bytes) = pins::PARAKEET_MODEL;
     assert_eq!(
         pins::parakeet_model_identity(),
-        json!({"unit":"parakeet-model","repo":repo,"filename":filename,"revision":revision,"sha256":sha256,"size_bytes":size_bytes})
+        json!({"unit":"parakeet-model","repo":repo,"filename":filename,"revision":revision,"sha256":sha256})
+    );
+}
+
+/// The regression that matters to an owner: a manifest carrying the identity
+/// the SHIPPED reference writes must prove here, or upgrading re-fetches a
+/// model that is already on disk and correct.
+///
+/// ⚠ The expected identity is transcribed from the reference's
+/// `_model_pin_identity()` rather than built from `pins`, deliberately. Deriving
+/// it from the thing under test is what let the drift live: every existing
+/// assertion compared `parakeet_model_identity()` against itself and passed.
+#[test]
+fn a_manifest_written_with_the_reference_identity_still_proves() {
+    let reference_identity = json!({
+        "unit": "parakeet-model",
+        "repo": "mudler/parakeet-cpp-gguf",
+        "filename": "tdt-0.6b-v3-q8_0.gguf",
+        "revision": "bf0af9f425fa01809cadec671b3cb672709d13e9",
+        "sha256": "4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757",
+    });
+    let root = temp("reference-parakeet-model-identity");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("payload"), b"fixture payload").unwrap();
+    let manifest = manifest::build_manifest(
+        "parakeet",
+        "parakeet-model",
+        "target",
+        json!({"pin_identity": reference_identity}),
+        manifest::inventory_for_tree(&root, "model").unwrap(),
+        None,
+        None,
+    )
+    .unwrap();
+    let path = manifest::artifact_manifest_path(&root);
+    manifest::write_manifest(&path, &manifest).unwrap();
+    assert_eq!(
+        manifest::prove_manifest(&path, &pins::parakeet_model_identity()),
+        json!({"status":"ready","reason_code":"ready","cache_hit":false}),
+        "native readiness rejects a manifest the shipped reference wrote"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// The key SET is the contract, not the values alone: `prove_manifest` compares
+/// canonicalized JSON for exact equality, so one extra key invalidates every
+/// manifest an owner already has on disk. An assertion phrased "carries these
+/// five" passes on a six-key identity -- which is how the size field got here
+/// and stayed.
+#[test]
+fn parakeet_model_identity_carries_exactly_the_reference_key_set() {
+    let identity = pins::parakeet_model_identity();
+    let keys = identity
+        .as_object()
+        .expect("identity is an object")
+        .keys()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        keys,
+        ["filename", "repo", "revision", "sha256", "unit"]
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        "parakeet model identity drifted from the shape the reference records"
     );
 }
 
@@ -2362,7 +2425,11 @@ fn parakeet_pin_tables_cover_every_pinned_platform_and_backend() {
     let model = pins::parakeet_model_identity();
     assert_eq!(model["repo"], repo);
     assert_eq!(model["sha256"], sha256);
-    assert_eq!(model["size_bytes"], size_bytes);
+    // The size stays PINNED -- it is what the fetch primitive refuses a length
+    // mismatch against -- it is just not part of the RECORDED identity, because
+    // the reference's manifests do not carry it.
+    assert_eq!(size_bytes, 940_663_680);
+    assert!(model.get("size_bytes").is_none());
 }
 
 #[test]
@@ -2527,7 +2594,7 @@ fn registry_preserves_prechange_identity_literals() {
         (fingerprint::canonical(pins::cuda_identity("x86_64-unknown-linux-gnu").unwrap()).unwrap(), "{\"arch\":\"amd64\",\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"llama_cpp_revision\":\"571d0d540df04f25298d0e159e520d9fc62ed121\",\"release_tag\":\"b10068\",\"repack_revision\":\"sol1\",\"sha256\":\"3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea\",\"size_bytes\":550238443,\"unit\":\"llama-server-cuda\",\"upstream_image_digest\":\"sha256:5bd5290bd35cfde893d0dcbd9811723c16d89575927d537b5f21becbfbab2f63\",\"url\":\"https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz\",\"wanted_files\":[\"libcublas.so.13\",\"libcublasLt.so.13\",\"libcudart.so.13\",\"libggml-base.so.0\",\"libggml-cpu-alderlake.so\",\"libggml-cpu-cannonlake.so\",\"libggml-cpu-cascadelake.so\",\"libggml-cpu-cooperlake.so\",\"libggml-cpu-haswell.so\",\"libggml-cpu-icelake.so\",\"libggml-cpu-ivybridge.so\",\"libggml-cpu-piledriver.so\",\"libggml-cpu-sandybridge.so\",\"libggml-cpu-sapphirerapids.so\",\"libggml-cpu-skylakex.so\",\"libggml-cpu-sse42.so\",\"libggml-cpu-x64.so\",\"libggml-cpu-zen4.so\",\"libggml-cuda.so\",\"libggml.so.0\",\"libllama-common.so.0\",\"libllama-server-impl.so\",\"libllama.so.0\",\"libmtmd.so.0\",\"llama-server\"]}"),
         (fingerprint::canonical(pins::model_identity("local/qwen3.5-4b").unwrap()).unwrap(), "{\"filename\":\"Qwen3.5-4B-Q4_K_M.gguf\",\"mmproj_filename\":\"mmproj-F16.gguf\",\"mmproj_sha256\":\"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864\",\"model_id\":\"local/qwen3.5-4b\",\"repo\":\"unsloth/Qwen3.5-4B-GGUF\",\"revision\":\"main\",\"sha256\":\"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4\",\"unit\":\"local-model\"}"),
         (fingerprint::canonical(pins::parakeet_backend_identity("x86_64-unknown-linux-gnu", "cpu").unwrap()).unwrap(), "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"backend\":\"cpu\",\"binary_name\":\"parakeet-server\",\"filename\":\"parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz\",\"release_tag\":\"v0.5.0\",\"sha256\":\"636a9fc48ac023096037790f9b77d7e5043b200dd6399ec0438bd648c35d79b9\",\"unit\":\"parakeet-server\"}"),
-        (fingerprint::canonical(pins::parakeet_model_identity()).unwrap(), "{\"filename\":\"tdt-0.6b-v3-q8_0.gguf\",\"repo\":\"mudler/parakeet-cpp-gguf\",\"revision\":\"bf0af9f425fa01809cadec671b3cb672709d13e9\",\"sha256\":\"4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757\",\"size_bytes\":940663680,\"unit\":\"parakeet-model\"}"),
+        (fingerprint::canonical(pins::parakeet_model_identity()).unwrap(), "{\"filename\":\"tdt-0.6b-v3-q8_0.gguf\",\"repo\":\"mudler/parakeet-cpp-gguf\",\"revision\":\"bf0af9f425fa01809cadec671b3cb672709d13e9\",\"sha256\":\"4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757\",\"unit\":\"parakeet-model\"}"),
         (fingerprint::canonical(json!({"unit":"mlx-snapshot","model_id":"qwen3.5:9b","repo":"mlx-community/Qwen3.5-9B-MLX-8bit","revision":"84f7c2deea248d8df56240f88102def51c7ed5d6","size_bytes":10453446077_u64})).unwrap(), "{\"model_id\":\"qwen3.5:9b\",\"repo\":\"mlx-community/Qwen3.5-9B-MLX-8bit\",\"revision\":\"84f7c2deea248d8df56240f88102def51c7ed5d6\",\"size_bytes\":10453446077,\"unit\":\"mlx-snapshot\"}"),
     ];
     for (actual, expected) in literals {

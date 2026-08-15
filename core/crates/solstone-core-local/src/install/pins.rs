@@ -224,9 +224,22 @@ pub fn parakeet_backend_pin(
         _ => None,
     }
 }
+/// The RECORDED identity of the parakeet model, which is not the same thing as
+/// what gets FETCHED.
+///
+/// ⛔ `size_bytes` is deliberately absent. It is a fetch property -- the catalog
+/// carries it and `download_verified` refuses a length mismatch against it --
+/// and it has never been part of the identity the reference writes beside an
+/// installed model. `prove_manifest` compares pin identity by exact
+/// canonicalized-JSON equality, so a sixth key here makes every manifest an
+/// owner already has on disk read `manifest_pin_mismatch` and re-fetch the
+/// model. Measured 2026-08-14: a manifest written by the reference proved
+/// `missing-or-mismatched` on this one key alone. `model_identity` above is the
+/// shape to match -- it agrees with its reference key-for-key and carries no
+/// size either.
 pub fn parakeet_model_identity() -> Value {
-    let (repo, filename, revision, sha256, size_bytes) = PARAKEET_MODEL;
-    json!({"unit":"parakeet-model","repo":repo,"filename":filename,"revision":revision,"sha256":sha256,"size_bytes":size_bytes})
+    let (repo, filename, revision, sha256, _size_bytes) = PARAKEET_MODEL;
+    json!({"unit":"parakeet-model","repo":repo,"filename":filename,"revision":revision,"sha256":sha256})
 }
 pub fn parakeet_backend_identity(key: &str, backend: &str) -> Option<Value> {
     let (release_tag, filename, sha256, binary_name) = parakeet_backend_pin(key, backend)?;
