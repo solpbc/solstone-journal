@@ -225,7 +225,7 @@ where
         }
         if parsed.segments {
             let source = solstone_core_system_health::FilesystemSegmentSource;
-            let segments = solstone_core_system_health::scan_day(
+            let segments: Vec<(String, Option<String>)> = solstone_core_system_health::scan_day(
                 &source,
                 &context.journal,
                 &context.day,
@@ -251,12 +251,24 @@ where
                 .expect("validated segment workers");
             let result = segment::run_repair_batch(
                 &context,
-                segments,
+                segments.clone(),
                 parsed.refresh,
                 parsed.jobs,
                 workers,
                 timeout,
                 skip_talents,
+            )
+            .map_err(|message| CliError::InvalidDay { message })?;
+            // Source-derived, not measured: thinking.py:594-634 and 4449-4456
+            // replay durable Sense output after the concurrent repair workers.
+            segment::replay_activity_state(
+                &context,
+                &mut run_log::RunLogWriter::open(&run_log::path(&day_dir, now_ms, "segments")),
+                &segments,
+                parsed.refresh,
+                parsed.jobs,
+                parsed.no_activity_prompts,
+                false,
             )
             .map_err(|message| CliError::InvalidDay { message })?;
             return Ok(CliRun {
@@ -285,6 +297,18 @@ where
                 timeout,
                 parsed.live,
                 &skip_talents,
+            )
+            .map_err(|message| CliError::InvalidDay { message })?;
+            // Source-derived, not measured: thinking.py:2021-2030 advances
+            // activity state after every direct segment Sense run.
+            segment::replay_activity_state(
+                &context,
+                &mut log,
+                &[(segment.to_owned(), parsed.stream.clone())],
+                parsed.refresh,
+                parsed.jobs,
+                parsed.no_activity_prompts,
+                true,
             )
             .map_err(|message| CliError::InvalidDay { message })?;
             return Ok(CliRun {
@@ -916,6 +940,60 @@ mod tests {
     }
 
     #[test]
+    fn scheduled_prompt_shapes_keep_daily_weekly_and_cadence_context_distinct() {
+        // Source-derived, not measured: thinking.py:2134/2294/2425,
+        // 2606/2728-2730/2834-2836, and 3012-3025 require distinct prompt
+        // forms rather than one generic scheduled-task message.
+        let journal = tempdir().unwrap();
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        fs::create_dir_all(context.day_dir.join("090000_300")).unwrap();
+        let runtime = dispatch::runtime().unwrap();
+        let cogitate = talent(Map::new());
+        dispatch::dispatch(
+            &context,
+            &runtime,
+            &cogitate,
+            "daily",
+            None,
+            false,
+            Map::new(),
+        )
+        .unwrap();
+        dispatch::dispatch(
+            &context,
+            &runtime,
+            &cogitate,
+            "cadence",
+            None,
+            false,
+            Map::new(),
+        )
+        .unwrap();
+        let mut reflection = talent(Map::new());
+        reflection.key = "weekly_reflection".to_owned();
+        dispatch::dispatch(
+            &context,
+            &runtime,
+            &reflection,
+            "weekly",
+            None,
+            false,
+            Map::new(),
+        )
+        .unwrap();
+        let requests = recorder.requests.lock().unwrap();
+        assert_eq!(
+            requests[0].prompt,
+            "Running scheduled task for 2026-08-13: Light activity: 1 segment, ~5 minutes."
+        );
+        assert_eq!(requests[1].prompt, "Running cadence task for 2026-08-13.");
+        assert_eq!(
+            requests[2].prompt,
+            "Running scheduled weekly reflection for 2026-08-09: Light activity: 1 segment, ~5 minutes."
+        );
+    }
+
+    #[test]
     fn exclude_streams_uses_fnmatch_globs() {
         let config = talent(Map::from_iter([(
             "exclude_streams".to_owned(),
@@ -990,6 +1068,16 @@ mod tests {
             Map::new(),
         )
         .unwrap();
+        dispatch::dispatch(
+            &context,
+            &runtime,
+            &reflection,
+            "weekly",
+            Some("work"),
+            false,
+            Map::new(),
+        )
+        .unwrap();
         let requests = recorder.requests.lock().unwrap();
         assert_eq!(
             requests[0].config["output_path"],
@@ -1002,10 +1090,15 @@ mod tests {
         assert!(
             requests[0]
                 .prompt
-                .contains("weekly reflection for 20260809")
+                .contains("weekly reflection for 2026-08-09: No recordings")
         );
         assert!(!requests[1].config.contains_key("output_path"));
         assert!(!requests[1].prompt.contains("weekly reflection"));
+        assert!(
+            requests[2]
+                .prompt
+                .contains("Processing facet 'work' for 2026-08-09: No recordings")
+        );
     }
 
     #[test]
@@ -1418,13 +1511,11 @@ mod tests {
             fs::create_dir_all(&path).unwrap();
             fs::write(path.join("facet.json"), "{}").unwrap();
         }
-        let active = journal.path().join("awareness/activity_state.json");
+        let active = journal
+            .path()
+            .join("chronicle/20260813/090000_60/talents/facets.json");
         fs::create_dir_all(active.parent().unwrap()).unwrap();
-        fs::write(
-            active,
-            r#"{"active":{"home":{"id":"h","activity":"focus","since":"s","description":"d"},"work":{"id":"w","activity":"focus","since":"s","description":"d"}}}"#,
-        )
-        .unwrap();
+        fs::write(active, r#"[{"facet":"home"},{"facet":"work"}]"#).unwrap();
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
@@ -2542,6 +2633,157 @@ mod tests {
     }
 
     #[test]
+    fn segment_activity_tail_persists_ended_records_runs_prompts_and_is_idempotent() {
+        // Source-derived, not measured: thinking.py:379-435 advances durable
+        // activity state, appends an ended record once, then runs its matching
+        // activity talent; repeated segment replay must not duplicate either.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "activity_probe",
+                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        for (segment, sense) in [
+            (
+                "090000_300",
+                serde_json::json!({"density":"active","content_type":"work","activity_summary":"work","facets":[{"facet":"work","level":"high","activity":"work"}]}),
+            ),
+            (
+                "090500_300",
+                serde_json::json!({"density":"idle","content_type":"idle","activity_summary":"","facets":[]}),
+            ),
+        ] {
+            let path = segment_dir(journal.path(), "20260813", segment).join("talents");
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("sense.json"), serde_json::to_vec(&sense).unwrap()).unwrap();
+        }
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        let segments = vec![
+            ("090000_300".to_owned(), Some("default".to_owned())),
+            ("090500_300".to_owned(), Some("default".to_owned())),
+        ];
+        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
+            .unwrap();
+        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
+            .unwrap();
+        let records =
+            fs::read_to_string(journal.path().join("facets/work/activities/20260813.jsonl"))
+                .unwrap();
+        assert_eq!(records.lines().count(), 1);
+        assert!(
+            journal
+                .path()
+                .join("awareness/activity_state.json")
+                .is_file()
+        );
+        assert_eq!(
+            recorder
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|request| request.name == "activity_probe")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn segment_activity_tail_no_activity_prompts_only_suppresses_prompt_dispatch() {
+        // Source-derived, not measured: thinking.py:323-332 persists ended
+        // activity data but records `activity.prompts_skipped` when requested.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "activity_probe",
+                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        for (segment, sense) in [
+            (
+                "090000_300",
+                serde_json::json!({"density":"active","content_type":"work","activity_summary":"work","facets":[{"facet":"work"}]}),
+            ),
+            (
+                "090500_300",
+                serde_json::json!({"density":"idle","content_type":"idle","activity_summary":"","facets":[]}),
+            ),
+        ] {
+            let path = segment_dir(journal.path(), "20260813", segment).join("talents");
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("sense.json"), serde_json::to_vec(&sense).unwrap()).unwrap();
+        }
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        segment::replay_activity_state(
+            &context,
+            &mut log,
+            &[
+                ("090000_300".to_owned(), Some("default".to_owned())),
+                ("090500_300".to_owned(), Some("default".to_owned())),
+            ],
+            false,
+            2,
+            true,
+            true,
+        )
+        .unwrap();
+        assert!(
+            journal
+                .path()
+                .join("facets/work/activities/20260813.jsonl")
+                .is_file()
+        );
+        assert!(recorder.requests.lock().unwrap().is_empty());
+        assert!(
+            fs::read_to_string(journal.path().join("segment.jsonl"))
+                .unwrap()
+                .contains("activity.prompts_skipped")
+        );
+    }
+
+    #[test]
+    fn segments_replay_reads_durable_sense_outputs_after_repairs() {
+        // Source-derived, not measured: thinking.py:594-634 replays persisted
+        // Sense projections after the concurrent `--segments` repair pool.
+        let journal = tempdir().unwrap();
+        let (context, _) = recorder_context(journal.path(), "20260813", 9);
+        let path = segment_dir(journal.path(), "20260813", "090000_300").join("talents");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(
+            path.join("sense.json"),
+            serde_json::to_vec(&serde_json::json!({"density":"active","content_type":"work","activity_summary":"work","facets":[{"facet":"work"}]})).unwrap(),
+        )
+        .unwrap();
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("segments.jsonl"));
+        segment::replay_activity_state(
+            &context,
+            &mut log,
+            &[("090000_300".to_owned(), Some("default".to_owned()))],
+            false,
+            2,
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(
+                &fs::read(journal.path().join("awareness/activity_state.json")).unwrap(),
+            )
+            .unwrap()["active"]["work"]["activity"],
+            "work"
+        );
+    }
+
+    #[test]
     fn segment_selects_direct_output_talents_and_observes_sense_change() {
         // Source-derived, not measured: thinking.py:1818-1882 selects the
         // floor, summary, and detection talents after a non-terminal Sense result.
@@ -3041,13 +3283,11 @@ mod tests {
         let declaration = journal.path().join("facets/work/facet.json");
         fs::create_dir_all(declaration.parent().unwrap()).unwrap();
         fs::write(declaration, "{}\n").unwrap();
-        let state = journal.path().join("awareness/activity_state.json");
+        let state = journal
+            .path()
+            .join("chronicle/20260101/090000_60/talents/facets.json");
         fs::create_dir_all(state.parent().unwrap()).unwrap();
-        fs::write(
-            state,
-            r#"{"active":{"work":{"id":"work_090000_60","activity":"work","since":"090000_60","description":"work"}}}"#,
-        )
-        .unwrap();
+        fs::write(state, r#"[{"facet":"work"}]"#).unwrap();
         let day_dir = day::create_day(journal.path(), "20260101").unwrap();
         let context = context::ThinkContext::new(journal.path(), "20260101".to_owned(), day_dir, 1)
             .with_talent_roots(talent_root, apps_root);

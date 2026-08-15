@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use chrono::Utc;
 use serde_json::{Map, Value};
+use solstone_core_facets::{AppendOutcome, append_activity_record};
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
+use solstone_core_system::activity_state::ActivityStateMachine;
 use solstone_core_system_health::{
     DataState, FilesystemHealthLogSource, SEGMENT_FLOOR_TALENTS, detect_segment_change,
     find_segment_dir, is_floor_talent_capped, read_segment_data_state, resolve_predecessor,
@@ -21,11 +23,8 @@ use crate::dispatch::{ModeResult, PendingUse, dispatch_direct, drain_with_deadli
 use crate::helpers;
 use crate::run_log::RunLogWriter;
 
-/// Port of the Sense phase of `thinking.py:1382-1816`.
-///
-/// The remaining talent-selection and batch-dispatch phase is intentionally
-/// deferred to stage 2. This stage establishes Sense's durable artifacts and
-/// terminal branches before anything is selected from them.
+/// Port of `thinking.py:1382-2052`, with activity-state replay performed by
+/// [`replay_activity_state`] after the segment's Sense projection is durable.
 #[allow(
     clippy::too_many_arguments,
     reason = "The reference keeps segment mode, timeout, live, and skip controls distinct at this boundary."
@@ -642,6 +641,167 @@ pub(crate) fn run_repair_batch(
         }
     });
     Ok(aggregate.lock().expect("repair result lock").clone())
+}
+
+/// Replay durable Sense output through the activity-state tail.
+///
+/// Source-derived, not measured: `thinking.py:379-435` persists the state
+/// machine, appends ended activity records, and runs their eligible prompts;
+/// `thinking.py:594-634` performs the same replay after a segment batch.
+/// Think owns this write as the native port of `solstone.think.thinking`; the
+/// system crate supplies only the deterministic state machine and the facets
+/// crate owns append-only activity-record publication.
+pub(crate) fn replay_activity_state(
+    context: &ThinkContext,
+    log: &mut RunLogWriter<std::fs::File>,
+    segments: &[(String, Option<String>)],
+    refresh: bool,
+    max_concurrency: i64,
+    skip_activity_prompts: bool,
+    hydrate_existing: bool,
+) -> Result<(), String> {
+    let mut machine = if hydrate_existing {
+        ActivityStateMachine::hydrate(Some(&context.journal))
+    } else {
+        ActivityStateMachine::default()
+    };
+    let mut ordered = segments.to_vec();
+    ordered.sort_by(|left, right| left.0.cmp(&right.0));
+    for (segment, stream) in ordered {
+        let Some(segment_dir) =
+            find_segment_dir(&context.journal, &context.day, &segment, stream.as_deref())
+        else {
+            continue;
+        };
+        let sense_path = segment_dir.join("talents/sense.json");
+        let Ok(bytes) = std::fs::read(&sense_path) else {
+            continue;
+        };
+        let Ok(sense) = serde_json::from_slice::<Value>(&bytes) else {
+            continue;
+        };
+        if !valid_activity_sense(&sense) {
+            continue;
+        }
+        let changes = machine.update(&sense, &segment, &context.day, None, context.now_ms);
+        persist_activity_state(context, &machine)?;
+        persist_ended_activities(
+            context,
+            log,
+            &segment,
+            changes,
+            &machine.completed_activities(),
+            refresh,
+            max_concurrency,
+            skip_activity_prompts,
+        )?;
+    }
+    Ok(())
+}
+
+fn valid_activity_sense(sense: &Value) -> bool {
+    ["density", "content_type", "activity_summary", "facets"]
+        .into_iter()
+        .all(|key| sense.get(key).is_some())
+}
+
+fn persist_activity_state(
+    context: &ThinkContext,
+    machine: &ActivityStateMachine,
+) -> Result<(), String> {
+    let path = context.journal.join("awareness/activity_state.json");
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    let bytes = serde_json::to_vec(&machine.snapshot()).map_err(|error| error.to_string())?;
+    atomic_replace(&path, &bytes, AtomicWriteOptions::default()).map_err(|error| error.to_string())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn persist_ended_activities(
+    context: &ThinkContext,
+    log: &mut RunLogWriter<std::fs::File>,
+    segment: &str,
+    changes: Vec<Value>,
+    completed: &[Value],
+    refresh: bool,
+    max_concurrency: i64,
+    skip_activity_prompts: bool,
+) -> Result<(), String> {
+    for change in changes {
+        if change.get("state").and_then(Value::as_str) != Some("ended") {
+            continue;
+        }
+        let Some(id) = change.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(facet) = change.get("facet").and_then(Value::as_str) else {
+            continue;
+        };
+        log.log(
+            "activity.detected",
+            context.now_ms,
+            segment_event(
+                context,
+                segment,
+                None,
+                Map::from_iter([
+                    ("activity".to_owned(), Value::String(id.to_owned())),
+                    ("facet".to_owned(), Value::String(facet.to_owned())),
+                    ("state".to_owned(), Value::String("ended".to_owned())),
+                ]),
+            ),
+        );
+        let Some(record) = completed.iter().rev().find_map(|record| {
+            (record.get("id").and_then(Value::as_str) == Some(id)
+                && record.get("facet").and_then(Value::as_str) == Some(facet))
+            .then(|| record.as_object().cloned())
+            .flatten()
+        }) else {
+            continue;
+        };
+        let written = matches!(
+            append_activity_record(&context.journal, facet, &context.day, record)
+                .map_err(|error| error.to_string())?,
+            AppendOutcome::Written(_)
+        );
+        log.log(
+            "activity.persisted",
+            context.now_ms,
+            segment_event(
+                context,
+                segment,
+                None,
+                Map::from_iter([
+                    ("activity".to_owned(), Value::String(id.to_owned())),
+                    ("facet".to_owned(), Value::String(facet.to_owned())),
+                ]),
+            ),
+        );
+        if skip_activity_prompts {
+            log.log(
+                "activity.prompts_skipped",
+                context.now_ms,
+                segment_event(
+                    context,
+                    segment,
+                    None,
+                    Map::from_iter([
+                        ("activity".to_owned(), Value::String(id.to_owned())),
+                        ("facet".to_owned(), Value::String(facet.to_owned())),
+                        (
+                            "reason".to_owned(),
+                            Value::String("--no-activity-prompts".to_owned()),
+                        ),
+                    ]),
+                ),
+            );
+        } else if written || refresh {
+            let _ = crate::activity::run(context, log, id, facet, refresh, max_concurrency)?;
+        }
+    }
+    Ok(())
 }
 
 fn log_dispatch(

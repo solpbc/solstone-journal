@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -161,18 +162,50 @@ pub(crate) fn dispatch(
     }
     let prompt = if config.metadata.get("type").and_then(Value::as_str) == Some("generate") {
         String::new()
-    } else if schedule == "weekly" && config.key == "weekly_reflection" {
+    } else if schedule == "weekly" && config.key == "weekly_reflection" && facet.is_none() {
+        // Source-derived, not measured: thinking.py:2606 and 2834 include
+        // the weekly reflection's ISO week-start and the day's input summary.
         format!(
-            "Running scheduled weekly reflection for {}.",
+            "Running scheduled weekly reflection for {}: {}.",
             request
                 .get("day")
                 .and_then(Value::as_str)
-                .unwrap_or(&context.day)
+                .and_then(iso_day)
+                .unwrap_or_else(|| iso_day(&context.day).unwrap_or_else(|| context.day.clone())),
+            day_input_summary(&context.day_dir),
+        )
+    } else if schedule == "cadence" {
+        // Source-derived, not measured: thinking.py:3012-3025 gives cadence
+        // cogitate talents their own prompt form, without a day summary.
+        format!(
+            "Running cadence task for {}.",
+            iso_day(&context.day).unwrap_or_else(|| context.day.clone())
         )
     } else if let Some(facet) = facet {
-        format!("Processing facet '{facet}' for {}.", context.day)
+        // Source-derived, not measured: thinking.py:2134/2294 and
+        // 2606/2728-2730 retain the facet context and input summary; the
+        // name-keyed weekly reflection uses its week-start day here too.
+        format!(
+            "Processing facet '{facet}' for {}: {}. Use get_facet('{facet}') to load context.",
+            if schedule == "weekly" && config.key == "weekly_reflection" {
+                request
+                    .get("day")
+                    .and_then(Value::as_str)
+                    .and_then(iso_day)
+                    .unwrap_or_else(|| iso_day(&context.day).unwrap_or_else(|| context.day.clone()))
+            } else {
+                iso_day(&context.day).unwrap_or_else(|| context.day.clone())
+            },
+            day_input_summary(&context.day_dir),
+        )
     } else {
-        format!("Running scheduled task for {}.", context.day)
+        // Source-derived, not measured: thinking.py:2134/2425 and
+        // 2606/2836 include the day's recording summary for scheduled work.
+        format!(
+            "Running scheduled task for {}: {}.",
+            iso_day(&context.day).unwrap_or_else(|| context.day.clone()),
+            day_input_summary(&context.day_dir),
+        )
     };
     let request = CortexRequest::new(prompt, config.key.clone()).with_config(request);
     let output_path = request
@@ -190,6 +223,64 @@ pub(crate) fn dispatch(
         output_path,
         index_output,
     })
+}
+
+fn iso_day(day: &str) -> Option<String> {
+    NaiveDate::parse_from_str(day, "%Y%m%d")
+        .ok()
+        .map(|day| day.format("%Y-%m-%d").to_string())
+}
+
+fn day_input_summary(day_dir: &std::path::Path) -> String {
+    let mut segments = Vec::new();
+    collect_segment_keys(day_dir, &mut segments);
+    let total_seconds = segments
+        .iter()
+        .filter_map(|segment| segment.split_once('_'))
+        .filter_map(|(_, duration)| duration.parse::<u64>().ok())
+        .sum::<u64>();
+    if segments.is_empty() {
+        return "No recordings".to_owned();
+    }
+    let duration = if total_seconds < 60 {
+        format!("~{total_seconds} seconds")
+    } else if total_seconds < 3_600 {
+        format!("~{} minutes", (total_seconds as f64 / 60.0).round() as u64)
+    } else {
+        format!("~{:.1} hours", total_seconds as f64 / 3_600.0)
+    };
+    let count = segments.len();
+    if count < 5 || total_seconds < 1_800 {
+        format!(
+            "Light activity: {count} segment{}, {duration}",
+            if count == 1 { "" } else { "s" }
+        )
+    } else {
+        format!("{count} segments, {duration}")
+    }
+}
+
+fn collect_segment_keys(directory: &std::path::Path, keys: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !path.is_dir() {
+            continue;
+        }
+        if name
+            .split_once('_')
+            .is_some_and(|(_, duration)| duration.parse::<u64>().is_ok())
+        {
+            keys.push(name.to_owned());
+        } else {
+            collect_segment_keys(&path, keys);
+        }
+    }
 }
 
 /// Segment, activity, and flush intentionally own their output fields.  The

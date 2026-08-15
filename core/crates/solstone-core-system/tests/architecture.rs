@@ -153,12 +153,7 @@ fn ac7_bus_decode_is_typed_to_bus_requests_not_scheduled_execution_requests() {
 #[test]
 fn ac21_only_operational_log_module_names_write_primitives() {
     let root_modules = [
-        (
-            "activity_state",
-            ACTIVITY_STATE
-                .split_once("\n#[cfg(test)]")
-                .map_or(ACTIVITY_STATE, |(production, _)| production),
-        ),
+        ("activity_state", ACTIVITY_STATE),
         ("cap", CAP),
         ("catchup", CATCHUP),
         ("error", ERROR),

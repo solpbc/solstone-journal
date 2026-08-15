@@ -41,6 +41,9 @@ pub(crate) fn run(
     let _ = helpers::emit(&context.journal, context.now_ms, "started", status);
     let facets =
         solstone_core_facets::list_declared_facet_names(&context.journal).unwrap_or_default();
+    // Source-derived, not measured: thinking.py:2606-2608 loads this day's
+    // active facets before multi-facet expansion, and 2689-2696 records
+    // `no_active_facets` for an inactive non-`always` facet.
     let active_facets =
         solstone_core_system::activity_state::active_facets(&context.journal, &context.day);
     let runtime = runtime()?;

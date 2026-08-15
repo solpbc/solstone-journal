@@ -13,11 +13,51 @@ use solstone_core_format::segment::segment_start_and_end_seconds;
 pub const GAP_THRESHOLD_SECONDS: i64 = 600;
 pub const END_HYSTERESIS_SEGMENTS: usize = 2;
 
-/// Read the active facet keys from the durable activity-state representation.
-/// This is the native equivalent of Python's `get_active_facets(day)`.
-pub fn active_facets(journal: &Path, _day: &str) -> BTreeSet<String> {
-    let machine = ActivityStateMachine::hydrate(Some(journal));
-    machine.state.into_keys().collect()
+/// Read facets recorded by the facets classifier for one day.
+///
+/// This is deliberately independent of `activity_state.json`: Python's
+/// `get_active_facets(day)` scans each segment's `talents/facets.json`, so a
+/// previous day's durable activity state must not make a facet active today.
+pub fn active_facets(journal: &Path, day: &str) -> BTreeSet<String> {
+    let day_dir = journal.join("chronicle").join(day);
+    let Ok(entries) = fs::read_dir(day_dir) else {
+        return BTreeSet::new();
+    };
+    let mut active = BTreeSet::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        collect_segment_facets(&path, &mut active);
+        if path.join("talents").is_dir() {
+            continue;
+        }
+        if let Ok(stream_entries) = fs::read_dir(path) {
+            for segment in stream_entries.flatten() {
+                if segment.path().is_dir() {
+                    collect_segment_facets(&segment.path(), &mut active);
+                }
+            }
+        }
+    }
+    active
+}
+
+fn collect_segment_facets(segment: &Path, active: &mut BTreeSet<String>) {
+    let path = segment.join("talents/facets.json");
+    let Ok(bytes) = fs::read(path) else {
+        return;
+    };
+    let Ok(Value::Array(rows)) = serde_json::from_slice::<Value>(&bytes) else {
+        return;
+    };
+    active.extend(rows.into_iter().filter_map(|row| {
+        row.get("facet")
+            .and_then(Value::as_str)
+            .filter(|facet| !facet.is_empty())
+            .map(ToOwned::to_owned)
+    }));
 }
 
 pub fn make_activity_id(activity_type: &str, since_segment: &str) -> String {
@@ -281,6 +321,38 @@ impl ActivityStateMachine {
     pub fn completed_activities(&self) -> Vec<Value> {
         self.completed.clone()
     }
+
+    /// Return the on-disk representation; the think orchestrator owns writing
+    /// this domain state, while this system helper remains deterministic.
+    pub fn snapshot(&self) -> Value {
+        Value::Object(Map::from_iter([
+            (
+                "last_segment_key".to_owned(),
+                self.last_segment_key
+                    .clone()
+                    .map_or(Value::Null, Value::String),
+            ),
+            (
+                "last_segment_day".to_owned(),
+                self.last_segment_day
+                    .clone()
+                    .map_or(Value::Null, Value::String),
+            ),
+            (
+                "active".to_owned(),
+                Value::Object(
+                    self.state
+                        .iter()
+                        .map(|(facet, entry)| {
+                            let mut entry = entry.clone();
+                            entry.remove("_change");
+                            (facet.clone(), Value::Object(entry))
+                        })
+                        .collect(),
+                ),
+            ),
+        ]))
+    }
     fn end_all(&mut self, segment: &str, change: &str, created_at: i64) -> Vec<Value> {
         let active = std::mem::take(&mut self.state);
         active
@@ -341,8 +413,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        ActivityStateMachine, END_HYSTERESIS_SEGMENTS, GAP_THRESHOLD_SECONDS, level_value,
-        make_activity_id,
+        ActivityStateMachine, END_HYSTERESIS_SEGMENTS, GAP_THRESHOLD_SECONDS, active_facets,
+        level_value, make_activity_id,
     };
 
     fn active(facet: &str) -> serde_json::Value {
@@ -385,14 +457,33 @@ mod tests {
     }
 
     #[test]
-    fn active_facets_reads_only_durable_active_entries() {
+    fn active_facets_is_day_specific_and_reads_segment_facet_outputs() {
+        // Source-derived, not measured: thinking.py:614-631 scans the requested
+        // day's `talents/facets.json`, never durable activity-state keys.
         let root = tempfile::tempdir().unwrap();
-        let awareness = root.path().join("awareness");
-        fs::create_dir_all(&awareness).unwrap();
-        fs::write(awareness.join("activity_state.json"), serde_json::to_vec(&json!({"active":{"work":active("work")},"last_segment_key":"100000_60","last_segment_day":"20260101"})).unwrap()).unwrap();
+        let first = root.path().join("chronicle/20260101/090000_60/talents");
+        let second = root
+            .path()
+            .join("chronicle/20260102/default/090000_60/talents");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        fs::write(
+            first.join("facets.json"),
+            serde_json::to_vec(&json!([{"facet":"work"}])).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            second.join("facets.json"),
+            serde_json::to_vec(&json!([{"facet":"home"}])).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
-            super::active_facets(root.path(), "20260101"),
+            active_facets(root.path(), "20260101"),
             std::collections::BTreeSet::from(["work".to_owned()])
+        );
+        assert_eq!(
+            active_facets(root.path(), "20260102"),
+            std::collections::BTreeSet::from(["home".to_owned()])
         );
     }
 
