@@ -31,7 +31,7 @@ use crate::readers::{
 const FIRST_WEEK_FRAMING: &str = "most of what i keep becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:";
 
 /// Complete pre-route pulse context. The instant stays typed until projection.
-pub struct PulseContext {
+struct PulseContext {
     fields: Map<String, Value>,
     now: DateTime<Utc>,
 }
@@ -55,7 +55,7 @@ impl PulseContext {
 }
 
 /// Assemble all fields used by the Python home context in its build order.
-pub fn build_pulse_context(context: &HomeContext) -> PulseContext {
+fn build_pulse_context(context: &HomeContext) -> PulseContext {
     let today = context.today();
     let journal_age_days = count_journal_age_days(context);
     let capture_health = get_capture_health(context);
@@ -184,10 +184,9 @@ pub fn build_pulse_context(context: &HomeContext) -> PulseContext {
     if let (Some(pipeline), Some(summary)) = (
         pipeline_status.as_object_mut(),
         read_steward_summary(context, None),
-    ) {
-        if let Some(summary) = summary.as_object() {
-            pipeline.extend(summary.clone());
-        }
+    ) && let Some(summary) = summary.as_object()
+    {
+        pipeline.extend(summary.clone());
     }
     let brain = crate::readers::build_brain_snapshot(context);
     let backlog = load_backlog_source(context);
@@ -539,13 +538,10 @@ mod tests {
     fn empty_fixture_matches_the_captured_pulse_and_briefing() {
         let context = fixture_context(
             "convey_home_empty_journal",
-            2026,
-            8,
-            14,
-            22,
-            28,
-            35,
-            430_840_000,
+            Utc.with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+                .unwrap()
+                .with_nanosecond(430_840_000)
+                .unwrap(),
         );
         let reference = reference_payload("reference-pulse-empty-journal.json");
         assert_payload_fields(&pulse_payload(&context), &reference["pulse"], &["now"]);
@@ -556,13 +552,10 @@ mod tests {
     fn seeded_fixture_matches_the_captured_pulse_and_briefing() {
         let context = fixture_context(
             "convey_home_seeded_journal",
-            2026,
-            8,
-            14,
-            23,
-            25,
-            13,
-            793_525_000,
+            Utc.with_ymd_and_hms(2026, 8, 14, 23, 25, 13)
+                .unwrap()
+                .with_nanosecond(793_525_000)
+                .unwrap(),
         );
         let payload = pulse_payload(&context);
         let reference = reference_payload("reference-pulse-seeded-journal.json");
@@ -880,13 +873,10 @@ mod tests {
     fn assembly_keeps_muted_activities_but_excludes_them_from_yesterday_processing() {
         let context = fixture_context(
             "convey_home_seeded_journal",
-            2026,
-            8,
-            14,
-            23,
-            25,
-            13,
-            793_525_000,
+            Utc.with_ymd_and_hms(2026, 8, 14, 23, 25, 13)
+                .unwrap()
+                .with_nanosecond(793_525_000)
+                .unwrap(),
         );
         let payload = pulse_payload(&context);
         assert!(
@@ -914,24 +904,12 @@ mod tests {
         assert!(!payload.to_string().contains("Unlisted"));
     }
 
-    fn fixture_context(
-        fixture: &str,
-        year: i32,
-        month: u32,
-        day: u32,
-        hour: u32,
-        minute: u32,
-        second: u32,
-        nanosecond: u32,
-    ) -> HomeContext {
+    fn fixture_context(fixture: &str, now: DateTime<Utc>) -> HomeContext {
         HomeContext::new(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../fixtures")
                 .join(fixture),
-            Utc.with_ymd_and_hms(year, month, day, hour, minute, second)
-                .unwrap()
-                .with_nanosecond(nanosecond)
-                .unwrap(),
+            now,
         )
     }
 
