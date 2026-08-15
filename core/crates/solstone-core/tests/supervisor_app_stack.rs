@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -15,6 +15,11 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::oneshot;
+
+#[path = "support/supervisor_guard.rs"]
+mod supervisor_guard;
+
+use supervisor_guard::SupervisorGuard;
 
 #[allow(dead_code)]
 #[path = "support/await_outcome.rs"]
@@ -65,8 +70,6 @@ impl Drop for TempJournal {
     }
 }
 
-struct ChildGuard(Child);
-
 fn panic_for_wait(context: &str, outcome: WaitOutcome) {
     match outcome {
         WaitOutcome::Passed(_) => {}
@@ -98,71 +101,13 @@ fn wait_outcome_from_dilation(reason: &str, requested: Duration, slept: Duration
     }
 }
 
-fn panic_or_log_termination(outcome: WaitOutcome) {
-    if matches!(outcome, WaitOutcome::Passed(_)) {
-        return;
-    }
-    let message = match &outcome {
-        WaitOutcome::Failed { reason, metrics } => {
-            format!(
-                "supervisor did not exit after SIGTERM: {reason}; {}",
-                metrics.describe()
-            )
-        }
-        WaitOutcome::Inconclusive(metrics) => format!(
-            "SUPERVISOR_RACE_INCONCLUSIVE supervisor shutdown wait was inconclusive after SIGTERM: {}",
-            metrics.describe()
-        ),
-        WaitOutcome::Passed(_) => unreachable!(),
-    };
-    if std::thread::panicking() {
-        eprintln!("suppressed termination failure while unwinding: {message}");
-    } else {
-        panic!("{message}");
-    }
-}
-
-impl ChildGuard {
+impl SupervisorGuard {
     fn running(&mut self) -> bool {
-        self.0.try_wait().expect("supervisor status").is_none()
-    }
-
-    fn terminate(&mut self) {
-        if self.0.try_wait().ok().flatten().is_none() {
-            nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(self.0.id() as i32),
-                nix::sys::signal::Signal::SIGTERM,
-            )
-            .expect("signal supervisor");
-            let outcome = await_outcome(
-                WaitPolarity::Positive,
-                Duration::from_millis(5),
-                2_000,
-                Instant::now,
-                || match self.0.try_wait() {
-                    Ok(Some(_)) => PollState::Held,
-                    Ok(None) => PollState::Pending,
-                    Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
-                },
-                thread::sleep,
-            );
-            if !matches!(outcome, WaitOutcome::Passed(_)) {
-                let _ = self.0.kill();
-                let _ = self.0.wait();
-            }
-            panic_or_log_termination(outcome);
-        }
+        self.try_wait().expect("supervisor status").is_none()
     }
 }
 
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        self.terminate();
-        let _ = self.0.wait();
-    }
-}
-
-fn start(journal: &TempJournal, args: &[&str], convey_argv: Option<String>) -> ChildGuard {
+fn start(journal: &TempJournal, args: &[&str], convey_argv: Option<String>) -> SupervisorGuard {
     let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
     let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
     command
@@ -179,7 +124,7 @@ fn start(journal: &TempJournal, args: &[&str], convey_argv: Option<String>) -> C
     if let Some(argv) = convey_argv {
         command.env("SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV", argv);
     }
-    ChildGuard(command.spawn().expect("supervisor starts"))
+    SupervisorGuard::new(command.spawn().expect("supervisor starts"))
 }
 
 fn wait_for_markers(journal: &TempJournal, services: &[&str]) -> BTreeMap<String, Instant> {
@@ -476,14 +421,16 @@ fn shutdown_terminates_all_app_fixture_children() {
         .iter()
         .map(|service| fixture_pid(&journal.marker(service)))
         .collect::<Vec<_>>();
-    child.terminate();
-    // `terminate` returns as soon as the SUPERVISOR exits, which is not the
+    child
+        .shutdown_and_wait(Duration::from_secs(10))
+        .expect("supervisor exits after SIGTERM");
+    // Graceful shutdown returns as soon as the SUPERVISOR exits, which is not the
     // same instant its children are gone: they still have to take SIGTERM,
     // exit, and be reparented to init before `kill(pid, None)` answers ESRCH.
-    // Asserting on the instant after terminate() therefore raced, and failed
-    // 4 runs in 5. Polling does not weaken the invariant — a supervisor that
-    // never terminates its children still fails, just after a bounded wait
-    // instead of immediately.
+    // Asserting on the instant after `shutdown_and_wait()` therefore raced,
+    // and failed 4 runs in 5. Polling does not weaken the invariant — a
+    // supervisor that never terminates its children still fails, just after a
+    // bounded wait instead of immediately.
     let outcome = await_outcome(
         WaitPolarity::Positive,
         Duration::from_millis(5),
@@ -521,7 +468,7 @@ fn exited_convey_restarts_under_restart_policy() {
         200,
         Instant::now,
         || {
-            if fixture_process_running(child.0.id(), &state_path.display().to_string()) {
+            if fixture_process_running(child.id(), &state_path.display().to_string()) {
                 PollState::Held
             } else {
                 PollState::Pending
