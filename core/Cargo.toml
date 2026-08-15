@@ -107,6 +107,7 @@ members = [
     "crates/solstone-core-talent-config",
     "crates/solstone-core-journal-stats-cli",
     "crates/solstone-core-talent-cli",
+    "crates/solstone-core-talent-runtime",
     "crates/solstone-core-reprocess-cli",
     "crates/solstone-core-backfill-cli",
     "crates/solstone-core-backup-web",
@@ -218,6 +219,7 @@ solstone-core-import-web = { path = "crates/solstone-core-import-web" }
 solstone-core-segment-cli = { path = "crates/solstone-core-segment-cli" }
 solstone-core-journal-stats-cli = { path = "crates/solstone-core-journal-stats-cli" }
 solstone-core-talent-cli = { path = "crates/solstone-core-talent-cli" }
+solstone-core-talent-runtime = { path = "crates/solstone-core-talent-runtime" }
 solstone-core-reprocess-cli = { path = "crates/solstone-core-reprocess-cli" }
 solstone-core-backfill-cli = { path = "crates/solstone-core-backfill-cli" }
 axum = { version = "0.8.9", default-features = false, features = ["json", "multipart", "query"] }

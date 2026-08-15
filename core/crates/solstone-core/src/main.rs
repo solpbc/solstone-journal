@@ -228,6 +228,7 @@ fn main() -> ExitCode {
         Ok(Command::Maintenance(args)) => run_maintenance(args),
         Ok(Command::Maint(args)) => run_maint(args),
         Ok(Command::MaintWorker(args)) => run_maint_worker(args),
+        Ok(Command::TalentWorker(args)) => run_talent_worker(args),
         Ok(Command::Reprocess(args)) => run_reprocess(args),
         Ok(Command::JournalStats(args)) => run_journal_stats(args),
         Ok(Command::Talent(args)) => run_talent(args),
@@ -767,6 +768,18 @@ fn run_maint_worker(args: Vec<OsString>) -> ExitCode {
     }
     eprint!("{}", run.stderr);
     ExitCode::from(run.exit_code as u8)
+}
+
+fn run_talent_worker(args: Vec<OsString>) -> ExitCode {
+    let arguments = match require_utf8_argv("talent worker", &args) {
+        Ok(arguments) => arguments,
+        Err(code) => return code,
+    };
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal.path,
+        Err(error) => return print_journal_error(error),
+    };
+    solstone_core_talent_runtime::run_worker(&arguments, &journal)
 }
 
 fn run_reprocess(args: Vec<OsString>) -> ExitCode {

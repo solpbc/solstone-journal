@@ -2732,6 +2732,7 @@ dependencies = [
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-talent-cli",
+ "solstone-core-talent-runtime",
  "solstone-core-think-cli",
  "solstone-core-top",
  "solstone-core-transcribe",
@@ -4295,6 +4296,27 @@ version = "1.0.22"
 dependencies = [
  "serde_json",
  "solstone-core-cogitate",
+ "tempfile",
+]
+
+[[package]]
+name = "solstone-core-talent-runtime"
+version = "1.0.22"
+dependencies = [
+ "chrono",
+ "jsonschema",
+ "log",
+ "nix",
+ "serde",
+ "serde_json",
+ "solstone-core-entity",
+ "solstone-core-facets",
+ "solstone-core-generate",
+ "solstone-core-identity",
+ "solstone-core-indexer-store",
+ "solstone-core-journal-io",
+ "solstone-core-talent-cli",
+ "solstone-core-talent-config",
  "tempfile",
 ]
 

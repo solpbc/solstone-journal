@@ -11,7 +11,7 @@ use solstone_core_journal_config::{plain_defaults, read_journal_config};
 
 use solstone_core_talent_config::read_frontmatter;
 
-pub(crate) fn safe_substitute(text: &str, vars: &BTreeMap<String, String>) -> String {
+pub fn safe_substitute(text: &str, vars: &BTreeMap<String, String>) -> String {
     let mut output = String::with_capacity(text.len());
     let bytes = text.as_bytes();
     let mut index = 0;

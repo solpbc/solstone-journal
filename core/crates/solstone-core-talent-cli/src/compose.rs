@@ -19,7 +19,7 @@ const DEFAULT_LOAD: [(&str, bool); 3] = [
     ("talents", false),
 ];
 
-pub(crate) fn compose_talent(
+pub fn compose_talent(
     config: &TalentConfig,
     journal_root: &Path,
     templates_dir: &Path,

@@ -64,6 +64,115 @@ const LANE_BE_REQUIRED_NATIVE_TOKENS: &[&str] = &["install-provider"];
 // uncensused site. This is the crate that owns the dispatcher.
 const INTERPRETER_RESOLUTION_OWNER: &str = "solstone-core-journal-cli";
 
+fn run_talent_worker_with_output(
+    context: &VerdictContext<'_>,
+    request: &str,
+) -> std::process::Output {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace = manifest_dir
+        .parent()
+        .expect("crates directory")
+        .parent()
+        .expect("core directory")
+        .parent()
+        .expect("workspace directory");
+    Command::new(context.sibling_dir.join("solstone-core"))
+        .arg("__talent-worker")
+        .current_dir(workspace)
+        .env("POISON_MARKER", context.poison_marker)
+        .env("HOME", context.home)
+        .env("SOLSTONE_JOURNAL", context.journal)
+        // The sibling directory contains python shims, and PATH is pinned to
+        // that same directory: both interpreter-poison routes are active.
+        .env("PATH", context.sibling_dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            child
+                .stdin
+                .as_mut()
+                .expect("talent worker stdin")
+                .write_all(request.as_bytes())?;
+            child.wait_with_output()
+        })
+        .expect("run native talent worker")
+}
+
+fn prepare_talent_worker_journal(context: &VerdictContext<'_>) {
+    fs::create_dir_all(context.journal.join("config")).expect("create talent config directory");
+    fs::write(
+        context.journal.join("config/journal.json"),
+        r#"{"providers":{"active":{"provider":"local","model":"fixture-model"}}}"#,
+    )
+    .expect("write talent config");
+}
+
+#[test]
+fn criterion_16_talent_worker_is_closed_at_journal_and_reaches_native_body() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    fs::create_dir_all(context.journal).expect("create journal");
+    let before = snapshot_tree(context.journal);
+    let closed = run_dispatcher_with_output(&context, "__talent-worker", &[])
+        .expect("run closed dispatcher spelling");
+    assert_eq!(closed.status.code(), Some(64));
+    assert!(String::from_utf8_lossy(&closed.stderr).contains("Usage: journal <command> [args...]"));
+    assert_eq!(snapshot_tree(context.journal), before);
+    assert!(!context.poison_marker.exists());
+
+    prepare_talent_worker_journal(&context);
+    let output =
+        run_talent_worker_with_output(&context, "{\"name\":\"read\",\"prompt\":\"hello\"}\n");
+    let events = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(serde_json::from_str::<serde_json::Value>)
+        .collect::<Result<Vec<_>, _>>()
+        .expect("talent worker NDJSON");
+    assert!(
+        events
+            .iter()
+            .any(|event| event["event"] == "start" && event["name"] == "read")
+    );
+}
+
+#[test]
+fn criterion_17_talent_worker_reaches_start_under_sibling_and_path_poison() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    prepare_talent_worker_journal(&context);
+    let output =
+        run_talent_worker_with_output(&context, "{\"name\":\"read\",\"prompt\":\"hello\"}\n");
+    assert!(output.status.success());
+    assert!(!context.poison_marker.exists());
+    let events = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(serde_json::from_str::<serde_json::Value>)
+        .collect::<Result<Vec<_>, _>>()
+        .expect("talent worker NDJSON");
+    // This start event is the depth observable: it is emitted after preparation
+    // and before generation, so parser-only success cannot satisfy this test.
+    assert!(
+        events
+            .iter()
+            .any(|event| event["event"] == "start" && event["name"] == "read")
+    );
+}
+
+#[test]
+fn criterion_18_cortex_keeps_the_live_python_talent_path() {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates directory")
+        .join("solstone-core-cortex/src/process.rs");
+    let body = fs::read_to_string(source).expect("read cortex process source");
+    assert!(body.contains(".arg(\"-m\")"));
+    assert!(body.contains(".arg(\"solstone.think.talents\")"));
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Probe {
     token: &'static str,
