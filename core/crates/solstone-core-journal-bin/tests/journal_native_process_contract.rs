@@ -171,6 +171,30 @@ fn criterion_18_cortex_keeps_the_live_python_talent_path() {
     let body = fs::read_to_string(source).expect("read cortex process source");
     assert!(body.contains(".arg(\"-m\")"));
     assert!(body.contains(".arg(\"solstone.think.talents\")"));
+
+    let crates = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates directory")
+        .to_path_buf();
+    let resolvers = rust_sources_under(&crates)
+        .into_iter()
+        .filter_map(|path| {
+            let body = fs::read_to_string(&path).ok()?;
+            let cutoff = body.find("#[cfg(test)]").unwrap_or(body.len());
+            if !body[..cutoff].contains("sibling_python") {
+                return None;
+            }
+            let relative = path.strip_prefix(&crates).ok()?;
+            let owner = relative.components().next()?;
+            Some(owner.as_os_str().to_string_lossy().into_owned())
+        })
+        .collect::<BTreeSet<_>>();
+    let extra = resolvers
+        .into_iter()
+        .filter(|owner| owner != INTERPRETER_RESOLUTION_OWNER)
+        .collect::<BTreeSet<_>>();
+    // This is the exact extra set which keeps the unedited Lane BB census red.
+    assert_eq!(extra, BTreeSet::from(["solstone-core-cortex".to_owned()]));
 }
 
 #[derive(Debug, Clone, Copy)]

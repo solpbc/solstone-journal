@@ -74,6 +74,13 @@ pub enum RuntimeOutcome {
         talent: String,
         enabled_sources: Vec<String>,
     },
+    Disabled {
+        talent: String,
+    },
+    SchemaValidationFailed {
+        talent: String,
+        validation: Value,
+    },
     PrepareFailed(prepare::PrepareFailure),
     StageFailed(StageError),
 }
@@ -162,6 +169,11 @@ pub fn execute_request(
         Err(error) => return RuntimeOutcome::PrepareFailed(error),
     };
     emit_start(writer, &prepared);
+    if prepared.config.get("skip_reason").and_then(Value::as_str) == Some("disabled") {
+        return RuntimeOutcome::Disabled {
+            talent: prepared.name.clone(),
+        };
+    }
     let hook = prepared
         .config
         .get("hook")
@@ -246,7 +258,17 @@ fn generate_and_write(
 ) -> RuntimeOutcome {
     let request = generate_request(prepared);
     let response = match client.execute(&request) {
-        Ok(GenerateResponse::Generated(response)) => response.text.clone(),
+        Ok(GenerateResponse::Generated(response)) => {
+            if prepared.config.contains_key("json_schema")
+                && schema_validation_failed(response.schema_validation.as_ref())
+            {
+                return RuntimeOutcome::SchemaValidationFailed {
+                    talent: prepared.name.clone(),
+                    validation: response.schema_validation.clone().unwrap_or(Value::Null),
+                };
+            }
+            response.text.clone()
+        }
         Ok(GenerateResponse::Refused(response)) => {
             return RuntimeOutcome::StageFailed(stage_error(
                 "generate",
@@ -300,6 +322,16 @@ fn generate_and_write(
         },
         Err(error) => RuntimeOutcome::StageFailed(stage_error("write", "runtime", prepared, error)),
     }
+}
+
+fn schema_validation_failed(validation: Option<&Value>) -> bool {
+    validation.is_some_and(|validation| {
+        validation.get("valid") == Some(&Value::Bool(false))
+            || validation
+                .get("errors")
+                .and_then(Value::as_array)
+                .is_some_and(|errors| !errors.is_empty())
+    })
 }
 
 fn generate_request(prepared: &PreparedTalent) -> GenerateRequest {
@@ -440,6 +472,14 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
             writer,
             json!({"event":"error", "terminal":true, "name":talent, "error":format!("transcript loading is unported for talent '{talent}'"), "enabled_sources":enabled_sources}),
         ),
+        RuntimeOutcome::Disabled { talent } => emit(
+            writer,
+            json!({"event":"finish", "name":talent, "skip_reason":"disabled"}),
+        ),
+        RuntimeOutcome::SchemaValidationFailed { talent, validation } => emit(
+            writer,
+            json!({"event":"error", "terminal":true, "name":talent, "error":"talent output failed schema validation", "schema_validation":validation}),
+        ),
         RuntimeOutcome::PrepareFailed(error) => emit(
             writer,
             json!({"event":"error", "terminal":true, "error":error.to_string()}),
@@ -570,6 +610,112 @@ mod tests {
             fs::read_to_string(context.journal.join("chronicle/20260101/talents/plain.md"))
                 .unwrap(),
             "generated"
+        );
+    }
+
+    #[test]
+    fn disabled_talent_skips_and_enabled_talent_runs() {
+        let (root, paths, context) = fixture(
+            "plain",
+            r#"{
+"type":"generate", "output":"md", "load":{"transcripts":false}
+}"#,
+        );
+        fs::write(
+            context.journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"test","model":"test-model"}},"talent_overrides":{"talent.system.plain":{"disabled":true}}}"#,
+        )
+        .unwrap();
+        let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "generated"));
+        let request = "{\"name\":\"plain\",\"day\":\"20260101\",\"prompt\":\"hello\"}\n";
+        let mut disabled_output = Vec::new();
+        run_lines(
+            Cursor::new(request),
+            &mut disabled_output,
+            &paths,
+            &context,
+            Ok(&client),
+        );
+        let disabled_events = events(&disabled_output);
+        assert_eq!(disabled_events.len(), 2);
+        assert_eq!(disabled_events[0]["event"], "start");
+        assert_eq!(disabled_events[1]["event"], "finish");
+        assert_eq!(disabled_events[1]["skip_reason"], "disabled");
+        let output_path = context.journal.join("chronicle/20260101/talents/plain.md");
+        assert!(!output_path.exists());
+
+        fs::write(
+            context.journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"test","model":"test-model"}}}"#,
+        )
+        .unwrap();
+        let mut enabled_output = Vec::new();
+        run_lines(
+            Cursor::new(request),
+            &mut enabled_output,
+            &paths,
+            &context,
+            Ok(&client),
+        );
+        let enabled_events = events(&enabled_output);
+        assert_eq!(enabled_events.len(), 2);
+        assert_eq!(enabled_events[0]["event"], "start");
+        assert_eq!(enabled_events[1]["event"], "finish");
+        assert_eq!(fs::read_to_string(output_path).unwrap(), "generated");
+    }
+
+    #[test]
+    fn criterion_7_schema_validation_blocks_story_commit_end_to_end() {
+        let (root, paths, context) = fixture(
+            "conversation",
+            r#"{
+"type":"generate", "output":"json", "schema":"story.schema.json", "hook":{"post":"story"}, "load":{"transcripts":false}
+}"#,
+        );
+        fs::write(
+            paths.talent_root.join("story.schema.json"),
+            r#"{"type":"object","required":["body"]}"#,
+        )
+        .unwrap();
+        let activity_path = context
+            .journal
+            .join("facets/work/activities/20260101.jsonl");
+        fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
+        fs::write(
+            &activity_path,
+            "{\"id\":\"activity-1\",\"story\":{\"old\":true}}\n",
+        )
+        .unwrap();
+        let before = fs::read(&activity_path).unwrap();
+        let client = OneShotClient::at_path(test_support::one_shot_stub_with_schema_validation(
+            root.path(),
+            r#"{"body":"valid enough for the hook","topics":["work"],"confidence":1,"commitments":[],"closures":[],"decisions":[],"relations":[]}"#,
+            json!({"valid":false,"errors":[{"path":"/body","constraint":"minLength"}]}),
+        ));
+        let mut output = Vec::new();
+        run_lines(
+            Cursor::new(
+                "{\"name\":\"conversation\",\"day\":\"20260101\",\"facet\":\"work\",\"activity\":{\"id\":\"activity-1\"},\"prompt\":\"hello\"}\n",
+            ),
+            &mut output,
+            &paths,
+            &context,
+            Ok(&client),
+        );
+        let output_events = events(&output);
+        assert_eq!(output_events.len(), 2);
+        assert_eq!(output_events[0]["event"], "start");
+        assert_eq!(output_events[1]["event"], "error");
+        assert_eq!(
+            output_events[1]["error"],
+            "talent output failed schema validation"
+        );
+        assert_eq!(fs::read(&activity_path).unwrap(), before);
+        assert!(
+            !context
+                .journal
+                .join("chronicle/20260101/talents/conversation.json")
+                .exists()
         );
     }
 
@@ -735,16 +881,33 @@ mod tests {
 
     #[test]
     fn criterion_8_framework_failure_is_terminal_and_typed() {
-        let prepared = PreparedTalent {
-            name: "conversation".into(),
-            config: Map::new(),
-        };
-        let outcome = RuntimeOutcome::StageFailed(stage_error(
-            "commit",
-            "story",
-            &prepared,
-            "persistence failed",
+        let (root, paths, context) = fixture(
+            "conversation",
+            r#"{
+"type":"generate", "hook":{"post":"story"}, "load":{"transcripts":false}
+}"#,
+        );
+        // A file in place of the facets directory makes the real story commit
+        // fail after generation, exercising execution's error propagation.
+        fs::write(context.journal.join("facets"), b"not a directory").unwrap();
+        let client = OneShotClient::at_path(test_support::one_shot_stub(
+            root.path(),
+            r#"{"body":"body","topics":["work"],"confidence":1,"commitments":[],"closures":[],"decisions":[],"relations":[]}"#,
         ));
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({
+                "name":"conversation", "day":"20260101", "facet":"work",
+                "activity":{"id":"activity-1"}, "prompt":"hello"
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+            &paths,
+            &context,
+            &client,
+            &mut output,
+        );
         let RuntimeOutcome::StageFailed(error) = outcome else {
             panic!("terminal stage failure")
         };

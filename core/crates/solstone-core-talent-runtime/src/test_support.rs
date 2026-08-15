@@ -9,11 +9,20 @@ use std::path::PathBuf;
 
 /// Install a one-shot v2 response stub and return its executable path.
 pub fn one_shot_stub(root: &std::path::Path, text: &str) -> PathBuf {
+    one_shot_stub_with_schema_validation(root, text, serde_json::Value::Null)
+}
+
+/// Install a one-shot v2 response stub with the supplied schema annotation.
+pub fn one_shot_stub_with_schema_validation(
+    root: &std::path::Path,
+    text: &str,
+    schema_validation: serde_json::Value,
+) -> PathBuf {
     let path = root.join("one-shot-stub.sh");
     let response = serde_json::json!({
         "schema":"solstone-generate-response-v2", "id":null,
         "outcome":"generated", "text":text, "model":"test-model", "usage":{},
-        "finish_reason":"stop", "thinking":null, "schema_validation":null,
+        "finish_reason":"stop", "thinking":null, "schema_validation":schema_validation,
         "input_budget":null, "request_budget":null, "inference":null,
     });
     fs::write(

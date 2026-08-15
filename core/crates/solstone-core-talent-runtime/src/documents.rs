@@ -26,23 +26,55 @@ mod tests {
     use super::*;
     use crate::{ExecutionContext, PreparedTalent};
     use serde_json::Map;
-    use std::path::PathBuf;
+    use std::env;
 
     #[test]
     fn criterion_11_reads_process_environment_not_request_env() {
+        for (stream, expected) in [("different.stream", "skip"), ("import.document", "proceed")] {
+            let status = std::process::Command::new(env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "documents::tests::criterion_11_child_uses_the_production_gate",
+                    "--nocapture",
+                ])
+                .env("SOL_STREAM", stream)
+                .env("DOCUMENTS_GATE_EXPECTATION", expected)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+    }
+
+    #[test]
+    fn criterion_11_child_uses_the_production_gate() {
+        let Ok(expectation) = env::var("DOCUMENTS_GATE_EXPECTATION") else {
+            return;
+        };
         let prepared = PreparedTalent {
             name: "documents".to_owned(),
-            config: Map::new(),
+            config: Map::from_iter([(
+                "env".to_owned(),
+                serde_json::json!({
+                    "SOL_STREAM":"import.document"
+                }),
+            )]),
         };
         let context = ExecutionContext {
-            journal: PathBuf::new(),
+            journal: Default::default(),
         };
-        // The source is the child process environment, populated by cortex.
-        let _ = (prepared, context); // gate reads std::env::var at the production boundary.
-        assert_eq!(
-            gate_stream(None),
-            GateDecision::Skip("not a document import segment")
-        );
-        assert_eq!(gate_stream(Some("import.document")), GateDecision::Proceed);
+        let before = prepared.config.clone();
+        // Cortex applies request.env to the child process at process.rs:118-127,
+        // while the request JSON carries the same map. Reading that map here
+        // would always skip in production, so the production gate reads env.
+        let decision = gate(&prepared, &context).unwrap();
+        match expectation.as_str() {
+            "skip" => assert_eq!(
+                decision,
+                GateDecision::Skip("not a document import segment")
+            ),
+            "proceed" => assert_eq!(decision, GateDecision::Proceed),
+            other => panic!("unknown child expectation: {other}"),
+        }
+        assert_eq!(prepared.config, before);
     }
 }

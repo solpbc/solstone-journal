@@ -122,9 +122,11 @@ pub fn apply_story(
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_owned(),
-            aka: Vec::new(),
-            emails: Vec::new(),
-            blocked: false,
+            aka: string_values(&item, "aka"),
+            emails: string_values(&item, "emails"),
+            blocked: item
+                .get("blocked")
+                .is_some_and(solstone_core_facets::activity_value_truthy),
         })
         .collect::<Vec<_>>();
     let resolve = |name: &str, field: &str| -> Result<Value, String> {
@@ -255,6 +257,17 @@ fn error(prepared: &PreparedTalent, detail: &str) -> StageError {
     stage_error("post-parse", "story", prepared, detail)
 }
 
+fn string_values(record: &Map<String, Value>, key: &str) -> Vec<String> {
+    record
+        .get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,20 +275,55 @@ mod tests {
     use crate::{ExecutionContext, generate_and_write};
     use std::fs;
     #[test]
-    fn criterion_22_plain_resolution_accepts_written_id() {
+    fn criterion_22_story_stage_uses_plain_resolution_for_written_id() {
         let root = tempfile::tempdir().unwrap();
-        let entities = vec![solstone_core_entity::EntityResolutionEntity {
-            id: Some("owner-id".into()),
-            name: "Different".into(),
-            aka: vec![],
-            emails: vec![],
-            blocked: false,
-        }];
-        let result = solstone_core_entity::record_entity_resolution(root.path(), "owner-id", &entities, json!({"kind":"facet","facet":"work"}), json!({"lane":"talent.story","facet":"work","day":"20260101","record_id":"a","field":"commitments.owner"}), 90.0, true).unwrap();
-        assert_eq!(
-            result.outcome,
-            solstone_core_entity::EntityResolutionOutcome::Resolved
-        );
+        let activity_path = root.path().join("facets/work/activities/20260101.jsonl");
+        let entity_path = root.path().join("facets/work/entities/20260101.jsonl");
+        fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(entity_path.parent().unwrap()).unwrap();
+        fs::write(&activity_path, "{\"id\":\"activity-1\"}\n").unwrap();
+        // The written id is the only matching evidence: this must resolve through
+        // the story stage's plain resolver, not its name-evidence sibling.
+        fs::write(
+            &entity_path,
+            "{\"id\":\"owner-id\",\"name\":\"Different\",\"type\":\"person\"}\n",
+        )
+        .unwrap();
+        let prepared = PreparedTalent {
+            name: "conversation".into(),
+            config: Map::from_iter([
+                ("facet".into(), json!("work")),
+                ("day".into(), json!("20260101")),
+                ("activity".into(), json!({"id":"activity-1"})),
+            ]),
+        };
+        let value = r#"{
+          "body":"A completed conversation.", "topics":["work"], "confidence":0.9,
+          "commitments":[{"owner":"owner-id","action":"follow up","counterparty":"nobody","when":"tomorrow","context":"meeting"}],
+          "closures":[], "decisions":[], "relations":[]
+        }"#;
+        let plan = commit(
+            parse(value, &prepared, &PrePostState::None).unwrap(),
+            &prepared,
+            &PrePostState::None,
+        )
+        .unwrap();
+        crate::writers::apply(
+            plan,
+            &ExecutionContext {
+                journal: root.path().into(),
+            },
+        )
+        .unwrap();
+        let record = solstone_core_facets::get_activity_record(
+            root.path(),
+            "work",
+            "20260101",
+            "activity-1",
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(record["commitments"][0]["owner_entity_id"], "owner-id");
     }
 
     #[test]
@@ -292,7 +340,7 @@ mod tests {
         .unwrap();
         fs::write(
             &entity_path,
-            "{\"id\":\"owner-id\",\"name\":\"Owner\",\"type\":\"person\"}\n{\"id\":\"counterparty-id\",\"name\":\"Counterparty\",\"type\":\"person\"}\n",
+            "{\"id\":\"owner-id\",\"name\":\"Different owner\",\"aka\":[\"Owner\"],\"type\":\"person\"}\n{\"id\":\"counterparty-id\",\"name\":\"Different counterparty\",\"emails\":[\"counterparty@example.com\"],\"type\":\"person\"}\n",
         )
         .unwrap();
         let prepared = PreparedTalent {
@@ -305,10 +353,10 @@ mod tests {
         };
         let valid = r#"{
           "body":"A completed conversation.", "topics":["Work"], "confidence":0.9,
-          "commitments":[{"owner":"Owner","action":"follow up","counterparty":"Counterparty","when":"tomorrow","context":"meeting"}],
-          "closures":[{"owner":"Owner","action":"close","counterparty":"Counterparty","resolution":"done","context":"meeting"}],
-          "decisions":[{"owner":"Owner","action":"decide","context":"meeting","counterparty":"Counterparty"}],
-          "relations":[{"from":"Owner","to":"Counterparty","kind":"works-with","note":"colleagues"}]
+          "commitments":[{"owner":"Owner","action":"follow up","counterparty":"counterparty@example.com","when":"tomorrow","context":"meeting"}],
+          "closures":[{"owner":"Owner","action":"close","counterparty":"counterparty@example.com","resolution":"done","context":"meeting"}],
+          "decisions":[{"owner":"Owner","action":"decide","context":"meeting","counterparty":"counterparty@example.com"}],
+          "relations":[{"from":"Owner","to":"counterparty@example.com","kind":"works-with","note":"colleagues"}]
         }"#;
         let plan = commit(
             parse(valid, &prepared, &PrePostState::None).unwrap(),

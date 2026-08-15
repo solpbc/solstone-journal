@@ -136,44 +136,6 @@ pub fn normalize_summary(raw: &str, default: &Map<String, Value>) -> Map<String,
     summary
 }
 
-pub fn latest_daily_run_complete_ts(journal: &Path, today: &str) -> Option<i64> {
-    let previous = NaiveDate::parse_from_str(today, "%Y%m%d")
-        .ok()?
-        .checked_sub_signed(Duration::days(1))?
-        .format("%Y%m%d")
-        .to_string();
-    let mut latest = None;
-    for day in [today, previous.as_str()] {
-        let Ok(entries) = fs::read_dir(journal.join("chronicle").join(day).join("health")) else {
-            continue;
-        };
-        for path in entries
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.ends_with("_daily.jsonl"))
-            })
-        {
-            let Ok(contents) = fs::read_to_string(path) else {
-                continue;
-            };
-            for row in contents
-                .lines()
-                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-            {
-                if row.get("event").and_then(Value::as_str) == Some("run.complete")
-                    && let Some(ts) = row.get("ts").and_then(Value::as_i64)
-                {
-                    latest = Some(latest.map_or(ts, |current: i64| current.max(ts)));
-                }
-            }
-        }
-    }
-    latest
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

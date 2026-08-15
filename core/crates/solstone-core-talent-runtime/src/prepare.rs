@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
-use solstone_core_talent_config::{TalentConfig, discover, is_truthy};
+use solstone_core_talent_config::{TalentConfig, discover, is_truthy, merge};
 
 use crate::{ExecutionContext, PreparedTalent};
 
@@ -58,8 +58,11 @@ pub fn prepare(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| PrepareFailure::Refusal("talent request missing name".to_owned()))?
         .to_owned();
-    let config = discover(&paths.talent_root, &paths.apps_root)
-        .map_err(PrepareFailure::Refusal)?
+    let mut configs =
+        discover(&paths.talent_root, &paths.apps_root).map_err(PrepareFailure::Refusal)?;
+    let overrides = talent_overrides(&context.journal);
+    merge(&mut configs, overrides.as_ref());
+    let config = configs
         .into_iter()
         .find(|config| config.key == name)
         .ok_or_else(|| PrepareFailure::Refusal(format!("talent '{name}' not found")))?;
@@ -92,6 +95,16 @@ pub fn prepare(
     }
     if composed.get("provider").and_then(Value::as_str) == Some("none") {
         return Err(PrepareFailure::NoBrainConfigured);
+    }
+    if composed.get("disabled").is_some_and(is_truthy) {
+        composed.insert(
+            "skip_reason".to_owned(),
+            Value::String("disabled".to_owned()),
+        );
+        return Ok(PreparedTalent {
+            name,
+            config: composed,
+        });
     }
     let enabled_sources = composed
         .get("sources")
@@ -140,9 +153,7 @@ pub fn prepare(
 }
 
 fn configured_brain(journal: &Path) -> (String, String) {
-    let configured = std::fs::read_to_string(journal.join("config/journal.json"))
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    let configured = read_journal_config(journal);
     let active = configured
         .as_ref()
         .and_then(|value| value.pointer("/providers/active"));
@@ -160,16 +171,28 @@ fn configured_brain(journal: &Path) -> (String, String) {
     )
 }
 
+fn talent_overrides(journal: &Path) -> Option<Map<String, Value>> {
+    read_journal_config(journal)
+        .and_then(|configured| configured.get("talent_overrides").cloned())
+        .and_then(|overrides| overrides.as_object().cloned())
+}
+
+fn read_journal_config(journal: &Path) -> Option<Value> {
+    std::fs::read_to_string(journal.join("config/journal.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+}
+
 fn reject_definition_fields(config: &TalentConfig, name: &str) -> Result<(), PrepareFailure> {
     if config.metadata.contains_key("outbound_approval") {
         return Err(PrepareFailure::Refusal(format!(
-            "talent {name:?} declares 'outbound_approval' in frontmatter; this field is launch-config-only and may not come from a talent definition"
+            "talent '{name}' declares 'outbound_approval' in frontmatter; this field is launch-config-only and may not come from a talent definition"
         )));
     }
     for field in ["provider", "model"] {
         if config.metadata.contains_key(field) {
             return Err(PrepareFailure::Refusal(format!(
-                "talent {name:?} declares {field:?} in frontmatter; thinking provider and model are configured only in Thinking"
+                "talent '{name}' declares '{field}' in frontmatter; thinking provider and model are configured only in Thinking"
             )));
         }
     }
@@ -184,7 +207,7 @@ fn reject_request_fields(
     for field in ["provider", "model"] {
         if request.get(field).is_some_and(|value| !value.is_null()) {
             return Err(PrepareFailure::Refusal(format!(
-                "request overrides for {field:?} are not allowed; thinking provider and model are configured only in Thinking"
+                "request overrides for '{field}' are not allowed; thinking provider and model are configured only in Thinking"
             )));
         }
     }
@@ -194,7 +217,9 @@ fn reject_request_fields(
         };
         if declared != Some(requested) {
             return Err(PrepareFailure::Refusal(format!(
-                "Request overrides '{field}' for talent '{name}' are not allowed ({declared:?} != {requested:?})"
+                "Request overrides '{field}' for talent '{name}' are not allowed ({} != {})",
+                python_repr(declared),
+                python_repr(Some(requested)),
             )));
         }
         Ok(())
@@ -205,11 +230,22 @@ fn reject_request_fields(
         && config.metadata.get("access_tier") != Some(access)
     {
         return Err(PrepareFailure::Refusal(format!(
-            "Request overrides 'access_tier' for talent '{name}' are not allowed ({:?} != {access:?})",
-            config.metadata.get("access_tier")
+            "Request overrides 'access_tier' for talent '{name}' are not allowed ({} != {})",
+            python_repr(config.metadata.get("access_tier")),
+            python_repr(Some(access)),
         )));
     }
     equal_or_refuse("type", config.metadata.get("type"))
+}
+
+fn python_repr(value: Option<&Value>) -> String {
+    match value {
+        None | Some(Value::Null) => "None".to_owned(),
+        Some(Value::String(value)) => format!("'{value}'"),
+        Some(Value::Bool(true)) => "True".to_owned(),
+        Some(Value::Bool(false)) => "False".to_owned(),
+        Some(value) => value.to_string(),
+    }
 }
 
 pub fn validate_config(config: &Map<String, Value>) -> Result<(), String> {
@@ -268,31 +304,95 @@ mod tests {
         ]);
         assert!(reject_request_fields(&config, &echo, "demo").is_ok());
         for field in ["provider", "model"] {
-            assert!(
+            assert_eq!(
                 reject_request_fields(
                     &config,
                     &Map::from_iter([(field.to_owned(), json!("x"))]),
                     "demo"
                 )
-                .is_err()
+                .unwrap_err()
+                .to_string(),
+                format!(
+                    "request overrides for '{field}' are not allowed; thinking provider and model are configured only in Thinking"
+                )
             );
         }
-        assert!(
+        assert_eq!(
             reject_request_fields(
                 &config,
                 &Map::from_iter([("cwd".to_owned(), json!("other"))]),
                 "demo"
             )
-            .is_err()
+            .unwrap_err()
+            .to_string(),
+            "Request overrides 'cwd' for talent 'demo' are not allowed ('journal' != 'other')"
         );
-        assert!(
+        assert_eq!(
             reject_request_fields(
                 &config,
                 &Map::from_iter([("type".to_owned(), json!("cogitate"))]),
                 "demo"
             )
-            .is_err()
+            .unwrap_err()
+            .to_string(),
+            "Request overrides 'type' for talent 'demo' are not allowed ('generate' != 'cogitate')"
         );
+        assert_eq!(
+            reject_request_fields(
+                &config,
+                &Map::from_iter([("access_tier".to_owned(), json!("full"))]),
+                "demo"
+            )
+            .unwrap_err()
+            .to_string(),
+            "Request overrides 'access_tier' for talent 'demo' are not allowed ('normal' != 'full')"
+        );
+        let without_access_tier = TalentConfig {
+            key: "demo".to_owned(),
+            file: String::new(),
+            body: String::new(),
+            metadata: Map::from_iter([
+                ("cwd".to_owned(), json!("journal")),
+                ("type".to_owned(), json!("generate")),
+            ]),
+        };
+        assert_eq!(
+            reject_request_fields(
+                &without_access_tier,
+                &Map::from_iter([("access_tier".to_owned(), json!("normal"))]),
+                "demo"
+            )
+            .unwrap_err()
+            .to_string(),
+            "Request overrides 'access_tier' for talent 'demo' are not allowed (None != 'normal')"
+        );
+        for (field, message) in [
+            (
+                "outbound_approval",
+                "talent 'demo' declares 'outbound_approval' in frontmatter; this field is launch-config-only and may not come from a talent definition",
+            ),
+            (
+                "provider",
+                "talent 'demo' declares 'provider' in frontmatter; thinking provider and model are configured only in Thinking",
+            ),
+            (
+                "model",
+                "talent 'demo' declares 'model' in frontmatter; thinking provider and model are configured only in Thinking",
+            ),
+        ] {
+            let definition = TalentConfig {
+                key: "demo".to_owned(),
+                file: String::new(),
+                body: String::new(),
+                metadata: Map::from_iter([(field.to_owned(), json!(true))]),
+            };
+            assert_eq!(
+                reject_definition_fields(&definition, "demo")
+                    .unwrap_err()
+                    .to_string(),
+                message
+            );
+        }
     }
 
     #[test]

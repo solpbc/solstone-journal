@@ -77,7 +77,7 @@ pub fn apply(
                 .map_err(|detail| StageError {
                     phase: "commit",
                     stage: "story",
-                    talent: "story".to_owned(),
+                    talent,
                     detail,
                 })?;
             Ok(CommitDisposition::CommittedNoOutput)
@@ -137,6 +137,7 @@ fn stage_error(stage: &str, detail: String) -> StageError {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io::Cursor;
     use std::os::unix::fs::MetadataExt;
 
     use nix::fcntl::{Flock, FlockArg};
@@ -151,6 +152,46 @@ mod tests {
 
     fn index_warnings() -> usize {
         TEST_INDEX_WARNINGS.with(|warnings| warnings.get())
+    }
+
+    fn worker_events(bytes: &[u8]) -> Vec<Value> {
+        std::str::from_utf8(bytes)
+            .unwrap()
+            .lines()
+            .map(serde_json::from_str)
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    fn steward_worker_fixture(
+        root: &tempfile::TempDir,
+    ) -> (crate::prepare::RuntimePaths, ExecutionContext) {
+        let talent_root = root.path().join("talent");
+        let apps_root = root.path().join("apps");
+        let templates_dir = root.path().join("templates");
+        let journal = root.path().join("journal");
+        fs::create_dir_all(&talent_root).unwrap();
+        fs::create_dir_all(&apps_root).unwrap();
+        fs::create_dir_all(&templates_dir).unwrap();
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            talent_root.join("steward.md"),
+            "{\n\"type\":\"generate\", \"hook\":{\"pre\":\"steward\",\"post\":\"steward\"}, \"load\":{\"transcripts\":false}\n}\nfixture",
+        )
+        .unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"test","model":"test-model"}}}"#,
+        )
+        .unwrap();
+        (
+            crate::prepare::RuntimePaths {
+                talent_root,
+                apps_root,
+                templates_dir,
+            },
+            ExecutionContext { journal },
+        )
     }
 
     #[test]
@@ -183,33 +224,69 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let path = root
             .path()
-            .join("chronicle/20260101/talents/unrecognized.jsonl");
+            .join("chronicle/20260101/talents/nested/unrecognized.jsonl");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, "{\"kept\":true}\n").unwrap();
         let before_inode = fs::metadata(&path).unwrap().ino();
         let locked = std::fs::OpenOptions::new().read(true).open(&path).unwrap();
         let _lock = Flock::lock(locked, FlockArg::LockExclusiveNonblock).unwrap();
+        // A classified path would fail to open this as the index directory.
+        // Reaching no warning therefore proves append_day_record saw Declined.
+        fs::write(root.path().join("indexer"), b"not a directory").unwrap();
         reset_index_warnings();
         let mut record = Map::from_iter([("new".to_owned(), json!(true))]);
-        append_day_record(root.path(), "20260101", "unrecognized", &mut record).unwrap();
+        append_day_record(root.path(), "20260101", "nested/unrecognized", &mut record).unwrap();
         assert_ne!(fs::metadata(&path).unwrap().ino(), before_inode);
-        let declined = root.path().join("health/not-indexed.jsonl");
-        fs::create_dir_all(declined.parent().unwrap()).unwrap();
-        fs::write(&declined, "{}\n").unwrap();
-        assert!(matches!(
-            rescan_file(root.path(), &declined).unwrap(),
-            RescanFileStatus::Declined
-        ));
         assert_eq!(index_warnings(), 0);
     }
 
     #[test]
-    fn criterion_19_index_failure_warns_once_without_failing_the_write() {
+    fn criterion_19_index_failure_warns_once_and_worker_finishes() {
         let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("indexer"), b"not a directory").unwrap();
+        let (paths, context) = steward_worker_fixture(&root);
+        fs::write(context.journal.join("indexer"), b"not a directory").unwrap();
+        let client =
+            solstone_core_generate::OneShotClient::at_path(crate::test_support::one_shot_stub(
+                root.path(),
+                r#"{"headline":"All clear","summary_sentence":"fine","suggested_action":"none"}"#,
+            ));
         reset_index_warnings();
-        let mut record = Map::from_iter([("event".to_owned(), json!("summary"))]);
-        assert!(append_day_record(root.path(), "20260101", "steward", &mut record).is_ok());
+        let mut output = Vec::new();
+        crate::run_lines(
+            Cursor::new("{\"name\":\"steward\",\"day\":\"20260101\",\"prompt\":\"hello\"}\n"),
+            &mut output,
+            &paths,
+            &context,
+            Ok(&client),
+        );
+        let events = worker_events(&output);
+        assert!(events.iter().any(|event| event["event"] == "finish"));
+        assert!(!events.iter().any(|event| event["event"] == "error"));
         assert_eq!(index_warnings(), 1);
+    }
+
+    #[test]
+    fn story_commit_error_names_the_talent() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("facets"), b"not a directory").unwrap();
+        let error = apply(
+            CommitPlan::Write(WriteIntent::Story {
+                talent: "conversation".to_owned(),
+                facet: "work".to_owned(),
+                day: "20260101".to_owned(),
+                record_id: "activity-1".to_owned(),
+                value: json!({
+                    "body":"body", "topics":[], "confidence":1,
+                    "commitments":[], "closures":[], "decisions":[], "relations":[]
+                }),
+            }),
+            &ExecutionContext {
+                journal: root.path().to_owned(),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.phase, "commit");
+        assert_eq!(error.stage, "story");
+        assert_eq!(error.talent, "conversation");
     }
 }
