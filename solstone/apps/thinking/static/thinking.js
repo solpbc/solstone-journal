@@ -33,7 +33,6 @@
     },
     runsFacet: '',
     runsFacetExplicit: false,
-    runsDay: null,
     runsDetail: null,
     runsModalFocus: null,
   };
@@ -989,11 +988,15 @@
     return true;
   }
 
-  async function loadThinkingRequest(kind, key, load, renderReady, renderFailed) {
+  async function loadThinkingRequest(kind, key, load, renderReady, renderFailed, shouldCache = () => true) {
     const token = beginThinkingRequest(kind);
     try {
       const value = await load();
       if (!isCurrentThinkingRequest(token)) return;
+      if (!shouldCache(value)) {
+        renderReady(value);
+        return;
+      }
       if (!writeThinkingCache(kind, key, value, token) || !isCurrentThinkingRequest(token)) return;
       renderReady(value);
     } catch (err) {
@@ -1192,19 +1195,23 @@
   }
 
   function bindThinkingTablist(tablistId, activate) {
-    const thinkingTabs = Array.from($(tablistId)?.querySelectorAll('[role="tab"]') || [])
-      .filter((tab) => !tab.hidden);
-    thinkingTabs.forEach((tab, index) => {
-      tab.addEventListener('click', () => activate(tab, 'pointer'));
+    const thinkingTabs = Array.from($(tablistId)?.querySelectorAll('[role="tab"]') || []);
+    thinkingTabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        if (!tab.hidden) activate(tab, 'pointer');
+      });
       tab.addEventListener('keydown', (event) => {
-        let nextIndex = index;
-        if (event.key === 'ArrowLeft') nextIndex = (index + thinkingTabs.length - 1) % thinkingTabs.length;
-        else if (event.key === 'ArrowRight') nextIndex = (index + 1) % thinkingTabs.length;
+        const visibleTabs = thinkingTabs.filter((candidate) => !candidate.hidden);
+        const currentIndex = visibleTabs.indexOf(tab);
+        if (currentIndex === -1) return;
+        let nextIndex = currentIndex;
+        if (event.key === 'ArrowLeft') nextIndex = (currentIndex + visibleTabs.length - 1) % visibleTabs.length;
+        else if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % visibleTabs.length;
         else if (event.key === 'Home') nextIndex = 0;
-        else if (event.key === 'End') nextIndex = thinkingTabs.length - 1;
+        else if (event.key === 'End') nextIndex = visibleTabs.length - 1;
         else return;
         event.preventDefault();
-        activate(thinkingTabs[nextIndex], 'keyboard');
+        activate(visibleTabs[nextIndex], 'keyboard');
       });
     });
   }
@@ -1245,11 +1252,6 @@
       state.runsFacetExplicit = explicit;
       state.runsNavigationGeneration += 1;
     }
-  }
-
-  function thinkingRunStatus(run) {
-    if (run.status === 'running') return 'running';
-    return run.failed ? 'failed' : 'completed';
   }
 
   function thinkingRunFacts(run) {
@@ -1295,16 +1297,19 @@
     const summary = $('thinkingRunsSummary');
     if (!summary) return;
     summary.replaceChildren();
+    const total = document.createElement('span');
+    total.textContent = `${runs.length} run${runs.length !== 1 ? 's' : ''}`;
+    summary.appendChild(total);
     const failed = runs.filter((run) => run.failed).length;
     const cost = runs.reduce((total, run) => total + (typeof run.cost === 'number' ? run.cost : 0), 0);
     if (failed) {
       const item = document.createElement('span');
-      item.textContent = `failed: ${failed}`;
+      item.textContent = `${failed} failed`;
       summary.appendChild(item);
     }
     if (cost) {
       const item = document.createElement('span');
-      item.textContent = `cost: ${cost}`;
+      item.textContent = cost > 0 && cost < 0.01 ? '<$0.01' : `$${cost.toFixed(2)}`;
       summary.appendChild(item);
     }
   }
@@ -1365,7 +1370,6 @@
   }
 
   function renderThinkingRunsDay(payload, route) {
-    state.runsDay = payload;
     const runs = normalizedThinkingRuns(payload);
     const date = $('thinkingRunsDate');
     if (date) date.value = runsDayInputValue(route.day);
@@ -1388,6 +1392,7 @@
     if (!host) return;
     host.replaceChildren();
     $('thinkingRunsDetail').hidden = !route.useId;
+    $('thinkingRunsNoOutput').hidden = true;
     renderThinkingRunsSummary(runs);
     if (!runs.length) {
       const heading = document.createElement('p');
@@ -1444,7 +1449,7 @@
     });
   }
 
-  function loadThinkingUpdatedDays(route) {
+  function loadThinkingUpdatedDays() {
     const token = beginThinkingRequest('day');
     window.apiJson('/app/thinking/api/updated-days').then((days) => {
       if (isCurrentThinkingRequest(token)) renderThinkingUpdatedDays(days);
@@ -1466,7 +1471,7 @@
     const cached = readThinkingCache('day', key);
     if (cached && !force) {
       renderThinkingRunsDay(cached, route);
-      loadThinkingUpdatedDays(route);
+      loadThinkingUpdatedDays();
       return;
     }
     renderThinkingRunsLoading();
@@ -1476,7 +1481,7 @@
       () => window.apiJson(thinkingDayUrl(route)),
       (payload) => {
         renderThinkingRunsDay(payload, route);
-        loadThinkingUpdatedDays(route);
+        loadThinkingUpdatedDays();
       },
       renderThinkingRunsFailure,
     );
@@ -1532,6 +1537,7 @@
     }
     const output = $('thinkingRunsOutputTab');
     if (output) output.hidden = !run.output_file;
+    $('thinkingRunsNoOutput').hidden = !!run.output_file;
     renderThinkingRunLog(run);
     activateThinkingRunDetailTab('thinkingRunsLogTab', 'history');
   }
@@ -1545,11 +1551,22 @@
     panel.appendChild(message);
   }
 
-  function loadThinkingRun(route, force = false) {
+  function renderThinkingRunPending(route) {
+    const detail = $('thinkingRunsDetail');
+    if (detail) detail.hidden = false;
+    setText('thinkingRunsDetailHeading', route.talent || '');
+    $('thinkingRunsDetailFacts')?.replaceChildren();
+    $('thinkingRunsOutputTab').hidden = true;
+    $('thinkingRunsNoOutput').hidden = true;
+    renderThinkingRunLog({status: 'running'});
+    activateThinkingRunDetailTab('thinkingRunsLogTab', 'history');
+  }
+
+  function loadThinkingRun(route) {
     if (!route?.useId) return;
     const key = thinkingCacheKey('run', {useId: route.useId});
     const cached = readThinkingCache('run', key);
-    if (cached && !force) {
+    if (cached) {
       const contextual = runContextFromRecord(route, cached);
       renderThinkingRunDetail(cached, contextual);
       return;
@@ -1564,16 +1581,23 @@
       key,
       () => window.apiJson(`/app/thinking/api/run/${encodeThinkingSegment(route.useId)}`),
       (run) => {
+        if (run?.reason_code === 'talent_run_pending') {
+          renderThinkingRunPending(route);
+          return;
+        }
         const contextual = runContextFromRecord(route, run);
+        const contextChanged = contextual.key !== route.key;
         setThinkingRoute(contextual);
         renderThinkingRunDetail(run, contextual);
-        if (contextual.day) loadThinkingRuns(contextual);
+        if (route.kind === 'run-id' || contextChanged) loadThinkingRuns(contextual);
       },
       renderThinkingRunFailure,
+      (run) => run?.reason_code !== 'talent_run_pending',
     );
   }
 
   function activateThinkingRunDetailTab(tabId, origin) {
+    if ($(tabId)?.hidden) return;
     const output = tabId === 'thinkingRunsOutputTab';
     $('thinkingRunsLogPanel').hidden = output;
     $('thinkingRunsOutputPanel').hidden = !output;
@@ -1608,7 +1632,7 @@
     state.runsModalFocus = document.activeElement;
     modal.hidden = false;
     const content = $('thinkingRunsPromptContent');
-    content.textContent = 'loading run log…';
+    content.textContent = 'loading run details…';
     const key = thinkingCacheKey('prompt', {talent: run.name});
     const cached = readThinkingCache('prompt', key);
     if (cached) {
@@ -1645,6 +1669,12 @@
     });
     $('thinkingRunsPrompt')?.addEventListener('click', openThinkingPrompt);
     $('thinkingRunsPromptClose')?.addEventListener('click', closeThinkingPrompt);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !$('thinkingRunsPromptModal')?.hidden) {
+        event.preventDefault();
+        closeThinkingPrompt();
+      }
+    });
   }
 
   function navigateThinkingRunsDay(amount, requestedDay = '') {

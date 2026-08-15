@@ -138,6 +138,7 @@ async function main() {
   );
 
   const nodes = new Map();
+  const documentListeners = {};
   const document = {
     activeElement: null,
     getElementById(id) { return nodes.get(id) || null; },
@@ -150,6 +151,16 @@ async function main() {
       if (selector === '#providers [data-view]') return views;
       if (selector === '[data-thinking-section]') return panels;
       return [];
+    },
+    addEventListener(name, listener) {
+      (documentListeners[name] ||= []).push(listener);
+    },
+    emit(name, event = {}) {
+      for (const listener of documentListeners[name] || []) listener({
+        preventDefault() {},
+        target: document,
+        ...event,
+      });
     },
   };
   const make = (id, dataset = {}) => {
@@ -192,10 +203,14 @@ async function main() {
   make('thinkingRunsDetail');
   make('thinkingRunsDetailHeading');
   make('thinkingRunsDetailFacts');
+  const noOutput = make('thinkingRunsNoOutput');
+  noOutput.hidden = true;
+  noOutput.textContent = "this run doesn't have a saved output.";
   make('thinkingRunsPrompt');
   const detailTabs = make('thinkingRunsDetailTabs');
   const logTab = make('thinkingRunsLogTab');
   const outputTab = make('thinkingRunsOutputTab');
+  outputTab.hidden = true;
   for (const tab of [logTab, outputTab]) {
     tab.setAttribute('role', 'tab');
     detailTabs.appendChild(tab);
@@ -369,6 +384,7 @@ async function main() {
   await settle();
   await settle();
   assert.strictEqual(requests[firstDayRequest], '/app/thinking/api/talents/20260101', 'first day request leaves facet to the cookie');
+  assert.strictEqual(nodes.get('thinkingRunsSummary').children[0].textContent, '0 runs', 'day summary includes the run total');
   const facetControl = nodes.get('thinkingRunsFacet');
   facetControl.value = 'work';
   facetControl.emit('change');
@@ -403,6 +419,51 @@ async function main() {
   await settle();
   assert.strictEqual(nodes.get('thinkingRunsLogPanel').children[0].textContent, "couldn't load that run", 'run failure remains inside detail context');
 
+  runResponses.push(Promise.resolve({id: 'without-output', day: '20260103', name: 'talent', events: []}));
+  window.location.hash = '#runs/20260103/talent/without-output';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  assert.strictEqual(noOutput.hidden, false, 'completed run without output explains the missing output');
+  assert.strictEqual(noOutput.textContent, "this run doesn't have a saved output.");
+
+  const deepDay = deferred();
+  dayResponses.push(deepDay.promise);
+  outputResponses.push(Promise.resolve({content: 'saved output'}));
+  runResponses.push(Promise.resolve({id: 'with-output', day: '20260109', name: 'talent', output_file: 'saved.txt', events: []}));
+  const deepDayRequests = requests.filter((url) => url.startsWith('/app/thinking/api/talents/20260109')).length;
+  window.location.hash = '#runs/20260109/talent/with-output';
+  thinking.routeThinkingHash('history');
+  await settle();
+  assert.strictEqual(
+    requests.filter((url) => url.startsWith('/app/thinking/api/talents/20260109')).length,
+    deepDayRequests + 1,
+    'matching deep run detail starts one day read',
+  );
+  deepDay.resolve({uses: [], facets: []});
+  await settle();
+  assert.strictEqual(outputTab.hidden, false, 'run output tab becomes visible after binding');
+  outputTab.emit('click');
+  await settle();
+  assert.strictEqual(nodes.get('thinkingRunsOutputPanel').textContent, 'saved output', 'newly visible output tab activates its panel');
+  outputTab.emit('keydown', {key: 'ArrowLeft'});
+  assert.strictEqual(logTab.attributes['aria-selected'], 'true', 'detail tabs rove after output becomes visible');
+
+  runResponses.push(Promise.resolve({reason_code: 'talent_run_pending'}));
+  window.location.hash = '#runs/20260103/talent/active';
+  thinking.routeThinkingHash('history');
+  await settle();
+  await settle();
+  assert.strictEqual(nodes.get('thinkingRunsLogPanel').children[0].textContent, 'this run is still in progress.', 'active run renders progress instead of an empty detail');
+  assert.strictEqual(nodes.get('thinkingRunsLogPanel').children[1].textContent, 'check back soon.');
+  assert.strictEqual(thinking.state.runsCache.run.has('run:active'), false, 'active response is not cached as a completed run');
+
+  thinking.state.runsDetail = {name: 'prompt talent'};
+  thinking.openThinkingPrompt();
+  assert.strictEqual(nodes.get('thinkingRunsPromptModal').hidden, false, 'prompt modal opens');
+  document.emit('keydown', {key: 'Escape'});
+  assert.strictEqual(nodes.get('thinkingRunsPromptModal').hidden, true, 'Escape closes the prompt modal');
+
   const first = deferred();
   const second = deferred();
   dayResponses.push(first.promise, second.promise);
@@ -410,13 +471,14 @@ async function main() {
   thinking.routeThinkingHash('history');
   window.location.hash = '#runs/20260105';
   thinking.routeThinkingHash('history');
-  second.resolve({uses: [{id: 'new', name: 'talent'}], facets: []});
+  second.resolve({uses: [{id: 'new', name: 'current-day'}], facets: []});
   await settle();
-  first.resolve({uses: [{id: 'old', name: 'talent'}], facets: []});
+  first.resolve({uses: [{id: 'old', name: 'stale-day'}], facets: []});
   await settle();
   await settle();
   assert.strictEqual(thinking.state.runsCache.day.has('day:20260104:facet:work'), false, 'stale day response is not cached');
   assert.strictEqual(thinking.state.runsCache.day.has('day:20260105:facet:work'), true, 'current day response is cached');
+  assert.strictEqual(nodes.get('thinkingRunsContent').children[0].children[0].textContent, 'current-day', 'stale day response does not replace the current render');
 
   const firstRun = deferred();
   const secondRun = deferred();
@@ -425,13 +487,14 @@ async function main() {
   thinking.routeThinkingHash('history');
   window.location.hash = '#runs/20260107/talent/second';
   thinking.routeThinkingHash('history');
-  secondRun.resolve({id: 'second', day: '20260107', name: 'talent', events: []});
+  secondRun.resolve({id: 'second', day: '20260107', name: 'current-run', events: []});
   await settle();
-  firstRun.resolve({id: 'first', day: '20260106', name: 'talent', events: []});
+  firstRun.resolve({id: 'first', day: '20260106', name: 'stale-run', events: []});
   await settle();
   await settle();
   assert.strictEqual(thinking.state.runsCache.run.has('run:first'), false, 'stale run response is not cached');
   assert.strictEqual(thinking.state.runsCache.run.has('run:second'), true, 'current run response is cached');
+  assert.strictEqual(nodes.get('thinkingRunsDetailHeading').textContent, 'current-run', 'stale run response does not replace the current render');
 
   const firstPrompt = deferred();
   const secondPrompt = deferred();
@@ -453,6 +516,7 @@ async function main() {
   await settle();
   assert.strictEqual(thinking.state.runsCache.prompt.has('prompt:first prompt'), false, 'stale prompt response is not cached');
   assert.strictEqual(thinking.state.runsCache.prompt.get('prompt:second prompt').content, 'current prompt', 'current prompt response is cached');
+  assert.strictEqual(nodes.get('thinkingRunsPromptContent').textContent, 'current prompt', 'stale prompt response does not replace the current render');
 
   const firstOutput = deferred();
   const secondOutput = deferred();
@@ -474,6 +538,7 @@ async function main() {
   await settle();
   assert.strictEqual(thinking.state.runsCache.output.has('output:20260107:first.txt'), false, 'stale output response is not cached');
   assert.strictEqual(thinking.state.runsCache.output.get('output:20260108:second.txt').content, 'current output', 'current output response is cached');
+  assert.strictEqual(nodes.get('thinkingRunsOutputPanel').textContent, 'current output', 'stale output response does not replace the current render');
   console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);
 }
 

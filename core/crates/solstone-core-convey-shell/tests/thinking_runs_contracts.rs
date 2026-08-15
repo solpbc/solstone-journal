@@ -91,6 +91,19 @@ fn authored_script_copy(source: &str) -> &str {
     &source[start..end]
 }
 
+fn contains_copy_literal(value: &serde_json::Value, needle: &str) -> bool {
+    match value {
+        serde_json::Value::String(text) => text == needle,
+        serde_json::Value::Array(values) => values
+            .iter()
+            .any(|value| contains_copy_literal(value, needle)),
+        serde_json::Value::Object(values) => values
+            .values()
+            .any(|value| contains_copy_literal(value, needle)),
+        _ => false,
+    }
+}
+
 #[test]
 fn thinking_runs_heading_structure_has_one_h1_and_no_skips() {
     let workspace = native_workspace();
@@ -116,6 +129,8 @@ fn thinking_runs_tab_markup_has_roving_tabs_and_labelled_panels() {
         "aria-labelledby=\"thinkingSetupTab\"",
         "aria-labelledby=\"thinkingRunsTab\"",
         "aria-labelledby=\"thinkingIdentityTab\"",
+        "id=\"thinkingRunsNoOutput\"",
+        "this run doesn't have a saved output.",
     ] {
         assert!(
             workspace.contains(needle),
@@ -198,10 +213,51 @@ fn thinking_runs_copy_payload_remains_frozen() {
         routes.contains("\"copy\":solstone_core_thinking_copy::thinking_copy_payload()"),
         "the state payload continues to source copy only from the frozen copy payload"
     );
-    assert!(
-        !routes.contains("loading identity") && !routes.contains("couldn't load identity"),
-        "new asset literals do not enter thinking_copy_payload"
-    );
+    let payload = serde_json::to_value(solstone_core_thinking_copy::thinking_copy_payload())
+        .expect("Thinking copy payload serializes");
+    for literal in [
+        "setup",
+        "runs",
+        "identity",
+        "talent runs",
+        "date",
+        "previous day",
+        "next day",
+        "facet",
+        "all",
+        "loading talent runs…",
+        "no talent runs on this day",
+        "talent runs will appear here after they finish.",
+        "couldn't load talent runs",
+        "try again",
+        "some run details aren't available right now.",
+        "that talent run isn't available.",
+        "loading run details…",
+        "loading run log…",
+        "this run is still in progress.",
+        "check back soon.",
+        "couldn't load that run",
+        "couldn't load that prompt",
+        "loading output…",
+        "couldn't load that output",
+        "this run doesn't have a saved output.",
+        "loading identity…",
+        "couldn't load identity",
+        "identity details aren't available right now.",
+        "name",
+        "naming status",
+        "you",
+        "not set",
+        "run log",
+        "output",
+        "prompt",
+        "close",
+    ] {
+        assert!(
+            !contains_copy_literal(&payload, literal),
+            "Runs/Identity literal entered thinking_copy_payload: {literal}"
+        );
+    }
 }
 
 #[test]
@@ -218,6 +274,22 @@ fn thinking_runs_list_source_has_explicit_table_controls_and_mobile_cards() {
             "missing run-list source contract: {needle}"
         );
     }
+    let row_start = script
+        .find("runs.forEach((run) => {")
+        .expect("run rows are rendered");
+    let row_end = script[row_start..]
+        .find("body.appendChild(row);")
+        .expect("run row is appended")
+        + row_start;
+    let row = &script[row_start..row_end];
+    assert!(
+        row.contains("prompt.appendChild(thinkingRunControl(run));"),
+        "every generated run row appends its explicit control"
+    );
+    assert!(
+        !row.contains("row.addEventListener(") && !row.contains("row.onclick"),
+        "run rows are not clickable"
+    );
 }
 
 #[test]
