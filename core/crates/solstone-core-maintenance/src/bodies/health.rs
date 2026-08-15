@@ -15,7 +15,7 @@ use solstone_core_retention::logs::{
     Compaction, EntryKind, Kept, LogPlan, LogPolicy, day_key, plan as plan_logs, plan_compactions,
 };
 use solstone_core_retention::marks::{Proposal, RemovalClass, load, reconcile};
-use solstone_core_retention::policy::{Anchor, Days, Policy, Rule};
+use solstone_core_retention::policy::{policy_from_retention, policy_would_release};
 use solstone_core_retention::receipt::Outcome;
 use solstone_core_retention::sweep::plan as plan_sweep;
 
@@ -240,83 +240,6 @@ fn positive_config_days(value: &Value) -> Option<u32> {
         _ => None,
     }
     .filter(|days| *days >= 1)
-}
-
-fn policy_from_retention(retention: &Map<String, Value>) -> Policy {
-    let default_rule = rule(
-        retention
-            .get("raw_media")
-            .and_then(Value::as_str)
-            .unwrap_or("keep"),
-        retention.get("raw_media_days"),
-    );
-    let per_stream = retention
-        .get("per_stream")
-        .and_then(Value::as_object)
-        .into_iter()
-        .flat_map(|streams| streams.iter())
-        .filter_map(|(name, stream)| {
-            let stream = stream.as_object()?;
-            Some((
-                name.clone(),
-                rule(
-                    stream
-                        .get("raw_media")
-                        .and_then(Value::as_str)
-                        .unwrap_or("keep"),
-                    stream.get("raw_media_days"),
-                ),
-            ))
-        })
-        .collect();
-    let minimum_age = python_int(retention.get("raw_media_minimum_days"))
-        .unwrap_or(0)
-        .max(0);
-    Policy {
-        default_rule,
-        per_stream,
-        minimum_age: Days(u32::try_from(minimum_age).unwrap_or(u32::MAX)),
-        enabled: true,
-    }
-}
-
-fn rule(mode: &str, days: Option<&Value>) -> Rule {
-    match mode {
-        "days" => match python_int(days).and_then(|days| u32::try_from(days).ok()) {
-            Some(days) if days > 0 => Rule {
-                anchor: Anchor::Captured,
-                period: Some(Days(days)),
-                priority: 0,
-            },
-            _ => Rule::keep(),
-        },
-        "processed" => Rule {
-            anchor: Anchor::Processed,
-            period: Some(Days(0)),
-            priority: 0,
-        },
-        _ => Rule::keep(),
-    }
-}
-
-fn python_int(value: Option<&Value>) -> Option<i64> {
-    match value? {
-        Value::Bool(value) => Some(i64::from(*value)),
-        Value::Number(number) => number
-            .as_i64()
-            .or_else(|| number.as_u64().and_then(|value| i64::try_from(value).ok()))
-            .or_else(|| number.as_f64().map(|value| value as i64)),
-        Value::String(value) => value.trim().parse().ok(),
-        _ => None,
-    }
-}
-
-fn policy_would_release(policy: &Policy) -> bool {
-    policy.default_rule.period.is_some()
-        || policy
-            .per_stream
-            .iter()
-            .any(|(_, rule)| rule.period.is_some())
 }
 
 fn policy_mark_ids(
@@ -569,6 +492,7 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use serde_json::{Map, Value, json};
     use solstone_core_retention::Target;
+    use solstone_core_retention::marks::load;
     use solstone_core_retention::receipt::{NotRemoved, Outcome, RunHalt, TargetOutcome};
 
     struct Host;
@@ -679,9 +603,9 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         write_config(
             journal.path(),
-            json!({"retention": {"raw_media": "days", "raw_media_days": 1}}),
+            json!({"retention": {"raw_media": "days", "raw_media_days": 7}}),
         );
-        write_proven_segment(journal.path(), "20260228", "first.audio", "070000_17");
+        write_proven_segment(journal.path(), "20260130", "first.audio", "070000_17");
         let host = Host;
         let services = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
@@ -694,10 +618,21 @@ mod tests {
                 .stdout
                 .starts_with("mark-raw: new items: 1.\n  standing total: 1.")
         );
+        assert_eq!(
+            load(journal.path())
+                .unwrap()
+                .marks
+                .values()
+                .next()
+                .unwrap()
+                .proposal
+                .reason,
+            "policy eligibility: Eligible { anchor: Captured, age_days: 30, period: Days(7) }"
+        );
         let first_id = mark_ids_from_output(&first.stdout).pop().unwrap();
 
         // A second stream becomes eligible after the first register reconciliation.
-        write_proven_segment(journal.path(), "20260228", "second.audio", "070000_17");
+        write_proven_segment(journal.path(), "20260130", "second.audio", "070000_17");
         let second = run("health:mark-raw", &[], journal.path(), &services);
         assert_eq!(second.exit_code, 0);
         assert!(

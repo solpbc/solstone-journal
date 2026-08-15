@@ -56,8 +56,8 @@ use solstone_core_retention::logs::{
     plan as plan_logs, plan_compactions,
 };
 use solstone_core_retention::marks::{
-    Failure, MarkId, Proposal, RemovalClass, load, reconcile, reconcile_recovered, record_failure,
-    resolve_offload, upsert_offload,
+    Failure, MarkId, Proposal, RemovalClass, decline, load, preflight, reconcile,
+    reconcile_recovered, record_failure, resolve_offload, upsert_offload,
 };
 use solstone_core_retention::notify::{IndexNotify, NotifyError, PruneCounts};
 use solstone_core_retention::policy::Policy;
@@ -1045,6 +1045,15 @@ fn run_remove_marked(args: &Args) -> ExitCode {
         Ok(value) => PathBuf::from(value),
         Err(error) => return verb_fail("remove-marked", &error),
     };
+    if let Some((flag, _)) = args.values.iter().find(|(flag, _)| {
+        flag != "--journal"
+            && flag != "--today"
+            && flag != "--now"
+            && flag != "--policy"
+            && flag != "--mark"
+    }) {
+        return verb_fail("remove-marked", &format!("unknown flag `{flag}`"));
+    }
     let today = match parse_today(args) {
         Ok(value) => value,
         Err(error) => return verb_fail("remove-marked", &error),
@@ -1070,14 +1079,62 @@ fn run_remove_marked(args: &Args) -> ExitCode {
         Ok(value) => value,
         Err(error) => return verb_fail("remove-marked", &error),
     };
-    match remove_marked(&journal, &ids, &policy, today, now, at) {
-        Ok(outcome) => finish(
-            &journal,
-            outcome,
-            serde_json::json!({ "verb": "remove-marked" }),
+    let marks = match preflight(&journal, &ids) {
+        Ok(marks) => marks,
+        Err(error) => {
+            return emit(
+                serde_json::json!({ "ok": false, "verb": "remove-marked", "error": error.to_string() }),
+                EXIT_REFUSED,
+            );
+        }
+    };
+    let mut register_errors = Vec::new();
+    let outcome = remove_marked(
+        &journal,
+        &marks,
+        &policy,
+        today,
+        now,
+        at,
+        &mut register_errors,
+    );
+    finish(
+        &journal,
+        outcome,
+        serde_json::json!({
+            "verb": "remove-marked",
+            "register_error": (!register_errors.is_empty()).then(|| register_errors.join("; ")),
+        }),
+    )
+}
+
+fn run_decline(args: &Args) -> ExitCode {
+    let journal = match args.required("--journal") {
+        Ok(value) => PathBuf::from(value),
+        Err(error) => return verb_fail("decline", &error),
+    };
+    if let Some((flag, _)) = args
+        .values
+        .iter()
+        .find(|(flag, _)| flag != "--journal" && flag != "--mark")
+    {
+        return verb_fail("decline", &format!("unknown flag `{flag}`"));
+    }
+    let ids = args.all("--mark");
+    let [id] = ids.as_slice() else {
+        return verb_fail("decline", "exactly one --mark is required");
+    };
+    let id = match MarkId::parse(id) {
+        Some(id) => id,
+        None => return verb_fail("decline", &format!("`{id}` is not a mark ID")),
+    };
+    match decline(&journal, &id) {
+        Ok(register) => emit(
+            serde_json::json!({ "ok": true, "verb": "decline", "marks": register }),
+            EXIT_OK,
         ),
         Err(error) => emit(
-            serde_json::json!({ "ok": false, "verb": "remove-marked", "error": error }),
+            serde_json::json!({ "ok": false, "verb": "decline", "error": error.to_string() }),
             EXIT_REFUSED,
         ),
     }
@@ -1146,6 +1203,7 @@ solstone-retention — the retention executor
   mark-offload    --journal P --day DAY [--stream STREAM] --dir DIR --file NAME [--file ...] --reason REF --now ISO
   resolve-offload --journal P --day DAY [--stream STREAM] --dir DIR --file NAME [--file ...]
   remove-marked   --journal P --today YYYY-MM-DD --now ISO [--policy JSON] --mark ID [--mark ...]
+  decline         --journal P --mark ID
 
 Always prints one JSON object. Exit 0 all removed, 2 usage, 3 something refused, \
 4 run halted.
@@ -1177,6 +1235,7 @@ fn main() -> ExitCode {
         "mark-offload" => run_mark_offload(&args),
         "resolve-offload" => run_resolve_offload(&args),
         "remove-marked" => run_remove_marked(&args),
+        "decline" => run_decline(&args),
         other => fail(&format!("unknown verb `{other}`")),
     }
 }

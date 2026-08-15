@@ -48,6 +48,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("remove_marked", include_str!("../src/remove_marked.rs")),
     ("scan", include_str!("../src/scan.rs")),
     ("staging", include_str!("../src/staging.rs")),
+    ("summary", include_str!("../src/summary.rs")),
     ("sweep", include_str!("../src/sweep.rs")),
     ("tombstone", include_str!("../src/tombstone.rs")),
 ];

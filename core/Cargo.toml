@@ -45,6 +45,7 @@ members = [
     "crates/solstone-core-processing-record",
     "crates/solstone-core-retention",
     "crates/solstone-core-retention-cli",
+    "crates/solstone-core-retention-client",
     "crates/solstone-core-transcribe",
     "crates/solstone-core-transcribe-cli",
     "crates/solstone-core-ced-sys",
@@ -180,6 +181,7 @@ solstone-core-cogitate-wire = { path = "crates/solstone-core-cogitate-wire" }
 solstone-core-processing-record = { path = "crates/solstone-core-processing-record" }
 solstone-core-retention = { path = "crates/solstone-core-retention" }
 solstone-core-retention-cli = { path = "crates/solstone-core-retention-cli" }
+solstone-core-retention-client = { path = "crates/solstone-core-retention-client" }
 solstone-core-transcribe = { path = "crates/solstone-core-transcribe" }
 solstone-core-transcribe-cli = { path = "crates/solstone-core-transcribe-cli" }
 solstone-core-ced-sys = { path = "crates/solstone-core-ced-sys" }

@@ -5,11 +5,11 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use axum::{body::Bytes, response::Response};
 use chrono::{Days, Local, Utc};
-use serde::Serialize;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_config_write::{
     JournalConfigMutation, LockError, LockOptions, mutate_journal_config,
 };
+use solstone_core_retention::policy::{policy_from_retention, policy_would_release};
 
 use crate::{
     http::{
@@ -19,20 +19,6 @@ use crate::{
     request_body::{JsonBody, json_body},
     retention_executor::{self, ExecutorError},
 };
-
-#[derive(Debug, Serialize)]
-pub(crate) struct RetentionRule {
-    anchor: String,
-    period: Option<i64>,
-    priority: i64,
-}
-#[derive(Debug, Serialize)]
-pub(crate) struct RetentionPolicy {
-    default_rule: RetentionRule,
-    per_stream: Vec<(String, RetentionRule)>,
-    minimum_age: i64,
-    enabled: bool,
-}
 
 struct LogRetentionConfig {
     enabled: bool,
@@ -311,83 +297,6 @@ fn prune_response(journal_root: &std::path::Path, result: Value, dry_run: bool) 
     }
 }
 
-fn rule(mode: Option<&str>, days: Option<&Value>) -> RetentionRule {
-    match mode {
-        Some("days") => {
-            let period = days
-                .and_then(|value| {
-                    value
-                        .as_i64()
-                        .or_else(|| value.as_bool().map(i64::from))
-                        .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
-                })
-                .unwrap_or(0);
-            RetentionRule {
-                anchor: "captured".to_owned(),
-                period: (period > 0).then_some(period),
-                priority: 0,
-            }
-        }
-        Some("processed") => RetentionRule {
-            anchor: "processed".to_owned(),
-            period: Some(0),
-            priority: 0,
-        },
-        _ => RetentionRule {
-            anchor: "captured".to_owned(),
-            period: None,
-            priority: 0,
-        },
-    }
-}
-
-pub(crate) fn policy_payload(retention: &Map<String, Value>) -> RetentionPolicy {
-    let per_stream = retention
-        .get("per_stream")
-        .and_then(Value::as_object)
-        .into_iter()
-        .flatten()
-        .filter_map(|(name, value)| {
-            value.as_object().map(|stream| {
-                (
-                    name.clone(),
-                    rule(
-                        stream.get("raw_media").and_then(Value::as_str),
-                        stream.get("raw_media_days"),
-                    ),
-                )
-            })
-        })
-        .collect();
-    let minimum_age = retention
-        .get("raw_media_minimum_days")
-        .and_then(|value| {
-            value
-                .as_i64()
-                .or_else(|| value.as_bool().map(i64::from))
-                .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
-        })
-        .unwrap_or(0)
-        .max(0);
-    RetentionPolicy {
-        default_rule: rule(
-            retention.get("raw_media").and_then(Value::as_str),
-            retention.get("raw_media_days"),
-        ),
-        per_stream,
-        minimum_age,
-        enabled: true,
-    }
-}
-
-pub(crate) fn policy_would_release(policy: &RetentionPolicy) -> bool {
-    policy.default_rule.period.is_some()
-        || policy
-            .per_stream
-            .iter()
-            .any(|(_, rule)| rule.period.is_some())
-}
-
 pub(crate) fn read_policy_marks(receipt: &Value, stream: Option<&str>) -> BTreeMap<String, Value> {
     receipt
         .get("marks")
@@ -611,7 +520,7 @@ pub async fn purge(journal_root: PathBuf, body: Bytes) -> Response {
         .expect("session gate handled corrupt config")
         .config
         .unwrap_or_default();
-    let policy = policy_payload(
+    let policy = policy_from_retention(
         config
             .get("retention")
             .and_then(Value::as_object)

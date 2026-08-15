@@ -9,93 +9,113 @@ use std::path::Path;
 use chrono::{DateTime, NaiveDate, Utc};
 use solstone_core_journal_io::{LockOptions, hold_lock};
 
-use crate::Policy;
 use crate::age::segment_age;
 use crate::content::{ClosedHandlerSet, JournalMedia};
 use crate::door::release_raw;
 use crate::eligibility::{RawRelease, resolve};
 use crate::marks::{
-    Approval, Failure, Mark, MarkId, MarkState, load, record_failure, resolve as resolve_mark,
+    Failure, Mark, MarkId, PreflightMarks, load as load_marks, record_failure,
+    resolve as resolve_mark,
 };
-use crate::receipt::{NotRemoved, Outcome, TargetOutcome};
+use crate::receipt::{NotRemoved, Outcome, RunHalt, TargetOutcome};
 use crate::scan::scan_segment;
+use crate::{Eligibility, Policy};
 
-/// Execute the explicitly named marks. Preflight errors remove nothing.
+const TOO_YOUNG: &str =
+    "your retention settings don't release these originals yet. they aren't old enough.";
+const KEPT_FOREVER: &str = "your retention settings keep these originals indefinitely.";
+const ANCHOR_MISSING: &str =
+    "i don't have a record of when these originals are from, so i can't release them.";
+const NOT_ON_REMOVAL_LIST: &str =
+    "this file was proven releasable but is not on the removal list, so it is left in place";
+const NO_LONGER_PRESENT: &str = "this file was on the removal list but is no longer present";
+const NO_LONGER_ON_REMOVAL_LIST: &str =
+    "this entry is no longer on the removal list, so nothing was removed";
+
+struct RemovalContext<'a> {
+    policy: &'a Policy,
+    today: NaiveDate,
+    now: DateTime<Utc>,
+    at: &'a str,
+    register_errors: &'a mut Vec<String>,
+}
+
+/// Execute marks already proven valid by preflight.
+///
+/// A row describes a target the run reached; `halted` describes the target it
+/// could not start and every requested target after it.
 pub fn remove_marked(
     journal: &Path,
-    ids: &[MarkId],
+    marks: &PreflightMarks,
     policy: &Policy,
     today: NaiveDate,
     now: DateTime<Utc>,
     at: &str,
-) -> Result<Outcome, String> {
-    if ids.is_empty() {
-        return Err("at least one --mark is required".to_owned());
-    }
-    let mut unique = BTreeSet::new();
-    if ids.iter().any(|id| !unique.insert(id.as_str())) {
-        return Err("the same mark was named more than once".to_owned());
-    }
-    let register = load(journal).map_err(|error| error.to_string())?;
-    let mut marks = Vec::new();
-    for id in ids {
-        let Some(mark) = register.marks.get(id) else {
-            return Err(format!(
-                "no mark named `{}` exists; run `marks` to see current marks — an id changes whenever its proposal's file list changes",
-                id.as_str()
-            ));
-        };
-        if mark.class.axes().1 != Approval::Required {
-            return Err(format!("mark `{}` does not require approval", id.as_str()));
-        }
-        if matches!(mark.state, MarkState::Failed(_)) {
-            return Err(format!("mark `{}` has a recorded failure", id.as_str()));
-        }
-        marks.push((id.clone(), mark.clone()));
-    }
-
+    register_errors: &mut Vec<String>,
+) -> Outcome {
+    let mut context = RemovalContext {
+        policy,
+        today,
+        now,
+        at,
+        register_errors,
+    };
     let mut outcome = Outcome {
         targets: Vec::new(),
         halted: None,
     };
-    for (id, mark) in marks {
-        outcome
-            .targets
-            .push(remove_one(journal, &id, &mark, policy, today, now, at)?);
+    for (index, (id, mark)) in marks.as_slice().iter().enumerate() {
+        match remove_one(journal, id, mark, &mut context) {
+            Ok(row) => outcome.targets.push(row),
+            Err(()) => {
+                let remaining = marks.as_slice().len().saturating_sub(index);
+                let reason = format!(
+                    "i couldn't start on the originals for {} because something else is using them. the rest of the removal list wasn't attempted ({remaining} remaining).",
+                    id.as_str()
+                );
+                if outcome.targets.is_empty() {
+                    return Outcome::halted_before_start(reason);
+                }
+                outcome.halted = Some(RunHalt { reason });
+                break;
+            }
+        }
     }
-    Ok(outcome)
+    outcome
 }
 
 fn remove_one(
     journal: &Path,
     id: &MarkId,
     mark: &Mark,
-    policy: &Policy,
-    today: NaiveDate,
-    now: DateTime<Utc>,
-    at: &str,
-) -> Result<TargetOutcome, String> {
+    context: &mut RemovalContext<'_>,
+) -> Result<TargetOutcome, ()> {
     let target = &mark.target;
     let live = crate::layout::segment_rel(&target.day, &target.stream, &target.dir);
     let (row, complete, staged) = {
-        let _segment_lock = hold_lock(journal.join(&live), LockOptions::default())
-            .map_err(|error| format!("another process is working on this segment ({error})"))?;
+        let _segment_lock =
+            hold_lock(journal.join(&live), LockOptions::default()).map_err(|_| ())?;
+        let register = match load_marks(journal) {
+            Ok(register) => register,
+            Err(error) => return Ok(refused(mark, &error.to_string())),
+        };
+        if register.marks.get(id) != Some(mark) {
+            return Ok(refused(mark, NO_LONGER_ON_REMOVAL_LIST));
+        }
         let found = scan_segment(&journal.join(&live), &ClosedHandlerSet, &JournalMedia);
         let records = found
             .iter()
             .map(|item| item.sidecar.record.as_ref())
             .collect::<Vec<_>>();
-        let eligibility = policy.evaluate(
+        let eligibility = context.policy.evaluate(
             &target.stream,
-            segment_age(&target.day, &records, today, now),
+            segment_age(&target.day, &records, context.today, context.now),
         );
-        if !eligibility.is_eligible() {
-            return Ok(refused(
-                mark,
-                &format!(
-                    "the current retention policy no longer proposes this release: {eligibility:?}"
-                ),
-            ));
+        match eligibility {
+            Eligibility::Eligible { .. } => {}
+            Eligibility::TooYoung { .. } => return Ok(refused(mark, TOO_YOUNG)),
+            Eligibility::KeptForever => return Ok(refused(mark, KEPT_FOREVER)),
+            Eligibility::AnchorMissing { .. } => return Ok(refused(mark, ANCHOR_MISSING)),
         }
         let ready = match resolve(
             &ClosedHandlerSet,
@@ -148,7 +168,7 @@ fn remove_one(
         for name in not_approved {
             row.not_removed.push(NotRemoved {
                 entry: crate::layout::content_rel(&target.day, &target.stream, &target.dir, &name),
-                reason: "this file was proven releasable but is not named in this mark's proposal, so it is left in place".to_owned(),
+                reason: NOT_ON_REMOVAL_LIST.to_owned(),
                 staged: None,
             });
         }
@@ -161,8 +181,7 @@ fn remove_one(
                         &target.dir,
                         name,
                     ),
-                    reason: "this file was named in the proposal but is no longer present"
-                        .to_owned(),
+                    reason: NO_LONGER_PRESENT.to_owned(),
                     staged: None,
                 });
             }
@@ -175,10 +194,10 @@ fn remove_one(
         let accounted = mark.proposal.names.iter().all(|name| {
             let rel = crate::layout::content_rel(&target.day, &target.stream, &target.dir, name);
             removed.contains(rel.as_str())
-                || row.not_removed.iter().any(|item| {
-                    item.reason == "this file was named in the proposal but is no longer present"
-                        && item.entry == rel
-                })
+                || row
+                    .not_removed
+                    .iter()
+                    .any(|item| item.reason == NO_LONGER_PRESENT && item.entry == rel)
         });
         let complete = accounted && !row.not_removed.iter().any(|item| item.staged.is_some());
         let staged = row.not_removed.iter().find_map(|item| {
@@ -190,21 +209,24 @@ fn remove_one(
     };
     // Segment lock, then register lock, always: marks owns the second lock internally.
     if complete {
-        resolve_mark(journal, id).map_err(|error| error.to_string())?;
-    } else if let Some((staged, reason)) = staged {
-        record_failure(
+        if let Err(error) = resolve_mark(journal, id) {
+            context.register_errors.push(error.to_string());
+        }
+    } else if let Some((staged, reason)) = staged
+        && let Err(error) = record_failure(
             journal,
             mark.class,
             target,
             &mark.proposal.names,
             Failure {
-                at: at.to_owned(),
+                at: context.at.to_owned(),
                 reason,
                 staged: Some(staged),
             },
-            at,
+            context.at,
         )
-        .map_err(|error| error.to_string())?;
+    {
+        context.register_errors.push(error.to_string());
     }
     Ok(row)
 }
@@ -222,5 +244,86 @@ fn refused(mark: &Mark, reason: &str) -> TargetOutcome {
             reason: reason.to_owned(),
             staged: None,
         }],
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test setup and assertions use concise infallible helpers"
+)]
+mod tests {
+    use std::fs;
+
+    use chrono::TimeZone;
+
+    use super::*;
+    use crate::marks::{Proposal, RemovalClass, decline, preflight, reconcile};
+
+    #[test]
+    fn a_mark_declined_after_preflight_is_not_unlinked() {
+        let journal = tempfile::tempdir().unwrap();
+        let target = crate::Target {
+            day: "20260701".to_owned(),
+            stream: "field.audio".to_owned(),
+            dir: "070000_17".to_owned(),
+        };
+        let segment = journal.path().join(crate::layout::segment_rel(
+            &target.day,
+            &target.stream,
+            &target.dir,
+        ));
+        fs::create_dir_all(&segment).unwrap();
+        let raw = segment.join("audio.flac");
+        fs::write(&raw, b"the owner's originals").unwrap();
+        let proposal = Proposal {
+            bytes: 1,
+            reason: "test approval".to_owned(),
+            names: vec!["audio.flac".to_owned()],
+        };
+        let register = reconcile(
+            journal.path(),
+            RemovalClass::PolicyRawRelease,
+            &[(target.clone(), proposal.clone())],
+            "first",
+        )
+        .unwrap();
+        let id = register.marks.keys().next().unwrap().clone();
+        let marks = preflight(journal.path(), std::slice::from_ref(&id)).unwrap();
+        decline(journal.path(), &id).unwrap();
+        let policy = Policy {
+            default_rule: crate::Rule {
+                anchor: crate::Anchor::Captured,
+                period: Some(crate::Days(1)),
+                priority: 0,
+            },
+            enabled: true,
+            ..Policy::default()
+        };
+        let today = NaiveDate::from_ymd_opt(2026, 8, 6).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap();
+        let mut register_errors = Vec::new();
+        let outcome = remove_marked(
+            journal.path(),
+            &marks,
+            &policy,
+            today,
+            now,
+            "2026-08-06T00:00:00Z",
+            &mut register_errors,
+        );
+
+        assert!(raw.exists());
+        assert!(register_errors.is_empty());
+        assert_eq!(outcome.targets.len(), 1);
+        assert_eq!(outcome.targets[0].removed, Vec::new());
+        assert_eq!(outcome.targets[0].not_removed.len(), 1);
+        assert_eq!(
+            outcome.targets[0].not_removed[0].reason,
+            NO_LONGER_ON_REMOVAL_LIST
+        );
     }
 }

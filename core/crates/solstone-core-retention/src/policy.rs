@@ -39,6 +39,7 @@
 //! priority decides between rules; nothing is derived from rule shape.
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 /// A duration in whole days. Zero means forever.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -248,6 +249,142 @@ impl Policy {
     }
 }
 
+/// Project the journal retention object into the policy the removal engine evaluates.
+///
+/// An unrepresentable period becomes no period, which keeps recordings forever and is
+/// therefore safer than choosing a finite duration. The minimum-age floor has the
+/// opposite retaining direction: a larger floor keeps recordings longer, so a
+/// fractional or oversized numeric floor rounds upward and saturates at the largest
+/// representable whole-day value.
+pub fn policy_from_retention(retention: &Map<String, Value>) -> Policy {
+    let per_stream = retention
+        .get("per_stream")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(name, value)| {
+            value.as_object().map(|stream| {
+                (
+                    name.clone(),
+                    rule_from_retention(
+                        stream.get("raw_media").and_then(Value::as_str),
+                        stream.get("raw_media_days"),
+                    ),
+                )
+            })
+        })
+        .collect();
+    Policy {
+        default_rule: rule_from_retention(
+            retention.get("raw_media").and_then(Value::as_str),
+            retention.get("raw_media_days"),
+        ),
+        per_stream,
+        minimum_age: minimum_age(retention.get("raw_media_minimum_days")),
+        enabled: true,
+    }
+}
+
+/// Whether at least one configured rule can release raw media.
+pub fn policy_would_release(policy: &Policy) -> bool {
+    policy.default_rule.period.is_some()
+        || policy
+            .per_stream
+            .iter()
+            .any(|(_, rule)| rule.period.is_some())
+}
+
+fn rule_from_retention(mode: Option<&str>, days: Option<&Value>) -> Rule {
+    match mode {
+        Some("days") => Rule {
+            anchor: Anchor::Captured,
+            period: period(days),
+            priority: 0,
+        },
+        Some("processed") => Rule {
+            anchor: Anchor::Processed,
+            period: Some(Days(0)),
+            priority: 0,
+        },
+        _ => Rule::keep(),
+    }
+}
+
+fn period(value: Option<&Value>) -> Option<Days> {
+    let ParsedDays::Integer(days) = parse_days(value)? else {
+        return None;
+    };
+    (days > 0).then(|| Days(saturating_u32(days)))
+}
+
+fn minimum_age(value: Option<&Value>) -> Days {
+    match parse_days(value) {
+        Some(ParsedDays::Integer(days) | ParsedDays::Fractional(days)) if days > 0 => {
+            Days(saturating_u32(days))
+        }
+        _ => Days(0),
+    }
+}
+
+fn saturating_u32(days: i64) -> u32 {
+    u32::try_from(days).unwrap_or(u32::MAX)
+}
+
+enum ParsedDays {
+    Integer(i64),
+    Fractional(i64),
+}
+
+fn parse_days(value: Option<&Value>) -> Option<ParsedDays> {
+    match value? {
+        Value::Bool(value) => Some(ParsedDays::Integer(i64::from(*value))),
+        Value::Number(number) => number
+            .as_i64()
+            .map(ParsedDays::Integer)
+            .or_else(|| {
+                number
+                    .as_u64()
+                    .map(|days| ParsedDays::Integer(i64::try_from(days).unwrap_or(i64::MAX)))
+            })
+            .or_else(|| number.as_f64().and_then(parse_float_days)),
+        Value::String(value) => parse_integer_string(value).map(ParsedDays::Integer),
+        Value::Null | Value::Array(_) | Value::Object(_) => None,
+    }
+}
+
+fn parse_integer_string(value: &str) -> Option<i64> {
+    let value = value.trim();
+    if let Ok(days) = value.parse::<i64>() {
+        return Some(days);
+    }
+    let (negative, digits) = if let Some(digits) = value.strip_prefix('-') {
+        (true, digits)
+    } else {
+        (false, value.strip_prefix('+').unwrap_or(value))
+    };
+    (!digits.is_empty() && digits.bytes().all(|digit| digit.is_ascii_digit()))
+        .then_some(if negative { i64::MIN } else { i64::MAX })
+}
+
+fn parse_float_days(days: f64) -> Option<ParsedDays> {
+    if !days.is_finite() {
+        return None;
+    }
+    let rounded = days.ceil();
+    let rounded = if rounded >= i64::MAX as f64 {
+        i64::MAX
+    } else if rounded <= i64::MIN as f64 {
+        i64::MIN
+    } else {
+        rounded as i64
+    };
+    if days.fract() == 0.0 {
+        Some(ParsedDays::Integer(rounded))
+    } else {
+        Some(ParsedDays::Fractional(rounded))
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -258,6 +395,7 @@ impl Policy {
 )]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn armed(default_rule: Rule) -> Policy {
         Policy {
@@ -265,6 +403,115 @@ mod tests {
             enabled: true,
             ..Policy::default()
         }
+    }
+
+    fn retention(value: Value) -> Map<String, Value> {
+        value.as_object().cloned().unwrap()
+    }
+
+    #[test]
+    fn journal_retention_projection_handles_every_duration_shape() {
+        for (value, period, minimum_age) in [
+            (json!(7), Some(7), 7),
+            (json!(-7), None, 0),
+            (json!(0), None, 0),
+            (json!(7.5), None, 8),
+            (json!(-7.5), None, 0),
+            (json!(true), Some(1), 1),
+            (json!(false), None, 0),
+            (json!("30"), Some(30), 30),
+            (json!(" 30 "), Some(30), 30),
+            (json!("ninety"), None, 0),
+            (Value::Null, None, 0),
+            (json!([]), None, 0),
+            (json!({}), None, 0),
+            (json!(u64::MAX), Some(u32::MAX), u32::MAX),
+            (json!("999999999999999999999"), Some(u32::MAX), u32::MAX),
+        ] {
+            let policy = policy_from_retention(&retention(json!({
+                "raw_media": "days",
+                "raw_media_days": value.clone(),
+                "raw_media_minimum_days": value,
+            })));
+            assert_eq!(policy.default_rule.period.map(|days| days.0), period);
+            assert_eq!(policy.minimum_age, Days(minimum_age));
+        }
+
+        let policy = policy_from_retention(&retention(json!({"raw_media": "days"})));
+        assert_eq!(policy.default_rule, Rule::keep());
+        assert_eq!(policy.minimum_age, Days(0));
+    }
+
+    #[test]
+    fn journal_retention_projection_preserves_modes_and_stream_overrides() {
+        let processed = policy_from_retention(&retention(json!({"raw_media": "processed"})));
+        assert_eq!(
+            processed.default_rule,
+            Rule {
+                anchor: Anchor::Processed,
+                period: Some(Days(0)),
+                priority: 0,
+            }
+        );
+
+        for mode in [
+            json!("keep"),
+            json!("unexpected"),
+            json!(true),
+            Value::Null,
+            json!([]),
+            json!({}),
+        ] {
+            let policy = policy_from_retention(&retention(json!({"raw_media": mode})));
+            assert_eq!(policy.default_rule, Rule::keep());
+        }
+
+        let policy = policy_from_retention(&retention(json!({})));
+        assert_eq!(policy.default_rule, Rule::keep());
+
+        let policy = policy_from_retention(&retention(json!({
+            "raw_media": "keep",
+            "per_stream": {
+                "audio": {"raw_media": "days", "raw_media_days": 7.5},
+                "screen": {"raw_media": "processed"},
+                "ignored": true,
+            },
+        })));
+        assert_eq!(policy.per_stream.len(), 2);
+        assert_eq!(policy.rule_for("audio"), Rule::keep());
+        assert_eq!(
+            policy.rule_for("screen"),
+            Rule {
+                anchor: Anchor::Processed,
+                period: Some(Days(0)),
+                priority: 0,
+            }
+        );
+
+        let policy = policy_from_retention(&retention(json!({
+            "raw_media": "days",
+            "raw_media_days": 7,
+            "per_stream": [],
+        })));
+        assert!(policy.per_stream.is_empty());
+    }
+
+    #[test]
+    fn journal_retention_projection_identifies_releasing_rules() {
+        let keep = policy_from_retention(&retention(json!({"raw_media": "keep"})));
+        assert!(!policy_would_release(&keep));
+
+        let days = policy_from_retention(&retention(json!({
+            "raw_media": "days",
+            "raw_media_days": 1,
+        })));
+        assert!(policy_would_release(&days));
+
+        let stream = policy_from_retention(&retention(json!({
+            "raw_media": "keep",
+            "per_stream": {"audio": {"raw_media": "processed"}},
+        })));
+        assert!(policy_would_release(&stream));
     }
 
     #[test]

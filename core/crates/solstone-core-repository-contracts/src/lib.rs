@@ -8,6 +8,12 @@ mod ci_gate_purity;
 #[path = "contracts/journal_io_deny_policy.rs"]
 mod journal_io_deny_policy;
 #[cfg(test)]
+#[path = "contracts/retention_client_contracts.rs"]
+mod retention_client_contracts;
+#[cfg(test)]
+#[path = "contracts/retention_projection_architecture.rs"]
+mod retention_projection_architecture;
+#[cfg(test)]
 #[path = "contracts/schedule_read_only_architecture.rs"]
 mod schedule_read_only_architecture;
 #[cfg(test)]

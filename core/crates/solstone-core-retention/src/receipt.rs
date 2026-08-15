@@ -123,7 +123,9 @@ pub struct Outcome {
     /// length.
     pub targets: Vec<TargetOutcome>,
     /// The run stopped before reaching every target. The rows above are still
-    /// accurate as far as they go.
+    /// accurate as far as they go. A row describes a target the run reached;
+    /// `halted` describes the target it could not start and every requested
+    /// target after it.
     pub halted: Option<RunHalt>,
 }
 
