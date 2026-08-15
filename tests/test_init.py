@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from solstone.apps.observer.routes import ACTIVE_THRESHOLD_MS, STALE_THRESHOLD_MS
+from solstone.apps.observer.presentation import ACTIVE_THRESHOLD_MS, STALE_THRESHOLD_MS
 from solstone.apps.observer.utils import save_observer
 from solstone.apps.thinking.copy import CONFIDENTIAL_LANE_DETAIL, LANES
 from solstone.convey import create_app
@@ -609,33 +609,36 @@ class TestInitObservers:
             created_at=30,
             last_seen=current_now - 600_000,
         )
+        _save_test_observer(
+            "dddd0000",
+            "revoked-observer",
+            created_at=40,
+            last_seen=current_now - 5_000,
+            revoked=True,
+        )
         config = _read_config(journal_copy)
         config["setup"] = {"completed_at": current_now}
         seed_journal_config(config, journal_copy)
 
-        api_resp = fresh_client.get("/app/observer/api/list")
         init_resp = fresh_client.get("/init/observers")
-        assert api_resp.status_code == 200
         assert init_resp.status_code == 200
-
-        api_by_key = {
-            observer["prefix"]: observer
-            for observer in api_resp.get_json()["observers"]
-            if not observer["revoked"]
+        body = init_resp.get_json()
+        assert body["thresholds"] == {
+            "active_ms": ACTIVE_THRESHOLD_MS,
+            "stale_ms": STALE_THRESHOLD_MS,
         }
-        init_by_key = {
-            observer["prefix"]: observer
-            for observer in init_resp.get_json()["observers"]
-        }
-
-        assert set(init_by_key) == set(api_by_key)
-        for key_prefix, init_observer in init_by_key.items():
-            api_observer = api_by_key[key_prefix]
-            assert init_observer["state"] == api_observer["state"]
-            assert init_observer["group"] == api_observer["group"]
-            assert init_observer["label"] == api_observer["label"]
-            assert init_observer["clock_skew"] == api_observer["clock_skew"]
-            assert abs(init_observer["elapsed_ms"] - api_observer["elapsed_ms"]) < 200
+        observers = body["observers"]
+        assert [observer["prefix"] for observer in observers] == [
+            "cccc0000",
+            "bbbb0000",
+            "aaaa0000",
+        ]
+        assert [observer["created_at"] for observer in observers] == [30, 20, 10]
+        assert [observer["state"] for observer in observers] == [
+            "disconnected",
+            "stale",
+            "connected",
+        ]
 
 
 class TestInitFinalize:

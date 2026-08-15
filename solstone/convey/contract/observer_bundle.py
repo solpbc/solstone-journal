@@ -20,7 +20,7 @@ from solstone.convey.contract.assemble import CALLOSUM_REGISTRY, build_document
 from solstone.observe import protocol
 
 INITIAL_BUNDLE_SEMVER = "1.0.0"
-BUNDLE_SEMVER = "6.0.0"
+BUNDLE_SEMVER = "7.0.0"
 GENERATOR_IDENTITY = "solstone.convey.contract.observer_bundle.v1"
 BUNDLE_SCHEMA_IDENTITY = "solstone.observer-client-contract-bundle.schema.v1"
 SCHEMA_DIALECT_URI = "https://json-schema.org/draft/2020-12/schema"
@@ -604,8 +604,8 @@ def build_consumer_audit_payload() -> dict[str, Any]:
                 ),
                 "status": "adoption_blocker",
                 "verified_citations": [
-                    "solstone/apps/settings/routes.py:86-89",
-                    "solstone/apps/settings/routes.py:640-641",
+                    "core/crates/solstone-core-settings-web/src/lib.rs:117-121",
+                    "core/crates/solstone-core-settings-web/src/router_contracts.rs:1-36",
                 ],
             },
             {
@@ -620,7 +620,7 @@ def build_consumer_audit_payload() -> dict[str, Any]:
                     "solstone/convey/sol_initiated/settings.py:41-42",
                     "solstone/convey/sol_initiated/settings.py:61-63",
                     "solstone/convey/sol_initiated/settings.py:211-213",
-                    "solstone/apps/settings/tests/test_sol_voice_routes.py:58",
+                    "core/crates/solstone-core-settings-web/src/build_contract.rs:29-37",
                 ],
             },
         ],

@@ -149,41 +149,6 @@ def test_malformed_existing_doc_raises_and_is_not_replaced(
     assert config_path.read_bytes() == before
 
 
-def test_settings_lock_timeout_returns_503_config_busy_without_effects(
-    tmp_path, monkeypatch
-) -> None:
-    monkeypatch.setenv("SOLSTONE_JOURNAL", str(tmp_path))
-    monkeypatch.setenv("SOL_SKIP_SUPERVISOR_CHECK", "1")
-    seed_journal_config(
-        {
-            "setup": {"completed_at": 1},
-            "journal": {"name": "Before"},
-            "env": {},
-        },
-        tmp_path,
-    )
-    import solstone.apps.settings.routes as settings_routes
-
-    logs: list[object] = []
-    timeout = LockTimeout(path=Path("busy.lock"), timeout=0.01)
-    monkeypatch.setattr(
-        settings_routes,
-        "mutate_journal_config",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(timeout),
-    )
-    monkeypatch.setattr(settings_routes, "log_app_action", logs.append)
-
-    app = create_app(str(tmp_path))
-    app.config["TESTING"] = True
-    response = app.test_client().put(
-        "/app/settings/api/config",
-        json={"section": "journal", "data": {"name": "After"}},
-    )
-
-    assert response.status_code == 503
-    assert response.get_json()["reason_code"] == CONFIG_BUSY.code
-    assert logs == []
-    assert read_journal_config(tmp_path)["journal"]["name"] == "Before"
 
 
 def test_tools_call_lock_timeout_exits_nonzero_with_retry_message(

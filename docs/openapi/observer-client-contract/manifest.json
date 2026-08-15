@@ -14,7 +14,7 @@
     }
   ],
   "bundle_schema_identity": "solstone.observer-client-contract-bundle.schema.v1",
-  "bundle_semver": "6.0.0",
+  "bundle_semver": "7.0.0",
   "component_closure": [
     "CallosumEvent",
     "Error",
@@ -34,7 +34,7 @@
   "files": [
     {
       "path": "consumer-audit.json",
-      "sha256": "f3562062aeb971c9dc95ae5d14333566b28431758bcd232c33c093757df7bc18"
+      "sha256": "41440f44de59c94cbc780c5ba44e7059b1e725f0a0a7a04aaafdafb0b8c47a07"
     },
     {
       "path": "fixtures/wire-behavior.json",
@@ -42,7 +42,7 @@
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "82082baa78f2926aebe15c8b3df1994f50ff0e3f12519253aa45f1353974f59c"
+      "sha256": "8f01fedc5622e2653ddbb090dbc42600c4b4258e35df411631f0ca102a2e7b20"
     },
     {
       "path": "vectors.json",
@@ -55,7 +55,7 @@
       "id": "bundle.projection_builder",
       "path": "solstone/convey/contract/observer_bundle.py",
       "role": "projection_builder",
-      "sha256": "a033e1b577e2ff7f019c5ab1bdb537bfe9507863d682cc7be202328a46076a0f"
+      "sha256": "fcd6c49b6aed861303c2debb54206d9207a922bbf197ab3a76001fd147b032c9"
     },
     {
       "id": "bundle.recording",
@@ -103,13 +103,13 @@
       "id": "openapi.assembler",
       "path": "solstone/convey/contract/assemble.py",
       "role": "openapi_source",
-      "sha256": "96ccc955adebc6e27b2da751ff6cbfe17518962a8566abe6cf6368779f4cd7b7"
+      "sha256": "03f547c2d14d282f4ecf1c30ae754b241adbcf6ace0aae3298bd3ea27f9624a6"
     },
     {
       "id": "producer.chat_routes",
       "path": "solstone/convey/chat.py",
       "role": "producer",
-      "sha256": "5970c56b0b718bf50c48d09a1f4fc9067198aff8771dc2c3899f918d05a36302"
+      "sha256": "3da605052e598b8959277c255c3c5c20db15431477f9ba566c8f5a1cf589b7da"
     },
     {
       "id": "producer.chat_sol_initiated_copy",
@@ -133,7 +133,7 @@
       "id": "producer.observer_routes",
       "path": "solstone/apps/observer/routes.py",
       "role": "producer",
-      "sha256": "cb218d5568784aceee22b5cb1fcbc626ef37211b991f9417518e13c1cc37fd58"
+      "sha256": "a5e28c034fd68b1ead420ba8916c1eda883e019fcb9e23e1b642aa7f0856dfe8"
     },
     {
       "id": "producer.observer_utils",
@@ -151,13 +151,13 @@
       "id": "producer.root_sse",
       "path": "solstone/convey/root.py",
       "role": "producer",
-      "sha256": "95df9af5ede291289b1a2aaa4f53ce154f24a8d1b09a314d44234d9c17eb66b1"
+      "sha256": "7286e8836eec5c957f137e8173e314deabda0f71f453fa27a34432a33cd4128f"
     },
     {
       "id": "reason_codes",
       "path": "solstone/convey/reasons.py",
       "role": "vocabulary_source",
-      "sha256": "9959ecbaf168a157f20c71f80a90ad3de46bcd2297e11b29ee5c5e8166de9a63"
+      "sha256": "3ca67b324d3993d8fe0eedb05dcb0f88716deaff80b5a68611dae3ebc37b7a13"
     }
   ],
   "observer_protocol_version": 2,
@@ -266,7 +266,6 @@
           "progress",
           "text_delta",
           "tool_budget_exhausted",
-          "warning",
           "budget_escalation"
         ],
         "importer": [

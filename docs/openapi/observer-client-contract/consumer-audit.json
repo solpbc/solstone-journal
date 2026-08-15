@@ -256,8 +256,8 @@
       "rationale": "Linux reads /api/sol_voice, but the journal route is /app/settings/api/sol_voice.",
       "status": "adoption_blocker",
       "verified_citations": [
-        "solstone/apps/settings/routes.py:86-89",
-        "solstone/apps/settings/routes.py:640-641"
+        "core/crates/solstone-core-settings-web/src/lib.rs:117-121",
+        "core/crates/solstone-core-settings-web/src/router_contracts.rs:1-36"
       ]
     },
     {
@@ -269,7 +269,7 @@
         "solstone/convey/sol_initiated/settings.py:41-42",
         "solstone/convey/sol_initiated/settings.py:61-63",
         "solstone/convey/sol_initiated/settings.py:211-213",
-        "solstone/apps/settings/tests/test_sol_voice_routes.py:58"
+        "core/crates/solstone-core-settings-web/src/build_contract.rs:29-37"
       ]
     }
   ]

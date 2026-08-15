@@ -151,7 +151,7 @@ def _isolate_os_environ():
     Production code mutates os.environ by raw assignment (not monkeypatch): the
     supervisor sets ``SOL_SUPERVISOR_SPAWNED`` and rewrites ``PATH``
     (``supervisor.py``), talents set ``SOL_SEGMENT`` (``talents.py``), and
-    settings write provider keys (``settings/routes.py``). When a test exercises
+    native Settings commands write provider keys. When a test exercises
     one of those paths the change persists into every later test in the same
     worker — the root cause of the ``SOL_SUPERVISOR_SPAWNED`` flake and the
     reason ~20 test files defensively ``delenv`` it. Snapshotting here makes

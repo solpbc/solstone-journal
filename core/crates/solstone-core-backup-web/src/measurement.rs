@@ -37,9 +37,23 @@ fn device_geometry(journal_root: &Path) -> DeviceGeometry {
             total_bytes: None,
         };
     };
+    // `statvfs`'s BLOCK COUNTS are u64 on Linux and u32 on Darwin (the sizes
+    // are u64 on both), so these products only compile on Linux without a
+    // widening cast -- and this one crate's break took the WHOLE solstone-core
+    // build down on macOS, not just its own tests. The allow is required
+    // because the lint is platform-blind: on Linux it sees u64 -> u64 and
+    // cannot see that the same cast is load-bearing on Darwin. Same class as
+    // `solstone-core-import-sources::archive`, `solstone-core::check` and
+    // `solstone-core-local::install::fit_report::free_bytes`; the first two
+    // escape the lint through their expression shape, which is luck rather
+    // than a pattern to copy.
+    #[allow(clippy::unnecessary_cast)]
+    let free_blocks = stats.blocks_free() as u64;
+    #[allow(clippy::unnecessary_cast)]
+    let total_blocks = stats.blocks() as u64;
     DeviceGeometry {
-        free_bytes: stats.blocks_free().checked_mul(fragment_size),
-        total_bytes: stats.blocks().checked_mul(fragment_size),
+        free_bytes: free_blocks.checked_mul(fragment_size),
+        total_bytes: total_blocks.checked_mul(fragment_size),
     }
 }
 

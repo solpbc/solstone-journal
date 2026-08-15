@@ -22,7 +22,8 @@ mod production_processes;
 use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPECS};
 use solstone_core_cli::{
     CHECK_HELP, CHECK_USAGE, DESCRIBE_USAGE, HEALTH_USAGE, INSTALL_MODELS_HELP,
-    INSTALL_MODELS_USAGE, SCHEDULE_USAGE, SPL_USAGE, TOP_USAGE,
+    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, SCHEDULE_USAGE, SPL_USAGE,
+    TOP_USAGE,
 };
 
 const POISON_INTERPRETER: &str = r#"#!/bin/sh
@@ -34,6 +35,7 @@ const STORAGE_OPS_REFERENCE_GRAMMAR: &str =
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const CHECK_USAGE_ANCHOR: &[u8] = CHECK_USAGE.as_bytes();
 const INSTALL_MODELS_USAGE_ANCHOR: &[u8] = INSTALL_MODELS_USAGE.as_bytes();
+const INSTALL_PROVIDER_USAGE_ANCHOR: &[u8] = INSTALL_PROVIDER_USAGE.as_bytes();
 const CONVEY_USAGE_ANCHOR: &[u8] = b"usage: journal convey [-h] --port PORT [-v] [-d]\n";
 const RESTART_CONVEY_USAGE_ANCHOR: &[u8] =
     b"usage: journal restart-convey [-h] [--timeout TIMEOUT] [-v] [-d]\n";
@@ -344,6 +346,17 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: Some(INSTALL_MODELS_USAGE_ANCHOR),
+    },
+    // Exit 2 with the verb's own usage on stderr, never the top-level 64 --
+    // which is the code the binary emits for a verb the sibling does not have
+    // at all, so a row registered there certifies nothing. `--nonsense` also
+    // stops at argument parsing, before the supervisor gate this verb runs, so
+    // the probe does not depend on whether a journal service is up.
+    Probe {
+        token: "install-provider",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(INSTALL_PROVIDER_USAGE_ANCHOR),
     },
     // supervisor and start were deliberately unprobed until a verb-level usage
     // path existed for them. 1d1523b4b added both tokens to NATIVE_PROCESS_SPECS
@@ -1812,12 +1825,13 @@ fn native_storage_ops_help_matches_reference_grammar_through_dispatcher() {
 }
 
 #[test]
-fn native_check_and_install_models_help_match_exported_cli_constants_through_dispatcher() {
+fn native_install_verbs_help_matches_exported_cli_constants_through_dispatcher() {
     let harness = Harness::new();
     let context = harness.context();
     for (token, expected_help) in [
         ("check", CHECK_HELP),
         ("install-models", INSTALL_MODELS_HELP),
+        ("install-provider", INSTALL_PROVIDER_HELP),
     ] {
         for argv in [["--help"], ["-h"]] {
             let output = run_dispatcher_with_output(&context, token, &argv)
@@ -1831,12 +1845,13 @@ fn native_check_and_install_models_help_match_exported_cli_constants_through_dis
 }
 
 #[test]
-fn native_check_and_install_models_malformed_argv_use_exported_usage_through_dispatcher() {
+fn native_install_verbs_malformed_argv_use_exported_usage_through_dispatcher() {
     let harness = Harness::new();
     let context = harness.context();
     for (token, expected_usage) in [
         ("check", CHECK_USAGE),
         ("install-models", INSTALL_MODELS_USAGE),
+        ("install-provider", INSTALL_PROVIDER_USAGE),
     ] {
         let output = run_dispatcher_with_output(&context, token, &["--nonsense"])
             .expect("run malformed native argv through journal dispatcher");
@@ -1986,6 +2001,59 @@ fn native_check_json_routes_without_python_and_has_contractual_top_level_keys() 
         .copied()
         .collect::<BTreeSet<_>>();
     assert_eq!(actual_keys, expected_keys);
+}
+
+/// The registered probe for `install-provider` is a bad-argv probe, so it exits
+/// inside argument parsing and proves nothing about the verb's own body. These
+/// three argv sets each run the real body -- the supervisor gate reads the
+/// journal's recorded Convey port, and the name arm runs past it -- and none of
+/// them can reach a fetch, so the guard stays hermetic.
+#[test]
+fn native_install_provider_bodies_never_reach_a_poisoned_interpreter() {
+    let harness = Harness::new();
+    let context = harness.context();
+    prove_poison_interpreters_live(&context);
+    let _ = fs::remove_file(context.poison_marker);
+
+    // Stack down, interactive: the owner line on stderr and exit 1.
+    let down =
+        run_dispatcher_with_output_and_environment(&context, "install-provider", &["local"], &[])
+            .expect("run native install-provider with the stack down");
+    assert_eq!(down.status.code(), Some(1));
+    assert_eq!(
+        down.stderr,
+        b"sol: solstone isn't running. Start it with 'journal up' and retry.\n"
+    );
+    assert!(down.stdout.is_empty());
+    assert!(!context.poison_marker.exists(), "supervisor gate");
+
+    // Stack down, supervisor-spawned: exit 75 and not one byte of stderr.
+    let spawned = run_dispatcher_with_output_and_environment(
+        &context,
+        "install-provider",
+        &["parakeet"],
+        &[("SOL_SUPERVISOR_SPAWNED", "1")],
+    )
+    .expect("run native install-provider as a spawned child");
+    assert_eq!(spawned.status.code(), Some(75));
+    assert!(spawned.stderr.is_empty(), "{:?}", spawned.stderr);
+    assert!(!context.poison_marker.exists(), "spawned refusal");
+
+    // Past the gate, into the name arm: exit 2 with the reference's quoting.
+    let unknown = run_dispatcher_with_output_and_environment(
+        &context,
+        "install-provider",
+        &["bogus"],
+        &[("SOL_SKIP_SUPERVISOR_CHECK", "1")],
+    )
+    .expect("run native install-provider past the gate");
+    assert_eq!(unknown.status.code(), Some(2));
+    assert_eq!(
+        unknown.stderr,
+        b"unsupported provider 'bogus'; supported: local, parakeet\n"
+    );
+    assert!(unknown.stdout.is_empty());
+    assert!(!context.poison_marker.exists(), "unknown provider arm");
 }
 
 #[test]

@@ -131,6 +131,10 @@ solstone-core-steward-prune.workspace = true
 solstone-core-transfer.workspace = true
 solstone-core-transcribe.workspace = true
 solstone-core-streams-cli.workspace = true
+# Owns the supervisor-availability contract every native journal-host verb
+# gates on. Already a transitive production dependency through segment-cli;
+# this edge is what keeps install-provider from re-deriving a fourth copy.
+solstone-core-segment.workspace = true
 solstone-core-segment-cli.workspace = true
 solstone-core-journal-stats-cli.workspace = true
 solstone-core-talent-cli.workspace = true
@@ -152,7 +156,6 @@ rustls.workspace = true
 rusqlite.workspace = true
 sha2.workspace = true
 solstone-core-npy.workspace = true
-solstone-core-segment.workspace = true
 spl-core.workspace = true
 tempfile = "3.24.0"
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["handshake"] }

@@ -173,6 +173,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         preset_argv: &["install-models"],
     },
     NativeProcessSpec {
+        token: "install-provider",
+        binary: "solstone-core",
+        preset_argv: &["install-provider"],
+    },
+    NativeProcessSpec {
         token: "grab",
         binary: "solstone-core",
         preset_argv: &["grab"],

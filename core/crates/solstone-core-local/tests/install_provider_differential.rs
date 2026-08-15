@@ -71,11 +71,18 @@ fn locate_solstone_core_binary() -> PathBuf {
     panic!("cargo build did not report a solstone-core binary artifact");
 }
 
+/// Both sides gate on the journal service before doing anything else, and a
+/// temp journal has no recorded Convey port -- so without this every case below
+/// would compare two supervisor refusals and pass while asserting nothing about
+/// the install grammar it names. The harness establishes the condition rather
+/// than the expectations being relaxed to accommodate it; `supervisor_gate_*`
+/// covers the gate itself.
 fn native(binary: &Path, journal: &Path, name: &str) -> Output {
     Command::new(binary)
         .args(["install-provider", name])
         .current_dir(repository_root())
         .env("SOLSTONE_JOURNAL", journal)
+        .env("SOL_SKIP_SUPERVISOR_CHECK", "1")
         .output()
         .expect("run native install-provider")
 }
@@ -85,8 +92,39 @@ fn reference(journal: &Path, name: &str) -> Output {
         .args(["-m", "solstone.think.install_provider", name])
         .current_dir(repository_root())
         .env("SOLSTONE_JOURNAL", journal)
+        .env("SOL_SKIP_SUPERVISOR_CHECK", "1")
         .output()
         .expect("run Python install-provider")
+}
+
+fn native_gated(binary: &Path, journal: &Path, name: &str, spawned: bool) -> Output {
+    let mut command = Command::new(binary);
+    command
+        .args(["install-provider", name])
+        .current_dir(repository_root())
+        .env("SOLSTONE_JOURNAL", journal)
+        .env_remove("SOL_SKIP_SUPERVISOR_CHECK");
+    if spawned {
+        command.env("SOL_SUPERVISOR_SPAWNED", "1");
+    } else {
+        command.env_remove("SOL_SUPERVISOR_SPAWNED");
+    }
+    command.output().expect("run native install-provider")
+}
+
+fn reference_gated(journal: &Path, name: &str, spawned: bool) -> Output {
+    let mut command = Command::new(python());
+    command
+        .args(["-m", "solstone.think.install_provider", name])
+        .current_dir(repository_root())
+        .env("SOLSTONE_JOURNAL", journal)
+        .env_remove("SOL_SKIP_SUPERVISOR_CHECK");
+    if spawned {
+        command.env("SOL_SUPERVISOR_SPAWNED", "1");
+    } else {
+        command.env_remove("SOL_SUPERVISOR_SPAWNED");
+    }
+    command.output().expect("run Python install-provider")
 }
 
 #[cfg(target_os = "linux")]
@@ -147,6 +185,35 @@ fn stage_parakeet(journal: &Path, cpu_executable: bool) {
         .unwrap();
         manifest::write_manifest(&manifest::artifact_manifest_path(root), &manifest).unwrap();
     }
+}
+
+#[test]
+fn supervisor_gate_refuses_before_the_provider_name_matches_python() {
+    // The gate runs after argument parsing and before the name check, so an
+    // unsupported name still exits at the gate rather than at the name.
+    let journal = tempfile::tempdir().unwrap();
+    let binary = locate_solstone_core_binary();
+    let native = native_gated(&binary, journal.path(), "bogus", false);
+    let python = reference_gated(journal.path(), "bogus", false);
+    assert_eq!(native.status.code(), Some(1));
+    assert_eq!(native.status.code(), python.status.code());
+    assert_eq!(native.stdout, python.stdout);
+    assert_eq!(native.stderr, python.stderr);
+}
+
+#[test]
+fn supervisor_gate_stays_silent_for_a_spawned_child_matching_python() {
+    // A spawned child gets exit 75 and ZERO bytes of stderr; a spurious line
+    // here lands in the supervisor's own spawn path.
+    let journal = tempfile::tempdir().unwrap();
+    let binary = locate_solstone_core_binary();
+    let native = native_gated(&binary, journal.path(), "parakeet", true);
+    let python = reference_gated(journal.path(), "parakeet", true);
+    assert_eq!(native.status.code(), Some(75));
+    assert_eq!(native.status.code(), python.status.code());
+    assert!(native.stderr.is_empty(), "{:?}", native.stderr);
+    assert_eq!(native.stderr, python.stderr);
+    assert_eq!(native.stdout, python.stdout);
 }
 
 #[test]
