@@ -11,6 +11,7 @@ mod context;
 mod daily;
 mod day;
 mod dispatch;
+mod dry_run;
 mod flush;
 mod gate;
 mod helpers;
@@ -46,7 +47,6 @@ enum CliError {
     SupervisorSpawnedUnavailable,
     SupervisorUnavailable,
     InvalidDay { message: String },
-    Unavailable,
 }
 
 pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
@@ -157,14 +157,17 @@ where
         );
         validate(&parsed, cpu_count, uses_local, endpoint, bundled_slots)?;
 
-        if parsed.dry_run {
-            // The planner lands after all native run modes.
-            return Err(CliError::Unavailable);
-        }
-
         let now_ms = now_ms();
         let context =
             context::ThinkContext::new(journal, selected_day.clone(), day_dir.clone(), now_ms);
+        if parsed.dry_run {
+            return Ok(CliRun {
+                stdout: dry_run::run(&context, &parsed, default_segment_workers)
+                    .map_err(|message| CliError::InvalidDay { message })?,
+                stderr: String::new(),
+                exit_code: 0,
+            });
+        }
         let timeout = (!parsed.no_timeout).then_some(std::time::Duration::from_secs(610));
         if parsed.cadence {
             let configs = cadence::configured(&context)
@@ -352,11 +355,6 @@ where
             stdout: String::new(),
             stderr: format!("journal think: {message}\n"),
             exit_code: 1,
-        },
-        Err(CliError::Unavailable) => CliRun {
-            stdout: String::new(),
-            stderr: "journal think: native run mode is unavailable in this build\n".to_owned(),
-            exit_code: 69,
         },
     }
 }
@@ -645,6 +643,126 @@ mod tests {
     fn run(args: &[&str]) -> CliRun {
         let journal = tempdir().expect("journal");
         run_at(journal.path(), args)
+    }
+
+    /// The oracle harness never executes an argv read verbatim from the frozen
+    /// fixture.  Scenario A deliberately omits this flag, so executing its
+    /// header would otherwise start a real run mode.
+    fn oracle_dry_run_argv(header: &[&str]) -> Result<Vec<String>, &'static str> {
+        if header.contains(&"--dry-run") {
+            return Err("fixture argv must not supply --dry-run");
+        }
+        let mut argv = header
+            .iter()
+            .map(|argument| (*argument).to_owned())
+            .collect::<Vec<_>>();
+        argv.push("--dry-run".to_owned());
+        Ok(argv)
+    }
+
+    fn oracle_blocks() -> Vec<(usize, Vec<String>, String)> {
+        let fixture = include_str!("../../../fixtures/think-dry-run-reference-oracle.txt");
+        let lines = fixture.lines().collect::<Vec<_>>();
+        let mut blocks = Vec::new();
+        let mut line = 0;
+        while line < lines.len() {
+            let Some(header) = lines[line].strip_prefix("### journal think") else {
+                line += 1;
+                continue;
+            };
+            let header_line = line + 1;
+            let argv = header
+                .split_whitespace()
+                // The fixture documents that a header may contain this flag,
+                // but only this harness is allowed to append it to execution.
+                .filter(|argument| *argument != "--dry-run")
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>();
+            let mut stdout = String::new();
+            line += 1;
+            while line < lines.len() && lines[line] != "(exit 0)" {
+                stdout.push_str(lines[line]);
+                stdout.push('\n');
+                line += 1;
+            }
+            assert!(line < lines.len(), "oracle block must state its exit");
+            blocks.push((header_line, argv, stdout));
+            line += 1;
+        }
+        blocks
+    }
+
+    fn seed_oracle_case(journal: &Path, line: usize, now_ms: i64) {
+        match line {
+            103 | 128 | 140 => {
+                for facet in ["personal", "work"] {
+                    let declaration = journal.join("facets").join(facet).join("facet.json");
+                    fs::create_dir_all(declaration.parent().unwrap()).unwrap();
+                    fs::write(declaration, "{}\n").unwrap();
+                }
+            }
+            196 => {
+                for (key, body) in [
+                    ("093000_600", "browser_first.jsonl"),
+                    ("141500_900", "browser_second.jsonl"),
+                ] {
+                    let segment = journal.join("chronicle/20260101").join(key);
+                    fs::create_dir_all(&segment).unwrap();
+                    fs::write(segment.join(body), "browser content\n").unwrap();
+                }
+            }
+            225 => {
+                let cadence = journal.join("health/cadence.json");
+                fs::create_dir_all(cadence.parent().unwrap()).unwrap();
+                fs::write(
+                    cadence,
+                    format!(r#"{{"steward":{now_ms},"pulse":{}}}"#, now_ms - 3_600_000),
+                )
+                .unwrap();
+            }
+            _ => {}
+        }
+    }
+
+    fn run_oracle_case(journal: &Path, header_argv: &[String], now_ms: i64) -> CliRun {
+        let borrowed = header_argv.iter().map(String::as_str).collect::<Vec<_>>();
+        let argv = oracle_dry_run_argv(&borrowed).expect("harness owns dry-run flag");
+        run_cli_with(
+            &argv,
+            journal,
+            |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+            || false,
+            || NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            move || now_ms,
+            || Some(8),
+            || (false, LocalEndpointResolution::Bundled),
+            || Some(4),
+        )
+    }
+
+    fn created_paths(root: &Path) -> BTreeSet<String> {
+        fn visit(root: &Path, path: &Path, values: &mut BTreeSet<String>) {
+            let Ok(entries) = fs::read_dir(path) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let relative = entry
+                    .path()
+                    .strip_prefix(root)
+                    .unwrap()
+                    .display()
+                    .to_string();
+                if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                    values.insert(format!("{relative}/"));
+                    visit(root, &entry.path(), values);
+                } else {
+                    values.insert(relative);
+                }
+            }
+        }
+        let mut values = BTreeSet::new();
+        visit(root, root, &mut values);
+        values
     }
 
     fn day_keys(journal: &Path) -> BTreeSet<String> {
@@ -1832,9 +1950,9 @@ mod tests {
         };
         assert_eq!(
             base(Some(("SOL_SKIP_SUPERVISOR_CHECK", "1")), false).exit_code,
-            69
+            0
         );
-        assert_eq!(base(None, true).exit_code, 69);
+        assert_eq!(base(None, true).exit_code, 0);
         let spawned = base(Some(("SOL_SUPERVISOR_SPAWNED", "1")), false);
         assert_eq!((spawned.exit_code, spawned.stderr), (75, String::new()));
         assert_eq!(base(None, false).exit_code, 1);
@@ -1976,7 +2094,7 @@ mod tests {
     }
 
     #[test]
-    fn segment_modes_are_reachable_while_only_the_planner_is_unavailable() {
+    fn all_run_modes_are_reachable_including_the_planner() {
         assert_eq!(
             run(&["--segments", "--jobs", "0", "--segment-workers", "2"]).exit_code,
             2
@@ -1986,7 +2104,7 @@ mod tests {
             0
         );
         assert_ne!(run(&["--segment", "missing"]).exit_code, 69);
-        assert_eq!(run(&["--dry-run"]).exit_code, 69);
+        assert_eq!(run(&["--dry-run"]).exit_code, 0);
     }
 
     #[test]
@@ -2715,5 +2833,230 @@ mod tests {
         // Use-log paths derive from these ids; asserting a fake path would only
         // measure the fake, while id uniqueness is the real construction invariant.
         assert_eq!(use_ids.len(), 6);
+    }
+
+    #[test]
+    fn dry_run_oracle_replays_all_thirteen_cases_byte_for_byte() {
+        let blocks = oracle_blocks();
+        assert_eq!(
+            blocks.iter().map(|(line, _, _)| *line).collect::<Vec<_>>(),
+            vec![20, 42, 55, 68, 72, 84, 91, 97, 103, 128, 140, 196, 225]
+        );
+        assert_eq!(blocks.len(), 13);
+        assert!(oracle_dry_run_argv(&["--dry-run"]).is_err());
+        for (line, argv, expected) in blocks {
+            let journal = tempdir().unwrap();
+            let now_ms = 1_767_225_600_000;
+            seed_oracle_case(journal.path(), line, now_ms);
+            let run = run_oracle_case(journal.path(), &argv, now_ms);
+            assert_eq!(run.exit_code, 0, "oracle case at line {line}");
+            // The fixture's two declared deviations are not present in planner
+            // stdout for these cases: no usage error is rendered, and no
+            // sibling executable path is displayed.  They remain explicit
+            // fixture metadata rather than values normalised from this output.
+            assert_eq!(run.stdout, expected, "oracle case at line {line}");
+            // The captured oracle is a public, package-relative surface: its
+            // expected bytes and native replay must not disclose the temporary
+            // journal path or a host-specific executable location.
+            assert!(!expected.contains(journal.path().to_string_lossy().as_ref()));
+            assert!(
+                !run.stdout
+                    .contains(journal.path().to_string_lossy().as_ref())
+            );
+            assert!(!expected.contains("/home/"));
+        }
+    }
+
+    #[test]
+    fn dry_run_binds_success_stdout_and_exact_bootstrap_write_set_without_overwriting_partner() {
+        // The fixture's measured side effect contract (lines 153-171) is only
+        // meaningful together with successful planner stdout and exit status.
+        let journal = tempdir().unwrap();
+        let args = oracle_dry_run_argv(&["--day", "20260101"]).unwrap();
+        let first = run_cli_with(
+            &args,
+            journal.path(),
+            |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+            || false,
+            || NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            || 1_767_225_600_000,
+            || Some(8),
+            || (false, LocalEndpointResolution::Bundled),
+            || Some(4),
+        );
+        assert_eq!(first.exit_code, 0);
+        assert_eq!(first.stdout.lines().next(), Some("Day 2026-01-01"));
+        assert_eq!(
+            created_paths(journal.path()),
+            BTreeSet::from([
+                "chronicle/".to_owned(),
+                "chronicle/20260101/".to_owned(),
+                "identity/".to_owned(),
+                "identity/.identity.lock".to_owned(),
+                "identity/health.md".to_owned(),
+                "identity/history.jsonl".to_owned(),
+                "identity/partner.md".to_owned(),
+            ])
+        );
+        let partner = fs::read(journal.path().join("identity/partner.md")).unwrap();
+        let second = run_cli_with(
+            &args,
+            journal.path(),
+            |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+            || false,
+            || NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            || 1_767_225_600_000,
+            || Some(8),
+            || (false, LocalEndpointResolution::Bundled),
+            || Some(4),
+        );
+        assert_eq!(second.exit_code, 0);
+        assert_eq!(
+            fs::read(journal.path().join("identity/partner.md")).unwrap(),
+            partner
+        );
+    }
+
+    #[test]
+    fn dry_run_output_paths_are_package_relative_and_format_sensitive() {
+        // Source-derived, not measured: oracle lines 173-190 require a JSON
+        // daily_schedule output to ignore a same-stem markdown decoy.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "daily_schedule",
+                "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":10,\"output\":\"json\"\n}\n",
+            )],
+        );
+        let day_dir = day::create_day(journal.path(), "20260101").unwrap();
+        let context =
+            context::ThinkContext::new(journal.path(), "20260101".to_owned(), day_dir.clone(), 1)
+                .with_talent_roots(talent_root, apps_root);
+        let args = args::ThinkArgs {
+            dry_run: true,
+            day: Some("20260101".to_owned()),
+            ..args::ThinkArgs::default()
+        };
+        let before = dry_run::run(&context, &args, 4).unwrap();
+        fs::create_dir_all(day_dir.join("talents")).unwrap();
+        fs::write(day_dir.join("talents/daily_schedule.md"), "decoy").unwrap();
+        assert_eq!(dry_run::run(&context, &args, 4).unwrap(), before);
+        fs::write(day_dir.join("talents/daily_schedule.json"), "{}\n").unwrap();
+        let after = dry_run::run(&context, &args, 4).unwrap();
+        assert!(after.contains("daily_schedule (exists)"), "{after}");
+        assert!(!before.contains(journal.path().to_string_lossy().as_ref()));
+    }
+
+    #[test]
+    fn dry_run_source_derived_cadence_fire_reports_segment_and_activity_counts() {
+        // Source-derived, not measured: fixture lines 236-257 exclude this
+        // row; its exact shape comes from thinking.py:3808-3811.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "steward",
+                "{\n\"type\":\"generate\",\"schedule\":\"cadence\",\"priority\":1,\"cadence_minutes\":30,\"output\":\"json\"\n}\n",
+            )],
+        );
+        let health = journal
+            .path()
+            .join("chronicle/20260101/health/events.jsonl");
+        fs::create_dir_all(health.parent().unwrap()).unwrap();
+        fs::write(
+            health,
+            concat!(
+                r#"{"event":"talent.complete","ts":2,"mode":"segment","stream":"_default","segment":"093000_600","name":"sense"}"#, "\n",
+                r#"{"event":"talent.complete","ts":3,"mode":"activity","facet":"work","activity":"meeting","name":"conversation"}"#, "\n",
+            ),
+        )
+        .unwrap();
+        let day_dir = day::create_day(journal.path(), "20260101").unwrap();
+        let context =
+            context::ThinkContext::new(journal.path(), "20260101".to_owned(), day_dir, 10)
+                .with_talent_roots(talent_root, apps_root);
+        let args = args::ThinkArgs {
+            cadence: true,
+            dry_run: true,
+            ..args::ThinkArgs::default()
+        };
+        assert_eq!(
+            dry_run::run(&context, &args, 4).unwrap(),
+            "Day 2026-01-01 — cadence agents\n\n  fire  steward — window: 1 segment(s), 1 activity(ies)\n"
+        );
+    }
+
+    #[test]
+    fn dry_run_source_derived_flush_renders_eligible_hooks() {
+        // Source-derived, not measured: fixture lines 236-257 capture only
+        // the empty branch; this is thinking.py:4035-4055.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "flush_agent",
+                "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"md\",\"hook\":{\"flush\":true}\n}\n",
+            )],
+        );
+        let day_dir = day::create_day(journal.path(), "20260101").unwrap();
+        let context = context::ThinkContext::new(journal.path(), "20260101".to_owned(), day_dir, 1)
+            .with_talent_roots(talent_root, apps_root);
+        let args = args::ThinkArgs {
+            flush: true,
+            segment: Some("010203_60".to_owned()),
+            dry_run: true,
+            ..args::ThinkArgs::default()
+        };
+        assert_eq!(
+            dry_run::run(&context, &args, 4).unwrap(),
+            "Day 2026-01-01 --flush segment 010203_60\n\n  gen  flush_agent\n\nTotal: 1 agents\n"
+        );
+    }
+
+    #[test]
+    fn dry_run_source_derived_active_multi_facet_renders_one_row_per_facet() {
+        // Source-derived, not measured: fixture lines 236-257 omit the active
+        // multi-facet branch; this is thinking.py:3901-3920.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "facet_newsletter",
+                "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":40,\"output\":\"md\",\"multi_facet\":true\n}\n",
+            )],
+        );
+        let declaration = journal.path().join("facets/work/facet.json");
+        fs::create_dir_all(declaration.parent().unwrap()).unwrap();
+        fs::write(declaration, "{}\n").unwrap();
+        let state = journal.path().join("awareness/activity_state.json");
+        fs::create_dir_all(state.parent().unwrap()).unwrap();
+        fs::write(
+            state,
+            r#"{"active":{"work":{"id":"work_090000_60","activity":"work","since":"090000_60","description":"work"}}}"#,
+        )
+        .unwrap();
+        let day_dir = day::create_day(journal.path(), "20260101").unwrap();
+        let context = context::ThinkContext::new(journal.path(), "20260101".to_owned(), day_dir, 1)
+            .with_talent_roots(talent_root, apps_root);
+        let args = args::ThinkArgs {
+            dry_run: true,
+            ..args::ThinkArgs::default()
+        };
+        assert_eq!(
+            dry_run::run(&context, &args, 4).unwrap(),
+            concat!(
+                "Day 2026-01-01\n\n",
+                "Pre-phase:  journal sense --day 20260101 -j 4\n",
+                "Priority 40:\n  gen  facet_newsletter/work (new)\n\n",
+                "Total: 1 agents\n",
+                "Post-phase: journal indexer --rescan\n",
+                "Post-phase: journal journal-stats\n",
+            )
+        );
     }
 }
