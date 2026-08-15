@@ -24,6 +24,11 @@ path = "tests/convey_speaker_contracts.rs"
 name = "restart_protocol"
 path = "tests/restart_protocol.rs"
 
+# Cargo auto-discovery is disabled for this package, so this route-contract target is explicit.
+[[test]]
+name = "thinking_sol_reads"
+path = "tests/thinking_sol_reads.rs"
+
 [lints]
 workspace = true
 
@@ -68,7 +73,10 @@ solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-facets-web.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-journal.workspace = true
+solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write = { workspace = true, optional = true }
+solstone-core-model-pricing.workspace = true
 solstone-core-npy.workspace = true
 solstone-core-observer.workspace = true
 solstone-core-records-web.workspace = true
@@ -85,6 +93,9 @@ solstone-core-sol-link = { workspace = true, optional = true }
 solstone-core-spl = { workspace = true, optional = true }
 solstone-core-thinking = { workspace = true, optional = true }
 solstone-core-thinking-copy = { workspace = true, optional = true }
+solstone-core-talent-cli.workspace = true
+solstone-core-talent-config.workspace = true
+solstone-core-system.workspace = true
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync", "time"] }
 tower.workspace = true
 ureq = { workspace = true, features = ["rustls"] }
@@ -94,6 +105,7 @@ zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 serde_json.workspace = true
 
 [dev-dependencies]
+filetime = "0.2.29"
 rcgen.workspace = true
 rustls.workspace = true
 sha2.workspace = true

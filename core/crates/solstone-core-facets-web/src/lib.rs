@@ -20,6 +20,7 @@ pub mod segments;
 mod timeline;
 
 pub use clock::Clock;
+pub use date_nav::date_nav_index;
 
 pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
     timeline::routes(journal_root.clone(), clock.clone())
