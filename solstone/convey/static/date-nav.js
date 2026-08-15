@@ -1050,9 +1050,10 @@
   // Scoped consumers (stats) own a controller. They deliberately do not use
   // the legacy module singleton above, parse a path day, or hard-navigate.
   function createScopedController(options) {
+    const apiBase = String(options.apiBase || '').replace(/\/?$/, '/');
     const local = {
       host: options.host,
-      apiBase: String(options.apiBase || ''),
+      apiBase,
       day: parseDayString(options.initialDay),
       onSelect: options.onSelect,
       abort: new AbortController()
@@ -1066,17 +1067,30 @@
       '</div>';
     const label = local.host.querySelector('[data-date-nav-label]');
     const render = () => { label.textContent = controlLabel(local.day); };
-    const select = day => {
+    const requestJson = path => window.apiJson
+      ? window.apiJson(path)
+      : fetch(path).then(response => response.ok ? response.json() : Promise.reject(new Error('date-nav request failed')));
+    const refreshMonth = () => requestJson(`${local.apiBase}api/index`)
+      .then(() => requestJson(`${local.apiBase}api/stats/${local.day.slice(0, 6)}`))
+      .catch(() => {});
+    const setDay = day => {
       const normalized = parseDayString(day);
-      if (!normalized) return;
+      if (!normalized) return null;
       local.day = normalized;
       render();
+      refreshMonth();
+      return normalized;
+    };
+    const select = day => {
+      const normalized = setDay(day);
+      if (!normalized) return;
       local.onSelect(normalized);
     };
     local.host.querySelector('[data-date-nav-prev]').addEventListener('click', () => select(addDays(local.day, -1)), { signal: local.abort.signal });
     local.host.querySelector('[data-date-nav-next]').addEventListener('click', () => select(addDays(local.day, 1)), { signal: local.abort.signal });
     render();
-    return { unmount: () => { local.abort.abort(); local.host.replaceChildren(); } };
+    refreshMonth();
+    return { setDay, unmount: () => { local.abort.abort(); local.host.replaceChildren(); } };
   }
 
   function mountScoped(options) {
@@ -1088,6 +1102,9 @@
       unmount() {
         controller.unmount();
         if (scopedMount === controller) scopedMount = null;
+      },
+      setDay(day) {
+        controller.setDay(day);
       }
     };
   }
