@@ -18,7 +18,12 @@ fn real_vad_helper_matches_python_for_the_shared_seed() {
     let audio = root.join("core/fixtures/vad_speech_seed.f32le");
     let model = root
         .join("packages/solstone-journal-models/solstone_journal_models/assets/silero_vad_v6.onnx");
-    let helper = root.join("core/target/debug/solstone-core-vad-analyze");
+    let helper = std::env::current_exe()
+        .expect("current test executable")
+        .parent()
+        .and_then(Path::parent)
+        .expect("Cargo profile directory")
+        .join("solstone-core-vad-analyze");
     assert!(audio.is_file(), "shared VAD input fixture is missing");
     assert!(model.is_file(), "shared Silero model asset is missing");
     assert!(
