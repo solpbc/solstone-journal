@@ -1073,6 +1073,7 @@ mod tests {
                 std::process::id()
             ));
             fs::create_dir(&path).expect("temporary directory creates");
+            let path = fs::canonicalize(path).expect("temporary directory canonicalizes");
             Self { path }
         }
 

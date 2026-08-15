@@ -21,7 +21,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const LOCAL_OPS_JSON: &str = include_str!("../../../fixtures/journal-cli/local-ops-v1.json");
-const LOCAL_OPS_SHA256: &str = "6f64998350f8088dcfce8b76e7393c38370b4f1e710501cdd16d0de019ee9fa6";
+const LOCAL_OPS_SHA256: &str = "02424d2e9173eb7b90949bddbffb78ee0c057b20de8ec621db89b60258f12a75";
 const CLI_BOUNDARY_JSON: &str = include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
 
 struct TempDir {
