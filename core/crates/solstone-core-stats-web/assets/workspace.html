@@ -1,31 +1,948 @@
-<!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <style>
-.dashboard { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
-.token-card { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.25rem; }
-.token-rollup { display: flex; align-items: end; gap: 4px; height: 180px; margin: 1rem 0; }
-.token-rollup__bar { flex: 1; min-width: 12px; border: 0; background: var(--facet-color, #b06a1a); cursor: pointer; }
-.token-rollup__bar[aria-pressed="true"] { outline: 3px solid #111827; }
-.token-detail { border-top: 1px solid #e5e7eb; padding-top: 1rem; }
-.token-detail table { width: 100%; border-collapse: collapse; } .token-detail th, .token-detail td { padding: .5rem; text-align: left; }
+/* Layout */
+.dashboard {
+  padding: 1.5rem 2rem 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+h1 {
+  margin-top: 0;
+  font-size: 1.75rem;
+  margin-bottom: 0.5em;
+  color: var(--facet-color, #b06a1a);
+}
+
+/* Loading state */
+#loading {
+  text-align: center;
+  padding: 4em;
+  color: #666;
+}
+
+.spinner {
+  display: inline-block;
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f0f0f0;
+  border-top-color: var(--facet-color, #b06a1a);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 1em;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Alerts */
+.alert {
+  padding: 1em;
+  border-radius: 8px;
+  margin-bottom: 2em;
+}
+
+.alert-warning {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  color: #856404;
+}
+
+.alert-error {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  color: #721c24;
+}
+
+.stats-freshness {
+  color: #888;
+  font-size: 0.85em;
+  font-weight: 500;
+  margin: 0.25em 0 1.5em;
+}
+
+.stats-refresh {
+  color: var(--facet-color, #b06a1a);
+  text-decoration: none;
+  margin-left: 0.5em;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.stats-refresh:hover {
+  text-decoration: underline;
+}
+
+.stats-refresh:active {
+  opacity: 0.7;
+}
+
+/* Stats grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1.5em;
+  margin-bottom: 1.5em;
+}
+
+.stat-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5em;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.06);
+  transition: border-color 0.2s;
+}
+
+.stat-card:hover {
+  border-color: var(--facet-border, #e5e0db);
+}
+
+.stat-card h3 {
+  font-size: 0.9em;
+  color: #666;
+  margin: 0 0 0.75em 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.stat-value {
+  font-size: 2em;
+  font-weight: 700;
+  margin: 0;
+  color: var(--facet-color, #b06a1a);
+  line-height: 1.1;
+}
+
+.stat-subtitle {
+  font-size: 0.8em;
+  color: #999;
+  margin-top: 0.5em;
+  font-weight: 400;
+}
+
+/* Progress cards */
+.progress-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5em;
+  margin-bottom: 1.5em;
+}
+
+.progress-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5em;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.progress-card h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+.progress-bar {
+  background: #f0f0f0;
+  border-radius: 8px;
+  height: 24px;
+  overflow: hidden;
+  margin: 1em 0 0.75em 0;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--facet-color, var(--orange));
+  border-radius: 8px;
+  transition: width 0.5s ease;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  color: white;
+  font-size: 0.75em;
+  min-width: 3em;
+  font-weight: 600;
+}
+
+.progress-stats {
+  display: flex;
+  justify-content: space-between;
+  color: #666;
+  font-size: 0.8em;
+  padding: 0 0.25em;
+}
+
+/* Backlog */
+.backlog-section {
+  display: grid;
+  gap: 1em;
+  margin-bottom: 1.5em;
+}
+
+.backlog-hero {
+  background: white;
+  border-radius: 12px;
+  padding: 1.25em 1.5em;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.backlog-hero-line {
+  color: #2f2a24;
+  font-size: 1.35em;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.backlog-needs-hand {
+  background: #fffaf0;
+  border: 1px solid #f4d08a;
+  border-left: 4px solid #d4a843;
+  border-radius: 12px;
+  padding: 1.25em 1.5em;
+}
+
+.backlog-needs-hand h2,
+.backlog-list h2 {
+  color: #333;
+  font-size: 1.1em;
+  margin: 0 0 0.5em;
+}
+
+.backlog-description {
+  color: #5f564d;
+  margin: 0 0 1em;
+}
+
+.backlog-rows {
+  display: grid;
+  gap: 0.75em;
+}
+
+.backlog-row {
+  background: white;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 8px;
+  padding: 0.9em 1em;
+}
+
+.backlog-row-link {
+  align-items: center;
+  color: inherit;
+  display: grid;
+  gap: 0.75em;
+  grid-template-columns: minmax(7em, 1fr) auto;
+  text-decoration: none;
+}
+
+.backlog-row-main {
+  display: grid;
+  gap: 0.25em;
+}
+
+.backlog-row-day {
+  color: #2f2a24;
+  font-weight: 700;
+}
+
+.backlog-row-copy {
+  color: #675f58;
+  font-size: 0.9em;
+}
+
+.backlog-badge {
+  align-self: start;
+  background: #fff3cd;
+  border: 1px solid #e6c76b;
+  border-radius: 999px;
+  color: #6c4b00;
+  font-size: 0.8em;
+  font-weight: 700;
+  justify-self: start;
+  padding: 0.25em 0.65em;
+}
+
+.backlog-depth {
+  color: var(--facet-color, #b06a1a);
+  font-weight: 700;
+}
+
+.backlog-row-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin-top: 0.75em;
+}
+
+.backlog-action {
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  color: #374151;
+  cursor: pointer;
+  font-size: 0.8em;
+  padding: 0.35em 0.65em;
+}
+
+.backlog-action:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.backlog-action:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.backlog-action-status {
+  color: #675f58;
+  font-size: 0.85em;
+}
+
+.backlog-list {
+  background: white;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  padding: 1.25em 1.5em;
+}
+
+.backlog-routine-note {
+  color: #675f58;
+  margin: 0 0 1em;
+}
+
+.backlog-row details {
+  grid-column: 1 / -1;
+}
+
+.backlog-row summary {
+  cursor: pointer;
+}
+
+.backlog-why-list {
+  color: #675f58;
+  margin: 0.5em 0 0;
+  padding-left: 1.25em;
+}
+
+/* Chart sections */
+.chart-section {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5em;
+  margin-bottom: 1.5em;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.chart-section h2 {
+  margin-top: 0;
+  color: #333;
+  font-size: 1.5em;
+  font-weight: 600;
+}
+
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chart {
+  display: flex;
+  flex-direction: column;
+  height: 300px;
+  position: relative;
+  margin-top: 1.5em;
+  padding-bottom: 24px;
+  padding-top: 8px;
+}
+
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  flex: 1 1 auto;
+  height: auto;
+  gap: 3px;
+  padding: 0 16px;
+  margin-bottom: 22px;
+}
+
+.bar {
+  flex: 1;
+  background: var(--facet-color, var(--orange));
+  border-radius: 4px 4px 0 0;
+  transition: filter 0.2s;
+  position: relative;
+  min-width: 20px;
+}
+
+.bar:hover {
+  filter: brightness(1.1);
+}
+
+.bar::after {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75em;
+  white-space: pre;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 20;
+}
+
+.bar:hover::after {
+  content: attr(data-tip);
+  opacity: 1;
+}
+
+.bar-label {
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.75em;
+  color: #666;
+  white-space: nowrap;
+}
+
+.bar-value {
+  position: absolute;
+  top: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.8em;
+  font-weight: 500;
+  color: #333;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.bar:hover .bar-value {
+  opacity: 1;
+}
+
+.empty-chart {
+  text-align: center;
+  color: #999;
+  padding: 2em;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Heatmap */
+.heatmap {
+  display: grid;
+  grid-template-columns: 40px repeat(24, 1fr);
+  gap: 2px;
+  margin-top: 1.5em;
+}
+
+.heatmap-label {
+  font-size: 0.8em;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  font-weight: 600;
+}
+
+.heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: #f0f0f0;
+  transition: transform 0.2s;
+  cursor: default;
+  position: relative;
+}
+
+.heatmap-cell:hover {
+  transform: scale(1.2);
+  z-index: 10;
+}
+
+.heatmap-cell::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 20;
+}
+
+.heatmap-cell:hover::after {
+  opacity: 1;
+}
+
+.heatmap-cell:focus-visible {
+  outline: 2px solid var(--facet-color, #b06a1a);
+  outline-offset: 1px;
+  transform: scale(1.2);
+  z-index: 10;
+}
+
+.heatmap-cell:focus-visible::after {
+  opacity: 1;
+}
+
+.heatmap-header {
+  grid-column: 2 / -1;
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.heatmap-hour {
+  text-align: center;
+  font-size: 0.75em;
+  color: #999;
+  font-weight: 500;
+}
+
+
+/* Repair alert */
+.alert-repair {
+  background: white;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-left: 3px solid #d4a843;
+  padding: 1em 1.5em;
+}
+
+.alert-repair .stat-card {
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.alert-repair .stat-value {
+  color: #dc2626;
+}
+
+.alert-repair .stats-grid {
+  margin-bottom: 0;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* Model selector */
+.model-select {
+  padding: 0.5em 1em;
+  font-size: 0.9em;
+  border: 1px solid var(--facet-border, #e5e0db);
+  border-radius: 6px;
+  background: white;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.model-select:hover {
+  border-color: var(--facet-color, #b06a1a);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.model-select:focus {
+  outline: none;
+  border-color: var(--facet-color, #b06a1a);
+  box-shadow: 0 0 0 3px rgba(176, 106, 26, 0.1);
+}
+
+.model-select:focus-visible {
+  outline: 2px solid var(--facet-color, #b06a1a);
+  outline-offset: 2px;
+}
+
+.model-select:active {
+  border-color: var(--facet-color, #b06a1a);
+  box-shadow: 0 0 0 3px rgba(176, 106, 26, 0.2);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Stacked bar styles */
+.bar-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 100%;
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+}
+
+.stack-segment {
+  min-height: 2px;
+  transition: opacity 0.2s;
+  position: relative;
+}
+
+.stack-segment.input {
+  background: #2171b5;
+}
+
+.stack-segment.reasoning {
+  background: #e6550d;
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.3) 3px, rgba(255,255,255,0.3) 6px);
+}
+
+.stack-segment.output {
+  background: #31a354;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.3) 1px, transparent 1px);
+  background-size: 6px 6px;
+}
+
+.stack-segment.audio {
+  background: #2171b5;
+}
+
+.stack-segment.screen {
+  background: #e6550d;
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.3) 3px, rgba(255,255,255,0.3) 6px);
+}
+
+.token-legend {
+  display: flex;
+  gap: 1.5em;
+  margin-top: 0;
+  font-size: 0.85em;
+  justify-content: flex-start;
+  font-weight: 500;
+}
+
+/* Token-cost detail merged into the stats information architecture. */
+.token-card {
+  scroll-margin-top: 1rem;
+}
+
+.token-source-note,
+.token-card-status,
+.token-unknown-note,
+.token-table-note {
+  color: #675f58;
+}
+
+.token-card-status {
+  border-left: 3px solid var(--facet-color, #b06a1a);
+  margin: 1rem 0;
+  padding: 0.65rem 0.85rem;
+}
+
+.token-rollup {
+  align-items: end;
+  display: flex;
+  gap: 4px;
+  height: 180px;
+  margin: 1rem 0 1.5rem;
+}
+
+.token-rollup__bar {
+  background: var(--facet-color, #b06a1a);
+  border: 0;
+  border-radius: 3px 3px 0 0;
+  cursor: pointer;
+  flex: 1;
+  min-width: 12px;
+}
+
+.token-rollup__bar:hover {
+  filter: brightness(1.1);
+}
+
+.token-rollup__bar[aria-pressed="true"] {
+  outline: 3px solid #111827;
+  outline-offset: 2px;
+}
+
+.token-detail {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 1rem;
+}
+
+.token-comparison {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 1rem 0;
+}
+
+.token-comparison-card {
+  background: #faf8f5;
+  border: 1px solid #e5e0db;
+  border-radius: 8px;
+  padding: 0.85rem;
+}
+
+.token-comparison-card h4,
+.token-comparison-card p {
+  margin: 0;
+}
+
+.token-comparison-card p {
+  margin-top: 0.35rem;
+}
+
+.token-table-scroll {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.token-detail table {
+  border-collapse: collapse;
+  min-width: 42rem;
+  width: 100%;
+}
+
+.token-detail th,
+.token-detail td {
+  border-bottom: 1px solid #ece7e1;
+  padding: 0.55rem;
+  text-align: left;
+}
+
+.token-sort {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.token-sort::after {
+  content: " ↕";
+}
+
+.token-detail h4 {
+  margin-bottom: 0.5rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.legend-color {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .dashboard {
+    padding: 1em;
+  }
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  .alert-repair .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  .backlog-row {
+    padding: 0.9em;
+  }
+  .backlog-row-link {
+    grid-template-columns: 1fr;
+  }
+  .heatmap {
+    font-size: 0.8em;
+    grid-template-columns: 30px repeat(24, 1fr);
+  }
+  .bar {
+    min-width: 10px;
+  }
+  .bar-value {
+    top: -18px;
+    font-size: 0.7em;
+  }
+  .bar-label {
+    display: none;
+  }
+  .bar:first-child .bar-label,
+  .bar:last-child .bar-label {
+    display: block;
+  }
+}
+
+@media (max-width: 480px) {
+  .chart-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .chart {
+    height: 200px;
+  }
+  .chart-section {
+    padding: 1em;
+  }
+  .bar {
+    min-width: 6px;
+  }
+  .bar-value {
+    display: none;
+  }
+  #heatmapSection {
+    display: none;
+  }
+  .model-select {
+    min-height: 44px;
+  }
+  .progress-section {
+    grid-template-columns: 1fr;
+  }
+  .token-legend {
+    flex-wrap: wrap;
+    gap: 0.5em;
+  }
+  .token-comparison {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
-<main class="dashboard" data-stats-url="/app/stats/api/stats">
+
+<div class="dashboard" data-stats-url="/app/stats/api/stats">
   <h1>journal dashboard</h1>
-  <section class="token-card" id="cost" data-token-card-state="loading" aria-labelledby="tokenCostHeading">
-    <h2 id="tokenCostHeading">token activity (last 30 days)</h2>
-    <div id="statsDateNav" aria-label="selected token day"></div>
-    <div class="token-rollup" id="tokenRollup" aria-label="30 day token cost rollup"></div>
-    <section class="token-detail" aria-labelledby="tokenDayHeading">
-      <h3 id="tokenDayHeading" tabindex="-1">selected day</h3>
-      <p id="tokenSummary" aria-live="polite"></p>
-      <table>
-        <thead><tr><th scope="col" aria-sort="none">provider</th><th scope="col" aria-sort="none">requests</th><th scope="col" aria-sort="none">tokens</th><th scope="col" aria-sort="none">cost</th></tr></thead>
-        <tbody id="tokenProviders"></tbody>
-      </table>
-      <table>
-        <thead><tr><th scope="col" aria-sort="none">model</th><th scope="col" aria-sort="none">requests</th><th scope="col" aria-sort="none">tokens</th><th scope="col" aria-sort="none">cost</th></tr></thead>
-        <tbody id="tokenModels"></tbody>
-      </table>
+
+  <p id="statsFreshness" class="stats-freshness"></p>
+
+  <div id="notice"></div>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Loading dashboard data...</p>
+  </div>
+
+  <div id="mainContent" style="display: none;">
+    <div id="statsGrid" class="stats-grid"></div>
+    <div id="progressSection" class="progress-section"></div>
+    <div id="repairSection"></div>
+
+    <section class="chart-section token-card" id="cost" data-token-card-state="loading" aria-labelledby="tokenCostHeading">
+      <h2 id="tokenCostHeading">token activity (last 30 days)</h2>
+      <p class="token-source-note">the chart shows the daily summary. selected-day totals include the latest entries, so they may briefly differ from the chart.</p>
+      <div id="statsDateNav" aria-label="selected token day"></div>
+      <p id="tokenCardStatus" class="token-card-status" role="status">loading token activity…</p>
+      <div class="token-rollup" id="tokenRollup" aria-label="30-day token activity rollup"></div>
+      <section class="token-detail" aria-labelledby="tokenDayHeading">
+        <h3 id="tokenDayHeading" tabindex="-1" aria-live="polite">selected day</h3>
+        <p id="tokenSummary"></p>
+        <p id="tokenUnknownModels" class="token-unknown-note" hidden></p>
+        <div class="token-comparison" id="tokenTypeComparison" aria-label="generate and cogitate comparison"></div>
+
+        <h4>providers</h4>
+        <div class="token-table-scroll" tabindex="0" aria-label="provider token activity table">
+          <table id="tokenProviderTable">
+            <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="descending"><button class="token-sort" type="button" data-token-table="providers" data-token-key="cost">cost</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="providers" data-token-key="percent">share</button></th></tr></thead>
+            <tbody id="tokenProviders"></tbody>
+          </table>
+        </div>
+
+        <h4>models</h4>
+        <p class="token-table-note">cached tokens stay in provider totals. they appear by model only when that provider has one model for the day.</p>
+        <div class="token-table-scroll" tabindex="0" aria-label="model token activity table">
+          <table id="tokenModelTable">
+            <thead><tr><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="model">model</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="provider">provider</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="requests">requests</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="tokens">tokens</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="cached_tokens">cached</button></th><th scope="col" aria-sort="descending"><button class="token-sort" type="button" data-token-table="models" data-token-key="cost">cost</button></th><th scope="col" aria-sort="none"><button class="token-sort" type="button" data-token-table="models" data-token-key="percent">share</button></th></tr></thead>
+            <tbody id="tokenModels"></tbody>
+          </table>
+        </div>
+      </section>
     </section>
-  </section>
-</main>
+
+    <div class="chart-section">
+      <h2>hours sol was with you, per day</h2>
+      <div class="chart" id="audioChart"></div>
+    </div>
+
+    <div class="chart-section" id="heatmapSection">
+      <h2>activity heatmap</h2>
+      <div id="heatmap"></div>
+    </div>
+
+    <div class="chart-section">
+      <h2>facets (last 30 days)</h2>
+      <div class="chart" id="facetsChart"></div>
+    </div>
+
+    <div class="chart-section">
+      <h2>activities (last 30 days)</h2>
+      <div class="chart" id="activitiesChart"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  window.BACKLOG_COPY = {
+    ACTION_PROCESS_NOW: "process now",
+    ACTION_REDO_SCRATCH: "redo from scratch",
+    CONFIRM_REDO_SCRATCH: "redo this whole day from scratch? this re-does the parts sol already finished, so it'll take longer. the day you see now won't change until it's done.",
+    QUEUED_FEEDBACK: "queued, working on it now",
+    VERDICT_CAUGHT_UP: "your journal's all caught up.",
+    VERDICT_STUCK_ONLY_PLURAL: "caught up except {stuck_n} days that need a hand.",
+    VERDICT_STUCK_ONLY_SINGULAR: "caught up except 1 day that needs a hand.",
+    VERDICT_PENDING_ONLY_PLURAL: "{pending_n} days are still catching up.",
+    VERDICT_PENDING_ONLY_SINGULAR: "1 day is still catching up.",
+    VERDICT_MIXED_STUCK_PLURAL: "{stuck_n} days need a hand",
+    VERDICT_MIXED_STUCK_SINGULAR: "1 day needs a hand",
+    VERDICT_MIXED_PENDING_PLURAL: "{pending_n} more days are still catching up",
+    VERDICT_MIXED_PENDING_SINGULAR: "1 more day is still catching up",
+    VERDICT_CANT_TELL: "still checking — give me a moment to see where your journal stands.",
+    BUCKET_HEADING: "days that need a hand",
+    BUCKET_DESCRIPTION: "these days stopped on their own and can't pick back up without you — here's why, and what to try.",
+    DAY_BADGE: "stuck",
+    REASON_CORRUPT_RAW: "original raw media is missing or damaged — re-import it",
+    REASON_FAILING_STEP: "a processing step keeps failing — try again",
+    REASON_MISSING_CONFIG: "a setting's missing — check your journal's setup",
+    REASON_PROVIDER_DOWN: "the AI provider was unreachable. try again",
+    REASON_PROVIDER_REFUSED: "the AI provider refused a request sol sent — retrying won't help; this is a defect in sol",
+    WHY_NEVER_ATTEMPTED: "not looked at yet",
+    WHY_FAILED: "couldn't finish — will retry",
+    WHY_SENSED_NOT_THOUGHT: "taken in, not yet thought through",
+    CATCHING_UP_DAY: "catching up",
+    CATCHING_UP_AGGREGATE: "{pending_n} day(s) catching up",
+    CATCHING_UP_TAIL: "sol's working through these on its own, freshest day first.",
+  };
+</script>
 <script src="/app/stats/static/dashboard.js"></script>
+<script src="/app/stats/static/cost-card.js"></script>
+<script>
+  // Load dashboard data when page loads
+  Dashboard.load('/app/stats/api/stats');
+</script>

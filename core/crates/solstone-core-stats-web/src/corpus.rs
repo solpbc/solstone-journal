@@ -237,7 +237,7 @@ fn ac7_disclosed_filename_day_fold_and_utc_stats_rollup_diverge() {
             fs::create_dir_all(root.path().join("tokens")).expect("tokens directory");
             fs::write(
                 root.path().join("tokens/20260809.jsonl"),
-                "{\"model\":\"gpt-5.5\",\"timestamp\":1786321800,\"usage\":{\"input_tokens\":100,\"output_tokens\":10,\"total_tokens\":110}}\n",
+                "{\"model\":\"gpt-5.5\",\"timestamp\":1786321800,\"usage\":{\"input_tokens\":100,\"output_tokens\":11,\"total_tokens\":111}}\n{\"model\":\"unknown-model\",\"timestamp\":1786321800,\"usage\":{\"input_tokens\":20,\"output_tokens\":17,\"total_tokens\":37}}\n",
             )
             .expect("token fixture");
             let router = solstone_core_convey_shell::router(root.path().to_path_buf());
@@ -257,23 +257,30 @@ fn ac7_disclosed_filename_day_fold_and_utc_stats_rollup_diverge() {
                 .expect("json")
                 }
             };
-            assert_eq!(usage("/app/stats/api/usage?day=20260809").await["total"]["requests"], 1);
-            assert_eq!(usage("/app/stats/api/usage?day=20260810").await["total"]["requests"], 0);
+            let filename_day = usage("/app/stats/api/usage?day=20260809").await;
+            assert_eq!(filename_day["total"]["tokens"], 111);
+            assert_eq!(filename_day["total"]["skipped_unknown"], 1);
+            assert_eq!(usage("/app/stats/api/usage?day=20260810").await["total"]["tokens"], 0);
             let by_day = solstone_core_journal_stats_cli::scan_token_usage_by_day(
                 root.path(),
                 Utc.with_ymd_and_hms(2026, 8, 10, 1, 0, 0).unwrap(),
             );
-            assert_eq!(
-                by_day["20260810"]["gpt-5.5"]["input_tokens"],
-                100
-            );
+            assert!(!by_day.contains_key("20260809"));
+            let utc_total = by_day["20260810"]
+                .values()
+                .filter_map(|counts| counts.get("total_tokens"))
+                .sum::<i64>();
+            assert_eq!(utc_total, 148);
         });
 }
 
 #[test]
 fn merged_card_declares_each_state_and_day_scoped_selection_contract() {
-    let script = include_str!("../assets/static/dashboard.js");
-    assert!(script.contains("/app/stats/api/stats/${month}"));
+    let script = include_str!("../assets/static/cost-card.js");
+    let stats_script = include_str!("../assets/static/dashboard.js");
+    assert!(script.contains("stats:token-rollup"));
+    assert!(stats_script.contains("dispatchEvent(new CustomEvent('stats:token-rollup'"));
+    assert!(script.contains("/app/stats/api/index"));
     assert!(script.contains("history.pushState"));
     assert!(script.contains("heading.focus()"));
     assert!(!script.contains("window.location.href"));
@@ -282,12 +289,15 @@ fn merged_card_declares_each_state_and_day_scoped_selection_contract() {
 #[test]
 fn merged_card_mounts_the_scoped_date_nav_on_its_declared_host() {
     let workspace = include_str!("../assets/workspace.html");
-    let script = include_str!("../assets/static/dashboard.js");
+    let script = include_str!("../assets/static/cost-card.js");
     assert!(workspace.contains("id=\"statsDateNav\""));
     assert!(script.contains("window.DateNav && window.DateNav.mountScoped({"));
     assert!(script.contains("host: dateNavHost,"));
     assert!(script.contains("apiBase: '/app/stats/',"));
-    assert!(script.contains("onSelect: day => select(day, true)"));
+    assert!(
+        script
+            .contains("onSelect: day => select(day, { push: true, focus: true, syncNav: false })")
+    );
 }
 
 #[test]
@@ -315,17 +325,58 @@ fn card_index_error_state_is_declared() {
     assert_card_state("index-error");
 }
 fn assert_card_state(state: &str) {
-    let script = include_str!("../assets/static/dashboard.js");
+    let script = include_str!("../assets/static/cost-card.js");
     let assignment = match state {
-        "loading" => "state('loading')",
-        "ready" => "? 'empty' : data.total.skipped_unknown ? 'partial' : 'ready'",
-        "empty" => "state(data.total.requests === 0 ? 'empty'",
-        "usage-error" => "state('usage-error')",
-        "partial" => "data.total.skipped_unknown ? 'partial' : 'ready'",
-        "index-error" => "state('index-error')",
+        "loading" => "state('loading',",
+        "ready" => "state('ready',",
+        "empty" => "state('empty',",
+        "usage-error" => "state('usage-error',",
+        "partial" => "state('partial',",
+        "index-error" => "state('index-error',",
         _ => unreachable!("known token-card state"),
     };
     assert!(script.contains(assignment), "card state assignment {state}");
+}
+
+#[test]
+fn merged_workspace_retains_stats_and_contains_the_bounded_token_detail() {
+    let workspace = include_str!("../assets/workspace.html");
+    for retained in [
+        "id=\"statsGrid\"",
+        "id=\"audioChart\"",
+        "id=\"heatmap\"",
+        "id=\"facetsChart\"",
+        "id=\"activitiesChart\"",
+    ] {
+        assert!(
+            workspace.contains(retained),
+            "retained stats structure {retained}"
+        );
+    }
+    for merged in [
+        "id=\"cost\"",
+        "id=\"tokenTypeComparison\"",
+        "id=\"tokenProviderTable\"",
+        "id=\"tokenModelTable\"",
+        "id=\"tokenUnknownModels\"",
+        "class=\"token-table-scroll\"",
+    ] {
+        assert!(
+            workspace.contains(merged),
+            "merged token structure {merged}"
+        );
+    }
+    for removed in [
+        "token-type-body",
+        "context-search",
+        "segment-search",
+        "sparkline",
+    ] {
+        assert!(
+            !workspace.contains(removed),
+            "superseded token structure {removed}"
+        );
+    }
 }
 
 fn replace(value: &mut Value, path: &str, pattern: &str) {

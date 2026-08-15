@@ -17,6 +17,7 @@ pub(super) static RATES: &[(&str, Rate)] = &[
     ("claude-opus-4-6", Rate::new(5.0, 0.5, 25.0)),
     ("claude-sonnet-4-6", Rate::new(3.0, 0.3, 15.0)),
     ("claude-haiku-4-5", Rate::new(1.0, 0.1, 5.0)),
+    ("claude-3-5-haiku-20241022", Rate::new(0.8, 0.08, 4.0)),
     ("gemini-3-pro-preview", Rate::new(2.0, 0.2, 12.0)),
     ("gemini-3-flash-preview", Rate::new(0.5, 0.05, 3.0)),
     ("gemini-3.5-flash", Rate::new(0.5, 0.05, 3.0)),

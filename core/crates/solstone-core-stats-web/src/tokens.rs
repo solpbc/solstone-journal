@@ -239,7 +239,11 @@ fn percent(value: f64, total: f64) -> f64 {
 }
 fn number_value(value: f64) -> Value {
     if value.fract() == 0.0 {
-        json!(value as u64)
+        if value < 0.0 {
+            json!(value as i64)
+        } else {
+            json!(value as u64)
+        }
     } else {
         json!(value)
     }
@@ -390,5 +394,6 @@ mod tests {
             .expect("rate")
             * 10_000.0;
         assert!((scaled_rate - scaled_rate.round()).abs() < 0.000_001);
+        assert_eq!(number_value(-2.0), json!(-2));
     }
 }
