@@ -83,14 +83,13 @@ fn spawn_one(
     if let Some(resolved) = resolved.as_ref() {
         state.update_resolved_talent(&work.use_id, resolved.clone());
     }
-    // The child is Python. This is cortex's only interpreter-resolution site, so
-    // the cortex verb is deliberately not registered in the native process table.
-    let python = solstone_core_journal_cli::sibling_python_in_dir(&executable_dir)
+    // Cortex spawns the native worker directly; its service verb remains outside the
+    // native process table because cortex owns this request/response lifecycle.
+    let worker = solstone_core_journal_cli::sibling_native_in_dir(&executable_dir, "solstone-core")
         .map_err(|error| error.to_string())?;
-    let mut command = Command::new(python);
+    let mut command = Command::new(worker);
     command
-        .arg("-m")
-        .arg("solstone.think.talents")
+        .arg("__talent-worker")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -404,12 +403,12 @@ mod tests {
         (talent_root, apps_root, templates_dir)
     }
 
-    fn write_python_stub(executable_dir: &std::path::Path, body: &str) {
-        let python = executable_dir.join("python3");
-        fs::write(&python, body).expect("python stub");
-        let mut permissions = fs::metadata(&python).unwrap().permissions();
+    fn write_native_stub(executable_dir: &std::path::Path, body: &str) {
+        let native = executable_dir.join("solstone-core");
+        fs::write(&native, body).expect("native stub");
+        let mut permissions = fs::metadata(&native).unwrap().permissions();
         permissions.set_mode(0o755);
-        fs::set_permissions(&python, permissions).unwrap();
+        fs::set_permissions(&native, permissions).unwrap();
     }
 
     #[test]
@@ -430,7 +429,7 @@ mod tests {
         let (spawn_tx, _) = mpsc::channel();
         let (cancel_tx, _) = mpsc::channel();
         let (outbound_tx, outbound_rx) = mpsc::channel();
-        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
+        let state = CortexState::new(store.clone(), spawn_tx, cancel_tx, outbound_tx);
         let work = Work {
             use_id: "one".into(),
             active: active.clone(),
@@ -450,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn injected_interpreter_is_reached_only_by_deliberate_spawn() {
+    fn native_sibling_is_reached_only_by_deliberate_spawn() {
         let directory = tempdir().unwrap();
         let executable_dir = directory.path().join("bin");
         fs::create_dir(&executable_dir).unwrap();
@@ -458,15 +457,90 @@ mod tests {
         let marker = directory.path().join("marker");
         let argv = directory.path().join("argv");
         let environment = directory.path().join("environment");
-        write_python_stub(
+        for name in ["python", "python3", "pytest", "uv", "ruff"] {
+            let poison = executable_dir.join(name);
+            fs::write(&poison, "#!/bin/sh\nprintf poison >> \"$CORTEX_MARKER\"\n").unwrap();
+            let mut permissions = fs::metadata(&poison).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&poison, permissions).unwrap();
+        }
+        write_native_stub(
             &executable_dir,
             "#!/bin/sh\nprintf x >> \"$CORTEX_MARKER\"\nprintf '%s\\n' \"$@\" > \"$CORTEX_ARGV\"\nenv > \"$CORTEX_ENV\"\nprintf '%s\\n' '{\"event\":\"finish\"}'\n",
         );
         assert!(!marker.exists());
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let request: Map<String, Value> = serde_json::from_value(
-            serde_json::json!({"use_id":"one","name":"chat","day":"20260101","facet":"top","env":{"CORTEX_MARKER":marker,"CORTEX_ARGV":argv,"CORTEX_ENV":environment,"SOL_FACET":"override"}}),
+            serde_json::json!({"use_id":"one","name":"chat","day":"20260101","facet":"top","env":{"CORTEX_MARKER":marker,"CORTEX_ARGV":argv,"CORTEX_ENV":environment,"SOL_FACET":"override","PATH":format!("{}:/usr/bin", executable_dir.display())}}),
         )
+        .unwrap();
+        let active = store.claim("chat", "one", &request).unwrap().unwrap();
+        let (spawn_tx, _) = mpsc::channel();
+        let (cancel_tx, _) = mpsc::channel();
+        let (outbound_tx, _) = mpsc::channel();
+        let state = CortexState::new(store.clone(), spawn_tx, cancel_tx, outbound_tx);
+        spawn_one(
+            state,
+            executable_dir,
+            &talent_root,
+            &apps_root,
+            &templates_dir,
+            Work {
+                use_id: "one".into(),
+                active: active.clone(),
+                request,
+            },
+        )
+        .unwrap();
+        thread::sleep(Duration::from_millis(150));
+        assert_eq!(fs::read_to_string(marker).unwrap(), "x");
+        // The native sibling's finish output must land; poison avoidance alone is insufficient.
+        let completed = active.with_file_name("one.jsonl");
+        assert!(
+            fs::read_to_string(completed)
+                .unwrap()
+                .contains("\"event\":\"finish\"")
+        );
+        assert_eq!(fs::read_to_string(argv).unwrap(), "__talent-worker\n");
+        assert!(
+            fs::read_to_string(environment)
+                .unwrap()
+                .contains("SOL_FACET=override")
+        );
+    }
+
+    #[test]
+    fn native_sibling_avoids_path_poison_and_lands_output() {
+        let directory = tempdir().unwrap();
+        let executable_dir = directory.path().join("bin");
+        fs::create_dir(&executable_dir).unwrap();
+        let (talent_root, apps_root, templates_dir) = package_roots(directory.path());
+        let poison_marker = directory.path().join("poison-marker");
+        for name in ["python", "python3", "pytest", "uv", "ruff"] {
+            let shim = executable_dir.join(name);
+            fs::write(
+                &shim,
+                "#!/bin/sh\nprintf poison >> \"$CORTEX_POISON_MARKER\"\n",
+            )
+            .unwrap();
+            let mut permissions = fs::metadata(&shim).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&shim, permissions).unwrap();
+        }
+        write_native_stub(
+            &executable_dir,
+            "#!/bin/sh\nprintf '%s\\n' '{\"event\":\"finish\"}'\n",
+        );
+
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
+            "use_id":"one",
+            "name":"chat",
+            "env":{
+                "CORTEX_POISON_MARKER":poison_marker,
+                "PATH":format!("{}:/usr/bin", executable_dir.display()),
+            },
+        }))
         .unwrap();
         let active = store.claim("chat", "one", &request).unwrap().unwrap();
         let (spawn_tx, _) = mpsc::channel();
@@ -481,21 +555,18 @@ mod tests {
             &templates_dir,
             Work {
                 use_id: "one".into(),
-                active,
+                active: active.clone(),
                 request,
             },
         )
         .unwrap();
+
         thread::sleep(Duration::from_millis(150));
-        assert_eq!(fs::read_to_string(marker).unwrap(), "x");
-        assert_eq!(
-            fs::read_to_string(argv).unwrap(),
-            "-m\nsolstone.think.talents\n"
-        );
+        assert!(!poison_marker.exists());
         assert!(
-            fs::read_to_string(environment)
+            fs::read_to_string(active.with_file_name("one.jsonl"))
                 .unwrap()
-                .contains("SOL_FACET=override")
+                .contains("\"event\":\"finish\"")
         );
     }
 
@@ -507,7 +578,7 @@ mod tests {
         let (talent_root, apps_root, templates_dir) = package_roots(&root);
         fs::write(talent_root.join(format!("{name}.md")), frontmatter).unwrap();
         let cwd = root.join("child-cwd");
-        write_python_stub(
+        write_native_stub(
             &executable_dir,
             "#!/bin/sh\npwd > \"$CORTEX_CWD\"\nprintf '%s\\n' '{\"event\":\"finish\"}'\n",
         );
@@ -585,6 +656,10 @@ mod tests {
             permissions.set_mode(0o755);
             fs::set_permissions(&shim, permissions).unwrap();
         }
+        write_native_stub(
+            &executable_dir,
+            "#!/bin/sh\nprintf x >> \"$CORTEX_MARKER\"\nprintf '%s\\n' '{\"event\":\"finish\"}'\n",
+        );
 
         write_valid_test_journal(directory.path());
         let cycle_now = chrono::Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap();
@@ -897,7 +972,7 @@ mod tests {
         fs::create_dir(&executable_dir).unwrap();
         let (talent_root, apps_root, templates_dir) = package_roots(directory.path());
         let child_pid = directory.path().join("child-pid");
-        write_python_stub(
+        write_native_stub(
             &executable_dir,
             "#!/bin/sh\necho $$ > \"$CORTEX_CHILD_PID\"\nexec 0<&-\nsleep 30\n",
         );

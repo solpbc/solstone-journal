@@ -164,14 +164,14 @@ fn criterion_17_talent_worker_reaches_start_under_sibling_and_path_poison() {
 }
 
 #[test]
-fn criterion_18_cortex_keeps_the_live_python_talent_path() {
+fn criterion_18_cortex_spawns_native_talent_worker_without_interpreter_resolution() {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("crates directory")
         .join("solstone-core-cortex/src/process.rs");
     let body = fs::read_to_string(source).expect("read cortex process source");
-    assert!(body.contains(".arg(\"-m\")"));
-    assert!(body.contains(".arg(\"solstone.think.talents\")"));
+    assert!(body.contains("sibling_native_in_dir(&executable_dir, \"solstone-core\")"));
+    assert!(body.contains(".arg(\"__talent-worker\")"));
 
     let crates = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -194,8 +194,10 @@ fn criterion_18_cortex_keeps_the_live_python_talent_path() {
         .into_iter()
         .filter(|owner| owner != INTERPRETER_RESOLUTION_OWNER)
         .collect::<BTreeSet<_>>();
-    // This is the exact extra set which keeps the unedited Lane BB census red.
-    assert_eq!(extra, BTreeSet::from(["solstone-core-cortex".to_owned()]));
+    assert!(
+        extra.is_empty(),
+        "unexpected interpreter resolvers: {extra:?}"
+    );
 }
 
 #[derive(Debug, Clone, Copy)]

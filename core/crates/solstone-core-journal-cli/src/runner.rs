@@ -41,7 +41,7 @@ impl std::fmt::Display for InterpreterError {
 impl std::error::Error for InterpreterError {}
 
 #[derive(Debug)]
-pub(crate) enum NativeExecutableError {
+pub enum NativeExecutableError {
     CurrentExe(std::io::Error),
     Missing { path: PathBuf },
     NonExecutable { path: PathBuf },
@@ -86,7 +86,11 @@ pub(crate) fn sibling_native_for_executable(
     executable: &Path,
     binary: &str,
 ) -> Result<PathBuf, NativeExecutableError> {
-    let candidate = executable_dir(executable).join(binary);
+    sibling_native_in_dir(&executable_dir(executable), binary)
+}
+
+pub fn sibling_native_in_dir(dir: &Path, binary: &str) -> Result<PathBuf, NativeExecutableError> {
+    let candidate = dir.join(binary);
     match fs::metadata(&candidate) {
         Ok(_) if is_executable(&candidate) => Ok(candidate),
         Ok(_) => Err(NativeExecutableError::NonExecutable { path: candidate }),
