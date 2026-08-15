@@ -1597,7 +1597,12 @@ async fn confidential_routes_are_session_gated_and_registered_404s_stay_unchange
 fn thinking_conversion_is_explicit_at_the_catch_all_boundary() {
     let shell = include_str!("../src/lib.rs");
     let registry = include_str!("../src/registry.rs");
-    assert_eq!(shell.matches(".converted").count(), 1);
+    assert_eq!(
+        shell
+            .matches("Some(definition) if definition.converted => not_found_response(),")
+            .count(),
+        1
+    );
     assert!(!shell.contains("struct ShellApp {\n    pub converted"));
     let thinking = registry
         .split("name: \"thinking\",")
