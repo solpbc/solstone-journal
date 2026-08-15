@@ -764,6 +764,7 @@ pub enum Command {
     Maintenance(Vec<OsString>),
     Maint(Vec<OsString>),
     MaintWorker(Vec<OsString>),
+    TalentWorker(Vec<OsString>),
     Reprocess(Vec<OsString>),
     JournalStats(Vec<OsString>),
     Talent(Vec<OsString>),
@@ -1599,6 +1600,9 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("maint") => Ok(Command::Maint(rest.to_vec())),
         [command, rest @ ..] if command == OsStr::new("__maint-worker") => {
             Ok(Command::MaintWorker(args.to_vec()))
+        }
+        [command, ..] if command == OsStr::new("__talent-worker") => {
+            Ok(Command::TalentWorker(args.to_vec()))
         }
         [command, rest @ ..] if command == OsStr::new("reprocess") => {
             Ok(Command::Reprocess(rest.to_vec()))

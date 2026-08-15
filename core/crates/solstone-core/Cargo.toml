@@ -138,6 +138,7 @@ solstone-core-segment.workspace = true
 solstone-core-segment-cli.workspace = true
 solstone-core-journal-stats-cli.workspace = true
 solstone-core-talent-cli.workspace = true
+solstone-core-talent-runtime.workspace = true
 solstone-core-reprocess-cli.workspace = true
 solstone-core-backfill-cli.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }

@@ -17,6 +17,9 @@ mod inventory;
 mod schema;
 mod templates;
 
+pub use compose::compose_talent;
+pub use templates::safe_substitute;
+
 mod emit;
 mod last_run;
 mod list;
