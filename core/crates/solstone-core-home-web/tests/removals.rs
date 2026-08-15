@@ -378,7 +378,7 @@ fn approve_maps_preflight_partial_and_halted_receipts_and_logs_the_attempt() {
     assert_eq!(partial.1["not_removed_count"], 1);
     assert_eq!(
         partial.1["refusals"][0],
-        json!({"state": "refusal.item_named", "name": "b.flac"})
+        json!({"state": "refusal.item_named", "name": "b.flac", "reason": "r"})
     );
     assert_ne!(partial.1["state"], "approve.refused_after_start");
 
@@ -426,6 +426,7 @@ fn segment_refusal_names_only_the_directory_basename() {
     });
     assert_eq!(unnamed.1["refusals"][0]["state"], "refusal.item_unnamed");
     assert!(unnamed.1["refusals"][0].get("name").is_none());
+    assert_eq!(unnamed.1["refusals"][0]["reason"], "r");
 }
 
 #[test]

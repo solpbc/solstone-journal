@@ -45,7 +45,6 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{REMOVALS_JS, WORKSPACE_SUFFIX};
-    use solstone_core_retention_client as retention;
 
     fn removal_copy() -> Vec<(&'static str, &'static str)> {
         let source = std::str::from_utf8(REMOVALS_JS).expect("removal card source is UTF-8");
@@ -53,8 +52,8 @@ mod tests {
             .split_once("const COPY = Object.freeze({\n")
             .expect("copy table starts");
         let (copy, _) = copy
-            .split_once("  });\n\n  // PENDING")
-            .expect("copy table ends before pending states");
+            .split_once("  });\n\n  const LIST_URL")
+            .expect("copy table ends before card routes");
         copy.lines()
             .map(str::trim)
             .map(|line| {
@@ -99,27 +98,43 @@ mod tests {
             "card.subhead",
             "card.empty",
             "card.unavailable",
-            "card.total",
+            "card.total_one",
+            "card.total_many",
             "row.identity",
-            "row.origin_policy",
-            "row.origin_offload",
-            "row.what",
-            "row.kept",
+            "row.origin_policy_one",
+            "row.origin_policy_many",
+            "row.origin_offload_one",
+            "row.origin_offload_many",
+            "row.what_one",
+            "row.what_many",
+            "row.kept_one",
+            "row.kept_many",
             "row.delete",
             "row.keep",
-            "confirm.heading",
-            "confirm.body_one",
-            "confirm.body_many",
-            "confirm.go",
+            "confirm.heading_one",
+            "confirm.heading_many",
+            "confirm.body_policy_one",
+            "confirm.body_policy_many",
+            "confirm.body_offload_one",
+            "confirm.body_offload_many",
+            "confirm.go_one",
+            "confirm.go_many",
             "confirm.cancel",
-            "done.deleted",
-            "done.partial",
-            "done.halted",
-            "done.refused_none",
+            "done.clause_deleted_one",
+            "done.clause_deleted_many",
+            "done.clause_not_removed_one",
+            "done.clause_not_removed_many",
+            "done.clause_halted",
+            "done.refused_none_one",
+            "done.refused_none_many",
             "done.refused_item",
+            "done.refused_item_unnamed",
             "done.unknown",
             "done.kept_policy",
             "done.kept_offload",
+            "done.too_many",
+            "done.declined_failed",
+            "done.declined_unknown",
             "failed.badge",
             "failed.body",
         ]
@@ -129,7 +144,7 @@ mod tests {
             keys, expected,
             "the card has one complete authored copy table"
         );
-        assert_eq!(copy.len(), 27);
+        assert_eq!(copy.len(), 43);
         for (_, value) in copy {
             assert_eq!(value, value.to_lowercase(), "authored copy is lowercase");
             assert!(!value.contains('\u{2014}'), "authored copy has no em dash");
@@ -149,8 +164,8 @@ mod tests {
             !source.contains("/app/home/api/pulse") && !source.contains("/app/home/api/briefing"),
             "the removal card is independent of pulse and briefing data"
         );
-        let selection_cap = format!("const MAX_SELECTION = {};", retention::MAX_REMOVE_MARK_IDS);
-        assert!(source.contains(&selection_cap));
+        assert!(!source.contains("MAX_SELECTION"));
+        assert!(!source.contains("data-removal-select"));
         assert!(source.contains("if (stream === '_default') return null;"));
         assert!(!source.contains("function formatDay"));
 
@@ -169,14 +184,18 @@ mod tests {
             .split_once("function showOutcome")
             .expect("outcome renderer");
         let (outcomes, _) = outcomes
-            .split_once("function selectedRows()")
+            .split_once("function refresh()")
             .expect("outcome end");
         assert!(outcomes.contains("case 'approve.partial':"));
         assert!(outcomes.contains("case 'approve.refused_after_start':"));
-        assert!(outcomes.contains("copy(\"done.refused_none\")"));
+        assert!(outcomes.contains("approveOutcome(response, row, items)"));
+        assert!(outcomes.contains("done.refused_none"));
+        assert!(outcomes.contains("case 'declined.unknown':"));
         assert!(outcomes.contains("case 'tool.unavailable':"));
         assert!(outcomes.contains("case 'request.too_large':"));
         assert!(outcomes.contains("case 'approve.policy_keeps':"));
         assert!(outcomes.contains("refusalList(items)"));
+        assert!(source.contains("refusal.item_unnamed"));
+        assert!(source.contains("confirmation = { row: row };"));
     }
 }

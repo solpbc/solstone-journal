@@ -30,6 +30,7 @@ const APPROVE_HALTED: &str = "approve.halted";
 const DECLINED_DONE: &str = "declined.done";
 const DECLINED_PARTIAL: &str = "declined.partial";
 const DECLINED_REFUSED: &str = "declined.refused";
+const DECLINED_UNKNOWN: &str = "declined.unknown";
 const REFUSAL_ITEM_NAMED: &str = "refusal.item_named";
 const REFUSAL_ITEM_UNNAMED: &str = "refusal.item_unnamed";
 
@@ -346,8 +347,8 @@ fn removal_outcome(receipt: &Value) -> Option<RemovalOutcome> {
         for item in not_removed {
             let item = item.as_object()?;
             let entry = item.get("entry").and_then(Value::as_str);
-            item.get("reason").and_then(Value::as_str)?;
-            refusals.push(refusal_item(entry));
+            let reason = item.get("reason").and_then(Value::as_str)?;
+            refusals.push(refusal_item(entry, reason));
         }
     }
     let state = if halted {
@@ -377,14 +378,14 @@ fn remove_preflight_refusal(receipt: &Value) -> bool {
         && receipt.get("error").and_then(Value::as_str).is_some()
 }
 
-fn refusal_item(entry: Option<&str>) -> Value {
+fn refusal_item(entry: Option<&str>, reason: &str) -> Value {
     let name = entry
         .and_then(|entry| Path::new(entry).file_name())
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty());
     match name {
-        Some(name) => json!({"state": REFUSAL_ITEM_NAMED, "name": name}),
-        None => json!({"state": REFUSAL_ITEM_UNNAMED}),
+        Some(name) => json!({"state": REFUSAL_ITEM_NAMED, "name": name, "reason": reason}),
+        None => json!({"state": REFUSAL_ITEM_UNNAMED, "reason": reason}),
     }
 }
 
@@ -439,7 +440,7 @@ fn decline_state(
     unknown_count: usize,
 ) -> &'static str {
     if unknown_count > 0 {
-        OUTCOME_UNKNOWN
+        DECLINED_UNKNOWN
     } else if declined_count == 0 && unavailable_count > 0 && refused_count == 0 {
         TOOL_UNAVAILABLE
     } else if declined_count > 0 && (refused_count > 0 || unavailable_count > 0) {
@@ -511,9 +512,9 @@ mod tests {
     use super::{
         APPROVE_DELETED, APPROVE_HALTED, APPROVE_PARTIAL, APPROVE_REFUSED_AFTER_START,
         APPROVE_REFUSED_BEFORE_START, DECLINED_DONE, DECLINED_PARTIAL, DECLINED_REFUSED,
-        LIST_REGISTER_UNAVAILABLE, OUTCOME_UNKNOWN, REFUSAL_ITEM_NAMED, REFUSAL_ITEM_UNNAMED,
-        TOOL_UNAVAILABLE, decline_state, decline_success, error_state, marks_store_refusal,
-        project_mark, refusal_item, removal_outcome, remove_preflight_refusal,
+        DECLINED_UNKNOWN, LIST_REGISTER_UNAVAILABLE, OUTCOME_UNKNOWN, REFUSAL_ITEM_NAMED,
+        REFUSAL_ITEM_UNNAMED, TOOL_UNAVAILABLE, decline_state, decline_success, error_state,
+        marks_store_refusal, project_mark, refusal_item, removal_outcome, remove_preflight_refusal,
     };
 
     fn receipt(removed: &[&str], entries: &[&str], halted: bool) -> Value {
@@ -596,6 +597,7 @@ mod tests {
         assert_eq!(refused.not_removed_count, 1);
         assert_eq!(refused.refusals[0]["state"], REFUSAL_ITEM_NAMED);
         assert_eq!(refused.refusals[0]["name"], "070000_17");
+        assert_eq!(refused.refusals[0]["reason"], "r");
 
         let partial = removal_outcome(&receipt(&["a"], &["b"], false)).expect("partial receipt");
         assert_eq!(partial.state, APPROVE_PARTIAL);
@@ -610,8 +612,9 @@ mod tests {
         assert!(halted.halted);
 
         assert!(removal_outcome(&receipt(&[], &[], false)).is_none());
-        assert_eq!(REFUSAL_ITEM_UNNAMED, refusal_item(Some(""))["state"]);
-        assert_eq!(REFUSAL_ITEM_UNNAMED, refusal_item(None)["state"]);
+        assert_eq!(REFUSAL_ITEM_UNNAMED, refusal_item(Some(""), "r")["state"]);
+        assert_eq!(refusal_item(Some(""), "r")["reason"], "r");
+        assert_eq!(REFUSAL_ITEM_UNNAMED, refusal_item(None, "r")["state"]);
         assert_eq!(APPROVE_REFUSED_BEFORE_START, "approve.refused_before_start");
         assert_eq!(OUTCOME_UNKNOWN, "outcome.unknown");
         assert_eq!(TOOL_UNAVAILABLE, "tool.unavailable");
@@ -623,7 +626,7 @@ mod tests {
         assert_eq!(decline_state(1, 1, 0, 0), DECLINED_PARTIAL);
         assert_eq!(decline_state(0, 2, 0, 0), DECLINED_REFUSED);
         assert_eq!(decline_state(0, 0, 1, 0), TOOL_UNAVAILABLE);
-        assert_eq!(decline_state(1, 0, 0, 1), OUTCOME_UNKNOWN);
+        assert_eq!(decline_state(1, 0, 0, 1), DECLINED_UNKNOWN);
     }
 
     #[test]
