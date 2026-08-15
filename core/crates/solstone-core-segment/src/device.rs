@@ -13,6 +13,8 @@ pub enum Kind {
     Observed,
     Browser,
     Imported(ImportSource),
+    /// A journal-authored support chat stream.
+    Chat,
     Unknown,
 }
 
@@ -26,7 +28,7 @@ impl Kind {
     pub fn import_source(&self) -> Option<&ImportSource> {
         match self {
             Self::Imported(source) => Some(source),
-            Self::Observed | Self::Browser | Self::Unknown => None,
+            Self::Observed | Self::Browser | Self::Chat | Self::Unknown => None,
         }
     }
 
@@ -45,6 +47,7 @@ impl Kind {
             Self::Observed => "observer",
             Self::Browser => "browser",
             Self::Imported(_) => "import",
+            Self::Chat => "chat",
             Self::Unknown => "unknown",
         }
     }
