@@ -35,7 +35,7 @@ fn authored_workspace_copy(source: &str) -> String {
         .find("    .thinking-workspace .thinking-runs-header")
         .expect("Runs CSS starts");
     let css_end = source[css_start..]
-        .find("    @media (max-width: 760px)")
+        .find("    @media (max-width: 960px)")
         .expect("Runs CSS ends")
         + css_start;
     let header_start = source
@@ -319,6 +319,10 @@ fn thinking_runs_list_source_has_explicit_table_controls_and_mobile_cards() {
 #[test]
 fn thinking_runs_list_styles_do_not_force_horizontal_scrolling() {
     let workspace = native_workspace();
+    assert!(
+        workspace.contains("@media (max-width: 960px)"),
+        "run cards cover the measured 768px tablet viewport"
+    );
     let table_start = workspace
         .find(".thinking-workspace .thinking-runs-table {")
         .expect("run table style starts");
