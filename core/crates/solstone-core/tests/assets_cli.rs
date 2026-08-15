@@ -19,23 +19,12 @@ fn assets_command_emits_the_complete_round_trippable_catalog() {
         .unwrap()
         .to_vec();
     assert_eq!(emitted, expected);
-    assert_eq!(emitted.len(), 68);
+    assert_eq!(emitted.len(), 43);
     assert!(emitted.iter().any(|row| row["origin_key"]
         == "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz"));
     assert!(emitted.iter().any(|row| row["origin_key"]
         == "runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-arm64-sol1.tar.gz"));
-    // The MLX snapshots carry the only origin keys with a repo segment, so a row
-    // that lost it would still round-trip and still count 68. Name one exactly.
-    assert_eq!(
-        emitted
-            .iter()
-            .filter(|row| row["unit"] == "mlx-snapshot")
-            .count(),
-        25
-    );
-    assert!(emitted.iter().any(|row| row["origin_key"]
-        == "assets/mlx-snapshot/mlx-community-Qwen3.5-9B-MLX-8bit/\
-84f7c2deea248d8df56240f88102def51c7ed5d6/model-00001-of-00002.safetensors"));
+    assert!(emitted.iter().all(|row| row["unit"] != "mlx-snapshot"));
 }
 
 #[test]

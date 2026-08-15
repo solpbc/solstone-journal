@@ -8,14 +8,12 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::mlx::SnapshotSource as _;
 use super::{
     InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, coreml_install, dispatch,
-    download_artifact, fingerprint, lease, local_backend_choice, manifest, metal_candidate, mlx,
+    download_artifact, fingerprint, lease, local_backend_choice, manifest, metal_candidate,
     parakeet_target_for_install, pins, publish_staged_tree_with, readiness, status,
     write_parakeet_model_manifest,
 };
@@ -311,43 +309,6 @@ fn fixture_artifact(url: String, filename: &'static str, body: &[u8]) -> Artifac
     }
 }
 
-fn candidate_runtime_archive() -> Vec<u8> {
-    let encoder = GzEncoder::new(Vec::new(), Compression::default());
-    let mut builder = tar::Builder::new(encoder);
-    let bytes = b"#!/bin/sh\nexit 0\n";
-    let mut header = tar::Header::new_gnu();
-    header.set_size(bytes.len() as u64);
-    header.set_mode(0o755);
-    header.set_cksum();
-    builder
-        .append_data(&mut header, "llama-server", &bytes[..])
-        .unwrap();
-    builder.into_inner().unwrap().finish().unwrap()
-}
-
-fn candidate_server(bodies: Vec<Vec<u8>>, status: u16) -> (String, thread::JoinHandle<usize>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = thread::spawn(move || {
-        let mut requests = 0;
-        for body in bodies {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 2048];
-            let _ = stream.read(&mut request).unwrap();
-            write!(
-                stream,
-                "HTTP/1.1 {status} TEST\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                body.len()
-            )
-            .unwrap();
-            stream.write_all(&body).unwrap();
-            requests += 1;
-        }
-        requests
-    });
-    (format!("http://{address}"), server)
-}
-
 fn candidate_request(root: &PathBuf) -> serde_json::Map<String, Value> {
     serde_json::from_value(json!({
         "journal": root,
@@ -357,28 +318,21 @@ fn candidate_request(root: &PathBuf) -> serde_json::Map<String, Value> {
     .unwrap()
 }
 
-fn candidate_fixture_artifacts(base: &str, runtime: &[u8]) -> (Artifact, Artifact, Artifact) {
-    (
-        fixture_artifact(
-            format!("{base}/runtime"),
-            "llama-b10068-bin-macos-arm64.tar.gz",
-            runtime,
-        ),
-        fixture_artifact(
-            format!("{base}/model"),
-            "Qwen3.5-9B-Q8_0.gguf",
-            b"candidate model",
-        ),
-        fixture_artifact(
-            format!("{base}/projector"),
-            "mmproj-F16.gguf",
-            b"candidate projector",
-        ),
-    )
+#[test]
+fn local_backend_defaults_to_metal_on_apple_silicon() {
+    let request = serde_json::Map::new();
+    assert_eq!(
+        super::local_backend_for_key(&request, "aarch64-apple-darwin").unwrap(),
+        super::LocalBackend::Metal
+    );
+    assert_eq!(
+        super::local_backend_for_key(&request, "x86_64-unknown-linux-gnu").unwrap(),
+        super::LocalBackend::Existing
+    );
 }
 
 #[test]
-fn metal_candidate_requires_explicit_supported_platform_without_provider_state() {
+fn metal_runtime_requires_the_supported_platform_without_ready_state() {
     let root = temp("metal-candidate-platform");
     let error = dispatch(
         InstallVerb::RunLocal,
@@ -391,55 +345,40 @@ fn metal_candidate_requires_explicit_supported_platform_without_provider_state()
         "unsupported_platform"
     );
     assert!(!status::status_path(&root, "local").exists());
-    assert!(!lease::lease_path(&root, "local").exists());
+    assert!(lease::lease_path(&root, "local").exists());
+    assert!(!lease::is_held(&root, "local").unwrap());
     let _ = fs::remove_dir_all(root);
 }
 
 #[test]
-fn metal_candidate_installs_proves_and_discards_stale_parts_atomically() {
-    let root = temp("metal-candidate-install");
-    let runtime_staging = pins::cache_root(&root).join("bin/aarch64-apple-darwin/.b10068.staging");
-    fs::create_dir_all(&runtime_staging).unwrap();
-    fs::write(
-        runtime_staging.join(".llama-b10068-bin-macos-arm64.tar.gz.part"),
-        b"stale",
-    )
-    .unwrap();
-    let runtime = candidate_runtime_archive();
-    let (base, server) = candidate_server(
-        vec![
-            runtime.clone(),
-            b"candidate model".to_vec(),
-            b"candidate projector".to_vec(),
-        ],
-        200,
-    );
-    let (runtime, model, projector) = candidate_fixture_artifacts(&base, &runtime);
-    let policy = loopback_download_policy(&base);
-    let result = metal_candidate::run_with(
-        &candidate_request(&root),
-        &policy,
+fn metal_target_reuses_the_shared_4b_model_and_darwin_runtime_pin() {
+    let root = temp("metal-target-4b");
+    let target = super::local_target_for_key(
+        &root,
+        "local/qwen3.5-4b",
+        super::LocalBackend::Metal,
         "aarch64-apple-darwin",
-        &runtime,
-        &model,
-        &projector,
     )
     .unwrap();
-    assert_eq!(server.join().unwrap(), 3);
-    assert_eq!(result["ready"], true);
-    assert_eq!(result["backend"], "metal");
-    assert!(result["proof"]["server_binary"]["status"] == "ready");
-    assert!(result["proof"]["model_gguf"]["status"] == "ready");
-    assert!(result["proof"]["projector"]["status"] == "ready");
-    assert!(!runtime_staging.exists());
-    assert!(!status::status_path(&root, "local").exists());
-    assert!(!lease::lease_path(&root, "local").exists());
+    assert_eq!(target["backend"], "metal");
     assert_eq!(
-        manifest::prove_manifest(
-            &manifest::artifact_manifest_path(&pins::cache_root(&root).join("models/qwen3.5-9b")),
-            &pins::metal_candidate_model_identity(),
-        )["status"],
-        "ready"
+        target["model_pin"],
+        pins::model_identity("local/qwen3.5-4b").unwrap()
+    );
+    assert_eq!(
+        target["runtime_pin"],
+        pins::vulkan_identity("aarch64-apple-darwin").unwrap()
+    );
+    let error = super::local_target_for_key(
+        &root,
+        "local/qwen3.5-4b",
+        super::LocalBackend::Metal,
+        "x86_64-unknown-linux-gnu",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.envelope.error.unwrap().reason_code,
+        "unsupported_platform"
     );
     let _ = fs::remove_dir_all(root);
 }
@@ -447,29 +386,47 @@ fn metal_candidate_installs_proves_and_discards_stale_parts_atomically() {
 #[test]
 fn metal_candidate_inspect_is_pure_and_reports_component_reasons_and_fit() {
     let root = temp("metal-candidate-inspect");
-    let runtime = candidate_runtime_archive();
-    let (base, server) = candidate_server(
-        vec![
-            runtime.clone(),
-            b"candidate model".to_vec(),
-            b"candidate projector".to_vec(),
-        ],
-        200,
-    );
-    let (runtime, model, projector) = candidate_fixture_artifacts(&base, &runtime);
-    metal_candidate::run_with(
-        &candidate_request(&root),
-        &loopback_download_policy(&base),
-        "aarch64-apple-darwin",
-        &runtime,
-        &model,
-        &projector,
+    let cache = pins::cache_root(&root);
+    let runtime = cache.join("bin/aarch64-apple-darwin/b10068");
+    let model = cache.join("models/local__qwen3.5-4b");
+    fs::create_dir_all(&runtime).unwrap();
+    fs::create_dir_all(&model).unwrap();
+    fs::write(runtime.join("llama-server"), b"#!/bin/sh\nexit 0\n").unwrap();
+    archive::make_executable(&runtime.join("llama-server")).unwrap();
+    fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").unwrap();
+    fs::write(model.join("mmproj-F16.gguf"), b"projector").unwrap();
+    let runtime_manifest = manifest::build_manifest(
+        "local",
+        "llama-server-vulkan",
+        "target",
+        json!({"pin_identity":pins::vulkan_identity("aarch64-apple-darwin").unwrap()}),
+        manifest::runtime_inventory(&runtime, &[]).unwrap(),
+        None,
+        None,
     )
     .unwrap();
-    server.join().unwrap();
+    manifest::write_manifest(
+        &manifest::artifact_manifest_path(&runtime),
+        &runtime_manifest,
+    )
+    .unwrap();
+    let model_manifest = manifest::build_manifest(
+        "local",
+        "local-model",
+        "target",
+        json!({"pin_identity":pins::model_identity("local/qwen3.5-4b").unwrap()}),
+        manifest::inventory_for_tree(&model, "model").unwrap(),
+        None,
+        None,
+    )
+    .unwrap();
+    manifest::write_manifest(&manifest::artifact_manifest_path(&model), &model_manifest).unwrap();
     let before = archive::snapshot_tree(&pins::cache_root(&root)).unwrap();
     let ready =
         metal_candidate::inspect_with(&candidate_request(&root), "aarch64-apple-darwin").unwrap();
+    assert_eq!(ready["ready"], true);
+    assert_eq!(ready["artifacts"]["model_id"], "local/qwen3.5-4b");
+    assert_eq!(ready["fit"]["model_bytes"], 2_740_937_888_u64);
     assert_eq!(ready["fit"]["measurement"], "unmeasured");
     assert_eq!(ready["fit"]["tier"]["source"], "supplied_measurement");
     assert_eq!(ready["fit"]["tier"]["unified_memory_mib"], 16000);
@@ -480,126 +437,75 @@ fn metal_candidate_inspect_is_pure_and_reports_component_reasons_and_fit() {
         before
     );
 
-    fs::remove_file(pins::cache_root(&root).join("models/qwen3.5-9b/Qwen3.5-9B-Q8_0.gguf"))
-        .unwrap();
+    status::begin(
+        &root,
+        r#"{"provider":"local","runtime":"mlx","model_pin":{"model_id":"qwen3.5:9b"}}"#.to_owned(),
+        "legacy-mlx".to_owned(),
+        None,
+        "downloading",
+    )
+    .unwrap();
+    let ignores_legacy_status =
+        metal_candidate::inspect_with(&candidate_request(&root), "aarch64-apple-darwin").unwrap();
+    assert_eq!(ignores_legacy_status["ready"], true);
+    assert!(ignores_legacy_status["install"].is_null());
+
+    fs::remove_file(status::status_path(&root, "local")).unwrap();
+    status::begin(
+        &root,
+        r#"{"backend":"metal","model_pin":{"model_id":"local/qwen3.5-4b"},"runtime":"llama.cpp","runtime_pin":{"release_tag":"stale"}}"#.to_owned(),
+        "stale-native-4b".to_owned(),
+        None,
+        "downloading",
+    )
+    .unwrap();
+    let ignores_stale_native_status =
+        metal_candidate::inspect_with(&candidate_request(&root), "aarch64-apple-darwin").unwrap();
+    assert_eq!(ignores_stale_native_status["ready"], true);
+    assert!(ignores_stale_native_status["install"].is_null());
+
+    fs::remove_file(status::status_path(&root, "local")).unwrap();
+    let current = super::resolved_fingerprint(
+        super::local_target_for_key(
+            &root,
+            "local/qwen3.5-4b",
+            super::LocalBackend::Metal,
+            "aarch64-apple-darwin",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    status::begin(
+        &root,
+        current["target_fingerprint_json"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+        current["target_fingerprint_sha256"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+        None,
+        "downloading",
+    )
+    .unwrap();
+    let reports_current_native_status =
+        metal_candidate::inspect_with(&candidate_request(&root), "aarch64-apple-darwin").unwrap();
+    assert_eq!(
+        reports_current_native_status["install"]["install_state"],
+        "downloading"
+    );
+    assert_eq!(
+        reports_current_native_status["target"]["target_fingerprint_sha256"],
+        current["target_fingerprint_sha256"]
+    );
+
+    fs::remove_file(model.join("Qwen3.5-4B-Q4_K_M.gguf")).unwrap();
     let missing =
         metal_candidate::inspect_with(&candidate_request(&root), "aarch64-apple-darwin").unwrap();
     assert_eq!(missing["failed_component"], "model_gguf");
     assert_eq!(missing["reason_code"], "inventory_member_missing");
     let _ = fs::remove_dir_all(root);
-}
-
-#[test]
-fn metal_candidate_origin_failures_are_explicit_and_never_publish_ready_state() {
-    for (name, status, body, expected) in [
-        ("missing", 404, Vec::new(), "download_origin_unreachable"),
-        ("short", 200, b"short".to_vec(), "download_size_mismatch"),
-        (
-            "wrong-digest",
-            200,
-            vec![b'x'; candidate_runtime_archive().len()],
-            "download_digest_mismatch",
-        ),
-    ] {
-        let root = temp(&format!("metal-candidate-{name}"));
-        let runtime_bytes = candidate_runtime_archive();
-        let (base, server) = candidate_server(vec![body], status);
-        let (runtime, model, projector) = candidate_fixture_artifacts(&base, &runtime_bytes);
-        let error = metal_candidate::run_with(
-            &candidate_request(&root),
-            &loopback_download_policy(&base),
-            "aarch64-apple-darwin",
-            &runtime,
-            &model,
-            &projector,
-        )
-        .unwrap_err();
-        assert_eq!(error.exit_code, 74, "{name}");
-        assert_eq!(
-            error.envelope.error.unwrap().reason_code,
-            expected,
-            "{name}"
-        );
-        assert_eq!(server.join().unwrap(), 1, "{name}");
-        let inspect =
-            metal_candidate::inspect_with(&candidate_request(&root), "aarch64-apple-darwin")
-                .unwrap();
-        assert_eq!(inspect["ready"], false, "{name}");
-        assert!(!status::status_path(&root, "local").exists());
-        let _ = fs::remove_dir_all(root);
-    }
-}
-
-#[test]
-fn metal_candidate_preserves_incumbent_mlx_owner_state() {
-    let root = temp("metal-candidate-incumbent-mlx");
-    fs::create_dir_all(root.join("config")).unwrap();
-    fs::write(
-        root.join("config/journal.json"),
-        br#"{"providers":{"active":{"provider":"local","model":"qwen3.5:9b"}}}"#,
-    )
-    .unwrap();
-    let mlx_source = temp("metal-candidate-mlx-source");
-    let policy = loopback_download_policy("http://127.0.0.1:1");
-    super::dispatch_with_download_policy(
-        InstallVerb::RunMlx,
-        json!({
-            "journal": root,
-            "model_id": "qwen3.5:9b",
-            "source_snapshot": mlx_source,
-            "lfs_sha256": {},
-        }),
-        &policy,
-    )
-    .unwrap();
-    fs::remove_file(lease::lease_path(&root, "local")).unwrap();
-    let status_path = status::status_path(&root, "local");
-    let status_before = fs::read(&status_path).unwrap();
-    let config_before = fs::read(root.join("config/journal.json")).unwrap();
-    let mlx_base = pins::cache_root(&root)
-        .join("mlx/mlx-community--Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6");
-    let mlx_before = archive::snapshot_tree(&mlx_base).unwrap();
-    let mlx_input: serde_json::Map<String, Value> = serde_json::from_value(json!({
-        "journal": root,
-        "model_id": "qwen3.5:9b",
-        "platform_supported": true,
-        "mlx_vlm_importable": true,
-    }))
-    .unwrap();
-    let readiness_before = readiness::inspect_mlx(mlx_input.clone());
-
-    let runtime_bytes = candidate_runtime_archive();
-    let (base, server) = candidate_server(
-        vec![
-            runtime_bytes.clone(),
-            b"candidate model".to_vec(),
-            b"candidate projector".to_vec(),
-        ],
-        200,
-    );
-    let (runtime, model, projector) = candidate_fixture_artifacts(&base, &runtime_bytes);
-    metal_candidate::run_with(
-        &candidate_request(&root),
-        &loopback_download_policy(&base),
-        "aarch64-apple-darwin",
-        &runtime,
-        &model,
-        &projector,
-    )
-    .unwrap();
-    server.join().unwrap();
-
-    assert_eq!(fs::read(status_path).unwrap(), status_before);
-    assert_eq!(
-        fs::read(root.join("config/journal.json")).unwrap(),
-        config_before
-    );
-    assert_eq!(archive::snapshot_tree(&mlx_base).unwrap(), mlx_before);
-    assert_eq!(readiness::inspect_mlx(mlx_input), readiness_before);
-    assert!(!lease::lease_path(&root, "local").exists());
-    assert_eq!(resolve("local-model", None, None).len(), 2);
-    let _ = fs::remove_dir_all(root);
-    let _ = fs::remove_dir_all(mlx_source);
 }
 
 fn assert_manifest_proves_preflip_identity(root: &std::path::Path, unit: &str, identity: Value) {
@@ -1416,22 +1322,6 @@ fn local_target_fingerprint_matches_python_vulkan_reference() {
 }
 
 #[test]
-fn mlx_target_fingerprint_matches_python_reference() {
-    // Captured with:
-    // python3 -c 'from solstone.think.models import QWEN_35_9B; from solstone.think.providers import mlx_install; print(mlx_install.target_fingerprint(QWEN_35_9B))'
-    // on the current reference tree, for the Qwen MLX registry entry.
-    let expected_json = r#"{"model_pin":{"model_id":"qwen3.5:9b","repo":"mlx-community/Qwen3.5-9B-MLX-8bit","revision":"84f7c2deea248d8df56240f88102def51c7ed5d6","soft_token_budget":null,"unit":"mlx-snapshot"},"provider":"local","runtime":"mlx"}"#;
-    let mut input = serde_json::from_str::<serde_json::Map<String, Value>>(expected_json).unwrap();
-    input.remove("provider");
-    let actual = fingerprint::mlx_fingerprint(input).unwrap();
-    assert_eq!(actual["target_fingerprint_json"], expected_json);
-    assert_eq!(
-        actual["target_fingerprint_sha256"],
-        "04cb931cecdab39e1b7b92d675b36f06e06eee492ebbb606d41a4a8c1fec7ce5"
-    );
-}
-
-#[test]
 fn fingerprint_transport_resolves_targets_without_writing_status() {
     let root = temp("fingerprint-transport");
     let local = dispatch(
@@ -1447,16 +1337,6 @@ fn fingerprint_transport_resolves_targets_without_writing_status() {
     assert!(local_target["model_pin"].is_object());
     assert!(!status::status_path(&root, "local").exists());
 
-    let mlx = dispatch(
-        InstallVerb::FingerprintMlx,
-        json!({"journal":root,"model_id":"qwen3.5:9b"}),
-    )
-    .unwrap();
-    let mlx = mlx.result.unwrap();
-    assert_eq!(
-        mlx["target_fingerprint_json"],
-        r#"{"model_pin":{"model_id":"qwen3.5:9b","repo":"mlx-community/Qwen3.5-9B-MLX-8bit","revision":"84f7c2deea248d8df56240f88102def51c7ed5d6","soft_token_budget":null,"unit":"mlx-snapshot"},"provider":"local","runtime":"mlx"}"#
-    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -1849,11 +1729,6 @@ fn extraction_refuses_symlink_and_hardlink_escapes_without_parent_changes() {
 #[test]
 fn failed_local_publish_restores_the_existing_tree() {
     assert_failed_publish_restores_the_existing_tree("local-publish-rollback");
-}
-
-#[test]
-fn failed_mlx_publish_restores_the_existing_tree() {
-    assert_failed_publish_restores_the_existing_tree("mlx-publish-rollback");
 }
 
 fn assert_failed_publish_restores_the_existing_tree(name: &str) {
@@ -2881,12 +2756,31 @@ fn registry_binds_existing_pins_and_the_python_parakeet_model_pin() {
 #[test]
 fn registry_preserves_prechange_identity_literals() {
     let literals = [
-        (fingerprint::canonical(pins::vulkan_identity("x86_64-unknown-linux-gnu").unwrap()).unwrap(), "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"filename\":\"llama-b10068-bin-ubuntu-vulkan-x64.tar.gz\",\"release_tag\":\"b10068\",\"sha256\":\"713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3\",\"unit\":\"llama-server-vulkan\"}"),
-        (fingerprint::canonical(pins::cuda_identity("x86_64-unknown-linux-gnu").unwrap()).unwrap(), "{\"arch\":\"amd64\",\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"llama_cpp_revision\":\"571d0d540df04f25298d0e159e520d9fc62ed121\",\"release_tag\":\"b10068\",\"repack_revision\":\"sol1\",\"sha256\":\"3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea\",\"size_bytes\":550238443,\"unit\":\"llama-server-cuda\",\"upstream_image_digest\":\"sha256:5bd5290bd35cfde893d0dcbd9811723c16d89575927d537b5f21becbfbab2f63\",\"url\":\"https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz\",\"wanted_files\":[\"libcublas.so.13\",\"libcublasLt.so.13\",\"libcudart.so.13\",\"libggml-base.so.0\",\"libggml-cpu-alderlake.so\",\"libggml-cpu-cannonlake.so\",\"libggml-cpu-cascadelake.so\",\"libggml-cpu-cooperlake.so\",\"libggml-cpu-haswell.so\",\"libggml-cpu-icelake.so\",\"libggml-cpu-ivybridge.so\",\"libggml-cpu-piledriver.so\",\"libggml-cpu-sandybridge.so\",\"libggml-cpu-sapphirerapids.so\",\"libggml-cpu-skylakex.so\",\"libggml-cpu-sse42.so\",\"libggml-cpu-x64.so\",\"libggml-cpu-zen4.so\",\"libggml-cuda.so\",\"libggml.so.0\",\"libllama-common.so.0\",\"libllama-server-impl.so\",\"libllama.so.0\",\"libmtmd.so.0\",\"llama-server\"]}"),
-        (fingerprint::canonical(pins::model_identity("local/qwen3.5-4b").unwrap()).unwrap(), "{\"filename\":\"Qwen3.5-4B-Q4_K_M.gguf\",\"mmproj_filename\":\"mmproj-F16.gguf\",\"mmproj_sha256\":\"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864\",\"model_id\":\"local/qwen3.5-4b\",\"repo\":\"unsloth/Qwen3.5-4B-GGUF\",\"revision\":\"main\",\"sha256\":\"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4\",\"unit\":\"local-model\"}"),
-        (fingerprint::canonical(pins::parakeet_backend_identity("x86_64-unknown-linux-gnu", "cpu").unwrap()).unwrap(), "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"backend\":\"cpu\",\"binary_name\":\"parakeet-server\",\"filename\":\"parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz\",\"release_tag\":\"v0.5.0\",\"sha256\":\"636a9fc48ac023096037790f9b77d7e5043b200dd6399ec0438bd648c35d79b9\",\"unit\":\"parakeet-server\"}"),
-        (fingerprint::canonical(pins::parakeet_model_identity()).unwrap(), "{\"filename\":\"tdt-0.6b-v3-q8_0.gguf\",\"repo\":\"mudler/parakeet-cpp-gguf\",\"revision\":\"bf0af9f425fa01809cadec671b3cb672709d13e9\",\"sha256\":\"4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757\",\"unit\":\"parakeet-model\"}"),
-        (fingerprint::canonical(json!({"unit":"mlx-snapshot","model_id":"qwen3.5:9b","repo":"mlx-community/Qwen3.5-9B-MLX-8bit","revision":"84f7c2deea248d8df56240f88102def51c7ed5d6","size_bytes":10453446077_u64})).unwrap(), "{\"model_id\":\"qwen3.5:9b\",\"repo\":\"mlx-community/Qwen3.5-9B-MLX-8bit\",\"revision\":\"84f7c2deea248d8df56240f88102def51c7ed5d6\",\"size_bytes\":10453446077,\"unit\":\"mlx-snapshot\"}"),
+        (
+            fingerprint::canonical(pins::vulkan_identity("x86_64-unknown-linux-gnu").unwrap())
+                .unwrap(),
+            "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"filename\":\"llama-b10068-bin-ubuntu-vulkan-x64.tar.gz\",\"release_tag\":\"b10068\",\"sha256\":\"713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3\",\"unit\":\"llama-server-vulkan\"}",
+        ),
+        (
+            fingerprint::canonical(pins::cuda_identity("x86_64-unknown-linux-gnu").unwrap())
+                .unwrap(),
+            "{\"arch\":\"amd64\",\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"binary_name\":\"llama-server\",\"llama_cpp_revision\":\"571d0d540df04f25298d0e159e520d9fc62ed121\",\"release_tag\":\"b10068\",\"repack_revision\":\"sol1\",\"sha256\":\"3727630e6ac79953f5c652fddcfd7100da98c55d773c0aec115a55f40f3aafea\",\"size_bytes\":550238443,\"unit\":\"llama-server-cuda\",\"upstream_image_digest\":\"sha256:5bd5290bd35cfde893d0dcbd9811723c16d89575927d537b5f21becbfbab2f63\",\"url\":\"https://updates.solstone.app/runtimes/llama-cuda13/b10068/llama-b10068-bin-linux-cuda13-amd64-sol1.tar.gz\",\"wanted_files\":[\"libcublas.so.13\",\"libcublasLt.so.13\",\"libcudart.so.13\",\"libggml-base.so.0\",\"libggml-cpu-alderlake.so\",\"libggml-cpu-cannonlake.so\",\"libggml-cpu-cascadelake.so\",\"libggml-cpu-cooperlake.so\",\"libggml-cpu-haswell.so\",\"libggml-cpu-icelake.so\",\"libggml-cpu-ivybridge.so\",\"libggml-cpu-piledriver.so\",\"libggml-cpu-sandybridge.so\",\"libggml-cpu-sapphirerapids.so\",\"libggml-cpu-skylakex.so\",\"libggml-cpu-sse42.so\",\"libggml-cpu-x64.so\",\"libggml-cpu-zen4.so\",\"libggml-cuda.so\",\"libggml.so.0\",\"libllama-common.so.0\",\"libllama-server-impl.so\",\"libllama.so.0\",\"libmtmd.so.0\",\"llama-server\"]}",
+        ),
+        (
+            fingerprint::canonical(pins::model_identity("local/qwen3.5-4b").unwrap()).unwrap(),
+            "{\"filename\":\"Qwen3.5-4B-Q4_K_M.gguf\",\"mmproj_filename\":\"mmproj-F16.gguf\",\"mmproj_sha256\":\"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864\",\"model_id\":\"local/qwen3.5-4b\",\"repo\":\"unsloth/Qwen3.5-4B-GGUF\",\"revision\":\"main\",\"sha256\":\"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4\",\"unit\":\"local-model\"}",
+        ),
+        (
+            fingerprint::canonical(
+                pins::parakeet_backend_identity("x86_64-unknown-linux-gnu", "cpu").unwrap(),
+            )
+            .unwrap(),
+            "{\"artifact_key\":\"x86_64-unknown-linux-gnu\",\"backend\":\"cpu\",\"binary_name\":\"parakeet-server\",\"filename\":\"parakeet-v0.5.0-bin-linux-cpu-x64.tar.gz\",\"release_tag\":\"v0.5.0\",\"sha256\":\"636a9fc48ac023096037790f9b77d7e5043b200dd6399ec0438bd648c35d79b9\",\"unit\":\"parakeet-server\"}",
+        ),
+        (
+            fingerprint::canonical(pins::parakeet_model_identity()).unwrap(),
+            "{\"filename\":\"tdt-0.6b-v3-q8_0.gguf\",\"repo\":\"mudler/parakeet-cpp-gguf\",\"revision\":\"bf0af9f425fa01809cadec671b3cb672709d13e9\",\"sha256\":\"4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757\",\"unit\":\"parakeet-model\"}",
+        ),
     ];
     for (actual, expected) in literals {
         assert_eq!(actual, expected);
@@ -2961,92 +2855,6 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
         parakeet["model_path"],
         "/journal/cache/providers/parakeet/models/mudler__parakeet-cpp-gguf/bf0af9f425fa01809cadec671b3cb672709d13e9/tdt-0.6b-v3-q8_0.gguf"
     );
-
-    assert_eq!(
-        super::MLX_SNAPSHOT_MANIFEST_FILENAME,
-        "snapshot.manifest.json"
-    );
-    assert_eq!(
-        super::MLX_VARIANT_MANIFEST_FILENAME,
-        "variant-solstone-budget1120.manifest.json"
-    );
-    assert_ne!(
-        super::MLX_SNAPSHOT_MANIFEST_FILENAME,
-        super::MLX_VARIANT_MANIFEST_FILENAME
-    );
-
-    let mlx_root = temp("registry-mlx-paths");
-    let qwen_source = temp("registry-mlx-qwen-source");
-    let qwen_request = json!({
-        "journal": mlx_root,
-        "model_id": "qwen3.5:9b",
-        "source_snapshot": qwen_source,
-        "lfs_sha256": {}
-    });
-    // A deliberately dead origin: these requests carry source_snapshot, so the
-    // fetch path must never run. If it ever did, this policy makes it fail loudly
-    // instead of quietly reaching the network from a unit test.
-    let unreachable = loopback_download_policy("http://127.0.0.1:1");
-    let qwen_install =
-        super::run_mlx_install(qwen_request.as_object().unwrap(), &unreachable).unwrap();
-    let qwen_base = pins::cache_root(&mlx_root)
-        .join("mlx/mlx-community--Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6");
-    let qwen_snapshot_dir = qwen_base.join("snapshot");
-    assert_eq!(
-        qwen_install["snapshot_path"].as_str(),
-        qwen_snapshot_dir.to_str()
-    );
-    assert!(
-        qwen_base
-            .join(super::MLX_SNAPSHOT_MANIFEST_FILENAME)
-            .is_file()
-    );
-    let qwen_readiness = readiness::inspect_mlx(
-        serde_json::from_value(json!({
-            "journal": mlx_root,
-            "model_id": "qwen3.5:9b",
-        }))
-        .unwrap(),
-    );
-    assert_eq!(
-        qwen_readiness["artifacts"]["snapshot_dir"].as_str(),
-        qwen_snapshot_dir.to_str()
-    );
-    assert_eq!(qwen_readiness["proof"]["snapshot"]["status"], "ready");
-
-    let gemma_source = temp("registry-mlx-gemma-source");
-    let gemma_request = json!({
-        "journal": mlx_root,
-        "model_id": "gemma-4-26b-a4b-it-mlx-4bit",
-        "source_snapshot": gemma_source,
-        "lfs_sha256": {}
-    });
-    let gemma_install =
-        super::run_mlx_install(gemma_request.as_object().unwrap(), &unreachable).unwrap();
-    let mlx_base = pins::cache_root(&mlx_root).join(
-        "mlx/mlx-community--gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
-    );
-    let snapshot_dir = mlx_base.join("snapshot");
-    let snapshot_manifest = mlx_base.join(super::MLX_SNAPSHOT_MANIFEST_FILENAME);
-    let variant_manifest = mlx_base.join(super::MLX_VARIANT_MANIFEST_FILENAME);
-    assert_eq!(
-        snapshot_dir,
-        pins::cache_root(&mlx_root).join(
-            "mlx/mlx-community--gemma-4-26b-a4b-it-4bit/efbeee6e582ebfd06abc9d65e90839c4b5d2116b/snapshot"
-        )
-    );
-    assert_eq!(
-        gemma_install["snapshot_path"].as_str(),
-        snapshot_dir.to_str()
-    );
-    let variant_dir = mlx_base.join("variant-solstone-budget1120");
-    assert_eq!(gemma_install["variant_path"].as_str(), variant_dir.to_str());
-    assert!(snapshot_manifest.is_file());
-    assert!(variant_manifest.is_file());
-    assert_ne!(snapshot_manifest.file_name(), variant_manifest.file_name());
-    let _ = fs::remove_dir_all(mlx_root);
-    let _ = fs::remove_dir_all(qwen_source);
-    let _ = fs::remove_dir_all(gemma_source);
 }
 
 #[test]
@@ -3074,7 +2882,7 @@ fn registry_binds_local_model_artifacts_without_mutating_manifest_identity() {
             .iter()
             .filter(|row| row.unit == "local-model")
             .count(),
-        4
+        2
     );
 }
 
@@ -3225,100 +3033,5 @@ fn two_real_processes_cannot_hold_the_same_lease() {
         serde_json::from_slice::<Value>(&fs::read(status::status_path(&root, "local")).unwrap())
             .is_ok()
     );
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
-fn mlx_snapshot_objects_join_on_repo_and_revision_not_filename() {
-    // Both snapshots ship files with identical names (config.json,
-    // tokenizer_config.json, model.safetensors.index.json), so a join that keyed
-    // on filename would blend the two models into one corrupt snapshot.
-    let qwen = mlx::snapshot_objects(
-        "mlx-community/Qwen3.5-9B-MLX-8bit",
-        "84f7c2deea248d8df56240f88102def51c7ed5d6",
-    );
-    let gemma = mlx::snapshot_objects(
-        "mlx-community/gemma-4-26b-a4b-it-4bit",
-        "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
-    );
-    assert_eq!(qwen.len(), 13);
-    assert_eq!(gemma.len(), 12);
-    for artifact in qwen.iter().chain(gemma.iter()) {
-        assert_eq!(artifact.unit, "mlx-snapshot");
-        assert!(artifact.origin_key.starts_with("assets/mlx-snapshot/"));
-    }
-    // The shared filenames really do exist on both sides -- without that, the
-    // test above would pass for a join keyed on anything at all.
-    for shared in ["config.json", "tokenizer_config.json"] {
-        assert!(qwen.iter().any(|a| a.filename == shared));
-        assert!(gemma.iter().any(|a| a.filename == shared));
-    }
-    // Negative twin: the right repo at the wrong revision resolves to nothing.
-    assert!(
-        mlx::snapshot_objects("mlx-community/Qwen3.5-9B-MLX-8bit", "not-a-revision").is_empty()
-    );
-    assert!(mlx::snapshot_objects("mlx-community/nonexistent", "84f7c2de").is_empty());
-}
-
-#[test]
-fn mlx_origin_source_fails_closed_rather_than_leaving_an_empty_snapshot() {
-    let root = temp("mlx-fail-closed");
-    let policy = loopback_download_policy("http://127.0.0.1:1");
-    let source = mlx::OriginSnapshotSource {
-        repo: "mlx-community/nonexistent",
-        revision: "deadbeef",
-        policy: &policy,
-    };
-    let destination = root.join("snapshot");
-    let error = source.populate(&destination).unwrap_err();
-    assert!(error.contains("no registry objects"), "{error}");
-    // ⛔ The directory must not exist. An empty snapshot dir is indistinguishable
-    // from a model that legitimately has no files, which is how a silent failure
-    // would reach the publish step.
-    assert!(!destination.exists());
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
-fn mlx_origin_source_fetches_every_object_from_the_origin_and_verifies_digests() {
-    let root = temp("mlx-origin-fetch");
-    let objects = mlx::snapshot_objects(
-        "mlx-community/gemma-4-26b-a4b-it-4bit",
-        "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
-    );
-    // Serve one real registry row's bytes; the rest are never reached because the
-    // first digest mismatch aborts. That is the property under test: the fetch
-    // verifies against the pin rather than trusting the origin.
-    let artifact = objects[0];
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let requested = Arc::new(Mutex::new(Vec::new()));
-    let observed = Arc::clone(&requested);
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut buffer = [0_u8; 2048];
-        let read = stream.read(&mut buffer).unwrap_or(0);
-        let request = String::from_utf8_lossy(&buffer[..read]).to_string();
-        observed.lock().unwrap().push(request);
-        stream
-            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nwrong")
-            .unwrap();
-    });
-    let base = format!("http://{address}");
-    let policy = loopback_download_policy(&base);
-    let source = mlx::OriginSnapshotSource {
-        repo: "mlx-community/gemma-4-26b-a4b-it-4bit",
-        revision: "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
-        policy: &policy,
-    };
-    let destination = root.join("snapshot");
-    let error = source.populate(&destination).unwrap_err();
-    server.join().unwrap();
-    // Wrong bytes are refused even though the server answered 200.
-    assert!(error.contains("fetch"), "{error}");
-    // And it asked the ORIGIN for that row's exact key -- never a model hub.
-    let seen = requested.lock().unwrap().join("");
-    assert!(seen.contains(artifact.origin_key), "{seen}");
-    assert!(!seen.contains("huggingface"));
     let _ = fs::remove_dir_all(root);
 }

@@ -17,7 +17,8 @@ use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_c
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_local::install::{
     lease::is_held,
-    readiness::{inspect_local, inspect_mlx},
+    metal_candidate,
+    readiness::inspect_local,
     status::{is_in_flight, read_status},
 };
 use solstone_core_sense::memory::{MemoryProbe, SystemMemoryProbe};
@@ -25,27 +26,16 @@ use solstone_core_sense::memory::{MemoryProbe, SystemMemoryProbe};
 use crate::MutationError;
 
 pub const DEFAULT_MODEL: &str = "local/qwen3.5-4b";
-const MLX_MODEL: &str = "qwen3.5:9b";
-const MLX_MODEL_SIZE_BYTES: u64 = 10_453_446_077;
-const MLX_MIN_RAM_GB: u64 = 13;
 
 pub fn default_model() -> &'static str {
-    if cfg!(target_os = "macos") {
-        MLX_MODEL
-    } else {
-        DEFAULT_MODEL
-    }
+    DEFAULT_MODEL
 }
 
 pub fn accepted_model(model: Option<&str>) -> Option<&'static str> {
     let candidate = model
         .filter(|value| !value.is_empty())
         .unwrap_or(DEFAULT_MODEL);
-    if cfg!(target_os = "macos") {
-        matches!(candidate, DEFAULT_MODEL | MLX_MODEL).then_some(MLX_MODEL)
-    } else {
-        (candidate == DEFAULT_MODEL).then_some(DEFAULT_MODEL)
-    }
+    (candidate == DEFAULT_MODEL).then_some(DEFAULT_MODEL)
 }
 
 pub fn invalid_model(model: &str) -> Value {
@@ -53,9 +43,6 @@ pub fn invalid_model(model: &str) -> Value {
 }
 
 pub fn models() -> Value {
-    if cfg!(target_os = "macos") {
-        return json!([{"name":MLX_MODEL,"label":"qwen 3.5 9B VLM — 13 GB","min_ram_gb":MLX_MIN_RAM_GB,"size_bytes":MLX_MODEL_SIZE_BYTES}]);
-    }
     json!([{"name":DEFAULT_MODEL,"label":"qwen 3.5 4B VLM — 8 GB","min_ram_gb":8,"size_bytes":2_740_937_888_u64}])
 }
 
@@ -68,44 +55,37 @@ pub fn availability(journal: &Path, model: &str) -> Value {
         (String::from("model_id"), Value::String(model.to_owned())),
     ]);
     let readiness = if cfg!(target_os = "macos") {
-        // `inspect_mlx` requires `mlx_vlm_importable`; Rust has no reader for
-        // that Python-package observation, so binary_present/available remain
-        // unavailable until one exists.
-        input.insert(
-            "platform_supported".to_owned(),
-            Value::Bool(cfg!(target_arch = "aarch64")),
-        );
-        inspect_mlx(input)
+        input.insert("backend".to_owned(), Value::String("metal".to_owned()));
+        metal_candidate::inspect(&input).unwrap_or_else(|_| {
+            json!({
+                "host":{"platform_supported":false},
+                "artifacts":{"binary_installed":false,"model_installed":false},
+            })
+        })
     } else {
         inspect_local(input)
     };
     let host = &readiness["host"];
     let artifacts = &readiness["artifacts"];
+    let readiness_status = readiness["status"].as_str().unwrap_or("");
     let platform_supported = host["platform_supported"].as_bool().unwrap_or(false);
     let binary_present = artifacts
         .get("binary_installed")
-        .or_else(|| host.get("package_available"))
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let model_present = artifacts["model_installed"].as_bool().unwrap_or(false);
     let memory = SystemMemoryProbe;
     let total_memory_gb = memory.total_bytes().map(bytes_to_gb);
     let available_memory_gb = memory.available_bytes().map(bytes_to_gb);
-    let min_ram_gb = if cfg!(target_os = "macos") {
-        MLX_MIN_RAM_GB
-    } else {
-        8
-    };
-    let download_bytes = if cfg!(target_os = "macos") {
-        MLX_MODEL_SIZE_BYTES
-    } else {
-        3_413_361_504_u64
-    };
+    let min_ram_gb = 8;
+    let download_bytes = 3_413_361_504_u64;
     let (available, reason) = if !platform_supported {
         (
             false,
             "local thinking needs supported hardware on this computer.",
         )
+    } else if readiness_status == "host-ineligible" {
+        (false, "local runtime cannot start on this computer")
     } else if !binary_present {
         (false, "local runtime is not installed")
     } else if !model_present {
@@ -119,6 +99,9 @@ pub fn availability(journal: &Path, model: &str) -> Value {
 pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
     match read_status(journal, "local") {
         Ok(mut status) => {
+            if cfg!(target_os = "macos") && !metal_candidate::status_targets_native(&status) {
+                return idle_bootstrap_status();
+            }
             if is_in_flight(&status.install_state) && matches!(is_held(journal, "local"), Ok(false))
             {
                 status.install_state = "failed".to_owned();
@@ -126,10 +109,12 @@ pub fn bootstrap_status(journal: &Path, _model: &str) -> Value {
             }
             json!({"name":status.provider,"install_state":status.install_state,"last_transition_at":status.last_transition_at,"last_progress_at":status.last_progress_at,"progress_bytes_received":if is_in_flight(&status.install_state) { status.progress_bytes_received } else { None },"progress_bytes_total":if is_in_flight(&status.install_state) { status.progress_bytes_total } else { None },"install_error":status.install_error})
         }
-        Err(_) => {
-            json!({"name":"local","install_state":"idle","last_transition_at":null,"last_progress_at":null,"progress_bytes_received":null,"progress_bytes_total":null,"install_error":null})
-        }
+        Err(_) => idle_bootstrap_status(),
     }
+}
+
+fn idle_bootstrap_status() -> Value {
+    json!({"name":"local","install_state":"idle","last_transition_at":null,"last_progress_at":null,"progress_bytes_received":null,"progress_bytes_total":null,"install_error":null})
 }
 
 pub fn runtime(journal: &Path) -> Value {
@@ -220,11 +205,14 @@ pub fn start_bootstrap(
         ("model_id".to_owned(), Value::String(model.to_owned())),
     ]);
     let readiness = if cfg!(target_os = "macos") {
-        input.insert(
-            "platform_supported".to_owned(),
-            Value::Bool(cfg!(target_arch = "aarch64")),
-        );
-        inspect_mlx(input)
+        input.insert("backend".to_owned(), Value::String("metal".to_owned()));
+        metal_candidate::inspect(&input).unwrap_or_else(|_| {
+            json!({
+                "ready":false,
+                "status":"proof-unavailable",
+                "reason_code":"readiness_unavailable",
+            })
+        })
     } else {
         inspect_local(input)
     };
@@ -245,7 +233,13 @@ pub fn start_bootstrap(
         Err(error) => return BootstrapResponse::Unavailable(error.to_string()),
     };
     let install_state = read_status(journal, "local")
-        .map(|status| status.install_state)
+        .map(|status| {
+            if cfg!(target_os = "macos") && !metal_candidate::status_targets_native(&status) {
+                "idle".to_owned()
+            } else {
+                status.install_state
+            }
+        })
         .unwrap_or_else(|_| "idle".to_owned());
     if is_in_flight(&install_state) {
         return BootstrapResponse::InFlight(install_state);

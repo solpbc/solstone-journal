@@ -1192,18 +1192,15 @@ pub enum InstallCommand {
     PinsLocal,
     PathsLocal,
     FingerprintLocal,
-    FingerprintMlx,
     VerifySha256,
     CudaTrust,
     ManifestVulkan,
     ManifestCuda,
     ManifestModel,
     InspectLocal,
-    InspectMlx,
     InspectParakeet,
     ProbeBinary,
     RunLocal,
-    RunMlx,
     PinsParakeet,
     PathsParakeet,
     FingerprintParakeet,
@@ -3447,9 +3444,6 @@ fn parse_local_install(args: &[OsString]) -> Result<InstallCommand, UsageError> 
         [one, two] if one == OsStr::new("fingerprint") && two == OsStr::new("local") => {
             Ok(InstallCommand::FingerprintLocal)
         }
-        [one, two] if one == OsStr::new("fingerprint") && two == OsStr::new("mlx") => {
-            Ok(InstallCommand::FingerprintMlx)
-        }
         [one, two] if one == OsStr::new("fingerprint") && two == OsStr::new("parakeet") => {
             Ok(InstallCommand::FingerprintParakeet)
         }
@@ -3477,18 +3471,12 @@ fn parse_local_install(args: &[OsString]) -> Result<InstallCommand, UsageError> 
         [one, two] if one == OsStr::new("inspect") && two == OsStr::new("local") => {
             Ok(InstallCommand::InspectLocal)
         }
-        [one, two] if one == OsStr::new("inspect") && two == OsStr::new("mlx") => {
-            Ok(InstallCommand::InspectMlx)
-        }
         [one, two] if one == OsStr::new("inspect") && two == OsStr::new("parakeet") => {
             Ok(InstallCommand::InspectParakeet)
         }
         [one] if one == OsStr::new("probe-binary") => Ok(InstallCommand::ProbeBinary),
         [one, two] if one == OsStr::new("run") && two == OsStr::new("local") => {
             Ok(InstallCommand::RunLocal)
-        }
-        [one, two] if one == OsStr::new("run") && two == OsStr::new("mlx") => {
-            Ok(InstallCommand::RunMlx)
         }
         [one, two] if one == OsStr::new("run") && two == OsStr::new("parakeet") => {
             Ok(InstallCommand::RunParakeet)
@@ -6065,6 +6053,17 @@ mod tests {
                 Ok(Command::Local(LocalCommand::Install(expected))),
                 "{args_values:?}"
             );
+        }
+    }
+
+    #[test]
+    fn rejects_retired_mlx_install_verbs() {
+        for values in [
+            &["local", "install", "fingerprint", "mlx"][..],
+            &["local", "install", "inspect", "mlx"][..],
+            &["local", "install", "run", "mlx"][..],
+        ] {
+            assert_eq!(evaluate_args(&args(values)), Err(UsageError));
         }
     }
 

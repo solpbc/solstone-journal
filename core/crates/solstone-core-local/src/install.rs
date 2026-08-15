@@ -20,7 +20,6 @@ pub mod lease;
 pub mod manifest;
 pub mod metal_candidate;
 pub mod migration;
-pub mod mlx;
 pub mod pins;
 pub mod readiness;
 pub mod rerank_install;
@@ -78,9 +77,6 @@ pub(crate) mod test_support {
 
 static PUBLISH_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-pub(crate) const MLX_SNAPSHOT_MANIFEST_FILENAME: &str = "snapshot.manifest.json";
-pub(crate) const MLX_VARIANT_MANIFEST_FILENAME: &str = "variant-solstone-budget1120.manifest.json";
-
 #[cfg(test)]
 mod tests;
 
@@ -97,18 +93,15 @@ pub enum InstallVerb {
     PinsLocal,
     PathsLocal,
     FingerprintLocal,
-    FingerprintMlx,
     VerifySha256,
     CudaTrust,
     ManifestVulkan,
     ManifestCuda,
     ManifestModel,
     InspectLocal,
-    InspectMlx,
     InspectParakeet,
     ProbeBinary,
     RunLocal,
-    RunMlx,
     PinsParakeet,
     PathsParakeet,
     FingerprintParakeet,
@@ -190,11 +183,11 @@ fn dispatch_with_download_policy(
         }
         InstallVerb::FingerprintLocal => {
             let journal = journal(&object)?;
-            let target = local_target(&journal, &required(&object, "model_id")?)?;
-            resolved_fingerprint(target)?
-        }
-        InstallVerb::FingerprintMlx => {
-            let target = mlx_target(&required(&object, "model_id")?)?;
+            let target = local_target(
+                &journal,
+                &required(&object, "model_id")?,
+                local_backend(&object)?,
+            )?;
             resolved_fingerprint(target)?
         }
         InstallVerb::VerifySha256 => {
@@ -216,14 +209,12 @@ fn dispatch_with_download_policy(
             LocalBackend::Existing => readiness::inspect_local(object),
             LocalBackend::Metal => metal_candidate::inspect(&object)?,
         },
-        InstallVerb::InspectMlx => readiness::inspect_mlx(object),
         InstallVerb::InspectParakeet => readiness::inspect_parakeet(object),
         InstallVerb::ProbeBinary => readiness::probe_binary(&object),
-        InstallVerb::RunLocal => match local_backend(&object)? {
-            LocalBackend::Existing => run_local(&object, policy)?,
-            LocalBackend::Metal => metal_candidate::run(&object, policy)?,
-        },
-        InstallVerb::RunMlx => run_mlx(&object, policy)?,
+        InstallVerb::RunLocal => {
+            local_backend(&object)?;
+            run_local(&object, policy)?
+        }
         InstallVerb::PinsParakeet => pins::parakeet_pins_json(),
         InstallVerb::PathsParakeet => {
             let journal = journal(&object)?;
@@ -239,13 +230,22 @@ fn dispatch_with_download_policy(
     Ok(InstallEnvelope::ok(result))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LocalBackend {
     Existing,
     Metal,
 }
 
 fn local_backend(object: &Map<String, Value>) -> Result<LocalBackend, DispatchError> {
+    local_backend_for_key(object, &pins::platform_key())
+}
+
+fn local_backend_for_key(
+    object: &Map<String, Value>,
+    platform_key: &str,
+) -> Result<LocalBackend, DispatchError> {
     match object.get("backend") {
+        None if platform_key == "aarch64-apple-darwin" => Ok(LocalBackend::Metal),
         None => Ok(LocalBackend::Existing),
         Some(Value::String(value)) if value == "metal" => Ok(LocalBackend::Metal),
         Some(_) => Err(failure(
@@ -381,13 +381,12 @@ fn write_manifest(kind: &str, object: &Map<String, Value>) -> Result<Value, Disp
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RunKind {
     Local,
-    Mlx,
     Parakeet,
 }
 impl RunKind {
     fn status_provider(self) -> &'static str {
         match self {
-            Self::Local | Self::Mlx => "local",
+            Self::Local => "local",
             Self::Parakeet => "parakeet",
         }
     }
@@ -398,12 +397,6 @@ fn run_local(
     policy: &archive::DownloadHostPolicy<'_>,
 ) -> Result<Value, DispatchError> {
     run(object, RunKind::Local, policy)
-}
-fn run_mlx(
-    object: &Map<String, Value>,
-    policy: &archive::DownloadHostPolicy<'_>,
-) -> Result<Value, DispatchError> {
-    run(object, RunKind::Mlx, policy)
 }
 fn run_parakeet(
     object: &Map<String, Value>,
@@ -466,9 +459,7 @@ fn run_with_lease(
         RunKind::Local => local_target(
             &journal,
             &string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".to_owned()),
-        )?,
-        RunKind::Mlx => mlx_target(
-            &string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".to_owned()),
+            local_backend(object)?,
         )?,
         RunKind::Parakeet => parakeet_target_for_install(&journal, parakeet_platform)?,
     };
@@ -493,7 +484,6 @@ fn run_with_lease(
     .map_err(|error| failure("state", "begin_failed", error, 74))?;
     let start = Instant::now();
     let result = match kind {
-        RunKind::Mlx => run_mlx_install(object, policy),
         RunKind::Local => run_local_install(object, &mut state, start, policy),
         RunKind::Parakeet => run_parakeet_install(&journal, &mut state, policy),
     };
@@ -539,14 +529,47 @@ fn run_with_lease(
     }
 }
 
-fn local_target(journal: &Path, model_id: &str) -> Result<Value, DispatchError> {
+fn local_target(
+    journal: &Path,
+    model_id: &str,
+    backend: LocalBackend,
+) -> Result<Value, DispatchError> {
     let key = pins::platform_key();
-    let choice = local_backend_choice(journal, None);
-    let runtime_pin = match choice.backend {
-        crate::Backend::Cuda => pins::cuda_identity(&key),
-        crate::Backend::Vulkan => pins::vulkan_identity(&key),
-    }
-    .ok_or_else(|| {
+    local_target_for_key(journal, model_id, backend, &key)
+}
+
+fn local_target_for_key(
+    journal: &Path,
+    model_id: &str,
+    backend: LocalBackend,
+    key: &str,
+) -> Result<Value, DispatchError> {
+    let (runtime_pin, backend_name, backend_reason) = match backend {
+        LocalBackend::Metal => {
+            if key != "aarch64-apple-darwin" {
+                return Err(failure(
+                    "platform",
+                    "unsupported_platform",
+                    format!("Metal local inference is unsupported on {key}"),
+                    65,
+                ));
+            }
+            (
+                pins::vulkan_identity(key),
+                "metal",
+                "Darwin Metal runtime".to_owned(),
+            )
+        }
+        LocalBackend::Existing => {
+            let choice = local_backend_choice(journal, None);
+            let (identity, name) = match choice.backend {
+                crate::Backend::Cuda => (pins::cuda_identity(key), "cuda"),
+                crate::Backend::Vulkan => (pins::vulkan_identity(key), "vulkan"),
+            };
+            (identity, name, choice.reason)
+        }
+    };
+    let runtime_pin = runtime_pin.ok_or_else(|| {
         failure(
             "platform",
             "unsupported_platform",
@@ -557,7 +580,7 @@ fn local_target(journal: &Path, model_id: &str) -> Result<Value, DispatchError> 
     let model_pin = pins::model_identity(model_id)
         .ok_or_else(|| failure("model", "unsupported_model", model_id, 65))?;
     Ok(
-        json!({"provider":"local","runtime":"llama.cpp","backend":match choice.backend { crate::Backend::Cuda => "cuda", crate::Backend::Vulkan => "vulkan" },"backend_reason":choice.reason,"runtime_pin":runtime_pin,"model_pin":model_pin}),
+        json!({"provider":"local","runtime":"llama.cpp","backend":backend_name,"backend_reason":backend_reason,"runtime_pin":runtime_pin,"model_pin":model_pin}),
     )
 }
 
@@ -610,16 +633,6 @@ pub fn local_backend_choice(
                         })
             })
             .unwrap_or(false),
-    )
-}
-
-fn mlx_target(model_id: &str) -> Result<Value, DispatchError> {
-    let model = pins::MLX_MODELS
-        .iter()
-        .find(|model| model.0 == model_id)
-        .ok_or_else(|| failure("model", "unsupported_model", model_id, 65))?;
-    Ok(
-        json!({"provider":"local","runtime":"mlx","model_pin":{"unit":"mlx-snapshot","model_id":model.0,"repo":model.1,"revision":model.2,"soft_token_budget":if model.0 == "gemma-4-26b-a4b-it-mlx-4bit" { Value::from(1120) } else { Value::Null }}}),
     )
 }
 
@@ -682,7 +695,6 @@ fn run_local_install(
 ) -> Result<Value, DispatchError> {
     let journal = journal(object)?;
     let model_id = string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".to_owned());
-    let key = pins::platform_key();
     let target: Value = serde_json::from_str(
         status_value
             .target_fingerprint_json
@@ -700,6 +712,17 @@ fn run_local_install(
     let backend = target["backend"]
         .as_str()
         .ok_or_else(|| failure("state", "fingerprint_malformed", "backend missing", 74))?;
+    let key = target["runtime_pin"]["artifact_key"]
+        .as_str()
+        .ok_or_else(|| {
+            failure(
+                "state",
+                "fingerprint_malformed",
+                "runtime artifact key missing",
+                74,
+            )
+        })?
+        .to_owned();
     let root = pins::cache_root(&journal);
     let (filename, install_dir, pin_identity, exclude_names, cuda) = if backend == "cuda" {
         let (_, digest, _) = pins::cuda_pin(&key)
@@ -818,129 +841,6 @@ fn run_local_install(
     Ok(
         json!({"backend":backend,"binary_path":install_dir.join("llama-server"),"model_id":model_id}),
     )
-}
-
-/// `source_snapshot` is OPTIONAL. When it is absent the snapshot is fetched from
-/// sol pbc's own origin, which is the production path; when present it names a
-/// directory already on disk, which is the test seam and the only way to install
-/// from bytes this process did not fetch.
-///
-/// ⛔ There is deliberately no third option. Python reaches Hugging Face here
-/// (`huggingface_hub.snapshot_download`), and Article 8 forbids telling a model
-/// hub that an owner's journal exists.
-fn run_mlx_install(
-    object: &Map<String, Value>,
-    policy: &archive::DownloadHostPolicy<'_>,
-) -> Result<Value, DispatchError> {
-    let journal = journal(object)?;
-    let model_id = required(object, "model_id")?;
-    let model = pins::MLX_MODELS
-        .iter()
-        .find(|model| model.0 == model_id)
-        .ok_or_else(|| failure("model", "unsupported_model", &model_id, 65))?;
-    let destination = pins::cache_root(&journal)
-        .join("mlx")
-        .join(model.1.replace('/', "--"))
-        .join(model.2)
-        .join("snapshot");
-    let from_origin = object.get("source_snapshot").is_none();
-    let fetch_root = destination.parent().unwrap().join(".origin-fetch");
-    let source = if from_origin {
-        let _ = fs::remove_dir_all(&fetch_root);
-        use mlx::SnapshotSource as _;
-        mlx::OriginSnapshotSource {
-            repo: model.1,
-            revision: model.2,
-            policy,
-        }
-        .populate(&fetch_root)
-        .map_err(|error| failure("download", "snapshot_fetch_failed", error, 74))?;
-        fetch_root.clone()
-    } else {
-        PathBuf::from(required(object, "source_snapshot")?)
-    };
-    if !source.is_dir() {
-        return Err(failure(
-            "input",
-            "snapshot_source_missing",
-            "source_snapshot must be a directory",
-            65,
-        ));
-    }
-    let staging = destination.parent().unwrap().join(format!(
-        ".{}.staging",
-        destination.file_name().unwrap().to_string_lossy()
-    ));
-    let _ = fs::remove_dir_all(&staging);
-    std::fs::create_dir_all(&staging)
-        .map_err(|error| failure("io", "snapshot_create_failed", error, 74))?;
-    copy_tree(&source, &staging)?;
-    // On the origin path the digests are the registry's own pins, so the bytes are
-    // verified against the same values the fetch already enforced -- belt and
-    // braces across the copy into staging. A caller-supplied snapshot must still
-    // declare them, because nothing else vouches for those bytes.
-    let hashes = if from_origin {
-        mlx::snapshot_objects(model.1, model.2)
-            .into_iter()
-            .map(|artifact| (artifact.filename.to_owned(), Value::from(artifact.sha256)))
-            .collect()
-    } else {
-        object
-            .get("lfs_sha256")
-            .and_then(Value::as_object)
-            .cloned()
-            .ok_or_else(|| {
-                failure(
-                    "input",
-                    "missing_field",
-                    "lfs_sha256 must describe the source snapshot",
-                    65,
-                )
-            })?
-    };
-    mlx::validate_snapshot_sha256(&staging, &hashes)
-        .map_err(|error| failure("verification", "snapshot_sha256_mismatch", error, 65))?;
-    publish_staged_tree(&staging, &destination)
-        .map_err(|error| failure("io", "snapshot_replace_failed", error, 74))?;
-    let target = mlx_target(&model_id)?;
-    let target_json = fingerprint::canonical(target)
-        .map_err(|error| failure("input", "fingerprint_invalid", error, 65))?;
-    let target_sha = fingerprint::sha256(&target_json);
-    let identity = json!({"unit":"mlx-snapshot","model_id":model.0,"repo":model.1,"revision":model.2,"size_bytes":model.3});
-    let manifest_dir = destination.parent().unwrap();
-    let built = manifest::build_manifest(
-        "local",
-        "mlx-snapshot",
-        &target_sha,
-        json!({"pin_identity":identity}),
-        manifest::inventory_for_tree(&destination, "snapshot_file")
-            .map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?,
-        Some(&destination),
-        None,
-    )
-    .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
-    manifest::write_manifest(&manifest_dir.join(MLX_SNAPSHOT_MANIFEST_FILENAME), &built)
-        .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
-    let variant = if model.0 == "gemma-4-26b-a4b-it-mlx-4bit" {
-        let path = manifest_dir.join("variant-solstone-budget1120");
-        mlx::create_gemma4_variant(&destination, &path)
-            .map_err(|error| failure("io", "variant_create_failed", error, 74))?;
-        let built = manifest::build_manifest("local", "mlx-variant", &target_sha, json!({"pin_identity":{"unit":"mlx-variant","model_id":model.0,"repo":model.1,"revision":model.2,"size_bytes":model.3,"variant":"solstone-budget1120"}}), manifest::inventory_for_tree(&path, "variant_file").map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?, Some(&path), None).map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
-        manifest::write_manifest(&manifest_dir.join(MLX_VARIANT_MANIFEST_FILENAME), &built)
-            .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
-        Some(path)
-    } else {
-        None
-    };
-    if from_origin {
-        let _ = fs::remove_dir_all(&fetch_root);
-    }
-    let source_label = if from_origin {
-        "origin"
-    } else {
-        "local_snapshot_seam"
-    };
-    Ok(json!({"snapshot_path":destination,"variant_path":variant,"source":source_label}))
 }
 
 /// Mirrors `run_local_install`'s download-extract-chmod-manifest-publish
@@ -1121,28 +1021,6 @@ pub(crate) fn write_parakeet_model_manifest(
     .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
     manifest::write_manifest(&manifest::artifact_manifest_path(model_dir), &built)
         .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
-    Ok(())
-}
-
-fn copy_tree(source: &Path, destination: &Path) -> Result<(), DispatchError> {
-    for entry in std::fs::read_dir(source)
-        .map_err(|error| failure("io", "snapshot_read_failed", error, 74))?
-    {
-        let entry = entry.map_err(|error| failure("io", "snapshot_read_failed", error, 74))?;
-        let target = destination.join(entry.file_name());
-        if entry
-            .file_type()
-            .map_err(|error| failure("io", "snapshot_read_failed", error, 74))?
-            .is_dir()
-        {
-            fs::create_dir_all(&target)
-                .map_err(|error| failure("io", "snapshot_create_failed", error, 74))?;
-            copy_tree(&entry.path(), &target)?;
-        } else {
-            fs::copy(entry.path(), target)
-                .map_err(|error| failure("io", "snapshot_copy_failed", error, 74))?;
-        }
-    }
     Ok(())
 }
 

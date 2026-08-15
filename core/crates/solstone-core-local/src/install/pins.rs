@@ -47,23 +47,6 @@ pub const CUDA_ARTIFACTS: &[(&str, &str, &str, u64)] = &[
         654508507,
     ),
 ];
-pub const MLX_MODELS: &[(&str, &str, &str, u64)] = &[
-    (
-        "qwen3.5:9b",
-        "mlx-community/Qwen3.5-9B-MLX-8bit",
-        "84f7c2deea248d8df56240f88102def51c7ed5d6",
-        10453446077,
-    ),
-    (
-        "gemma-4-26b-a4b-it-mlx-4bit",
-        "mlx-community/gemma-4-26b-a4b-it-4bit",
-        "efbeee6e582ebfd06abc9d65e90839c4b5d2116b",
-        15641241224,
-    ),
-];
-pub const METAL_CANDIDATE_MODEL_ID: &str = "qwen3.5:9b";
-pub const METAL_CANDIDATE_MODEL_SLUG: &str = "qwen3.5-9b";
-
 // Parakeet pins mirror LLAMA_SERVER_PINS's (artifact_key, release_tag,
 // filename, sha256, binary_name) shape, split by backend the same way
 // LLAMA_SERVER_PINS (vulkan) and CUDA_ARTIFACTS (cuda) are split -- one
@@ -200,9 +183,6 @@ pub fn cuda_identity(key: &str) -> Option<Value> {
 }
 pub fn model_identity(model_id: &str) -> Option<Value> {
     (model_id == "local/qwen3.5-4b").then(|| json!({"unit":"local-model","model_id":"local/qwen3.5-4b","repo":"unsloth/Qwen3.5-4B-GGUF","revision":"main","filename":"Qwen3.5-4B-Q4_K_M.gguf","sha256":"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4","mmproj_filename":"mmproj-F16.gguf","mmproj_sha256":"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864"}))
-}
-pub fn metal_candidate_model_identity() -> Value {
-    json!({"unit":"local-model","model_id":METAL_CANDIDATE_MODEL_ID,"repo":"unsloth/Qwen3.5-9B-GGUF","revision":"3885219b6810b007914f3a7950a8d1b469d598a5","filename":"Qwen3.5-9B-Q8_0.gguf","sha256":"809626574d0cb43d4becfa56169980da2bb448f2299270f7be443cb89d0a6ae4","mmproj_filename":"mmproj-F16.gguf","mmproj_sha256":"f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f"})
 }
 
 pub fn parakeet_vulkan_pin(
@@ -348,7 +328,7 @@ pub fn paths(journal: &Path, key: &str, model_id: Option<&str>) -> Value {
     })
 }
 pub fn pins_json() -> Value {
-    json!({"llama_server_pins": LLAMA_SERVER_PINS.iter().map(|p| json!({"artifact_key":p.0,"release_tag":p.1,"filename":p.2,"sha256":p.3,"binary_name":p.4})).collect::<Vec<_>>(), "cuda_server_pin":{"cuda_version":13,"embedded_arch_set":["sm_86","sm_89","sm_120a","sm_121a"],"binary_name":"llama-server","device_flag_value":"CUDA0","visible_devices_env":"CUDA_VISIBLE_DEVICES","shared_wanted_files":CUDA_SHARED_WANTED_FILES,"cpu_wanted_files_by_arch":{"amd64":CUDA_AMD64_WANTED_FILES,"arm64":CUDA_ARM64_WANTED_FILES},"artifacts":CUDA_ARTIFACTS.iter().map(|p| cuda_identity(p.0).unwrap()).collect::<Vec<_>>()}, "mlx_models":MLX_MODELS.iter().map(|p| json!({"name":p.0,"repo":p.1,"revision":p.2,"size_bytes":p.3})).collect::<Vec<_>>(), "mlx_soft_token_budget":1120})
+    json!({"llama_server_pins": LLAMA_SERVER_PINS.iter().map(|p| json!({"artifact_key":p.0,"release_tag":p.1,"filename":p.2,"sha256":p.3,"binary_name":p.4})).collect::<Vec<_>>(), "cuda_server_pin":{"cuda_version":13,"embedded_arch_set":["sm_86","sm_89","sm_120a","sm_121a"],"binary_name":"llama-server","device_flag_value":"CUDA0","visible_devices_env":"CUDA_VISIBLE_DEVICES","shared_wanted_files":CUDA_SHARED_WANTED_FILES,"cpu_wanted_files_by_arch":{"amd64":CUDA_AMD64_WANTED_FILES,"arm64":CUDA_ARM64_WANTED_FILES},"artifacts":CUDA_ARTIFACTS.iter().map(|p| cuda_identity(p.0).unwrap()).collect::<Vec<_>>()}})
 }
 
 /// Mirrors `paths()`, keyed the way Parakeet's own cache tree is laid out

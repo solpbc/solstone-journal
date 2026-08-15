@@ -86,21 +86,18 @@ fn run_status(json_output: bool) -> ExitCode {
 
 fn current_bundled_runtime_fingerprint(journal: &Path) -> Option<String> {
     #[cfg(target_os = "macos")]
-    let (verb, model) = (
-        solstone_core_local::InstallVerb::FingerprintMlx,
-        "qwen3.5:9b",
-    );
+    let payload = json!({"journal": journal, "model_id": "local/qwen3.5-4b", "backend": "metal"});
     #[cfg(not(target_os = "macos"))]
-    let (verb, model) = (
+    let payload = json!({"journal": journal, "model_id": "local/qwen3.5-4b"});
+    solstone_core_local::dispatch_install(
         solstone_core_local::InstallVerb::FingerprintLocal,
-        "local/qwen3.5-4b",
-    );
-    solstone_core_local::dispatch_install(verb, json!({"journal": journal, "model_id": model}))
-        .ok()?
-        .result?
-        .get("target_fingerprint_sha256")?
-        .as_str()
-        .map(ToOwned::to_owned)
+        payload,
+    )
+    .ok()?
+    .result?
+    .get("target_fingerprint_sha256")?
+    .as_str()
+    .map(ToOwned::to_owned)
 }
 
 /// The one full refresh path.  Unsafe prerequisite renewal delegates here.

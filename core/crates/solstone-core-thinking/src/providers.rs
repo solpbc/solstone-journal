@@ -80,7 +80,7 @@ pub fn payload(
         "byo_models":config.get("providers").and_then(Value::as_object).and_then(|value|value.get("byo_models")).cloned().unwrap_or_else(||json!({})),
         "model_tiers":{"google":[{"tier":"mid","label":"Gemini 3.5 Flash","model":"gemini-3.5-flash"},{"tier":"lite","label":"Gemini 3.1 Flash Lite","model":"gemini-3.1-flash-lite"}],"anthropic":[{"tier":"top","label":"Claude Opus","model":"claude-opus-4-8"},{"tier":"mid","label":"Claude Sonnet","model":"claude-sonnet-5"},{"tier":"lite","label":"Claude Haiku","model":"claude-haiku-4-5"}],"openai":[{"tier":"top","label":"GPT","model":"gpt-5.5"},{"tier":"mid","label":"GPT mini","model":"gpt-5.4-mini"},{"tier":"lite","label":"GPT nano","model":"gpt-5.4-nano"}]},
         "active_lane":{"lane":ui_lane(config),"confidential_enabled":spp_configured,"confidential_provenance_configured":spp_configured,"confidential_audio":confidential_audio(config),"confidential_operation":confidential_operation,"confidential_attestation":brain_view["confidential_attestation"]},
-        "brain":brain_view["brain"],"provider_status":status,"local":local::bootstrap_status(journal, local_model),"local_runtime":local::runtime(journal),"local_override":endpoint_view,"local_backend":if cfg!(target_os="macos") {"mlx"} else {"local"},"configuration_guidance":google_exact_model_advisory(config)
+        "brain":brain_view["brain"],"provider_status":status,"local":local::bootstrap_status(journal, local_model),"local_runtime":local::runtime(journal),"local_override":endpoint_view,"local_backend":if cfg!(target_os="macos") {"metal"} else {"local"},"configuration_guidance":google_exact_model_advisory(config)
     })
 }
 
@@ -609,11 +609,23 @@ fn active(config: &Map<String, Value>) -> Value {
         .and_then(Value::as_str)
         .filter(|provider| !provider.is_empty())
         .unwrap_or("none");
-    let model = active
+    let configured_model = active
         .and_then(|active| active.get("model"))
         .and_then(Value::as_str)
         .filter(|model| !model.trim().is_empty())
         .unwrap_or_else(|| default_model_for(provider));
+    // One bundled local model is active on every platform. Keep reading old
+    // journal selections, but never present a retired Gemma/MLX selection as
+    // the model the native supervisor actually serves.
+    let model = if provider == "local"
+        && matches!(
+            resolve_local_endpoint(config),
+            LocalEndpointResolution::Bundled
+        ) {
+        local::default_model()
+    } else {
+        configured_model
+    };
     json!({"provider":provider,"model":model})
 }
 
@@ -772,6 +784,35 @@ mod tests {
         fn validate(&self, _provider: &str, _key: &str) -> Result<Value, String> {
             Err("provider rejected the key".to_owned())
         }
+    }
+
+    #[test]
+    fn active_projection_normalizes_retired_local_models_to_shared_4b() {
+        for retired in ["local/gemma-3-12b-it-qat", "qwen3.5:9b"] {
+            let config = Map::from_iter([(
+                "providers".to_owned(),
+                json!({"active":{"provider":"local","model":retired}}),
+            )]);
+            assert_eq!(
+                super::active(&config),
+                json!({"provider":"local","model":"local/qwen3.5-4b"})
+            );
+        }
+    }
+
+    #[test]
+    fn active_projection_preserves_byo_local_model_identity() {
+        let config = Map::from_iter([(
+            "providers".to_owned(),
+            json!({
+                "active":{"provider":"local","model":"private"},
+                "local":{"endpoint_url":"https://private.example/v1","served_model_id":"private"}
+            }),
+        )]);
+        assert_eq!(
+            super::active(&config),
+            json!({"provider":"local","model":"private"})
+        );
     }
 
     #[test]

@@ -7,6 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::json;
+use solstone_core_local::install::{archive, manifest, pins};
 use solstone_core_local::nvidia::NvidiaProbe;
 use solstone_core_local::{ArtifactTrust, Platform};
 use solstone_core_system::provider_runtime::{
@@ -58,10 +59,41 @@ impl RuntimeClock for TestClock {
 fn journal() -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!("solstone-local-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    let base=root.join("cache/providers/local/mlx/mlx-community--Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6");
-    std::fs::create_dir_all(base.join("snapshot")).unwrap();
-    let m = json!({"schema_version":1,"provider":"local","unit":"mlx-snapshot","target_fingerprint_sha256":"test","created_by_attempt_id":null,"external_root":null,"source":{"pin_identity":{"unit":"mlx-snapshot","model_id":"qwen3.5:9b","repo":"mlx-community/Qwen3.5-9B-MLX-8bit","revision":"84f7c2deea248d8df56240f88102def51c7ed5d6","size_bytes":10453446077u64}},"inventory":[]});
-    std::fs::write(base.join("snapshot.manifest.json"), m.to_string()).unwrap();
+    let cache = pins::cache_root(&root);
+    let runtime = cache.join("bin/aarch64-apple-darwin/b10068");
+    let model = cache.join("models/local__qwen3.5-4b");
+    std::fs::create_dir_all(&runtime).unwrap();
+    std::fs::create_dir_all(&model).unwrap();
+    std::fs::write(runtime.join("llama-server"), b"#!/bin/sh\nexit 0\n").unwrap();
+    archive::make_executable(&runtime.join("llama-server")).unwrap();
+    std::fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").unwrap();
+    std::fs::write(model.join("mmproj-F16.gguf"), b"projector").unwrap();
+    let runtime_manifest = manifest::build_manifest(
+        "local",
+        "llama-server-vulkan",
+        "test",
+        json!({"pin_identity":pins::vulkan_identity("aarch64-apple-darwin").unwrap()}),
+        manifest::runtime_inventory(&runtime, &[]).unwrap(),
+        None,
+        None,
+    )
+    .unwrap();
+    manifest::write_manifest(
+        &manifest::artifact_manifest_path(&runtime),
+        &runtime_manifest,
+    )
+    .unwrap();
+    let model_manifest = manifest::build_manifest(
+        "local",
+        "local-model",
+        "test",
+        json!({"pin_identity":pins::model_identity("local/qwen3.5-4b").unwrap()}),
+        manifest::inventory_for_tree(&model, "model").unwrap(),
+        None,
+        None,
+    )
+    .unwrap();
+    manifest::write_manifest(&manifest::artifact_manifest_path(&model), &model_manifest).unwrap();
     root
 }
 fn pump(

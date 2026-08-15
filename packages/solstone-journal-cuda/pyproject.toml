@@ -54,9 +54,6 @@ dependencies = [
     "nvidia-nvjitlink-cu12",
 ]
 
-[project.scripts]
-mlx-vlm-server = "solstone.think.providers.mlx_server:main"
-
 [tool.setuptools]
 packages = []
 py-modules = []

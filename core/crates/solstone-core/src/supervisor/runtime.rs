@@ -575,8 +575,8 @@ pub(crate) async fn boot_and_tick(
             local_shared.clone(),
             LocalTruthConfig {
                 journal_path: journal.clone(),
-                // The fixture path deliberately uses the lightweight MLX artifact
-                // proof instead of inspecting host NVIDIA hardware. Its launch
+                // The fixture path deliberately uses a lightweight native Metal
+                // artifact proof instead of inspecting host NVIDIA hardware. Its launch
                 // request is replaced below with the synthetic CUDA fixture plan.
                 platform: Platform::Darwin,
                 nvidia_probe: None,

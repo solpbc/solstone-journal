@@ -13,6 +13,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
+use solstone_core_local::install::{archive, manifest, pins};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
@@ -56,31 +57,42 @@ impl TempJournal {
             br#"{"setup":{"completed_at":1},"transcribe":{"backend":"parakeet-cpp","parakeet-cpp":{"device":"cpu"}}}"#,
         )
         .expect("fixture journal config");
-        let snapshot = self.0.join(
-            "cache/providers/local/mlx/mlx-community--Qwen3.5-9B-MLX-8bit/84f7c2deea248d8df56240f88102def51c7ed5d6",
-        );
-        fs::create_dir_all(snapshot.join("snapshot")).expect("fixture snapshot");
-        fs::write(
-            snapshot.join("snapshot.manifest.json"),
-            json!({
-                "schema_version": 1,
-                "provider": "local",
-                "unit": "mlx-snapshot",
-                "target_fingerprint_sha256": "test",
-                "created_by_attempt_id": null,
-                "external_root": null,
-                "source": {"pin_identity": {
-                    "unit": "mlx-snapshot",
-                    "model_id": "qwen3.5:9b",
-                    "repo": "mlx-community/Qwen3.5-9B-MLX-8bit",
-                    "revision": "84f7c2deea248d8df56240f88102def51c7ed5d6",
-                    "size_bytes": 10_453_446_077_u64
-                }},
-                "inventory": []
-            })
-            .to_string(),
+        let cache = pins::cache_root(&self.0);
+        let runtime = cache.join("bin/aarch64-apple-darwin/b10068");
+        let model = cache.join("models/local__qwen3.5-4b");
+        fs::create_dir_all(&runtime).expect("runtime directory");
+        fs::create_dir_all(&model).expect("model directory");
+        fs::write(runtime.join("llama-server"), b"#!/bin/sh\nexit 0\n").expect("runtime");
+        archive::make_executable(&runtime.join("llama-server")).expect("executable runtime");
+        fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").expect("model");
+        fs::write(model.join("mmproj-F16.gguf"), b"projector").expect("projector");
+        let runtime_manifest = manifest::build_manifest(
+            "local",
+            "llama-server-vulkan",
+            "test",
+            json!({"pin_identity":pins::vulkan_identity("aarch64-apple-darwin").unwrap()}),
+            manifest::runtime_inventory(&runtime, &[]).unwrap(),
+            None,
+            None,
         )
-        .expect("fixture snapshot manifest");
+        .unwrap();
+        manifest::write_manifest(
+            &manifest::artifact_manifest_path(&runtime),
+            &runtime_manifest,
+        )
+        .unwrap();
+        let model_manifest = manifest::build_manifest(
+            "local",
+            "local-model",
+            "test",
+            json!({"pin_identity":pins::model_identity("local/qwen3.5-4b").unwrap()}),
+            manifest::inventory_for_tree(&model, "model").unwrap(),
+            None,
+            None,
+        )
+        .unwrap();
+        manifest::write_manifest(&manifest::artifact_manifest_path(&model), &model_manifest)
+            .unwrap();
     }
 
     fn write_local_port(&self, port: u16) {

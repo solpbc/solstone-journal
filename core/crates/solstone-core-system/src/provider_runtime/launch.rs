@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{CanonicalInput, canonical_fingerprint};
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
-use solstone_core_local::install::readiness::{inspect_local, inspect_mlx};
+use solstone_core_local::install::{metal_candidate, readiness::inspect_local};
 use solstone_core_local::nvidia::{
     ArtifactTrust, CUDA_EMBEDDED_ARCH_SET, CUDA_MIN_DRIVER_VERSION, NvidiaProbe, probe_nvidia_gpu,
 };
@@ -41,7 +41,6 @@ use super::store::ReadyProcess;
 use super::store::{LocalRuntimeShared, RuntimeClock};
 
 const PLAN_INPUT_SCHEMA: &str = "solstone-local-plan-input-v1";
-const MLX_SERVER_PROCESS_NAME: &str = "mlx-vlm-server";
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 const WARMUP_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -101,19 +100,19 @@ pub enum LocalLaunchConfig {
         selected_vram_mib: u64,
         vram_before_mib: Option<u64>,
     },
-    Mlx {
+    Metal {
         common: LocalLaunchCommon,
-        runtime_dir: Option<String>,
-        interpreter_path: Option<String>,
+        binary_path: Option<String>,
+        unified_memory_mib: Option<u64>,
     },
 }
 
 impl LocalLaunchConfig {
     fn common(&self) -> &LocalLaunchCommon {
         match self {
-            Self::Cuda { common, .. } | Self::Vulkan { common, .. } | Self::Mlx { common, .. } => {
-                common
-            }
+            Self::Cuda { common, .. }
+            | Self::Vulkan { common, .. }
+            | Self::Metal { common, .. } => common,
         }
     }
 
@@ -123,7 +122,7 @@ impl LocalLaunchConfig {
 
     fn platform(&self) -> Platform {
         match self {
-            Self::Mlx { .. } => Platform::Darwin,
+            Self::Metal { .. } => Platform::Darwin,
             Self::Cuda { .. } | Self::Vulkan { .. } => Platform::Linux,
         }
     }
@@ -155,8 +154,6 @@ impl LocalLaunchConfig {
                 model_id: common.model_id.clone(),
                 model_path: common.model_path.clone(),
                 mmproj_path: common.mmproj_path.clone(),
-                runtime_dir: None,
-                mlx_interpreter_path: None,
                 cuda_binary_path: binary_path.clone(),
                 vulkan_binary_path: None,
                 metal_binary_path: None,
@@ -193,8 +190,6 @@ impl LocalLaunchConfig {
                 model_id: common.model_id.clone(),
                 model_path: common.model_path.clone(),
                 mmproj_path: common.mmproj_path.clone(),
-                runtime_dir: None,
-                mlx_interpreter_path: None,
                 cuda_binary_path: None,
                 vulkan_binary_path: binary_path.clone(),
                 metal_binary_path: None,
@@ -212,14 +207,14 @@ impl LocalLaunchConfig {
                 vulkan_selected_vram_mib: Some(*selected_vram_mib),
                 vram_before_mib: *vram_before_mib,
             },
-            Self::Mlx {
+            Self::Metal {
                 common,
-                runtime_dir,
-                interpreter_path,
+                binary_path,
+                unified_memory_mib,
             } => PlanInput {
                 schema: PLAN_INPUT_SCHEMA.into(),
                 platform: Platform::Darwin,
-                backend_override: Some(PlanBackend::Mlx),
+                backend_override: Some(PlanBackend::Metal),
                 bind_address: LoopbackAddr::IPV4_LOOPBACK,
                 port,
                 desired_fingerprint_json: common.desired_fingerprint_json.clone(),
@@ -227,12 +222,10 @@ impl LocalLaunchConfig {
                 model_id: common.model_id.clone(),
                 model_path: common.model_path.clone(),
                 mmproj_path: common.mmproj_path.clone(),
-                runtime_dir: runtime_dir.clone(),
-                mlx_interpreter_path: interpreter_path.clone(),
                 cuda_binary_path: None,
                 vulkan_binary_path: None,
-                metal_binary_path: None,
-                metal_unified_memory_mib: None,
+                metal_binary_path: binary_path.clone(),
+                metal_unified_memory_mib: *unified_memory_mib,
                 lib_dir: None,
                 inherited_ld_library_path: None,
                 nvidia_probe: None,
@@ -467,7 +460,7 @@ fn observe_truth(
             false,
         );
     }
-    let model_id = journal_config
+    let configured_model_id = journal_config
         .get("providers")
         .and_then(Value::as_object)
         .and_then(|providers| providers.get("active"))
@@ -475,12 +468,16 @@ fn observe_truth(
         .and_then(|active| active.get("model"))
         .and_then(Value::as_str)
         .filter(|model| !model.trim().is_empty())
-        .unwrap_or(if config.platform == Platform::Darwin {
-            "qwen3.5:9b"
-        } else {
-            "local/qwen3.5-4b"
-        })
+        .unwrap_or("local/qwen3.5-4b")
         .to_owned();
+    // Bundled macOS inference has one shipped model. Read journals written by
+    // the retired MLX runtime, but never let their old selection relabel the
+    // native 4B artifacts or desired fingerprint.
+    let model_id = if config.platform == Platform::Darwin {
+        "local/qwen3.5-4b".to_owned()
+    } else {
+        configured_model_id
+    };
     let probe = config.nvidia_probe.clone().unwrap_or_else(probe_nvidia_gpu);
     let readiness = match config.platform {
         Platform::Linux => inspect_local(Map::from_iter([
@@ -494,15 +491,24 @@ fn observe_truth(
                 serde_json::to_value(&probe).expect("NvidiaProbe serialization"),
             ),
         ])),
-        Platform::Darwin => inspect_mlx(Map::from_iter([
-            (
-                "journal".into(),
-                Value::String(config.journal_path.display().to_string()),
-            ),
-            ("model_id".into(), Value::String(model_id.clone())),
-            ("platform_supported".into(), Value::Bool(true)),
-            ("mlx_vlm_importable".into(), Value::Bool(true)),
-        ])),
+        Platform::Darwin => {
+            let input = Map::from_iter([
+                (
+                    "journal".into(),
+                    Value::String(config.journal_path.display().to_string()),
+                ),
+                ("model_id".into(), Value::String(model_id.clone())),
+                ("backend".into(), Value::String("metal".into())),
+            ]);
+            metal_candidate::inspect_with(&input, "aarch64-apple-darwin").unwrap_or_else(|_| {
+                json!({
+                    "provider":"local",
+                    "ready":false,
+                    "status":"proof-unavailable",
+                    "reason_code":"readiness_unavailable",
+                })
+            })
+        }
     };
     let Some(object) = readiness.as_object() else {
         return truth_unavailable();
@@ -558,11 +564,7 @@ fn observe_truth(
     }
     let artifacts = object.get("artifacts").and_then(Value::as_object);
     let Some(model_path) = artifacts
-        .and_then(|artifacts| {
-            artifacts
-                .get("model_path")
-                .or_else(|| artifacts.get("snapshot_dir"))
-        })
+        .and_then(|artifacts| artifacts.get("model_path"))
         .and_then(Value::as_str)
     else {
         return truth_unavailable();
@@ -572,9 +574,30 @@ fn observe_truth(
         .and_then(Value::as_object)
         .and_then(|host| host.get("backend"))
         .and_then(Value::as_str)
-        .unwrap_or("mlx");
-    let desired =
-        json!({"provider":"local","backend":backend,"model_id":model_id,"model_path":model_path});
+        .unwrap_or("metal");
+    let binary_path = artifacts
+        .and_then(|artifacts| artifacts.get("binary_path"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let projector_path = artifacts
+        .and_then(|artifacts| artifacts.get("projector_path"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let artifact_target_fingerprint = object
+        .get("target")
+        .and_then(Value::as_object)
+        .and_then(|target| target.get("target_fingerprint_sha256"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let desired = json!({
+        "provider":"local",
+        "backend":backend,
+        "model_id":model_id,
+        "artifact_target_fingerprint_sha256":artifact_target_fingerprint,
+        "binary_path":binary_path,
+        "model_path":model_path,
+        "projector_path":projector_path,
+    });
     let Ok(fingerprint) = canonical_fingerprint(&CanonicalInput::Json(desired.clone())) else {
         return truth_unavailable();
     };
@@ -583,24 +606,17 @@ fn observe_truth(
         desired_fingerprint_sha256: fingerprint.clone(),
         model_id,
         model_path: model_path.into(),
-        mmproj_path: None,
+        mmproj_path: projector_path,
     };
     let launch = match (config.platform, backend) {
-        (Platform::Darwin, _) => LocalLaunchConfig::Mlx {
+        (Platform::Darwin, "metal") => LocalLaunchConfig::Metal {
             common,
-            runtime_dir: Some(model_path.to_owned()),
-            interpreter_path: std::env::current_exe().ok().map(|path| {
-                path.with_file_name(MLX_SERVER_PROCESS_NAME)
-                    .display()
-                    .to_string()
-            }),
+            binary_path,
+            unified_memory_mib: None,
         },
         (Platform::Linux, "cuda") => LocalLaunchConfig::Cuda {
             common,
-            binary_path: artifacts
-                .and_then(|artifacts| artifacts.get("binary_path"))
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned),
+            binary_path,
             lib_dir: None,
             nvidia_probe: probe,
             cuda_embedded_arch_set: CUDA_EMBEDDED_ARCH_SET
@@ -623,10 +639,7 @@ fn observe_truth(
             };
             LocalLaunchConfig::Vulkan {
                 common,
-                binary_path: artifacts
-                    .and_then(|artifacts| artifacts.get("binary_path"))
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned),
+                binary_path,
                 devices: config.vulkan_devices.clone(),
                 selected_gpu_index: device.index,
                 selected_gpu_name: device.name,

@@ -12,7 +12,7 @@ use solstone_core_cli::InstallProviderOptions;
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_local::install::{
     DispatchError, InstallVerb, dispatch, fingerprint, fit_report, install_parakeet_with_lease,
-    lease, local_backend_choice, pins, readiness, status,
+    lease, local_backend_choice, metal_candidate, pins, readiness, status,
 };
 use solstone_core_local::{
     LocalEndpointResolution, MemorySource, detect_gpus, discrete_hardware_gpu_count, gpu_probe_ok,
@@ -298,24 +298,16 @@ fn install_parakeet(
 }
 
 fn install_local(journal: &Path) -> Result<Value, Box<DispatchError>> {
-    // On Darwin the local provider is an MLX snapshot, so this dispatches RunMlx
-    // with no source_snapshot -- which is what makes the install fetch from sol
-    // pbc's own origin rather than from a model hub.
-    let (verb, payload) = if normalized_os(std::env::consts::OS) == "darwin" {
-        (
-            InstallVerb::RunMlx,
-            json!({
-                "journal": journal.display().to_string(),
-                "model_id": pins::MLX_MODELS[0].0,
-            }),
-        )
+    let payload = if normalized_os(std::env::consts::OS) == "darwin" {
+        json!({
+            "journal": journal.display().to_string(),
+            "model_id": "local/qwen3.5-4b",
+            "backend": "metal",
+        })
     } else {
-        (
-            InstallVerb::RunLocal,
-            json!({"journal": journal.display().to_string()}),
-        )
+        json!({"journal": journal.display().to_string()})
     };
-    let envelope = dispatch(verb, payload).map_err(Box::new)?;
+    let envelope = dispatch(InstallVerb::RunLocal, payload).map_err(Box::new)?;
     Ok(envelope
         .result
         .expect("successful install dispatch has a result"))
@@ -371,17 +363,7 @@ where
         }
     };
     let readiness = readiness_provider(&journal);
-    // Darwin's local provider is MLX, and the reference branches to its MLX
-    // installer BEFORE printing this line -- so on a mac it prints no download
-    // disclosure at all. Printing it here would name a llama.cpp runtime and a
-    // CUDA component that platform never fetches, on the one surface whose job
-    // is to say accurately what gets downloaded. A macOS-specific disclosure
-    // would be new copy the reference does not have, so it is not built here.
-    let mut stderr = if os_name == "darwin" {
-        Vec::new()
-    } else {
-        vec![LOCAL_DOWNLOAD_DISCLOSURE.to_owned()]
-    };
+    let mut stderr = vec![LOCAL_DOWNLOAD_DISCLOSURE.to_owned()];
     let readiness_status = readiness["status"].as_str().unwrap_or("proof-unavailable");
     if readiness_status == "ready" {
         let install = match status::read_status(&journal, "local") {
@@ -495,27 +477,11 @@ where
     }
 }
 
-/// Darwin's local provider is MLX; every other platform's is llama.cpp. Routing
-/// here rather than at the call site keeps the one skeleton for both, which is
-/// what makes the Darwin path testable by the same criteria as the Linux one.
 fn build_platform_report(
     journal: &Path,
     os_name: &str,
     arch: &str,
 ) -> Result<fit_report::FitReport, String> {
-    if os_name == "darwin" {
-        return Ok(fit_report::build_mlx_fit_report(
-            pins::MLX_MODELS[0].0,
-            os_name,
-            arch,
-            &pins::cache_root(journal),
-            fit_report::free_bytes(&pins::cache_root(journal)),
-            available_memory_bytes(),
-            // Native cannot answer this without an interpreter, and asking one
-            // would defeat the point of the native path. It degrades to Unknown.
-            None,
-        ));
-    }
     build_local_report(journal, os_name, arch)
 }
 
@@ -659,11 +625,14 @@ fn parakeet_target_sha(journal: &Path, os_name: &str, arch: &str) -> Result<Stri
 }
 
 fn local_target_sha(journal: &Path) -> Result<String, String> {
-    let envelope = dispatch(
-        InstallVerb::FingerprintLocal,
-        json!({"journal": journal.display().to_string(), "model_id": "local/qwen3.5-4b"}),
-    )
-    .map_err(dispatch_message)?;
+    let mut payload = json!({
+        "journal": journal.display().to_string(),
+        "model_id": "local/qwen3.5-4b",
+    });
+    if normalized_os(std::env::consts::OS) == "darwin" {
+        payload["backend"] = Value::String("metal".to_owned());
+    }
+    let envelope = dispatch(InstallVerb::FingerprintLocal, payload).map_err(dispatch_message)?;
     envelope
         .result
         .and_then(|result| {
@@ -830,12 +799,6 @@ fn render_value(value: &Value) -> String {
     serde_json::to_string_pretty(value).expect("JSON value serializes")
 }
 
-/// Route to the right inspector for this provider and platform, and supply the
-/// host facts the MLX one takes as inputs.
-///
-/// Extracted from `run`'s closure so the routing and the inputs are testable
-/// together: asserting `mlx_host_inputs` alone would still pass if the wiring
-/// that carries them were removed.
 fn readiness_for(journal: &Path, provider_is_local: bool, os_name: &str, arch: &str) -> Value {
     let mut input = json!({"journal": journal.display().to_string()})
         .as_object()
@@ -844,49 +807,23 @@ fn readiness_for(journal: &Path, provider_is_local: bool, os_name: &str, arch: &
     if !provider_is_local {
         return readiness::inspect_parakeet(input);
     }
-    // Darwin's local provider IS MLX. Inspecting the llama.cpp installation
-    // there would report on an artifact set that platform never installs.
-    if os_name != "darwin" {
-        return readiness::inspect_local(input);
+    if os_name == "darwin" && arch == "arm64" {
+        input.insert("backend".to_owned(), Value::String("metal".to_owned()));
+        return metal_candidate::inspect_with(&input, "aarch64-apple-darwin").unwrap_or_else(
+            |error| {
+                json!({
+                    "provider":"local",
+                    "ready":false,
+                    "status":"proof-unavailable",
+                    "reason_code":error.envelope.error.map_or_else(
+                        || "readiness_unavailable".to_owned(),
+                        |value| value.reason_code,
+                    ),
+                })
+            },
+        );
     }
-    for (key, value) in mlx_host_inputs(os_name, arch) {
-        input.insert(key.to_owned(), Value::Bool(value));
-    }
-    readiness::inspect_mlx(input)
-}
-
-/// The two host facts `inspect_mlx` takes as INPUTS, which both default to
-/// `false` when a caller omits them.
-///
-/// 🔴 Omitting them is not neutral. `inspect_mlx` checks the manifest proof
-/// first, so an absent snapshot reads `missing-or-mismatched` either way -- but
-/// the moment a Mac owner HAS the model installed, the proof passes and the
-/// `!platform_supported` branch answers `host-ineligible` /
-/// `platform_unsupported`. So the verb reported the platform unsupported ON THE
-/// PLATFORM IT IS FOR, at exit 1, where the reference reports
-/// `local already installed` at exit 0. Nothing caught it because the defect is
-/// only reachable AFTER a successful install.
-///
-/// The reference computes `platform_supported` as Darwin plus a non-empty MLX
-/// pin set, which is a fact this side can answer exactly.
-///
-/// ⚠ `mlx_vlm_importable` is the reference's `import mlx_vlm`, and a native
-/// binary cannot answer it -- executing an interpreter to ask is the thing this
-/// conversion exists to remove, and probing for a Python package layout would
-/// be a second implementation of import resolution. It is answered from the
-/// same platform fact because the journal declares `mlx-vlm` as an
-/// unconditional dependency under exactly this platform marker
-/// (`pyproject.toml`: `sys_platform == 'darwin' and platform_machine ==
-/// 'arm64'`), so the reference's import succeeds on every correctly installed
-/// Mac. 📌 The residual, and it is named rather than hidden: on a Mac whose MLX
-/// package is BROKEN, this reports installed where the reference reports
-/// `package_unavailable`.
-fn mlx_host_inputs(os_name: &str, arch: &str) -> [(&'static str, bool); 2] {
-    let supported = os_name == "darwin" && arch == "arm64" && !pins::MLX_MODELS.is_empty();
-    [
-        ("platform_supported", supported),
-        ("mlx_vlm_importable", supported),
-    ]
+    readiness::inspect_local(input)
 }
 
 /// Quote a rejected provider name the way the reference's `!r` does.
@@ -1582,12 +1519,9 @@ mod tests {
     }
 
     #[test]
-    fn local_darwin_reaches_the_mlx_installer_instead_of_refusing() {
-        // This asserted the opposite until 2026-08-12: native local refused on
-        // Darwin, on the stated grounds that "the native pool has no mac host".
-        // That was a claim about the test host pool, not about the platform -- the
-        // refusal made Python the only way to install a local provider on a mac,
-        // and Python's route calls huggingface_hub.snapshot_download.
+    fn local_darwin_reaches_the_native_metal_installer_instead_of_refusing() {
+        // Native local must stay installable on Darwin through the same
+        // orchestrator seam used by the Linux backends.
         let journal = tempfile::tempdir().unwrap();
         let installed = std::cell::Cell::new(false);
         let local = run_local_inner_with_platform(
@@ -1616,26 +1550,14 @@ mod tests {
     }
 
     #[test]
-    fn darwin_fit_report_names_the_mlx_model_and_linux_does_not() {
-        // The report builder is the seam that decides which artifact set an owner
-        // is told about. If Darwin fell back to the llama.cpp builder it would
-        // report on artifacts that platform never installs -- and the exit code
-        // would look identical.
+    fn darwin_and_linux_fit_reports_name_the_shared_native_4b_artifacts() {
         let journal = tempfile::tempdir().unwrap();
         let darwin =
             build_platform_report(journal.path(), "darwin", "arm64").expect("darwin report builds");
-        assert!(
-            darwin.artifact.contains("MLX"),
-            "darwin artifact: {}",
-            darwin.artifact
-        );
+        assert_eq!(darwin.artifact, "local provider artifacts");
         let linux =
             build_platform_report(journal.path(), "linux", "x86_64").expect("linux report builds");
-        assert!(
-            !linux.artifact.contains("MLX"),
-            "linux artifact: {}",
-            linux.artifact
-        );
+        assert_eq!(linux.artifact, "local provider artifacts");
     }
 
     #[test]
@@ -1686,49 +1608,21 @@ mod tests {
     }
 
     #[test]
-    fn darwin_local_readiness_carries_the_host_facts_inspect_mlx_takes_as_inputs() {
-        // The defect this pins is only reachable AFTER a successful install:
-        // `inspect_mlx` checks the manifest proof first, so an absent snapshot
-        // hides it, and once the snapshot proves, an omitted `platform_supported`
-        // answers `host-ineligible` / `platform_unsupported` -- the platform
-        // reported unsupported on the platform it is for. `inspect_mlx` echoes
-        // both inputs into `host`, so an empty journal is enough to assert the
-        // wiring without staging a 10 GB snapshot.
+    fn darwin_local_readiness_uses_metal_and_the_shared_4b_identity() {
         let journal = tempfile::tempdir().unwrap();
 
         let darwin = readiness_for(journal.path(), true, "darwin", "arm64");
         assert_eq!(darwin["host"]["platform_supported"], json!(true));
-        assert_eq!(darwin["host"]["package_available"], json!(true));
-        assert_eq!(darwin["target"]["model_id"], json!(pins::MLX_MODELS[0].0));
+        assert_eq!(darwin["host"]["backend"], json!("metal"));
+        assert_eq!(darwin["target"]["model_id"], json!("local/qwen3.5-4b"));
+        assert_eq!(darwin["artifacts"]["binary_installed"], json!(false));
+        assert!(darwin["host"].get("package_available").is_none());
 
-        // Every other platform routes to the llama.cpp inspector, which has no
-        // such inputs -- so a `host` block carrying them would mean the Darwin
-        // branch had leaked.
         let linux = readiness_for(journal.path(), true, "linux", "x86_64");
-        assert!(linux["target"]["model_id"] != json!(pins::MLX_MODELS[0].0));
+        assert_eq!(linux["target"]["model_id"], json!("local/qwen3.5-4b"));
 
         let parakeet = readiness_for(journal.path(), false, "darwin", "arm64");
         assert_eq!(parakeet["provider"], json!("parakeet"));
-    }
-
-    #[test]
-    fn mlx_host_facts_track_the_reference_predicate() {
-        // `is_mlx_platform_supported()` is Darwin plus a non-empty MLX pin set.
-        assert_eq!(
-            mlx_host_inputs("darwin", "arm64"),
-            [("platform_supported", true), ("mlx_vlm_importable", true)]
-        );
-        for (os_name, arch) in [
-            ("linux", "x86_64"),
-            ("linux", "arm64"),
-            ("darwin", "x86_64"),
-        ] {
-            assert_eq!(
-                mlx_host_inputs(os_name, arch),
-                [("platform_supported", false), ("mlx_vlm_importable", false)],
-                "{os_name}/{arch}"
-            );
-        }
     }
 
     #[test]
@@ -1779,11 +1673,9 @@ mod tests {
     }
 
     #[test]
-    fn darwin_local_arm_carries_no_llama_cpp_download_disclosure() {
-        // The reference branches into its MLX installer before printing the
-        // local disclosure, so a mac owner sees none. Printing it on Darwin
-        // names a llama.cpp runtime and a CUDA component that platform never
-        // fetches -- an over-disclosure on the surface that exists to disclose.
+    fn darwin_local_arm_discloses_the_shared_llama_cpp_runtime_once() {
+        // Darwin now installs the same native llama.cpp runtime family as the
+        // other local backends, so the owner-facing disclosure must be present.
         let journal = tempfile::tempdir().unwrap();
         let executor = |_: &Path| Ok(json!({"status": {"install_state": "installed"}}));
 
@@ -1795,11 +1687,13 @@ mod tests {
             "darwin",
             "arm64",
         );
-        assert!(
-            !darwin
+        assert_eq!(
+            darwin
                 .stderr
                 .iter()
-                .any(|line| line.contains("llama.cpp runtime") || line.contains("NVIDIA-licensed")),
+                .filter(|line| line.as_str() == LOCAL_DOWNLOAD_DISCLOSURE)
+                .count(),
+            1,
             "{:?}",
             darwin.stderr
         );

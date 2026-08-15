@@ -17,7 +17,7 @@ use solstone_core_system::provider_runtime::{
 static NEXT_JOURNAL: AtomicU64 = AtomicU64::new(0);
 
 fn probe_config() -> LocalLaunchConfig {
-    LocalLaunchConfig::Mlx {
+    LocalLaunchConfig::Metal {
         common: LocalLaunchCommon {
             desired_fingerprint_json: json!({"provider":"local"}),
             desired_fingerprint_sha256: "fingerprint".into(),
@@ -25,8 +25,8 @@ fn probe_config() -> LocalLaunchConfig {
             model_path: "test-model".into(),
             mmproj_path: None,
         },
-        runtime_dir: None,
-        interpreter_path: None,
+        binary_path: None,
+        unified_memory_mib: None,
     }
 }
 

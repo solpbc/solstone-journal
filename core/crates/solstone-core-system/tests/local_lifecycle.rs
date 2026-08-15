@@ -192,10 +192,10 @@ fn each_backend_plan_rejection_maps_to_launch_failed() {
             selected_vram_mib: 16_000,
             vram_before_mib: None,
         },
-        LocalLaunchConfig::Mlx {
+        LocalLaunchConfig::Metal {
             common: common(""),
-            runtime_dir: Some("test-runtime".into()),
-            interpreter_path: None,
+            binary_path: None,
+            unified_memory_mib: None,
         },
     ];
     for (attempt, launch) in configs.into_iter().enumerate() {

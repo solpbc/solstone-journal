@@ -35,18 +35,12 @@ fn owner_refresh(journal: &TempDir) {
 
 fn bundled_runtime_fingerprint(journal: &TempDir) -> String {
     #[cfg(target_os = "macos")]
-    let (verb, model) = (
-        solstone_core_local::InstallVerb::FingerprintMlx,
-        "qwen3.5:9b",
-    );
+    let payload = serde_json::json!({"journal": journal.path(), "model_id": "local/qwen3.5-4b", "backend":"metal"});
     #[cfg(not(target_os = "macos"))]
-    let (verb, model) = (
-        solstone_core_local::InstallVerb::FingerprintLocal,
-        "local/qwen3.5-4b",
-    );
+    let payload = serde_json::json!({"journal": journal.path(), "model_id": "local/qwen3.5-4b"});
     solstone_core_local::dispatch_install(
-        verb,
-        serde_json::json!({"journal": journal.path(), "model_id": model}),
+        solstone_core_local::InstallVerb::FingerprintLocal,
+        payload,
     )
     .expect("resolve bundled runtime fingerprint")
     .result

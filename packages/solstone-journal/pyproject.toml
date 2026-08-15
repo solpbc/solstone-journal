@@ -48,9 +48,6 @@ dependencies = [
     "onnxruntime>=1.25.0,!=1.24.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
-[project.scripts]
-mlx-vlm-server = "solstone.think.providers.mlx_server:main"
-
 [tool.setuptools]
 packages = []
 py-modules = []

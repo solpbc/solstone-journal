@@ -52,8 +52,6 @@ pub struct PlanInput {
     pub model_id: String,
     pub model_path: String,
     pub mmproj_path: Option<String>,
-    pub runtime_dir: Option<String>,
-    pub mlx_interpreter_path: Option<String>,
     pub cuda_binary_path: Option<String>,
     pub vulkan_binary_path: Option<String>,
     pub metal_binary_path: Option<String>,
@@ -77,7 +75,6 @@ pub struct PlanInput {
 pub enum PlanBackend {
     Cuda,
     Vulkan,
-    Mlx,
     Metal,
 }
 
@@ -92,7 +89,6 @@ pub struct LaunchPlan {
     pub mmproj_path: Option<String>,
     pub lib_dir: Option<String>,
     pub model_id: String,
-    pub runtime_dir: Option<String>,
     pub gpu_index: Option<u32>,
     pub gpu_name: Option<String>,
     pub gpu_vram_mib: Option<u64>,
@@ -186,40 +182,9 @@ pub fn plan(input: PlanInput) -> PlanOutcome {
     }
     match input.platform {
         Platform::Darwin if input.backend_override == Some(PlanBackend::Metal) => plan_metal(input),
-        Platform::Darwin => plan_mlx(input),
+        Platform::Darwin => rejected("Metal backend selection is required on Darwin"),
         Platform::Linux => plan_linux(input),
     }
-}
-
-fn plan_mlx(input: PlanInput) -> PlanOutcome {
-    let Some(interpreter) = input.mlx_interpreter_path.clone() else {
-        return rejected("MLX interpreter path is required");
-    };
-    let Some(runtime_dir) = input.runtime_dir.clone() else {
-        return rejected("MLX runtime directory is required");
-    };
-    let argv = vec![
-        interpreter,
-        "--host".into(),
-        input.bind_address.to_string(),
-        "--port".into(),
-        input.port.to_string(),
-        "--model".into(),
-        runtime_dir.clone(),
-    ];
-    PlanOutcome::Launch(Box::new(base_plan(
-        input,
-        PlanBackend::Mlx,
-        BackendDetails {
-            gpu_index: None,
-            gpu_name: None,
-            gpu_vram_mib: None,
-            reason: "darwin MLX runtime".into(),
-        },
-        argv,
-        None,
-        None,
-    )))
 }
 
 fn plan_linux(input: PlanInput) -> PlanOutcome {
@@ -259,7 +224,6 @@ fn plan_linux(input: PlanInput) -> PlanOutcome {
                 )
             }
             PlanBackend::Vulkan => plan_vulkan(input, "backend explicitly selected by caller"),
-            PlanBackend::Mlx => rejected("MLX backend override is not valid on Linux"),
             PlanBackend::Metal => rejected("Metal backend override is not valid on Linux"),
         };
     }
@@ -363,12 +327,6 @@ fn plan_vulkan(input: PlanInput, reason: &str) -> PlanOutcome {
 }
 
 fn plan_metal(input: PlanInput) -> PlanOutcome {
-    if input.runtime_dir.is_some() {
-        return rejected("metal runtime_dir must not be set");
-    }
-    if input.mlx_interpreter_path.is_some() {
-        return rejected("metal mlx_interpreter_path must not be set");
-    }
     let Some(binary) = input.metal_binary_path.clone() else {
         return rejected("metal binary path is required");
     };
@@ -480,13 +438,11 @@ fn base_plan(
             PlanBackend::Cuda => input.cuda_binary_path,
             PlanBackend::Vulkan => input.vulkan_binary_path,
             PlanBackend::Metal => input.metal_binary_path,
-            PlanBackend::Mlx => None,
         },
         model_path: input.model_path,
         mmproj_path: input.mmproj_path,
         lib_dir: input.lib_dir,
         model_id: input.model_id,
-        runtime_dir: input.runtime_dir,
         gpu_index: details.gpu_index,
         gpu_name: details.gpu_name,
         gpu_vram_mib: details.gpu_vram_mib,
@@ -542,8 +498,6 @@ mod tests {
             model_id: "m".into(),
             model_path: "/model".into(),
             mmproj_path: Some("/mm".into()),
-            runtime_dir: None,
-            mlx_interpreter_path: None,
             cuda_binary_path: Some("/cuda-bin".into()),
             vulkan_binary_path: Some("/vulkan-bin".into()),
             metal_binary_path: None,
@@ -728,42 +682,6 @@ mod tests {
         assert_eq!(plan.binary_path.as_deref(), Some("/vulkan-bin"));
     }
     #[test]
-    fn mlx_argv_is_pinned() {
-        let mut input = input(1);
-        input.platform = Platform::Darwin;
-        input.mlx_interpreter_path = Some("/mlx".into());
-        input.runtime_dir = Some("/runtime".into());
-        let plan = launch(input);
-        assert_eq!(
-            plan.argv,
-            vec![
-                "/mlx",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                "4010",
-                "--model",
-                "/runtime"
-            ]
-            .into_iter()
-            .map(str::to_string)
-            .collect::<Vec<_>>()
-        );
-        assert_eq!(plan.context_tokens, None);
-    }
-    #[test]
-    fn mlx_rejects_missing_required_paths() {
-        let mut missing_interpreter = input(1);
-        missing_interpreter.platform = Platform::Darwin;
-        missing_interpreter.runtime_dir = Some("/runtime".into());
-        assert_rejected(missing_interpreter, "MLX interpreter path is required");
-
-        let mut missing_runtime = input(1);
-        missing_runtime.platform = Platform::Darwin;
-        missing_runtime.mlx_interpreter_path = Some("/mlx".into());
-        assert_rejected(missing_runtime, "MLX runtime directory is required");
-    }
-    #[test]
     fn cuda_override_rejects_missing_probe_memory_and_binary() {
         let mut missing_probe = input(16_000);
         missing_probe.backend_override = Some(PlanBackend::Cuda);
@@ -877,7 +795,7 @@ mod tests {
         let mut ipv6 = input(1);
         ipv6.bind_address = LoopbackAddr::IPV6_LOOPBACK;
         assert_eq!(launch(ipv6).argv[6], "::1");
-        let value = serde_json::json!({"schema":INPUT_SCHEMA,"platform":"linux","backend_override":null,"bind_address":"0.0.0.0","port":1,"desired_fingerprint_json":{},"desired_fingerprint_sha256":"x","model_id":"m","model_path":"m","mmproj_path":null,"runtime_dir":null,"mlx_interpreter_path":null,"cuda_binary_path":null,"vulkan_binary_path":null,"metal_binary_path":null,"metal_unified_memory_mib":null,"lib_dir":null,"inherited_ld_library_path":null,"nvidia_probe":null,"cuda_embedded_arch_set":[],"cuda_min_driver_version":null,"cuda_artifact_trust":null,"cuda_persisted_installed_cuda_target":null,"vulkan_devices":null,"vulkan_selected_gpu_index":null,"vulkan_selected_gpu_name":null,"vulkan_selected_vram_mib":null,"vram_before_mib":null});
+        let value = serde_json::json!({"schema":INPUT_SCHEMA,"platform":"linux","backend_override":null,"bind_address":"0.0.0.0","port":1,"desired_fingerprint_json":{},"desired_fingerprint_sha256":"x","model_id":"m","model_path":"m","mmproj_path":null,"cuda_binary_path":null,"vulkan_binary_path":null,"metal_binary_path":null,"metal_unified_memory_mib":null,"lib_dir":null,"inherited_ld_library_path":null,"nvidia_probe":null,"cuda_embedded_arch_set":[],"cuda_min_driver_version":null,"cuda_artifact_trust":null,"cuda_persisted_installed_cuda_target":null,"vulkan_devices":null,"vulkan_selected_gpu_index":null,"vulkan_selected_gpu_name":null,"vulkan_selected_vram_mib":null,"vram_before_mib":null});
         assert!(serde_json::from_value::<PlanInput>(value).is_err());
     }
     #[test]
@@ -885,12 +803,11 @@ mod tests {
         let mut capable = input(1);
         capable.platform = Platform::Darwin;
         capable.backend_override = Some(PlanBackend::Metal);
-        capable.model_id = "qwen3.5:9b".into();
+        capable.model_id = "local/qwen3.5-4b".into();
         capable.metal_binary_path = Some("/metal-bin".into());
         capable.metal_unified_memory_mib = Some(16_000);
         let plan = launch(capable);
         assert_eq!(plan.backend, PlanBackend::Metal);
-        assert_eq!(plan.runtime_dir, None);
         assert_eq!(plan.gpu_vram_mib, None);
         assert_eq!(plan.context_tokens, Some(32_768));
         assert_eq!(
@@ -932,22 +849,9 @@ mod tests {
         linux.backend_override = Some(PlanBackend::Metal);
         assert_rejected(linux, "Metal backend override is not valid on Linux");
 
-        let mut runtime_dir = input(1);
-        runtime_dir.platform = Platform::Darwin;
-        runtime_dir.backend_override = Some(PlanBackend::Metal);
-        runtime_dir.metal_binary_path = Some("/metal-bin".into());
-        runtime_dir.runtime_dir = Some("/runtime".into());
-        assert_rejected(runtime_dir, "metal runtime_dir must not be set");
-
-        let mut mlx_interpreter = input(1);
-        mlx_interpreter.platform = Platform::Darwin;
-        mlx_interpreter.backend_override = Some(PlanBackend::Metal);
-        mlx_interpreter.metal_binary_path = Some("/metal-bin".into());
-        mlx_interpreter.mlx_interpreter_path = Some("/mlx".into());
-        assert_rejected(
-            mlx_interpreter,
-            "metal mlx_interpreter_path must not be set",
-        );
+        let mut unspecified = input(1);
+        unspecified.platform = Platform::Darwin;
+        assert_rejected(unspecified, "Metal backend selection is required on Darwin");
     }
     #[test]
     fn plan_is_repeatable_without_side_effects() {

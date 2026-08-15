@@ -69,7 +69,15 @@ fn legacy_has_state(record: &Map<String, Value>) -> bool {
 
 fn target(provider: &str, journal: &Path) -> Result<(Value, String, String), String> {
     let target = match provider {
-        "local" => super::local_target(journal, LOCAL_MODEL),
+        "local" => super::local_target(
+            journal,
+            LOCAL_MODEL,
+            if cfg!(target_os = "macos") {
+                super::LocalBackend::Metal
+            } else {
+                super::LocalBackend::Existing
+            },
+        ),
         "parakeet" => super::parakeet_target(journal),
         _ => unreachable!("closed provider migration census"),
     }

@@ -1,125 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Non-owner-facing macOS Metal candidate installer and readiness probe.
+//! macOS Metal readiness over the shared native Qwen 3.5 4B install.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{Map, Value, json};
-use solstone_core_assets::{Artifact, Platform, resolve};
 
 use crate::plan::{MetalTierMetadata, metal_tier};
 
-use super::{
-    DispatchError, archive, download_artifact, failure, find_file, fingerprint, journal, manifest,
-    pins, publish_staged_tree,
-};
+use super::{DispatchError, failure, journal, manifest, pins, status};
 
 const PLATFORM_KEY: &str = "aarch64-apple-darwin";
-const RUNTIME_UNIT: &str = "llama-server-vulkan";
-const MODEL_UNIT: &str = "local-model";
-const MODEL_FILENAME: &str = "Qwen3.5-9B-Q8_0.gguf";
+const MODEL_ID: &str = "local/qwen3.5-4b";
+const MODEL_FILENAME: &str = "Qwen3.5-4B-Q4_K_M.gguf";
 const PROJECTOR_FILENAME: &str = "mmproj-F16.gguf";
 
-pub(super) fn run(
-    object: &Map<String, Value>,
-    policy: &archive::DownloadHostPolicy<'_>,
-) -> Result<Value, DispatchError> {
-    let (runtime, model, projector) = artifacts()?;
-    run_with(
-        object,
-        policy,
-        &pins::platform_key(),
-        runtime,
-        model,
-        projector,
-    )
-}
-
-pub(super) fn inspect(object: &Map<String, Value>) -> Result<Value, DispatchError> {
+pub fn inspect(object: &Map<String, Value>) -> Result<Value, DispatchError> {
     inspect_with(object, &pins::platform_key())
 }
 
-pub(super) fn run_with(
-    object: &Map<String, Value>,
-    policy: &archive::DownloadHostPolicy<'_>,
-    platform_key: &str,
-    runtime: &Artifact,
-    model: &Artifact,
-    projector: &Artifact,
-) -> Result<Value, DispatchError> {
-    require_platform(platform_key)?;
-    let journal = journal(object)?;
-    let root = pins::cache_root(&journal);
-    let (release, runtime_filename, _, _) = pins::vulkan_pin(PLATFORM_KEY)
-        .ok_or_else(|| failure("platform", "unsupported_platform", PLATFORM_KEY, 65))?;
-    let runtime_dir = root.join("bin").join(PLATFORM_KEY).join(release);
-    let runtime_staging = staged_path(&runtime_dir);
-    let model_dir = root.join("models").join(pins::METAL_CANDIDATE_MODEL_SLUG);
-    let model_staging = staged_path(&model_dir);
-    let target = json!({
-        "provider":"local",
-        "runtime":"llama.cpp",
-        "backend":"metal",
-        "runtime_pin":pins::vulkan_identity(PLATFORM_KEY).expect("Darwin runtime pin"),
-        "model_pin":pins::metal_candidate_model_identity(),
-    });
-    let target_json = fingerprint::canonical(target)
-        .map_err(|error| failure("input", "fingerprint_invalid", error, 65))?;
-    let target_sha256 = fingerprint::sha256(&target_json);
-
-    prepare_staging(&runtime_staging)?;
-    let archive_path = runtime_staging.join(runtime_filename);
-    // Shared installer behavior: download verification failures use the io/state exit code.
-    download_artifact(runtime, &archive_path, policy, |_, _| {}, "download_failed")?;
-    archive::extract_tar_gz(&archive_path, &runtime_staging)
-        .map_err(|error| failure("archive", "extract_failed", error, 65))?;
-    let binary = find_file(&runtime_staging, "llama-server").ok_or_else(|| {
-        failure(
-            "archive",
-            "binary_missing",
-            "llama-server missing from archive",
-            65,
-        )
-    })?;
-    let final_binary = runtime_staging.join("llama-server");
-    if binary != final_binary {
-        fs::rename(&binary, &final_binary)
-            .map_err(|error| failure("io", "binary_move_failed", error, 74))?;
-    }
-    archive::make_executable(&final_binary)
-        .map_err(|error| failure("io", "chmod_failed", error, 74))?;
-    archive::clear_macos_quarantine(&runtime_staging)
-        .map_err(|error| failure("io", "quarantine_clear_failed", error, 74))?;
-    write_runtime_manifest(&runtime_staging, &target_sha256, runtime_filename)?;
-
-    prepare_staging(&model_staging)?;
-    // Shared installer behavior: download verification failures use the io/state exit code.
-    download_artifact(
-        model,
-        &model_staging.join(MODEL_FILENAME),
-        policy,
-        |_, _| {},
-        "model_download_failed",
-    )?;
-    download_artifact(
-        projector,
-        &model_staging.join(PROJECTOR_FILENAME),
-        policy,
-        |_, _| {},
-        "model_download_failed",
-    )?;
-    write_model_manifest(&model_staging, &target_sha256)?;
-
-    publish_staged_tree(&runtime_staging, &runtime_dir)
-        .map_err(|error| failure("io", "publish_failed", error, 74))?;
-    publish_staged_tree(&model_staging, &model_dir)
-        .map_err(|error| failure("io", "publish_failed", error, 74))?;
-    inspect_with(object, platform_key)
-}
-
-pub(super) fn inspect_with(
+pub fn inspect_with(
     object: &Map<String, Value>,
     platform_key: &str,
 ) -> Result<Value, DispatchError> {
@@ -129,36 +30,51 @@ pub(super) fn inspect_with(
     let (release, _, _, _) = pins::vulkan_pin(PLATFORM_KEY)
         .ok_or_else(|| failure("platform", "unsupported_platform", PLATFORM_KEY, 65))?;
     let runtime_dir = root.join("bin").join(PLATFORM_KEY).join(release);
-    let model_dir = root.join("models").join(pins::METAL_CANDIDATE_MODEL_SLUG);
+    let model_dir = root.join("models").join(MODEL_ID.replace('/', "__"));
+    let runtime_identity = pins::vulkan_identity(PLATFORM_KEY).expect("Darwin runtime pin");
+    let model_identity = pins::model_identity(MODEL_ID).expect("Qwen 3.5 4B model pin");
     let runtime_proof = manifest::prove_manifest(
         &manifest::artifact_manifest_path(&runtime_dir),
-        &pins::vulkan_identity(PLATFORM_KEY).expect("Darwin runtime pin"),
+        &runtime_identity,
     );
     let model_manifest = manifest::artifact_manifest_path(&model_dir);
-    let model_proof = manifest::prove_manifest_member(
-        &model_manifest,
-        &pins::metal_candidate_model_identity(),
-        MODEL_FILENAME,
-    );
-    let projector_proof = manifest::prove_manifest_member(
-        &model_manifest,
-        &pins::metal_candidate_model_identity(),
-        PROJECTOR_FILENAME,
-    );
+    let model_proof =
+        manifest::prove_manifest_member(&model_manifest, &model_identity, MODEL_FILENAME);
+    let projector_proof =
+        manifest::prove_manifest_member(&model_manifest, &model_identity, PROJECTOR_FILENAME);
     let binary_path = runtime_dir.join("llama-server");
     let probe = readiness_probe(&binary_path);
     let (tier, tier_metadata) = metal_tier(unified_memory_mib(object)?);
-    let (status, reason_code, failed_component) =
+    let (readiness, reason_code, failed_component) =
         readiness_status(&runtime_proof, &model_proof, &projector_proof, &probe);
+    let target = current_target(&journal)?;
+    let install = status::read_status(&journal, "local")
+        .ok()
+        .filter(status_targets_native)
+        .map(|value| serde_json::to_value(value).expect("install status serializes"))
+        .unwrap_or(Value::Null);
     Ok(json!({
         "provider":"local",
         "backend":"metal",
-        "ready":status == "ready",
-        "status":status,
+        "ready":readiness == "ready",
+        "status":readiness,
         "reason_code":reason_code,
         "failed_component":failed_component,
+        "target":{
+            "model_id":MODEL_ID,
+            "target_fingerprint_json":target["target_fingerprint_json"],
+            "target_fingerprint_sha256":target["target_fingerprint_sha256"],
+        },
+        "install":install,
+        "host":{
+            "platform_supported":true,
+            "backend":"metal",
+            "backend_reason":"Darwin Metal runtime",
+        },
         "artifacts":{
-            "model_id":pins::METAL_CANDIDATE_MODEL_ID,
+            "model_id":MODEL_ID,
+            "binary_installed":runtime_proof["status"] == "ready",
+            "model_installed":model_proof["status"] == "ready" && projector_proof["status"] == "ready",
             "binary_path":binary_path,
             "model_path":model_dir.join(MODEL_FILENAME),
             "projector_path":model_dir.join(PROJECTOR_FILENAME),
@@ -173,44 +89,19 @@ pub(super) fn inspect_with(
     }))
 }
 
-fn artifacts() -> Result<(&'static Artifact, &'static Artifact, &'static Artifact), DispatchError> {
-    let models = resolve(MODEL_UNIT, Some(Platform::MacosArm64), None);
-    let model = models
-        .iter()
-        .find(|artifact| artifact.filename == MODEL_FILENAME)
-        .copied()
-        .ok_or_else(|| {
-            failure(
-                "registry",
-                "artifact_registry_mismatch",
-                "candidate GGUF missing",
-                65,
-            )
-        })?;
-    let projector = models
-        .iter()
-        .find(|artifact| artifact.filename == PROJECTOR_FILENAME)
-        .copied()
-        .ok_or_else(|| {
-            failure(
-                "registry",
-                "artifact_registry_mismatch",
-                "candidate projector missing",
-                65,
-            )
-        })?;
-    let runtime = resolve(RUNTIME_UNIT, Some(Platform::MacosArm64), None)
-        .into_iter()
-        .find(|artifact| artifact.artifact_key == Some(PLATFORM_KEY))
-        .ok_or_else(|| {
-            failure(
-                "registry",
-                "artifact_registry_mismatch",
-                "candidate runtime missing",
-                65,
-            )
-        })?;
-    Ok((runtime, model, projector))
+fn current_target(journal: &Path) -> Result<Value, DispatchError> {
+    let target =
+        super::local_target_for_key(journal, MODEL_ID, super::LocalBackend::Metal, PLATFORM_KEY)?;
+    super::resolved_fingerprint(target)
+}
+
+pub fn status_targets_native(value: &status::InstallStatus) -> bool {
+    let Ok(target) = current_target(Path::new("")) else {
+        return false;
+    };
+    value.target_fingerprint_json.as_deref() == target["target_fingerprint_json"].as_str()
+        && value.target_fingerprint_sha256.as_deref()
+            == target["target_fingerprint_sha256"].as_str()
 }
 
 fn require_platform(platform_key: &str) -> Result<(), DispatchError> {
@@ -224,63 +115,6 @@ fn require_platform(platform_key: &str) -> Result<(), DispatchError> {
             65,
         ))
     }
-}
-
-fn prepare_staging(path: &Path) -> Result<(), DispatchError> {
-    // Best-effort removal is safe: downloads truncate stale parts and publish is atomic.
-    let _ = fs::remove_dir_all(path);
-    fs::create_dir_all(path).map_err(|error| failure("io", "staging_create_failed", error, 74))
-}
-
-fn staged_path(target: &Path) -> PathBuf {
-    target
-        .parent()
-        .expect("candidate target parent")
-        .join(format!(
-            ".{}.staging",
-            target
-                .file_name()
-                .expect("candidate target name")
-                .to_string_lossy()
-        ))
-}
-
-fn write_runtime_manifest(
-    root: &Path,
-    target_sha256: &str,
-    archive_filename: &str,
-) -> Result<(), DispatchError> {
-    let manifest_value = manifest::build_manifest(
-        "local",
-        RUNTIME_UNIT,
-        target_sha256,
-        json!({"pin_identity":pins::vulkan_identity(PLATFORM_KEY).expect("Darwin runtime pin")} ),
-        manifest::runtime_inventory(root, &[archive_filename.to_owned()])
-            .map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?,
-        None,
-        None,
-    )
-    .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
-    manifest::write_manifest(&manifest::artifact_manifest_path(root), &manifest_value)
-        .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
-    Ok(())
-}
-
-fn write_model_manifest(root: &Path, target_sha256: &str) -> Result<(), DispatchError> {
-    let manifest_value = manifest::build_manifest(
-        "local",
-        MODEL_UNIT,
-        target_sha256,
-        json!({"pin_identity":pins::metal_candidate_model_identity()}),
-        manifest::inventory_for_tree(root, "model")
-            .map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?,
-        None,
-        None,
-    )
-    .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
-    manifest::write_manifest(&manifest::artifact_manifest_path(root), &manifest_value)
-        .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
-    Ok(())
 }
 
 fn readiness_probe(binary_path: &Path) -> Value {
@@ -358,8 +192,8 @@ fn fit(
 ) -> Value {
     json!({
         "measurement":"unmeasured",
-        "model_bytes":9527502048_u64,
-        "projector_bytes":918166080_u64,
+        "model_bytes":2_740_937_888_u64,
+        "projector_bytes":672_423_616_u64,
         "context_tokens":context_tokens,
         "parallel_slots":parallel_slots,
         "prompt_cache_mib":prompt_cache_mib,

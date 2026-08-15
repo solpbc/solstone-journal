@@ -80,17 +80,13 @@ pub fn check_version(version: &str) -> Result<(), VersionError> {
 /// its released objects are served under `runtimes/llama-cuda13/b10068/{filename}`.
 /// These are declarations only; this crate performs no fetches.
 ///
-/// MLX is INCLUDED as of 2026-08-12: mirroring the two snapshots produced
-/// per-file filenames and digests, so the reason it was previously excluded no
-/// longer holds. ⚠ Its `origin_key` is intentionally exceptional in the same way
-/// CUDA's is -- `assets/mlx-snapshot/{repo-slug}/{revision}/{filename}` carries a
-/// repo segment the ordinary convention lacks, because a snapshot's filenames are
-/// unique only within a repository and the mirrored bytes already sit at those
-/// keys. `artifact_key` carries the source repo so a row is attributable.
+/// The trailing MLX rows are retained as historical pin references while old
+/// journal data remains readable. They are excluded from [`catalog`] and cannot
+/// be resolved or advertised by a shipped command.
 /// nvattest is excluded because its three archive plus companion-manifest pairs
 /// are governed by `nvattest_authority_v1.json` and its own `url_prefix`
 /// contract; duplicating them here would be unbound truth.
-pub static ARTIFACTS: &[Artifact] = &[
+static ARTIFACTS: &[Artifact] = &[
     Artifact {
         unit: "ced-engine",
         version: "v0.1.0",
@@ -220,32 +216,6 @@ pub static ARTIFACTS: &[Artifact] = &[
         origin_key: "assets/local-model/e87f176479d0855a907a41277aca2f8ee7a09523/Qwen3.5-4B-Q4_K_M.gguf",
         artifact_key: None,
         platform: None,
-        backend: None,
-        extracted_binary_sha256: None,
-    },
-    Artifact {
-        unit: "local-model",
-        version: "3885219b6810b007914f3a7950a8d1b469d598a5",
-        filename: "Qwen3.5-9B-Q8_0.gguf",
-        sha256: "809626574d0cb43d4becfa56169980da2bb448f2299270f7be443cb89d0a6ae4",
-        size_bytes: 9527502048,
-        upstream_url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q8_0.gguf",
-        origin_key: "assets/local-model/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q8_0.gguf",
-        artifact_key: None,
-        platform: Some(Platform::MacosArm64),
-        backend: None,
-        extracted_binary_sha256: None,
-    },
-    Artifact {
-        unit: "local-model",
-        version: "3885219b6810b007914f3a7950a8d1b469d598a5",
-        filename: "mmproj-F16.gguf",
-        sha256: "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f",
-        size_bytes: 918166080,
-        upstream_url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/mmproj-F16.gguf",
-        origin_key: "assets/local-model/3885219b6810b007914f3a7950a8d1b469d598a5/mmproj-F16.gguf",
-        artifact_key: None,
-        platform: Some(Platform::MacosArm64),
         backend: None,
         extracted_binary_sha256: None,
     },
@@ -1020,7 +990,11 @@ static VALIDATED: LazyLock<()> = LazyLock::new(|| {
 
 pub fn catalog() -> &'static [Artifact] {
     LazyLock::force(&VALIDATED);
-    ARTIFACTS
+    let active_len = ARTIFACTS
+        .iter()
+        .position(|artifact| artifact.unit == "mlx-snapshot")
+        .unwrap_or(ARTIFACTS.len());
+    &ARTIFACTS[..active_len]
 }
 
 pub fn resolve(
@@ -1048,7 +1022,7 @@ mod tests {
 
     #[test]
     fn catalog_has_the_handed_down_sha_and_size_multiset() {
-        let expected = BTreeSet::from([
+        let mut expected = BTreeSet::from([
             (
                 "a87de0a8b086429aa5d6544a6f881a70e62726d07901734640ac85dbf146181e",
                 720034,
@@ -1092,14 +1066,6 @@ mod tests {
             (
                 "cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864",
                 672423616,
-            ),
-            (
-                "809626574d0cb43d4becfa56169980da2bb448f2299270f7be443cb89d0a6ae4",
-                9527502048,
-            ),
-            (
-                "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f",
-                918166080,
             ),
             (
                 "4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757",
@@ -1326,11 +1292,18 @@ mod tests {
                 1139,
             ),
         ]);
+        let retired = ARTIFACTS
+            .iter()
+            .filter(|artifact| artifact.unit == "mlx-snapshot")
+            .map(|artifact| (artifact.sha256, artifact.size_bytes))
+            .collect::<BTreeSet<_>>();
+        expected.retain(|entry| !retired.contains(entry));
         let actual: BTreeSet<(&str, u64)> = catalog()
             .iter()
             .map(|artifact| (artifact.sha256, artifact.size_bytes))
             .collect();
-        assert_eq!(catalog().len(), 70);
+        assert_eq!(catalog().len(), 43);
+        assert!(resolve("mlx-snapshot", None, None).is_empty());
         assert_eq!(actual, expected);
     }
 
@@ -1364,16 +1337,16 @@ mod tests {
 
     #[test]
     fn selectors_return_complete_file_sets_without_ordering_contracts() {
-        assert_eq!(resolve("local-model", None, None).len(), 2);
-        let metal = resolve("local-model", Some(Platform::MacosArm64), None);
-        assert_eq!(metal.len(), 2);
+        let local = resolve("local-model", None, None);
+        assert_eq!(local.len(), 2);
         assert_eq!(
-            metal
+            local
                 .iter()
                 .map(|artifact| artifact.filename)
                 .collect::<BTreeSet<_>>(),
-            BTreeSet::from(["Qwen3.5-9B-Q8_0.gguf", "mmproj-F16.gguf"])
+            BTreeSet::from(["Qwen3.5-4B-Q4_K_M.gguf", "mmproj-F16.gguf"])
         );
+        assert!(resolve("local-model", Some(Platform::MacosArm64), None).is_empty());
         assert_eq!(resolve("rerank-model", None, None).len(), 2);
         assert_eq!(
             resolve("llama-server-cuda", Some(Platform::LinuxX64), None).len(),
@@ -1438,38 +1411,15 @@ mod tests {
     }
 
     #[test]
-    fn origin_keys_follow_the_mirror_convention_with_only_cuda_and_mlx_exceptions() {
+    fn origin_keys_follow_the_mirror_convention_with_only_cuda_exception() {
         let exceptions: Vec<_> = catalog()
             .iter()
             .filter(|artifact| artifact.unit == "llama-server-cuda")
             .collect();
         assert_eq!(exceptions.len(), 2);
 
-        // MLX is the second exception, and it is ASSERTED rather than skipped:
-        // a snapshot's filenames are unique only within a repository, so the key
-        // carries a repo segment. Skipping it here would let a malformed MLX key
-        // through silently, which is the failure this test exists to prevent.
-        let mlx: Vec<_> = catalog()
-            .iter()
-            .filter(|artifact| artifact.unit == "mlx-snapshot")
-            .collect();
-        assert_eq!(mlx.len(), 25);
-        for artifact in &mlx {
-            let repo = artifact
-                .artifact_key
-                .expect("an mlx row carries its source repo")
-                .replace('/', "-");
-            assert_eq!(
-                artifact.origin_key,
-                format!(
-                    "assets/{}/{}/{}/{}",
-                    artifact.unit, repo, artifact.version, artifact.filename
-                )
-            );
-        }
-
         for artifact in catalog() {
-            if artifact.unit == "llama-server-cuda" || artifact.unit == "mlx-snapshot" {
+            if artifact.unit == "llama-server-cuda" {
                 continue;
             }
             assert_eq!(

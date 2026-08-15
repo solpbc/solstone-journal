@@ -83,14 +83,6 @@ pub fn local_fingerprint(mut input: Map<String, Value>) -> Result<Value, String>
     )
 }
 
-pub fn mlx_fingerprint(mut input: Map<String, Value>) -> Result<Value, String> {
-    input.insert("provider".to_owned(), Value::String("local".to_owned()));
-    let canonical = canonical(Value::Object(input))?;
-    Ok(
-        json!({"target_fingerprint_json": canonical, "target_fingerprint_sha256": sha256(&canonical)}),
-    )
-}
-
 fn hex(bytes: impl AsRef<[u8]>) -> String {
     bytes
         .as_ref()

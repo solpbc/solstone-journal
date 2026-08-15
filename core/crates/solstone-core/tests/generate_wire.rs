@@ -417,7 +417,7 @@ fn bundled_generation_emits_generated_response_and_hints() {
 }
 
 #[test]
-fn bundled_candidate_loopback_enforces_schema_output_and_sends_multimodal_response_format() {
+fn bundled_native_loopback_enforces_schema_output_and_sends_multimodal_response_format() {
     let schema = json!({
         "type": "object",
         "properties": {"answer": {"type": "string"}},
@@ -445,7 +445,7 @@ fn bundled_candidate_loopback_enforces_schema_output_and_sends_multimodal_respon
         ),
     ];
     for (name, completion, expected_outcome) in cases {
-        let journal = root(&format!("candidate-schema-{name}"));
+        let journal = root(&format!("native-schema-{name}"));
         write_config(&journal, bundled_config(false));
         let (port, server) = serve_recording(vec![(200, completion)]);
         std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
@@ -483,8 +483,8 @@ fn bundled_candidate_loopback_enforces_schema_output_and_sends_multimodal_respon
 }
 
 #[test]
-fn bundled_candidate_schema_validation_is_advisory() {
-    let journal = root("candidate-schema-advisory");
+fn bundled_native_schema_validation_is_advisory() {
+    let journal = root("native-schema-advisory");
     write_config(&journal, bundled_config(false));
     let (port, server) = serve_recording(vec![(
         200,
@@ -512,8 +512,8 @@ fn bundled_candidate_schema_validation_is_advisory() {
 }
 
 #[test]
-fn bundled_candidate_loopback_converse_preserves_tool_results_and_rejects_prose_tools() {
-    let journal = root("candidate-converse");
+fn bundled_native_loopback_converse_preserves_tool_results_and_rejects_prose_tools() {
+    let journal = root("native-converse");
     let first = json!({
         "choices": [{
             "message": {"content": "", "tool_calls": [{
@@ -595,7 +595,7 @@ fn bundled_candidate_loopback_converse_preserves_tool_results_and_rejects_prose_
     assert_eq!(second_body["messages"][2]["content"], "sunny");
     let _ = std::fs::remove_dir_all(journal);
 
-    let prose_journal = root("candidate-converse-prose");
+    let prose_journal = root("native-converse-prose");
     let prose = json!({
         "choices": [{"message": {"content": "<tool_call>{}</tool_call>"}, "finish_reason": "stop"}],
     })
@@ -621,8 +621,8 @@ fn bundled_candidate_loopback_converse_preserves_tool_results_and_rejects_prose_
 
 #[cfg(unix)]
 #[test]
-fn refusing_candidate_endpoint_stays_local_and_never_spawns_mlx() {
-    let journal = root("candidate-refusing");
+fn refusing_native_endpoint_stays_local_and_never_spawns_mlx() {
+    let journal = root("native-refusing");
     write_config(&journal, bundled_config(false));
     let config = bundled_config(false)
         .as_object()
@@ -632,7 +632,7 @@ fn refusing_candidate_endpoint_stays_local_and_never_spawns_mlx() {
         resolve_lane(&config),
         ("local".into(), LaneOutcome::BundledLocal)
     );
-    let (port, server) = serve_recording(vec![(200, r#"{"choices":"candidate refused"}"#.into())]);
+    let (port, server) = serve_recording(vec![(200, r#"{"choices":"native refused"}"#.into())]);
     std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
     let (poison_bin, marker) = poison_mlx_commands(&journal);
     let input = fixture_vector("generated")["request"].to_string();
@@ -662,7 +662,7 @@ fn refusing_candidate_endpoint_stays_local_and_never_spawns_mlx() {
             || std::fs::read(&marker)
                 .expect("read poison marker")
                 .is_empty(),
-        "candidate request spawned an MLX command"
+        "native request spawned an MLX command"
     );
     let _ = std::fs::remove_dir_all(journal);
 }
