@@ -1009,6 +1009,30 @@ mod tests {
     }
 
     #[test]
+    fn empty_day_does_not_gather_or_skip() {
+        let (_root, paths, context) = fixture(
+            "empty-day",
+            r#"{
+"type":"generate", "load":{"transcripts":true}
+}"#,
+        );
+
+        let prepared = prepare::prepare(
+            json!({"name":"empty-day", "day":"", "prompt":"hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+        )
+        .unwrap();
+
+        assert!(prepared.config.get("transcript").is_none());
+        assert!(prepared.config.get("source_counts").is_none());
+        assert!(prepared.config.get("skip_reason").is_none());
+    }
+
+    #[test]
     fn criterion_9_gate_does_not_probe_when_no_source_is_enabled() {
         let root = tempfile::tempdir().unwrap();
         let sources =
@@ -1100,7 +1124,7 @@ mod tests {
         let (_root, paths, context) = fixture(
             "filtered-talents",
             r#"{
-"type":"generate", "load":{"talents":{"sense":true}}
+"type":"generate", "load":{"talents":{"app:name":true}}
 }"#,
         );
         let day = "20260104";
@@ -1108,7 +1132,7 @@ mod tests {
         let path = segment_dir(&context, day, segment);
         fs::create_dir_all(path.join("talents")).unwrap();
         fs::write(
-            path.join("talents/sense.md"),
+            path.join("talents/_app_name.md"),
             "This selected talent output is long enough for the gather to retain it.",
         )
         .unwrap();
@@ -1128,12 +1152,15 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(prepared.config["sources"]["talents"], json!({"sense":true}));
+        assert_eq!(
+            prepared.config["sources"]["talents"],
+            json!({"app:name":true})
+        );
         assert!(
             prepared.config["transcript"]
                 .as_str()
                 .unwrap()
-                .contains("### sense summary")
+                .contains("### _app_name summary")
         );
         assert!(
             !prepared.config["transcript"]

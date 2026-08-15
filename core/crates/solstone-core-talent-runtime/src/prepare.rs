@@ -100,7 +100,10 @@ pub fn prepare(
         });
     }
     let sources = composed.get("sources").and_then(Value::as_object).cloned();
-    if composed.contains_key("day")
+    if composed
+        .get("day")
+        .and_then(Value::as_str)
+        .is_some_and(|day| !day.is_empty())
         && sources
             .as_ref()
             .is_some_and(transcript::sources_are_enabled)

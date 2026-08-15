@@ -267,18 +267,25 @@ fn process_segment(segment: &Segment, day: &str, sources: &Sources) -> Vec<Entry
         markdown.sort();
         markdown.dedup();
         for path in markdown {
-            if let Ok(content) = fs::read_to_string(path)
-                && !content.trim().is_empty()
-            {
-                entries.push(entry(
-                    start,
-                    end,
-                    segment,
-                    "transcript",
-                    content,
-                    stream.clone(),
-                    None,
-                ));
+            match fs::read_to_string(path) {
+                Ok(content) if !content.trim().is_empty() => {
+                    entries.push(entry(
+                        start,
+                        end,
+                        segment,
+                        "transcript",
+                        content,
+                        stream.clone(),
+                        None,
+                    ));
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    log::warn!(
+                        "unable to read transcript input {}: {error}",
+                        path.display()
+                    );
+                }
             }
         }
         for path in &files {
@@ -327,30 +334,35 @@ fn process_segment(segment: &Segment, day: &str, sources: &Sources) -> Vec<Entry
             .collect::<Vec<_>>();
         browser.sort();
         for path in browser {
-            if let Ok(text) = fs::read_to_string(path) {
-                let content = produce_chunks(
-                    Family::Browser,
-                    path.file_name()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or_default(),
-                    &text,
-                    &ChatLabels::default(),
-                )
-                .chunks
-                .into_iter()
-                .map(|chunk| chunk.content)
-                .collect::<Vec<_>>()
-                .join("\n\n");
-                if !content.is_empty() {
-                    entries.push(entry(
-                        start,
-                        end,
-                        segment,
-                        "browser",
-                        content,
-                        stream.clone(),
-                        None,
-                    ));
+            match fs::read_to_string(path) {
+                Ok(text) => {
+                    let content = produce_chunks(
+                        Family::Browser,
+                        path.file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or_default(),
+                        &text,
+                        &ChatLabels::default(),
+                    )
+                    .chunks
+                    .into_iter()
+                    .map(|chunk| chunk.content)
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                    if !content.is_empty() {
+                        entries.push(entry(
+                            start,
+                            end,
+                            segment,
+                            "browser",
+                            content,
+                            stream.clone(),
+                            None,
+                        ));
+                    }
+                }
+                Err(error) => {
+                    log::warn!("unable to read JSONL input {}: {error}", path.display());
                 }
             }
         }
@@ -498,6 +510,7 @@ fn all_segments(root: &Path, day: &str) -> Vec<Segment> {
 }
 
 fn find_segment(root: &Path, day: &str, key: &str, stream: Option<&str>) -> Option<Segment> {
+    let stream = stream.filter(|stream| !stream.is_empty());
     all_segments(root, day).into_iter().find(|segment| {
         segment.key == key && stream.is_none_or(|stream| segment.stream_dir == stream)
     })
@@ -770,6 +783,39 @@ mod tests {
 
         assert_eq!(markdown, "Segment folder not found: 20260731/090000_60");
         assert_eq!(counts, SourceCounts::default());
+    }
+
+    #[test]
+    fn empty_stream_searches_all_segments_while_named_stream_filters() {
+        let root = TempDir::new().unwrap();
+        let default_segment = segment(&root);
+        let field_segment = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("field")
+            .join(SEGMENT);
+        fs::create_dir_all(&field_segment).unwrap();
+        fs::write(
+            default_segment.join("capture_audio.jsonl"),
+            r#"{"start":"00:00:00","text":"Default stream input"}"#,
+        )
+        .unwrap();
+        fs::write(
+            field_segment.join("capture_audio.jsonl"),
+            r#"{"start":"00:00:00","text":"Field stream input"}"#,
+        )
+        .unwrap();
+        let sources = sources(true, false, TalentSource::Disabled);
+
+        let unspecified = cluster_period(root.path(), DAY, SEGMENT, &sources, None);
+        let empty = cluster_period(root.path(), DAY, SEGMENT, &sources, Some(""));
+        let field = cluster_period(root.path(), DAY, SEGMENT, &sources, Some("field"));
+
+        assert_eq!(empty, unspecified);
+        assert!(field.0.contains("Field stream input"));
+        assert!(!field.0.contains("Default stream input"));
+        assert_eq!(field.1.transcripts, 1);
     }
 
     #[test]
