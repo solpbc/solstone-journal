@@ -64,6 +64,20 @@ pub enum WriteIntent {
         facet: String,
         day: String,
     },
+    TimelineSegmentSummary {
+        result: Value,
+        day: String,
+        segment: String,
+        stream: Option<String>,
+        model: String,
+    },
+    SpeakerAttribution {
+        output: String,
+        day: String,
+        segment: String,
+        stream: String,
+        state: crate::speaker_attribution::SpeakerAttributionState,
+    },
 }
 
 pub fn write_output_if_configured(prepared: &PreparedTalent, output: &str) -> Result<bool, String> {
@@ -202,6 +216,52 @@ pub fn apply(
                     talent: "entities:entity_observer".to_owned(),
                     detail,
                 })?;
+            Ok(CommitDisposition::CommittedNoOutput)
+        }
+        CommitPlan::Write(WriteIntent::TimelineSegmentSummary {
+            result,
+            day,
+            segment,
+            stream,
+            model,
+        }) => {
+            crate::timeline::apply_result(
+                &context.journal,
+                &result,
+                &day,
+                &segment,
+                stream.as_deref(),
+                &model,
+            )
+            .map_err(|detail| StageError {
+                phase: "write-intent",
+                stage: "timeline:segment_summary",
+                talent: "timeline:segment_summary".to_owned(),
+                detail,
+            })?;
+            Ok(CommitDisposition::CommittedNoOutput)
+        }
+        CommitPlan::Write(WriteIntent::SpeakerAttribution {
+            output,
+            day,
+            segment,
+            stream,
+            state,
+        }) => {
+            crate::speaker_attribution::apply_result(
+                &context.journal,
+                &output,
+                &day,
+                &segment,
+                &stream,
+                &state,
+            )
+            .map_err(|detail| StageError {
+                phase: "write-intent",
+                stage: "speaker_attribution",
+                talent: "speaker_attribution".to_owned(),
+                detail,
+            })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
     }

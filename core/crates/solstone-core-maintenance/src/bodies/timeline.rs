@@ -727,6 +727,35 @@ pub fn origin_for_segment(segment: &Path) -> String {
     }
 }
 
+/// Write the timeline entry for one chronicle segment by atomic replacement.
+pub fn write_segment_timeline(segment: &Path, payload: &Value) -> Result<(), String> {
+    let mut bytes = serde_json::to_vec(payload).map_err(|error| error.to_string())?;
+    bytes.push(b'\n');
+    atomic_replace(
+        segment.join("timeline.json"),
+        &bytes,
+        AtomicWriteOptions::default(),
+    )
+    .map_err(|error| error.to_string())
+}
+
+/// Write the deterministic continuation entry for a redundant segment.
+pub fn write_continuation_summary(
+    segment: &Path,
+    predecessor_segment_key: &str,
+) -> Result<(), String> {
+    // Preserve solstone/apps/timeline/talent/segment_summary.py:70-88.
+    write_segment_timeline(
+        segment,
+        &json!({
+            "title": "Continued",
+            "description": "Unchanged from the prior window.",
+            "origin": origin_for_segment(segment),
+            "continuation_of": predecessor_segment_key,
+        }),
+    )
+}
+
 fn group_by_hour(rows: &[SegmentRow]) -> BTreeMap<String, Vec<&SegmentRow>> {
     let mut grouped = BTreeMap::<String, Vec<&SegmentRow>>::new();
     for row in rows {
@@ -897,13 +926,14 @@ fn usage_error(id: &str, detail: &str) -> CliRun {
     reason = "temporary journals and canned model responses are test-only"
 )]
 mod tests {
-    use super::{pick_one, rollup_request, run};
+    use super::{pick_one, rollup_request, run, write_segment_timeline};
     use crate::timezone::HostTimezoneSource;
     use crate::{GenerateModelResolver, RollupPicker, TimelineServices};
     use chrono::{TimeZone, Utc};
     use serde_json::{Map, Value, json};
     use solstone_core_generate::{ContentPart, GenerateRequest};
     use std::collections::VecDeque;
+    use std::os::unix::fs::MetadataExt;
     use std::path::Path;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -968,6 +998,22 @@ mod tests {
                 .pop_front()
                 .unwrap_or_else(|| Ok("{\"picks\":[0],\"rationale\":\"canned\"}".to_owned()))
         }
+    }
+
+    #[test]
+    fn segment_timeline_writer_atomically_replaces_existing_entry() {
+        // Derived from solstone/apps/timeline/talent/segment_summary.py:70-88, :198-207.
+        let journal = tempfile::tempdir().unwrap();
+        let segment = journal.path().join("chronicle/20260101/090000_300");
+        std::fs::create_dir_all(&segment).unwrap();
+        let timeline = segment.join("timeline.json");
+        std::fs::write(&timeline, b"{\"title\":\"old\"}\n").unwrap();
+        let old_inode = std::fs::metadata(&timeline).unwrap().ino();
+
+        write_segment_timeline(&segment, &json!({"title":"new"})).unwrap();
+
+        assert_eq!(read_json(&timeline), json!({"title":"new"}));
+        assert_ne!(std::fs::metadata(&timeline).unwrap().ino(), old_inode);
     }
 
     struct Model {

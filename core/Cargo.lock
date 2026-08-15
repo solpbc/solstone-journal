@@ -4327,6 +4327,8 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-journal-io",
  "solstone-core-maintenance",
+ "solstone-core-speaker-id",
+ "solstone-core-speaker-resolve",
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-talent-cli",

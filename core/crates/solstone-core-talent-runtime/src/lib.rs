@@ -24,10 +24,12 @@ pub mod participation;
 pub mod prepare;
 pub mod pulse;
 pub mod schedule;
+pub mod speaker_attribution;
 pub mod steward;
 pub mod steward_health;
 pub mod steward_log;
 pub mod story;
+pub mod timeline;
 mod transcript;
 pub mod writers;
 
@@ -875,7 +877,7 @@ mod tests {
         let (root, paths, context) = fixture(
             "speaker-attribution-fixture",
             r#"{
-"type":"generate", "hook":{"pre":"speaker_attribution"}, "load":{"transcripts":false}
+"type":"generate", "hook":{"pre":"unknown_native_hook"}, "load":{"transcripts":false}
 }"#,
         );
         let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "generated"));
@@ -891,7 +893,7 @@ mod tests {
             &mut output,
         );
         assert!(
-            matches!(outcome, RuntimeOutcome::UnportedHook { ref hook, ref talent } if hook == "speaker_attribution" && talent == "speaker-attribution-fixture")
+            matches!(outcome, RuntimeOutcome::UnportedHook { ref hook, ref talent } if hook == "unknown_native_hook" && talent == "speaker-attribution-fixture")
         );
         let hook_events = events(&output);
         assert_eq!(hook_events.len(), 1);
