@@ -3401,6 +3401,7 @@ version = "1.0.22"
 dependencies = [
  "axum",
  "chrono",
+ "log",
  "regex",
  "serde_json",
  "solstone-core-convey-shell",

@@ -459,8 +459,11 @@ fn has_exact_keys<const N: usize>(value: &Value, expected: [&str; N]) -> bool {
 }
 
 fn append_action(journal_root: &Path, action: &str, params: Value) {
-    let _ =
-        solstone_core_facets::append_action_log(journal_root, None, "app", "home", action, params);
+    if let Err(error) =
+        solstone_core_facets::append_action_log(journal_root, None, "app", "home", action, params)
+    {
+        log::warn!("home {action} could not append audit action: {error}");
+    }
 }
 
 fn list_response(state: &'static str, removals: Vec<Value>) -> Response {

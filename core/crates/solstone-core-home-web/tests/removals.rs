@@ -21,6 +21,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
+use chrono::{Days, Local, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use solstone_core_retention_client::RemovalClass;
 use tempfile::TempDir;
@@ -224,7 +225,7 @@ fn list_projects_only_pending_approval_and_all_failures() {
     let receipt = marks_receipt(json!({
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": mark(RemovalClass::PolicyRawRelease, json!("marked"), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &["a", "b"]),
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": mark(RemovalClass::OwnerRawRelease, json!("marked"), "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", &["c"]),
-        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": mark(RemovalClass::PolicyRawRelease, json!({"failed": {"at": "2026-01-01T00:00:01Z", "reason": "r", "staged": null}}), "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", &[]),
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": mark(RemovalClass::PolicyRawRelease, json!({"failed": {"at": "2026-01-01T00:00:01Z", "reason": "r", "staged": "chronicle/20260101/.removing_070000_17"}}), "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", &[]),
     }));
     let response = harness.call(&receipt, "0", &json!({}), || {
         response(
@@ -255,7 +256,34 @@ fn list_projects_only_pending_approval_and_all_failures() {
         .iter()
         .find(|row| row["state"] == "failed")
         .expect("failed row");
-    assert_eq!(failed["staged"], Value::Null);
+    let failed_fields = failed.as_object().expect("failed fields");
+    assert_eq!(
+        failed_fields.len(),
+        14,
+        "failed rows contain their exact fields"
+    );
+    assert!(
+        [
+            "id",
+            "class",
+            "origin",
+            "day",
+            "stream",
+            "dir",
+            "marked_at",
+            "count",
+            "bytes",
+            "size",
+            "state",
+            "at",
+            "reason",
+            "staged",
+        ]
+        .iter()
+        .all(|field| failed_fields.contains_key(*field)),
+        "failed rows contain only their declared fields"
+    );
+    assert_eq!(failed["staged"], "chronicle/20260101/.removing_070000_17");
     assert_eq!(failed["reason"], "r");
 }
 
@@ -478,7 +506,11 @@ fn run_retention(binary: &Path, args: &[&str]) -> Value {
 }
 
 fn seed_segment(root: &Path) -> PathBuf {
-    let segment = root.join("chronicle/20260701/field.audio/070000_17");
+    seed_segment_on(root, "20260701")
+}
+
+fn seed_segment_on(root: &Path, day: &str) -> PathBuf {
+    let segment = root.join(format!("chronicle/{day}/field.audio/070000_17"));
     fs::create_dir_all(&segment).expect("segment");
     let raw = b"raw";
     fs::write(segment.join("audio.flac"), raw).expect("raw");
@@ -574,9 +606,17 @@ fn real_executor_refuses_when_the_current_policy_no_longer_releases_the_mark() {
     let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
     let binary = support::retention_binary();
     let harness = Harness::new();
-    let segment = seed_segment(harness.root.path());
+    let today = Local::now().date_naive();
+    let segment_day = today
+        .checked_sub_days(Days::new(2))
+        .expect("segment date")
+        .format("%Y%m%d")
+        .to_string();
+    let segment = seed_segment_on(harness.root.path(), &segment_day);
     let policy = r#"{"default_rule":{"anchor":"captured","period":1,"priority":0},"enabled":true}"#;
     let root = harness.root.path().display().to_string();
+    let today = today.format("%Y-%m-%d").to_string();
+    let now = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
     let marked = run_retention(
         &binary,
         &[
@@ -584,9 +624,9 @@ fn real_executor_refuses_when_the_current_policy_no_longer_releases_the_mark() {
             "--journal",
             &root,
             "--today",
-            "2026-08-06",
+            &today,
             "--now",
-            "2026-08-06T00:00:00Z",
+            &now,
             "--policy",
             policy,
         ],
@@ -603,7 +643,7 @@ fn real_executor_refuses_when_the_current_policy_no_longer_releases_the_mark() {
         "config/journal.json",
         &json!({
             "setup": {"completed_at": 1_700_000_000_000_i64},
-            "retention": {"raw_media": "days", "raw_media_days": 999},
+            "retention": {"raw_media": "days", "raw_media_days": 4},
         }),
     );
 
