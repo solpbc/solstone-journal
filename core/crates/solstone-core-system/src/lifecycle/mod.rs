@@ -184,6 +184,11 @@ pub fn is_supervisor_up(journal: impl AsRef<Path>) -> bool {
     is_supervisor_up_with_start_time(journal, state::process_start_time_epoch_seconds)
 }
 
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+pub fn is_supervisor_up(_journal: impl AsRef<Path>) -> bool {
+    false
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) fn is_supervisor_up_with_start_time(
     journal: impl AsRef<Path>,

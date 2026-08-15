@@ -47,7 +47,6 @@ use crate::layout::resolve_current_journal;
 const EXIT_FAILED: u8 = 1;
 const EXIT_USAGE: u8 = 64;
 const EXIT_DATA: u8 = 65;
-#[cfg(not(target_os = "ios"))]
 const EXIT_UNAVAILABLE: u8 = 69;
 const EXIT_IO: u8 = 74;
 #[cfg(not(target_os = "ios"))]
@@ -94,7 +93,7 @@ impl IndexerQuery {
 
 #[cfg(target_os = "ios")]
 fn indexer(_args: &[OsString]) -> Outcome {
-    failure("indexer", "unavailable on iOS", 69)
+    failure("indexer", "unavailable on iOS", EXIT_UNAVAILABLE)
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -574,6 +573,12 @@ fn archive_export(args: &[OsString]) -> Outcome {
     }
 }
 
+#[cfg(target_os = "ios")]
+fn archive_merge(_args: &[OsString]) -> Outcome {
+    failure("archive merge", "unavailable on iOS", EXIT_UNAVAILABLE)
+}
+
+#[cfg(not(target_os = "ios"))]
 fn archive_merge(args: &[OsString]) -> Outcome {
     let Some(source_arg) = args.first() else {
         return usage("archive merge", "SOURCE is required");
@@ -839,6 +844,12 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
     success(stdout)
 }
 
+#[cfg(target_os = "ios")]
+fn facet_merge(_args: &[OsString]) -> Outcome {
+    failure("facet merge", "unavailable on iOS", EXIT_UNAVAILABLE)
+}
+
+#[cfg(not(target_os = "ios"))]
 fn facet_merge(args: &[OsString]) -> Outcome {
     let Some(source) = args.first().and_then(|arg| arg.to_str()) else {
         return usage("facet merge", "SOURCE is required");

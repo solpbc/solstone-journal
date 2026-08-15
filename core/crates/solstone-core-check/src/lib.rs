@@ -150,48 +150,53 @@ fn meminfo() -> Option<(u64, u64)> {
     }
     Some((total?, available?))
 }
+#[cfg(target_os = "linux")]
 fn memory() -> MemoryInput {
-    #[cfg(target_os = "linux")]
-    {
-        if let Some((total, available)) = meminfo() {
-            return MemoryInput {
-                total_bytes: (total > 0).then_some(total),
-                available_bytes: (total > 0 && available > 0 && available <= total)
-                    .then_some(available),
-            };
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let total = command_text("/usr/sbin/sysctl", &["-n", "hw.memsize"])
-            .and_then(|text| text.parse().ok());
-        let available = command_text("/usr/bin/vm_stat", &[]).and_then(|text| {
-            let page = text
-                .split("page size of ")
-                .nth(1)?
-                .split_whitespace()
-                .next()?
-                .parse::<u64>()
-                .ok()?;
-            let mut count = 0;
-            for line in text.lines() {
-                if line.starts_with("Pages free") || line.starts_with("Pages inactive") {
-                    count += line
-                        .split(':')
-                        .nth(1)?
-                        .trim()
-                        .trim_end_matches('.')
-                        .parse::<u64>()
-                        .ok()?;
-                }
-            }
-            Some(count * page)
-        });
+    if let Some((total, available)) = meminfo() {
         return MemoryInput {
-            total_bytes: total,
-            available_bytes: available,
+            total_bytes: (total > 0).then_some(total),
+            available_bytes: (total > 0 && available > 0 && available <= total)
+                .then_some(available),
         };
     }
+    MemoryInput {
+        total_bytes: None,
+        available_bytes: None,
+    }
+}
+#[cfg(target_os = "macos")]
+fn memory() -> MemoryInput {
+    let total =
+        command_text("/usr/sbin/sysctl", &["-n", "hw.memsize"]).and_then(|text| text.parse().ok());
+    let available = command_text("/usr/bin/vm_stat", &[]).and_then(|text| {
+        let page = text
+            .split("page size of ")
+            .nth(1)?
+            .split_whitespace()
+            .next()?
+            .parse::<u64>()
+            .ok()?;
+        let mut count = 0;
+        for line in text.lines() {
+            if line.starts_with("Pages free") || line.starts_with("Pages inactive") {
+                count += line
+                    .split(':')
+                    .nth(1)?
+                    .trim()
+                    .trim_end_matches('.')
+                    .parse::<u64>()
+                    .ok()?;
+            }
+        }
+        Some(count * page)
+    });
+    MemoryInput {
+        total_bytes: total,
+        available_bytes: available,
+    }
+}
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn memory() -> MemoryInput {
     MemoryInput {
         total_bytes: None,
         available_bytes: None,
