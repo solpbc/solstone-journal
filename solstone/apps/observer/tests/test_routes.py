@@ -20,6 +20,7 @@ import pytest
 
 import solstone.apps.observer.routes as routes_module
 import solstone.apps.observer.utils as observer_utils
+import solstone.convey.bridge as convey_bridge
 import solstone.observe.observer_cli as observer_cli_module
 from solstone.apps.observer.presentation import (
     ACTIVE_THRESHOLD_MS,
@@ -27,6 +28,7 @@ from solstone.apps.observer.presentation import (
     OBSERVER_STATE_LABELS,
     STALE_THRESHOLD_MS,
     classify_observer_freshness,
+    serialize_observer,
 )
 from solstone.apps.observer.utils import (
     append_history_record,
@@ -36,6 +38,7 @@ from solstone.apps.observer.utils import (
     save_observer,
 )
 from solstone.convey.secure_listener import ConveyIdentity
+from solstone.convey.sol_initiated.copy import KIND_SOL_CHAT_REQUEST
 from solstone.observe.processing_record import (
     HANDLER_DESCRIBE,
     HANDLER_TRANSCRIBE,
@@ -571,6 +574,158 @@ def test_classifier_revoked_returns_revoked_regardless_of_last_seen():
 
     assert classify_observer_freshness(None, True, current_now) == expected
     assert classify_observer_freshness(current_now, True, current_now) == expected
+
+
+def test_serialize_observer_shows_created_observer(observer_env):
+    env = observer_env()
+    resp = env.register_bound_observer("my-observer")
+    assert resp.status_code == 200
+    key_prefix = resp.get_json()["prefix"]
+    key = resp.get_json()["key"]
+    record = observer_utils.load_observer(key)
+    assert record is not None
+    observers = [serialize_observer(record, 0)]
+
+    assert len(observers) == 1
+    assert observers[0]["prefix"] == key_prefix
+    assert "key_prefix" not in observers[0]
+    assert observers[0]["name"] == "my-observer"
+    assert observers[0]["enabled"] is True
+    assert observers[0]["stats"]["segments_received"] == 0
+    assert observers[0]["state"] == "disconnected"
+    assert observers[0]["group"] == "inactive"
+    assert observers[0]["label"] == OBSERVER_STATE_LABELS["disconnected"]
+    assert observers[0]["elapsed_ms"] is None
+    assert observers[0]["clock_skew"] is False
+    assert observers[0]["last_chat_request_at"] is None
+
+
+def test_serialize_observer_includes_last_chat_request_at(observer_env):
+    env = observer_env()
+    resp = env.register_bound_observer("my-observer")
+    assert resp.status_code == 200
+    key_prefix = resp.get_json()["prefix"]
+    key = resp.get_json()["key"]
+    handle = convey_bridge.register_sse_subscriber(key_prefix)
+    try:
+        convey_bridge._broadcast_to_sse_clients(
+            {"tract": "chat", "event": KIND_SOL_CHAT_REQUEST, "ts": 9876}
+        )
+        observer = observer_utils.load_observer(key)
+        assert observer is not None
+        serialized = serialize_observer(observer, 0)
+    finally:
+        convey_bridge.unregister_sse_subscriber(handle)
+        with convey_bridge._SSE_LOCK:
+            convey_bridge._SSE_LAST_CHAT_REQUEST_AT_BY_KEY.pop(key_prefix, None)
+
+    assert serialized["prefix"] == key_prefix
+    assert serialized["last_chat_request_at"] == 9876
+
+
+def _raw_ingest_rejection() -> dict:
+    return {
+        "reason_code": "ingest_contract_invalid",
+        "active_count": 79,
+        "first_ts": 1_781_999_200_000,
+        "latest_ts": 1_782_000_000,
+        "summary": "screen.jsonl:2: value is invalid",
+        "stream": "fedora",
+        "version": "0.3.1",
+        "segment": "20260622/120000_300",
+    }
+
+
+def test_serialize_observer_includes_failing_ingest_rejection_without_segment():
+    observer = serialize_observer(
+        {
+            "key": "feda0000" + ("f" * 56),
+            "name": "fedora",
+            "created_at": 10,
+            "last_seen": 5_995_000,
+            "enabled": True,
+            "revoked": False,
+            "stats": {},
+            "health": {"ingest_rejection": _raw_ingest_rejection()},
+        },
+        6_000_000,
+    )
+
+    assert observer["failing"] is True
+    assert set(observer["ingest_rejection"]) == {
+        "reason_code",
+        "active_count",
+        "first_ts",
+        "latest_ts",
+        "summary",
+        "stream",
+        "version",
+    }
+    assert "segment" not in observer["ingest_rejection"]
+
+
+def test_serialize_observer_omits_ingest_rejection_when_not_failing():
+    records = {
+        "no-rejection": {
+            "key": "aaaa0000" + ("f" * 56),
+            "name": "no-rejection",
+            "created_at": 10,
+            "last_seen": 6_995_000,
+            "enabled": True,
+            "revoked": False,
+            "stats": {},
+        },
+        "revoked-with-rejection": {
+            "key": "bbbb0000" + ("f" * 56),
+            "name": "revoked-with-rejection",
+            "created_at": 20,
+            "last_seen": 6_995_000,
+            "enabled": True,
+            "revoked": True,
+            "stats": {},
+            "health": {"ingest_rejection": _raw_ingest_rejection()},
+        },
+        "disabled-with-rejection": {
+            "key": "cccc0000" + ("f" * 56),
+            "name": "disabled-with-rejection",
+            "created_at": 30,
+            "last_seen": 6_995_000,
+            "enabled": False,
+            "revoked": False,
+            "stats": {},
+            "health": {"ingest_rejection": _raw_ingest_rejection()},
+        },
+    }
+    observers = {
+        name: serialize_observer(record, 7_000_000)
+        for name, record in records.items()
+    }
+
+    for name in [
+        "no-rejection",
+        "revoked-with-rejection",
+        "disabled-with-rejection",
+    ]:
+        assert observers[name]["failing"] is False
+        assert "ingest_rejection" not in observers[name]
+
+
+def test_serialize_observer_includes_segments_observed_stat():
+    record = {
+        "key": "stats000" + ("f" * 56),
+        "name": "stats-test",
+        "created_at": 10,
+        "last_seen": None,
+        "enabled": True,
+        "revoked": False,
+        "stats": {},
+    }
+    data = serialize_observer(record, 0)
+    assert "segments_observed" not in data["stats"]
+
+    record["stats"]["segments_observed"] = 5
+    data = serialize_observer(record, 0)
+    assert data["stats"]["segments_observed"] == 5
 
 
 

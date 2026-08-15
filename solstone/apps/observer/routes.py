@@ -39,7 +39,6 @@ import solstone.convey.bridge as convey_bridge
 from solstone.apps.utils import log_app_action
 from solstone.convey import emit
 from solstone.convey.bridge import _SSE_HEARTBEAT_SECONDS
-from solstone.convey.copy import OBSERVER_CALLOSUM_LIVE_LABEL
 from solstone.convey.reasons import (
     AUTH_REQUIRED,
     FEATURE_UNAVAILABLE,
