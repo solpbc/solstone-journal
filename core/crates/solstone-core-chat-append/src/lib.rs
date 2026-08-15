@@ -6,9 +6,10 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone};
+use regex::Regex;
 use serde_json::{Map, Value};
 use solstone_core_indexer_store::scan::rescan_file;
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, write_jsonl};
@@ -160,19 +161,36 @@ fn append_chat_event_at(
         .get("ts")
         .and_then(Value::as_i64)
         .ok_or(ChatAppendError::InvalidTimestamp)?;
-    let (day, segment) = current_segment_key(journal, timestamp)?;
-    let segment_dir = SegmentDir::resolve(journal, &day, &segment, CHAT_STREAM)
-        .map_err(|source| ChatAppendError::SegmentPath { source })?;
-    let chat_path = segment_dir.path().join("chat.jsonl");
+    let event_time = local_time(timestamp)?;
+    append_validated_chat_event_at_local_time(
+        journal,
+        kind,
+        event,
+        timestamp,
+        event_time.naive_local(),
+    )
+}
+
+fn append_validated_chat_event_at_local_time(
+    journal: &Path,
+    kind: &str,
+    event: Map<String, Value>,
+    timestamp: i64,
+    event_time: NaiveDateTime,
+) -> Result<Value, ChatAppendError> {
     let mut stored = Map::new();
     stored.insert("kind".to_owned(), Value::String(kind.to_owned()));
     stored.extend(event);
     let stored = Value::Object(stored);
 
-    {
+    let chat_path = {
         let _guard = CHAT_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (day, segment) = current_segment_key(journal, timestamp, event_time)?;
+        let segment_dir = SegmentDir::resolve(journal, &day, &segment, CHAT_STREAM)
+            .map_err(|source| ChatAppendError::SegmentPath { source })?;
+        let chat_path = segment_dir.path().join("chat.jsonl");
         let existed = chat_path.exists();
         let mut events = read_events_file(&chat_path)?;
         pause_at("chat-read-before-write");
@@ -197,7 +215,8 @@ fn append_chat_event_at(
             )
             .map_err(|source| ChatAppendError::StreamAdvance { source })?;
         }
-    }
+        chat_path
+    };
 
     if let Err(error) = rescan_file(journal, &chat_path) {
         log::warn!(
@@ -267,18 +286,18 @@ fn support_draft_index_path(journal: &Path, draft_id: &str) -> PathBuf {
 fn current_segment_key(
     journal: &Path,
     timestamp: i64,
+    event_time: NaiveDateTime,
 ) -> Result<(String, String), ChatAppendError> {
-    let event_time = local_time(timestamp)?;
     let day = event_time.format("%Y%m%d").to_string();
     let mut existing = chat_segments(journal, &day)?;
     if existing.is_empty() {
-        return Ok((day, segment_key_for_start(event_time.naive_local())));
+        return Ok((day, segment_key_for_start(event_time)));
     }
     existing.sort();
     let current = existing.pop().expect("checked nonempty chat segment list");
     let current_start = segment_start_timestamp(&day, &current)?;
     if i128::from(timestamp) - i128::from(current_start) >= i128::from(SEGMENT_WINDOW_MS) {
-        Ok((day, segment_key_for_start(event_time.naive_local())))
+        Ok((day, segment_key_for_start(event_time)))
     } else {
         Ok((day, current))
     }
@@ -335,11 +354,13 @@ fn chat_segments(journal: &Path, day: &str) -> Result<Vec<String>, ChatAppendErr
 }
 
 fn is_segment_key(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() > 7
-        && bytes[..6].iter().all(u8::is_ascii_digit)
-        && bytes[6] == b'_'
-        && bytes[7..].iter().all(u8::is_ascii_digit)
+    static SEGMENT_KEY: OnceLock<Regex> = OnceLock::new();
+    SEGMENT_KEY
+        .get_or_init(|| {
+            Regex::new(r"\b(\d{6})_(\d+)(?:_|\b)")
+                .expect("the Python-compatible segment-key pattern is valid")
+        })
+        .is_match(value)
 }
 
 fn segment_key_for_start(start: NaiveDateTime) -> String {
@@ -353,7 +374,24 @@ fn segment_start_timestamp(day: &str, segment: &str) -> Result<i64, ChatAppendEr
             segment: segment.to_owned(),
         }
     })?;
-    let time = chrono::NaiveTime::parse_from_str(&segment[..6], "%H%M%S").map_err(|_| {
+    let (time_text, duration_text) =
+        segment
+            .split_once('_')
+            .ok_or_else(|| ChatAppendError::InvalidSegmentKey {
+                day: day.to_owned(),
+                segment: segment.to_owned(),
+            })?;
+    if time_text.len() != 6
+        || !time_text.bytes().all(|byte| byte.is_ascii_digit())
+        || duration_text.is_empty()
+        || !duration_text.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(ChatAppendError::InvalidSegmentKey {
+            day: day.to_owned(),
+            segment: segment.to_owned(),
+        });
+    }
+    let time = chrono::NaiveTime::parse_from_str(time_text, "%H%M%S").map_err(|_| {
         ChatAppendError::InvalidSegmentKey {
             day: day.to_owned(),
             segment: segment.to_owned(),
@@ -361,7 +399,7 @@ fn segment_start_timestamp(day: &str, segment: &str) -> Result<i64, ChatAppendEr
     })?;
     Local
         .from_local_datetime(&NaiveDateTime::new(date, time))
-        .single()
+        .earliest()
         .map(|time| time.timestamp_millis())
         .ok_or_else(|| ChatAppendError::InvalidSegmentKey {
             day: day.to_owned(),
@@ -436,7 +474,8 @@ mod tests {
 
     use super::{
         CHAT_STREAM, ChatAppendError, PAUSE_HOOK, append_chat_event_at, append_support_draft,
-        record_draft_captured, resolve_draft_day, support_draft_index_path,
+        append_validated_chat_event_at_local_time, record_draft_captured, resolve_draft_day,
+        support_draft_index_path,
     };
 
     static NEXT_JOURNAL: AtomicU64 = AtomicU64::new(0);
@@ -543,6 +582,26 @@ mod tests {
                 "future_field": {"kept": true},
             })
         );
+        let landed: Value = serde_json::from_str(
+            &fs::read_to_string(chat_path(&journal.path, "20260815", "100347_300"))
+                .expect("read landed event"),
+        )
+        .expect("landed JSON");
+        let landed_object = landed.as_object().expect("landed object");
+        assert_eq!(landed, stored);
+        assert_eq!(
+            landed_object.keys().collect::<Vec<_>>(),
+            [
+                "kind",
+                "ts",
+                "draft_id",
+                "captured_day",
+                "verb",
+                "payload",
+                "diagnostics_snapshot",
+                "future_field",
+            ]
+        );
     }
 
     #[test]
@@ -580,11 +639,7 @@ mod tests {
                 .windows("café".len())
                 .any(|window| window == "café".as_bytes())
         );
-        assert!(
-            !String::from_utf8(bytes)
-                .expect("utf8")
-                .contains("\\\\u00e9")
-        );
+        assert!(!String::from_utf8(bytes).expect("utf8").contains("\\u00e9"));
     }
 
     #[test]
@@ -610,7 +665,7 @@ mod tests {
             route_event(now.timestamp_millis()),
             now,
         )
-        .expect("299ms-window append");
+        .expect("299-second-window append");
         assert!(!chat_path(&within.path, "20260815", "100347_300").exists());
 
         let boundary = TestJournal::new();
@@ -621,7 +676,7 @@ mod tests {
             route_event(now.timestamp_millis()),
             now,
         )
-        .expect("300ms-window append");
+        .expect("300-second-window append");
         assert!(chat_path(&boundary.path, "20260815", "100347_300").is_file());
 
         let older = TestJournal::new();
@@ -659,6 +714,17 @@ mod tests {
             instant.with_timezone(&Utc).format("%Y%m%d").to_string(),
             "20260816"
         );
+        let journal = TestJournal::new();
+        append_validated_chat_event_at_local_time(
+            &journal.path,
+            "support_draft",
+            route_event(instant.timestamp_millis()),
+            instant.timestamp_millis(),
+            instant.naive_local(),
+        )
+        .expect("append at injected local wall clock");
+        assert!(chat_path(&journal.path, "20260815", "233000_300").is_file());
+        assert!(!chat_path(&journal.path, "20260816", "063000_300").exists());
     }
 
     #[test]
@@ -704,6 +770,27 @@ mod tests {
             now,
         )
         .expect("append after repair");
+    }
+
+    #[test]
+    fn malformed_segment_name_accepted_by_reference_predicate_refuses_append() {
+        let journal = TestJournal::new();
+        let now = local_at(2026, 8, 15, 10, 3, 47);
+        let path = chat_path(&journal.path, "20260815", "100000_300_extra");
+        write_chat(&path, "{}\n");
+        assert!(matches!(
+            append_chat_event_at(
+                &journal.path,
+                "support_draft",
+                route_event(now.timestamp_millis()),
+                now
+            ),
+            Err(ChatAppendError::InvalidSegmentKey { .. })
+        ));
+        assert_eq!(
+            fs::read_to_string(path).expect("read unchanged chat"),
+            "{}\n"
+        );
     }
 
     #[test]
@@ -824,12 +911,24 @@ mod tests {
             resolve_draft_day(&journal.path, "missing").expect("missing"),
             None
         );
-        let unreadable = support_draft_index_path(&journal.path, "unreadable");
-        fs::create_dir_all(&unreadable).expect("unreadable shape");
-        assert_eq!(
-            resolve_draft_day(&journal.path, "unreadable").expect("unreadable"),
-            None
-        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let unreadable = support_draft_index_path(&journal.path, "unreadable");
+            fs::create_dir_all(unreadable.parent().expect("locator parent"))
+                .expect("create locator parent");
+            fs::write(&unreadable, "{\"captured_day\":\"20260815\"}")
+                .expect("write unreadable locator");
+            fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000))
+                .expect("remove locator permissions");
+            if fs::File::open(&unreadable).is_err() {
+                assert_eq!(
+                    resolve_draft_day(&journal.path, "unreadable").expect("unreadable"),
+                    None
+                );
+            }
+        }
         for (id, contents) in [
             ("bad-json", "{"),
             ("array", "[]"),
@@ -937,6 +1036,67 @@ mod tests {
         let contents = fs::read_to_string(chat_path(&journal.path, "20260815", "100347_300"))
             .expect("read chat");
         assert_eq!(contents.lines().count(), 2);
+    }
+
+    #[test]
+    fn ac12_static_lock_serializes_segment_selection() {
+        let journal = Arc::new(TestJournal::new());
+        let first = local_at(2026, 8, 15, 10, 5, 0);
+        let second = local_at(2026, 8, 15, 10, 7, 0);
+        write_chat(&chat_path(&journal.path, "20260815", "100000_300"), "{}\n");
+        let entered = Arc::new(Barrier::new(2));
+        let released = Arc::new(Barrier::new(2));
+        let paused = Arc::new(AtomicBool::new(false));
+        let hook_entered = Arc::clone(&entered);
+        let hook_released = Arc::clone(&released);
+        let hook_paused = Arc::clone(&paused);
+        let hooks = PAUSE_HOOK.get_or_init(|| Mutex::new(None));
+        *hooks.lock().expect("hook lock") = Some(Arc::new(move |point| {
+            if point == "chat-read-before-write" && !hook_paused.swap(true, Ordering::SeqCst) {
+                hook_entered.wait();
+                hook_released.wait();
+            }
+        }));
+
+        let first_journal = Arc::clone(&journal);
+        let first_append = thread::spawn(move || {
+            append_chat_event_at(
+                &first_journal.path,
+                "support_draft",
+                route_event(first.timestamp_millis()),
+                first,
+            )
+        });
+        entered.wait();
+        let second_journal = Arc::clone(&journal);
+        let second_append = thread::spawn(move || {
+            append_chat_event_at(
+                &second_journal.path,
+                "support_draft",
+                route_event(second.timestamp_millis()),
+                second,
+            )
+        });
+        released.wait();
+        first_append
+            .join()
+            .expect("first thread")
+            .expect("first append");
+        *hooks.lock().expect("hook lock") = None;
+        second_append
+            .join()
+            .expect("second thread")
+            .expect("second append");
+
+        let selected = chat_path(&journal.path, "20260815", "100500_300");
+        assert_eq!(
+            fs::read_to_string(selected)
+                .expect("read serialized segment")
+                .lines()
+                .count(),
+            2
+        );
+        assert!(!chat_path(&journal.path, "20260815", "100700_300").exists());
     }
 
     #[test]

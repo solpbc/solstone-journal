@@ -15,6 +15,7 @@ test-hooks = []
 [dependencies]
 chrono = { workspace = true }
 log = { workspace = true }
+regex = { workspace = true }
 serde_json = { workspace = true }
 solstone-core-indexer-store = { workspace = true }
 solstone-core-journal-io = { workspace = true }
