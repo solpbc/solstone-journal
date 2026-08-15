@@ -58,6 +58,11 @@
     return `$${Number(value || 0).toFixed(2)}`;
   }
 
+  function requestCount(value) {
+    const count = Number(value || 0);
+    return `${number(count)} ${count === 1 ? 'request' : 'requests'}`;
+  }
+
   function dayLabel(day) {
     return `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}`;
   }
@@ -112,7 +117,7 @@
       const title = document.createElement('h4');
       title.textContent = kind;
       const detail = document.createElement('p');
-      detail.textContent = `${number(data.requests)} requests · ${number(data.tokens)} tokens · ${money(data.cost)}`;
+      detail.textContent = `${requestCount(data.requests)} · ${number(data.tokens)} tokens · ${money(data.cost)}`;
       section.append(title, detail);
       comparison.append(section);
     });
@@ -120,7 +125,7 @@
 
   function renderUsage(data) {
     heading.textContent = dayLabel(data.day);
-    summary.textContent = `${money(data.total.cost)} · ${number(data.total.requests)} requests · ${number(data.total.tokens)} tokens`;
+    summary.textContent = `${money(data.total.cost)} · ${requestCount(data.total.requests)} · ${number(data.total.tokens)} tokens`;
     const skipped = Number(data.total.skipped_unknown || 0);
     unknown.hidden = skipped === 0;
     unknown.textContent = skipped === 1

@@ -668,6 +668,7 @@ h1 {
   display: flex;
   gap: 4px;
   height: 180px;
+  justify-content: flex-start;
   margin: 1rem 0 1.5rem;
 }
 
@@ -676,7 +677,8 @@ h1 {
   border: 0;
   border-radius: 3px 3px 0 0;
   cursor: pointer;
-  flex: 1;
+  flex: 1 1 12px;
+  max-width: 2.25rem;
   min-width: 12px;
 }
 
@@ -803,6 +805,10 @@ h1 {
 }
 
 @media (max-width: 480px) {
+  .token-rollup__bar {
+    min-width: 6px;
+  }
+
   .chart-header {
     flex-direction: column;
     align-items: flex-start;
