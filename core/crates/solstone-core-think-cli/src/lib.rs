@@ -1036,6 +1036,8 @@ mod tests {
 
     #[test]
     fn weekly_reflection_uses_the_week_start_output_and_prompt_only_for_that_key() {
+        // Source-derived, not measured: thinking.py:2728-2730 and 2834-2836
+        // shape each eligible facet row with the weekly reflection summary.
         let journal = tempdir().unwrap();
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
         let runtime = dispatch::runtime().unwrap();
@@ -2669,6 +2671,10 @@ mod tests {
         ];
         segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
             .unwrap();
+        assert!(journal
+            .path()
+            .join("chronicle/20260813/health/talent-provenance/activity-inputs/work/work_090000_300.json")
+            .is_file());
         segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
             .unwrap();
         let records =
@@ -2751,6 +2757,231 @@ mod tests {
     }
 
     #[test]
+    fn activity_tail_routes_cross_day_completion_to_the_prior_day() {
+        // Source-derived, not measured: thinking.py:394-435 captures
+        // `last_segment_day` before update, so a carried activity completes
+        // and dispatches on the day where it began.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "activity_probe",
+                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+            )],
+        );
+        fs::create_dir_all(journal.path().join("awareness")).unwrap();
+        fs::write(
+            journal.path().join("awareness/activity_state.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "last_segment_key":"235500_300", "last_segment_day":"20260813",
+                "active":{"work":{"id":"work_235500_300","activity":"work","since":"235500_300","description":"work","facet":"work","segment":"235500_300","segments":["235500_300"]}}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let (context, recorder) = recorder_context(journal.path(), "20260814", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        let path = segment_dir(journal.path(), "20260814", "000000_300").join("talents");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(
+            path.join("sense.json"),
+            br#"{"density":"idle","content_type":"idle"}"#,
+        )
+        .unwrap();
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        segment::replay_activity_state(
+            &context,
+            &mut log,
+            &[("000000_300".to_owned(), Some("default".to_owned()))],
+            false,
+            2,
+            false,
+            true,
+        )
+        .unwrap();
+        assert!(
+            journal
+                .path()
+                .join("facets/work/activities/20260813.jsonl")
+                .is_file()
+        );
+        assert_eq!(
+            recorder.requests.lock().unwrap()[0].config["day"],
+            "20260813"
+        );
+    }
+
+    #[test]
+    fn segment_batch_replay_keeps_streams_separate_and_flushes_imports() {
+        // Source-derived, not measured: thinking.py:594-634 keeps a machine
+        // per stream, then closes finite import streams at batch end.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "activity_probe",
+                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 1_786_708_800_000);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        for (stream, segment, sense) in [
+            (
+                "import.audio",
+                "090000_300",
+                serde_json::json!({"density":"active","content_type":"work","activity_summary":"import","facets":[{"facet":"work"}]}),
+            ),
+            (
+                "default",
+                "100000_300",
+                serde_json::json!({"density":"active","content_type":"work","activity_summary":"live","facets":[{"facet":"work"}]}),
+            ),
+            (
+                "default",
+                "100500_300",
+                serde_json::json!({"density":"idle","content_type":"idle"}),
+            ),
+        ] {
+            let path = journal
+                .path()
+                .join("chronicle/20260813")
+                .join(stream)
+                .join(segment)
+                .join("talents");
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("sense.json"), serde_json::to_vec(&sense).unwrap()).unwrap();
+        }
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("segments.jsonl"));
+        segment::replay_activity_state(
+            &context,
+            &mut log,
+            &[
+                ("090000_300".to_owned(), Some("import.audio".to_owned())),
+                ("100000_300".to_owned(), Some("default".to_owned())),
+                ("100500_300".to_owned(), Some("default".to_owned())),
+            ],
+            false,
+            2,
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(journal.path().join("facets/work/activities/20260813.jsonl"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn activity_replay_reruns_only_when_its_durable_input_changes() {
+        // Source-derived, not measured: thinking.py:335-375 compares the
+        // activity input provenance after an existing record, rerunning only
+        // when the span's durable Sense input changed.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "activity_probe",
+                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+            )],
+        );
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        for (segment, sense) in [
+            (
+                "090000_300",
+                serde_json::json!({"density":"active","content_type":"work","activity_summary":"one","facets":[{"facet":"work"}]}),
+            ),
+            (
+                "090500_300",
+                serde_json::json!({"density":"idle","content_type":"idle"}),
+            ),
+        ] {
+            let path = segment_dir(journal.path(), "20260813", segment).join("talents");
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("sense.json"), serde_json::to_vec(&sense).unwrap()).unwrap();
+        }
+        let segments = vec![
+            ("090000_300".to_owned(), Some("default".to_owned())),
+            ("090500_300".to_owned(), Some("default".to_owned())),
+        ];
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
+            .unwrap();
+        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
+            .unwrap();
+        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+        let path = segment_dir(journal.path(), "20260813", "090000_300").join("talents/sense.json");
+        fs::write(path, br#"{"density":"active","content_type":"work","activity_summary":"changed","facets":[{"facet":"work"}]}"#).unwrap();
+        segment::replay_activity_state(&context, &mut log, &segments, false, 2, false, true)
+            .unwrap();
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn replay_accepts_minimal_sense_and_snapshot_failure_does_not_block_completion() {
+        // Source-derived, not measured: thinking.py:408-435 swallows a
+        // snapshot failure, while 547-591 require only density/content_type.
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (talent_root, apps_root) = talent_roots(
+            roots.path(),
+            &[(
+                "activity_probe",
+                "{\n\"type\":\"generate\",\"schedule\":\"activity\",\"priority\":1,\"output\":\"md\",\"activities\":[\"work\"]\n}",
+            )],
+        );
+        fs::write(journal.path().join("awareness"), "not a directory").unwrap();
+        let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        let context = context.with_talent_roots(talent_root, apps_root);
+        // Hydration cannot use the blocked snapshot, so the first replay
+        // starts activity; the second minimal idle projection closes it.
+        for (segment, sense) in [
+            (
+                "090000_300",
+                br#"{"density":"active","content_type":"work","facets":[{"facet":"work"}]}"#
+                    .as_slice(),
+            ),
+            (
+                "090500_300",
+                br#"{"density":"idle","content_type":"idle"}"#.as_slice(),
+            ),
+        ] {
+            let path = segment_dir(journal.path(), "20260813", segment).join("talents");
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("sense.json"), sense).unwrap();
+        }
+        let mut log = run_log::RunLogWriter::open(&journal.path().join("segment.jsonl"));
+        segment::replay_activity_state(
+            &context,
+            &mut log,
+            &[
+                ("090000_300".to_owned(), Some("default".to_owned())),
+                ("090500_300".to_owned(), Some("default".to_owned())),
+            ],
+            false,
+            2,
+            false,
+            true,
+        )
+        .unwrap();
+        assert!(
+            journal
+                .path()
+                .join("facets/work/activities/20260813.jsonl")
+                .is_file()
+        );
+        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
     fn segments_replay_reads_durable_sense_outputs_after_repairs() {
         // Source-derived, not measured: thinking.py:594-634 replays persisted
         // Sense projections after the concurrent `--segments` repair pool.
@@ -2774,12 +3005,14 @@ mod tests {
             false,
         )
         .unwrap();
-        assert_eq!(
-            serde_json::from_slice::<Value>(
-                &fs::read(journal.path().join("awareness/activity_state.json")).unwrap(),
-            )
-            .unwrap()["active"]["work"]["activity"],
-            "work"
+        // Source-derived, not measured: thinking.py:594-634 keeps one
+        // in-memory machine per replay stream and does not overwrite the
+        // direct-run activity snapshot from a batch replay.
+        assert!(
+            !journal
+                .path()
+                .join("awareness/activity_state.json")
+                .exists()
         );
     }
 

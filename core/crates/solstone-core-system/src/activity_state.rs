@@ -322,6 +322,20 @@ impl ActivityStateMachine {
         self.completed.clone()
     }
 
+    /// The day associated with the last processed segment, if any.
+    ///
+    /// The think orchestrator reads this before calling [`Self::update`] so a
+    /// completion caused by the first segment of a new day remains routed to
+    /// the day where its activity began.
+    pub fn last_segment_day(&self) -> Option<&str> {
+        self.last_segment_day.as_deref()
+    }
+
+    /// The last processed segment key, used to close a finite replay stream.
+    pub fn last_segment_key(&self) -> Option<&str> {
+        self.last_segment_key.as_deref()
+    }
+
     /// Return the on-disk representation; the think orchestrator owns writing
     /// this domain state, while this system helper remains deterministic.
     pub fn snapshot(&self) -> Value {

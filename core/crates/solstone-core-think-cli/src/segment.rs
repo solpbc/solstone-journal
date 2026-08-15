@@ -5,8 +5,9 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use chrono::Utc;
+use chrono::{TimeZone, Utc};
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 use solstone_core_facets::{AppendOutcome, append_activity_record};
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 use solstone_core_system::activity_state::ActivityStateMachine;
@@ -660,13 +661,12 @@ pub(crate) fn replay_activity_state(
     skip_activity_prompts: bool,
     hydrate_existing: bool,
 ) -> Result<(), String> {
-    let mut machine = if hydrate_existing {
-        ActivityStateMachine::hydrate(Some(&context.journal))
-    } else {
-        ActivityStateMachine::default()
-    };
     let mut ordered = segments.to_vec();
-    ordered.sort_by(|left, right| left.0.cmp(&right.0));
+    ordered.sort();
+    let mut machines = BTreeMap::new();
+    if hydrate_existing {
+        machines.insert(None, ActivityStateMachine::hydrate(Some(&context.journal)));
+    }
     for (segment, stream) in ordered {
         let Some(segment_dir) =
             find_segment_dir(&context.journal, &context.day, &segment, stream.as_deref())
@@ -683,14 +683,45 @@ pub(crate) fn replay_activity_state(
         if !valid_activity_sense(&sense) {
             continue;
         }
+        let machine = if hydrate_existing {
+            machines
+                .get_mut(&None)
+                .expect("direct replay machine exists")
+        } else {
+            machines.entry(stream.clone()).or_default()
+        };
+        // Source-derived, not measured: thinking.py:394-405 captures this
+        // routing day before update closes a carried-over activity.
+        let routing_day = machine
+            .last_segment_day()
+            .unwrap_or(&context.day)
+            .to_owned();
         let changes = machine.update(&sense, &segment, &context.day, None, context.now_ms);
-        persist_activity_state(context, &machine)?;
+        if hydrate_existing {
+            // Source-derived, not measured: thinking.py:408-411 deliberately
+            // logs and continues when snapshot persistence fails; ended records
+            // and their prompts must still be published.
+            if let Err(error) = persist_activity_state(context, machine) {
+                log::debug!("failed to write activity state snapshot: {error}");
+            }
+        }
         persist_ended_activities(
             context,
             log,
             &segment,
+            &routing_day,
             changes,
             &machine.completed_activities(),
+            refresh,
+            max_concurrency,
+            skip_activity_prompts,
+        )?;
+    }
+    if !hydrate_existing {
+        flush_replay_machines(
+            context,
+            log,
+            machines,
             refresh,
             max_concurrency,
             skip_activity_prompts,
@@ -700,9 +731,58 @@ pub(crate) fn replay_activity_state(
 }
 
 fn valid_activity_sense(sense: &Value) -> bool {
-    ["density", "content_type", "activity_summary", "facets"]
+    // Source-derived, not measured: thinking.py:547-591 accepts a durable
+    // replay projection with only these two required keys.
+    ["density", "content_type"]
         .into_iter()
         .all(|key| sense.get(key).is_some())
+}
+
+fn flush_replay_machines(
+    context: &ThinkContext,
+    log: &mut RunLogWriter<std::fs::File>,
+    mut machines: BTreeMap<Option<String>, ActivityStateMachine>,
+    refresh: bool,
+    max_concurrency: i64,
+    skip_activity_prompts: bool,
+) -> Result<(), String> {
+    let today = Utc
+        .timestamp_millis_opt(context.now_ms)
+        .single()
+        .unwrap_or_else(Utc::now)
+        .format("%Y%m%d")
+        .to_string();
+    for (stream, machine) in &mut machines {
+        let Some(last_segment) = machine.last_segment_key().map(ToOwned::to_owned) else {
+            continue;
+        };
+        let import_stream = stream
+            .as_deref()
+            .is_some_and(|name| name.starts_with("import."));
+        if !import_stream && context.day >= today {
+            continue;
+        }
+        // Source-derived, not measured: thinking.py:438-469 and 604-634
+        // close finite import streams and completed historical days after the
+        // batch, never an ongoing current-day observer stream.
+        let routing_day = machine
+            .last_segment_day()
+            .unwrap_or(&context.day)
+            .to_owned();
+        let changes = machine.close_active(&last_segment, context.now_ms);
+        persist_ended_activities(
+            context,
+            log,
+            &last_segment,
+            &routing_day,
+            changes,
+            &machine.completed_activities(),
+            refresh,
+            max_concurrency,
+            skip_activity_prompts,
+        )?;
+    }
+    Ok(())
 }
 
 fn persist_activity_state(
@@ -723,6 +803,7 @@ fn persist_ended_activities(
     context: &ThinkContext,
     log: &mut RunLogWriter<std::fs::File>,
     segment: &str,
+    routing_day: &str,
     changes: Vec<Value>,
     completed: &[Value],
     refresh: bool,
@@ -762,7 +843,7 @@ fn persist_ended_activities(
             continue;
         };
         let written = matches!(
-            append_activity_record(&context.journal, facet, &context.day, record)
+            append_activity_record(&context.journal, facet, routing_day, record.clone())
                 .map_err(|error| error.to_string())?,
             AppendOutcome::Written(_)
         );
@@ -797,11 +878,193 @@ fn persist_ended_activities(
                     ]),
                 ),
             );
-        } else if written || refresh {
-            let _ = crate::activity::run(context, log, id, facet, refresh, max_concurrency)?;
+        } else {
+            let (changed, input_hash) =
+                activity_input_changed(context, routing_day, facet, id, &record);
+            if !(written || refresh || changed) {
+                log.log(
+                    "activity.unchanged",
+                    context.now_ms,
+                    segment_event(
+                        context,
+                        segment,
+                        None,
+                        Map::from_iter([("activity".to_owned(), Value::String(id.to_owned()))]),
+                    ),
+                );
+                continue;
+            }
+            let mut prompt_context = ThinkContext::new(
+                &context.journal,
+                routing_day.to_owned(),
+                context.journal.join("chronicle").join(routing_day),
+                context.now_ms,
+            );
+            prompt_context.talent_root = context.talent_root.clone();
+            prompt_context.apps_root = context.apps_root.clone();
+            prompt_context.cortex = context.cortex.clone();
+            prompt_context.index = context.index.clone();
+            prompt_context.status = context.status.clone();
+            let result =
+                crate::activity::run(&prompt_context, log, id, facet, refresh, max_concurrency)?;
+            if result.failed == 0
+                && let Some(input_hash) = input_hash
+            {
+                write_activity_provenance(context, routing_day, facet, id, &input_hash)?;
+            }
         }
     }
     Ok(())
+}
+
+fn activity_input_changed(
+    context: &ThinkContext,
+    routing_day: &str,
+    facet: &str,
+    activity_id: &str,
+    record: &Map<String, Value>,
+) -> (bool, Option<String>) {
+    let input_hash = compute_activity_input_hash(context, routing_day, record);
+    let Some(input_hash) = input_hash else {
+        return (true, None);
+    };
+    let path = activity_provenance_path(context, routing_day, facet, activity_id);
+    let stored = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|value| {
+            value
+                .get("input_hash")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        });
+    (stored.as_deref() != Some(&input_hash), Some(input_hash))
+}
+
+fn compute_activity_input_hash(
+    context: &ThinkContext,
+    day: &str,
+    record: &Map<String, Value>,
+) -> Option<String> {
+    let spans = record
+        .get("segments")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(Value::as_str)
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    let day_dir = context.journal.join("chronicle").join(day);
+    let mut inputs = Vec::new();
+    for segment in &spans {
+        let mut sense = Vec::new();
+        let mut entries = std::fs::read_dir(&day_dir)
+            .ok()?
+            .flatten()
+            .map(|entry| entry.path())
+            .collect::<Vec<_>>();
+        entries.sort();
+        for direct in entries {
+            let segment_dir = if direct.file_name().and_then(|name| name.to_str()) == Some(segment)
+                && direct.is_dir()
+            {
+                direct
+            } else {
+                let nested = direct.join(segment);
+                if !nested.is_dir() {
+                    continue;
+                }
+                nested
+            };
+            let path = segment_dir.join("talents/sense.json");
+            let relative = path
+                .strip_prefix(&context.journal)
+                .ok()?
+                .display()
+                .to_string();
+            match std::fs::read(&path) {
+                Ok(bytes) => sense.push(serde_json::json!({"path":relative,"sha256":format!("{:x}", Sha256::digest(&bytes)),"size":bytes.len()})),
+                Err(_) => sense.push(serde_json::json!({"path":relative,"missing":true})),
+            }
+        }
+        if sense.is_empty() {
+            sense.push(serde_json::json!({"segment":segment,"missing":true}));
+        }
+        inputs.push(serde_json::json!({"segment":segment,"sense":sense}));
+    }
+    let identity = serde_json::json!({
+        "activity_id": record.get("id"), "activity": record.get("activity"),
+        "facet": record.get("facet"), "segments": spans, "segment_inputs": inputs,
+    });
+    serde_json::to_string(&canonical_json(identity))
+        .ok()
+        .map(|text| format!("{:x}", Sha256::digest(text.as_bytes())))
+}
+
+fn canonical_json(value: Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values.into_iter().map(canonical_json).collect()),
+        Value::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| (key, canonical_json(value)))
+                .collect::<BTreeMap<_, _>>()
+                .into_iter()
+                .collect(),
+        ),
+        primitive => primitive,
+    }
+}
+
+fn activity_provenance_path(
+    context: &ThinkContext,
+    day: &str,
+    facet: &str,
+    activity_id: &str,
+) -> std::path::PathBuf {
+    context
+        .journal
+        .join("chronicle")
+        .join(day)
+        .join("health/talent-provenance/activity-inputs")
+        .join(provenance_component(facet))
+        .join(format!("{}.json", provenance_component(activity_id)))
+}
+
+/// Match `urllib.parse.quote(value, safe="._-")` used by the reference
+/// provenance path, keeping an activity identifier confined to one filename.
+fn provenance_component(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'_' | b'-' => {
+                encoded.push(char::from(byte));
+            }
+            _ => {
+                encoded.push('%');
+                encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+                encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+        }
+    }
+    encoded
+}
+
+fn write_activity_provenance(
+    context: &ThinkContext,
+    day: &str,
+    facet: &str,
+    activity_id: &str,
+    input_hash: &str,
+) -> Result<(), String> {
+    let path = activity_provenance_path(context, day, facet, activity_id);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let bytes = serde_json::to_vec(&serde_json::json!({"schema_version":1,"facet":facet,"activity_id":activity_id,"input_hash":input_hash})).map_err(|error| error.to_string())?;
+    atomic_replace(&path, &bytes, AtomicWriteOptions::default()).map_err(|error| error.to_string())
 }
 
 fn log_dispatch(
