@@ -705,7 +705,7 @@ fn segment_ancestor(path: &Path) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
-fn origin_for_segment(segment: &Path) -> String {
+pub fn origin_for_segment(segment: &Path) -> String {
     let mut after_chronicle = false;
     let mut parts = Vec::new();
     for component in segment.components() {

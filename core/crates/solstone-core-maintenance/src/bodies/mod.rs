@@ -3,4 +3,4 @@
 
 pub(crate) mod backup;
 pub(crate) mod health;
-pub(crate) mod timeline;
+pub mod timeline;

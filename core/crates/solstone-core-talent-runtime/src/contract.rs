@@ -17,6 +17,10 @@ pub enum StageId {
     Participation,
     Schedule,
     DailySchedule,
+    FacetNewsletter,
+    EntityDetection,
+    EntitiesReview,
+    EntityObserver,
 }
 
 #[derive(Clone, Copy)]
@@ -51,6 +55,10 @@ pub enum PrePostState {
     MorningBriefing(crate::morning_briefing::MorningBriefingPreState),
     EntityDescribe(crate::entities::describe::EntityDescribePreState),
     DailySchedule(crate::daily_schedule::DailySchedulePreState),
+    FacetNewsletter(crate::facet_newsletter::FacetNewsletterState),
+    EntityDetection(crate::entities::detection::DetectionState),
+    EntitiesReview(crate::entities::review::ReviewState),
+    EntityObserver(crate::entities::observer::ObserverState),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -89,7 +97,7 @@ pub struct StageSpec {
     pub output_override: Option<OutputOverrideFn>,
 }
 
-pub const HOOK_TABLE: [HookBinding; 10] = [
+pub const HOOK_TABLE: [HookBinding; 14] = [
     HookBinding {
         hook: "documents",
         stage: StageId::Documents,
@@ -129,6 +137,22 @@ pub const HOOK_TABLE: [HookBinding; 10] = [
     HookBinding {
         hook: "daily_schedule",
         stage: StageId::DailySchedule,
+    },
+    HookBinding {
+        hook: "facet_newsletter",
+        stage: StageId::FacetNewsletter,
+    },
+    HookBinding {
+        hook: "entities:detection",
+        stage: StageId::EntityDetection,
+    },
+    HookBinding {
+        hook: "entities:entities_review",
+        stage: StageId::EntitiesReview,
+    },
+    HookBinding {
+        hook: "entities:entity_observer",
+        stage: StageId::EntityObserver,
     },
 ];
 
@@ -240,6 +264,54 @@ pub static DAILY_SCHEDULE: StageSpec = StageSpec {
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
+pub static FACET_NEWSLETTER: StageSpec = StageSpec {
+    stage: StageId::FacetNewsletter,
+    gate: Some(crate::facet_newsletter::gate),
+    build: Some(crate::facet_newsletter::build),
+    prompt_override: Some(crate::facet_newsletter::apply_prompt_override),
+    commit: Some(CommitSpec {
+        parse: crate::facet_newsletter::parse,
+        commit: crate::facet_newsletter::commit,
+    }),
+    writes_as_intent: Some(crate::writers::apply),
+    output_override: None,
+};
+pub static ENTITY_DETECTION: StageSpec = StageSpec {
+    stage: StageId::EntityDetection,
+    gate: Some(crate::entities::detection::gate),
+    build: Some(crate::entities::detection::build),
+    prompt_override: Some(crate::entities::detection::apply_prompt_override),
+    commit: Some(CommitSpec {
+        parse: crate::entities::detection::parse,
+        commit: crate::entities::detection::commit,
+    }),
+    writes_as_intent: Some(crate::writers::apply),
+    output_override: None,
+};
+pub static ENTITIES_REVIEW: StageSpec = StageSpec {
+    stage: StageId::EntitiesReview,
+    gate: Some(crate::entities::review::gate),
+    build: Some(crate::entities::review::build),
+    prompt_override: Some(crate::entities::review::apply_prompt_override),
+    commit: Some(CommitSpec {
+        parse: crate::entities::review::parse,
+        commit: crate::entities::review::commit,
+    }),
+    writes_as_intent: Some(crate::writers::apply),
+    output_override: None,
+};
+pub static ENTITY_OBSERVER: StageSpec = StageSpec {
+    stage: StageId::EntityObserver,
+    gate: None,
+    build: Some(crate::entities::observer::build),
+    prompt_override: Some(crate::entities::observer::apply_prompt_override),
+    commit: Some(CommitSpec {
+        parse: crate::entities::observer::parse,
+        commit: crate::entities::observer::commit,
+    }),
+    writes_as_intent: Some(crate::writers::apply),
+    output_override: None,
+};
 
 pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
     let binding = HOOK_TABLE.iter().find(|binding| binding.hook == hook)?;
@@ -254,6 +326,10 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
         StageId::Participation => &PARTICIPATION,
         StageId::Schedule => &SCHEDULE,
         StageId::DailySchedule => &DAILY_SCHEDULE,
+        StageId::FacetNewsletter => &FACET_NEWSLETTER,
+        StageId::EntityDetection => &ENTITY_DETECTION,
+        StageId::EntitiesReview => &ENTITIES_REVIEW,
+        StageId::EntityObserver => &ENTITY_OBSERVER,
     })
 }
 

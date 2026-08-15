@@ -7,7 +7,7 @@ use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
 use crate::{PreparedTalent, StageError, stage_error};
 
 const CLOSURES: &[&str] = &["sent", "done", "signed", "dropped", "deferred"];
-const RELATIONS: &[&str] = &[
+pub(crate) const RELATIONS: &[&str] = &[
     "works-with",
     "works-at",
     "reports-to",

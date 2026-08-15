@@ -3,7 +3,7 @@
 
 //! Native registry and command surface for recurring journal maintenance.
 
-mod bodies;
+pub mod bodies;
 mod parser;
 pub mod registry;
 pub mod schedule_sync;

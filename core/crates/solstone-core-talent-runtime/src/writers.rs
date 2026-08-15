@@ -43,6 +43,27 @@ pub enum WriteIntent {
         output: String,
         day: String,
     },
+    FacetNewsletter {
+        output: String,
+        facet: String,
+        day: String,
+    },
+    EntityDetection {
+        output: String,
+        day: String,
+        segment: String,
+        stream: Option<String>,
+    },
+    EntitiesReview {
+        output: String,
+        facet: String,
+        day: String,
+    },
+    EntityObserver {
+        output: String,
+        facet: String,
+        day: String,
+    },
 }
 
 pub fn write_output_if_configured(prepared: &PreparedTalent, output: &str) -> Result<bool, String> {
@@ -130,6 +151,57 @@ pub fn apply(
                     detail,
                 }
             })?;
+            Ok(CommitDisposition::CommittedNoOutput)
+        }
+        CommitPlan::Write(WriteIntent::FacetNewsletter { output, facet, day }) => {
+            crate::facet_newsletter::apply_result(&context.journal, &output, &facet, &day)
+                .map_err(|detail| StageError {
+                    phase: "write-intent",
+                    stage: "facet_newsletter",
+                    talent: "facet_newsletter".to_owned(),
+                    detail,
+                })?;
+            Ok(CommitDisposition::CommittedNoOutput)
+        }
+        CommitPlan::Write(WriteIntent::EntityDetection {
+            output,
+            day,
+            segment,
+            stream,
+        }) => {
+            crate::entities::detection::apply_result(
+                &context.journal,
+                &output,
+                &day,
+                &segment,
+                stream.as_deref(),
+            )
+            .map_err(|detail| StageError {
+                phase: "write-intent",
+                stage: "entities:detection",
+                talent: "entities:detection".to_owned(),
+                detail,
+            })?;
+            Ok(CommitDisposition::CommittedNoOutput)
+        }
+        CommitPlan::Write(WriteIntent::EntitiesReview { output, facet, day }) => {
+            crate::entities::review::apply_result(&context.journal, &output, &facet, &day)
+                .map_err(|detail| StageError {
+                    phase: "write-intent",
+                    stage: "entities:entities_review",
+                    talent: "entities:entities_review".to_owned(),
+                    detail,
+                })?;
+            Ok(CommitDisposition::CommittedNoOutput)
+        }
+        CommitPlan::Write(WriteIntent::EntityObserver { output, facet, day }) => {
+            crate::entities::observer::apply_result(&context.journal, &output, &facet, &day)
+                .map_err(|detail| StageError {
+                    phase: "write-intent",
+                    stage: "entities:entity_observer",
+                    talent: "entities:entity_observer".to_owned(),
+                    detail,
+                })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
     }

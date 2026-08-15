@@ -18,6 +18,7 @@ pub mod contract;
 pub mod daily_schedule;
 pub mod documents;
 pub mod entities;
+pub mod facet_newsletter;
 pub mod morning_briefing;
 pub mod participation;
 pub mod prepare;
