@@ -49,6 +49,22 @@ fn fixture(label: &str) -> PathBuf {
     let source =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/observer_listing/python_era");
     copy_tree(&source, &root);
+    // The repository ignores captured media extensions. Recreate the two held
+    // payloads whose exact sizes and hashes are recorded in the golden history.
+    create_media(
+        &root,
+        "laptop",
+        "120000_60",
+        "present.flac",
+        b"present fixture media",
+    );
+    create_media(
+        &root,
+        "phone",
+        "130000_60",
+        "other.flac",
+        b"other device fixture media",
+    );
     root
 }
 
