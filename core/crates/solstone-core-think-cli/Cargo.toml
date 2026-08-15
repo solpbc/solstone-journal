@@ -18,6 +18,7 @@ chrono.workspace = true
 log.workspace = true
 serde_json.workspace = true
 solstone-core-cli.workspace = true
+solstone-core-cortex-client.workspace = true
 solstone-core-identity.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
