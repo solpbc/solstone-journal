@@ -26,7 +26,7 @@ mod day_scan;
 #[path = "../tests/journal_stats.rs"]
 mod journal_stats;
 
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Map, Value};
@@ -45,6 +45,16 @@ pub use model::{
     ActivityTotals, CacheStatus, DayScan, DayStats, HeatmapData, SCHEMA_VERSION, ScanDayOutcome,
 };
 pub use run::{CliRun, run_cli};
+
+/// Read token usage keyed by the producer's UTC timestamp day without writing
+/// its optional cache sidecar.
+pub fn scan_token_usage_by_day(
+    journal_root: &Path,
+    now: DateTime<Utc>,
+) -> BTreeMap<String, BTreeMap<String, BTreeMap<String, i64>>> {
+    let mut diagnostics = Vec::new();
+    tokens::scan_tokens(journal_root, now, false, &mut diagnostics).by_day
+}
 
 /// Inputs for one cache-aware per-day journal statistics scan.
 pub struct DayScanRequest<'a, S, H, W> {

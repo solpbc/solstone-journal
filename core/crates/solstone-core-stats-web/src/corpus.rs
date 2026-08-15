@@ -12,6 +12,7 @@ use axum::{
     body::{Body, to_bytes},
     http::Request,
 };
+use chrono::{TimeZone, Utc};
 use serde_json::Value;
 use std::fs;
 use tower::ServiceExt;
@@ -236,14 +237,9 @@ fn ac7_disclosed_filename_day_fold_and_utc_stats_rollup_diverge() {
             fs::create_dir_all(root.path().join("tokens")).expect("tokens directory");
             fs::write(
                 root.path().join("tokens/20260809.jsonl"),
-                "{\"model\":\"gpt-5.5\",\"timestamp\":\"2026-08-10T00:30:00Z\",\"usage\":{\"input_tokens\":100,\"output_tokens\":10,\"total_tokens\":110}}\n",
+                "{\"model\":\"gpt-5.5\",\"timestamp\":1786321800,\"usage\":{\"input_tokens\":100,\"output_tokens\":10,\"total_tokens\":110}}\n",
             )
             .expect("token fixture");
-            fs::write(
-                root.path().join("stats.json"),
-                r#"{"tokens":{"20260810":{"gpt-5.5":{"input_tokens":100,"output_tokens":10}}}}"#,
-            )
-            .expect("stats fixture");
             let router = solstone_core_convey_shell::router(root.path().to_path_buf());
             let usage = |path: &str| {
                 let path = path.to_owned();
@@ -263,27 +259,35 @@ fn ac7_disclosed_filename_day_fold_and_utc_stats_rollup_diverge() {
             };
             assert_eq!(usage("/app/stats/api/usage?day=20260809").await["total"]["requests"], 1);
             assert_eq!(usage("/app/stats/api/usage?day=20260810").await["total"]["requests"], 0);
-            assert!(usage("/app/stats/api/stats").await["stats"]["tokens"].get("20260810").is_some());
+            let by_day = solstone_core_journal_stats_cli::scan_token_usage_by_day(
+                root.path(),
+                Utc.with_ymd_and_hms(2026, 8, 10, 1, 0, 0).unwrap(),
+            );
+            assert_eq!(
+                by_day["20260810"]["gpt-5.5"]["input_tokens"],
+                100
+            );
         });
 }
 
 #[test]
 fn merged_card_declares_each_state_and_day_scoped_selection_contract() {
     let script = include_str!("../assets/static/dashboard.js");
-    for state in [
-        "loading",
-        "ready",
-        "empty",
-        "usage-error",
-        "partial",
-        "index-error",
-    ] {
-        assert!(script.contains(state), "card state {state}");
-    }
     assert!(script.contains("/app/stats/api/stats/${month}"));
     assert!(script.contains("history.pushState"));
     assert!(script.contains("heading.focus()"));
     assert!(!script.contains("window.location.href"));
+}
+
+#[test]
+fn merged_card_mounts_the_scoped_date_nav_on_its_declared_host() {
+    let workspace = include_str!("../assets/workspace.html");
+    let script = include_str!("../assets/static/dashboard.js");
+    assert!(workspace.contains("id=\"statsDateNav\""));
+    assert!(script.contains("window.DateNav && window.DateNav.mountScoped({"));
+    assert!(script.contains("host: dateNavHost,"));
+    assert!(script.contains("apiBase: '/app/stats/',"));
+    assert!(script.contains("onSelect: day => select(day, true)"));
 }
 
 #[test]
@@ -311,7 +315,17 @@ fn card_index_error_state_is_declared() {
     assert_card_state("index-error");
 }
 fn assert_card_state(state: &str) {
-    assert!(include_str!("../assets/static/dashboard.js").contains(state));
+    let script = include_str!("../assets/static/dashboard.js");
+    let assignment = match state {
+        "loading" => "state('loading')",
+        "ready" => "? 'empty' : data.total.skipped_unknown ? 'partial' : 'ready'",
+        "empty" => "state(data.total.requests === 0 ? 'empty'",
+        "usage-error" => "state('usage-error')",
+        "partial" => "data.total.skipped_unknown ? 'partial' : 'ready'",
+        "index-error" => "state('index-error')",
+        _ => unreachable!("known token-card state"),
+    };
+    assert!(script.contains(assignment), "card state assignment {state}");
 }
 
 fn replace(value: &mut Value, path: &str, pattern: &str) {

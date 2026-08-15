@@ -26,3 +26,5 @@ temp-env = "0.3.6"
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 tower.workspace = true
 solstone-core-convey-shell.workspace = true
+# Drives AC7 through the native UTC-timestamp rollup producer without cache writes.
+solstone-core-journal-stats-cli.workspace = true

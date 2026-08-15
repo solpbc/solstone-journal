@@ -4289,6 +4289,7 @@ dependencies = [
  "solstone-core-convey-shell",
  "solstone-core-journal",
  "solstone-core-journal-io",
+ "solstone-core-journal-stats-cli",
  "solstone-core-talent-config",
  "temp-env",
  "tempfile",
