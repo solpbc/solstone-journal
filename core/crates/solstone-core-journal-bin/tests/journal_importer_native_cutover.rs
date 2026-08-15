@@ -3,6 +3,9 @@
 
 #![cfg(unix)]
 
+#[path = "support/python_process_control.rs"]
+mod python_process_control;
+
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
@@ -633,6 +636,7 @@ fn contains_named_file(root: &Path, name: &str) -> bool {
 #[test]
 fn poison_remains_live_for_an_unmigrated_python_process_token() {
     let harness = Harness::new();
-    assert_eq!(harness.run_python_token("backup").status.code(), Some(97));
+    let token = python_process_control::token();
+    assert_eq!(harness.run_python_token(token).status.code(), Some(97));
     assert!(harness.poison.exists());
 }

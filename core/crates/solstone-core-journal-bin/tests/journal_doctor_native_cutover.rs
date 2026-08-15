@@ -3,6 +3,9 @@
 
 #![cfg(unix)]
 
+#[path = "support/python_process_control.rs"]
+mod python_process_control;
+
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -252,11 +255,12 @@ fn doctor_help_and_usage_match_the_owner_facing_grammar_without_python() {
 #[test]
 fn poison_remains_live_for_a_python_token() {
     let harness = Harness::new();
-    let output = harness.run(&["backup"]);
+    let token = python_process_control::token();
+    let output = harness.run(&[token]);
 
     assert_eq!(output.status.code(), Some(97));
     assert!(
         harness.poison_marker.exists(),
-        "backup did not invoke the poisoned interpreter"
+        "{token} did not invoke the poisoned interpreter"
     );
 }

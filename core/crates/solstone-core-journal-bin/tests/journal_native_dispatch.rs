@@ -3,6 +3,9 @@
 
 #![cfg(unix)]
 
+#[path = "support/python_process_control.rs"]
+mod python_process_control;
+
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -170,26 +173,24 @@ fn native_process_verbs_exec_their_sibling_without_python() {
         harness.run("identity"),
         "solstone-core\nidentity\n--opaque\nhas space\n"
     );
-    let backup = harness.run_process("backup");
-    assert_eq!(backup.status.code(), Some(97));
+    let token = python_process_control::token();
+    let output = harness.run_process(token);
+    assert_eq!(output.status.code(), Some(97));
     assert!(
         harness.poison_marker.exists(),
-        "backup did not invoke poison"
+        "{token} did not invoke poison"
     );
 }
 
 #[test]
-fn convey_bypasses_python_while_maintenance_reaches_the_poisoned_interpreter() {
+fn convey_and_maintenance_bypass_python() {
     let harness = Harness::new();
     assert_eq!(
         harness.run("convey"),
         "solstone-core\nconvey\n--opaque\nhas space\n"
     );
-
-    let maintenance = harness.run_process("maintenance");
-    assert_eq!(maintenance.status.code(), Some(97));
-    assert!(
-        harness.poison_marker.exists(),
-        "maintenance did not invoke poison"
+    assert_eq!(
+        harness.run("maintenance"),
+        "solstone-core\nmaintenance\n--opaque\nhas space\n"
     );
 }

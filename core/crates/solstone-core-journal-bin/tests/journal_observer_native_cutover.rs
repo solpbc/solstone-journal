@@ -12,6 +12,9 @@
 
 #![cfg(unix)]
 
+#[path = "support/python_process_control.rs"]
+mod python_process_control;
+
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -206,14 +209,15 @@ fn observer_list_and_prune_run_natively_without_touching_the_poisoned_interprete
 #[test]
 fn the_poison_is_live_a_still_python_token_actually_reaches_it() {
     let harness = Harness::new();
-    let backup = harness.run(&["backup"]);
+    let token = python_process_control::token();
+    let output = harness.run(&[token]);
     assert_eq!(
-        backup.status.code(),
+        output.status.code(),
         Some(97),
-        "backup is still Python-execed; if this isn't 97 the poison isn't live and the cutover proof above is meaningless"
+        "{token} is Python-routed; if this isn't 97 the poison isn't live and the cutover proof above is meaningless"
     );
     assert!(
         harness.poison_marker.exists(),
-        "backup did not invoke the poisoned interpreter"
+        "{token} did not invoke the poisoned interpreter"
     );
 }

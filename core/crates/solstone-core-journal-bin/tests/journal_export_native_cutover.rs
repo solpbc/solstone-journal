@@ -3,6 +3,9 @@
 
 #![cfg(unix)]
 
+#[path = "support/python_process_control.rs"]
+mod python_process_control;
+
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -130,6 +133,7 @@ fn export_runs_natively_without_the_poisoned_interpreter() {
 #[test]
 fn poison_remains_live_for_a_python_process_token() {
     let harness = Harness::new();
-    assert_eq!(harness.run(&["backup"]).status.code(), Some(97));
+    let token = python_process_control::token();
+    assert_eq!(harness.run(&[token]).status.code(), Some(97));
     assert!(harness.poison.exists());
 }
