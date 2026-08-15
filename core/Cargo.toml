@@ -116,6 +116,7 @@ members = [
     "crates/solstone-core-settings-web",
     "crates/solstone-core-transcripts-web",
     "crates/solstone-core-facets-web",
+    "crates/solstone-core-home",
 ]
 exclude = ["crates/solstone-core-service-legacy-evidence"]
 resolver = "3"
