@@ -13,6 +13,24 @@ use solstone_core_journal_config::{
     parakeet_coreml::{parakeet_coreml_cache_dir, parakeet_coreml_model_root},
     read_journal_config,
 };
+/// The native ced installer resolves both artifacts through the catalog's
+/// `origin_key` against a single-element host allowlist, revalidated per
+/// redirect hop -- so naming github.com and huggingface.co here named two
+/// parties this path never contacts, on the surface whose whole job is to say
+/// where bytes come from.
+///
+/// ⛔ The REFERENCE's copy of this sentence still names both hosts and that is
+/// still TRUE, because `ced_install.py` still builds the upstream URLs. The
+/// string and the code it introduces drift in both directions; the check is
+/// per-site -- trace the sentence to the code that follows it and read what
+/// THAT code fetches.
+fn ced_download_disclosure() -> String {
+    format!(
+        "ced assets: downloading the ced.cpp {} engine (MIT) and the ced-tiny-q8_0 model (Apache-2.0) from updates.solstone.app. see THIRD_PARTY_NOTICES.md.",
+        ced_install::ENGINE_VERSION
+    )
+}
+
 use solstone_core_local::install::{
     DispatchError, ced_install, coreml_install, fingerprint, fit_report,
     install_parakeet_with_lease, lease, pins, rerank_install, rfdetr_install, status,
@@ -333,7 +351,7 @@ where
         if ready {
             provider_stdout.push(ready_line(&ced_install::ced_model_path(&journal)));
         } else {
-            provider_stdout.push("ced assets: downloading ced.cpp v0.1.0 engine from github.com (MIT) and ced-tiny-q8_0 model from huggingface.co (Apache-2.0)".to_owned());
+            provider_stdout.push(ced_download_disclosure());
             match (providers.ced)(
                 &journal,
                 &host.os_name,
@@ -779,6 +797,29 @@ fn normalize_os(os_name: &str) -> &str {
 
 fn normalize_arch(arch: &str) -> &str {
     if arch == "aarch64" { "arm64" } else { arch }
+}
+
+#[cfg(test)]
+mod disclosure_tests {
+    use super::ced_download_disclosure;
+    use solstone_core_local::install::coreml_install::PARAKEET_COREML_DOWNLOAD_DISCLOSURE;
+
+    /// Every artifact this verb fetches resolves through one primitive with a
+    /// single-element host allowlist, so no disclosure it prints may name a
+    /// third-party host. Asserting the origin IS named would pass on a sentence
+    /// that named all three.
+    #[test]
+    fn native_download_disclosures_name_no_host_but_our_origin() {
+        for line in [
+            ced_download_disclosure().as_str(),
+            PARAKEET_COREML_DOWNLOAD_DISCLOSURE,
+        ] {
+            assert!(line.contains("updates.solstone.app"), "{line}");
+            for third_party in ["github.com", "huggingface.co", "hf.co", "githubusercontent"] {
+                assert!(!line.contains(third_party), "{line} names {third_party}");
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1252,12 +1293,18 @@ mod tests {
                 .any(|line| line.starts_with("model ready: "))
         );
         assert_eq!(outcome.stderr, [rendered]);
+        // This exists to catch the Core ML disclosure leaking into a Linux
+        // run. It keyed on "updates.solstone.app", which was unique to that
+        // sentence when it was written and stopped being unique the moment a
+        // second native disclosure named the same origin -- so it fired on a
+        // line it was never about. Name the subject instead of a substring the
+        // subject happens to share; that cannot be weakened by a third one.
         assert!(
             !outcome
                 .stdout
                 .iter()
                 .chain(outcome.stderr.iter())
-                .any(|line| line.contains("updates.solstone.app"))
+                .any(|line| line == coreml_install::PARAKEET_COREML_DOWNLOAD_DISCLOSURE)
         );
     }
 
