@@ -476,7 +476,7 @@ pub fn clear_macos_quarantine(path: &Path) -> Result<(), ArchiveError> {
     #[cfg(target_os = "macos")]
     {
         let status = std::process::Command::new("xattr")
-            .args(["-d", "com.apple.quarantine"])
+            .args(["-d", "-r", "com.apple.quarantine"])
             .arg(path)
             .status()?;
         if !status.success() {
@@ -516,6 +516,43 @@ mod tests {
             verify_sha256(&path, "00"),
             Err(ArchiveError::DigestMismatch)
         ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn clearing_quarantine_is_recursive_and_idempotent() {
+        let directory = tempfile::tempdir().unwrap();
+        let nested = directory.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        let asset = nested.join("asset");
+        File::create(&asset).unwrap();
+        let written = std::process::Command::new("xattr")
+            .args(["-w", "com.apple.quarantine", "0083;test"])
+            .arg(&asset)
+            .status()
+            .unwrap();
+        assert!(written.success());
+        assert!(
+            std::process::Command::new("xattr")
+                .args(["-p", "com.apple.quarantine"])
+                .arg(&asset)
+                .output()
+                .unwrap()
+                .status
+                .success()
+        );
+
+        clear_macos_quarantine(directory.path()).unwrap();
+        assert!(
+            !std::process::Command::new("xattr")
+                .args(["-p", "com.apple.quarantine"])
+                .arg(&asset)
+                .output()
+                .unwrap()
+                .status
+                .success()
+        );
+        clear_macos_quarantine(directory.path()).unwrap();
     }
 
     #[test]
