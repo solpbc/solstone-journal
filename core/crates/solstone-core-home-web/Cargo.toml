@@ -11,10 +11,12 @@ workspace = true
 
 [dependencies]
 axum = { workspace = true, features = ["tokio"] }
+chrono.workspace = true
+serde_json.workspace = true
+solstone-core-home.workspace = true
 
 [dev-dependencies]
 regex.workspace = true
-serde_json.workspace = true
 solstone-core-convey-shell.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros", "rt"] }

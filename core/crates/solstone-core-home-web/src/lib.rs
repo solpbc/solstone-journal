@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use axum::{
-    Router,
+    Json, Router,
     body::Body,
     http::{StatusCode, header},
     response::Response,
@@ -12,13 +12,37 @@ use axum::{
 };
 
 mod assets;
+mod clock;
 
-pub fn routes(_journal_root: PathBuf) -> Router {
+pub use clock::Clock;
+
+pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
+    let pulse_root = journal_root.clone();
+    let pulse_clock = clock.clone();
+    let briefing_root = journal_root;
     Router::new()
         .route("/app/home/", get(assets::shell))
         .route("/app/home", get(shell_redirect))
         .route("/app/home/workspace", get(assets::workspace))
         .route("/app/home/static/home.js", get(assets::home_js))
+        .route(
+            "/app/home/api/pulse",
+            get(move || pulse(pulse_root.clone(), pulse_clock.clone())),
+        )
+        .route(
+            "/app/home/api/briefing",
+            get(move || briefing(briefing_root.clone(), clock.clone())),
+        )
+}
+
+async fn pulse(journal_root: PathBuf, clock: Clock) -> Json<serde_json::Value> {
+    let context = solstone_core_home::HomeContext::new(journal_root, clock.now());
+    Json(solstone_core_home::pulse::pulse_payload(&context))
+}
+
+async fn briefing(journal_root: PathBuf, clock: Clock) -> Json<serde_json::Value> {
+    let context = solstone_core_home::HomeContext::new(journal_root, clock.now());
+    Json(solstone_core_home::pulse::briefing_payload(&context))
 }
 
 async fn shell_redirect() -> Response {
@@ -35,6 +59,7 @@ async fn shell_redirect() -> Response {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -43,8 +68,9 @@ mod tests {
         body::{Body, to_bytes},
         http::{Request, StatusCode, header},
     };
+    use chrono::{TimeZone, Timelike};
     use regex::Regex;
-    use serde_json::Value;
+    use serde_json::{Value, json};
     use tempfile::TempDir;
     use tower::ServiceExt;
 
@@ -157,20 +183,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn home_api_routes_remain_unconverted_until_native_api_routes_land() {
-        // Retire when home's API routes land natively.
+    async fn home_api_routes_are_served_natively() {
+        // Home API routes are served natively by this crate.
         let established = established_root();
         let router = shell_router(established.path());
-        for path in ["/app/home/api/pulse", "/app/home/api/briefing"] {
+        for (path, keys) in [
+            ("/app/home/api/pulse", pulse_keys()),
+            ("/app/home/api/briefing", briefing_keys()),
+        ] {
             let response = get(router.clone(), path).await;
-            assert_eq!(response.0, StatusCode::NOT_IMPLEMENTED, "{path}");
-            let refusal: Value = serde_json::from_slice(&response.3).expect("refusal JSON");
-            assert_eq!(refusal["reason_code"], "app_not_converted", "{path}");
+            assert_eq!(response.0, StatusCode::OK, "{path}");
+            assert_eq!(response.1, "application/json", "{path}");
+            assert_json_key_set(&response.3, &keys, path);
         }
     }
 
     #[tokio::test]
-    async fn unregistered_home_paths_remain_typed_unconverted_refusals() {
+    async fn unregistered_home_paths_are_converted_not_found_responses() {
         let established = established_root();
         let router = shell_router(established.path());
         for path in [
@@ -179,10 +208,153 @@ mod tests {
             "/app/home/nonexistent",
         ] {
             let response = get(router.clone(), path).await;
-            assert_eq!(response.0, StatusCode::NOT_IMPLEMENTED, "{path}");
-            let refusal: Value = serde_json::from_slice(&response.3).expect("refusal JSON");
-            assert_eq!(refusal["reason_code"], "app_not_converted", "{path}");
+            assert_eq!(response.0, StatusCode::NOT_FOUND, "{path}");
+            assert_eq!(response.1, "text/html; charset=utf-8", "{path}");
         }
+    }
+
+    #[tokio::test]
+    async fn home_api_routes_follow_the_session_gate_for_both_payloads() {
+        let established = established_root();
+        let router = shell_router(established.path());
+        for (path, key, expected) in [
+            ("/app/home/api/pulse", "home_state", json!("welcome")),
+            ("/app/home/api/briefing", "needs_shared_count", json!(0)),
+        ] {
+            let response = get(router.clone(), path).await;
+            assert_eq!(response.0, StatusCode::OK, "{path}");
+            let body: Value = serde_json::from_slice(&response.3).expect("handler JSON");
+            assert_eq!(body[key], expected, "{path}");
+        }
+
+        let unestablished = TempDir::new().expect("temporary journal");
+        let router = shell_router(unestablished.path());
+        for path in ["/app/home/api/pulse", "/app/home/api/briefing"] {
+            let response = get(router.clone(), path).await;
+            assert_eq!(response.0, StatusCode::FOUND, "{path}");
+            assert_eq!(response.2.as_deref(), Some("/init"), "{path}");
+        }
+
+        let corrupt = corrupt_root();
+        let router = shell_router(corrupt.path());
+        for path in ["/app/home/api/pulse", "/app/home/api/briefing"] {
+            let response = get(router.clone(), path).await;
+            assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR, "{path}");
+            assert_eq!(response.1, "application/json", "{path}");
+            let body: Value = serde_json::from_slice(&response.3).expect("corrupt API JSON");
+            assert_eq!(body["reason_code"], "corrupt_config", "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn home_pulse_request_does_not_create_awareness_in_the_empty_fixture() {
+        let root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/convey_home_empty_journal");
+        let before = tree_entries(&root);
+        let router = super::routes(
+            root.clone(),
+            super::Clock::fixed(
+                chrono::Utc
+                    .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+                    .unwrap()
+                    .with_nanosecond(430_840_000)
+                    .unwrap(),
+            ),
+        );
+        let response = get(router, "/app/home/api/pulse").await;
+        assert_eq!(response.0, StatusCode::OK);
+        assert_eq!(tree_entries(&root), before);
+        assert!(!root.join("awareness").exists());
+    }
+
+    fn pulse_keys() -> BTreeSet<String> {
+        [
+            "today",
+            "now",
+            "health_glance",
+            "attention",
+            "pipeline_status",
+            "segment_count",
+            "facet_data",
+            "narrative_content",
+            "narrative_updated_at",
+            "narrative_source",
+            "narrative_header",
+            "pulse_needs",
+            "flow_content",
+            "flow_updated_at",
+            "anticipated_activities",
+            "activities",
+            "needs_you_items",
+            "briefing_sections",
+            "briefing_meta",
+            "briefing_phase",
+            "briefing_lateness",
+            "briefing_exists",
+            "briefing_summary",
+            "briefing_needs_deduped",
+            "briefing_needs_shared_count",
+            "briefing_needs_badge",
+            "latest_weekly_reflection",
+            "yesterday_processing",
+            "connections",
+            "journal_age_days",
+            "home_state",
+            "welcome_framing",
+            "narrative_summary",
+            "today_summary",
+            "needs_summary",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+    }
+
+    fn briefing_keys() -> BTreeSet<String> {
+        [
+            "exists",
+            "phase",
+            "summary",
+            "meta",
+            "sections",
+            "needs_deduped",
+            "needs_shared_count",
+            "needs_badge",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+    }
+
+    fn assert_json_key_set(bytes: &[u8], expected: &BTreeSet<String>, path: &str) {
+        let body: Value = serde_json::from_slice(bytes).expect("API JSON");
+        let keys = body
+            .as_object()
+            .expect("API object")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(&keys, expected, "{path}");
+    }
+
+    fn tree_entries(root: &Path) -> Vec<String> {
+        let mut entries =
+            fs::read_dir(root)
+                .expect("fixture root")
+                .filter_map(Result::ok)
+                .flat_map(|entry| {
+                    let path = entry.path();
+                    let mut entries = vec![path.strip_prefix(root).unwrap().display().to_string()];
+                    if path.is_dir() {
+                        entries.extend(tree_entries(&path).into_iter().map(|child| {
+                            format!("{}/{}", entry.file_name().to_string_lossy(), child)
+                        }));
+                    }
+                    entries
+                })
+                .collect::<Vec<_>>();
+        entries.sort();
+        entries
     }
 
     fn joined(parts: &[&str]) -> String {
@@ -289,6 +461,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(visited.iter().any(|path| path == "lib.rs"));
         assert!(visited.iter().any(|path| path == "assets.rs"));
+        assert!(visited.iter().any(|path| path == "clock.rs"));
 
         let patterns = forbidden_patterns();
         assert_eq!(patterns.len(), 13);

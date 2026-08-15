@@ -716,7 +716,10 @@ pub fn router(journal_root: PathBuf) -> Router {
         .merge(solstone_core_entities::api_router(journal_root.clone()))
         .merge(solstone_core_settings_web::routes(journal_root.clone()))
         .merge(solstone_core_health_web::routes(journal_root.clone()))
-        .merge(solstone_core_home_web::routes(journal_root.clone()))
+        .merge(solstone_core_home_web::routes(
+            journal_root.clone(),
+            solstone_core_home_web::Clock::system(),
+        ))
         .merge(solstone_core_backup_web::routes(journal_root.clone()))
         .route("/app/body/", get(body::shell))
         .route("/app/body/trends", get(body::trends))

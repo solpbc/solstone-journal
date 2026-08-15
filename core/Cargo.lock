@@ -3400,9 +3400,11 @@ name = "solstone-core-home-web"
 version = "1.0.22"
 dependencies = [
  "axum",
+ "chrono",
  "regex",
  "serde_json",
  "solstone-core-convey-shell",
+ "solstone-core-home",
  "tempfile",
  "tokio",
  "tower",
