@@ -730,7 +730,7 @@ pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
     let directory = day_root(context, day).join("health");
     let Ok(entries) = fs::read_dir(&directory) else {
         if day < context.today().as_str() {
-            summary["status"] = "unknown".into();
+            summary["status"] = "stale".into();
             summary["anomalies"]
                 .as_array_mut()
                 .unwrap()
@@ -1450,7 +1450,7 @@ mod tests {
         let summary = summarize_pipeline_day(&context, "20260602");
         assert_eq!(summary["talents"]["failed"], 1);
         let missing = summarize_pipeline_day(&context, "20260601");
-        assert_eq!(missing["status"], "unknown");
+        assert_eq!(missing["status"], "stale");
     }
 
     #[test]

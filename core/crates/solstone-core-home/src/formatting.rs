@@ -277,7 +277,13 @@ pub fn format_gap_links(
         }
     }
     let has_named_failures = !groups.is_empty();
-    for (name, rows) in groups {
+    for (name, mut rows) in groups {
+        rows.sort_by(|left, right| {
+            left["mode"]
+                .as_str()
+                .cmp(&right["mode"].as_str())
+                .then_with(|| left["use_id"].as_str().cmp(&right["use_id"].as_str()))
+        });
         let count = rows.len();
         let label = name.replace('_', " ");
         let lost = rows
@@ -365,4 +371,54 @@ fn title_case(value: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failure_gap_links_cap_and_sort_the_first_anchor() {
+        let failures = (0..20)
+            .map(|index| {
+                json!({
+                    "kind":"talent_failure",
+                    "name":format!("task_{index}"),
+                    "mode":"daily",
+                    "use_id":format!("{index:02}"),
+                    "state":"failed",
+                })
+            })
+            .collect::<Vec<_>>();
+        let links = format_gap_links(
+            &json!({"anomalies":failures,"talents":{"failed_list_truncated":true,"outstanding_failed":21}}),
+            true,
+            "20260813",
+            "20260814",
+        );
+        assert_eq!(links.last().unwrap()["text"], "…and 1 more didn't finish.");
+
+        let links = format_gap_links(
+            &json!({"anomalies":[
+                {"kind":"talent_failure","name":"daily_summary","mode":"daily","use_id":"z","state":"failed"},
+                {"kind":"talent_failure","name":"daily_summary","mode":"activity","use_id":"a","state":"failed"}
+            ]}),
+            true,
+            "20260813",
+            "20260814",
+        );
+        assert_eq!(links[0]["text"], "2 daily summary runs didn't finish.");
+        assert_eq!(links[0]["href"], "/app/sol/20260813#daily_summary");
+
+        let links = format_gap_links(
+            &json!({"anomalies":[
+                {"kind":"talent_failure","name":"daily_summary","mode":"daily","use_id":"z","state":"failed"},
+                {"kind":"talent_failure","name":"other","mode":"daily","use_id":"x","state":"failed"}
+            ]}),
+            true,
+            "20260813",
+            "20260814",
+        );
+        assert_eq!(links[0]["href"], "/app/sol/20260813#daily_summary/z");
+    }
 }

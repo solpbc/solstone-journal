@@ -108,6 +108,8 @@ fn trim_neighbor(row: &serde_json::Map<String, Value>) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
 
     #[test]
@@ -124,6 +126,25 @@ mod tests {
             build_connections_card(Ok(Some(json!({"id":"owner"}))), Err(())),
             json!({"state":"unavailable"})
         );
+        assert_eq!(
+            build_connections_card(Ok(Some(json!({}))), Ok(json!({}))),
+            json!({"state":"empty"})
+        );
+        assert_eq!(
+            build_connections_card(Ok(Some(json!({"id":"owner"}))), Ok(json!({}))),
+            json!({"state":"empty"})
+        );
+        assert_eq!(
+            build_connections_card(
+                Ok(Some(json!({"id":"owner"}))),
+                Ok(json!({"neighbors":"not a list"})),
+            ),
+            json!({"state":"empty"})
+        );
+        assert_eq!(
+            build_connections_card(Ok(Some(json!({"id":"owner"}))), Ok(json!({"neighbors":[]})),),
+            json!({"state":"empty"})
+        );
     }
 
     #[test]
@@ -135,6 +156,23 @@ mod tests {
             ),
         );
         assert_eq!(card["state"], "ok");
+        assert_eq!(
+            card.as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            [
+                "state",
+                "neighbors",
+                "total",
+                "kind_words",
+                "attendance_kinds"
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        );
         assert_eq!(card["total"], 4);
         assert_eq!(
             card["attendance_kinds"],
@@ -148,5 +186,36 @@ mod tests {
             json!([{ "kind":"knows", "count":1, "weighted":3.0 }, { "kind":"created", "count":3, "weighted":2.0 }, { "kind":"works-with", "count":1, "weighted":2.0 }])
         );
         assert_eq!(card["neighbors"][0]["latest_label"], "meeting");
+    }
+
+    #[test]
+    fn connection_projection_preserves_edge_case_shapes() {
+        let card = build_connections_card(
+            Ok(Some(json!({"id":"owner"}))),
+            Ok(json!({
+                "total_neighbors": 9,
+                "neighbors": [
+                    "discarded",
+                    {"entity_id":"one","kinds":{"z":{"count":0,"weighted":2.5},"a":{"count":1,"weighted":2.5},"drop":{"count":0,"weighted":0}},"evidence":"not a list"}
+                ]
+            })),
+        );
+        assert_eq!(card["total"], 9);
+        assert_eq!(card["neighbors"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            card["neighbors"][0]["kinds"],
+            json!([{"kind":"a","count":1,"weighted":2.5},{"kind":"z","count":0,"weighted":2.5}])
+        );
+        assert_eq!(card["neighbors"][0]["latest_label"], Value::Null);
+        assert_eq!(card["neighbors"][0]["latest_kind"], Value::Null);
+        assert_eq!(card["neighbors"][0]["latest_day"], Value::Null);
+
+        let kinds = build_connections_card(
+            Ok(Some(json!({"id":"owner"}))),
+            Ok(json!({"neighbors":[{"kinds":"invalid"}]})),
+        );
+        assert_eq!(kinds["neighbors"][0]["kinds"], json!([]));
+        assert_eq!(kinds.as_object().unwrap().len(), 5);
+        assert_eq!(kinds["kind_words"].as_object().unwrap().len(), 15);
     }
 }

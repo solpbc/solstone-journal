@@ -1,0 +1,861 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Router-free assembly for the home pulse and briefing payloads.
+
+use std::collections::BTreeSet;
+
+use chrono::{DateTime, Timelike, Utc};
+use serde_json::{Map, Value, json};
+use solstone_core_entity::read_journal_principal;
+
+use crate::HomeContext;
+use crate::briefing;
+use crate::connections::build_connections_card;
+use crate::formatting::{
+    format_activity_label, format_duration, format_gap_links, format_heatmap_summary,
+    format_newsletter_summary, format_processing_summary, relative_time,
+};
+use crate::health_glance::build_health_glance;
+use crate::needs_you::{classify_needs_you, needs_dedup_key};
+use crate::readers::{
+    briefing_freshness, briefing_lateness_state, briefing_needs_items, collect_activities,
+    collect_anticipated_activities, collect_top_activities_yesterday, compute_briefing_phase,
+    count_journal_age_days, get_capture_health, last_observe_relative_seconds, load_awareness,
+    load_backlog_source, load_briefing, load_connections_network, load_flow_md,
+    load_latest_weekly_reflection, load_pulse_narrative, load_stats, load_yesterday_stats,
+    newsletter_attempts_from_think_logs, read_steward_health, read_steward_summary,
+    render_briefing_sections, resolve_attention, summarize_pipeline_day,
+};
+
+const FIRST_WEEK_FRAMING: &str = "most of what i keep becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:";
+
+/// Complete pre-route pulse context. The instant stays typed until projection.
+pub struct PulseContext {
+    fields: Map<String, Value>,
+    now: DateTime<Utc>,
+}
+
+impl PulseContext {
+    fn into_pulse_payload(mut self) -> Value {
+        self.fields.remove("show_welcome");
+        self.fields
+            .insert("now".to_owned(), format_now(self.now).into());
+        if let Some(attention) = self.fields.get("attention").and_then(Value::as_object) {
+            self.fields.insert(
+                "attention".to_owned(),
+                json!({
+                    "placeholder_text": attention.get("placeholder_text").cloned().unwrap_or(Value::Null),
+                    "context_lines": attention.get("context_lines").cloned().unwrap_or_else(|| json!([])),
+                }),
+            );
+        }
+        Value::Object(self.fields)
+    }
+}
+
+/// Assemble all fields used by the Python home context in its build order.
+pub fn build_pulse_context(context: &HomeContext) -> PulseContext {
+    let today = context.today();
+    let journal_age_days = count_journal_age_days(context);
+    let capture_health = get_capture_health(context);
+    let awareness = load_awareness(context);
+    let attention = resolve_attention(context, &awareness).unwrap_or(Value::Null);
+    let stats_data = load_stats(context, &today);
+    let stats = stats_data
+        .get("stats")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let segment_count = stats
+        .get("transcript_segments")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let facet_data = stats_data
+        .get("facet_data")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let flow = load_flow_md(context, &today);
+    let flow_updated_at = flow.updated_at.and_then(|timestamp| {
+        DateTime::from_timestamp(timestamp as i64, 0)
+            .map(|time| time.with_timezone(&Utc).format("%H:%M").to_string())
+    });
+    let narrative = load_pulse_narrative(context, &today);
+    let (narrative_content, narrative_updated_at, narrative_source, narrative_header, pulse_needs) =
+        if let Some(content) = narrative.content {
+            (
+                Some(content),
+                narrative.updated_at.or_else(|| flow_updated_at.clone()),
+                "pulse",
+                "pulse",
+                narrative.needs.into_iter().map(Value::String).collect(),
+            )
+        } else {
+            (
+                flow.content.clone(),
+                flow_updated_at.clone(),
+                "flow",
+                "today's flow",
+                Vec::new(),
+            )
+        };
+    let anticipated_activities = collect_anticipated_activities(context, &today);
+    let activities = collect_activities(context, &today);
+    let latest_weekly_reflection = load_latest_weekly_reflection(context);
+    let last_observe_relative = last_observe_relative_seconds(context)
+        .map(|seconds| format!("{} ago", relative_time(seconds as f64)));
+
+    let briefing = load_briefing(context, &today);
+    let briefing_document = briefing.clone().unwrap_or(Value::Null);
+    let briefing_sections = Value::Object(
+        render_briefing_sections(&briefing_document)
+            .into_iter()
+            .map(|(key, value)| (key, Value::String(value)))
+            .collect(),
+    );
+    let briefing_meta = briefing_document
+        .get("metadata")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let briefing_needs = briefing_needs_items(&briefing_document);
+    let briefing_exists = !briefing_sections.as_object().is_none_or(Map::is_empty);
+    let briefing_phase =
+        compute_briefing_phase(segment_count, context.now_utc.hour(), briefing_exists);
+    let briefing_lateness = briefing_lateness_state(context.now_utc, briefing_phase);
+    let show_welcome = narrative_content.is_none()
+        && anticipated_activities.is_empty()
+        && activities.is_empty()
+        && !briefing_exists
+        && attention.is_null()
+        && pulse_needs.is_empty()
+        && latest_weekly_reflection.is_none();
+
+    let mut needs_keys = BTreeSet::new();
+    if !attention.is_null() {
+        needs_keys.insert(needs_dedup_key(&attention));
+    }
+    let mut deduped_pulse_needs = Vec::new();
+    for need in &pulse_needs {
+        let key = needs_dedup_key(need);
+        if needs_keys.insert(key) {
+            deduped_pulse_needs.push(need.clone());
+        }
+    }
+    let needs_you_items = classify_needs_you(&attention, &deduped_pulse_needs);
+    let needs_count = needs_you_items.len();
+    let needs_summary = if needs_count == 0 {
+        String::new()
+    } else {
+        format!(
+            "{needs_count} item{} need{} attention",
+            if needs_count == 1 { "" } else { "s" },
+            if needs_count == 1 { "s" } else { "" },
+        )
+    };
+    let mut briefing_needs_deduped = Vec::new();
+    let mut briefing_needs_shared_count = 0;
+    let mut seen_keys = needs_keys.clone();
+    for item in briefing_needs {
+        let key = needs_dedup_key(&item);
+        if needs_keys.contains(&key) {
+            briefing_needs_shared_count += 1;
+        } else if seen_keys.insert(key) {
+            briefing_needs_deduped.push(item);
+        }
+    }
+    let briefing_needs_badge = (briefing_needs_shared_count > 0).then(|| {
+        format!(
+            "{briefing_needs_shared_count} item{} also in Pulse needs",
+            if briefing_needs_shared_count == 1 {
+                ""
+            } else {
+                "s"
+            }
+        )
+    });
+    let briefing_summary = (briefing_phase == "active").then(|| {
+        briefing::summary(
+            briefing.as_ref(),
+            &briefing_sections,
+            briefing_needs_deduped.len() as i64,
+        )
+    });
+
+    let mut pipeline_status = read_steward_health(context).unwrap_or(Value::Null);
+    if let (Some(pipeline), Some(summary)) = (
+        pipeline_status.as_object_mut(),
+        read_steward_summary(context, None),
+    ) {
+        if let Some(summary) = summary.as_object() {
+            pipeline.extend(summary.clone());
+        }
+    }
+    let brain = crate::readers::build_brain_snapshot(context);
+    let backlog = load_backlog_source(context);
+    let health_glance = build_health_glance(
+        &capture_health,
+        &pipeline_status,
+        last_observe_relative.as_deref(),
+        &backlog,
+        &brain,
+        context.now_utc,
+    );
+    let yesterday_processing = summarize_yesterday_processing(context, journal_age_days);
+    let connections = load_connections_card(context);
+
+    let narrative_summary = narrative_content.as_ref().map_or_else(String::new, |_| {
+        narrative_updated_at.as_ref().map_or_else(
+            || narrative_header.to_owned(),
+            |updated| format!("{narrative_header} — updated {updated}"),
+        )
+    });
+    let mut today_parts = Vec::new();
+    if !anticipated_activities.is_empty() {
+        let count = anticipated_activities.len();
+        today_parts.push(format!(
+            "{count} anticipated activit{}",
+            if count == 1 { "y" } else { "ies" }
+        ));
+    }
+    if !activities.is_empty() {
+        let count = activities.len();
+        today_parts.push(format!(
+            "{count} {}",
+            if count == 1 { "activity" } else { "activities" }
+        ));
+    }
+
+    let mut fields = Map::new();
+    fields.insert("today".to_owned(), today.into());
+    fields.insert("now".to_owned(), Value::Null);
+    fields.insert("health_glance".to_owned(), health_glance);
+    fields.insert("attention".to_owned(), attention);
+    fields.insert("pipeline_status".to_owned(), pipeline_status);
+    fields.insert("segment_count".to_owned(), segment_count.into());
+    fields.insert("facet_data".to_owned(), facet_data);
+    fields.insert("narrative_content".to_owned(), narrative_content.into());
+    fields.insert(
+        "narrative_updated_at".to_owned(),
+        narrative_updated_at.into(),
+    );
+    fields.insert("narrative_source".to_owned(), narrative_source.into());
+    fields.insert("narrative_header".to_owned(), narrative_header.into());
+    fields.insert("pulse_needs".to_owned(), Value::Array(pulse_needs));
+    fields.insert("flow_content".to_owned(), flow.content.into());
+    fields.insert("flow_updated_at".to_owned(), flow_updated_at.into());
+    fields.insert(
+        "anticipated_activities".to_owned(),
+        Value::Array(anticipated_activities),
+    );
+    fields.insert("activities".to_owned(), Value::Array(activities));
+    fields.insert("needs_you_items".to_owned(), Value::Array(needs_you_items));
+    fields.insert("briefing_sections".to_owned(), briefing_sections);
+    fields.insert("briefing_meta".to_owned(), briefing_meta);
+    fields.insert("briefing_phase".to_owned(), briefing_phase.into());
+    fields.insert("briefing_lateness".to_owned(), briefing_lateness);
+    fields.insert("briefing_exists".to_owned(), briefing_exists.into());
+    fields.insert("briefing_summary".to_owned(), briefing_summary.into());
+    fields.insert(
+        "briefing_needs_deduped".to_owned(),
+        Value::Array(
+            briefing_needs_deduped
+                .into_iter()
+                .filter_map(|item| item.get("text").and_then(Value::as_str).map(str::to_owned))
+                .map(Value::String)
+                .collect(),
+        ),
+    );
+    fields.insert(
+        "briefing_needs_shared_count".to_owned(),
+        briefing_needs_shared_count.into(),
+    );
+    fields.insert(
+        "briefing_needs_badge".to_owned(),
+        briefing_needs_badge.into(),
+    );
+    fields.insert(
+        "latest_weekly_reflection".to_owned(),
+        latest_weekly_reflection.into(),
+    );
+    fields.insert(
+        "yesterday_processing".to_owned(),
+        yesterday_processing.into(),
+    );
+    fields.insert("connections".to_owned(), connections);
+    fields.insert("show_welcome".to_owned(), show_welcome.into());
+    fields.insert("journal_age_days".to_owned(), journal_age_days.into());
+    fields.insert(
+        "home_state".to_owned(),
+        if show_welcome { "welcome" } else { "active" }.into(),
+    );
+    fields.insert(
+        "welcome_framing".to_owned(),
+        if show_welcome && journal_age_days <= 7 {
+            Value::String(FIRST_WEEK_FRAMING.to_owned())
+        } else {
+            Value::Null
+        },
+    );
+    fields.insert("narrative_summary".to_owned(), narrative_summary.into());
+    fields.insert("today_summary".to_owned(), today_parts.join(", ").into());
+    fields.insert("needs_summary".to_owned(), needs_summary.into());
+    debug_assert_eq!(fields.len(), 36);
+    PulseContext {
+        fields,
+        now: context.now_utc,
+    }
+}
+
+/// Project a full context to the public pulse API shape.
+pub fn pulse_payload(context: &HomeContext) -> Value {
+    build_pulse_context(context).into_pulse_payload()
+}
+
+/// Project the briefing fields from a freshly assembled context for this request.
+pub fn briefing_payload(context: &HomeContext) -> Value {
+    let payload = pulse_payload(context);
+    let field = |name: &str| payload.get(name).cloned().unwrap_or(Value::Null);
+    json!({
+        "exists": field("briefing_exists"),
+        "phase": field("briefing_phase"),
+        "summary": field("briefing_summary"),
+        "meta": field("briefing_meta"),
+        "sections": field("briefing_sections"),
+        "needs_deduped": field("briefing_needs_deduped"),
+        "needs_shared_count": field("briefing_needs_shared_count"),
+        "needs_badge": field("briefing_needs_badge"),
+    })
+}
+
+fn format_now(now: DateTime<Utc>) -> String {
+    now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()
+}
+
+fn load_connections_card(context: &HomeContext) -> Value {
+    let principal = read_journal_principal(context.journal_root()).map_err(|_| ());
+    let network = match principal.as_ref() {
+        Err(_) | Ok(None) => Ok(json!({})),
+        Ok(Some(principal))
+            if principal
+                .get("id")
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty) =>
+        {
+            Ok(json!({}))
+        }
+        Ok(Some(_)) => load_connections_network(context)
+            .map_err(|_| ())
+            .and_then(|network| {
+                network
+                    .map(|network| serde_json::to_value(network).map_err(|_| ()))
+                    .transpose()
+            })
+            .map(|network| network.unwrap_or_else(|| json!({}))),
+    };
+    build_connections_card(principal, network)
+}
+
+fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) -> Option<Value> {
+    let stats_data = load_yesterday_stats(context)?;
+    if journal_age_days == 0 {
+        return None;
+    }
+    let stats = stats_data
+        .get("stats")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let transcript_seconds = stats
+        .get("transcript_duration")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let transcript_segments = stats
+        .get("transcript_segments")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let has_facet_activity = stats_data
+        .get("facet_data")
+        .and_then(Value::as_object)
+        .is_some_and(|facets| {
+            facets.values().any(|facet| {
+                facet.get("minutes").and_then(Value::as_f64).unwrap_or(0.0) > 0.0
+                    || facet.get("count").and_then(Value::as_i64).unwrap_or(0) > 0
+            })
+        });
+    let activities = collect_top_activities_yesterday(context);
+    if transcript_seconds <= 0.0
+        && transcript_segments <= 0
+        && !has_facet_activity
+        && activities.is_empty()
+    {
+        return None;
+    }
+    let yesterday = context.yesterday();
+    let today = context.today();
+    let pipeline = summarize_pipeline_day(context, &yesterday);
+    let briefing = briefing_freshness(context, &today);
+    let briefing_valid = briefing
+        .get("valid")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let (successful, attempted) = newsletter_attempts_from_think_logs(context, &yesterday);
+    let successful = successful as i64;
+    let attempted = attempted as i64;
+    let sparse = (transcript_seconds > 0.0 || transcript_segments > 0)
+        && !has_facet_activity
+        && activities.is_empty();
+    let mut reasons = Vec::new();
+    if attempted > successful {
+        reasons.push(Value::String("newsletter_partial".to_owned()));
+    }
+    if pipeline.get("status").and_then(Value::as_str) != Some("healthy") {
+        reasons.push(Value::String("pipeline_warning".to_owned()));
+    }
+    if !briefing_valid {
+        reasons.push(Value::String("briefing_missing".to_owned()));
+    }
+    let mode = if sparse {
+        "sparse"
+    } else if reasons.is_empty() {
+        "healthy"
+    } else {
+        "degraded"
+    };
+    if mode == "sparse" {
+        return Some(
+            json!({"title":"Yesterday's processing","mode":"sparse","default_collapsed":false,"first_week_framing":null,"summary_line":format!("i took in {} yesterday and kept it in your journal.", format_duration(transcript_seconds / 60.0)),"details":null,"gap_links":[],"sparse_lines":["I didn't produce any facet newsletters.","There wasn't much else to process."],"status_reasons":reasons}),
+        );
+    }
+    let mut details = vec![Value::String(format_newsletter_summary(
+        successful, attempted,
+    ))];
+    if briefing_valid {
+        details.push(Value::String(
+            match briefing.get("generated_label").and_then(Value::as_str) {
+                Some(label) => format!("I prepared your morning briefing at {label}."),
+                None => "I prepared your morning briefing.".to_owned(),
+            },
+        ));
+    }
+    if let Some(summary) = format_heatmap_summary(&stats_data) {
+        details.push(summary.into());
+    }
+    details.extend(
+        activities
+            .iter()
+            .take(2)
+            .map(|activity| Value::String(format_activity_label(activity))),
+    );
+    Some(json!({
+        "title": if mode == "degraded" { "⚠ Yesterday's processing" } else { "Yesterday's processing" },
+        "mode": mode,
+        "default_collapsed": mode == "healthy" && journal_age_days >= 8,
+        "first_week_framing": if journal_age_days <= 7 { Value::String(FIRST_WEEK_FRAMING.to_owned()) } else { Value::Null },
+        "summary_line": format_processing_summary(mode, successful, attempted, briefing_valid),
+        "details": details,
+        "gap_links": if mode == "degraded" { Value::Array(format_gap_links(&pipeline, briefing_valid, &yesterday, &today)) } else { Value::Array(Vec::new()) },
+        "sparse_lines": Value::Null,
+        "status_reasons": reasons,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+
+    use chrono::TimeZone;
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn empty_payload_has_exact_public_key_set_and_naive_microsecond_now() {
+        let root = TempDir::new().unwrap();
+        let context = HomeContext::new(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+                .unwrap()
+                .with_nanosecond(430_840_000)
+                .unwrap(),
+        );
+        let payload = pulse_payload(&context);
+        assert_eq!(payload.as_object().unwrap().len(), 35);
+        assert_eq!(
+            payload
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            [
+                "today",
+                "now",
+                "health_glance",
+                "attention",
+                "pipeline_status",
+                "segment_count",
+                "facet_data",
+                "narrative_content",
+                "narrative_updated_at",
+                "narrative_source",
+                "narrative_header",
+                "pulse_needs",
+                "flow_content",
+                "flow_updated_at",
+                "anticipated_activities",
+                "activities",
+                "needs_you_items",
+                "briefing_sections",
+                "briefing_meta",
+                "briefing_phase",
+                "briefing_lateness",
+                "briefing_exists",
+                "briefing_summary",
+                "briefing_needs_deduped",
+                "briefing_needs_shared_count",
+                "briefing_needs_badge",
+                "latest_weekly_reflection",
+                "yesterday_processing",
+                "connections",
+                "journal_age_days",
+                "home_state",
+                "welcome_framing",
+                "narrative_summary",
+                "today_summary",
+                "needs_summary",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        );
+        assert_eq!(payload["now"], "2026-08-14T22:28:35.430840");
+        assert!(payload.get("show_welcome").is_none());
+        assert_eq!(
+            payload["briefing_lateness"],
+            json!({"late":false,"late_hours":0})
+        );
+    }
+
+    #[test]
+    fn empty_fixture_matches_the_captured_pulse_and_briefing() {
+        let context = fixture_context(
+            "convey_home_empty_journal",
+            2026,
+            8,
+            14,
+            22,
+            28,
+            35,
+            430_840_000,
+        );
+        let reference = reference_payload("reference-pulse-empty-journal.json");
+        assert_payload_fields(&pulse_payload(&context), &reference["pulse"], &["now"]);
+        assert_eq!(briefing_payload(&context), reference["briefing"]);
+    }
+
+    #[test]
+    fn seeded_fixture_matches_the_captured_pulse_and_briefing() {
+        let context = fixture_context(
+            "convey_home_seeded_journal",
+            2026,
+            8,
+            14,
+            23,
+            25,
+            13,
+            793_525_000,
+        );
+        let payload = pulse_payload(&context);
+        let reference = reference_payload("reference-pulse-seeded-journal.json");
+        let mut expected_pulse = reference["pulse"].clone();
+        assert_eq!(
+            expected_pulse.pointer("/health_glance/cta/href"),
+            Some(&json!("/app/observer/"))
+        );
+        assert_eq!(
+            payload.pointer("/health_glance/cta/href"),
+            Some(&json!("/app/devices/"))
+        );
+        *expected_pulse
+            .pointer_mut("/health_glance/cta/href")
+            .unwrap() = json!("/app/devices/");
+        assert_payload_fields(
+            &payload,
+            &expected_pulse,
+            &[
+                "now",
+                "segment_count",
+                "facet_data",
+                "latest_weekly_reflection",
+            ],
+        );
+        assert_eq!(briefing_payload(&context), reference["briefing"]);
+        for pointer in [
+            "/activities",
+            "/anticipated_activities",
+            "/needs_you_items",
+            "/briefing_sections",
+            "/pulse_needs",
+            "/briefing_needs_deduped",
+            "/today_summary",
+            "/narrative_content",
+            "/latest_weekly_reflection",
+            "/yesterday_processing/details",
+        ] {
+            let value = payload.pointer(pointer).unwrap();
+            assert!(
+                !value.is_null()
+                    && !value.as_array().is_some_and(Vec::is_empty)
+                    && !value.as_object().is_some_and(Map::is_empty)
+                    && value.as_str().is_none_or(|value| !value.is_empty()),
+                "seeded payload field {pointer} must be non-empty"
+            );
+        }
+        let reflection = payload["latest_weekly_reflection"].as_object().unwrap();
+        assert_eq!(reflection.len(), 2);
+        assert!(
+            reflection
+                .get("label")
+                .and_then(Value::as_str)
+                .is_some_and(|label| !label.is_empty())
+        );
+        assert!(!reflection.contains_key("url"));
+    }
+
+    #[test]
+    fn empty_journal_phase_tracks_the_injected_hour() {
+        let root = TempDir::new().unwrap();
+        for hour in 0..24 {
+            let context = HomeContext::new(
+                root.path(),
+                Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
+            );
+            assert_eq!(
+                pulse_payload(&context)["briefing_lateness"],
+                json!({"late":false,"late_hours":0}),
+                "hour {hour}"
+            );
+        }
+        for (hour, expected) in [(9, "pending"), (22, "eod")] {
+            let context = HomeContext::new(
+                root.path(),
+                Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
+            );
+            assert_eq!(pulse_payload(&context)["briefing_phase"], expected);
+        }
+        let late = briefing::lateness_state(
+            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
+            "pending",
+        );
+        assert_eq!(late, json!({"late":true,"late_hours":3}));
+    }
+
+    #[test]
+    fn absent_yesterday_stats_and_empty_yesterday_return_none() {
+        let root = TempDir::new().unwrap();
+        let context = HomeContext::new(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
+        );
+        assert!(summarize_yesterday_processing(&context, 1).is_none());
+
+        fs::create_dir_all(root.path().join("chronicle/20260813")).unwrap();
+        fs::write(
+            root.path().join("chronicle/20260813/stats.json"),
+            r#"{"stats":{"transcript_duration":0,"transcript_segments":0},"facet_data":{}}"#,
+        )
+        .unwrap();
+        assert!(summarize_yesterday_processing(&context, 1).is_none());
+    }
+
+    #[test]
+    fn missing_yesterday_health_is_stale_and_degrades_processing() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260813")).unwrap();
+        fs::write(
+            root.path().join("chronicle/20260813/stats.json"),
+            r#"{"stats":{"transcript_duration":60,"transcript_segments":0},"facet_data":{"focus":{"minutes":1,"count":1}}}"#,
+        )
+        .unwrap();
+        let context = HomeContext::new(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
+        );
+        assert_eq!(
+            summarize_pipeline_day(&context, "20260813")["status"],
+            "stale"
+        );
+        let processing = summarize_yesterday_processing(&context, 1).unwrap();
+        assert_eq!(processing["mode"], "degraded");
+        assert_eq!(processing["title"], "⚠ Yesterday's processing");
+    }
+
+    #[test]
+    fn assembly_does_not_create_awareness_in_the_empty_fixture() {
+        let root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/convey_home_empty_journal");
+        let before = tree_entries(&root);
+        let context = HomeContext::new(
+            &root,
+            Utc.with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+                .unwrap()
+                .with_nanosecond(430_840_000)
+                .unwrap(),
+        );
+        let _ = pulse_payload(&context);
+        assert_eq!(tree_entries(&root), before);
+        assert!(!root.join("awareness").exists());
+    }
+
+    #[test]
+    fn observer_fixture_is_active_at_twenty_nine_seconds() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/convey_home_observer_journal");
+        let context = HomeContext::new(
+            root,
+            Utc.timestamp_millis_opt(1_786_749_913_793)
+                .single()
+                .unwrap(),
+        );
+        assert_eq!(
+            crate::readers::get_capture_health(&context)["status"],
+            "active"
+        );
+        assert_eq!(last_observe_relative_seconds(&context), Some(29));
+    }
+
+    #[test]
+    fn reflection_fixture_accepts_an_unparseable_eight_digit_stem() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/convey_home_reflection_journal");
+        let context = HomeContext::new(root, Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap());
+        assert_eq!(
+            load_latest_weekly_reflection(&context),
+            Some(json!({"day":"99999999","label":"99999999"}))
+        );
+    }
+
+    #[test]
+    fn seeded_fixture_keeps_the_no_observer_cta_branch() {
+        let root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/convey_home_seeded_journal");
+        let context = HomeContext::new(
+            root,
+            Utc.with_ymd_and_hms(2026, 8, 14, 23, 25, 13)
+                .unwrap()
+                .with_nanosecond(793_525_000)
+                .unwrap(),
+        );
+        assert_eq!(
+            pulse_payload(&context)["health_glance"]["cta"]["href"],
+            "/app/devices/"
+        );
+    }
+
+    #[test]
+    fn assembly_keeps_muted_activities_but_excludes_them_from_yesterday_processing() {
+        let context = fixture_context(
+            "convey_home_seeded_journal",
+            2026,
+            8,
+            14,
+            23,
+            25,
+            13,
+            793_525_000,
+        );
+        let payload = pulse_payload(&context);
+        assert!(
+            payload["activities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|activity| activity["facet"] == "muted")
+        );
+        assert!(
+            payload["anticipated_activities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|activity| activity["facet"] == "muted")
+        );
+        assert!(
+            !payload["yesterday_processing"]["details"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|detail| detail.contains("Muted"))
+        );
+        assert!(!payload.to_string().contains("Unlisted"));
+    }
+
+    fn fixture_context(
+        fixture: &str,
+        year: i32,
+        month: u32,
+        day: u32,
+        hour: u32,
+        minute: u32,
+        second: u32,
+        nanosecond: u32,
+    ) -> HomeContext {
+        HomeContext::new(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures")
+                .join(fixture),
+            Utc.with_ymd_and_hms(year, month, day, hour, minute, second)
+                .unwrap()
+                .with_nanosecond(nanosecond)
+                .unwrap(),
+        )
+    }
+
+    fn reference_payload(name: &str) -> Value {
+        let text = match name {
+            "reference-pulse-empty-journal.json" => {
+                include_str!("../../../fixtures/reference-pulse-empty-journal.json")
+            }
+            "reference-pulse-seeded-journal.json" => {
+                include_str!("../../../fixtures/reference-pulse-seeded-journal.json")
+            }
+            _ => panic!("unknown reference payload: {name}"),
+        };
+        serde_json::from_str(text).unwrap()
+    }
+
+    fn assert_payload_fields(actual: &Value, expected: &Value, exceptions: &[&str]) {
+        let actual = actual.as_object().unwrap();
+        let expected = expected.as_object().unwrap();
+        assert_eq!(
+            actual.keys().collect::<BTreeSet<_>>(),
+            expected.keys().collect::<BTreeSet<_>>(),
+            "payload key set"
+        );
+        for key in expected.keys() {
+            if exceptions.contains(&key.as_str()) {
+                continue;
+            }
+            assert_eq!(actual.get(key), expected.get(key), "payload field {key}");
+        }
+    }
+
+    fn tree_entries(root: &Path) -> Vec<String> {
+        let mut entries =
+            fs::read_dir(root)
+                .unwrap()
+                .filter_map(Result::ok)
+                .flat_map(|entry| {
+                    let path = entry.path();
+                    let mut entries = vec![path.strip_prefix(root).unwrap().display().to_string()];
+                    if path.is_dir() {
+                        entries.extend(tree_entries(&path).into_iter().map(|child| {
+                            format!("{}/{}", entry.file_name().to_string_lossy(), child)
+                        }));
+                    }
+                    entries
+                })
+                .collect::<Vec<_>>();
+        entries.sort();
+        entries
+    }
+}

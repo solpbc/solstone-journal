@@ -25,6 +25,7 @@ pub mod formatting;
 pub mod health_glance;
 pub mod model;
 pub mod needs_you;
+pub mod pulse;
 pub mod readers;
 
 #[cfg(test)]
