@@ -119,10 +119,6 @@ int main(int argc, char **argv) {
     );
 }
 
-fn write_rustup_shim(path: &Path, body: &str) {
-    write_executable(path, &format!("#!/bin/sh\nset -eu\n{body}\n"));
-}
-
 fn replace_once(text: &mut String, old: &str, new: &str) {
     let count = text.matches(old).count();
     assert_eq!(count, 1, "fixture seam must occur exactly once: {old}");
@@ -854,7 +850,6 @@ fn make_ci_full_keeps_apple_gates_native_to_apple_sdk_hosts() {
         "--workspace",
         "--all-targets",
         "--no-run",
-        "--target aarch64-apple-darwin",
         "--locked",
     ] {
         assert!(
@@ -1036,7 +1031,6 @@ fn native_macos_gate_records_the_full_workspace_test_compile() {
             let shims = temp.path.join("shims");
             fs::create_dir(&shims).expect("create shims");
             write_native_cargo_shim(&shims.join("cargo"));
-            write_rustup_shim(&shims.join("rustup"), "printf '%s\\n' aarch64-apple-darwin");
             let argv_log = temp.path.join("cargo.argv");
             let env_log = temp.path.join("cargo.env");
             let link_dir = seed_runtime(
@@ -1075,8 +1069,6 @@ fn native_macos_gate_records_the_full_workspace_test_compile() {
                     "--workspace",
                     "--all-targets",
                     "--no-run",
-                    "--target",
-                    "aarch64-apple-darwin",
                     "--locked",
                 ]
             );
@@ -1105,7 +1097,6 @@ fn native_macos_gate_ignores_make_control_plane_overrides() {
     let shims = temp.path.join("shims");
     fs::create_dir(&shims).expect("create shims");
     write_native_cargo_shim(&shims.join("cargo"));
-    write_rustup_shim(&shims.join("rustup"), "printf '%s\n' aarch64-apple-darwin");
     let argv_log = temp.path.join("cargo.argv");
     let env_log = temp.path.join("cargo.env");
     let link_dir = seed_runtime(
@@ -1233,7 +1224,6 @@ fn macos_gate_rejects_each_missing_or_corrupt_runtime_before_cargo() {
             let shims = temp.path.join("shims");
             fs::create_dir(&shims).expect("create shims");
             write_native_cargo_shim(&shims.join("cargo"));
-            write_rustup_shim(&shims.join("rustup"), "printf '%s\\n' aarch64-apple-darwin");
             let link_dir = seed_runtime(&temp.path, "macos-arm64", &names, &[]);
             if state == "missing" {
                 fs::remove_file(link_dir.join(victim)).expect("remove runtime fixture");
@@ -1258,39 +1248,6 @@ fn macos_gate_rejects_each_missing_or_corrupt_runtime_before_cargo() {
             assert!(stderr.contains("make check-rust-onnx-stage"));
             assert!(!argv_log.exists(), "Cargo ran with {victim} {state}");
         }
-    }
-}
-
-#[test]
-fn macos_gate_distinguishes_rustup_failure_from_a_missing_target() {
-    for (rustup_body, expected) in [
-        ("exit 23", "rustup failed to inspect installed targets"),
-        (
-            "printf '%s\\n' x86_64-unknown-linux-gnu",
-            "Rust target aarch64-apple-darwin is required",
-        ),
-    ] {
-        let temp = TempDir::new("macos-rustup-negative");
-        write_host_makefile(&temp.path, "Darwin", "arm64");
-        let shims = temp.path.join("shims");
-        fs::create_dir(&shims).expect("create shims");
-        write_native_cargo_shim(&shims.join("cargo"));
-        write_rustup_shim(&shims.join("rustup"), rustup_body);
-        let argv_log = temp.path.join("cargo.argv");
-        let output = Command::new("make")
-            .arg("check-rust-macos")
-            .current_dir(&temp.path)
-            .env("PATH", fixture_path(&shims))
-            .env("SOLSTONE_CARGO_ARGV", &argv_log)
-            .env("SOLSTONE_CARGO_ENV", temp.path.join("cargo.env"))
-            .output()
-            .expect("run rustup negative");
-        assert!(!output.status.success());
-        assert!(String::from_utf8_lossy(&output.stderr).contains(expected));
-        assert!(
-            !argv_log.exists(),
-            "Cargo ran after rustup prerequisite failure"
-        );
     }
 }
 

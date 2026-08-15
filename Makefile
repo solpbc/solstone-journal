@@ -28,7 +28,6 @@ RUST_MANIFEST := core/Cargo.toml
 RUST_TARGET_DIR := $(if $(strip $(CARGO_TARGET_DIR)),$(abspath $(CARGO_TARGET_DIR)),$(CURDIR)/core/target)
 SERVICE_LEGACY_EVIDENCE_ROOT ?= core/fixtures/service_legacy_evidence
 IOS_TARGET := aarch64-apple-ios
-MACOS_TARGET := aarch64-apple-darwin
 RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze
 
 # Every crate RUST_HOST_EXCLUDES removes from the workspace test selection is
@@ -690,16 +689,8 @@ check-rust-macos:
 		exit 1; \
 	fi; \
 	$(REQUIRE_CARGO); \
-	command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the macOS gate; install rustup and retry" >&2; exit 1; }; \
-	installed_targets=$$(mktemp "$${TMPDIR:-/var/tmp}/solstone-rustup-targets-XXXXXX"); \
-	trap 'rm -f "$$installed_targets"' EXIT INT TERM; \
-	if ! rustup target list --installed > "$$installed_targets" 2>&1; then \
-		echo "rustup failed to inspect installed targets for the macOS gate" >&2; \
-		exit 1; \
-	fi; \
-	grep -qx "aarch64-apple-darwin" "$$installed_targets" || { echo "Rust target aarch64-apple-darwin is required for the macOS gate; run rustup target add aarch64-apple-darwin" >&2; exit 1; }; \
 	$(REQUIRE_ONNX_HOST_RUNTIME); \
-	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path core/Cargo.toml --workspace --all-targets --no-run --target aarch64-apple-darwin --locked
+	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path core/Cargo.toml --workspace --all-targets --no-run --locked
 
 check-rust-ios:
 	@$(REQUIRE_CARGO)
