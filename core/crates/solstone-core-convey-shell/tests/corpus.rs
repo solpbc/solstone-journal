@@ -349,7 +349,13 @@ async fn an_unconverted_app_refusal_is_never_a_success_status() {
         // deleted, so the assertion keeps covering shell and workspace paths.
         "/app/activities/",
         "/app/activities/workspace",
-        "/app/home/background",
+        // `/app/home/background` was here until 2026-08-15, when the home
+        // conversion landed and made its catch-all an HTML 404 rather than a
+        // typed JSON refusal. The INVARIANT is unchanged -- an unconverted
+        // app's refusal is never 2xx -- only this example went stale. Replaced
+        // with a still-unconverted app rather than deleted, so the assertion
+        // keeps covering a background path.
+        "/app/tokens/background",
         // `/app/timeline/background` was here until 2026-08-14, when the
         // timeline conversion landed and made it a real 200 serving the app's
         // background fragment. The INVARIANT is unchanged -- an unconverted
