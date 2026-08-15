@@ -49,6 +49,32 @@ pub enum OperationError {
     },
 }
 
+/// Failure while establishing or using the local support-portal identity.
+#[derive(Debug, Error)]
+pub enum PortalClientError {
+    /// A portal request could not be sent or its response could not be read.
+    #[error("Support portal request failed: {message}")]
+    Transport { message: String },
+    /// The portal returned a status the reference treats as an error.
+    #[error("{message}")]
+    HttpStatus { message: String },
+    /// Every reference-compatible handle retry collided.
+    #[error("Could not find an available support portal handle.")]
+    HandleCollision,
+    /// `keypair.pem` could not be parsed by either required crypto view.
+    #[error("Support portal keypair is invalid: {message}")]
+    KeypairInvalid { message: String },
+    /// Durable portal state could not be read or written.
+    #[error("Support portal state is unavailable: {message}")]
+    Storage { message: String },
+    /// A local JSON value had the wrong shape for the reference protocol.
+    #[error("Support portal state is invalid: {message}")]
+    State { message: String },
+    /// Signing failed unexpectedly.
+    #[error("Support portal signing failed: {message}")]
+    Signing { message: String },
+}
+
 impl OperationError {
     /// Return the owner-visible reason code when routes map this error directly.
     pub const fn reason_code(&self) -> Option<&'static str> {
