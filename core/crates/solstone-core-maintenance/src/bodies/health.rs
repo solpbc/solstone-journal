@@ -15,7 +15,7 @@ use solstone_core_retention::logs::{
     Compaction, EntryKind, Kept, LogPlan, LogPolicy, day_key, plan as plan_logs, plan_compactions,
 };
 use solstone_core_retention::marks::{Proposal, RemovalClass, load, reconcile};
-use solstone_core_retention::policy::{Anchor, Days, Policy, Rule};
+use solstone_core_retention::policy::{policy_from_retention, policy_would_release};
 use solstone_core_retention::receipt::Outcome;
 use solstone_core_retention::sweep::plan as plan_sweep;
 
@@ -240,83 +240,6 @@ fn positive_config_days(value: &Value) -> Option<u32> {
         _ => None,
     }
     .filter(|days| *days >= 1)
-}
-
-fn policy_from_retention(retention: &Map<String, Value>) -> Policy {
-    let default_rule = rule(
-        retention
-            .get("raw_media")
-            .and_then(Value::as_str)
-            .unwrap_or("keep"),
-        retention.get("raw_media_days"),
-    );
-    let per_stream = retention
-        .get("per_stream")
-        .and_then(Value::as_object)
-        .into_iter()
-        .flat_map(|streams| streams.iter())
-        .filter_map(|(name, stream)| {
-            let stream = stream.as_object()?;
-            Some((
-                name.clone(),
-                rule(
-                    stream
-                        .get("raw_media")
-                        .and_then(Value::as_str)
-                        .unwrap_or("keep"),
-                    stream.get("raw_media_days"),
-                ),
-            ))
-        })
-        .collect();
-    let minimum_age = python_int(retention.get("raw_media_minimum_days"))
-        .unwrap_or(0)
-        .max(0);
-    Policy {
-        default_rule,
-        per_stream,
-        minimum_age: Days(u32::try_from(minimum_age).unwrap_or(u32::MAX)),
-        enabled: true,
-    }
-}
-
-fn rule(mode: &str, days: Option<&Value>) -> Rule {
-    match mode {
-        "days" => match python_int(days).and_then(|days| u32::try_from(days).ok()) {
-            Some(days) if days > 0 => Rule {
-                anchor: Anchor::Captured,
-                period: Some(Days(days)),
-                priority: 0,
-            },
-            _ => Rule::keep(),
-        },
-        "processed" => Rule {
-            anchor: Anchor::Processed,
-            period: Some(Days(0)),
-            priority: 0,
-        },
-        _ => Rule::keep(),
-    }
-}
-
-fn python_int(value: Option<&Value>) -> Option<i64> {
-    match value? {
-        Value::Bool(value) => Some(i64::from(*value)),
-        Value::Number(number) => number
-            .as_i64()
-            .or_else(|| number.as_u64().and_then(|value| i64::try_from(value).ok()))
-            .or_else(|| number.as_f64().map(|value| value as i64)),
-        Value::String(value) => value.trim().parse().ok(),
-        _ => None,
-    }
-}
-
-fn policy_would_release(policy: &Policy) -> bool {
-    policy.default_rule.period.is_some()
-        || policy
-            .per_stream
-            .iter()
-            .any(|(_, rule)| rule.period.is_some())
 }
 
 fn policy_mark_ids(

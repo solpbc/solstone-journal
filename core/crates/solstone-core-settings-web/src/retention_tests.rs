@@ -18,7 +18,7 @@ use tempfile::TempDir;
 use tokio::sync::{Mutex, MutexGuard};
 use tower::ServiceExt;
 
-use crate::retention::{policy_payload, policy_would_release};
+use solstone_core_retention::policy::{policy_from_retention, policy_would_release};
 
 const STUB_EXECUTOR: &str = r#"#!/bin/sh
 for _a in "$@"; do printf '%s\n' "$_a" >> "$ORACLE_STUB_LOG"; done
@@ -781,10 +781,24 @@ fn ac6_policy_would_release_has_python_zero_polarity() {
         (json!({"raw_media":"days","raw_media_days":"ninety"}), false),
         (json!({"raw_media":"days","raw_media_days":-1}), false),
         (json!({"raw_media":"days","raw_media_days":true}), true),
+        (json!({"raw_media":"days","raw_media_days":7.5}), false),
+        (json!({"raw_media":"days","raw_media_days":" 30 "}), true),
     ] {
         assert_eq!(
-            policy_would_release(&policy_payload(retention.as_object().expect("retention"))),
+            policy_would_release(&policy_from_retention(
+                retention.as_object().expect("retention")
+            )),
             expected
         );
     }
+}
+
+#[test]
+fn ac6_fractional_minimum_age_rounds_up() {
+    let policy = policy_from_retention(
+        json!({"raw_media":"days","raw_media_days":30,"raw_media_minimum_days":7.5})
+            .as_object()
+            .expect("retention"),
+    );
+    assert_eq!(policy.minimum_age.0, 8);
 }
