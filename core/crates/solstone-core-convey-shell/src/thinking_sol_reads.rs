@@ -363,11 +363,11 @@ fn facets(journal: &Path) -> BTreeMap<String, Value> {
                 .ok()
                 .flatten()
                 .map(|facet| {
-                    let title = if facet.title.is_empty() {
-                        name.clone()
-                    } else {
-                        facet.title
-                    };
+                    let title = facet
+                        .value()
+                        .get("title")
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(name.clone()));
                     (name, json!({"title": title, "color": facet.color}))
                 })
         })
@@ -486,8 +486,9 @@ fn active_use(path: &Path, journal: &Path) -> Option<(String, Value)> {
     let day = request
         .get("day")
         .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
+        .filter(|day| !day.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| use_id_to_day(&id));
     Some((
         day,
         json!({
@@ -728,21 +729,28 @@ fn output_file(request: &Value, journal: &Path) -> Result<Option<String>, String
     {
         PathBuf::from(path)
     } else {
-        let day = request
+        let Some(day) = request
             .get("day")
             .and_then(Value::as_str)
-            .unwrap_or_default();
+            .filter(|day| !day.is_empty())
+        else {
+            return Ok(None);
+        };
         let name = request
             .get("name")
             .and_then(Value::as_str)
             .unwrap_or_default();
         get_output_path(
-            &journal.join("chronicle").join(day),
+            &journal.join(day),
             name,
             request.get("segment").and_then(Value::as_str),
             output.as_str(),
             request.get("facet").and_then(Value::as_str),
-            request.get("stream").and_then(Value::as_str),
+            request
+                .get("env")
+                .and_then(Value::as_object)
+                .and_then(|env| env.get("SOL_STREAM"))
+                .and_then(Value::as_str),
         )
     };
     if !path.exists() {
@@ -751,7 +759,7 @@ fn output_file(request: &Value, journal: &Path) -> Result<Option<String>, String
     let day_dir = request
         .get("day")
         .and_then(Value::as_str)
-        .map(|day| journal.join("chronicle").join(day));
+        .map(|day| journal.join(day));
     // Run detail intentionally stays lexical: the UI may name an in-day symlink
     // even when following it would escape the journal; fetch enforces containment.
     if let Some(day_dir) = day_dir.filter(|day_dir| path.starts_with(day_dir)) {
@@ -763,6 +771,20 @@ fn output_file(request: &Value, journal: &Path) -> Result<Option<String>, String
     path.strip_prefix(journal)
         .map(|path| Some(path.display().to_string()))
         .map_err(|error| error.to_string())
+}
+
+fn use_id_to_day(use_id: &str) -> String {
+    use_id
+        .parse::<i64>()
+        .ok()
+        .and_then(chrono::DateTime::<chrono::Utc>::from_timestamp_millis)
+        .map(|timestamp| {
+            timestamp
+                .with_timezone(&chrono::Local)
+                .format("%Y%m%d")
+                .to_string()
+        })
+        .unwrap_or_default()
 }
 
 fn day_key(value: &str) -> bool {

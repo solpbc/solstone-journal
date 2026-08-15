@@ -366,6 +366,45 @@ async fn ac3_day_index_io_error_keeps_active_run() {
 }
 
 #[tokio::test]
+async fn ac3_active_use_day_falls_back_to_use_id() {
+    let fixture = Fixture::new();
+    fixture.established();
+    let timestamp = 1_710_030_600_000i64;
+    let local_day = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(timestamp)
+        .expect("timestamp")
+        .with_timezone(&chrono::Local)
+        .format("%Y%m%d")
+        .to_string();
+    let mut no_day = request_event_at("1710030600000", "unused", "fallback", None, timestamp);
+    no_day.as_object_mut().expect("request event").remove("day");
+    write_jsonl(
+        &fixture
+            .0
+            .join("talents/fallback/1710030600000_active.jsonl"),
+        &[no_day],
+    );
+    let mut invalid_id = request_event("not-a-number", "unused", "invalid", None);
+    invalid_id
+        .as_object_mut()
+        .expect("request event")
+        .remove("day");
+    write_jsonl(
+        &fixture.0.join("talents/fallback/not-a-number_active.jsonl"),
+        &[invalid_id],
+    );
+
+    let (status, body) = get(
+        router(fixture.0.clone()),
+        &format!("/app/thinking/api/talents/{local_day}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["uses"].as_array().expect("uses").len(), 1);
+    assert_eq!(body["uses"][0]["id"], "1710030600000");
+}
+
+#[tokio::test]
 async fn ac3_facet_query_cookie_and_empty_precedence() {
     let fixture = Fixture::new();
     fixture.established();
@@ -400,6 +439,30 @@ async fn ac3_facet_query_cookie_and_empty_precedence() {
     )
     .await;
     assert_eq!(empty["uses"][0]["id"], "empty");
+}
+
+#[tokio::test]
+async fn ac3_facet_metadata_preserves_explicit_empty_title() {
+    let fixture = Fixture::new();
+    fixture.established();
+    write_json(
+        &fixture.0.join("facets/absent-title/facet.json"),
+        json!({"color":"blue"}),
+    );
+    write_json(
+        &fixture.0.join("facets/empty-title/facet.json"),
+        json!({"title":"","color":"green"}),
+    );
+
+    let (status, body) = get(
+        router(fixture.0.clone()),
+        "/app/thinking/api/talents/20260403",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["facets"]["absent-title"]["title"], "absent-title");
+    assert_eq!(body["facets"]["empty-title"]["title"], "");
 }
 
 #[tokio::test]
@@ -461,6 +524,14 @@ async fn ac5_output_oracle_and_containment() {
     empty.established();
     let (status, body) = get(
         router(empty.0.clone()),
+        "/app/thinking/api/output/20260403/talents/example-output.md",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body, corpus_body("established_empty", "api_output"));
+    let (status, body) = get(
+        router(empty.0.clone()),
         "/app/thinking/api/output/20260403/../../etc/passwd",
         None,
     )
@@ -516,7 +587,7 @@ async fn ac5_run_output_path_and_fetch_containment_asymmetry() {
     );
     let (status, run) = get(app.clone(), "/app/thinking/api/run/link-run", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(run["output_file"], "talents/link.md");
+    assert_eq!(run["output_file"], "chronicle/20260403/talents/link.md");
     let (status, fetch) = get(
         app,
         "/app/thinking/api/output/20260403/talents/link.md",
@@ -529,6 +600,73 @@ async fn ac5_run_output_path_and_fetch_containment_asymmetry() {
         json!({"error":"I couldn't use that path.","reason_code":"invalid_path","detail":"Invalid path"})
     );
     let _ = fs::remove_file(outside);
+}
+
+#[tokio::test]
+async fn ac5_derived_output_paths_use_env_stream() {
+    let fixture = Fixture::new();
+    fixture.established();
+    let day = "20260403";
+    let streamed = fixture
+        .0
+        .join("20260403/stream-a/segment-a/talents/streamed.md");
+    let no_env = fixture.0.join("20260403/segment-a/talents/no-env.md");
+    let active = fixture
+        .0
+        .join("20260403/stream-a/segment-a/talents/active-stream.md");
+    for path in [&streamed, &no_env, &active] {
+        fs::create_dir_all(path.parent().expect("output parent")).expect("output parent");
+        fs::write(path, "output").expect("output");
+    }
+    let mut streamed_request = request_event("streamed", day, "streamed", None);
+    streamed_request["output"] = json!("md");
+    streamed_request["segment"] = json!("segment-a");
+    streamed_request["env"] = json!({"SOL_STREAM":"stream-a"});
+    write_jsonl(
+        &fixture.0.join("talents/derived/streamed.jsonl"),
+        &[
+            streamed_request,
+            json!({"event":"finish", "usage":{"input_tokens":1,"output_tokens":1}}),
+        ],
+    );
+    let mut no_env_request = request_event("no-env", day, "no-env", None);
+    no_env_request["output"] = json!("md");
+    no_env_request["segment"] = json!("segment-a");
+    write_jsonl(
+        &fixture.0.join("talents/derived/no-env.jsonl"),
+        &[
+            no_env_request,
+            json!({"event":"finish", "usage":{"input_tokens":1,"output_tokens":1}}),
+        ],
+    );
+    let mut active_request = request_event("active-stream", day, "active-stream", None);
+    active_request["output"] = json!("md");
+    active_request["segment"] = json!("segment-a");
+    active_request["env"] = json!({"SOL_STREAM":"stream-a"});
+    write_jsonl(
+        &fixture.0.join("talents/derived/active-stream_active.jsonl"),
+        &[active_request],
+    );
+
+    let app = router(fixture.0.clone());
+    let (_, streamed_run) = get(app.clone(), "/app/thinking/api/run/streamed", None).await;
+    assert_eq!(
+        streamed_run["output_file"],
+        "stream-a/segment-a/talents/streamed.md"
+    );
+    let (_, no_env_run) = get(app.clone(), "/app/thinking/api/run/no-env", None).await;
+    assert_eq!(no_env_run["output_file"], "segment-a/talents/no-env.md");
+    let (_, uses) = get(app, "/app/thinking/api/talents/20260403", None).await;
+    let active_use = uses["uses"]
+        .as_array()
+        .expect("uses")
+        .iter()
+        .find(|use_info| use_info["id"] == "active-stream")
+        .expect("active use");
+    assert_eq!(
+        active_use["output_file"],
+        "stream-a/segment-a/talents/active-stream.md"
+    );
 }
 
 #[tokio::test]
@@ -728,7 +866,10 @@ async fn ac8_badge_counts_only_failed_and_updated_days_excludes_today() {
         None,
     )
     .await;
-    assert_eq!(updated, json!([]));
+    assert_eq!(
+        updated,
+        corpus_body("established_empty", "api_updated_days")
+    );
     let (_, badge) = get(
         router(empty.0.clone()),
         "/app/thinking/api/badge-count",
