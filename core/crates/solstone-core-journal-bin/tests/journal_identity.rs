@@ -3,6 +3,9 @@
 
 #![cfg(unix)]
 
+#[path = "support/python_process_control.rs"]
+mod python_process_control;
+
 use std::env;
 use std::fs;
 use std::io::{ErrorKind, Read, Write};
@@ -779,33 +782,32 @@ fn journal_identity_exec_replaces_itself_and_forwards_process_argv() {
         "-V",
         "a.b.c",
     ];
+    let token = python_process_control::token();
     let mut command = Command::new(&layout.binary);
     command
         .arg("-v")
-        .arg("up")
+        .arg(token)
         .args(owner)
         .env("RECORD_FILE", &record)
         .env("VERBOSE_RECORD_FILE", &verbose_record);
     let mut child = command.spawn().expect("installed journal should start");
     let pid = child.id();
     let recorded = wait_for_record(&record);
-    let expected = [
-        vec![
-            b"-c".to_vec(),
-            solstone_core_journal_cli::python_bootstrap_script()
-                .as_bytes()
-                .to_vec(),
-            b"solstone.think.service".to_vec(),
-            b"journal up".to_vec(),
-            b"1".to_vec(),
-            b"up".to_vec(),
-        ],
-        owner
+    let mut expected = vec![
+        b"-c".to_vec(),
+        solstone_core_journal_cli::python_bootstrap_script()
+            .as_bytes()
+            .to_vec(),
+        python_process_control::module().as_bytes().to_vec(),
+        format!("journal {token}").into_bytes(),
+        b"1".to_vec(),
+    ];
+    expected.extend(
+        python_process_control::preset_argv()
             .iter()
-            .map(|argument| argument.as_bytes().to_vec())
-            .collect(),
-    ]
-    .concat();
+            .map(|argument| argument.as_bytes().to_vec()),
+    );
+    expected.extend(owner.iter().map(|argument| argument.as_bytes().to_vec()));
     assert_eq!(recorded, expected);
     assert_eq!(
         fs::read_to_string(&verbose_record).expect("read verbose record"),
