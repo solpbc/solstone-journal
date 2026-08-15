@@ -37,35 +37,15 @@ mod tests {
     use axum::{body::to_bytes, http::Request};
     use tower::ServiceExt;
 
-    use super::WORKSPACE;
+    use super::{SETTINGS_JS, WORKSPACE};
     use crate::test_support::{established_root, shell_router};
 
     #[tokio::test]
-    async fn ac13_assets_match_python_sources_and_workspace_serves_embedded_bytes() {
-        // Retire this half when the settings Python surface is deleted; until then it makes that cut safe.
-        assert_eq!(
-            include_bytes!("../assets/workspace.html"),
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../solstone/apps/settings/workspace.html"
-            )),
-        );
-        assert_eq!(
-            include_bytes!("../assets/settings.js"),
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../solstone/apps/settings/static/settings.js"
-            )),
-        );
-        assert_eq!(
-            include_bytes!("../assets/copy.py"),
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../solstone/apps/settings/copy.py"
-            )),
-        );
+    async fn ac13_embedded_assets_are_served_verbatim() {
         let root = established_root();
-        let response = shell_router(root.path())
+        let router = shell_router(root.path());
+        let workspace = router
+            .clone()
             .oneshot(
                 Request::get("/app/settings/workspace")
                     .body(axum::body::Body::empty())
@@ -74,10 +54,24 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(
-            to_bytes(response.into_body(), usize::MAX)
+            to_bytes(workspace.into_body(), usize::MAX)
                 .await
                 .expect("body"),
             WORKSPACE
+        );
+        let settings_js = router
+            .oneshot(
+                Request::get("/app/settings/static/settings.js")
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(
+            to_bytes(settings_js.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+            SETTINGS_JS
         );
     }
 }

@@ -105,6 +105,7 @@
               "pairing_relay_unavailable",
               "pairing_request_invalid",
               "pl_revoked",
+              "plaud_validation_unavailable",
               "principal_entity_protected",
               "provider_key_missing",
               "push_request_invalid",
@@ -1399,7 +1400,6 @@
       "progress",
       "text_delta",
       "tool_budget_exhausted",
-      "warning",
       "budget_escalation"
     ],
     "importer": [
@@ -1513,7 +1513,6 @@
           "progress",
           "text_delta",
           "tool_budget_exhausted",
-          "warning",
           "budget_escalation"
         ],
         "importer": [

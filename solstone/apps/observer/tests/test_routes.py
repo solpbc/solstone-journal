@@ -22,12 +22,13 @@ import solstone.apps.observer.routes as routes_module
 import solstone.apps.observer.utils as observer_utils
 import solstone.convey.bridge as convey_bridge
 import solstone.observe.observer_cli as observer_cli_module
-from solstone.apps.observer.routes import (
+from solstone.apps.observer.presentation import (
     ACTIVE_THRESHOLD_MS,
     FUTURE_CLOCK_DRIFT_TOLERANCE_MS,
     OBSERVER_STATE_LABELS,
     STALE_THRESHOLD_MS,
-    _classify_observer_freshness,
+    classify_observer_freshness,
+    serialize_observer,
 )
 from solstone.apps.observer.utils import (
     append_history_record,
@@ -36,7 +37,6 @@ from solstone.apps.observer.utils import (
     sanitize_validation_summary,
     save_observer,
 )
-from solstone.convey.copy import OBSERVER_CALLOSUM_LIVE_LABEL
 from solstone.convey.secure_listener import ConveyIdentity
 from solstone.convey.sol_initiated.copy import KIND_SOL_CHAT_REQUEST
 from solstone.observe.processing_record import (
@@ -48,8 +48,6 @@ from solstone.observe.processing_record import (
 )
 from solstone.observe.protocol import OBSERVER_HANDLE_HEADER, OBSERVER_PROTOCOL_VERSION
 from solstone.think.contract.journal import ContractIssue
-from solstone.think.link.auth import AuthorizedClients
-from solstone.think.link.paths import authorized_clients_path
 from solstone.think.streams import update_stream, write_segment_stream
 
 PL_FINGERPRINT = "sha256:" + ("c" * 64)
@@ -66,16 +64,6 @@ def _pl_identity(fingerprint: str = PL_FINGERPRINT) -> ConveyIdentity:
     )
 
 
-def _api_list_payload(env):
-    resp = env.client.get("/app/observer/api/list")
-    assert resp.status_code == 200
-    return resp.get_json()
-
-
-def _api_list_observers(env):
-    return _api_list_payload(env)["observers"]
-
-
 def test_observer_state_labels_use_device_copy():
     assert OBSERVER_STATE_LABELS == {
         "connected": "connected",
@@ -83,15 +71,6 @@ def test_observer_state_labels_use_device_copy():
         "disconnected": "offline",
         "revoked": "removed",
     }
-
-
-def test_observer_index_serves_injected_spa_shell(observer_env):
-    env = observer_env()
-
-    response = env.client.get("/app/observer/")
-
-    assert response.status_code == 200
-    assert b'data-solstone-shell="spa"' in response.data
 
 
 def _day_dir(env, day: str = "20250103"):
@@ -494,53 +473,13 @@ def _plant_location_segment(
     return seg_dir
 
 
-def _save_test_observer(
-    key_prefix: str,
-    name: str,
-    *,
-    created_at: int,
-    last_seen: int | None,
-    revoked: bool = False,
-    enabled: bool = True,
-    health: dict | None = None,
-):
-    key = key_prefix + ("f" * 56)
-    record = {
-        "key": key,
-        "name": name,
-        "created_at": created_at,
-        "last_seen": last_seen,
-        "last_segment": None,
-        "enabled": enabled,
-        "revoked": revoked,
-        "revoked_at": created_at + 1 if revoked else None,
-        "stats": {
-            "segments_received": 0,
-            "bytes_received": 0,
-        },
-    }
-    if health is not None:
-        record["health"] = health
-    assert save_observer(record)
-    return key
 
 
-def _raw_ingest_rejection() -> dict:
-    return {
-        "reason_code": "ingest_contract_invalid",
-        "active_count": 79,
-        "first_ts": 1_781_999_200_000,
-        "latest_ts": 1_782_000_000_000,
-        "summary": "screen.jsonl:2: value is invalid",
-        "stream": "fedora",
-        "version": "0.3.1",
-        "segment": "20260622/120000_300",
-    }
 
 
 def test_classifier_last_seen_none_returns_disconnected():
     """Missing last_seen is classified as disconnected."""
-    assert _classify_observer_freshness(None, False, 1_000_000) == {
+    assert classify_observer_freshness(None, False, 1_000_000) == {
         "state": "disconnected",
         "group": "inactive",
         "elapsed_ms": None,
@@ -553,7 +492,7 @@ def test_classifier_future_within_tolerance_returns_connected_no_skew():
     current_now = 1_000_000
     assert 60_000 < FUTURE_CLOCK_DRIFT_TOLERANCE_MS
 
-    assert _classify_observer_freshness(current_now + 60_000, False, current_now) == {
+    assert classify_observer_freshness(current_now + 60_000, False, current_now) == {
         "state": "connected",
         "group": "active",
         "elapsed_ms": 0,
@@ -567,7 +506,7 @@ def test_classifier_future_beyond_tolerance_returns_disconnected_with_skew():
     last_seen = current_now + (10 * 60_000)
     assert (10 * 60_000) > FUTURE_CLOCK_DRIFT_TOLERANCE_MS
 
-    result = _classify_observer_freshness(last_seen, False, current_now)
+    result = classify_observer_freshness(last_seen, False, current_now)
 
     assert result["state"] == "disconnected"
     assert result["group"] == "inactive"
@@ -579,7 +518,7 @@ def test_classifier_just_under_active_returns_connected():
     """Elapsed time just under the active threshold stays connected."""
     current_now = 1_000_000
 
-    assert _classify_observer_freshness(
+    assert classify_observer_freshness(
         current_now - (ACTIVE_THRESHOLD_MS - 1),
         False,
         current_now,
@@ -595,7 +534,7 @@ def test_classifier_just_over_active_returns_stale():
     """Elapsed time at the active threshold enters the stale bucket."""
     current_now = 1_000_000
 
-    assert _classify_observer_freshness(
+    assert classify_observer_freshness(
         current_now - ACTIVE_THRESHOLD_MS,
         False,
         current_now,
@@ -611,7 +550,7 @@ def test_classifier_beyond_stale_returns_disconnected():
     """Elapsed time at the stale threshold becomes disconnected."""
     current_now = 1_000_000
 
-    assert _classify_observer_freshness(
+    assert classify_observer_freshness(
         current_now - STALE_THRESHOLD_MS,
         False,
         current_now,
@@ -633,22 +572,162 @@ def test_classifier_revoked_returns_revoked_regardless_of_last_seen():
         "clock_skew": False,
     }
 
-    assert _classify_observer_freshness(None, True, current_now) == expected
-    assert _classify_observer_freshness(current_now, True, current_now) == expected
+    assert classify_observer_freshness(None, True, current_now) == expected
+    assert classify_observer_freshness(current_now, True, current_now) == expected
 
 
-def test_api_list_empty(observer_env):
-    """Test listing observers when none exist."""
+def test_serialize_observer_shows_created_observer(observer_env):
     env = observer_env()
+    resp = env.register_bound_observer("my-observer")
+    assert resp.status_code == 200
+    key_prefix = resp.get_json()["prefix"]
+    key = resp.get_json()["key"]
+    record = observer_utils.load_observer(key)
+    assert record is not None
+    observers = [serialize_observer(record, 0)]
 
-    assert _api_list_payload(env) == {
-        "thresholds": {
-            "active_ms": 30000,
-            "stale_ms": 120000,
-        },
-        "labels": dict(live=OBSERVER_CALLOSUM_LIVE_LABEL),
-        "observers": [],
+    assert len(observers) == 1
+    assert observers[0]["prefix"] == key_prefix
+    assert "key_prefix" not in observers[0]
+    assert observers[0]["name"] == "my-observer"
+    assert observers[0]["enabled"] is True
+    assert observers[0]["stats"]["segments_received"] == 0
+    assert observers[0]["state"] == "disconnected"
+    assert observers[0]["group"] == "inactive"
+    assert observers[0]["label"] == OBSERVER_STATE_LABELS["disconnected"]
+    assert observers[0]["elapsed_ms"] is None
+    assert observers[0]["clock_skew"] is False
+    assert observers[0]["last_chat_request_at"] is None
+
+
+def test_serialize_observer_includes_last_chat_request_at(observer_env):
+    env = observer_env()
+    resp = env.register_bound_observer("my-observer")
+    assert resp.status_code == 200
+    key_prefix = resp.get_json()["prefix"]
+    key = resp.get_json()["key"]
+    handle = convey_bridge.register_sse_subscriber(key_prefix)
+    try:
+        convey_bridge._broadcast_to_sse_clients(
+            {"tract": "chat", "event": KIND_SOL_CHAT_REQUEST, "ts": 9876}
+        )
+        observer = observer_utils.load_observer(key)
+        assert observer is not None
+        serialized = serialize_observer(observer, 0)
+    finally:
+        convey_bridge.unregister_sse_subscriber(handle)
+        with convey_bridge._SSE_LOCK:
+            convey_bridge._SSE_LAST_CHAT_REQUEST_AT_BY_KEY.pop(key_prefix, None)
+
+    assert serialized["prefix"] == key_prefix
+    assert serialized["last_chat_request_at"] == 9876
+
+
+def _raw_ingest_rejection() -> dict:
+    return {
+        "reason_code": "ingest_contract_invalid",
+        "active_count": 79,
+        "first_ts": 1_781_999_200_000,
+        "latest_ts": 1_782_000_000,
+        "summary": "screen.jsonl:2: value is invalid",
+        "stream": "fedora",
+        "version": "0.3.1",
+        "segment": "20260622/120000_300",
     }
+
+
+def test_serialize_observer_includes_failing_ingest_rejection_without_segment():
+    observer = serialize_observer(
+        {
+            "key": "feda0000" + ("f" * 56),
+            "name": "fedora",
+            "created_at": 10,
+            "last_seen": 5_995_000,
+            "enabled": True,
+            "revoked": False,
+            "stats": {},
+            "health": {"ingest_rejection": _raw_ingest_rejection()},
+        },
+        6_000_000,
+    )
+
+    assert observer["failing"] is True
+    assert set(observer["ingest_rejection"]) == {
+        "reason_code",
+        "active_count",
+        "first_ts",
+        "latest_ts",
+        "summary",
+        "stream",
+        "version",
+    }
+    assert "segment" not in observer["ingest_rejection"]
+
+
+def test_serialize_observer_omits_ingest_rejection_when_not_failing():
+    records = {
+        "no-rejection": {
+            "key": "aaaa0000" + ("f" * 56),
+            "name": "no-rejection",
+            "created_at": 10,
+            "last_seen": 6_995_000,
+            "enabled": True,
+            "revoked": False,
+            "stats": {},
+        },
+        "revoked-with-rejection": {
+            "key": "bbbb0000" + ("f" * 56),
+            "name": "revoked-with-rejection",
+            "created_at": 20,
+            "last_seen": 6_995_000,
+            "enabled": True,
+            "revoked": True,
+            "stats": {},
+            "health": {"ingest_rejection": _raw_ingest_rejection()},
+        },
+        "disabled-with-rejection": {
+            "key": "cccc0000" + ("f" * 56),
+            "name": "disabled-with-rejection",
+            "created_at": 30,
+            "last_seen": 6_995_000,
+            "enabled": False,
+            "revoked": False,
+            "stats": {},
+            "health": {"ingest_rejection": _raw_ingest_rejection()},
+        },
+    }
+    observers = {
+        name: serialize_observer(record, 7_000_000)
+        for name, record in records.items()
+    }
+
+    for name in [
+        "no-rejection",
+        "revoked-with-rejection",
+        "disabled-with-rejection",
+    ]:
+        assert observers[name]["failing"] is False
+        assert "ingest_rejection" not in observers[name]
+
+
+def test_serialize_observer_includes_segments_observed_stat():
+    record = {
+        "key": "stats000" + ("f" * 56),
+        "name": "stats-test",
+        "created_at": 10,
+        "last_seen": None,
+        "enabled": True,
+        "revoked": False,
+        "stats": {},
+    }
+    data = serialize_observer(record, 0)
+    assert "segments_observed" not in data["stats"]
+
+    record["stats"]["segments_observed"] = 5
+    data = serialize_observer(record, 0)
+    assert data["stats"]["segments_observed"] == 5
+
+
 
 
 def test_register_bound_observer_helper_mints_cert_bound_record(observer_env):
@@ -674,354 +753,28 @@ def test_register_bound_observer_helper_mints_cert_bound_record(observer_env):
     assert record["device_binding"]["device"] == env.pl_identity().fingerprint
 
 
-def test_api_create_refuses_hand_mint(observer_env):
-    env = observer_env()
-
-    resp = env.client.post(
-        "/app/observer/api/create",
-        json={"name": "test-laptop"},
-        content_type="application/json",
-    )
-    body = resp.get_json()
-    assert resp.status_code == 410
-    assert body["reason_code"] == "operation_no_longer_available"
-    assert body["detail"] == (
-        "Observer records are no longer created by hand. "
-        "A device registers itself when you pair it."
-    )
 
 
-def test_api_list_shows_created_observer(observer_env):
-    """Test that created observers appear in the list."""
-    env = observer_env()
-
-    # Create a observer
-    resp = env.register_bound_observer("my-observer")
-    assert resp.status_code == 200
-    key_prefix = resp.get_json()["prefix"]
-
-    # List should show it
-    payload = _api_list_payload(env)
-    observers = payload["observers"]
-
-    assert len(observers) == 1
-    assert payload["thresholds"] == {"active_ms": 30000, "stale_ms": 120000}
-    assert observers[0]["prefix"] == key_prefix
-    assert "key_prefix" not in observers[0]
-    assert observers[0]["name"] == "my-observer"
-    assert observers[0]["enabled"] is True
-    assert observers[0]["stats"]["segments_received"] == 0
-    assert observers[0]["state"] == "disconnected"
-    assert observers[0]["group"] == "inactive"
-    assert observers[0]["label"] == OBSERVER_STATE_LABELS["disconnected"]
-    assert observers[0]["elapsed_ms"] is None
-    assert observers[0]["clock_skew"] is False
-    assert observers[0]["last_chat_request_at"] is None
 
 
-def test_api_list_includes_last_chat_request_at(observer_env):
-    env = observer_env()
-    resp = env.register_bound_observer("my-observer")
-    assert resp.status_code == 200
-    key_prefix = resp.get_json()["prefix"]
-    handle = convey_bridge.register_sse_subscriber(key_prefix)
-    try:
-        convey_bridge._broadcast_to_sse_clients(
-            {"tract": "chat", "event": KIND_SOL_CHAT_REQUEST, "ts": 9876}
-        )
-        observers = _api_list_observers(env)
-    finally:
-        convey_bridge.unregister_sse_subscriber(handle)
-        with convey_bridge._SSE_LOCK:
-            convey_bridge._SSE_LAST_CHAT_REQUEST_AT_BY_KEY.pop(key_prefix, None)
-
-    assert observers[0]["prefix"] == key_prefix
-    assert observers[0]["last_chat_request_at"] == 9876
 
 
-def test_api_delete_observer(observer_env):
-    """Test revoking a observer (soft-delete)."""
-    env = observer_env()
-
-    # Create a observer
-    resp = env.register_bound_observer("to-revoke")
-    key_prefix = resp.get_json()["prefix"]
-
-    # Revoke it
-    resp = env.client.delete(f"/app/observer/api/{key_prefix}")
-    assert resp.status_code == 200
-    assert resp.get_json()["status"] == "ok"
-
-    # List should still show it, but marked as revoked
-    observers = _api_list_observers(env)
-    assert len(observers) == 1
-    assert observers[0]["prefix"] == key_prefix
-    assert observers[0]["revoked"] is True
-    assert observers[0]["revoked_at"] is not None
-    assert observers[0]["state"] == "revoked"
-    assert observers[0]["group"] == "inactive"
-    assert observers[0]["label"] == OBSERVER_STATE_LABELS["revoked"]
-    assert observers[0]["elapsed_ms"] is None
-    assert observers[0]["clock_skew"] is False
 
 
-def test_api_delete_dl_observer_does_not_touch_authorized_clients(observer_env):
-    env = observer_env()
-    resp = env.register_unbound_observer("dl-delete")
-    key_prefix = resp.get_json()["prefix"]
-    fingerprint = "sha256:" + ("e" * 64)
-    AuthorizedClients(authorized_clients_path()).add(
-        fingerprint,
-        "phone",
-        "inst-1",
-        paired_at="2026-05-20T00:00:00Z",
-    )
-    before = authorized_clients_path().read_bytes()
-
-    resp = env.client.delete(f"/app/observer/api/{key_prefix}")
-
-    assert resp.status_code == 200
-    assert authorized_clients_path().read_bytes() == before
-    assert (
-        AuthorizedClients(authorized_clients_path()).is_authorized(fingerprint) is True
-    )
 
 
-def test_api_list_sorts_by_group_and_last_seen(observer_env, monkeypatch):
-    """api_list orders active, then stale, then inactive with freshest first."""
-    env = observer_env()
-    fixed_now = 2_000_000
-    monkeypatch.setattr(routes_module, "now_ms", lambda: fixed_now)
-
-    _save_test_observer(
-        "cccc0000",
-        "inactive-disconnected",
-        created_at=10,
-        last_seen=fixed_now - 600_000,
-    )
-    _save_test_observer(
-        "bbbb0000",
-        "stale-observer",
-        created_at=20,
-        last_seen=fixed_now - 60_000,
-    )
-    _save_test_observer(
-        "aaaa0000",
-        "active-observer",
-        created_at=30,
-        last_seen=fixed_now - 5_000,
-    )
-    _save_test_observer(
-        "dddd0000",
-        "inactive-never",
-        created_at=40,
-        last_seen=None,
-    )
-
-    observers = _api_list_observers(env)
-    assert [observer["name"] for observer in observers] == [
-        "active-observer",
-        "stale-observer",
-        "inactive-disconnected",
-        "inactive-never",
-    ]
-    assert [
-        (
-            observer["state"],
-            observer["group"],
-            observer["label"],
-            observer["elapsed_ms"],
-            observer["clock_skew"],
-        )
-        for observer in observers
-    ] == [
-        ("connected", "active", OBSERVER_STATE_LABELS["connected"], 5_000, False),
-        ("stale", "stale", OBSERVER_STATE_LABELS["stale"], 60_000, False),
-        (
-            "disconnected",
-            "inactive",
-            OBSERVER_STATE_LABELS["disconnected"],
-            600_000,
-            False,
-        ),
-        (
-            "disconnected",
-            "inactive",
-            OBSERVER_STATE_LABELS["disconnected"],
-            None,
-            False,
-        ),
-    ]
 
 
-def test_api_list_tie_breaks_by_prefix(observer_env, monkeypatch):
-    """Observers with the same last_seen sort by prefix ascending."""
-    env = observer_env()
-    fixed_now = 3_000_000
-    monkeypatch.setattr(routes_module, "now_ms", lambda: fixed_now)
-
-    _save_test_observer(
-        "bbbb0000",
-        "active-b",
-        created_at=10,
-        last_seen=fixed_now - 5_000,
-    )
-    _save_test_observer(
-        "aaaa0000",
-        "active-a",
-        created_at=20,
-        last_seen=fixed_now - 5_000,
-    )
-
-    observers = _api_list_observers(env)
-    assert [observer["prefix"] for observer in observers] == [
-        "aaaa0000",
-        "bbbb0000",
-    ]
-    assert all("key_prefix" not in observer for observer in observers)
-    assert all(observer["state"] == "connected" for observer in observers)
-    assert all(observer["group"] == "active" for observer in observers)
-    assert all(
-        observer["label"] == OBSERVER_STATE_LABELS["connected"]
-        for observer in observers
-    )
 
 
-def test_api_list_revoked_observer_buckets_inactive(observer_env, monkeypatch):
-    """Revoked observers sort in the inactive bucket regardless of last_seen."""
-    env = observer_env()
-    fixed_now = 4_000_000
-    monkeypatch.setattr(routes_module, "now_ms", lambda: fixed_now)
-
-    _save_test_observer(
-        "bbbb0000",
-        "revoked-observer",
-        created_at=10,
-        last_seen=fixed_now - 1_000,
-        revoked=True,
-    )
-    _save_test_observer(
-        "aaaa0000",
-        "stale-observer",
-        created_at=20,
-        last_seen=fixed_now - 60_000,
-    )
-
-    observers = _api_list_observers(env)
-    assert [observer["name"] for observer in observers] == [
-        "stale-observer",
-        "revoked-observer",
-    ]
-    assert observers[0]["state"] == "stale"
-    assert observers[0]["group"] == "stale"
-    assert observers[0]["label"] == OBSERVER_STATE_LABELS["stale"]
-    assert observers[0]["elapsed_ms"] == 60_000
-    assert observers[0]["clock_skew"] is False
-    assert observers[1]["state"] == "revoked"
-    assert observers[1]["group"] == "inactive"
-    assert observers[1]["label"] == OBSERVER_STATE_LABELS["revoked"]
-    assert observers[1]["elapsed_ms"] is None
-    assert observers[1]["clock_skew"] is False
 
 
-def test_api_list_includes_state_and_group_per_observer(observer_env, monkeypatch):
-    """api_list includes freshness state, grouping, label, and skew metadata."""
-    env = observer_env()
-    fixed_now = 5_000_000
-    monkeypatch.setattr(routes_module, "now_ms", lambda: fixed_now)
-
-    _save_test_observer(
-        "aaaa0000",
-        "active-observer",
-        created_at=10,
-        last_seen=fixed_now - 5_000,
-    )
-
-    observer = _api_list_observers(env)[0]
-
-    assert observer["state"] == "connected"
-    assert observer["group"] == "active"
-    assert observer["label"] == OBSERVER_STATE_LABELS["connected"]
-    assert isinstance(observer["elapsed_ms"], int)
-    assert observer["elapsed_ms"] == 5_000
-    assert observer["clock_skew"] is False
 
 
-def test_api_list_serializes_failing_ingest_rejection_without_segment(
-    observer_env, monkeypatch
-):
-    env = observer_env()
-    fixed_now = 6_000_000
-    monkeypatch.setattr(routes_module, "now_ms", lambda: fixed_now)
-
-    _save_test_observer(
-        "feda0000",
-        "fedora",
-        created_at=10,
-        last_seen=fixed_now - 5_000,
-        health={"ingest_rejection": _raw_ingest_rejection()},
-    )
-
-    observer = _api_list_observers(env)[0]
-
-    assert observer["failing"] is True
-    assert set(observer["ingest_rejection"]) == {
-        "reason_code",
-        "active_count",
-        "first_ts",
-        "latest_ts",
-        "summary",
-        "stream",
-        "version",
-    }
-    assert "segment" not in observer["ingest_rejection"]
 
 
-def test_api_list_omits_ingest_rejection_when_not_failing(observer_env, monkeypatch):
-    env = observer_env()
-    fixed_now = 7_000_000
-    monkeypatch.setattr(routes_module, "now_ms", lambda: fixed_now)
-
-    _save_test_observer(
-        "aaaa0000",
-        "no-rejection",
-        created_at=10,
-        last_seen=fixed_now - 5_000,
-    )
-    _save_test_observer(
-        "bbbb0000",
-        "revoked-with-rejection",
-        created_at=20,
-        last_seen=fixed_now - 5_000,
-        revoked=True,
-        health={"ingest_rejection": _raw_ingest_rejection()},
-    )
-    _save_test_observer(
-        "cccc0000",
-        "disabled-with-rejection",
-        created_at=30,
-        last_seen=fixed_now - 5_000,
-        enabled=False,
-        health={"ingest_rejection": _raw_ingest_rejection()},
-    )
-
-    observers = {observer["name"]: observer for observer in _api_list_observers(env)}
-
-    for name in [
-        "no-rejection",
-        "revoked-with-rejection",
-        "disabled-with-rejection",
-    ]:
-        assert observers[name]["failing"] is False
-        assert "ingest_rejection" not in observers[name]
 
 
-def test_api_delete_nonexistent(observer_env):
-    """Test deleting a nonexistent observer returns 404."""
-    env = observer_env()
-
-    resp = env.client.delete("/app/observer/api/nonexistent")
-    assert resp.status_code == 404
 
 
 def test_ingest_invalid_key(observer_env):
@@ -1382,12 +1135,11 @@ def test_ingest_updates_stats(observer_env):
     assert resp.status_code == 200
 
     # Check stats updated
-    observers = _api_list_observers(env)
-    assert len(observers) == 1
-    assert observers[0]["stats"]["segments_received"] == 1
-    assert observers[0]["stats"]["bytes_received"] == len(test_data)
-    assert observers[0]["last_segment"] == "120000_300"
-    assert observers[0]["last_seen"] is not None
+    observer = _observer_record()
+    assert observer["stats"]["segments_received"] == 1
+    assert observer["stats"]["bytes_received"] == len(test_data)
+    assert observer["last_segment"] == "120000_300"
+    assert observer["last_seen"] is not None
 
 
 def test_ingest_persists_last_segment_receipt_freshness(
@@ -1471,7 +1223,7 @@ def test_status_event_refreshes_last_seen_without_segment_receipt(
     assert record["last_segment"] is None
     assert record["last_segment_received_at"] is None
     assert record["last_segment_day"] is None
-    freshness = _classify_observer_freshness(
+    freshness = classify_observer_freshness(
         record["last_seen"],
         record.get("revoked", False),
         event_now,
@@ -1565,8 +1317,7 @@ def test_ingest_revoked_key(observer_env):
     key = data["key"]
     key_prefix = data["prefix"]
 
-    resp = env.client.delete(f"/app/observer/api/{key_prefix}")
-    assert resp.status_code == 200
+    observer_utils.revoke_observer_record(key_prefix)
 
     # Try to upload - should fail
     test_data = b"test content"
@@ -1590,8 +1341,7 @@ def test_keyless_ingest_bearer_rejects_revoked_and_disabled_keys(observer_env):
     revoked_data = resp.get_json()
     revoked_key = revoked_data["key"]
 
-    resp = env.client.delete(f"/app/observer/api/{revoked_data['prefix']}")
-    assert resp.status_code == 200
+    observer_utils.revoke_observer_record(revoked_data["prefix"])
 
     resp = env.client.post(
         "/app/observer/ingest",
@@ -1652,8 +1402,7 @@ def test_ingest_event_revoked_key(observer_env):
     key = data["key"]
     key_prefix = data["prefix"]
 
-    resp = env.client.delete(f"/app/observer/api/{key_prefix}")
-    assert resp.status_code == 200
+    observer_utils.revoke_observer_record(key_prefix)
 
     # Try to send event - should fail
     resp = env.client.post(
@@ -1743,8 +1492,7 @@ def test_observer_health_revoked_key(observer_env):
     data = resp.get_json()
     key = data["key"]
 
-    resp = env.client.delete(f"/app/observer/api/{data['prefix']}")
-    assert resp.status_code == 200
+    observer_utils.revoke_observer_record(data["prefix"])
 
     resp = env.client.post(
         "/app/observer/health",
@@ -1756,92 +1504,14 @@ def test_observer_health_revoked_key(observer_env):
     assert resp.get_json()["reason_code"] == "pl_revoked"
 
 
-def test_api_get_key(observer_env):
-    """Test retrieving full key for a observer."""
-    env = observer_env()
-
-    # Create a observer
-    resp = env.register_bound_observer("key-test")
-    create_data = resp.get_json()
-    key = create_data["key"]
-    key_prefix = create_data["prefix"]
-
-    # Get the key
-    resp = env.client.get(f"/app/observer/api/{key_prefix}/key")
-    assert resp.status_code == 200
-
-    data = resp.get_json()
-    assert data["key"] == key
-    assert data["name"] == "key-test"
-    assert data["ingest_url"] == "/app/observer/ingest"
-    assert key not in data["ingest_url"]
-    assert data["protocol_version"] == OBSERVER_PROTOCOL_VERSION
 
 
-def test_mint_responses_protocol_version_single_source_and_keyless_unconditional(
-    observer_env, monkeypatch
-):
-    monkeypatch.setattr("solstone.observe.protocol.OBSERVER_PROTOCOL_VERSION", 99)
-    env = observer_env()
-
-    resp = env.register_bound_observer("mint-protocol-test")
-    assert resp.status_code == 200
-    create_data = resp.get_json()
-    assert create_data["protocol_version"] == 99
-    assert create_data["ingest_url"] == "/app/observer/ingest"
-
-    resp = env.client.get(f"/app/observer/api/{create_data['prefix']}/key")
-    assert resp.status_code == 200
-    key_data = resp.get_json()
-    assert key_data["protocol_version"] == 99
-    assert key_data["ingest_url"] == "/app/observer/ingest"
 
 
-def test_api_get_key_nonexistent(observer_env):
-    """Test getting key for nonexistent observer returns 404."""
-    env = observer_env()
-
-    resp = env.client.get("/app/observer/api/nonexistent/key")
-    assert resp.status_code == 404
 
 
-def test_api_get_key_revoked(observer_env):
-    """Test getting key for revoked observer returns 403."""
-    env = observer_env()
-
-    # Create then revoke
-    resp = env.register_bound_observer("revoke-key-test")
-    create_data = resp.get_json()
-    key_prefix = create_data["prefix"]
-
-    env.client.delete(f"/app/observer/api/{key_prefix}")
-
-    # Try to get the key
-    resp = env.client.get(f"/app/observer/api/{key_prefix}/key")
-    assert resp.status_code == 403
-    assert "revoked" in resp.get_json()["detail"]
 
 
-def test_api_get_key_audit_log(observer_env):
-    """Test that viewing a key logs an audit action."""
-    from unittest.mock import patch
-
-    env = observer_env()
-
-    resp = env.register_bound_observer("audit-test")
-    create_data = resp.get_json()
-    key_prefix = create_data["prefix"]
-
-    with patch("solstone.apps.observer.routes.log_app_action") as mock_log:
-        resp = env.client.get(f"/app/observer/api/{key_prefix}/key")
-        assert resp.status_code == 200
-
-        mock_log.assert_called_once_with(
-            app="observer",
-            facet=None,
-            action="observer_key_view",
-            params={"name": "audit-test", "key_prefix": key_prefix},
-        )
 
 
 def test_save_to_failed_creates_directory(observer_env):
@@ -1980,9 +1650,7 @@ def test_ingest_stats_use_adjusted_segment(observer_env):
     assert resp.status_code == 200
 
     # Check stats - last_segment should be the adjusted one
-    observers = _api_list_observers(env)
-    assert len(observers) == 1
-    last_segment = observers[0]["last_segment"]
+    last_segment = _observer_record()["last_segment"]
     assert last_segment is not None
     # It should be adjusted (not the original conflicting one)
     assert last_segment != "120000_300"
@@ -2767,7 +2435,7 @@ def test_segments_endpoint_revoked_key(observer_env):
     key = data["key"]
     key_prefix = data["prefix"]
 
-    env.client.delete(f"/app/observer/api/{key_prefix}")
+    observer_utils.revoke_observer_record(key_prefix)
 
     # Query segments - should be rejected
     resp = env.client.get(
@@ -2881,33 +2549,6 @@ def test_segments_endpoint_shows_observed_status(observer_env):
     assert data[0]["observed"] is True
 
 
-def test_api_list_includes_segments_observed_stat(observer_env):
-    """Test that api_list includes segments_observed stat."""
-    env = observer_env()
-
-    # Create a observer
-    resp = env.register_bound_observer("stats-test")
-    data = resp.get_json()
-    key_prefix = data["prefix"]
-
-    # Initially no segments_observed
-    data = _api_list_observers(env)
-    assert len(data) == 1
-    assert "segments_observed" not in data[0]["stats"]
-
-    # Manually add segments_observed stat
-    observer_path = (
-        env.journal / "apps" / "observer" / "observers" / f"{key_prefix}.json"
-    )
-    with open(observer_path) as f:
-        observer_data = json.load(f)
-    observer_data["stats"]["segments_observed"] = 5
-    with open(observer_path, "w") as f:
-        json.dump(observer_data, f)
-
-    # Should now show in list
-    data = _api_list_observers(env)
-    assert data[0]["stats"]["segments_observed"] == 5
 
 
 # === Duplicate detection tests ===
@@ -3112,7 +2753,7 @@ def test_ingest_duplicate_increments_duplicates_rejected_stat(observer_env):
     assert resp.status_code == 200
 
     # Check stats - no duplicates_rejected yet
-    stats = _api_list_observers(env)[0]["stats"]
+    stats = _observer_record()["stats"]
     assert stats.get("duplicates_rejected", 0) == 0
 
     # Submit duplicate
@@ -3129,7 +2770,7 @@ def test_ingest_duplicate_increments_duplicates_rejected_stat(observer_env):
     assert resp.get_json()["status"] == "duplicate"
 
     # Check stats - should have 1 duplicate rejected
-    stats = _api_list_observers(env)[0]["stats"]
+    stats = _observer_record()["stats"]
     assert stats["duplicates_rejected"] == 1
 
 

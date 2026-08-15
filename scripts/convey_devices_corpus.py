@@ -61,13 +61,13 @@ if hasattr(time, "tzset"):
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CORPUS_PATH = REPO_ROOT / "core" / "fixtures" / "convey_devices_corpus.json"
 
-from solstone.apps.observer.routes import (  # noqa: E402
+from solstone.apps.observer.presentation import (  # noqa: E402
     ACTIVE_THRESHOLD_MS,
     FUTURE_CLOCK_DRIFT_TOLERANCE_MS,
     OBSERVER_STATE_LABELS,
     STALE_THRESHOLD_MS,
-    _classify_observer_freshness,
-    _serialize_observer,
+    classify_observer_freshness,
+    serialize_observer,
 )
 
 # A fixed epoch so the corpus is byte-reproducible. Nothing here reads the clock.
@@ -95,7 +95,7 @@ def freshness_cases() -> list[dict]:
     for label, elapsed in ELAPSED_CASES:
         last_seen = None if elapsed is None else NOW - elapsed
         for revoked in (False, True):
-            output = _classify_observer_freshness(last_seen, revoked, NOW)
+            output = classify_observer_freshness(last_seen, revoked, NOW)
             cases.append(
                 {
                     "case": f"{label}_revoked" if revoked else label,
@@ -161,7 +161,7 @@ GROUP_ORDER = {"active": 0, "stale": 1, "inactive": 2}
 
 def serialized_cases() -> list[dict]:
     return [
-        {"input": rec, "output": _serialize_observer(dict(rec), NOW)}
+        {"input": rec, "output": serialize_observer(dict(rec), NOW)}
         for rec in SORT_RECORDS
     ]
 
@@ -183,9 +183,8 @@ def build() -> dict:
     serialized = serialized_cases()
     return {
         "captured_from": [
-            "solstone.apps.observer.routes._classify_observer_freshness",
-            "solstone.apps.observer.routes._serialize_observer",
-            "solstone.apps.observer.routes.api_list (sort comparator)",
+            "solstone.apps.observer.presentation.classify_observer_freshness",
+            "solstone.apps.observer.presentation.serialize_observer",
         ],
         "reference_rev": "0a0632ad73816efe7e4d0fc38b92e732e4f8ceb4",
         "now_ms": NOW,

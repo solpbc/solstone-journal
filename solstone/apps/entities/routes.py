@@ -66,12 +66,10 @@ from solstone.think.entities import (
     add_observation,
     attach_or_reactivate_entity,
     block_journal_entity,
-    count_observations,
     delete_detected_entity,
     detach_facet_entity,
     entity_last_active_day,
     entity_last_active_ts,
-    entity_memory_path,
     entity_slug,
     is_valid_entity_type,
     iter_entity_history,
@@ -103,7 +101,11 @@ from solstone.think.entities.journal import (
     get_journal_principal,
     load_journal_entity,
 )
-from solstone.think.entities.relationships import move_facet_entity
+from solstone.think.entities.relationships import (
+    build_facet_relationships,
+    get_entity_metadata,
+    move_facet_entity,
+)
 from solstone.think.entities.review_candidates import (
     load_candidates,
 )
@@ -153,18 +155,6 @@ def api_state() -> Any:
         )
 
 
-def _get_entity_metadata(facet_name: str, entity_name: str) -> dict:
-    """Get observation count and voiceprint status for an entity."""
-    try:
-        folder = entity_memory_path(facet_name, entity_name)
-    except ValueError:
-        return {"observation_count": 0, "has_voiceprint": False}
-    return {
-        "observation_count": count_observations(facet_name, entity_name),
-        "has_voiceprint": (folder / "voiceprints.npz").exists(),
-    }
-
-
 def get_facet_entities_data(facet_name: str) -> dict:
     """Get entity data for a facet: attached and detected entities.
 
@@ -182,7 +172,7 @@ def get_facet_entities_data(facet_name: str) -> dict:
     for entity in attached:
         name = entity.get("name", "")
         if name:
-            metadata = _get_entity_metadata(facet_name, name)
+            metadata = get_entity_metadata(facet_name, name)
             entity["observation_count"] = metadata["observation_count"]
             entity["has_voiceprint"] = metadata["has_voiceprint"]
         # Add computed activity timestamp for frontend sorting/display
@@ -1264,7 +1254,7 @@ def get_entity(facet_name: str, entity_id: str) -> Any:
         entity = entity.copy()
 
         # Add metadata
-        metadata = _get_entity_metadata(facet_name, entity_name)
+        metadata = get_entity_metadata(facet_name, entity_name)
         entity["observation_count"] = metadata["observation_count"]
         entity["has_voiceprint"] = metadata["has_voiceprint"]
         # Add computed activity timestamp for frontend display
@@ -1710,75 +1700,6 @@ def delete_detected(facet_name: str) -> Any:
 # =============================================================================
 
 
-def _build_facet_relationships(
-    entity_id: str,
-    entity_name: str,
-    facets_config: dict,
-    *,
-    all_relationships: dict[str, dict[str, EntityDict]] | None = None,
-) -> tuple[list, int, int]:
-    """Build facet relationships list for a journal entity.
-
-    Args:
-        entity_id: The entity id
-        entity_name: The entity name
-        facets_config: Dict of facet configs from get_facets()
-
-    Returns:
-        Tuple of (facet_relationships list, total_observation_count, latest_active_ts)
-    """
-    facet_relationships = []
-    total_observation_count = 0
-    latest_active_ts = 0
-
-    for facet_name in facets_config:
-        if all_relationships is None:
-            relationship = load_facet_relationship(facet_name, entity_id)
-        else:
-            relationship = all_relationships.get(facet_name, {}).get(entity_id)
-        if not relationship:
-            continue
-
-        is_detached = relationship.get("detached", False)
-        facet_config = facets_config.get(facet_name, {})
-        metadata = _get_entity_metadata(facet_name, entity_name)
-
-        facet_rel = {
-            "name": facet_name,
-            "title": facet_config.get("title", facet_name),
-            "color": facet_config.get("color", "#888"),
-            "emoji": facet_config.get("emoji", ""),
-            "description": relationship.get("description", ""),
-            "last_seen": relationship.get("last_seen"),
-            "attached_at": relationship.get("attached_at"),
-            "updated_at": relationship.get("updated_at"),
-            "observation_count": metadata["observation_count"],
-            "has_voiceprint": metadata["has_voiceprint"],
-        }
-
-        # Include detached flag if true
-        if is_detached:
-            facet_rel["detached"] = True
-
-        # Compute last_active_ts for this relationship
-        rel_active_ts = entity_last_active_ts(relationship)
-        facet_rel["last_active_ts"] = rel_active_ts
-        facet_rel["last_active_day"] = entity_last_active_day(relationship)
-
-        # Only count observations and activity from non-detached relationships
-        if not is_detached:
-            total_observation_count += metadata["observation_count"]
-            if rel_active_ts > latest_active_ts:
-                latest_active_ts = rel_active_ts
-
-        facet_relationships.append(facet_rel)
-
-    # Sort facet relationships by last_active_ts (most recent first)
-    facet_relationships.sort(key=lambda r: r.get("last_active_ts", 0), reverse=True)
-
-    return facet_relationships, total_observation_count, latest_active_ts
-
-
 def get_journal_entities_data() -> dict:
     """Get all journal entities with facet relationship data.
 
@@ -1799,7 +1720,7 @@ def get_journal_entities_data() -> dict:
 
         # Build facet relationships
         facet_relationships, total_observation_count, latest_active_ts = (
-            _build_facet_relationships(
+            build_facet_relationships(
                 entity_id,
                 entity_name,
                 facets_config,
@@ -1866,7 +1787,7 @@ def get_journal_entity(entity_id: str) -> Any:
 
         # Build facet relationships
         facet_relationships, total_observation_count, latest_active_ts = (
-            _build_facet_relationships(entity_id, entity_name, facets_config)
+            build_facet_relationships(entity_id, entity_name, facets_config)
         )
 
         # Build enriched entity

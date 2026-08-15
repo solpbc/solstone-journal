@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Self-contained fixtures for settings app tests."""
+"""Self-contained fixtures for retained Settings maintenance tests."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def _skip_supervisor_check(monkeypatch):
 
 @pytest.fixture
 def settings_env(tmp_path, monkeypatch):
-    """Create a temporary journal with settings config."""
+    """Create a temporary journal with Settings configuration."""
 
     def _create(config: dict | None = None):
         config_dir = tmp_path / "config"

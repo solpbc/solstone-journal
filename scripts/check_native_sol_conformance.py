@@ -25,7 +25,6 @@ from solstone.apps.curation.routes import curation_bp
 from solstone.apps.entities.routes import entities_bp
 from solstone.apps.network.routes import network_bp
 from solstone.apps.news.routes import news_bp
-from solstone.apps.settings.routes import settings_bp
 from solstone.apps.sol.routes import sol_bp
 from solstone.apps.support.routes import support_bp
 from solstone.apps.thinking.routes import thinking_bp
@@ -52,7 +51,13 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
     )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-RUST_CONVEY_OPERATION_PREFIXES = ("body.", "import.", "speakers.", "transcripts.")
+RUST_CONVEY_OPERATION_PREFIXES = (
+    "body.",
+    "import.",
+    "settings.",
+    "speakers.",
+    "transcripts.",
+)
 REASON_CODES_BY_NAME = {
     name: value.code
     for name, value in vars(reasons).items()
@@ -302,7 +307,6 @@ def register_native_blueprints(app: Flask) -> None:
         profile_bp,
         profiles_bp,
         network_bp,
-        settings_bp,
         thinking_bp,
         news_bp,
     ):

@@ -894,7 +894,7 @@ class TestRetentionDerivationRule:
     @staticmethod
     def derive_retention(days_value: str, dont_retain: bool) -> tuple[str, int | None]:
         # Mirrors the JS deriveRetention helper in convey/templates/init.html
-        # and apps/settings/workspace.html.
+        # and the native Settings workspace asset.
         if dont_retain:
             return ("processed", None)
         try:

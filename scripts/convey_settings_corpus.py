@@ -2,12 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
-"""Conformance oracle for the settings READ surface.
+"""Frozen capture methodology for the former Flask Settings reference.
 
-Drives the reference Flask settings app and records what it actually answers, so
-the native port's tests assert against captured reference output rather than
-against a re-reading of the reference's source. Nothing here restates an
-expectation.
+The Flask Settings reference tree was deleted in the native-web cut. The
+committed corpus remains a frozen record; it has no producer. Native Settings
+evidence lives in ``core/crates/solstone-core-settings-web``.
 
 ⚠ Why the phases are shaped the way they are -- each one exists because a
 narrower capture certified something false:
@@ -900,6 +899,12 @@ def run_phase(name: str, config: dict, *, seed: bool = False,
 
 
 def main() -> int:
+    raise RuntimeError(
+        "The Flask Settings reference tree was deleted in the native-web cut; "
+        "convey_settings_corpus.py cannot recapture its frozen record. "
+        "Use core/crates/solstone-core-settings-web as the surviving native evidence."
+    )
+
     out = {
         "rev": REV,
         "captured_by": "driving the reference; no value here is a restated expectation",

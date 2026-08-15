@@ -284,11 +284,7 @@ fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"));
     let root = manifest.join("../../..");
     let modules = [
-        (
-            root.join("solstone/apps/settings/copy.py"),
-            true,
-            "settings_copy.rs",
-        ),
+        (manifest.join("assets/copy.py"), true, "settings_copy.rs"),
         (
             root.join("solstone/apps/settings/install_copy.py"),
             true,

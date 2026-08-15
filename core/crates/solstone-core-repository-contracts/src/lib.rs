@@ -14,6 +14,9 @@ mod schedule_read_only_architecture;
 #[path = "contracts/service_legacy_gate_purity.rs"]
 mod service_legacy_gate_purity;
 #[cfg(test)]
+#[path = "contracts/settings_devices_python_web_cut.rs"]
+mod settings_devices_python_web_cut;
+#[cfg(test)]
 #[path = "contracts/settings_native_linkage.rs"]
 mod settings_native_linkage;
 #[cfg(test)]
