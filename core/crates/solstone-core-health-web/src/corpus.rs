@@ -82,6 +82,14 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                                 "/app/observer/api/list",
                                 "/app/devices/api/list",
                             );
+                            replace_text(
+                                &mut wanted,
+                                "/app/tokens/api/usage",
+                                "/app/stats/api/usage",
+                            );
+                        }
+                        if case["name"] == "workspace" {
+                            replace_text(&mut wanted, "/app/tokens/", "/app/stats/#cost");
                         }
                         for pattern in case["normalized"]
                             .as_array()
@@ -114,6 +122,20 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                 );
             });
     });
+}
+
+#[test]
+fn ac16_health_static_uses_stats_usage_endpoint() {
+    let asset = include_str!("../assets/static/health.js");
+    assert!(asset.contains("/app/stats/api/usage?day="));
+    assert!(!asset.contains("/app/tokens/api/usage?day="));
+}
+
+#[test]
+fn ac16_health_workspace_cost_link_targets_stats_cost_section() {
+    let asset = include_str!("../assets/workspace.html");
+    assert!(asset.contains("href=\"/app/stats/#cost\""));
+    assert!(!asset.contains("href=\"/app/tokens/\""));
 }
 
 fn replace(value: &mut Value, path: &str, pattern: &str) {

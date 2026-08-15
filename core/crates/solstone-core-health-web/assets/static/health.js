@@ -40,7 +40,7 @@
       }
     });
 
-  fetch('/app/tokens/api/usage?day=' + todayKey())
+  fetch('/app/stats/api/usage?day=' + todayKey())
     .then(r => {
       if (!r.ok) throw new Error('token usage unavailable');
       return r.json();
