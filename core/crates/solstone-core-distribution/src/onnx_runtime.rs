@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 use crate::digest::sha256_hex;
@@ -180,10 +181,13 @@ pub fn fetch_origin(url: &str) -> Result<Vec<u8>, StageError> {
     let response = ureq::get(url)
         .call()
         .map_err(|error| StageError::new(error.to_string()))?;
+    let mut bytes = Vec::new();
     response
         .into_body()
-        .read_to_vec()
-        .map_err(|error| StageError::new(error.to_string()))
+        .as_reader()
+        .read_to_end(&mut bytes)
+        .map_err(|error| StageError::new(error.to_string()))?;
+    Ok(bytes)
 }
 
 pub fn fetch_wheel(spec: &TargetSpec) -> Result<Vec<u8>, StageError> {
