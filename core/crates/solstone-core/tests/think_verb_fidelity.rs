@@ -191,7 +191,7 @@ fn every_supported_argument_spelling_reaches_think_not_top_level_usage() {
 }
 
 #[test]
-fn updated_ignores_invalid_segment_workers_and_run_modes_are_unavailable() {
+fn updated_ignores_invalid_segment_workers_and_dry_run_is_native() {
     let (journal, prior, updated) = loop {
         let journal = TempDir::new().unwrap();
         let sampled_today = Local::now().date_naive();
@@ -225,17 +225,17 @@ fn updated_ignores_invalid_segment_workers_and_run_modes_are_unavailable() {
     assert_eq!(updated.status.code(), Some(0));
     assert!(updated.stderr.is_empty());
     assert_eq!(updated.stdout, format!("{prior}\n").into_bytes());
-    let unavailable = command(&["think", "--dry-run"], &journal).output().unwrap();
-    assert_eq!(unavailable.status.code(), Some(69));
+    let dry_run = command(&["think", "--dry-run"], &journal).output().unwrap();
+    assert_eq!(dry_run.status.code(), Some(0));
 }
 
 #[test]
-fn negative_jobs_reaches_the_unavailable_run_mode() {
+fn negative_jobs_reaches_the_native_run_mode() {
     let journal = TempDir::new().unwrap();
     let output = command(&["think", "--jobs", "-1"], &journal)
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(69));
+    assert_eq!(output.status.code(), Some(1));
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn think_never_reaches_interpreters_while_a_python_path_reaches_the_poison() {
         .env("SOL_SKIP_SUPERVISOR_CHECK", "1")
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(69));
+    assert_eq!(output.status.code(), Some(0));
     assert!(!temp.path().join("python").exists());
     assert!(!temp.path().join("python3").exists());
     let positive = Command::new("python3")
