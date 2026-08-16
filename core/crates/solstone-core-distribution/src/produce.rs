@@ -265,6 +265,13 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             ),
             rust_lld.display().to_string(),
         );
+        musl_env.vars.insert(
+            format!(
+                "BINDGEN_EXTRA_CLANG_ARGS_{}",
+                lanes::env_target(&target.triple_musl)
+            ),
+            musl_bindgen_args(target, &zig_lib),
+        );
         let musl_stubs = work.join("musl-lib-stubs");
         write_musl_lib_stubs(&musl_stubs)?;
         let gnu_env = lanes::gnu_lane_env(
@@ -535,6 +542,16 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
     }
     bind_cargo_json(&String::from_utf8_lossy(&output.stdout))
         .map_err(|error| ProduceError::new(error.to_string()))
+}
+
+fn musl_bindgen_args(target: &crate::inventory::Target, zig_lib: &Path) -> String {
+    let arch_musl = format!("{}-linux-musl", target.arch);
+    let arch_any = format!("{}-linux-any", target.arch);
+    let lib = zig_lib.display();
+    format!(
+        "-nostdinc --target={} -isystem {lib}/include -isystem {lib}/libc/include/{arch_musl} -isystem {lib}/libc/include/generic-musl -isystem {lib}/libc/include/{arch_any} -isystem {lib}/libc/include/any-linux-any",
+        target.triple_musl
+    )
 }
 
 fn write_musl_lib_stubs(dir: &Path) -> Result<(), ProduceError> {
