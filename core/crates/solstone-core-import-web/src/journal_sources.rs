@@ -322,6 +322,35 @@ fn save_journal_source(root: &Path, record: &Map<String, Value>) -> Result<(), (
     atomic_replace(path, &bytes, AtomicWriteOptions { mode: Some(0o600) }).map_err(|_| ())
 }
 
+#[cfg(test)]
+use std::{cell::RefCell, rc::Rc};
+#[cfg(test)]
+thread_local! {
+    static MUTATION_HOOK: RefCell<Option<Rc<dyn Fn()>>> = const { RefCell::new(None) };
+}
+#[cfg(test)]
+struct MutationHookGuard(Option<Rc<dyn Fn()>>);
+#[cfg(test)]
+impl Drop for MutationHookGuard {
+    fn drop(&mut self) {
+        MUTATION_HOOK.with(|hook| *hook.borrow_mut() = self.0.take());
+    }
+}
+#[cfg(test)]
+fn install_mutation_hook(hook: Rc<dyn Fn()>) -> MutationHookGuard {
+    MutationHookGuard(MUTATION_HOOK.with(|current| current.replace(Some(hook))))
+}
+#[cfg(test)]
+fn run_mutation_hook() {
+    MUTATION_HOOK.with(|hook| {
+        if let Some(hook) = hook.borrow().as_ref() {
+            hook();
+        }
+    });
+}
+#[cfg(not(test))]
+fn run_mutation_hook() {}
+
 pub(crate) fn record_received(
     root: &Path,
     identity: &JournalSourceIdentity,
@@ -349,6 +378,7 @@ pub(crate) fn record_received(
     .as_object()
     .cloned()
     .ok_or_else(|| "Journal source statistics record must be an object".to_owned())?;
+    run_mutation_hook();
     let stats = record
         .entry("stats".to_owned())
         .or_insert_with(|| json!({}));
@@ -444,6 +474,7 @@ fn revoke_source(root: &Path, name: &str) -> Result<String, RevokeSourceError> {
             .as_object()
             .cloned()
             .ok_or(RevokeSourceError::Persist)?;
+    run_mutation_hook();
     if record.get("revoked") == Some(&Value::Bool(true)) {
         return Err(RevokeSourceError::AlreadyRevoked);
     }
@@ -748,7 +779,12 @@ mod tests {
     use std::{
         fs,
         os::unix::fs::PermissionsExt,
-        sync::{Arc, Barrier},
+        rc::Rc,
+        sync::{
+            Arc, Barrier,
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        },
         thread,
     };
 
@@ -939,30 +975,69 @@ mod tests {
             "source",
             serde_json::Value::Object(record.clone()),
         );
+        let path = root.path().join("apps/import/journal_sources/source.json");
         let root = Arc::new(root.path().to_owned());
         let identity = Arc::new(JournalSourceIdentity {
             source: record,
             derived_prefix: "prefix01".to_owned(),
         });
-        let barrier = Arc::new(Barrier::new(2));
+        let start = Arc::new(Barrier::new(3));
+        let release = Arc::new(Barrier::new(2));
+        let first = Arc::new(AtomicBool::new(true));
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (parked_tx, parked_rx) = mpsc::channel();
         let segments = {
             let root = Arc::clone(&root);
             let identity = Arc::clone(&identity);
-            let barrier = Arc::clone(&barrier);
+            let start = Arc::clone(&start);
+            let release = Arc::clone(&release);
+            let first = Arc::clone(&first);
+            let entered_tx = entered_tx.clone();
+            let parked_tx = parked_tx.clone();
+            let path = path.clone();
             thread::spawn(move || {
-                barrier.wait();
+                let _guard = super::install_mutation_hook(Rc::new(move || {
+                    if first.swap(false, Ordering::SeqCst) {
+                        parked_tx.send("segments_received").unwrap();
+                        release.wait();
+                    } else {
+                        let saved: serde_json::Value =
+                            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                        assert_eq!(saved["stats"]["entities_received"], 1);
+                    }
+                }));
+                start.wait();
+                entered_tx.send("segments_received").unwrap();
                 record_received(&root, &identity, "segments_received", 1).unwrap();
             })
         };
         let entities = {
             let root = Arc::clone(&root);
             let identity = Arc::clone(&identity);
-            let barrier = Arc::clone(&barrier);
+            let start = Arc::clone(&start);
+            let release = Arc::clone(&release);
+            let first = Arc::clone(&first);
             thread::spawn(move || {
-                barrier.wait();
+                let _guard = super::install_mutation_hook(Rc::new(move || {
+                    if first.swap(false, Ordering::SeqCst) {
+                        parked_tx.send("entities_received").unwrap();
+                        release.wait();
+                    } else {
+                        let saved: serde_json::Value =
+                            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                        assert_eq!(saved["stats"]["segments_received"], 1);
+                    }
+                }));
+                start.wait();
+                entered_tx.send("entities_received").unwrap();
                 record_received(&root, &identity, "entities_received", 1).unwrap();
             })
         };
+        start.wait();
+        parked_rx.recv().unwrap();
+        entered_rx.recv().unwrap();
+        entered_rx.recv().unwrap();
+        release.wait();
         segments.join().unwrap();
         entities.join().unwrap();
 
@@ -970,6 +1045,10 @@ mod tests {
             &fs::read(root.join("apps/import/journal_sources/source.json")).unwrap(),
         )
         .unwrap();
+        assert_eq!(saved["key"], "prefix01-key-material");
+        assert_eq!(saved["name"], "source");
+        assert_eq!(saved["enabled"], true);
+        assert_eq!(saved["revoked"], false);
         assert_eq!(saved["stats"]["segments_received"], 1);
         assert_eq!(saved["stats"]["entities_received"], 1);
     }
@@ -983,29 +1062,68 @@ mod tests {
             "source",
             serde_json::Value::Object(record.clone()),
         );
+        let path = root.path().join("apps/import/journal_sources/source.json");
         let root = Arc::new(root.path().to_owned());
         let identity = Arc::new(JournalSourceIdentity {
             source: record,
             derived_prefix: "prefix01".to_owned(),
         });
-        let barrier = Arc::new(Barrier::new(2));
+        let start = Arc::new(Barrier::new(3));
+        let release = Arc::new(Barrier::new(2));
+        let first = Arc::new(AtomicBool::new(true));
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (parked_tx, parked_rx) = mpsc::channel();
         let increment = {
             let root = Arc::clone(&root);
             let identity = Arc::clone(&identity);
-            let barrier = Arc::clone(&barrier);
+            let start = Arc::clone(&start);
+            let release = Arc::clone(&release);
+            let first = Arc::clone(&first);
+            let entered_tx = entered_tx.clone();
+            let parked_tx = parked_tx.clone();
+            let path = path.clone();
             thread::spawn(move || {
-                barrier.wait();
+                let _guard = super::install_mutation_hook(Rc::new(move || {
+                    if first.swap(false, Ordering::SeqCst) {
+                        parked_tx.send("segments_received").unwrap();
+                        release.wait();
+                    } else {
+                        let saved: serde_json::Value =
+                            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                        assert_eq!(saved["revoked"], true);
+                    }
+                }));
+                start.wait();
+                entered_tx.send("segments_received").unwrap();
                 record_received(&root, &identity, "segments_received", 1).unwrap();
             })
         };
         let revoke = {
             let root = Arc::clone(&root);
-            let barrier = Arc::clone(&barrier);
+            let start = Arc::clone(&start);
+            let release = Arc::clone(&release);
+            let first = Arc::clone(&first);
             thread::spawn(move || {
-                barrier.wait();
+                let _guard = super::install_mutation_hook(Rc::new(move || {
+                    if first.swap(false, Ordering::SeqCst) {
+                        parked_tx.send("revoked").unwrap();
+                        release.wait();
+                    } else {
+                        let saved: serde_json::Value =
+                            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                        assert_eq!(saved["stats"]["segments_received"], 1);
+                    }
+                }));
+                start.wait();
+                entered_tx.send("revoked").unwrap();
                 revoke_source(&root, "source").unwrap();
             })
         };
+        start.wait();
+        parked_rx.recv().unwrap();
+        entered_rx.recv().unwrap();
+        entered_rx.recv().unwrap();
+        release.wait();
         increment.join().unwrap();
         revoke.join().unwrap();
 
@@ -1013,7 +1131,11 @@ mod tests {
             &fs::read(root.join("apps/import/journal_sources/source.json")).unwrap(),
         )
         .unwrap();
+        assert_eq!(saved["key"], "prefix01-key-material");
+        assert_eq!(saved["name"], "source");
+        assert_eq!(saved["enabled"], true);
         assert_eq!(saved["revoked"], true);
+        assert!(saved["revoked_at"].as_i64().is_some());
         assert_eq!(saved["stats"]["segments_received"], 1);
     }
 
