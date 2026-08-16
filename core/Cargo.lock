@@ -3299,7 +3299,9 @@ dependencies = [
 name = "solstone-core-distribution"
 version = "1.0.22"
 dependencies = [
+ "flate2",
  "serde",
+ "tar",
  "toml_edit",
 ]
 

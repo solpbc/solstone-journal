@@ -17,5 +17,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+flate2.workspace = true
 serde.workspace = true
+tar.workspace = true
 toml_edit = { workspace = true, features = ["serde"] }
