@@ -145,12 +145,6 @@ id = "solstone-core-chat-append::core/crates/solstone-core-chat-append/src/lib.r
 id = "solstone-core-chat-append::core/crates/solstone-core-chat-append/src/lib.rs::tests::ac12_static_lock_serializes_segment_selection::scheduling"
 
 [[findings]]
-id = "solstone-core-check::core/crates/solstone-core-check/src/lib.rs::tests::json_platform_python_is_null::native"
-
-[[findings]]
-id = "solstone-core-check::core/crates/solstone-core-check/src/lib.rs::tests::vulkan_gpu_uses_shared_cpu_placement_decision::native"
-
-[[findings]]
 id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::service_args_foundation_has_no_execution_or_python_bridge::scheduling"
 
 [[findings]]
@@ -490,25 +484,7 @@ id = "solstone-core-depict::core/crates/solstone-core-depict/src/lib.rs::tests::
 id = "solstone-core-describe::core/crates/solstone-core-describe/src/merge.rs::tests::artifact_reader_preserves_raw_lines_and_marks_bad_rows::clock"
 
 [[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/host_dependencies.rs::tests::checks_staged_module_shapes_and_both_battery_bindings::native"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::feature_environment_inspection_matrix::native"
-
-[[findings]]
 id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::incomplete::clock"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::parakeet_cpp_fixture_states_are_distinct::native"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::speakers_model_ready::native"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::stage_feature::native"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::stage_parakeet_ready::native"
 
 [[findings]]
 id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::task_pace_with::clock"
@@ -539,9 +515,6 @@ id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::
 
 [[findings]]
 id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac9_full_batteries_never_invoke_poisoned_interpreters::process"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::stage_ac9_batteries::native"
 
 [[findings]]
 id = "solstone-core-entities::core/crates/solstone-core-entities/src/router_tests.rs::await_deferred_delete_phase::clock"
@@ -1024,15 +997,6 @@ id = "solstone-core-local::core/crates/solstone-core-local/src/install/coreml_in
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/coreml_install.rs::tests::server::scheduling"
 
 [[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/fit_report.rs::tests::local_builder_force_cpu_false_has_no_placement_suffix::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/fit_report.rs::tests::local_builder_matrix_has_nineteen_constructible_branches::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/rerank_install.rs::tests::sound_no_force_install_keeps_rerank_files_and_sweeps_no_temps::native"
-
-[[findings]]
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/rfdetr_install.rs::tests::extracted_binary_digest_mismatch_cleans_install_outputs::network"
 
 [[findings]]
@@ -1043,12 +1007,6 @@ id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs:
 
 [[findings]]
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::coreml_install_stages_all_catalog_paths_from_the_origin::scheduling"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::dispatch_paths_parakeet_with_explicit_artifact_key_is_host_independent::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::dispatch_pins_parakeet_matches_the_pins_table::native"
 
 [[findings]]
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_artifact_refuses_disallowed_redirect_target_in_envelope::clock"
@@ -1108,30 +1066,6 @@ id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs:
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::every_flipped_catalog_unit_contacts_only_its_origin_for_each_failure_class::network"
 
 [[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::flipped_origin_artifacts::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::inspect_local_resolves_backend_and_exposes_supervisor_host_fields::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::inspect_parakeet_isolates_each_corrupt_artifact_proof::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::inspect_parakeet_reports_ready_per_artifact_proofs::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::inspect_parakeet_reports_unrunnable_cpu_binary::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::local_target_fingerprint_matches_python_vulkan_reference::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::metal_candidate_inspect_is_pure_and_reports_component_reasons_and_fit::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::metal_target_reuses_the_shared_4b_model_and_darwin_runtime_pin::native"
-
-[[findings]]
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::origin_contact_assertion_rejects_a_test_double_upstream_fallback::network"
 
 [[findings]]
@@ -1147,27 +1081,6 @@ id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs:
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::origin_http_statuses_map_to_origin_unreachable::scheduling"
 
 [[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::origin_url_for_arch_key_is_host_independent_and_catalog_derived::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::origin_urls_follow_the_catalog_for_every_rust_download_unit::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::parakeet_backend_pin_is_none_for_an_unknown_backend_or_key::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::parakeet_pin_tables_cover_every_pinned_platform_and_backend::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::pin_tables_cover_every_pinned_platform::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::preflip_fixture_preserves_paths_and_native_pins_json_fields::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::preflip_origin_readiness_fixture_preserves_all_pin_identities_and_proofs::native"
-
-[[findings]]
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::progress_writes_are_coalesced_until_the_window_elapses::clock"
 
 [[findings]]
@@ -1177,34 +1090,10 @@ id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs:
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::record_tls_hosts::scheduling"
 
 [[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::registry_binds_existing_pins_and_the_python_parakeet_model_pin::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::registry_preserves_prechange_identity_literals::native"
-
-[[findings]]
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::replay_status_special_cases::clock"
 
 [[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::stage_ready_parakeet::native"
-
-[[findings]]
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::two_real_processes_cannot_hold_the_same_lease::process"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/plan.rs::tests::bind_address_drives_argv_and_plan_input_rejects_non_loopback::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/plan.rs::tests::input::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/plan.rs::tests::vulkan_argv_is_pinned::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/plan.rs::tests::vulkan_override_rejects_invalid_selection_and_missing_binary::native"
-
-[[findings]]
-id = "solstone-core-local::core/crates/solstone-core-local/src/plan.rs::tests::vulkan_override_skips_backend_decision_inputs::native"
 
 [[findings]]
 id = "solstone-core-maintenance::core/crates/solstone-core-maintenance/src/bodies/timeline.rs::tests::canned::scheduling"
@@ -1234,9 +1123,6 @@ id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/reloa
 id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/write.rs::tests::save_is_pretty_has_no_trailing_newline_and_preserves_fields::clock"
 
 [[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::gate_loopback_verifies_bytes_and_inner_slash_origin_key::native"
-
-[[findings]]
 id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::gate_never_falls_back_to_the_upstream_listener::clock"
 
 [[findings]]
@@ -1244,9 +1130,6 @@ id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::gate_
 
 [[findings]]
 id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::gate_never_falls_back_to_the_upstream_listener::scheduling"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::head_only_key_names_head_unreleased::native"
 
 [[findings]]
 id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_follows_validated_loopback_redirects::scheduling"
@@ -1288,13 +1171,7 @@ id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::statu
 id = "solstone-core-processing-record::core/crates/solstone-core-processing-record/src/reentry.rs::tests::temporary_path::clock"
 
 [[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/ci.rs::tests::fixture::native"
-
-[[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_input_failure_is_not_misreported_as_a_broken_verifier::host-tool"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_input_failure_is_not_misreported_as_a_broken_verifier::native"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_input_failure_is_not_misreported_as_a_broken_verifier::process"
@@ -1303,43 +1180,19 @@ id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-c
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_verifier_must_prove_itself_before_runtime_data_is_judged::host-tool"
 
 [[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_verifier_must_prove_itself_before_runtime_data_is_judged::native"
-
-[[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_verifier_must_prove_itself_before_runtime_data_is_judged::process"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::differential_gate_requires_validated_onnx_staging::native"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::every_host_excluded_crate_is_tested_by_a_ci_target::native"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::every_linux_runtime_link_is_required_by_the_real_consumer::host-tool"
 
 [[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::every_linux_runtime_link_is_required_by_the_real_consumer::native"
-
-[[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::every_linux_runtime_link_is_required_by_the_real_consumer::process"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::full_ci_stages_host_runtimes_before_entering_the_poisoned_gate::native"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::macos_gate_rejects_each_missing_or_corrupt_runtime_before_cargo::host-tool"
 
 [[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::macos_gate_rejects_each_missing_or_corrupt_runtime_before_cargo::native"
-
-[[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::macos_gate_rejects_each_missing_or_corrupt_runtime_before_cargo::process"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::make_ci_full_builds_and_exercises_every_host_packaged_binary::native"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::make_ci_runs_only_library_and_binary_unit_harnesses::native"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::make_clean_reclaims_default_and_configured_cargo_targets::host-tool"
@@ -1357,16 +1210,10 @@ id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-c
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_ignores_make_control_plane_overrides::host-tool"
 
 [[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_ignores_make_control_plane_overrides::native"
-
-[[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_ignores_make_control_plane_overrides::process"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_records_the_full_workspace_test_compile::host-tool"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_records_the_full_workspace_test_compile::native"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_records_the_full_workspace_test_compile::process"
@@ -1375,16 +1222,10 @@ id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-c
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_is_a_noop_when_every_pinned_link_is_healthy::host-tool"
 
 [[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_is_a_noop_when_every_pinned_link_is_healthy::native"
-
-[[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_is_a_noop_when_every_pinned_link_is_healthy::process"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_preserves_a_failed_staging_status_even_if_files_were_repaired::host-tool"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_preserves_a_failed_staging_status_even_if_files_were_repaired::native"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_preserves_a_failed_staging_status_even_if_files_were_repaired::process"
@@ -1393,22 +1234,13 @@ id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-c
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_repairs_then_independently_validates_every_link::host-tool"
 
 [[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_repairs_then_independently_validates_every_link::native"
-
-[[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_repairs_then_independently_validates_every_link::process"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::pdf_runtime_mapping_ignores_make_control_plane_overrides::host-tool"
 
 [[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::pdf_runtime_mapping_ignores_make_control_plane_overrides::native"
-
-[[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::pdf_runtime_mapping_ignores_make_control_plane_overrides::process"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::rust_host_excludes_match_the_workspace_onnx_closure::native"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::supported_linux_skips_the_macos_gate_before_tool_requirements::process"
@@ -1439,9 +1271,6 @@ id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-c
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/settings_native_linkage.rs::ac16_settings_adds_no_native_linkage::host-tool"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/settings_native_linkage.rs::ac16_settings_adds_no_native_linkage::native"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/settings_native_linkage.rs::ac16_settings_adds_no_native_linkage::process"
@@ -1837,15 +1666,6 @@ id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtim
 id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet.rs::tests::stopping_the_same_managed_process_twice_is_idempotent::scheduling"
 
 [[findings]]
-id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet_truth_seam.rs::tests::auto_backend_uses_an_injected_gpu::native"
-
-[[findings]]
-id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet_truth_seam.rs::tests::dispatch_truth_re_fires_and_records_two_independent_results::native"
-
-[[findings]]
-id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet_truth_seam.rs::tests::plan_builder_maps_vulkan_backend_to_gpu_placement_and_cpu_to_cpu_placement::native"
-
-[[findings]]
 id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/readiness.rs::tests::binary_probe_reaps_a_timed_out_child::process"
 
 [[findings]]
@@ -2008,9 +1828,6 @@ id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend
 id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::start::scheduling"
 
 [[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/lib.rs::tests::model_asset_errors_are_configuration_failures::native"
-
-[[findings]]
 id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/speakers.rs::tests::stale_sweep_removes_old_directory_and_keeps_fresh_one::clock"
 
 [[findings]]
@@ -2077,19 +1894,10 @@ id = "solstone-core::core/crates/solstone-core/src/health.rs::tests::filters_env
 id = "solstone-core::core/crates/solstone-core/src/health.rs::tests::reports_malformed_frames_observed_before_timeout_without_a_socket::clock"
 
 [[findings]]
-id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::bundled_asset_gate_names_only_speaker_assets_and_never_enters_the_installer::native"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::real_asset_gate_reports_wespeaker_digest_mismatch_before_installing::native"
-
-[[findings]]
 id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::real_asset_gate_reports_wespeaker_digest_mismatch_before_installing::process"
 
 [[findings]]
 id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::same_target_held_lease_is_observed_to_ready::clock"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::same_target_held_lease_is_observed_to_ready::native"
 
 [[findings]]
 id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::same_target_held_lease_is_observed_to_ready::scheduling"
@@ -2098,13 +1906,7 @@ id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::sam
 id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::local_install_busy_observes_the_existing_local_attempt::scheduling"
 
 [[findings]]
-id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::local_override_accepts_python_integer_strings_but_corrupt_config_surfaces::native"
-
-[[findings]]
 id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::local_preheld_lease_observes_the_existing_local_attempt::scheduling"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::stage_ready_parakeet::native"
 
 [[findings]]
 id = "solstone-core::core/crates/solstone-core/src/supervisor/tick.rs::tests::app_observation_requires_a_captured_start_and_preserves_poll_outcomes::clock"

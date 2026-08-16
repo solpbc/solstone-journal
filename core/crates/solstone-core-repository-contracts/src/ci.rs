@@ -916,6 +916,7 @@ impl RiskVisitor<'_> {
                         || needles.iter().any(|needle| tokens.contains(needle))
                 }
                 "process" => calls.launches_process,
+                "native" => calls.reaches_native,
                 "host-tool" => {
                     calls.launches_process && needles.iter().any(|needle| tokens.contains(needle))
                 }
@@ -986,6 +987,7 @@ impl<'ast> Visit<'ast> for RiskVisitor<'_> {
 struct CallRisks {
     names: BTreeSet<String>,
     launches_process: bool,
+    reaches_native: bool,
 }
 
 fn inspect_calls(block: &syn::Block, module_aliases: &[BTreeSet<String>]) -> CallRisks {
@@ -1029,11 +1031,22 @@ impl<'ast> Visit<'ast> for CallRiskVisitor<'_> {
                 .iter()
                 .map(|segment| segment.ident.to_string())
                 .collect::<Vec<_>>();
-            self.risks.launches_process |= is_process_constructor(
+            let launches_process = is_process_constructor(
                 &segments,
                 self.block_aliases.last().expect("call block alias scope"),
                 self.module_aliases,
             );
+            self.risks.launches_process |= launches_process;
+            self.risks.reaches_native |= segments
+                .iter()
+                .any(|segment| is_native_call_segment(segment));
+            if launches_process {
+                self.risks.reaches_native |= node
+                    .args
+                    .first()
+                    .and_then(static_string)
+                    .is_some_and(|program| is_native_executable(&program));
+            }
         }
         visit::visit_expr_call(self, node);
     }
@@ -1042,6 +1055,32 @@ impl<'ast> Visit<'ast> for CallRiskVisitor<'_> {
         self.risks.names.insert(node.method.to_string());
         visit::visit_expr_method_call(self, node);
     }
+}
+
+fn static_string(expression: &syn::Expr) -> Option<String> {
+    if let syn::Expr::Lit(syn::ExprLit {
+        lit: syn::Lit::Str(value),
+        ..
+    }) = expression
+    {
+        Some(value.value())
+    } else {
+        None
+    }
+}
+
+fn is_native_call_segment(segment: &str) -> bool {
+    matches!(
+        segment,
+        "ffmpeg" | "ffmpeg_next" | "libloading" | "pdfium" | "onnx" | "vulkan" | "maturin"
+    )
+}
+
+fn is_native_executable(program: &str) -> bool {
+    program
+        .rsplit(['/', '\\'])
+        .next()
+        .is_some_and(|name| matches!(name, "ffmpeg" | "maturin"))
 }
 
 fn is_process_constructor(
@@ -1219,17 +1258,7 @@ fn risk_patterns() -> &'static [(&'static str, &'static [&'static str])] {
             &["TcpListener", "TcpStream", "UdpSocket", "reqwest", "ureq"],
         ),
         ("process", &[]),
-        (
-            "native",
-            &[
-                "libloading",
-                "ffmpeg",
-                "pdfium",
-                "onnx",
-                "vulkan",
-                "maturin",
-            ],
-        ),
+        ("native", &[]),
         (
             "host-tool",
             &[
@@ -1389,6 +1418,8 @@ mod tests {
                 enum Command { Version }
                 struct DomainCommand;
                 impl DomainCommand { fn new() -> Self { Self } }
+                struct NativePlan { vulkan_identity: &'static str }
+                fn stage_onnx_fixture() {}
                 fn temporary_path() { let _ = std::process::id(); }
                 #[test] fn lexical_lookalikes_are_safe() {
                     let command = Command::Version;
@@ -1396,9 +1427,13 @@ mod tests {
                     let spawner = "fake";
                     let sleepy = "fake";
                     let tool = "cargo";
+                    let model = "model.onnx";
+                    let plan = NativePlan { vulkan_identity: "vulkan" };
+                    stage_onnx_fixture();
                     temporary_path();
                     assert!(matches!(command, Command::Version));
                     assert_eq!((spawner, sleepy, tool), ("fake", "fake", "cargo"));
+                    assert_eq!((model, plan.vulkan_identity), ("model.onnx", "vulkan"));
                 }
                 #[test] fn nested_process_alias_does_not_leak() {
                     {
@@ -1423,6 +1458,7 @@ mod tests {
                 fn interval<T>() {}
                 fn sleep<T>() {}
                 fn spawn<T>() {}
+                fn ffmpeg(_: &[&str]) {}
 
                 use std::process::Command as Runner;
                 use tokio::process::Command as AsyncRunner;
@@ -1455,6 +1491,22 @@ mod tests {
                 }
                 #[test] fn launches_host_through_direct_path() {
                     std::process::Command::new("cargo");
+                }
+                #[test] fn launches_native_executable() {
+                    Runner::new("ffmpeg");
+                }
+                #[test] fn non_native_executable_with_native_strings() {
+                    Runner::new("echo");
+                    let _ = ("model.onnx", "vulkan", "pdfium");
+                }
+                #[test] fn calls_native_helper() {
+                    ffmpeg(&[]);
+                }
+                #[test] fn calls_native_crate() {
+                    ffmpeg_next::init();
+                }
+                #[test] fn calls_dynamic_loader() {
+                    libloading::Library::new("libexample.so");
                 }
                 #[test] fn opens_turbofished_channel() {
                     let _ = std::sync::mpsc::channel::<()>();
@@ -1501,6 +1553,7 @@ mod tests {
         assert!(errors.iter().any(|error| error.contains("host-tool")));
         assert!(errors.iter().any(|error| error.contains("clock")));
         assert!(errors.iter().any(|error| error.contains("scheduling")));
+        assert!(errors.iter().any(|error| error.contains("native")));
 
         let observed = scan_routine_boundaries(temp.path()).expect("scan risky forms");
         for expected in [
@@ -1522,6 +1575,12 @@ mod tests {
             "launches_host_through_async_alias::host-tool",
             "launches_host_through_direct_path::process",
             "launches_host_through_direct_path::host-tool",
+            "launches_native_executable::process",
+            "launches_native_executable::native",
+            "non_native_executable_with_native_strings::process",
+            "calls_native_helper::native",
+            "calls_native_crate::native",
+            "calls_dynamic_loader::native",
             "opens_turbofished_channel::scheduling",
             "spawns::scheduling",
             "sleeps::clock",
@@ -1539,6 +1598,13 @@ mod tests {
                 "missing scanner control {expected}"
             );
         }
+        assert!(
+            !observed
+                .iter()
+                .any(|finding| finding
+                    .ends_with("non_native_executable_with_native_strings::native")),
+            "native words outside call/executable position are not runtime evidence"
+        );
 
         let accepted = BoundaryBaseline {
             version: 1,
