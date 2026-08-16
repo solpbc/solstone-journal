@@ -34,46 +34,7 @@ id = "solstone-core-brain::core/crates/solstone-core-brain/src/inspect.rs::tests
 id = "solstone-core-brain::core/crates/solstone-core-brain/src/runtime_health.rs::tests::new::clock"
 
 [[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::begin_pause_command::process"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::begin_pause_helper::clock"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::crash_after_begin_keeps_checking_record_and_kernel_releases_lease::scheduling"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::helper::process"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::key_generation_race_keeps_one_key::scheduling"
-
-[[findings]]
 id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_lock_pause_command::process"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_lock_pause_helper::clock"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_writes_serialize_behind_a_real_process_lock::clock"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_writes_serialize_behind_a_real_process_lock::scheduling"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::refresh_contention_returns_no_permit_while_renewal_returns_busy::scheduling"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::renewal_pause_command::process"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::renewal_pause_helper::clock"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::wait_for_file::clock"
 
 [[findings]]
 id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::decode_fragmented::scheduling"

@@ -343,13 +343,13 @@ fn browser_opener_does_not_hold_or_contaminate_stdio() {
     assert!(
         !output
             .stdout
-            .windows(18)
+            .windows(BROWSER_STDIO_LEAK.len())
             .any(|part| part == BROWSER_STDIO_LEAK)
     );
     assert!(
         !output
             .stderr
-            .windows(18)
+            .windows(BROWSER_STDIO_LEAK.len())
             .any(|part| part == BROWSER_STDIO_LEAK)
     );
 }
