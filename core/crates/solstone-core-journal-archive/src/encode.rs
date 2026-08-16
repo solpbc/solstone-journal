@@ -133,9 +133,9 @@ enum Poison {
     },
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum TestBoundary {
+pub enum TestBoundary {
     Body,
     RootDirectory,
     SourceStart,
@@ -151,31 +151,31 @@ pub(crate) enum TestBoundary {
     TerminalSeek,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TestSinkOperation {
+pub enum TestSinkOperation {
     Write,
     Seek,
     Flush,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TestFaultKind {
+pub enum TestFaultKind {
     Error,
     WriteZero,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct TestFault {
-    boundary: TestBoundary,
-    operation: TestSinkOperation,
-    ordinal: usize,
-    kind: TestFaultKind,
+pub(crate) struct TestFault {
+    pub(crate) boundary: TestBoundary,
+    pub(crate) operation: TestSinkOperation,
+    pub(crate) ordinal: usize,
+    pub(crate) kind: TestFaultKind,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TestTraceEvent {
     boundary: TestBoundary,
@@ -184,8 +184,8 @@ struct TestTraceEvent {
     faulted: bool,
 }
 
-#[cfg(test)]
-enum TestSourceAction {
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) enum TestSourceAction {
     RemoveBeforeOpen {
         member: String,
         path: std::path::PathBuf,
@@ -202,15 +202,15 @@ enum TestSourceAction {
     },
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TestPreflightOperation {
+pub(crate) enum TestPreflightOperation {
     Stat,
     Flags,
     Position,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 struct TestControl {
     boundary: TestBoundary,
     fault: Option<TestFault>,
@@ -222,7 +222,7 @@ struct TestControl {
     abort_calls: usize,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 impl TestControl {
     const fn new() -> Self {
         Self {
@@ -238,17 +238,59 @@ impl TestControl {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
     static TEST_CONTROL: RefCell<TestControl> = const { RefCell::new(TestControl::new()) };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) fn install_encode_control(
+    fault: Option<TestFault>,
+    action: Option<TestSourceAction>,
+    preflight_fault: Option<TestPreflightOperation>,
+) {
+    TEST_CONTROL.with(|control| {
+        let mut replacement = TestControl::new();
+        replacement.fault = fault;
+        replacement.action = action;
+        replacement.preflight_fault = preflight_fault;
+        *control.borrow_mut() = replacement;
+    });
+}
+
+#[cfg(feature = "test-hooks")]
+pub(crate) fn encode_injected_operation_fired() -> bool {
+    TEST_CONTROL.with(|control| {
+        let control = control.borrow();
+        let _ = (
+            control.boundary,
+            control.finish_calls,
+            control.abort_calls,
+            control.preflight_fault,
+        );
+        control.trace.iter().any(|event| event.faulted)
+    })
+}
+
+#[cfg(feature = "test-hooks")]
+pub(crate) fn reset_encode_control() {
+    TEST_CONTROL.with(|control| *control.borrow_mut() = TestControl::new());
+    let _ = TestSourceAction::RemoveBeforeOpen {
+        member: String::new(),
+        path: std::path::PathBuf::new(),
+    };
+    let _ = TestSourceAction::AppendBeforeFinalRevalidate {
+        path: std::path::PathBuf::new(),
+        bytes: Vec::new(),
+    };
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn test_set_boundary(boundary: TestBoundary) {
     TEST_CONTROL.with(|control| control.borrow_mut().boundary = boundary);
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn test_sink_result(
     operation: TestSinkOperation,
     requested: usize,
@@ -296,17 +338,17 @@ fn test_sink_result(
     })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn test_before_source_open(member: &ArchiveMemberName) {
     test_run_source_action(member, None);
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn test_before_source_read(member: &ArchiveMemberName, copied: u64) {
     test_run_source_action(member, Some(copied));
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn test_take_body_write_failure(member: &ArchiveMemberName) -> bool {
     TEST_CONTROL.with(|control| {
         let mut control = control.borrow_mut();
@@ -319,7 +361,7 @@ pub(crate) fn test_take_body_write_failure(member: &ArchiveMemberName) -> bool {
     })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 fn test_run_source_action(member: &ArchiveMemberName, copied: Option<u64>) {
     TEST_CONTROL.with(|control| {
@@ -355,7 +397,7 @@ fn test_run_source_action(member: &ArchiveMemberName, copied: Option<u64>) {
     });
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 fn test_before_final_revalidate() {
     test_set_boundary(TestBoundary::FinalRevalidate);
@@ -380,28 +422,28 @@ fn test_before_final_revalidate() {
     });
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-hooks")))]
 fn test_before_final_revalidate() {}
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn test_before_abort() {
     test_set_boundary(TestBoundary::Abort);
     TEST_CONTROL.with(|control| control.borrow_mut().abort_calls += 1);
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-hooks")))]
 fn test_before_abort() {}
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn test_before_finish() {
     test_set_boundary(TestBoundary::Finish);
     TEST_CONTROL.with(|control| control.borrow_mut().finish_calls += 1);
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-hooks")))]
 fn test_before_finish() {}
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn test_take_preflight_fault(operation: TestPreflightOperation) -> bool {
     TEST_CONTROL.with(|control| {
         let mut control = control.borrow_mut();
@@ -499,7 +541,7 @@ impl Write for FileSink<'_> {
         if !self.is_live() {
             return Ok(self.state.borrow_mut().virtual_write(buffer.len()));
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-hooks"))]
         if let Some(result) = test_sink_result(TestSinkOperation::Write, buffer.len(), Some(buffer))
         {
             return self
@@ -517,7 +559,7 @@ impl Write for FileSink<'_> {
         if !self.is_live() {
             return Ok(());
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-hooks"))]
         if let Some(result) = test_sink_result(TestSinkOperation::Flush, 0, None) {
             return match result {
                 Ok(_) => Ok(()),
@@ -542,7 +584,7 @@ impl Seek for FileSink<'_> {
         if !self.is_live() {
             return Ok(self.state.borrow_mut().virtual_seek(from));
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-hooks"))]
         if let Some(result) = test_sink_result(TestSinkOperation::Seek, 0, None) {
             return match result {
                 Ok(_) => unreachable!("seek injection cannot return success"),
@@ -616,7 +658,7 @@ pub fn encode_archive(
         state: &state,
     };
     let mut zip = ZipWriter::new(sink);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     test_set_boundary(TestBoundary::Body);
     let mut pending = crate::writer::write_archive(&mut zip, request.source, &manifest)
         .err()
@@ -726,7 +768,7 @@ impl PendingFailure {
 }
 
 fn preflight_writer(file: &File) -> Result<(), EncodeArchiveError> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     if test_take_preflight_fault(TestPreflightOperation::Stat) {
         return Err(EncodeArchiveError::InvalidWriter {
             reason: "could not stat writer",
@@ -742,7 +784,7 @@ fn preflight_writer(file: &File) -> Result<(), EncodeArchiveError> {
         });
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     if test_take_preflight_fault(TestPreflightOperation::Flags) {
         return Err(EncodeArchiveError::InvalidWriter {
             reason: "could not read writer flags",
@@ -769,7 +811,7 @@ fn preflight_writer(file: &File) -> Result<(), EncodeArchiveError> {
             reason: "must be empty",
         });
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     if test_take_preflight_fault(TestPreflightOperation::Position) {
         return Err(EncodeArchiveError::InvalidWriter {
             reason: "could not determine writer position",
@@ -816,11 +858,9 @@ fn from_manifest_error(error: ManifestError) -> EncodeArchiveError {
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs::{self, File, OpenOptions};
-    use std::io::{Cursor, Seek, SeekFrom, Write};
+    use std::io::{Seek, SeekFrom, Write};
     use std::path::{Path, PathBuf};
-    use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{Duration, Instant};
 
     use super::*;
 
@@ -893,13 +933,7 @@ mod tests {
         action: Option<TestSourceAction>,
         preflight_fault: Option<TestPreflightOperation>,
     ) {
-        TEST_CONTROL.with(|control| {
-            let mut replacement = TestControl::new();
-            replacement.fault = fault;
-            replacement.action = action;
-            replacement.preflight_fault = preflight_fault;
-            *control.borrow_mut() = replacement;
-        });
+        super::install_encode_control(fault, action, preflight_fault);
     }
 
     fn take_control() -> TestControl {
@@ -1394,183 +1428,5 @@ mod tests {
             } if error.to_string() == "injected sink fault"
         ));
         assert!(take_control().fault.is_none());
-    }
-
-    struct DropFailWriter(Cursor<Vec<u8>>);
-
-    impl Write for DropFailWriter {
-        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
-            Err(io::Error::other("uncontrolled drop failure"))
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl Seek for DropFailWriter {
-        fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
-            self.0.seek(from)
-        }
-    }
-
-    #[test]
-    fn stderr_oracle_child() {
-        match std::env::var("SOLSTONE_ARCHIVE_STDERR_CHILD").as_deref() {
-            Ok("uncontrolled") => {
-                drop(ZipWriter::new(DropFailWriter(Cursor::new(Vec::new()))));
-            }
-            Ok(scenario) if scenario.starts_with("controlled-") => {
-                let (_temporary, source, first, _) = source_fixture("stderr-child");
-                let output = TempDir::new("stderr-child-output");
-                let mut file = File::create(output.path().join("archive.zip"))
-                    .expect("create controlled output");
-                let (fault, action, body_phase) = match scenario {
-                    "controlled-body" => (
-                        fault(
-                            TestBoundary::RootDirectory,
-                            TestSinkOperation::Write,
-                            1,
-                            TestFaultKind::Error,
-                        ),
-                        None,
-                        true,
-                    ),
-                    "controlled-zero" => (
-                        fault(
-                            TestBoundary::RootDirectory,
-                            TestSinkOperation::Write,
-                            1,
-                            TestFaultKind::WriteZero,
-                        ),
-                        None,
-                        true,
-                    ),
-                    "controlled-transition" => (
-                        fault(
-                            TestBoundary::MemberTransition,
-                            TestSinkOperation::Write,
-                            1,
-                            TestFaultKind::Error,
-                        ),
-                        None,
-                        true,
-                    ),
-                    "controlled-abort" => (
-                        fault(
-                            TestBoundary::Abort,
-                            TestSinkOperation::Write,
-                            1,
-                            TestFaultKind::Error,
-                        ),
-                        Some(TestSourceAction::TruncateBeforeRead {
-                            member: "imports/first/source.bin".to_owned(),
-                            copied: 0,
-                            path: first,
-                            length: 0,
-                        }),
-                        false,
-                    ),
-                    "controlled-central" => (
-                        fault(
-                            TestBoundary::CentralDirectory,
-                            TestSinkOperation::Write,
-                            1,
-                            TestFaultKind::Error,
-                        ),
-                        None,
-                        false,
-                    ),
-                    "controlled-footer" => (
-                        fault(
-                            TestBoundary::Footer,
-                            TestSinkOperation::Write,
-                            1,
-                            TestFaultKind::Error,
-                        ),
-                        None,
-                        false,
-                    ),
-                    "controlled-terminal" => (
-                        fault(
-                            TestBoundary::TerminalSeek,
-                            TestSinkOperation::Seek,
-                            1,
-                            TestFaultKind::Error,
-                        ),
-                        None,
-                        false,
-                    ),
-                    _ => panic!("unknown stderr child scenario {scenario}"),
-                };
-                install_control(Some(fault), action, None);
-                let result = encode_archive(&request(&source), &mut file);
-                if body_phase {
-                    assert!(matches!(
-                        result,
-                        Err(EncodeArchiveError::ArchiveWrite { .. })
-                    ));
-                } else {
-                    assert!(matches!(
-                        result,
-                        Err(EncodeArchiveError::ArchiveFinish { .. })
-                    ));
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn run_stderr_child(scenario: &str) -> std::process::Output {
-        let mut child = Command::new(std::env::current_exe().expect("current test executable"))
-            .args([
-                "--exact",
-                "encode::tests::stderr_oracle_child",
-                "--nocapture",
-            ])
-            .env("SOLSTONE_ARCHIVE_STDERR_CHILD", scenario)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn stderr oracle child");
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            if child.try_wait().expect("wait for stderr child").is_some() {
-                return child.wait_with_output().expect("collect stderr child");
-            }
-            if Instant::now() >= deadline {
-                child.kill().expect("kill stuck stderr child");
-                let output = child.wait_with_output().expect("collect killed child");
-                panic!("stderr child timed out: {output:?}");
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-
-    #[test]
-    fn controlled_failures_never_reach_zip_drop_stderr() {
-        let uncontrolled = run_stderr_child("uncontrolled");
-        assert!(uncontrolled.status.success());
-        assert!(
-            String::from_utf8_lossy(&uncontrolled.stderr).contains("ZipWriter drop failed"),
-            "negative control did not observe zip Drop stderr: {uncontrolled:?}"
-        );
-
-        for scenario in [
-            "controlled-body",
-            "controlled-zero",
-            "controlled-transition",
-            "controlled-abort",
-            "controlled-central",
-            "controlled-footer",
-            "controlled-terminal",
-        ] {
-            let controlled = run_stderr_child(scenario);
-            assert!(
-                controlled.status.success(),
-                "controlled stderr child failed for {scenario}: {controlled:?}"
-            );
-            assert_eq!(controlled.stderr, b"", "stderr for {scenario}");
-        }
     }
 }

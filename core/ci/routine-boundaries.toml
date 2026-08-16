@@ -661,30 +661,6 @@ id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/stream.rs::te
 id = "solstone-core-ingest::core/crates/solstone-core-ingest/src/router.rs::tests::shared_connection_limit_rejects_oversized_declared_body::scheduling"
 
 [[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/encode.rs::tests::run_stderr_child::clock"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/encode.rs::tests::run_stderr_child::process"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/encode.rs::tests::run_stderr_child::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::acquisition_faults_are_thread_local::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::descendant_stat_to_open_swaps_are_bounded_and_changed::clock"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::descendant_stat_to_open_swaps_are_bounded_and_changed::process"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::descendant_stat_to_open_swaps_are_bounded_and_changed::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::replacement_barrier::scheduling"
-
-[[findings]]
 id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/target.rs::tests::new::clock"
 
 [[findings]]

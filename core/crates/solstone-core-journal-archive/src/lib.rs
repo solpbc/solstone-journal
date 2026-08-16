@@ -20,6 +20,8 @@ mod manifest;
 mod publish;
 mod source;
 mod target;
+#[cfg(feature = "test-hooks")]
+mod test_hooks;
 mod writer;
 
 pub use encode::{
@@ -34,4 +36,10 @@ pub use source::ArchiveSource;
 pub use target::{
     ArchiveOutputTarget, ExplicitArchiveOutputRequest, ExplicitTargetError,
     acquire_explicit_output_target,
+};
+#[cfg(feature = "test-hooks")]
+pub use test_hooks::{
+    AcquisitionPrimitive, DescendantPrimitive, EncodeTruncateBeforeRead, TestBoundary,
+    TestFaultKind, TestSinkOperation, run_with_acquisition_fault, run_with_descendant_barrier,
+    run_with_encode_control,
 };
