@@ -10,6 +10,15 @@ mod ci_gate_purity;
 #[path = "contracts/distribution_payload.rs"]
 mod distribution_payload;
 #[cfg(test)]
+#[path = "contracts/distribution_onnx_runtime_pins.rs"]
+mod distribution_onnx_runtime_pins;
+#[cfg(test)]
+#[path = "contracts/distribution_model_digests.rs"]
+mod distribution_model_digests;
+#[cfg(test)]
+#[path = "contracts/distribution_workspace_bins.rs"]
+mod distribution_workspace_bins;
+#[cfg(test)]
 #[path = "contracts/journal_io_deny_policy.rs"]
 mod journal_io_deny_policy;
 #[cfg(test)]

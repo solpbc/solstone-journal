@@ -1,16 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::inventory::{Inventory, format_named_list};
+use crate::inventory::{format_named_list, Entry, Inventory};
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ArtifactId {
+    pub package: String,
+    pub bin: String,
+    pub triple: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectedBin {
+    pub dest: String,
+    pub bin: String,
+    pub package: String,
+    pub triple: String,
+    pub path: PathBuf,
+    pub mode: u32,
+    pub lane: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
     pub admitted: BTreeSet<String>,
+    pub bins: Vec<SelectedBin>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,42 +58,147 @@ impl fmt::Display for SelectError {
 
 impl std::error::Error for SelectError {}
 
-/// Naive directory listing. Commit #4 replaces this with inventory-driven
-/// package+bin+triple selection.
-pub fn select_from_directory(
+/// Inventory-driven selection. Never reads a Cargo output directory.
+pub fn select_artifacts(
     inventory: &Inventory,
-    output_dir: &Path,
+    target_id: &str,
+    artifacts: &BTreeMap<ArtifactId, PathBuf>,
 ) -> Result<Selection, SelectError> {
-    let mut present = BTreeSet::new();
-    let entries = fs::read_dir(output_dir).map_err(|_| SelectError {
-        missing_required: inventory.required_bins(),
-        admitted_forbidden: BTreeSet::new(),
-    })?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
-            present.insert(name.to_owned());
+    let target = inventory
+        .target
+        .iter()
+        .find(|target| target.id == target_id);
+    let Some(target) = target else {
+        return Err(SelectError {
+            missing_required: inventory.required_bins(),
+            admitted_forbidden: BTreeSet::new(),
+        });
+    };
+
+    let forbidden = inventory.forbidden_bins();
+    let mut admitted_forbidden = BTreeSet::new();
+    for id in artifacts.keys() {
+        if forbidden.contains(&id.bin) {
+            admitted_forbidden.insert(id.bin.clone());
         }
     }
 
-    let required = inventory.required_bins();
-    let forbidden = inventory.forbidden_bins();
-    let missing_required = required
-        .difference(&present)
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let admitted_forbidden = present
-        .intersection(&forbidden)
-        .cloned()
-        .collect::<BTreeSet<_>>();
+    let mut admitted = BTreeSet::new();
+    let mut bins = Vec::new();
+    let mut missing_required = BTreeSet::new();
+    for entry in &inventory.entry {
+        let Entry::Bin {
+            package,
+            bin,
+            dest,
+            mode,
+            lane,
+            targets,
+        } = entry
+        else {
+            continue;
+        };
+        if !targets.iter().any(|item| item == target_id) {
+            continue;
+        }
+        let triple = match lane.as_str() {
+            "musl-static" => target.triple_musl.as_str(),
+            _ => target.triple_gnu.as_str(),
+        };
+        let id = ArtifactId {
+            package: package.clone(),
+            bin: bin.clone(),
+            triple: triple.to_owned(),
+        };
+        match artifacts.get(&id) {
+            Some(path) if path.is_file() => {
+                admitted.insert(bin.clone());
+                bins.push(SelectedBin {
+                    dest: dest.clone(),
+                    bin: bin.clone(),
+                    package: package.clone(),
+                    triple: triple.to_owned(),
+                    path: path.clone(),
+                    mode: *mode,
+                    lane: lane.clone(),
+                });
+            }
+            _ => {
+                missing_required.insert(bin.clone());
+            }
+        }
+    }
+
     if !missing_required.is_empty() || !admitted_forbidden.is_empty() {
         return Err(SelectError {
             missing_required,
             admitted_forbidden,
         });
     }
-    Ok(Selection { admitted: present })
+    Ok(Selection { admitted, bins })
+}
+
+pub fn refuse_extra(
+    inventory: &Inventory,
+    target_id: &str,
+    artifacts: &BTreeMap<ArtifactId, PathBuf>,
+) -> Result<(), SelectError> {
+    let required = inventory
+        .entry
+        .iter()
+        .filter_map(|entry| match entry {
+            Entry::Bin {
+                package,
+                bin,
+                targets,
+                ..
+            } if targets.iter().any(|item| item == target_id) => {
+                Some((package.as_str(), bin.as_str()))
+            }
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let extra = artifacts
+        .keys()
+        .filter(|id| !required.contains(&(id.package.as_str(), id.bin.as_str())))
+        .map(|id| format!("{} {}", id.package, id.bin))
+        .collect::<BTreeSet<_>>();
+    if extra.is_empty() {
+        return Ok(());
+    }
+    Err(SelectError {
+        missing_required: BTreeSet::new(),
+        admitted_forbidden: extra,
+    })
+}
+
+pub fn refuse_wrong_triple(
+    inventory: &Inventory,
+    target_id: &str,
+    artifacts: &BTreeMap<ArtifactId, PathBuf>,
+) -> Result<(), SelectError> {
+    let Some(target) = inventory.target.iter().find(|item| item.id == target_id) else {
+        return Ok(());
+    };
+    let allowed = [target.triple_musl.as_str(), target.triple_gnu.as_str()];
+    let unexpected = artifacts
+        .keys()
+        .filter(|id| !allowed.contains(&id.triple.as_str()))
+        .map(|id| format!("{} {} {}", id.package, id.bin, id.triple))
+        .collect::<BTreeSet<_>>();
+    if unexpected.is_empty() {
+        return Ok(());
+    }
+    Err(SelectError {
+        missing_required: BTreeSet::new(),
+        admitted_forbidden: unexpected,
+    })
+}
+
+pub fn stage_selected(selection: &Selection, stage: &Path) -> std::io::Result<()> {
+    for bin in &selection.bins {
+        let bytes = std::fs::read(&bin.path)?;
+        crate::stage::write_staged_file_mode(stage, &bin.dest, &bytes, bin.mode)?;
+    }
+    Ok(())
 }

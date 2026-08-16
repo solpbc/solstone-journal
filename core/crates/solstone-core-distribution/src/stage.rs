@@ -3,23 +3,55 @@
 
 use std::fs;
 use std::io;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use crate::digest::sha256_hex;
+use crate::record::FileRecord;
+
 pub fn write_staged_file(root: &Path, dest: &str, contents: &[u8]) -> io::Result<PathBuf> {
+    write_staged_file_mode(root, dest, contents, 0o644)
+}
+
+pub fn write_staged_file_mode(
+    root: &Path,
+    dest: &str,
+    contents: &[u8],
+    mode: u32,
+) -> io::Result<PathBuf> {
+    crate::archive::refuse_escape(dest)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.as_str()))?;
     let path = root.join(dest);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     fs::write(&path, contents)?;
+    let mut permissions = fs::metadata(&path)?.permissions();
+    permissions.set_mode(mode);
+    fs::set_permissions(&path, permissions)?;
     Ok(path)
 }
 
 pub fn staged_files(root: &Path) -> io::Result<Vec<String>> {
+    Ok(staged_records(root)?
+        .into_iter()
+        .map(|record| record.dest)
+        .collect())
+}
+
+pub fn staged_records(root: &Path) -> io::Result<Vec<FileRecord>> {
     let mut dests = Vec::new();
     collect(root, root, &mut dests)?;
     dests.sort();
     dests.dedup();
-    Ok(dests)
+    let mut records = Vec::new();
+    for dest in dests {
+        let path = root.join(&dest);
+        let bytes = fs::read(&path)?;
+        let mode = fs::metadata(&path)?.permissions().mode() & 0o7777;
+        records.push(FileRecord::file(dest, mode, sha256_hex(&bytes)));
+    }
+    Ok(records)
 }
 
 fn collect(root: &Path, dir: &Path, dests: &mut Vec<String>) -> io::Result<()> {

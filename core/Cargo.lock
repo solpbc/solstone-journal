@@ -3301,8 +3301,11 @@ version = "1.0.22"
 dependencies = [
  "flate2",
  "serde",
+ "serde_json",
+ "sha2",
  "tar",
  "toml_edit",
+ "ureq",
 ]
 
 [[package]]

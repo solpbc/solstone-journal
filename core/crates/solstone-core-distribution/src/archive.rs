@@ -36,6 +36,27 @@ impl ArchiveEscape {
     }
 }
 
+pub fn refuse_escape(dest: &str) -> Result<(), ArchiveEscape> {
+    if dest.starts_with('/') {
+        return Err(ArchiveEscape::AbsolutePath);
+    }
+    for component in dest.split('/') {
+        if component == ".." {
+            return Err(ArchiveEscape::ParentTraversal);
+        }
+    }
+    Ok(())
+}
+
+pub fn refuse_link_target(kind: ArchiveEscape, dest: &str, target: &str) -> Result<(), ArchiveEscape> {
+    refuse_escape(dest)?;
+    refuse_escape(target).map_err(|_| kind)?;
+    if target.starts_with('/') {
+        return Err(kind);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::ArchiveEscape;

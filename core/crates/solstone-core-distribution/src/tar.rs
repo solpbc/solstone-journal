@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::io::{self, Read};
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use flate2::read::GzDecoder;
@@ -10,6 +11,8 @@ use flate2::write::GzEncoder;
 use flate2::{Compression, GzBuilder};
 use tar::{Builder, EntryType, Header};
 
+use crate::digest::sha256_hex;
+use crate::record::FileRecord;
 use crate::stage::staged_files;
 
 pub fn write_tar_gz(stage: &Path, dest: &Path) -> io::Result<()> {
@@ -17,28 +20,43 @@ pub fn write_tar_gz(stage: &Path, dest: &Path) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
     let file = fs::File::create(dest)?;
-    let encoder = GzBuilder::new()
-        .mtime(0)
-        .operating_system(255)
-        .write(file, Compression::default());
+    let encoder = deterministic_gzip(file);
     let mut builder = Builder::new(encoder);
     for dest_path in staged_files(stage)? {
-        let bytes = fs::read(stage.join(&dest_path))?;
-        append_file(&mut builder, &dest_path, &bytes)?;
+        crate::archive::refuse_escape(&dest_path)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.as_str()))?;
+        let path = stage.join(&dest_path);
+        let bytes = fs::read(&path)?;
+        let mode = fs::metadata(&path)?.permissions().mode() & 0o7777;
+        append_file(&mut builder, &dest_path, &bytes, mode)?;
     }
     builder.finish()?;
     builder.into_inner()?.finish()?;
     Ok(())
 }
 
-fn append_file<W: io::Write>(builder: &mut Builder<W>, dest: &str, bytes: &[u8]) -> io::Result<()> {
+pub fn deterministic_gzip<W: io::Write>(inner: W) -> GzEncoder<W> {
+    GzBuilder::new()
+        .mtime(0)
+        .operating_system(255)
+        .write(inner, Compression::default())
+}
+
+fn append_file<W: io::Write>(
+    builder: &mut Builder<W>,
+    dest: &str,
+    bytes: &[u8],
+    mode: u32,
+) -> io::Result<()> {
     let mut header = Header::new_gnu();
     header.set_entry_type(EntryType::Regular);
     header.set_path(dest)?;
     header.set_size(bytes.len() as u64);
-    header.set_mode(0o644);
+    header.set_mode(mode);
     header.set_uid(0);
     header.set_gid(0);
+    header.set_username("")?;
+    header.set_groupname("")?;
     header.set_mtime(0);
     header.set_cksum();
     builder.append(&header, bytes)?;
@@ -46,27 +64,45 @@ fn append_file<W: io::Write>(builder: &mut Builder<W>, dest: &str, bytes: &[u8])
 }
 
 pub fn list_tar_gz(path: &Path) -> io::Result<Vec<String>> {
-    list_tar_gz_bytes(&fs::read(path)?)
+    Ok(tar_records(&fs::read(path)?)?
+        .into_iter()
+        .map(|record| record.dest)
+        .collect())
 }
 
 pub fn list_tar_gz_bytes(bytes: &[u8]) -> io::Result<Vec<String>> {
+    Ok(tar_records(bytes)?
+        .into_iter()
+        .map(|record| record.dest)
+        .collect())
+}
+
+pub fn tar_records(bytes: &[u8]) -> io::Result<Vec<FileRecord>> {
     let decoder = GzDecoder::new(bytes);
     let mut archive = tar::Archive::new(decoder);
-    let mut dests = Vec::new();
+    let mut records = Vec::new();
     for entry in archive.entries()? {
-        let entry = entry?;
+        let mut entry = entry?;
         if !entry.header().entry_type().is_file() {
-            continue;
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                crate::archive::ArchiveEscape::SymlinkEscape.as_str(),
+            ));
         }
-        dests.push(entry.path()?.to_string_lossy().replace('\\', "/"));
+        let dest = entry.path()?.to_string_lossy().replace('\\', "/");
+        crate::archive::refuse_escape(&dest)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.as_str()))?;
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes)?;
+        let mode = entry.header().mode()?;
+        records.push(FileRecord::file(dest, mode, sha256_hex(&bytes)));
     }
-    dests.sort();
-    dests.dedup();
-    Ok(dests)
+    records.sort();
+    Ok(records)
 }
 
 pub fn gzip_bytes(bytes: &[u8]) -> io::Result<Vec<u8>> {
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    let mut encoder = deterministic_gzip(Vec::new());
     std::io::Write::write_all(&mut encoder, bytes)?;
     encoder.finish()
 }
@@ -76,4 +112,13 @@ pub fn gunzip_bytes(bytes: &[u8]) -> io::Result<Vec<u8>> {
     let mut out = Vec::new();
     decoder.read_to_end(&mut out)?;
     Ok(out)
+}
+
+pub(crate) fn append_regular<W: io::Write>(
+    builder: &mut Builder<W>,
+    dest: &str,
+    bytes: &[u8],
+    mode: u32,
+) -> io::Result<()> {
+    append_file(builder, dest, bytes, mode)
 }
