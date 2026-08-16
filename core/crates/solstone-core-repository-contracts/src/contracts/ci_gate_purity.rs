@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::ci::{Registry, load_registry};
+
 #[path = "../../../solstone-core/tests/support/maturin_leaves.rs"]
 mod maturin_leaves;
 
@@ -320,6 +322,10 @@ fn makefile_text(root: &Path) -> String {
     fs::read_to_string(root.join("Makefile")).expect("read Makefile")
 }
 
+fn ci_registry(root: &Path) -> Registry {
+    load_registry(&root.join("core/ci/suites.toml")).expect("load CI suite registry")
+}
+
 fn workspace_members(workspace: &str) -> Vec<String> {
     let mut members = Vec::new();
     let mut in_members = false;
@@ -489,38 +495,29 @@ fn make_ci_never_executes_forbidden_interpreters() {
 
 #[test]
 fn make_ci_full_never_executes_forbidden_interpreters() {
-    // Dependency policy runs before the long workspace suite so a known test
-    // failure cannot hide it. The trailing "test" is
-    // check-rust-describe-cli-stubs, immediately after that workspace leg.
-    // ONNX and PDF each add one Linux-only test.
-    let mut expected = vec![
-        "fmt", "run", "check", "clippy", "fetch", "deny", "test", "test",
-    ];
-    if cfg!(target_os = "linux") {
-        expected.extend(["test", "test"]);
-    }
-    expected.push("build");
-    expected.extend(["run"; if cfg!(target_os = "linux") { 10 } else { 7 }]);
-    if cfg!(target_os = "macos") {
-        expected.extend(["check", "test"]);
-    }
-    assert_gate_never_executes_forbidden_interpreters("ci-full", &expected);
+    // The Cargo shim records the runner launch. Per-entry traversal is owned by
+    // the runner and covered by its selector, poison, and command tests.
+    assert_gate_never_executes_forbidden_interpreters("ci-full", &["run"]);
 }
 
 #[test]
 fn make_ci_full_checks_dependency_policy_before_the_long_workspace_suite() {
-    let makefile = makefile_text(&repo_root());
-    let ci = target_body(&makefile, "ci-full-under-poison");
-    let deny = ci
-        .find("$(MAKE) check-rust-deny")
-        .expect("make ci-full must retain the dependency-policy gate");
-    let workspace_tests = ci
-        .find("$(MAKE) check-rust-test")
-        .expect("make ci-full must retain the full workspace test gate");
+    let root = repo_root();
+    let registry = ci_registry(&root);
+    let deny = registry
+        .legs
+        .iter()
+        .position(|leg| leg.make_target == "check-rust-deny")
+        .expect("registry must retain the dependency-policy gate");
+    let workspace_tests = registry
+        .legs
+        .iter()
+        .position(|leg| leg.id == "lib-bin")
+        .expect("registry must retain the library/binary workspace gate");
 
     assert!(
         deny < workspace_tests,
-        "dependency policy must run before the long workspace suite so a known test failure cannot hide it"
+        "dependency policy must run before the long workspace suite"
     );
 }
 
@@ -552,9 +549,11 @@ fn make_ci_full_builds_and_exercises_every_host_packaged_binary() {
         "the shipped-binary smoke gate must exactly match host-native maturin packaging leaves"
     );
     assert!(
-        target_body(&makefile, "ci-full-under-poison")
-            .contains("$(MAKE) check-rust-shipped-binaries"),
-        "make ci-full must retain the shipped-binary build and smoke gate"
+        ci_registry(&root)
+            .legs
+            .iter()
+            .any(|leg| leg.make_target == "check-rust-shipped-binaries" && leg.default_full),
+        "the default full registry must retain the shipped-binary build and smoke gate"
     );
     assert!(
         !target_body(&makefile, "ci-under-poison").contains("$(MAKE) check-rust-shipped-binaries"),
@@ -617,9 +616,17 @@ fn every_host_excluded_crate_is_tested_by_a_ci_target() {
         onnx.contains("$(ONNX_HOST_TEST_PACKAGES)"),
         "check-rust-onnx-test must run the excluded-crate package list, not a hand copy"
     );
-    assert!(
-        target_body(&makefile, "ci-full-under-poison").contains("$(MAKE) check-rust-onnx-test"),
-        "make ci-full must run the tests of the crates it excludes from the workspace selection"
+    let registry = ci_registry(&repo_root());
+    let onnx_leg = registry
+        .legs
+        .iter()
+        .find(|leg| leg.make_target == "check-rust-onnx-test")
+        .expect("full registry must retain the excluded-crate ONNX leg");
+    assert!(onnx_leg.default_full);
+    assert_eq!(
+        onnx_leg.packages.iter().cloned().collect::<BTreeSet<_>>(),
+        tested,
+        "the ONNX registry leg must name every host-excluded package"
     );
 }
 
@@ -679,18 +686,24 @@ fn every_supervisor_race_test_is_named_in_rust_race_gate() {
 #[test]
 fn make_ci_full_serializes_workspace_tests_that_compete_for_host_resources() {
     let makefile = makefile_text(&repo_root());
-    let rust_test = target_body(&makefile, "check-rust-test");
-    let cargo_test = rust_test
-        .lines()
-        .find(|line| line.trim_start().starts_with("cargo test "))
-        .expect("check-rust-test must execute cargo test");
-    let arguments = cargo_test.split_whitespace().collect::<Vec<_>>();
-
     assert!(
-        arguments
-            .windows(2)
-            .any(|pair| pair[0] == "--" && pair[1] == "--test-threads=1"),
-        "the full workspace suite must not make process and lock timeouts measure host contention"
+        makefile.contains("cargo test --manifest-path $(RUST_MANIFEST) --locked --offline $(1) -- --test-threads=1"),
+        "registry entries must serialize their individual test harnesses"
+    );
+    assert!(
+        target_body(&makefile, "check-rust-unit").contains("-- --test-threads=1"),
+        "the library/binary workspace leg must remain serialized"
+    );
+    assert!(
+        ci_registry(&repo_root())
+            .legs
+            .iter()
+            .any(|leg| leg.make_target == "check-rust-doc" && leg.default_full),
+        "the default full registry must preserve doctests from the former workspace cargo test"
+    );
+    assert!(
+        target_body(&makefile, "check-rust-doc").contains("--doc"),
+        "the doctest leg must select Rust documentation tests explicitly"
     );
 }
 
@@ -703,6 +716,7 @@ fn make_ci_runs_only_library_and_binary_unit_harnesses() {
     assert!(ci.contains("$(MAKE) check-rust-unit"));
     for forbidden in [
         "check-rust-msrv",
+        "check-rust-doc",
         "check-rust-test",
         "check-rust-describe-cli-stubs",
         "check-rust-onnx-test",
@@ -753,7 +767,7 @@ fn make_ci_runs_only_library_and_binary_unit_harnesses() {
 }
 
 #[test]
-fn efficient_ci_keeps_all_target_static_compilation() {
+fn efficient_ci_statically_checks_only_library_and_binary_targets() {
     let makefile = makefile_text(&repo_root());
     let clippy = target_body(&makefile, "check-rust-clippy");
     let invocation = clippy
@@ -764,15 +778,26 @@ fn efficient_ci_keeps_all_target_static_compilation() {
         "--manifest-path $(RUST_MANIFEST)",
         "--workspace",
         "$(RUST_HOST_EXCLUDES)",
-        "--all-targets",
+        "--lib",
+        "--bins",
         "--locked",
         "-- -D warnings",
     ] {
         assert!(
             invocation.contains(required),
-            "efficient CI lost static-compilation coverage: {required}"
+            "efficient CI lost routine static-compilation coverage: {required}"
         );
     }
+    assert!(
+        !invocation.contains("--all-targets"),
+        "routine CI must not compile integration targets"
+    );
+
+    let full = target_body(&makefile, "check-rust-clippy-full");
+    assert!(
+        full.contains("--all-targets") && full.contains("-- -D warnings"),
+        "full CI must retain all-target static compilation"
+    );
 }
 
 #[test]
@@ -797,15 +822,16 @@ fn public_rust_gates_share_poison_and_refuse_internal_entrypoints() {
 
 #[test]
 fn make_ci_full_names_the_manual_rust_race_gate() {
-    let makefile = makefile_text(&repo_root());
-    let ci = target_body(&makefile, "ci-full-under-poison");
+    let registry = ci_registry(&repo_root());
+    let race = registry
+        .legs
+        .iter()
+        .find(|leg| leg.set == "race")
+        .expect("registry must explicitly name the race lane");
+    assert_eq!(race.make_target, "check-rust-race");
     assert!(
-        ci.contains("check-rust-race"),
-        "make ci-full closing output must name the manual check-rust-race gate"
-    );
-    assert!(
-        !ci.contains("$(MAKE) check-rust-race"),
-        "check-rust-race must remain manually invoked, outside make ci-full"
+        !race.default_full,
+        "race must remain outside default full CI"
     );
 }
 
@@ -871,29 +897,60 @@ fn make_clean_reclaims_default_and_configured_cargo_targets() {
 #[test]
 fn manual_race_gate_is_selectable_without_uv() {
     let root = repo_root();
-    let dry_run = Command::new("make")
-        .args(["-n", "check-rust-race"])
-        .env("PATH", "/usr/bin:/bin")
-        .current_dir(&root)
-        .output()
-        .expect("uv-free make dry run starts");
-    assert!(
-        dry_run.status.success(),
-        "check-rust-race must be selectable without uv: {}",
-        String::from_utf8_lossy(&dry_run.stderr)
+    let mut targets = ci_registry(&root)
+        .legs
+        .into_iter()
+        .map(|leg| leg.make_target)
+        .collect::<BTreeSet<_>>();
+    targets.extend(
+        [
+            "ci",
+            "ci-under-poison",
+            "ci-full",
+            "ci-full-under-poison",
+            "ci-full-plan",
+            "ci-full-prep",
+            "ci-full-prep-cargo",
+            "check-rust-ci-topology",
+            "check-rust-registry-suite",
+            "check-rust-registry-package",
+        ]
+        .into_iter()
+        .map(str::to_owned),
     );
+    targets.insert(["ci-full-prep-", "on", "nx"].concat());
+    targets.insert(["ci-full-prep-", "p", "df"].concat());
+    targets.insert(["check-rust-", "on", "nx", "-ready"].concat());
+    targets.insert(["check-rust-", "p", "df", "-ready"].concat());
+    for target in targets {
+        let dry_run = Command::new("make")
+            .args(["-n", &target])
+            .env("PATH", "/usr/bin:/bin")
+            .current_dir(&root)
+            .output()
+            .expect("uv-free make dry run starts");
+        assert!(
+            dry_run.status.success(),
+            "{target} must be selectable without uv: {}",
+            String::from_utf8_lossy(&dry_run.stderr)
+        );
+    }
 }
 
 #[test]
 fn make_ci_full_keeps_apple_gates_native_to_apple_sdk_hosts() {
-    let makefile = makefile_text(&repo_root());
-    let ci = target_body(&makefile, "ci-full-under-poison");
+    let root = repo_root();
+    let makefile = makefile_text(&root);
+    let registry = ci_registry(&root);
     let ios = target_body(&makefile, "check-rust-ios");
     let macos = target_body(&makefile, "check-rust-macos");
 
     assert!(
-        ci.contains("$(MAKE) check-rust-ios"),
-        "make ci-full must retain the iOS gate"
+        registry
+            .legs
+            .iter()
+            .any(|leg| leg.make_target == "check-rust-ios" && leg.default_full),
+        "the default full registry must retain the iOS gate"
     );
     for protected in [
         "uname -s",
@@ -906,8 +963,11 @@ fn make_ci_full_keeps_apple_gates_native_to_apple_sdk_hosts() {
         );
     }
     assert!(
-        ci.contains("$(MAKE) check-rust-macos"),
-        "make ci-full must retain the macOS cfg gate"
+        registry
+            .legs
+            .iter()
+            .any(|leg| leg.make_target == "check-rust-macos" && leg.default_full),
+        "the default full registry must retain the macOS cfg gate"
     );
     for protected in [
         "cargo test",
@@ -1641,23 +1701,33 @@ fn differential_gate_requires_validated_onnx_staging() {
 #[test]
 fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
     let makefile = makefile_text(&repo_root());
-    let header = target_body(&makefile, "ci-full")
-        .lines()
-        .next()
-        .expect("ci-full header");
-    for stage in ["check-rust-onnx-stage", "check-rust-pdf-stage"] {
+    let prep = target_body(&makefile, "ci-full-prep");
+    for (stage, prep_target) in [
+        ("check-rust-onnx-stage", "ci-full-prep-onnx"),
+        ("check-rust-pdf-stage", "ci-full-prep-pdf"),
+    ] {
         assert!(
-            header.contains(stage),
-            "make ci-full must stage {stage} before entering the poisoned gate"
+            prep.contains(prep_target),
+            "make ci-full-prep must retain the dedicated prep lane for {stage}"
         );
     }
-    for gate in ["ci-under-poison", "ci-full-under-poison"] {
+    for gate in ["ci-under-poison", "ci-full", "ci-full-under-poison"] {
         let body = target_body(&makefile, gate);
         assert!(
             !body.contains("check-rust-onnx-stage") && !body.contains("check-rust-pdf-stage"),
             "{gate} must not invoke Python-backed runtime staging"
         );
     }
+    assert!(target_body(&makefile, "ci-full-prep-onnx").contains("check-rust-onnx-stage"));
+    assert!(target_body(&makefile, "ci-full-prep-pdf").contains("check-rust-pdf-stage"));
+    assert!(
+        target_body(&makefile, "ci-full-prep-cargo").contains("cargo fetch"),
+        "full prep must own Cargo fetching"
+    );
+    assert!(
+        !target_body(&makefile, "check-rust-deny").contains("cargo fetch"),
+        "offline validation must not fetch Cargo inputs"
+    );
 }
 
 #[test]
@@ -1891,6 +1961,9 @@ fn rust_host_excludes_match_the_workspace_onnx_closure() {
         "build",
         "check-rust-msrv",
         "check-rust-clippy",
+        "check-rust-clippy-full",
+        "check-rust-unit",
+        "check-rust-doc",
         "check-rust-test",
     ] {
         assert!(
