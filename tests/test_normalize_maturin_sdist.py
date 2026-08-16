@@ -146,18 +146,30 @@ def test_normalizer_refuses_to_remove_registry_package_record(tmp_path: Path) ->
 
 def test_normalizer_injects_native_sol_sources(tmp_path: Path) -> None:
     _source_workspace(tmp_path)
-    source = tmp_path / "solstone" / "apps" / "sample" / "native" / "command.rs"
+    authority = tmp_path / "solstone" / "apps" / "sample" / "native" / "authority.toml"
+    authority.parent.mkdir(parents=True)
+    authority.write_text("# native authority\n", encoding="utf-8")
+    source = (
+        tmp_path
+        / "core"
+        / "crates"
+        / "solstone-core-sol-client"
+        / "native"
+        / "apps"
+        / "sample"
+        / "command.rs"
+    )
     source.parent.mkdir(parents=True)
     source.write_text("// native source\n", encoding="utf-8")
-    authority = source.with_name("authority.toml")
-    authority.write_text("# native authority\n", encoding="utf-8")
     archive = _archive(tmp_path)
 
     normalize_core_sdist_workspace_lock(tmp_path, archive)
 
     after = _members(archive)
     assert (
-        after["solstone_core-1.2.3/solstone/apps/sample/native/command.rs"]
+        after[
+            "solstone_core-1.2.3/core/crates/solstone-core-sol-client/native/apps/sample/command.rs"
+        ]
         == b"// native source\n"
     )
     assert (

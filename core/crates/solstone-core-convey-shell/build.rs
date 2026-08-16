@@ -272,12 +272,12 @@ fn main() {
         .join("../../..")
         .canonicalize()
         .expect("repository root resolves");
-    let static_root = root.join("solstone/convey/static");
+    let static_root = manifest.join("assets/static");
     let speakers_root = manifest.join("assets/speakers");
     let speakers_copy = speakers_root.join("copy.py");
-    let network_copy = root.join("solstone/apps/network/copy.py");
-    let outcomes = root.join("solstone/think/services/outcomes.py");
-    let pairing_config = root.join("solstone/think/pairing/config.py");
+    let network_copy = manifest.join("assets/network_copy.py");
+    let outcomes = manifest.join("assets/outcomes.py");
+    let pairing_config = manifest.join("assets/pairing_config.py");
     let entities_workspace = manifest.join("assets/entities/workspace.html");
     let body_workspace = manifest.join("assets/body/workspace.html");
     let favicon = root.join("favicon.ico");

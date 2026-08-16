@@ -136,10 +136,7 @@ mod tests {
             (
                 "/app/home/",
                 "text/html; charset=utf-8",
-                include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/../../../solstone/convey/static/shell.html"
-                )),
+                include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html"),
             ),
             (
                 "/app/home/workspace",

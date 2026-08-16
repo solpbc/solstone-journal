@@ -16,6 +16,9 @@ mod retention_client_contracts;
 #[path = "contracts/retention_projection_architecture.rs"]
 mod retention_projection_architecture;
 #[cfg(test)]
+#[path = "contracts/rust_solstone_compile_inputs.rs"]
+mod rust_solstone_compile_inputs;
+#[cfg(test)]
 #[path = "contracts/schedule_read_only_architecture.rs"]
 mod schedule_read_only_architecture;
 #[cfg(test)]
@@ -27,6 +30,9 @@ mod settings_devices_python_web_cut;
 #[cfg(test)]
 #[path = "contracts/settings_native_linkage.rs"]
 mod settings_native_linkage;
+#[cfg(test)]
+#[path = "contracts/solstone_compile_input_copies.rs"]
+mod solstone_compile_input_copies;
 #[cfg(test)]
 #[path = "contracts/stats_dispatch_audit.rs"]
 mod stats_dispatch_audit;

@@ -6,11 +6,8 @@ use axum::{
     http::{Response, header},
 };
 
-// solstone/convey/static/shell.html is this crate's only out-of-crate compile input.
-const SHELL: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/convey/static/shell.html"
-));
+// Shared Convey shell lives in solstone-core-convey-shell/assets/static/shell.html.
+const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
 const WORKSPACE: &[u8] = include_bytes!("../assets/workspace.html");
 const HOME_JS: &[u8] = include_bytes!("../assets/home.js");
 const REMOVALS_JS: &[u8] = include_bytes!("../assets/removals.js");
@@ -69,23 +66,17 @@ mod tests {
 
     #[test]
     fn embedded_assets_match_python_reference_sources() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let workspace = std::fs::read(root.join("solstone/apps/home/workspace.html"))
+            .expect("python home workspace is readable");
+        let home_js = std::fs::read(root.join("solstone/apps/home/static/home.js"))
+            .expect("python home.js is readable");
         assert_eq!(
             include_bytes!("../assets/workspace.html").strip_suffix(WORKSPACE_SUFFIX),
-            Some(
-                &include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/../../../solstone/apps/home/workspace.html"
-                ))[..]
-            ),
+            Some(workspace.as_slice()),
             "the native workspace divergence is exactly the removal card script line"
         );
-        assert_eq!(
-            include_bytes!("../assets/home.js"),
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../solstone/apps/home/static/home.js"
-            )),
-        );
+        assert_eq!(include_bytes!("../assets/home.js"), home_js.as_slice());
     }
 
     #[test]

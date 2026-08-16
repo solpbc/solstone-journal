@@ -52,63 +52,57 @@ struct Frontmatter {
 const SOURCES: [CategorySource; 11] = [
     CategorySource {
         name: "browsing",
-        markdown: include_str!("../../../../solstone/observe/categories/browsing.md"),
+        markdown: include_str!("../assets/categories/browsing.md"),
         schema: None,
     },
     CategorySource {
         name: "calendar",
-        markdown: include_str!("../../../../solstone/observe/categories/calendar.md"),
-        schema: Some(include_str!(
-            "../../../../solstone/observe/categories/calendar.schema.json"
-        )),
+        markdown: include_str!("../assets/categories/calendar.md"),
+        schema: Some(include_str!("../assets/categories/calendar.schema.json")),
     },
     CategorySource {
         name: "code",
-        markdown: include_str!("../../../../solstone/observe/categories/code.md"),
+        markdown: include_str!("../assets/categories/code.md"),
         schema: None,
     },
     CategorySource {
         name: "gaming",
-        markdown: include_str!("../../../../solstone/observe/categories/gaming.md"),
+        markdown: include_str!("../assets/categories/gaming.md"),
         schema: None,
     },
     CategorySource {
         name: "media",
-        markdown: include_str!("../../../../solstone/observe/categories/media.md"),
+        markdown: include_str!("../assets/categories/media.md"),
         schema: None,
     },
     CategorySource {
         name: "meeting",
-        markdown: include_str!("../../../../solstone/observe/categories/meeting.md"),
-        schema: Some(include_str!(
-            "../../../../solstone/observe/categories/meeting.schema.json"
-        )),
+        markdown: include_str!("../assets/categories/meeting.md"),
+        schema: Some(include_str!("../assets/categories/meeting.schema.json")),
     },
     CategorySource {
         name: "messaging",
-        markdown: include_str!("../../../../solstone/observe/categories/messaging.md"),
-        schema: Some(include_str!(
-            "../../../../solstone/observe/categories/messaging.schema.json"
-        )),
+        markdown: include_str!("../assets/categories/messaging.md"),
+        schema: Some(include_str!("../assets/categories/messaging.schema.json")),
     },
     CategorySource {
         name: "productivity",
-        markdown: include_str!("../../../../solstone/observe/categories/productivity.md"),
+        markdown: include_str!("../assets/categories/productivity.md"),
         schema: None,
     },
     CategorySource {
         name: "reading",
-        markdown: include_str!("../../../../solstone/observe/categories/reading.md"),
+        markdown: include_str!("../assets/categories/reading.md"),
         schema: None,
     },
     CategorySource {
         name: "social",
-        markdown: include_str!("../../../../solstone/observe/categories/social.md"),
+        markdown: include_str!("../assets/categories/social.md"),
         schema: None,
     },
     CategorySource {
         name: "terminal",
-        markdown: include_str!("../../../../solstone/observe/categories/terminal.md"),
+        markdown: include_str!("../assets/categories/terminal.md"),
         schema: None,
     },
 ];

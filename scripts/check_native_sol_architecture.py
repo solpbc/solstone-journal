@@ -9,11 +9,25 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    from scripts.build_native_sol_inventory import REPO_ROOT, discover
+    from scripts.build_native_sol_inventory import (
+        REPO_ROOT,
+        command_source,
+        discover,
+    )
 except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
-    from build_native_sol_inventory import REPO_ROOT, discover  # type: ignore[no-redef]
+    from build_native_sol_inventory import (  # type: ignore[no-redef]
+        REPO_ROOT,
+        command_source,
+        discover,
+    )
 
 SHARED_CLIENT = REPO_ROOT / "core/crates/solstone-core-sol-client/src"
+# Sanctioned native command layout: hand-written command.rs files live at
+# core/crates/solstone-core-sol-client/native/{apps,think,tools}/…, outside
+# src/. The vocab scan below is src-only on purpose so those modules can name
+# apps and /app/ routes without tripping the shared-client rule. Do not move
+# them under src/ (or src/apps) without rewriting that rule.
+NATIVE_COMMAND_ROOT = REPO_ROOT / "core/crates/solstone-core-sol-client/native"
 ALLOWLIST: dict[tuple[str, str], str] = {}
 APP_VOCABULARY_PATTERNS = {
     "activities",
@@ -80,6 +94,14 @@ def rel(path: Path) -> str:
 
 def collect_violations() -> list[Violation]:
     violations: list[Violation] = []
+    if not NATIVE_COMMAND_ROOT.is_dir():
+        violations.append(
+            Violation(
+                rel(NATIVE_COMMAND_ROOT),
+                "native-command-root-missing",
+                "sanctioned sol-client/native/ command tree is missing",
+            )
+        )
     violations.extend(check_no_mirrored_apps_tree())
     violations.extend(check_shared_client_vocab())
     violations.extend(check_authority_adjacency())
@@ -155,12 +177,28 @@ def check_authority_adjacency() -> list[Violation]:
                 )
             )
             continue
-        if not (path.parent / source).is_file():
+        if source != "command.rs":
             violations.append(
                 Violation(
                     rel(path),
                     "authority-missing-source",
-                    f"declared source {source!r} does not exist beside authority",
+                    f"declared source {source!r} must be 'command.rs'",
+                )
+            )
+            continue
+        try:
+            resolved = command_source(path, REPO_ROOT)
+        except ValueError as error:
+            violations.append(
+                Violation(rel(path), "authority-missing-source", str(error))
+            )
+            continue
+        if not resolved.is_file():
+            violations.append(
+                Violation(
+                    rel(path),
+                    "authority-missing-source",
+                    f"declared source {source!r} does not exist at {rel(resolved)}",
                 )
             )
     return violations

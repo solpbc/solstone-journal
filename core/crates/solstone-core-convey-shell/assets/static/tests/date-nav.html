@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>date-nav.js smoke</title>
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; }
+  .pass { color: #166534; }
+  .fail { color: #b91c1c; }
+</style>
+<h1>date-nav.js smoke</h1>
+<div id="results"></div>
+<div id="fixture">
+  <div data-date-nav></div>
+  <h2 data-date-nav-heading>stale heading</h2>
+</div>
+<script src="../date_format.js"></script>
+<script src="../date-nav.js"></script>
+<script>
+  const results = document.getElementById('results');
+  let failures = 0;
+  const unit = { one: 'segment', other: 'segments', none: 'no segments' };
+  const activityUnit = { one: 'activity', other: 'activities', none: 'no activities' };
+  const currencyUnit = { kind: 'currency' };
+
+  function assert(name, condition, detail) {
+    const row = document.createElement('div');
+    row.className = condition ? 'pass' : 'fail';
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  function equal(name, actual, expected) {
+    assert(name, actual === expected, `expected "${expected}", got "${actual}"`);
+  }
+
+  function approx(name, actual, expected) {
+    assert(name, Math.abs(actual - expected) < 0.000001, `expected ${expected}, got ${actual}`);
+  }
+
+  function tick() {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  async function mount(appName, path, dateNav, responses) {
+    window.history.replaceState(null, '', path);
+    window.solShellData = { apps: [{ name: appName, date_nav: dateNav }] };
+    window.apiJson = async (url) => {
+      if (url.endsWith('/api/index')) return responses.index;
+      const monthMatch = url.match(/\/api\/stats\/(\d{6})$/);
+      if (monthMatch) return responses.stats?.[monthMatch[1]] || {};
+      throw new Error(`unexpected url: ${url}`);
+    };
+    document.dispatchEvent(new CustomEvent('workspace:mounted', { detail: { appName } }));
+    await tick();
+    await tick();
+  }
+
+  async function run() {
+    const now = new Date(2026, 6, 14);
+    equal('formatDateShort fallback rung', window.formatDateShort('20260711', new Date(2026, 7, 20)), 'Sat Jul 11');
+    equal('formatDateShort weekday rung', window.formatDateShort('20260711', now), 'Saturday');
+
+    equal('heading today', window.DateNav.headingLabel('20260714', now), 'Today');
+    equal('heading yesterday', window.DateNav.headingLabel('20260713', now), 'Yesterday');
+    equal('heading tomorrow', window.DateNav.headingLabel('20260715', now), 'Tomorrow');
+    equal('heading last weekday', window.DateNav.headingLabel('20260711', now), 'Last Saturday');
+    equal('heading full date', window.DateNav.headingLabel('20260707', now), 'Tuesday, July 7');
+    equal('heading other year', window.DateNav.headingLabel('20250102', now), 'Thursday, January 2, 2025');
+
+    equal('control same year', window.DateNav.controlLabel('20260714', now), 'Tue, Jul 14');
+    equal('control other year', window.DateNav.controlLabel('20250102', now), "Thu, Jan 2 '25");
+
+    approx('heat zero', window.DateNav.heatIntensity(0, 9), 0);
+    approx('heat log1p', window.DateNav.heatIntensity(3, 9), 0.15 + 0.85 * (Math.log1p(3) / Math.log1p(9)));
+
+    const totals = window.DateNav.yearTotals({ 202501: 4, 202601: 2, 202602: 3 });
+    equal('year total 2025', totals[2025], 4);
+    equal('year total 2026', totals[2026], 5);
+    const nestedTotals = window.DateNav.yearTotals({ 202601: { work: 2, personal: 3 } });
+    equal('year total nested object sum', nestedTotals[2026], 5);
+
+    equal('unit one', window.DateNav.countLabel(1, unit), '1 segment');
+    equal('unit many', window.DateNav.countLabel(3, unit), '3 segments');
+    equal('unit none', window.DateNav.countLabel(0, unit), 'no segments');
+    equal('activity one', window.DateNav.countLabel(1, activityUnit), '1 activity');
+    equal('activity many', window.DateNav.countLabel(2, activityUnit), '2 activities');
+    equal('activity none', window.DateNav.countLabel(0, activityUnit), 'no activities');
+    equal('currency zero', window.DateNav.countLabel(0, currencyUnit), 'nothing spent');
+    equal('currency tiny', window.DateNav.countLabel(0.004, currencyUnit), '<$0.01');
+    equal('currency cents', window.DateNav.countLabel(0.4823, currencyUnit), '$0.48');
+    equal('coerceCount object sum', window.DateNav.coerceCount({ work: 2, personal: 3 }), 5);
+    equal('nested count label sum', window.DateNav.countLabel({ work: 2, personal: 3 }, activityUnit), '5 activities');
+    equal(
+      'future day predicate allows activities',
+      window.DateNav.isSelectableFutureDay('20991231', { allow_future: true }, now),
+      true
+    );
+    equal(
+      'future day predicate blocks non-future apps',
+      window.DateNav.isSelectableFutureDay('20991231', { allow_future: false }, now),
+      false
+    );
+    equal('week control label', window.DateNav.weekControlLabel('20260712', now), 'week of Jul 12');
+    equal('week control label other year', window.DateNav.weekControlLabel('20251228', now), "week of Dec 28 '25");
+    equal('week heading this week', window.DateNav.weekHeadingLabel('20260712', now), 'This week');
+    equal('week heading last week', window.DateNav.weekHeadingLabel('20260705', now), 'Last week');
+    equal('week heading older week', window.DateNav.weekHeadingLabel('20260628', now), 'week of Jun 28');
+    equal('stepDay day step', window.DateNav.stepDay('20260308', 1, {}), '20260309');
+    equal('stepDay week step', window.DateNav.stepDay('20260308', 1, { step: 'week' }), '20260315');
+    equal('sundayOf mid-week', window.DateNav.sundayOf('20260310'), '20260308');
+
+    let steppedSunday = '20260308';
+    const steppedSundays = new Set();
+    for (let index = 0; index < 7; index += 1) {
+      steppedSunday = window.DateNav.stepDay(steppedSunday, 1, { step: 'week' });
+      steppedSundays.add(steppedSunday);
+      const target = new Date(
+        Number(steppedSunday.slice(0, 4)),
+        Number(steppedSunday.slice(4, 6)) - 1,
+        Number(steppedSunday.slice(6, 8))
+      );
+      assert(`week step target ${index + 1} is Sunday`, target.getDay() === 0);
+    }
+    equal('week step targets are unique', steppedSundays.size, 7);
+
+    equal('bad current path is dayless', window.DateNav.day(), null);
+    equal('general app path parses day', window.DateNav.parseDayFromPath('/app/sol/20260714'), '20260714');
+    equal('bad app path is dayless', window.DateNav.parseDayFromPath('/app/transcripts/20261332'), null);
+    equal('non-8-digit app path is dayless', window.DateNav.parseDayFromPath('/app/timeline/202607'), null);
+    equal('opening month from coverage', window.DateNav.openingMonth({ coverage: { end: '20260520' } }, now), '202605');
+    equal('opening month without coverage', window.DateNav.openingMonth({ coverage: null }, now), '202607');
+
+    await mount(
+      'body',
+      '/app/body/',
+      { mount: 'content', unit: { one: 'reading', other: 'readings', none: 'no readings' } },
+      { index: { coverage: { start: '20260703', end: '20260704' }, months: { 202607: 4 } } }
+    );
+    equal('dayless label', document.querySelector('[data-date-nav-label]')?.textContent, 'pick a day');
+    assert('dayless prev hidden', document.querySelector('[data-date-nav-prev]')?.hidden === true);
+    assert('dayless next hidden', document.querySelector('[data-date-nav-next]')?.hidden === true);
+    equal('dayless heading emptied', document.querySelector('[data-date-nav-heading]')?.textContent, '');
+
+    await mount(
+      'activities',
+      '/app/activities/20991230',
+      { mount: 'content', unit: activityUnit, allow_future: true },
+      {
+        index: { coverage: { start: '20991230', end: '20991230' }, months: { 209912: 1 } },
+        stats: { 209912: {} }
+      }
+    );
+    assert('allow_future next day navigation enabled', document.querySelector('[data-date-nav-next]')?.disabled === false);
+    document.querySelector('[data-date-nav-trigger]')?.click();
+    await tick();
+    await tick();
+    const futureActivityCell = document.querySelector('[data-date-nav-cell="day"][data-value="20991231"]');
+    assert('allow_future future day selectable', futureActivityCell?.disabled === false);
+
+    await mount(
+      'sol',
+      '/app/sol/20991230',
+      { mount: 'content', unit: { one: 'run', other: 'runs', none: 'no runs' } },
+      {
+        index: { coverage: { start: '20991230', end: '20991230' }, months: { 209912: 1 } },
+        stats: { 209912: {} }
+      }
+    );
+    assert('non-future app next day navigation disabled', document.querySelector('[data-date-nav-next]')?.disabled === true);
+    document.querySelector('[data-date-nav-trigger]')?.click();
+    await tick();
+    await tick();
+    const blockedFutureCell = document.querySelector('[data-date-nav-cell="day"][data-value="20991231"]');
+    assert('non-future app future day disabled', blockedFutureCell?.disabled === true);
+
+    await mount(
+      'tokens',
+      '/app/tokens/20260304',
+      { mount: 'content', unit: currencyUnit },
+      {
+        index: { coverage: { start: '20260304', end: '20260304' }, months: { 202603: 0.4823 } },
+        stats: { 202603: { 20260304: 0.4823 } }
+      }
+    );
+    document.querySelector('[data-date-nav-trigger]')?.click();
+    await tick();
+    await tick();
+    const selectedCell = document.querySelector('[data-date-nav-cell="day"][data-value="20260304"]');
+    assert('currency aria is formatted dollars', selectedCell?.getAttribute('aria-label')?.includes('$0.48'));
+    assert('currency aria is not items literal', !(selectedCell?.getAttribute('aria-label') || '').includes('0.4823 items'));
+
+    await mount(
+      'reflections',
+      '/app/reflections/20260310',
+      {
+        mount: 'content',
+        unit: { one: 'reflection', other: 'reflections', none: 'no reflection' },
+        step: 'week'
+      },
+      {
+        index: { coverage: { start: '20260301', end: '20260329' }, months: { 202603: 3 } },
+        stats: { 202603: { 20260301: 1, 20260308: 1, 20260315: 1 } }
+      }
+    );
+    equal('week mounted canonical day', window.DateNav.day(), '20260308');
+    equal('week mounted control label', document.querySelector('[data-date-nav-label]')?.textContent, 'week of Mar 8');
+    document.querySelector('[data-date-nav-trigger]')?.click();
+    await tick();
+    await tick();
+    equal('week grid is one column', document.querySelector('[data-date-nav-grid]')?.dataset.cols, '1');
+    const weekValues = Array.from(document.querySelectorAll('[data-date-nav-cell="week"]')).map((cell) => cell.dataset.value);
+    equal('week grid Sunday count', weekValues.length, 5);
+    ['20260301', '20260308', '20260315', '20260322', '20260329'].forEach((value) => {
+      assert(`week grid includes ${value}`, weekValues.includes(value));
+    });
+    ['20260301', '20260308', '20260315'].forEach((value) => {
+      assert(
+        `present week ${value} enabled`,
+        document.querySelector(`[data-date-nav-cell="week"][data-value="${value}"]`)?.disabled === false
+      );
+    });
+    ['20260322', '20260329'].forEach((value) => {
+      assert(
+        `absent week ${value} disabled`,
+        document.querySelector(`[data-date-nav-cell="week"][data-value="${value}"]`)?.disabled === true
+      );
+    });
+    assert(
+      'canonicalized selected week',
+      document
+        .querySelector('[data-date-nav-cell="week"][data-value="20260308"]')
+        ?.classList.contains('date-nav-content__cell--selected') === true
+    );
+    const firstIntensity = document
+      .querySelector('[data-date-nav-cell="week"][data-value="20260301"]')
+      ?.style.getPropertyValue('--intensity');
+    const secondIntensity = document
+      .querySelector('[data-date-nav-cell="week"][data-value="20260308"]')
+      ?.style.getPropertyValue('--intensity');
+    equal('present week intensity matches', firstIntensity, secondIntensity);
+
+    assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+  }
+
+  run().catch((error) => {
+    assert('run threw', false, error?.stack || String(error));
+  });
+</script>
+</html>

@@ -1,0 +1,83 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>chat thinking expander test</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    .pass { color: #0a7a2f; }
+    .fail { color: #b00020; }
+    .chat-thinking-content { opacity: 0.7; font-style: italic; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div id="chatTranscript">
+    <button type="button" class="chat-thinking-expander" aria-expanded="false" data-thinking-id="thinking-demo">show thinking</button>
+    <div id="thinking-demo" class="chat-thinking-content" hidden>Reasoning line one.
+Reasoning line two.</div>
+  </div>
+  <div id="test-results">RUNNING chat thinking expander</div>
+  <ol id="results"></ol>
+
+  <script>
+    window.solChatCopy = {
+      CHAT_THINKING_EXPANDER_LABEL: 'show thinking',
+      CHAT_THINKING_COLLAPSER_LABEL: 'hide thinking'
+    };
+    const thinking = {
+      content: 'Reasoning line one.\nReasoning line two.'
+    };
+    const transcript = document.getElementById('chatTranscript');
+    const summary = document.getElementById('test-results');
+    const results = document.getElementById('results');
+    let failures = 0;
+
+    function report(name, ok, detail) {
+      const item = document.createElement('li');
+      item.className = ok ? 'pass' : 'fail';
+      item.textContent = `${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
+      results.appendChild(item);
+      if (!ok) failures += 1;
+    }
+
+    function assert(name, condition) {
+      report(name, !!condition);
+    }
+
+    function toggleThinkingSurface(button) {
+      const content = document.getElementById(button.dataset.thinkingId || '');
+      if (!content) return;
+      const nextExpanded = button.getAttribute('aria-expanded') !== 'true';
+      button.setAttribute('aria-expanded', String(nextExpanded));
+      content.hidden = !nextExpanded;
+      button.textContent = nextExpanded
+        ? window.solChatCopy.CHAT_THINKING_COLLAPSER_LABEL
+        : window.solChatCopy.CHAT_THINKING_EXPANDER_LABEL;
+    }
+
+    transcript.addEventListener('click', (event) => {
+      const button = event.target.closest('button.chat-thinking-expander');
+      if (!button) return;
+      event.preventDefault();
+      toggleThinkingSurface(button);
+    });
+
+    function runTests() {
+      const button = document.querySelector('.chat-thinking-expander');
+      const content = document.getElementById('thinking-demo');
+      content.textContent = thinking.content;
+      assert('initially collapsed', button.getAttribute('aria-expanded') === 'false' && content.hidden);
+      button.click();
+      assert('expands', button.getAttribute('aria-expanded') === 'true' && !content.hidden && button.textContent === 'hide thinking');
+      button.click();
+      assert('collapses', button.getAttribute('aria-expanded') === 'false' && content.hidden && button.textContent === 'show thinking');
+      summary.textContent = failures ? `FAIL ${failures} failure(s)` : 'PASS chat thinking expander';
+      summary.className = failures ? 'fail' : 'pass';
+    }
+
+    runTests();
+  </script>
+</body>
+</html>

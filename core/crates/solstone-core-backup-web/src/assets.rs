@@ -8,10 +8,7 @@ use axum::{
 };
 
 const WORKSPACE: &[u8] = include_bytes!("../assets/workspace.html");
-const SHELL: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/convey/static/shell.html"
-));
+const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
 const JS: &[u8] = include_bytes!("../assets/backup.js");
 const CSS: &[u8] = include_bytes!("../assets/backup.css");
 const NOT_FOUND: &str = "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n";
@@ -55,10 +52,7 @@ mod tests {
         // Permanent framework invariant: every converted app embeds the canonical Convey shell.
         assert_eq!(
             SHELL,
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../solstone/convey/static/shell.html"
-            ))
+            include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html")
         );
     }
 

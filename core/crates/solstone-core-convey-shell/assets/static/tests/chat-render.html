@@ -1,0 +1,311 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>chat render test</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    .pass { color: #0a7a2f; }
+    .fail { color: #b00020; }
+    #fixture { border: 1px solid #ddd; margin-top: 1rem; padding: 1rem; }
+  </style>
+  <script src="../chat_copy.js"></script>
+  <script src="../chat_reasons.js"></script>
+  <script>
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    window.AppServices = {
+      escapeHtml,
+      renderMarkdown(value) {
+        return '<p>' + escapeHtml(value).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') + '</p>';
+      }
+    };
+  </script>
+  <script src="../chat_render.js"></script>
+</head>
+<body>
+  <div id="test-results">RUNNING chat render</div>
+  <ol id="results"></ol>
+  <ol id="fixture" class="chat-transcript"></ol>
+
+  <script>
+    const BASE_TS = Date.UTC(2099, 0, 2, 9, 0);
+    const EVENTS = [
+      {
+        kind: 'owner_message',
+        ts: BASE_TS,
+        text: 'owner hello **literal**',
+        app: 'chat',
+        path: '/app/chat/20990102',
+        facet: 'work'
+      },
+      {
+        kind: 'sol_chat_request',
+        ts: BASE_TS + 60000,
+        request_id: 'r1',
+        summary: 'notice',
+        message: '',
+        category: 'notice',
+        dedupe: 'notice-key',
+        dedupe_window: '24h',
+        since_ts: 123,
+        trigger_talent: 'reflection'
+      },
+      {
+        kind: 'sol_message',
+        ts: BASE_TS + 120000,
+        use_id: 'use-prov',
+        text: 'sol with provenance **bold**',
+        notes: 'notes here',
+        requested_target: null,
+        requested_task: null
+      },
+      {
+        kind: 'sol_chat_request_superseded',
+        ts: BASE_TS + 180000,
+        request_id: 'r1',
+        replaced_by: 'r2'
+      },
+      {
+        kind: 'owner_chat_open',
+        ts: BASE_TS + 240000,
+        request_id: 'r-open',
+        surface: 'convey'
+      },
+      {
+        kind: 'owner_chat_dismissed',
+        ts: BASE_TS + 300000,
+        request_id: 'r-dismiss',
+        surface: 'convey',
+        reason: 'owner'
+      },
+      {
+        kind: 'sol_message',
+        ts: BASE_TS + 360000,
+        use_id: 'use-dispatch',
+        text: 'sol with dispatch origin',
+        notes: '',
+        requested_target: null,
+        requested_task: null,
+        origin: {
+          logical_use_id: 'use-prov',
+          ask: 'follow up?'
+        },
+        thinking: {
+          content: 'dispatch thinking',
+          provider: 'openai',
+          model: 'gpt',
+          tokens: 10
+        }
+      },
+      {
+        kind: 'sol_chat_request',
+        ts: BASE_TS + 420000,
+        request_id: 'r3',
+        summary: 'second notice',
+        message: '',
+        category: 'notice',
+        dedupe: 'second-key',
+        dedupe_window: '24h',
+        since_ts: 456,
+        trigger_talent: ''
+      },
+      {
+        kind: 'sol_chat_request_superseded',
+        ts: BASE_TS + 480000,
+        request_id: 'r3',
+        replaced_by: 'r4'
+      },
+      {
+        kind: 'sol_message',
+        ts: BASE_TS + 540000,
+        use_id: 'use-after-controls',
+        text: 'sol after controls',
+        notes: '',
+        requested_target: null,
+        requested_task: null
+      },
+      {
+        kind: 'talent_queued',
+        ts: BASE_TS + 600000,
+        use_id: 'talent-queued',
+        name: 'exec',
+        task: 'make a change',
+        queued_at: BASE_TS + 600000,
+        chat_use_id: 'use-dispatch',
+        ask: 'please change it',
+        context: 'ctx',
+        location: 'repo'
+      },
+      {
+        kind: 'talent_spawned',
+        ts: BASE_TS + 660000,
+        use_id: 'talent-running',
+        name: 'exec',
+        task: 'make a change',
+        started_at: BASE_TS + 660000
+      },
+      {
+        kind: 'talent_finished',
+        ts: BASE_TS + 720000,
+        use_id: 'talent-finished',
+        name: 'exec',
+        summary: '**done**',
+        thinking: {
+          content: 'finished thinking',
+          provider: 'openai',
+          model: 'gpt',
+          tokens: 11
+        }
+      },
+      {
+        kind: 'talent_errored',
+        ts: BASE_TS + 780000,
+        use_id: 'talent-errored',
+        name: 'exec',
+        reason: '**bad**',
+        reason_code: 'failed'
+      },
+      {
+        kind: 'reflection_ready',
+        ts: BASE_TS + 840000,
+        day: '20981228',
+        url: '/app/reflections/20981228'
+      },
+      {
+        kind: 'chat_error',
+        ts: BASE_TS + 900000,
+        reason: 'network_unreachable',
+        use_id: 'use-error',
+        provider: 'openai',
+        detail: 'provider detail'
+      }
+    ];
+    const ORIGINS = {
+      '2': {
+        request_id: 'r1',
+        summary: 'notice',
+        trigger_talent: 'reflection',
+        dedupe: 'notice-key',
+        since_ts: 123,
+        ts: BASE_TS + 60000,
+        time: '9:01 AM',
+        category: 'notice',
+        superseded_by_id: 'r2',
+        superseded_at: BASE_TS + 180000,
+        superseded_time: '9:03 AM'
+      }
+    };
+
+    const summary = document.getElementById('test-results');
+    const results = document.getElementById('results');
+    const transcript = document.getElementById('fixture');
+    let failures = 0;
+
+    function report(name, ok, detail) {
+      const item = document.createElement('li');
+      item.className = ok ? 'pass' : 'fail';
+      item.textContent = `${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` - ${detail}` : ''}`;
+      results.appendChild(item);
+      if (!ok) failures += 1;
+    }
+
+    function assert(name, condition) {
+      report(name, !!condition);
+    }
+
+    function emptyEventItem(index, event) {
+      const item = document.createElement('li');
+      item.id = 'event-' + index;
+      item.className = 'chat-event';
+      item.dataset.kind = String(event.kind || '');
+      item.dataset.ts = String(event.ts ?? '');
+      return item;
+    }
+
+    function renderFixture(thinkingSurfaces = 'on_tap') {
+      transcript.innerHTML = '';
+      const ctx = {
+        ownerName: 'Owner',
+        agentName: 'Sol',
+        thinkingSurfaces,
+        transcript,
+        timeFormatter: new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }),
+        id: ''
+      };
+      EVENTS.forEach((rawEvent, index) => {
+        const event = { ...rawEvent };
+        const dispatchOrigin = event.origin || null;
+        event.origin = ORIGINS[String(index)] || null;
+        event.dispatchOrigin = dispatchOrigin;
+        const item = window.solChatRender.renderEventItem(event, {
+          ...ctx,
+          id: 'event-' + index
+        });
+        transcript.appendChild(item || emptyEventItem(index, event));
+      });
+      return transcript;
+    }
+
+    function text() {
+      return transcript.textContent || '';
+    }
+
+    function runTests() {
+      renderFixture('on_tap');
+
+      assert('AC5 owner bubble renders', !!transcript.querySelector('#event-0 .chat-bubble--owner') && text().includes('owner hello'));
+      assert('AC5 sol bubble renders', !!transcript.querySelector('#event-2 .chat-bubble--sol') && text().includes('sol with provenance'));
+      const ownerBody = transcript.querySelector('#event-0 .chat-bubble--owner .chat-bubble-text');
+      const solBody = transcript.querySelector('#event-2 .chat-bubble--sol .chat-bubble-text');
+      assert('AC5 owner bubble keeps markdown literal', ownerBody?.textContent.includes('**literal**') && !ownerBody.classList.contains('chat-bubble-text--markdown'));
+      assert('AC5 sol bubble renders markdown body', solBody?.classList.contains('chat-bubble-text--markdown') && solBody.innerHTML.includes('<strong>bold</strong>'));
+      assert('AC5 provenance label uses server time', text().includes('sol noticed (from reflection) at 9:01 AM'));
+      assert('AC5 superseded suffix renders', text().includes('(superseded by 9:03 AM)'));
+      assert('AC5 provenance detail values render', text().includes('trigger talent reflection') && text().includes('dedupe notice-key') && text().includes('since 123'));
+      assert('AC5 dispatch origin separate from provenance', !!transcript.querySelector('#event-6 .chat-dispatch-origin') && text().includes('in reply to: follow up?'));
+      assert('AC5 dispatch origin locatable', transcript.querySelector('#event-6 .chat-dispatch-origin')?.classList.contains('chat-dispatch-origin--locatable'));
+      assert('AC5 queued talent card renders', !!transcript.querySelector('#event-10 .chat-talent-card--queued') && text().includes(window.solChatCopy.CHAT_TALENT_QUEUED_LABEL));
+      assert('AC5 spawned talent card renders', !!transcript.querySelector('#event-11 .chat-talent-card--spawned'));
+      assert('AC5 finished talent card renders', !!transcript.querySelector('#event-12 .chat-talent-card--finished'));
+      assert('AC5 errored talent card renders', !!transcript.querySelector('#event-13 .chat-talent-card--errored'));
+      assert('AC5 reflection card renders', !!transcript.querySelector('#event-14 .chat-reflection-card') && text().includes('weekly reflection ready'));
+      assert('AC5 chat error detail renders', !!transcript.querySelector('#event-15 .chat-error-detail-content code') && text().includes('provider detail'));
+      assert('AC5 markdown rendered inline', transcript.querySelector('#event-12 .chat-talent-card-detail--markdown')?.innerHTML.includes('<strong>done</strong>'));
+      assert('AC5 no markdown bootstrap markers remain', !transcript.querySelector('[data-markdown]'));
+      assert('AC5 on_tap thinking has expander', !!transcript.querySelector('#event-6 .chat-thinking-expander') && !!transcript.querySelector('#event-12 .chat-thinking-expander'));
+      assert('AC4 raw-index id parity for every fixture event', EVENTS.every((_event, index) => transcript.children[index]?.id === 'event-' + index));
+      assert('AC4 post-control sol_message keeps raw id 9', transcript.querySelector('[data-use-id="use-after-controls"]')?.id === 'event-9');
+
+      renderFixture('always');
+      assert('AC5 always thinking renders inline', !!transcript.querySelector('#event-6 .chat-thinking-content') && !transcript.querySelector('#event-6 .chat-thinking-expander'));
+
+      renderFixture('never');
+      assert('AC5 never thinking hides reasoning', !transcript.querySelector('#event-6 .chat-thinking-content') && !text().includes('dispatch thinking'));
+
+      summary.className = failures ? 'fail' : 'pass';
+      summary.textContent = failures
+        ? `FAIL chat render: ${failures} failure(s)`
+        : 'PASS chat render: 0 failure(s)';
+    }
+
+    try {
+      runTests();
+    } catch (error) {
+      failures += 1;
+      report('uncaught exception', false, error && error.message ? error.message : String(error));
+      summary.className = 'fail';
+      summary.textContent = `FAIL chat render: ${failures} failure(s)`;
+    }
+  </script>
+</body>
+</html>

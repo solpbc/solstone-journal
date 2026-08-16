@@ -1,0 +1,521 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>support draft card test</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    .pass { color: #0a7a2f; }
+    .fail { color: #b00020; }
+  </style>
+  <script src="../chat_copy.js"></script>
+</head>
+<body>
+  <div id="test-results">RUNNING support draft card</div>
+  <ol id="results"></ol>
+
+  <div id="chatBarDraft" class="chat-bar-draft" aria-live="polite" hidden>
+    <div class="chat-bar-draft-card" role="group" aria-label="">
+      <div class="chat-bar-draft-header">
+        <span class="chat-bar-draft-dot" aria-hidden="true"></span>
+        <span class="chat-bar-draft-title"></span>
+        <span class="chat-bar-draft-route">
+          <span class="chat-bar-draft-route-from"></span>
+          <span class="chat-bar-draft-route-arrow" aria-hidden="true">→</span>
+          <span class="chat-bar-draft-route-to"></span>
+        </span>
+      </div>
+      <div class="chat-bar-draft-body"></div>
+      <div class="chat-bar-draft-actions">
+        <button id="chatBarDraftSubmit" type="button" class="chat-bar-draft-btn chat-bar-draft-btn--submit"></button>
+        <button id="chatBarDraftCancel" type="button" class="chat-bar-draft-btn chat-bar-draft-btn--cancel"></button>
+        <span class="chat-bar-draft-floor"></span>
+      </div>
+    </div>
+  </div>
+  <div id="chatBarResult" class="chat-bar-result" aria-live="polite" hidden></div>
+
+  <script>
+    const summary = document.getElementById('test-results');
+    const results = document.getElementById('results');
+    const draftEl = document.getElementById('chatBarDraft');
+    const resultEl = document.getElementById('chatBarResult');
+    const draftCardEl = draftEl.querySelector('.chat-bar-draft-card');
+    const draftBodyEl = draftEl.querySelector('.chat-bar-draft-body');
+    const draftSubmitBtn = document.getElementById('chatBarDraftSubmit');
+    const draftCancelBtn = document.getElementById('chatBarDraftCancel');
+    const postedMessages = [];
+    let failures = 0;
+    let currentDraft = null;
+
+    const FIELD_LABELS = {
+      subject: "subject",
+      description: "what's happening",
+      body: "your feedback",
+      content: "your message",
+      filename: "file",
+      content_type: "type",
+      byte_size: "size",
+      severity: "severity",
+      category: "area",
+      product: "product"
+    };
+    const DIAG_KEY_LABELS = {
+      version: "solstone version",
+      revision: "build",
+      platform: "system",
+      services: "services",
+      recent_errors: "recent errors",
+      config: "configuration",
+      provider_readiness: "ai providers"
+    };
+    const SUPPORT_OUTCOMES = {
+      "support draft submitted": { state: 'submitted', icon: '✓' },
+      "support draft failed": { state: 'failed', icon: '!' },
+      "support draft ambiguous": { state: 'ambiguous', icon: '?' },
+      "support draft in_progress": { state: 'in_progress', icon: '…' },
+      "support draft re_consent_required": { state: 're_consent_required', icon: '!' },
+      "support draft cancelled": { state: 'cancelled', icon: '–' }
+    };
+
+    function report(name, ok, detail) {
+      const item = document.createElement('li');
+      item.className = ok ? 'pass' : 'fail';
+      item.textContent = (ok ? 'PASS ' : 'FAIL ') + name + (detail ? ' — ' + detail : '');
+      results.appendChild(item);
+      if (!ok) failures += 1;
+    }
+    function assert(name, condition, detail) {
+      report(name, !!condition, detail);
+    }
+    function text() {
+      return draftEl.textContent + ' ' + resultEl.textContent;
+    }
+    function setStatus(_text, _title) {}
+    function postChatMessage(message) {
+      postedMessages.push(message);
+    }
+    function populateSupportDraftCopy() {
+      document.getElementById('chatBarDraftSubmit').textContent = window.solChatCopy.CHAT_DRAFT_SUBMIT;
+      document.getElementById('chatBarDraftCancel').textContent = window.solChatCopy.CHAT_DRAFT_CANCEL;
+      draftCardEl.setAttribute('aria-label', 'support draft for review');
+      draftEl.querySelector('.chat-bar-draft-title').textContent = window.solChatCopy.CHAT_DRAFT_HEADER;
+      draftEl.querySelector('.chat-bar-draft-route-from').textContent = window.solChatCopy.CHAT_CAPACITY_SUPPORT_ROUTE_FROM;
+      draftEl.querySelector('.chat-bar-draft-route-to').textContent = window.solChatCopy.CHAT_CAPACITY_SUPPORT_ROUTE_TO;
+      draftEl.querySelector('.chat-bar-draft-floor').textContent = window.solChatCopy.CHAT_DRAFT_FLOOR;
+    }
+    function formatAttachmentSize(size) {
+      const bytes = Number(size) || 0;
+      if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+      if (bytes >= 1024) return String(Math.round(bytes / 1024)) + ' KB';
+      return String(bytes) + ' bytes';
+    }
+    function appendDraftFieldRow(parent, label, value) {
+      const row = document.createElement('div');
+      row.className = 'chat-bar-draft-field';
+      const lab = document.createElement('span');
+      lab.className = 'chat-bar-draft-label';
+      lab.textContent = label;
+      const val = document.createElement('span');
+      val.className = 'chat-bar-draft-fieldval';
+      val.textContent = String(value ?? '—');
+      row.appendChild(lab);
+      row.appendChild(val);
+      parent.appendChild(row);
+    }
+    function appendDraftKind(parent, label, ticketId) {
+      const row = document.createElement('div');
+      row.className = 'chat-bar-draft-kindrow';
+      const kind = document.createElement('span');
+      kind.className = 'chat-bar-draft-kind';
+      kind.textContent = label;
+      row.appendChild(kind);
+      if (ticketId !== undefined && ticketId !== null) {
+        const ticket = document.createElement('span');
+        ticket.className = 'chat-bar-draft-ticket';
+        ticket.textContent = window.solChatCopy.CHAT_DRAFT_TICKET_FORMAT.replace('{ticket_id}', String(ticketId));
+        row.appendChild(ticket);
+      }
+      parent.appendChild(row);
+    }
+    function appendDraftFieldIfPresent(parent, payload, key, value) {
+      if (!(key in payload)) return;
+      appendDraftFieldRow(parent, FIELD_LABELS[key], value === undefined ? payload[key] : value);
+    }
+    function appendDraftMetaPill(parent, label, value) {
+      const pill = document.createElement('span');
+      pill.className = 'chat-bar-draft-pill';
+      pill.textContent = label + ': ' + String(value ?? '—');
+      parent.appendChild(pill);
+    }
+    function appendDraftMetaRow(parent, payload, keys) {
+      const row = document.createElement('div');
+      row.className = 'chat-bar-draft-meta';
+      keys.forEach(function(key) {
+        if (key in payload) appendDraftMetaPill(row, FIELD_LABELS[key], payload[key]);
+      });
+      parent.appendChild(row);
+      return row;
+    }
+    function appendNameAttachedPill(parent, payload) {
+      const pill = document.createElement('span');
+      pill.className = 'chat-bar-draft-pill';
+      pill.textContent = payload.anonymous === true
+        ? window.solChatCopy.CHAT_DRAFT_NAME_ATTACHED_NO
+        : window.solChatCopy.CHAT_DRAFT_NAME_ATTACHED_YES;
+      parent.appendChild(pill);
+    }
+    function renderDiagnosticsBlock(parent, snapshot) {
+      const section = document.createElement('div');
+      section.className = 'chat-bar-draft-diagnostics';
+      const title = document.createElement('div');
+      title.className = 'chat-bar-draft-diagnostics-title';
+      title.textContent = window.solChatCopy.CHAT_DRAFT_DIAGNOSTICS_TITLE;
+      const note = document.createElement('div');
+      note.className = 'chat-bar-draft-diagnostics-note';
+      note.textContent = window.solChatCopy.CHAT_DRAFT_DIAGNOSTICS_NOTE;
+      const rows = document.createElement('div');
+      rows.className = 'chat-bar-draft-diagnostics-rows';
+      if (snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
+        Object.keys(snapshot).forEach(function(key) {
+          appendDiagnosticsRow(rows, key, snapshot[key]);
+        });
+      }
+      section.appendChild(title);
+      section.appendChild(note);
+      section.appendChild(rows);
+      parent.appendChild(section);
+    }
+    function appendDiagnosticsRow(parent, key, value) {
+      const label = DIAG_KEY_LABELS[key] || key;
+      const row = document.createElement('div');
+      row.className = Array.isArray(value)
+        ? 'chat-bar-draft-diagnostic-row chat-bar-draft-diagnostic-row--array'
+        : 'chat-bar-draft-diagnostic-row';
+      if (!Array.isArray(value)) {
+        const labelEl = document.createElement('span');
+        labelEl.className = 'chat-bar-draft-label';
+        labelEl.textContent = label;
+        row.appendChild(labelEl);
+      }
+      const valueEl = document.createElement('div');
+      valueEl.className = 'chat-bar-draft-fieldval';
+      valueEl.appendChild(renderDiagnosticsValue(value, label));
+      row.appendChild(valueEl);
+      parent.appendChild(row);
+    }
+    function appendDiagnosticSubRow(parent, key, value) {
+      const row = document.createElement('div');
+      row.className = 'chat-bar-draft-diagnostic-subrow';
+      const label = document.createElement('span');
+      label.className = 'chat-bar-draft-label';
+      label.textContent = key;
+      const valueEl = document.createElement('div');
+      valueEl.className = 'chat-bar-draft-fieldval';
+      valueEl.appendChild(renderDiagnosticsValue(value, key));
+      row.appendChild(label);
+      row.appendChild(valueEl);
+      parent.appendChild(row);
+    }
+    function renderDiagnosticsValue(value, labelText) {
+      if (Array.isArray(value)) return renderDiagnosticsArray(value, labelText);
+      if (value === null || typeof value !== 'object') {
+        const span = document.createElement('span');
+        span.className = 'chat-bar-draft-value';
+        span.textContent = value === null ? '—' : String(value);
+        return span;
+      }
+      const keys = Object.keys(value);
+      if (keys.length === 0) {
+        const span = document.createElement('span');
+        span.className = 'chat-bar-draft-value';
+        span.textContent = '(none)';
+        return span;
+      }
+      const group = document.createElement('div');
+      group.className = 'chat-bar-draft-diagnostic-subrows';
+      keys.forEach(function(key) {
+        appendDiagnosticSubRow(group, key, value[key]);
+      });
+      return group;
+    }
+    function renderDiagnosticsArray(items, labelText) {
+      const wrapper = document.createElement('div');
+      const expanded = items.length <= 5;
+      const button = document.createElement('button');
+      const content = document.createElement('div');
+      wrapper.className = 'chat-bar-draft-diagnostic-array';
+      button.type = 'button';
+      button.className = 'chat-bar-draft-diagnostic-toggle';
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      button.textContent = String(labelText || '') + ' (' + String(items.length) + ')';
+      content.className = 'chat-bar-draft-diagnostic-array-items';
+      content.hidden = !expanded;
+      if (items.length === 0) {
+        const none = document.createElement('span');
+        none.textContent = '(none)';
+        content.appendChild(none);
+      } else {
+        items.forEach(function(item) {
+          const row = document.createElement('div');
+          row.className = 'chat-bar-draft-diagnostic-array-item';
+          row.appendChild(renderDiagnosticsValue(item, labelText));
+          content.appendChild(row);
+        });
+      }
+      button.addEventListener('click', function() {
+        const nextExpanded = button.getAttribute('aria-expanded') !== 'true';
+        button.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+        content.hidden = !nextExpanded;
+      });
+      wrapper.appendChild(button);
+      wrapper.appendChild(content);
+      return wrapper;
+    }
+    function renderDraftBody(parent, draft) {
+      const payload = draft.payload || {};
+      if (draft.verb === 'create') {
+        appendDraftKind(parent, window.solChatCopy.CHAT_DRAFT_KIND_CREATE);
+        appendDraftFieldIfPresent(parent, payload, 'subject');
+        appendDraftFieldIfPresent(parent, payload, 'description');
+        appendNameAttachedPill(appendDraftMetaRow(parent, payload, ['severity', 'category', 'product']), payload);
+        renderDiagnosticsBlock(parent, draft.diagnostics_snapshot);
+      } else if (draft.verb === 'feedback') {
+        appendDraftKind(parent, window.solChatCopy.CHAT_DRAFT_KIND_FEEDBACK);
+        appendDraftFieldIfPresent(parent, payload, 'body');
+        appendNameAttachedPill(appendDraftMetaRow(parent, payload, ['product']), payload);
+        renderDiagnosticsBlock(parent, draft.diagnostics_snapshot);
+      } else if (draft.verb === 'reply') {
+        appendDraftKind(parent, window.solChatCopy.CHAT_DRAFT_KIND_REPLY, payload.ticket_id);
+        appendDraftFieldIfPresent(parent, payload, 'content');
+      } else if (draft.verb === 'attach') {
+        appendDraftKind(parent, window.solChatCopy.CHAT_DRAFT_KIND_ATTACH, payload.ticket_id);
+        appendDraftFieldIfPresent(parent, payload, 'filename');
+        const meta = appendDraftMetaRow(parent, payload, ['content_type']);
+        if ('byte_size' in payload) appendDraftMetaPill(meta, FIELD_LABELS.byte_size, formatAttachmentSize(payload.byte_size));
+        const note = document.createElement('div');
+        note.className = 'chat-bar-draft-attach-note';
+        note.textContent = window.solChatCopy.CHAT_DRAFT_ATTACH_NOTE;
+        parent.appendChild(note);
+      } else if (draft.verb === 'close') {
+        renderLifecycleDraftBody(parent, payload, window.solChatCopy.CHAT_DRAFT_KIND_CLOSE, window.solChatCopy.CHAT_DRAFT_CLOSE_NOTE);
+      } else if (draft.verb === 'resolved') {
+        renderLifecycleDraftBody(parent, payload, window.solChatCopy.CHAT_DRAFT_KIND_RESOLVED, window.solChatCopy.CHAT_DRAFT_RESOLVED_NOTE);
+      } else if (draft.verb === 'still_need_help') {
+        renderLifecycleDraftBody(parent, payload, window.solChatCopy.CHAT_DRAFT_KIND_STILL_NEED_HELP, window.solChatCopy.CHAT_DRAFT_STILL_NEED_HELP_NOTE);
+      }
+    }
+    function renderLifecycleDraftBody(parent, payload, kind, noteText) {
+      appendDraftKind(parent, kind, payload.ticket_id);
+      const note = document.createElement('div');
+      note.className = 'chat-bar-draft-attach-note';
+      note.textContent = noteText;
+      parent.appendChild(note);
+    }
+    function reenableSupportDraft() {
+      draftSubmitBtn.disabled = false;
+      draftCancelBtn.disabled = false;
+    }
+    function hideSupportDraft() {
+      draftEl.hidden = true;
+      currentDraft = null;
+      reenableSupportDraft();
+    }
+    function hideSupportResult() {
+      resultEl.replaceChildren();
+      resultEl.hidden = true;
+    }
+    function showSupportDraft(draft) {
+      currentDraft = draft;
+      reenableSupportDraft();
+      hideSupportResult();
+      draftBodyEl.replaceChildren();
+      renderDraftBody(draftBodyEl, draft);
+      draftEl.hidden = false;
+      setStatus('', '');
+    }
+    function renderSupportOutcome(msg) {
+      const outcome = SUPPORT_OUTCOMES[msg.notes || ''];
+      if (!outcome) return false;
+      resultEl.replaceChildren();
+      const strip = document.createElement('div');
+      strip.className = 'chat-bar-result-strip chat-bar-result-strip--' + outcome.state;
+      const icon = document.createElement('span');
+      icon.className = 'chat-bar-result-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = outcome.icon;
+      const body = document.createElement('span');
+      body.className = 'chat-bar-result-text';
+      body.textContent = msg.text || '';
+      strip.appendChild(icon);
+      strip.appendChild(body);
+      if (outcome.state === 'submitted') {
+        const link = document.createElement('a');
+        link.href = '/app/support/';
+        link.textContent = window.solChatCopy.CHAT_RESULT_VIEW_IN_SUPPORT;
+        strip.appendChild(link);
+      }
+      resultEl.appendChild(strip);
+      resultEl.hidden = false;
+      if (outcome.state === 'submitted' || outcome.state === 'cancelled') {
+        hideSupportDraft();
+      } else {
+        reenableSupportDraft();
+      }
+      setStatus('', '');
+      return true;
+    }
+    function assertText(name, needle) {
+      assert(name, text().includes(needle), needle);
+    }
+
+    function runTests() {
+      populateSupportDraftCopy();
+      assert('card aria label', draftCardEl.getAttribute('aria-label') === 'support draft for review');
+      assertText('header title', window.solChatCopy.CHAT_DRAFT_HEADER);
+      assertText('route from', 'sol');
+      assertText('route to', 'solstone support');
+
+      showSupportDraft({
+        verb: 'create',
+        payload: {
+          subject: 'Cannot start',
+          description: 'The service exits',
+          severity: 'high',
+          category: 'runtime',
+          product: 'solstone',
+          anonymous: true
+        },
+        diagnostics_snapshot: {
+          version: '1.2.3',
+          revision: null,
+          platform: { system: 'Linux' },
+          services: {},
+          recent_errors: [{ message: 'boom' }, { message: 'pop' }, { message: 'zap' }],
+          empty_list: [],
+          provider_readiness: { unavailable: true },
+          unknown_key: 'visible'
+        }
+      });
+      assertText('create kind', 'new support request');
+      assertText('create description label', "what's happening");
+      assertText('create meta severity', 'severity: high');
+      assertText('create meta category', 'area: runtime');
+      assertText('create meta product', 'product: solstone');
+      assertText('anonymous name detached', 'name attached: no');
+      assertText('diagnostics title', window.solChatCopy.CHAT_DRAFT_DIAGNOSTICS_TITLE);
+      assertText('diagnostics note', window.solChatCopy.CHAT_DRAFT_DIAGNOSTICS_NOTE);
+      assertText('known diagnostic label', 'solstone version');
+      assertText('null diagnostic scalar', '—');
+      assertText('empty object diagnostic', '(none)');
+      assertText('empty array count', 'empty_list (0)');
+      assertText('unknown diagnostic key', 'unknown_key');
+      assert('no raw object dump', !text().includes('{"'));
+      const smallToggle = draftEl.querySelector('.chat-bar-draft-diagnostic-toggle');
+      assert('array toggle is button', smallToggle && smallToggle.tagName === 'BUTTON');
+      assert('small array expanded', smallToggle.getAttribute('aria-expanded') === 'true');
+
+      showSupportDraft({
+        verb: 'create',
+        payload: {},
+        diagnostics_snapshot: { recent_errors: [1, 2, 3, 4, 5, 6] }
+      });
+      const largeToggle = draftEl.querySelector('.chat-bar-draft-diagnostic-toggle');
+      const largeItems = draftEl.querySelector('.chat-bar-draft-diagnostic-array-items');
+      assert('large array collapsed', largeToggle.getAttribute('aria-expanded') === 'false' && largeItems.hidden);
+      largeToggle.click();
+      assert('array click toggles', largeToggle.getAttribute('aria-expanded') === 'true' && !largeItems.hidden);
+
+      showSupportDraft({
+        verb: 'feedback',
+        payload: { body: 'The flow is confusing', product: 'solstone' },
+        diagnostics_snapshot: { config: { mode: 'dev' } }
+      });
+      assertText('feedback kind', 'send feedback');
+      assertText('feedback field label', 'your feedback');
+      assertText('absent anonymous name attached', 'name attached: yes');
+
+      showSupportDraft({
+        verb: 'reply',
+        payload: { ticket_id: 42, content: 'More detail' },
+        diagnostics_snapshot: null
+      });
+      assertText('reply kind', 'reply');
+      assertText('reply ticket', 'ticket #42');
+      assertText('reply field label', 'your message');
+      assert('reply has no diagnostics', !text().includes(window.solChatCopy.CHAT_DRAFT_DIAGNOSTICS_TITLE));
+
+      showSupportDraft({
+        verb: 'attach',
+        payload: {
+          ticket_id: 42,
+          filename: 'evidence.txt',
+          content_type: 'text/plain',
+          byte_size: 2048
+        },
+        diagnostics_snapshot: null
+      });
+      assertText('attach kind', 'attach a file');
+      assertText('attach file field', 'file');
+      assertText('attach type meta', 'type: text/plain');
+      assertText('attach size meta', 'size: 2 KB');
+      assertText('attach trust note', window.solChatCopy.CHAT_DRAFT_ATTACH_NOTE);
+      assert('attach has no diagnostics', !text().includes(window.solChatCopy.CHAT_DRAFT_DIAGNOSTICS_TITLE));
+
+      [
+        ['close', window.solChatCopy.CHAT_DRAFT_KIND_CLOSE, window.solChatCopy.CHAT_DRAFT_CLOSE_NOTE],
+        ['resolved', window.solChatCopy.CHAT_DRAFT_KIND_RESOLVED, window.solChatCopy.CHAT_DRAFT_RESOLVED_NOTE],
+        ['still_need_help', window.solChatCopy.CHAT_DRAFT_KIND_STILL_NEED_HELP, window.solChatCopy.CHAT_DRAFT_STILL_NEED_HELP_NOTE]
+      ].forEach(function(row) {
+        showSupportDraft({ verb: row[0], payload: { ticket_id: 42 }, diagnostics_snapshot: null });
+        assert(row[0] + ' kind', text().includes(row[1]), row[1]);
+        assert(row[0] + ' ticket', text().includes('ticket #42'), 'ticket #42');
+        assert(row[0] + ' disclosure', text().includes(row[2]), row[2]);
+      });
+
+      showSupportDraft({ verb: 'create', payload: {}, diagnostics_snapshot: {} });
+      assert('submitted outcome matches', renderSupportOutcome({ notes: 'support draft submitted', text: 'Filed.' }));
+      assert('submitted clears draft', draftEl.hidden && !resultEl.hidden);
+      assert('submitted link', resultEl.querySelector('a').getAttribute('href') === '/app/support/');
+      assertText('submitted copy', 'Filed.');
+
+      [
+        ['failed', 'support draft failed'],
+        ['ambiguous', 'support draft ambiguous'],
+        ['in_progress', 'support draft in_progress'],
+        ['re_consent_required', 'support draft re_consent_required']
+      ].forEach(function(row) {
+        const retryDraft = { draft_id: 'retry-' + row[0], verb: 'create', payload: {}, diagnostics_snapshot: {} };
+        showSupportDraft(retryDraft);
+        draftSubmitBtn.disabled = true;
+        draftCancelBtn.disabled = true;
+        assert(row[0] + ' outcome matches', renderSupportOutcome({ notes: row[1], text: row[0] }));
+        assert(row[0] + ' keeps draft visible', !draftEl.hidden && !draftSubmitBtn.disabled && !draftCancelBtn.disabled);
+        assert(row[0] + ' keeps draft id', currentDraft && currentDraft.draft_id === retryDraft.draft_id);
+        assert(row[0] + ' has no retry button', !resultEl.querySelector('button'));
+      });
+
+      showSupportDraft({ verb: 'create', payload: {}, diagnostics_snapshot: {} });
+      assert('cancelled outcome matches', renderSupportOutcome({ notes: 'support draft cancelled', text: 'Cancelled.' }));
+      assert('cancelled clears draft', draftEl.hidden && currentDraft === null);
+      assert('near miss falls through', !renderSupportOutcome({ notes: 'support draft queued', text: 'Queued.' }));
+
+      summary.className = failures ? 'fail' : 'pass';
+      summary.textContent = failures
+        ? 'FAIL support draft card: ' + String(failures) + ' failure(s)'
+        : 'PASS support draft card: 0 failure(s)';
+    }
+
+    try {
+      runTests();
+    } catch (error) {
+      failures += 1;
+      report('uncaught exception', false, error && error.message ? error.message : String(error));
+      summary.className = 'fail';
+      summary.textContent = 'FAIL support draft card: ' + String(failures) + ' failure(s)';
+    }
+  </script>
+</body>
+</html>

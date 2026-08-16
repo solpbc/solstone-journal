@@ -11,7 +11,18 @@ import scripts.build_native_sol_inventory as inventory
 def write_authority(root: Path, app: str, operation_id: str) -> None:
     native = root / "solstone" / "apps" / app / "native"
     native.mkdir(parents=True)
-    (native / "command.rs").write_text(
+    command = (
+        root
+        / "core"
+        / "crates"
+        / "solstone-core-sol-client"
+        / "native"
+        / "apps"
+        / app
+        / "command.rs"
+    )
+    command.parent.mkdir(parents=True, exist_ok=True)
+    command.write_text(
         "// SPDX-License-Identifier: AGPL-3.0-only\n"
         "// Copyright (c) 2026 sol pbc\n\n"
         "pub fn fixture_handler() {}\n"
@@ -57,7 +68,18 @@ def test_inventory_discovery_uses_real_adjacency_without_central_list(
 def test_resident_entries_generate_resident_handlers(tmp_path: Path) -> None:
     native = tmp_path / "solstone" / "think" / "native" / "link"
     native.mkdir(parents=True)
-    (native / "command.rs").write_text(
+    command = (
+        tmp_path
+        / "core"
+        / "crates"
+        / "solstone-core-sol-client"
+        / "native"
+        / "think"
+        / "link"
+        / "command.rs"
+    )
+    command.parent.mkdir(parents=True, exist_ok=True)
+    command.write_text(
         "// SPDX-License-Identifier: AGPL-3.0-only\n"
         "// Copyright (c) 2026 sol pbc\n\n"
         "pub fn link_join() {}\n"

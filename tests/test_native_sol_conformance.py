@@ -26,7 +26,8 @@ def test_native_sol_conformance_self_test_detects_authority_route_mismatch() -> 
             authority=conformance.REPO_ROOT
             / "solstone/apps/activities/native/authority.toml",
             authority_path="solstone/apps/activities/native/authority.toml",
-            source=conformance.REPO_ROOT / "solstone/apps/activities/native/command.rs",
+            source=conformance.REPO_ROOT
+            / "core/crates/solstone-core-sol-client/native/apps/activities/command.rs",
             module="solstone_apps_activities_native_command_rs",
             surface="sol-call",
             path=("activities", "list"),

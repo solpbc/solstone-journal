@@ -6,10 +6,7 @@ use axum::{
     http::{Response, header},
 };
 
-const SHELL: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/convey/static/shell.html"
-));
+const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
 const WORKSPACE: &[u8] = include_bytes!("../assets/workspace.html");
 include!(concat!(env!("OUT_DIR"), "/static_assets.rs"));
 

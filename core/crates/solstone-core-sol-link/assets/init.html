@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>create your journal — solstone</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/static/tokens.css">
+  <style>
+    body {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-body); margin: 0; padding: 1em; background: var(--paper); color: var(--ink-soft-paper);
+    }
+    svg[aria-label="sol logo"] { width: 140px; height: 140px; margin: 0 auto 1rem; display: block; }
+    .init-container { max-width: 520px; width: 90vw; }
+    .config-path { font-size: 0.8rem; color: var(--ink-faint-paper); text-align: center; margin: 0 0 1.5rem; word-break: break-all; }
+    h1 { text-align: center; font-family: var(--font-display); font-weight: 700; letter-spacing: 0.1em; color: var(--ink); font-size: 2.5rem; text-transform: lowercase; margin-bottom: 0.5rem; }
+    .product-tagline { text-align: center; font-family: var(--font-display); color: var(--ink-faint-paper); text-transform: lowercase; margin: 0 0 2rem; font-size: 0.95rem; }
+    .init-section { margin-bottom: 2rem; }
+    .init-section h3 { font-size: 1.25rem; font-weight: 600; border-bottom: 1px solid var(--hairline); padding-bottom: 0.5rem; margin-bottom: 0.75rem; }
+    .section-hint { font-size: 0.85rem; color: var(--ink-soft-paper); margin: 0 0 0.75rem; }
+    .section-hint a { color: var(--orange-ink); }
+    .machine-card {
+      margin-bottom: 2rem;
+      padding: 1rem;
+      border: 1px solid var(--hairline-2);
+      border-radius: 8px;
+      background: var(--cream-bright);
+      color: var(--ink-soft-paper);
+    }
+    .machine-card-headline {
+      margin: 0 0 0.75rem;
+      color: var(--ink);
+      font-size: 1.25rem;
+      font-weight: 600;
+      font-family: var(--font-display);
+    }
+    .machine-card p { margin: 0; font-size: 0.9rem; line-height: 1.5; }
+    .field-group { margin-bottom: 0.75rem; }
+    .field-group label { display: block; font-size: 0.85rem; color: var(--ink-soft-paper); margin-bottom: 0.25rem; }
+    .field-group input:not([type="checkbox"]):not([type="radio"]) {
+      width: 100%; padding: 10px 12px; border: 2px solid var(--hairline-2); border-radius: 8px;
+      font-size: 0.95rem; box-sizing: border-box;
+    }
+    .field-group input:not([type="checkbox"]):not([type="radio"]):focus { outline: none; border-color: var(--orange); }
+    .field-group input:not([type="checkbox"]):not([type="radio"]):disabled { background: var(--cream); color: var(--ink-faint-paper); }
+    .field-status { display: block; font-size: 0.8rem; min-height: 1.2em; margin-top: 0.25rem; }
+    p.field-status { margin-bottom: 0; }
+    .status-saved { color: var(--success-ink); }
+    .status-error { color: var(--danger); }
+    .status-fade { opacity: 0; transition: opacity 0.3s; }
+    .error-message {
+      margin-top: 0.75rem;
+      padding: 0.75rem 0.9rem;
+      border: 1px solid var(--danger);
+      border-radius: 8px;
+      background: var(--danger-wash);
+      color: var(--danger);
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+    .cta-button {
+      display: inline-block; margin-top: 1rem; padding: 12px 24px; background: var(--orange);
+      color: var(--ink); border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
+      font-family: var(--font-display); text-transform: lowercase;
+    }
+    .cta-button:hover { filter: brightness(0.94); }
+    .cta-button[hidden] { display: none; }
+    .lanes { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .laneslot { min-width: 0; }
+    .lane {
+      border: 1.5px solid var(--hairline-2);
+      border-radius: 9px;
+      padding: 15px 16px;
+      background: var(--cream-bright);
+      cursor: pointer;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      text-decoration: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      width: 100%;
+      min-width: 0;
+      margin: 0;
+      box-sizing: border-box;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+    .lane:hover { background: var(--paper); }
+    .lane.active {
+      border-color: var(--orange);
+      background: var(--paper);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 14%, transparent);
+    }
+    .lane .laneic {
+      width: 30px;
+      height: 30px;
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 19px;
+      color: var(--ink-soft);
+      margin-top: 1px;
+    }
+    .lane .lanebody { flex: 1 1 auto; min-width: 0; }
+    .lane .lanetop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .lane .lanename { font-weight: 700; font-size: 1.02rem; color: var(--ink); }
+    .lane .lanesub { font-size: .82rem; color: var(--ink-faint); margin-top: 2px; }
+    .lane .lanedesc { font-size: .86rem; color: var(--ink-faint); margin-top: 3px; line-height: 1.45; }
+    .lane.greyed { background: var(--cream); border-color: var(--hairline); cursor: default; }
+    .lane.greyed .lanename { color: var(--ink-faint); }
+    .lane.greyed .laneic { color: var(--ink-faint); }
+    .lane .laneverdict { font-size: .82rem; color: var(--ink-faint); margin-top: 7px; line-height: 1.45; }
+    .lane .reqlink { color: var(--orange-ink); font-weight: 600; text-decoration: none; }
+    .lane .lanetag {
+      border: 1px solid var(--hairline);
+      color: var(--ink-faint);
+      background: var(--cream-bright);
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: .72rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .lanemore {
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      font: inherit;
+      font-size: .84rem;
+      font-weight: 600;
+      color: var(--orange-ink);
+      margin: 7px 0 0 60px;
+    }
+    .lanedetail {
+      margin: 8px 0 0 60px;
+      border: 1px solid var(--hairline);
+      border-radius: 9px;
+      background: var(--cream-bright);
+      color: var(--ink-faint);
+      padding: 11px 13px;
+      font-size: .84rem;
+      line-height: 1.5;
+    }
+    .lanedetail[hidden] { display: none; }
+    .lanedetail-heading {
+      font-family: var(--font-display);
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 2px;
+    }
+    .lanedetail-sub { color: var(--ink-soft); margin-bottom: 8px; }
+    .lanedetail-line { margin-top: 7px; }
+    .lanedetail-claims { color: var(--ink-soft); font-weight: 600; margin-top: 9px; }
+    .routenote {
+      font-size: .84rem;
+      color: var(--ink-faint);
+      background: var(--cream-bright);
+      border: 1px dashed var(--hairline-2);
+      border-radius: 9px;
+      padding: 11px 13px;
+      margin-top: 16px;
+      line-height: 1.5;
+    }
+    .routenote b { color: var(--ink-soft); }
+    .deferlink { font-size: .86rem; color: var(--ink-faint); margin-top: 16px; }
+    .deferlink a { color: var(--orange-ink); font-weight: 600; text-decoration: none; }
+    .footer-note { font-size: 0.8rem; color: var(--ink-faint-paper); margin-top: 1.5rem; text-align: center; }
+    .settings-preset-btn {
+      padding: 0.5em 0.9em; border: 1px solid var(--hairline-2); border-radius: 4px;
+      background: var(--paper); color: var(--ink-soft-paper); cursor: pointer; font-size: 0.85rem;
+    }
+    .settings-preset-btn:hover { border-color: var(--ink-faint-paper); }
+    .settings-preset-btn.active { border-color: var(--orange); color: var(--orange-ink); }
+    .retention-options { display: flex; flex-direction: column; gap: 0.5rem; }
+    .retention-option { display: flex; flex-direction: column; gap: 0.4rem; cursor: pointer; }
+    .retention-option-label { font-size: 0.95rem; }
+    .retention-days-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+    .retention-days-row input[type="number"] {
+      width: 5em; padding: 0.35em 0.5em; border: 2px solid var(--hairline-2); border-radius: 8px;
+      font-size: 0.95rem; box-sizing: border-box;
+    }
+    .retention-days-row input[type="number"]:focus { outline: none; border-color: var(--orange); }
+    .retention-days-row.is-disabled { opacity: 0.5; cursor: not-allowed; }
+    .retention-days-suffix { font-size: 0.85rem; color: var(--ink-soft-paper); }
+    .mark-display { display: flex; justify-content: center; min-height: 64px; margin: 0 0 0.85rem; }
+    .mark-card { display: inline-flex; flex-direction: column; align-items: center; gap: 0.55rem; background: var(--cream-bright); border: 1px solid var(--hairline-2); border-radius: 12px; padding: 1.15rem 1.4rem; }
+    .mark-card.locked { border-color: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 8%, transparent); }
+    .mark-chips { display: flex; gap: 0.7rem; }
+    .mark-chip { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 2px solid var(--hairline-2); border-radius: 12px; box-sizing: border-box; }
+    .mark-chip svg { width: 28px; height: 28px; display: block; }
+    .mark-words { display: flex; align-items: center; gap: 0.5rem; font-family: var(--font-display); font-size: 1.1rem; letter-spacing: .3px; color: var(--ink); }
+    .mark-words .mark-sep { color: var(--ink-faint); }
+    .mark-actions { display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-top: 0.25rem; }
+    .mark-permanence { text-align: center; }
+    .mark-locked { display: flex; align-items: center; justify-content: center; gap: 0.4rem; color: var(--success-ink); font-size: 0.92rem; margin-top: 0.5rem; font-weight: 600; }
+    .mark-locked svg { width: 16px; height: 16px; flex: none; }
+    @media (prefers-reduced-motion: no-preference) {
+      .mark-card.pop { animation: mark-pop .26s ease-out; }
+      @keyframes mark-pop { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
+    }
+    .cta-button:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+  <script src="/static/error-handler.js"></script>
+  <script src="/static/api.js"></script>
+</head>
+<body>
+  <main>
+    <div class="init-container">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="2.5 2.5 27 27" role="img" aria-label="sol logo">
+      <title>sol</title>
+      <!-- Sun rays: 10 floating wedges with curved inner arc matching the ring -->
+      <path fill="#FFCF33" d="M16.0 2.5 L18.6 7.3 A9.1 9.1 0 0 0 13.4 7.3 Z M23.9 5.1 L23.2 10.5 A9.1 9.1 0 0 0 19.0 7.4 Z M28.8 11.8 L25.1 15.8 A9.1 9.1 0 0 0 23.5 10.9 Z M28.8 20.2 L23.5 21.1 A9.1 9.1 0 0 0 25.1 16.2 Z M23.9 26.9 L19.0 24.6 A9.1 9.1 0 0 0 23.2 21.5 Z M16.0 29.5 L13.4 24.7 A9.1 9.1 0 0 0 18.6 24.7 Z M8.1 26.9 L8.8 21.5 A9.1 9.1 0 0 0 13.0 24.6 Z M3.2 20.2 L6.9 16.2 A9.1 9.1 0 0 0 8.5 21.1 Z M3.2 11.8 L8.5 10.9 A9.1 9.1 0 0 0 6.9 15.8 Z M8.1 5.1 L13.0 7.4 A9.1 9.1 0 0 0 8.8 10.5 Z"/>
+      <!-- Sun ring: open annulus -->
+      <circle cx="16" cy="16" r="8.0" fill="none" stroke="#E8923A" stroke-width="1.2"/>
+      <!-- sol — Comfortaa Bold, scale=0.01 SVG/fu, letter-spacing=-100fu, 12.54 wide -->
+      <path fill="#E8923A" fill-rule="evenodd" d="M12.079 18.795C13.489 18.795 14.229 18.065 14.229 17.155C14.229 16.365 13.729 15.835 12.229 15.535C11.149 15.315 10.939 15.095 10.939 14.725C10.939 14.345 11.399 14.135 11.989 14.135C12.499 14.135 12.859 14.235 13.199 14.555C13.399 14.745 13.729 14.815 13.949 14.665C14.159 14.505 14.169 14.255 13.989 14.035C13.589 13.545 12.889 13.245 12.009 13.245C10.989 13.245 9.959 13.735 9.959 14.755C9.959 15.525 10.529 16.075 11.879 16.335C12.919 16.525 13.249 16.815 13.239 17.215C13.229 17.615 12.809 17.895 12.039 17.895C11.429 17.895 10.889 17.625 10.659 17.375C10.469 17.175 10.189 17.125 9.929 17.335C9.699 17.515 9.659 17.825 9.859 18.035C10.299 18.475 11.149 18.795 12.079 18.795Z M16.999 18.795C18.609 18.795 19.749 17.645 19.749 16.025C19.739 14.395 18.599 13.245 16.999 13.245C15.379 13.245 14.239 14.395 14.239 16.025C14.239 17.645 15.379 18.795 16.999 18.795ZM16.999 17.895C15.959 17.895 15.219 17.125 15.219 16.025C15.219 14.925 15.959 14.145 16.999 14.145C18.039 14.145 18.769 14.925 18.769 16.025C18.769 17.125 18.039 17.895 16.999 17.895Z M21.569 18.755H21.589C21.989 18.755 22.269 18.545 22.269 18.255C22.269 17.965 22.079 17.755 21.819 17.755H21.569C21.279 17.755 21.069 17.405 21.069 16.905V11.445C21.069 11.155 20.859 10.945 20.569 10.945C20.279 10.945 20.069 11.155 20.069 11.445V16.905C20.069 17.985 20.689 18.755 21.569 18.755Z"/>
+    </svg>
+    <p class="config-path">journal version <span id="init-version"></span> at <code id="journal-path"></code></p>
+    <h1>create your journal</h1>
+    <p class="product-tagline">this is sol, part of solstone. sol keeps your journal.</p>
+
+    <section id="section-machine-card" class="section machine-card">
+      <h2 class="machine-card-headline">your journal lives on this computer.</h2>
+      <p>sol experiences your day with you and keeps it all here, in your journal. nothing else is required to start.</p>
+    </section>
+
+    <section class="init-section" id="section-journal-mark">
+      <h3>this is your journal</h3>
+      <p class="section-hint">every journal has its own mark — two symbols and two words, unique to yours. you'll recognize it whenever you connect a device.</p>
+      <div id="journal-mark-display" class="mark-display" aria-live="polite"></div>
+      <div id="journal-mark-error" class="error-message" hidden></div>
+      <button type="button" id="journal-mark-retry" class="settings-preset-btn" hidden>try again</button>
+      <div class="mark-actions">
+        <button type="button" id="journal-mark-regenerate" class="settings-preset-btn">try another</button>
+        <button type="button" id="journal-mark-lock" class="cta-button">lock it in</button>
+      </div>
+      <p class="section-hint mark-permanence">lock it in and this mark is your journal's, for good — it can't be changed later. try as many as you like first.</p>
+      <p id="journal-mark-locked" class="mark-locked" hidden><svg viewBox="0 0 24 24" fill="none" stroke="#166534" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>locked in · this is your journal's mark, for good.</p>
+    </section>
+
+    <form id="init-form" onsubmit="finalize(event); return false;">
+    <section class="init-section" id="section-identity">
+      <h3>who are you?</h3>
+      <p class="section-hint">optional — just helps sol know what to call you.</p>
+      <div class="field-group">
+        <label for="name">full name</label>
+        <input type="text" id="name">
+        <small class="field-status" aria-live="polite">&nbsp;</small>
+      </div>
+      <div class="field-group">
+        <label for="preferred">preferred name</label>
+        <input type="text" id="preferred">
+        <small class="field-status" aria-live="polite">&nbsp;</small>
+      </div>
+    </section>
+
+    <section class="init-section" id="section-provider">
+      <h3>how should sol think?</h3>
+      <p class="section-hint">sol reasons about your journal and answers you. it thinks the way you choose here — and you can change it anytime in <b>thinking</b>.</p>
+      <div class="lanes" id="provider-lanes" aria-live="polite"></div>
+      <div class="routenote">when you finish, <b>thinking</b> opens to the lane you picked. the fork lives in thinking from here on — switch anytime.</div>
+      <p class="deferlink"><a href="#" id="provider-skip">not thinking yet — set this up later in thinking</a> — sol will keep your journal from day one. choose how it thinks whenever you're ready — nothing is lost.</p>
+    </section>
+
+    <section class="init-section" id="section-observed-media">
+      <h3>your original media (audio, video, screen frames)</h3>
+      <p class="section-hint">by default, your journal keeps your original media so you can access it again later. you can also list it for removal after a set number of days, or list originals for removal after processing. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</p>
+      <div class="field-group">
+        <div class="retention-options">
+          <label class="retention-option">
+            <input type="radio" name="retention_mode" value="keep">
+            <span class="retention-option-label">keep everything</span>
+          </label>
+          <label class="retention-option">
+            <input type="radio" name="retention_mode" value="days">
+            <span class="retention-option-label">list originals for removal after a set number of days</span>
+            <div class="retention-days-row">
+              <input type="number" id="retention-days-input" min="1" value="30">
+              <span class="retention-days-suffix">days</span>
+              <button type="button" class="settings-preset-btn" data-days="7">7</button>
+              <button type="button" class="settings-preset-btn" data-days="30">30</button>
+              <button type="button" class="settings-preset-btn" data-days="90">90</button>
+            </div>
+          </label>
+          <label class="retention-option">
+            <input type="radio" name="retention_mode" value="processed">
+            <span class="retention-option-label">list originals for removal after processing</span>
+          </label>
+        </div>
+        <p class="field-status" id="retention-status">&nbsp;</p>
+      </div>
+    </section>
+
+    <button type="submit" class="cta-button" disabled>finish welcome setup</button>
+    </form>
+    <div id="finalize-error" class="error-message" hidden></div>
+
+    <p class="footer-note">your journal stays on this computer — nothing leaves unless you send it.</p>
+    <p class="footer-note">questions or feedback? <a href="https://bsky.app/profile/solstone.app" target="_blank" rel="noopener noreferrer">@solstone.app on bluesky</a> &middot; <a href="https://github.com/solpbc/solstone/issues" target="_blank" rel="noopener noreferrer">github issues</a> &middot; <a href="https://support.solstone.app" target="_blank" rel="noopener noreferrer">support.solstone.app</a></p>
+    </div>
+  </main>
+
+  <script>
+    const LANE_GLYPHS = { local: '⌂', confidential: '◎', byo: '⚿' };
+    const LOCAL_REQUIREMENTS_URL = 'https://github.com/solpbc/solstone-journal/blob/main/INSTALL.md#choosing-how-to-power-sol';
+    const SEVERITY_RANK = { ok: 0, unknown: 1, warning: 2, blocked: 3 };
+    let selectedLane = null;
+    let confidentialDetailOpen = false;
+    let confidentialDetail = null;
+    let laneData = [];
+    let localCapability = { overall: 'pending', checks: [] };
+
+    function laneDisplayLabel(lane) {
+      if (lane.id === 'byo') return lane.label || 'BYO';
+      return (lane.label || lane.id || '').toLowerCase();
+    }
+
+    function highestSeverityCheck(checks) {
+      return (checks || [])
+        .filter(check => check && check.name !== 'platform')
+        .reduce((winner, check) => {
+          const rank = SEVERITY_RANK[check.severity] ?? SEVERITY_RANK.unknown;
+          const winnerRank = winner ? (SEVERITY_RANK[winner.severity] ?? SEVERITY_RANK.unknown) : -1;
+          return rank > winnerRank ? check : winner;
+        }, null);
+    }
+
+    function localCapabilityState() {
+      if (localCapability.overall === 'ok' || localCapability.overall === 'warning') return 'capable';
+      if (localCapability.overall === 'blocked') return 'incapable';
+      if (localCapability.overall === 'unknown') return 'unknown';
+      return 'pending';
+    }
+
+    function localCapabilityDetail() {
+      const check = highestSeverityCheck(localCapability.checks);
+      return check && check.detail ? check.detail : '';
+    }
+
+    function renderLocalVerdict(parent) {
+      const state = localCapabilityState();
+      const detail = localCapabilityDetail();
+      const verdict = document.createElement('div');
+      verdict.className = 'laneverdict';
+      if (state === 'capable') {
+        verdict.textContent = detail ? `this computer can run it — ${detail}` : 'this computer can run it.';
+      } else if (state === 'incapable') {
+        verdict.textContent = detail;
+        const link = document.createElement('a');
+        link.className = 'reqlink';
+        link.href = LOCAL_REQUIREMENTS_URL;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'requirements ↗';
+        verdict.append(' ', link);
+      } else if (state === 'unknown') {
+        verdict.textContent = "couldn't check this computer. you can still choose local; thinking will check again.";
+      } else {
+        verdict.textContent = 'checking this computer…';
+      }
+      parent.appendChild(verdict);
+    }
+
+    function buildConfidentialDetailPanel(detail) {
+      const panel = document.createElement('div');
+      panel.className = 'lanedetail';
+      panel.id = 'lane-detail-confidential';
+      panel.hidden = !confidentialDetailOpen;
+
+      const heading = document.createElement('div');
+      heading.className = 'lanedetail-heading';
+      heading.textContent = detail.heading || '';
+      const sub = document.createElement('div');
+      sub.className = 'lanedetail-sub';
+      sub.textContent = detail.sub || '';
+      panel.append(heading, sub);
+
+      ['mechanism', 'egress'].forEach(key => {
+        const line = document.createElement('div');
+        line.className = 'lanedetail-line';
+        line.textContent = detail[key] || '';
+        panel.appendChild(line);
+      });
+
+      const claims = document.createElement('div');
+      claims.className = 'lanedetail-claims';
+      claims.textContent = detail.claims || '';
+      panel.appendChild(claims);
+
+      ['attestation', 'early_access'].forEach(key => {
+        const line = document.createElement('div');
+        line.className = 'lanedetail-line';
+        line.textContent = detail[key] || '';
+        panel.appendChild(line);
+      });
+
+      return panel;
+    }
+
+    function renderProviderLanes() {
+      const container = document.getElementById('provider-lanes');
+      if (!container || !laneData.length) return;
+      const activeId = document.activeElement && document.activeElement.id;
+      const focusedLaneId = activeId && activeId.startsWith('provider-lane-') ? activeId : '';
+      container.innerHTML = '';
+      laneData.forEach(lane => {
+        const localState = lane.id === 'local' ? localCapabilityState() : null;
+        const blocked = lane.id === 'local' && localState === 'incapable';
+        const active = selectedLane === lane.id && !blocked;
+        const hasConfidentialDetail = lane.id === 'confidential' && confidentialDetail && Object.keys(confidentialDetail).length > 0;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.id = `provider-lane-${lane.id}`;
+        button.className = `lane${active ? ' active' : ''}${blocked ? ' greyed' : ''}`;
+        if (blocked) {
+          button.setAttribute('aria-disabled', 'true');
+        } else {
+          button.addEventListener('click', () => selectProviderLane(lane.id));
+        }
+
+        const icon = document.createElement('div');
+        icon.className = 'laneic';
+        icon.textContent = LANE_GLYPHS[lane.id] || '';
+        const body = document.createElement('div');
+        body.className = 'lanebody';
+        const top = document.createElement('div');
+        top.className = 'lanetop';
+        const name = document.createElement('span');
+        name.className = 'lanename';
+        name.textContent = laneDisplayLabel(lane);
+        top.appendChild(name);
+        if (lane.tag) {
+          const tag = document.createElement('span');
+          tag.className = 'lanetag';
+          tag.textContent = lane.tag;
+          top.appendChild(tag);
+        }
+        const sub = document.createElement('div');
+        sub.className = 'lanesub';
+        sub.textContent = lane.sub || '';
+        const desc = document.createElement('div');
+        desc.className = 'lanedesc';
+        desc.textContent = lane.description || '';
+
+        body.appendChild(top);
+        if (lane.sub) body.appendChild(sub);
+        body.appendChild(desc);
+        if (lane.id === 'local') renderLocalVerdict(body);
+        button.append(icon, body);
+        if (hasConfidentialDetail) {
+          const slot = document.createElement('div');
+          slot.className = 'laneslot';
+          const more = document.createElement('button');
+          more.type = 'button';
+          more.className = 'lanemore';
+          more.textContent = 'how it works →';
+          more.setAttribute('aria-controls', 'lane-detail-confidential');
+          more.setAttribute('aria-expanded', confidentialDetailOpen ? 'true' : 'false');
+          const panel = buildConfidentialDetailPanel(confidentialDetail);
+          more.addEventListener('click', () => {
+            confidentialDetailOpen = !confidentialDetailOpen;
+            panel.hidden = !confidentialDetailOpen;
+            more.setAttribute('aria-expanded', confidentialDetailOpen ? 'true' : 'false');
+          });
+          slot.append(button, more, panel);
+          container.appendChild(slot);
+        } else {
+          container.appendChild(button);
+        }
+      });
+      if (focusedLaneId) {
+        const focusedLane = document.getElementById(focusedLaneId);
+        if (focusedLane && focusedLane.getAttribute('aria-disabled') !== 'true') {
+          focusedLane.focus();
+        }
+      }
+    }
+
+    function selectProviderLane(lane) {
+      if (lane === 'local' && localCapabilityState() === 'incapable') return;
+      selectedLane = lane;
+      renderProviderLanes();
+    }
+
+    function applyLocalCapability(payload) {
+      localCapability = payload || { overall: 'unknown', checks: [] };
+      if (selectedLane === 'local' && localCapabilityState() === 'incapable') {
+        selectedLane = null;
+      } else if (selectedLane === null && localCapabilityState() === 'capable') {
+        selectedLane = 'local';
+      }
+      renderProviderLanes();
+    }
+
+    async function loadLocalCapability() {
+      try {
+        const payload = await window.apiJson('/init/api/local-capability', {noAuthRedirect: true});
+        applyLocalCapability(payload);
+      } catch (err) {
+        if (window.logError) window.logError(err, { context: 'init-local-capability' });
+        applyLocalCapability({ overall: 'unknown', checks: [] });
+      }
+    }
+
+    async function hydrateInitState() {
+      const state = await window.apiJson('/init/api/state', {noAuthRedirect: true});
+      document.getElementById('init-version').textContent = state.version || '';
+      document.getElementById('journal-path').textContent = state.journal_path || '';
+      document.getElementById('name').value = state.identity_name || '';
+      document.getElementById('preferred').value = state.identity_preferred || '';
+      const mode = state.retention_mode || 'keep';
+      const modeInput = document.querySelector(`input[name="retention_mode"][value="${mode}"]`);
+      if (modeInput) modeInput.checked = true;
+      document.getElementById('retention-days-input').value = state.retention_days || 30;
+      confidentialDetail = (state.confidential && state.confidential.lane_detail) || null;
+      laneData = Array.isArray(state.lanes) ? state.lanes : [];
+      renderProviderLanes();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      hydrateInitState().catch((err) => {
+        const errorEl = document.getElementById('finalize-error');
+        if (errorEl) {
+          errorEl.textContent = (err && err.serverMessage) || "couldn't load setup state.";
+          errorEl.hidden = false;
+        }
+        if (window.logError) window.logError(err, { context: 'init-state' });
+      });
+      loadLocalCapability();
+    });
+
+    function showFieldStatus(el, type, message) {
+      const group = el.closest('.field-group');
+      if (!group) return;
+      const small = group.querySelector('.field-status');
+      if (!small) return;
+      small.classList.remove('status-saved', 'status-error', 'status-fade');
+      if (type === 'saved') {
+        small.textContent = message || 'saved';
+        small.classList.add('status-saved');
+        setTimeout(() => {
+          small.classList.add('status-fade');
+          setTimeout(() => { small.textContent = '\u00a0'; small.classList.remove('status-saved', 'status-fade'); }, 300);
+        }, 1500);
+      } else {
+        small.textContent = message || 'error';
+        small.classList.add('status-error');
+      }
+    }
+
+    let detectedTimezone = '';
+    const RESULT_DISPLAY_MS = 1200;
+
+    function deriveRetention(daysValue, mode) {
+      if (mode === 'processed') return { mode, days: null, statusText: 'currently: list originals for removal after processing.' };
+      if (mode === 'days') {
+        const n = parseInt(daysValue, 10);
+        if (Number.isFinite(n) && n >= 1) return { mode, days: n, statusText: `currently: list originals for removal after ${n} days.` };
+        return { mode, days: null, statusText: 'currently: keep — set a positive number of days.' };
+      }
+      return { mode: 'keep', days: null, statusText: 'currently: keep everything.' };
+    }
+
+    function updateRetentionUI() {
+      const modeInput = document.querySelector('input[name="retention_mode"]:checked');
+      const mode = modeInput ? modeInput.value : 'keep';
+      const daysRow = document.querySelector('#section-observed-media .retention-days-row');
+      const daysInput = document.getElementById('retention-days-input');
+      const presetButtons = document.querySelectorAll('#section-observed-media .settings-preset-btn');
+      const statusEl = document.getElementById('retention-status');
+      const disabled = mode !== 'days';
+
+      const { statusText } = deriveRetention(daysInput.value, mode);
+      statusEl.textContent = statusText;
+      daysRow.classList.toggle('is-disabled', disabled);
+      daysInput.disabled = disabled;
+      daysInput.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+
+      const activeDays = disabled ? null : parseInt(daysInput.value, 10);
+      presetButtons.forEach(btn => {
+        const isActive = Number.isFinite(activeDays) && parseInt(btn.dataset.days, 10) === activeDays;
+        btn.classList.toggle('active', isActive);
+        btn.disabled = disabled;
+        btn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+      ['name', 'preferred'].forEach(field => {
+        document.getElementById(field).addEventListener('blur', function() {
+          const value = this.value.trim();
+          if (!value) return;
+          showFieldStatus(this, 'saved');
+        });
+      });
+
+      const deferProvider = document.getElementById('provider-skip');
+
+      deferProvider.addEventListener('click', e => {
+        e.preventDefault();
+        selectedLane = 'defer';
+        renderProviderLanes();
+      });
+
+      document.querySelectorAll('input[name="retention_mode"]').forEach(radio => {
+        radio.addEventListener('change', updateRetentionUI);
+      });
+      document.querySelectorAll('#section-observed-media .settings-preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.getElementById('retention-days-input').value = btn.dataset.days;
+          document.querySelector('input[name="retention_mode"][value="days"]').checked = true;
+          updateRetentionUI();
+        });
+      });
+      document.getElementById('retention-days-input').addEventListener('input', updateRetentionUI);
+      updateRetentionUI();
+    });
+
+    let journalMarkLocked = false;
+
+    function showMarkError(message) {
+      const errorEl = document.getElementById('journal-mark-error');
+      if (!errorEl) return;
+      errorEl.textContent = message;
+      errorEl.hidden = false;
+    }
+
+    function applyLockState(locked) {
+      journalMarkLocked = locked === true;
+      const regenerateButton = document.getElementById('journal-mark-regenerate');
+      const lockButton = document.getElementById('journal-mark-lock');
+      const permanence = document.querySelector('.mark-permanence');
+      const lockedMessage = document.getElementById('journal-mark-locked');
+      const finishButton = document.querySelector('button[type="submit"].cta-button');
+
+      if (regenerateButton) regenerateButton.hidden = journalMarkLocked;
+      if (lockButton) lockButton.hidden = journalMarkLocked;
+      if (permanence) permanence.hidden = journalMarkLocked;
+      if (lockedMessage) lockedMessage.hidden = !journalMarkLocked;
+      if (finishButton) finishButton.disabled = !journalMarkLocked;
+    }
+
+    function renderMark(spec, locked) {
+      const display = document.getElementById('journal-mark-display');
+      const errorEl = document.getElementById('journal-mark-error');
+      const retryButton = document.getElementById('journal-mark-retry');
+      const icons = spec ? [spec.icon1, spec.icon2] : [];
+      const words = Array.isArray(spec && spec.words) ? spec.words : [];
+      const validIcons = icons.length === 2 && icons.every(icon => icon && icon.svg && icon.color && icon.color.hex);
+
+      if (!display || !validIcons || words.length !== 2) {
+        showMarkError("couldn't draw your mark — try again.");
+        return;
+      }
+
+      display.innerHTML = '<div class="mark-card' + (locked ? ' locked' : '') + ' pop"><div class="mark-chips"><div class="mark-chip"></div><div class="mark-chip"></div></div><div class="mark-words"><span></span><span class="mark-sep">·</span><span></span></div></div>';
+      const chips = display.querySelectorAll('.mark-chip');
+      chips.forEach((chip, index) => {
+        const icon = icons[index];
+        chip.style.borderColor = icon.color.hex;
+        chip.style.background = icon.color.hex + '1f';
+        if (icon.rot === 45) chip.style.transform = 'rotate(45deg)';
+        chip.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="${icon.color.hex}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon.svg}</svg>`;
+      });
+
+      const wordSpans = display.querySelectorAll('.mark-words span:not(.mark-sep)');
+      wordSpans[0].textContent = words[0];
+      wordSpans[1].textContent = words[1];
+      if (errorEl) {
+        errorEl.textContent = '';
+        errorEl.hidden = true;
+      }
+      if (retryButton) retryButton.hidden = true;
+      applyLockState(locked);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const retryButton = document.getElementById('journal-mark-retry');
+      const regenerateButton = document.getElementById('journal-mark-regenerate');
+      const lockButton = document.getElementById('journal-mark-lock');
+      const finishButton = document.querySelector('button[type="submit"].cta-button');
+
+      async function loadMark() {
+        const originalLabel = retryButton ? retryButton.textContent : '';
+        if (retryButton && !retryButton.hidden) {
+          retryButton.disabled = true;
+          retryButton.textContent = 'trying…';
+        }
+        try {
+          const data = await window.apiJson('/init/mark');
+          renderMark(data.mark, data.locked);
+        } catch (err) {
+          showMarkError((err && err.serverMessage) || "couldn't load your mark — try again.");
+          if (retryButton) retryButton.hidden = false;
+          if (finishButton) finishButton.disabled = true;
+        } finally {
+          if (retryButton && !retryButton.hidden) {
+            retryButton.textContent = originalLabel || 'try again';
+            retryButton.disabled = false;
+          }
+        }
+      }
+
+      if (retryButton) retryButton.addEventListener('click', loadMark);
+      if (regenerateButton) {
+        regenerateButton.addEventListener('click', async () => {
+          const originalLabel = regenerateButton.textContent;
+          regenerateButton.disabled = true;
+          regenerateButton.textContent = 'trying…';
+          try {
+            const data = await window.apiJson('/init/mark/regenerate', {method: 'POST'});
+            renderMark(data.mark, false);
+          } catch (err) {
+            showMarkError((err && err.serverMessage) || "couldn't regenerate — try again.");
+          } finally {
+            regenerateButton.textContent = originalLabel;
+            regenerateButton.disabled = false;
+          }
+        });
+      }
+      if (lockButton) {
+        lockButton.addEventListener('click', async () => {
+          const originalLabel = lockButton.textContent;
+          lockButton.disabled = true;
+          lockButton.textContent = 'locking…';
+          try {
+            const data = await window.apiJson('/init/mark/lock', {method: 'POST'});
+            renderMark(data.mark, true);
+          } catch (err) {
+            showMarkError((err && err.serverMessage) || "couldn't lock it in — try again.");
+            applyLockState(false);
+          } finally {
+            if (!lockButton.hidden) {
+              lockButton.textContent = originalLabel;
+              lockButton.disabled = false;
+            }
+          }
+        });
+      }
+      loadMark();
+    });
+
+    function showFinalizeError(errorEl, message) {
+      if (!errorEl) return;
+      errorEl.textContent = message;
+      errorEl.hidden = false;
+    }
+
+    async function finalize(event) {
+      if (event) event.preventDefault();
+      const errorEl = document.getElementById('finalize-error');
+      const button = document.querySelector('button[type="submit"].cta-button');
+      const originalLabel = button ? button.textContent : '';
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'saving…';
+      }
+      if (errorEl) {
+        errorEl.hidden = true;
+        errorEl.textContent = '';
+      }
+      try {
+        const daysInput = document.getElementById('retention-days-input');
+        const modeInput = document.querySelector('input[name="retention_mode"]:checked');
+        const selectedMode = modeInput ? modeInput.value : 'keep';
+        const { mode, days } = deriveRetention(daysInput.value, selectedMode);
+        const payload = {
+          name: document.getElementById('name').value.trim(),
+          preferred: document.getElementById('preferred').value.trim(),
+          timezone: detectedTimezone,
+          retention_mode: mode,
+          retention_days: days
+        };
+        if (selectedLane && selectedLane !== 'defer') payload.lane = selectedLane;
+        const data = await window.apiJson('/init/finalize', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        if (data && data.success && data.redirect) {
+          if (data.warnings && data.warnings.length) {
+            showFinalizeError(errorEl, data.warnings.join(' '));
+            if (button) button.textContent = 'redirecting…';
+            setTimeout(() => {
+              window.location.href = data.redirect;
+            }, RESULT_DISPLAY_MS);
+            return;
+          }
+          if (button) button.textContent = 'redirecting…';
+          window.location.href = data.redirect;
+          return;
+        }
+        if (data && data.error) {
+          showFinalizeError(errorEl, data.error);
+        } else {
+          showFinalizeError(errorEl, 'unexpected response from server — check the browser console.');
+        }
+      } catch (err) {
+        let message = err && err.serverMessage;
+        if (!message) {
+          message = err && err.message ? `couldn't finalize setup: ${err.message}` : "couldn't finalize setup. check your connection and try again.";
+        }
+        showFinalizeError(errorEl, message);
+        if (window.logError) window.logError(err, { context: 'init-finalize' });
+        else if (window.console) console.error('init-finalize', err);
+      } finally {
+        if (button && !button.textContent.includes('redirecting')) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
+      }
+    }
+  </script>
+</body>
+</html>

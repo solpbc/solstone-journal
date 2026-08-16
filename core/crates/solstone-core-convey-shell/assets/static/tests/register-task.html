@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>registerTask smoke</title>
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; }
+  .pass { color: #166534; }
+  .fail { color: #b91c1c; }
+</style>
+<div class="facet-bar"><button class="status-icon"></button><div class="facet-pills-container"></div></div>
+<nav class="menu-bar">
+  <ul class="menu-items">
+    <li class="menu-item" data-app-name="support" data-starred="false">
+      <a class="menu-item-link" href="#"><span class="icon">S</span><span class="label">Support</span></a>
+      <button class="star-toggle" type="button" aria-pressed="false">☆</button>
+      <button class="drag-handle" type="button">↕</button>
+    </li>
+  </ul>
+</nav>
+<div id="notification-center"></div>
+<div id="results"></div>
+<script>
+  window.facetsData = [];
+  window.selectedFacet = null;
+  window.appFacetCounts = {};
+  window.marked = { parse(value) { return value; } };
+  window.DOMPurify = { sanitize(value) { return value; } };
+</script>
+<script src="../api.js"></script>
+<script src="../shell_gate.js"></script>
+<script>window.resolveSolShellReady({source: 'static-test'});</script>
+<script src="../app.js"></script>
+<script>
+  const results = document.getElementById('results');
+  let failures = 0;
+
+  function assert(name, condition, detail) {
+    const row = document.createElement('div');
+    row.className = condition ? 'pass' : 'fail';
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function settle(promise) {
+    try { return await promise; } catch (_) { return null; }
+  }
+
+  (async function run() {
+    const notifications = [];
+    window.AppServices.notifications.show = function(options) {
+      notifications.push(options);
+      return notifications.length;
+    };
+    window.AppServices.notifications.dismiss = function() {};
+
+    const events = [
+      new Error('fail one'),
+      new Error('fail two'),
+      new Error('fail three'),
+      { count: 1 },
+      new window.ApiError({ status: 403, statusText: 'Forbidden', serverMessage: 'disabled', url: '/app/support/api/badge-count' })
+    ];
+
+    const task = window.AppServices.registerTask('support', 'badge-count', {
+      intervalMs: 60000,
+      run: async () => {
+        const next = events.shift();
+        if (next instanceof Error) throw next;
+        return next;
+      }
+    });
+
+    await wait(0);
+    await settle(task.runNow());
+    await settle(task.runNow());
+    const menuItem = document.querySelector('.menu-item[data-app-name="support"]');
+    assert('three failures add failing pip', menuItem.classList.contains('menu-item-bg-failing'));
+    assert('failing transition shows one notification', notifications.length === 1 && notifications[0].title === 'support background task');
+
+    await task.runNow();
+    const successHealth = task.getHealth();
+    assert('success clears failing pip', !menuItem.classList.contains('menu-item-bg-failing'));
+    assert('success resets health counters', successHealth.consecutiveFailures === 0 && successHealth.lastSuccessAt !== null && successHealth.failing === false);
+
+    await task.runNow();
+    const disabledHealth = task.getHealth();
+    const taskHealth = window.AppServices.getTaskHealth('support')['badge-count'];
+    assert('403 disables task without notification spam', disabledHealth.disabled === true && notifications.length === 1);
+    assert('getTaskHealth exposes stored record', !!taskHealth && 'lastError' in taskHealth && 'intervalId' in taskHealth);
+
+    task.stop();
+    assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+  })();
+</script>
+</html>

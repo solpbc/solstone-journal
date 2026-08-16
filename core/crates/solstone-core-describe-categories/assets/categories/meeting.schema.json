@@ -1,0 +1,96 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "platform",
+    "participants",
+    "screen_share"
+  ],
+  "properties": {
+    "platform": {
+      "type": "string",
+      "enum": [
+        "zoom",
+        "meet",
+        "teams",
+        "slack",
+        "discord",
+        "webex",
+        "other"
+      ]
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "status",
+          "video",
+          "box_2d"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "speaking",
+              "muted",
+              "active",
+              "presenting",
+              "unknown"
+            ]
+          },
+          "video": {
+            "type": "boolean"
+          },
+          "box_2d": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "screen_share": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "box_2d",
+        "presenter",
+        "description",
+        "formatted_text"
+      ],
+      "properties": {
+        "box_2d": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "presenter": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "formatted_text": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

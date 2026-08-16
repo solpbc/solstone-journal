@@ -144,6 +144,56 @@ def module_name(path: Path) -> str:
     return name
 
 
+def logical_command_path(authority: Path, root: Path) -> Path:
+    return authority.relative_to(root).parent / "command.rs"
+
+
+def command_source(authority: Path, root: Path) -> Path:
+    rel = authority.relative_to(root).as_posix()
+    parts = rel.split("/")
+    if (
+        len(parts) == 5
+        and parts[0] == "solstone"
+        and parts[1] == "apps"
+        and parts[3] == "native"
+        and parts[4] == "authority.toml"
+    ):
+        return (
+            root
+            / "core/crates/solstone-core-sol-client/native/apps"
+            / parts[2]
+            / "command.rs"
+        )
+    if (
+        len(parts) == 5
+        and parts[0] == "solstone"
+        and parts[1] == "think"
+        and parts[2] == "native"
+        and parts[4] == "authority.toml"
+    ):
+        return (
+            root
+            / "core/crates/solstone-core-sol-client/native/think"
+            / parts[3]
+            / "command.rs"
+        )
+    if (
+        len(parts) == 6
+        and parts[0] == "solstone"
+        and parts[1] == "think"
+        and parts[2] == "tools"
+        and parts[3] == "native"
+        and parts[5] == "authority.toml"
+    ):
+        return (
+            root
+            / "core/crates/solstone-core-sol-client/native/tools"
+            / parts[4]
+            / "command.rs"
+        )
+    raise ValueError(f"{authority}: native command source prefix is not mapped")
+
+
 def load_authority(path: Path, root: Path) -> list[AuthorityEntry]:
     try:
         data = tomllib.loads(path.read_text())
@@ -153,9 +203,11 @@ def load_authority(path: Path, root: Path) -> list[AuthorityEntry]:
     if data.get("schema") != SCHEMA:
         raise ValueError(f"{path}: schema must be {SCHEMA!r}")
     source_name = require_string(data, "source", path)
-    source = path.parent / source_name
+    if source_name != "command.rs":
+        raise ValueError(f"{path}: source must be 'command.rs'")
+    source = command_source(path, root)
     if not source.is_file():
-        raise ValueError(f"{path}: source {source_name!r} does not exist")
+        raise ValueError(f"{path}: source {source_name!r} does not exist at {source}")
     entries = data.get("entries")
     if not isinstance(entries, list) or not entries:
         raise ValueError(f"{path}: entries must be a non-empty list")
@@ -258,7 +310,7 @@ def parse_entry(
         authority=authority,
         authority_path=authority.relative_to(root).as_posix(),
         source=source,
-        module=module_name(source.relative_to(root)),
+        module=module_name(logical_command_path(authority, root)),
         surface=surface,
         path=command_path,
         kind=kind,

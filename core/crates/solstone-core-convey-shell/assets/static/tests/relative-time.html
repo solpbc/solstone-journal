@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>relative-time.js smoke</title>
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; }
+  .pass { color: #166534; }
+  .fail { color: #b91c1c; }
+</style>
+<h1>relative-time.js smoke</h1>
+<div id="results"></div>
+<script src="../relative-time.js"></script>
+<script>
+  const results = document.getElementById('results');
+  let failures = 0;
+
+  function assert(name, condition, detail) {
+    const row = document.createElement('div');
+    row.className = condition ? 'pass' : 'fail';
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  function check(ms, expected) {
+    const actual = window.relativeTime(ms);
+    assert(`${ms}ms`, actual === expected, `expected "${expected}", got "${actual}"`);
+  }
+
+  function run() {
+    check(-1_000, '0 seconds');
+    check(Number.POSITIVE_INFINITY, '0 seconds');
+    check(0, '0 seconds');
+    check(1_000, '1 second');
+    check(59_000, '59 seconds');
+    check(60_000, '1 minute');
+    check(119_000, '1 minute');
+    check(120_000, '2 minutes');
+    check(3_599_000, '59 minutes');
+    check(3_600_000, '1 hour');
+    check(7_199_000, '1 hour');
+    check(7_200_000, '2 hours');
+    check(86_399_000, '23 hours');
+    check(86_400_000, '1 day');
+    check(604_799_000, '6 days');
+    check(604_800_000, '1 week');
+    check(1_209_600_000, '2 weeks');
+    check(2_419_199_000, '3 weeks');
+    check(2_419_200_000, '1 month');
+    check(5_183_999_000, '1 month');
+    check(5_184_000_000, '2 months');
+    check(31_536_000_000, '12 months');
+    assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+  }
+
+  run();
+</script>
+</html>

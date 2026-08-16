@@ -620,7 +620,7 @@ fn selection_accepts_bare_and_wrapped_responses_and_uses_selection_contract() {
         assert_eq!(
             request["json_schema"],
             serde_json::from_str::<serde_json::Value>(include_str!(
-                "../../../../solstone/observe/extract.schema.json"
+                "../assets/extract.schema.json"
             ))
             .expect("selection schema")
         );

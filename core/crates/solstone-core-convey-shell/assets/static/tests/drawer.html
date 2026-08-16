@@ -1,0 +1,118 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>drawer.js smoke</title>
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; }
+  .pass { color: var(--success-ink); }
+  .fail { color: var(--danger); }
+  #fixture { max-width: 720px; }
+</style>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../drawer.css">
+<h1>drawer.js smoke</h1>
+<div id="results"></div>
+<div id="fixture"></div>
+<script src="../drawer.js"></script>
+<script>
+  const results = document.getElementById('results');
+  const fixture = document.getElementById('fixture');
+  let failures = 0;
+
+  function assert(name, condition, detail) {
+    const row = document.createElement('div');
+    row.className = condition ? 'pass' : 'fail';
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` - ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  function equal(name, actual, expected) {
+    assert(name, actual === expected, `expected "${expected}", got "${actual}"`);
+  }
+
+  function sampleBody() {
+    return '<p class="drawer-empty">empty</p>' +
+      '<ul class="drawer-evidence">' +
+      '<li class="drawer-evidence-row"><a class="drawer-evidence-title" href="/app/import/20260703_120000">20260703_120000</a><span class="ev-meta">4 entries</span></li>' +
+      '</ul>' +
+      '<p class="drawer-provenance">source</p>' +
+      '<dl class="drawer-kv"><dt>entries</dt><dd>4</dd></dl>';
+  }
+
+  function renderToFixture(options) {
+    fixture.innerHTML = window.Drawer.render({
+      id: 'fixture-drawer',
+      label: 'audit',
+      bodyHtml: sampleBody(),
+      ...options
+    });
+    return fixture.querySelector('.drawer');
+  }
+
+  function run() {
+    equal('public keys', Object.keys(window.Drawer).join(','), 'render,preserveOpen,formatLine');
+
+    let drawer = renderToFixture({ line: '4 imports', chipText: 'warn', chipTone: 'warn', open: true });
+    assert('root is details', drawer && drawer.tagName === 'DETAILS');
+    equal('data id', drawer.getAttribute('data-drawer-id'), 'fixture-drawer');
+    assert('open option', drawer.open === true);
+    assert('chevron renders', drawer.querySelector('.drawer-chev') !== null);
+    assert('summary text wrapper renders', drawer.querySelector('.drawer-summary-text') !== null);
+    equal('label text', drawer.querySelector('.drawer-label').textContent, 'audit');
+    equal('line text', drawer.querySelector('.drawer-line').textContent, '4 imports');
+    assert('warn chip', drawer.querySelector('.drawer-chip--warn') !== null);
+    assert('body wrapper renders', drawer.querySelector('.drawer-body') !== null);
+    assert('body classes render', drawer.querySelector('.drawer-empty') && drawer.querySelector('.drawer-evidence') && drawer.querySelector('.drawer-kv'));
+
+    const emphasizedLine = "oura's ring · 3 imports · latest jul 3, 12:00 pm";
+    drawer = renderToFixture({ label: 'audit 2', line: emphasizedLine, chipText: '9 warnings', chipTone: 'warn' });
+    const lineEl = drawer.querySelector('.drawer-line');
+    equal('emphasized line text', lineEl.textContent, emphasizedLine);
+    assert('digit runs emphasized', Array.from(lineEl.querySelectorAll('b')).map((node) => node.textContent).join('|') === '3|3,|12:00 pm');
+    assert('label has no emphasis', drawer.querySelector('.drawer-label b') === null);
+    assert('chip has no emphasis', drawer.querySelector('.drawer-chip b') === null);
+
+    drawer = renderToFixture({ line: "oura's ring latest today" });
+    assert('prose line has no emphasis', drawer.querySelector('.drawer-line b') === null);
+
+    drawer = renderToFixture({ chipText: 'danger', chipTone: 'danger' });
+    assert('danger chip', drawer.querySelector('.drawer-chip--danger') !== null);
+    assert('no line omits line span', drawer.querySelector('.drawer-line') === null);
+
+    fixture.innerHTML = window.Drawer.render({ id: 'keep', label: 'keep', bodyHtml: '<p>keep</p>' }) +
+      window.Drawer.render({ id: 'closed', label: 'closed', bodyHtml: '<p>closed</p>' });
+    fixture.querySelector('[data-drawer-id="keep"]').open = true;
+    const result = window.Drawer.preserveOpen(fixture, () => {
+      fixture.innerHTML = window.Drawer.render({ id: 'keep', label: 'keep', bodyHtml: '<p>keep</p>' }) +
+        window.Drawer.render({ id: 'closed', label: 'closed', bodyHtml: '<p>closed</p>' });
+      return 'rerendered';
+    });
+    equal('preserve returns rerender result', result, 'rerendered');
+    assert('preserve restores open id', fixture.querySelector('[data-drawer-id="keep"]').open === true);
+    assert('preserve leaves other ids closed', fixture.querySelector('[data-drawer-id="closed"]').open === false);
+
+    fixture.querySelector('[data-drawer-id="keep"]').open = true;
+    window.Drawer.preserveOpen(fixture, () => {
+      fixture.innerHTML = window.Drawer.render({ id: 'replacement', label: 'replacement', bodyHtml: '<p>replacement</p>' });
+    });
+    assert('vanished id is clean no-op', fixture.querySelector('[data-drawer-id="replacement"]').open === false);
+
+    if (failures > 0) {
+      throw new Error(`${failures} drawer smoke assertion(s) failed`);
+    }
+  }
+
+  try {
+    run();
+  } catch (error) {
+    const row = document.createElement('div');
+    row.className = 'fail';
+    row.textContent = `FAIL unhandled error - ${error.message}`;
+    results.appendChild(row);
+    throw error;
+  }
+</script>
+</html>

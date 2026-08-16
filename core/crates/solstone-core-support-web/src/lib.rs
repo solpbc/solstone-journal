@@ -27,10 +27,7 @@ use solstone_core_support_portal::{
 use tempfile::Builder;
 use uuid::Uuid;
 
-const SHELL: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/convey/static/shell.html"
-));
+const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
 const WORKSPACE: &[u8] = include_bytes!("../assets/workspace.html");
 const BACKGROUND: &[u8] = include_bytes!("../assets/background.html");
 const SUPPORT_JS: &[u8] = include_bytes!("../assets/static/support.js");

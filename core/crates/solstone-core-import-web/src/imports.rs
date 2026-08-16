@@ -149,10 +149,9 @@ const SOURCES: &[SourceMetadata] = &[
 ];
 
 static ICONS: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../solstone/convey/static/icons/lucide.json"
-    )))
+    serde_json::from_str(include_str!(
+        "../../solstone-core-convey-shell/assets/static/icons/lucide.json"
+    ))
     .expect("embedded Lucide icons")
 });
 

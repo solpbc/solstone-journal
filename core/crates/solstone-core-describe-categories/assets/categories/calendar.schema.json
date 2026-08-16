@@ -1,0 +1,145 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "app",
+    "view",
+    "range",
+    "events",
+    "availability",
+    "notes"
+  ],
+  "properties": {
+    "app": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "view": {
+      "type": "string",
+      "enum": [
+        "day",
+        "week",
+        "month",
+        "agenda",
+        "event_detail",
+        "availability",
+        "unknown"
+      ]
+    },
+    "range": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "start",
+          "end",
+          "location",
+          "conferencing",
+          "guests",
+          "status",
+          "recurrence",
+          "calendar",
+          "description"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "end": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "conferencing": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "guests": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "declined",
+              "tentative",
+              "needs_action",
+              "unknown"
+            ]
+          },
+          "recurrence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "calendar": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 96
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1000
+          }
+        }
+      }
+    },
+    "availability": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "string",
+        "maxLength": 96
+      }
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1000
+    }
+  }
+}

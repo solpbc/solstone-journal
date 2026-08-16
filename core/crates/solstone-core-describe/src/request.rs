@@ -8,8 +8,8 @@ use solstone_core_generate::{ContentPart, GenerateRequest};
 
 use crate::categories::CATEGORIES_META;
 
-const PROMPT: &str = include_str!("../../../../solstone/observe/describe.md");
-const SCHEMA: &str = include_str!("../../../../solstone/observe/describe.schema.json");
+const PROMPT: &str = include_str!("../assets/describe.md");
+const SCHEMA: &str = include_str!("../assets/describe.schema.json");
 pub fn system_instruction(redact_rules: &[String]) -> String {
     let categories = render_categories();
     let mut prompt = PROMPT.replace("$categories", &categories).trim().to_owned();

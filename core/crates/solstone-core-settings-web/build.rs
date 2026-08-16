@@ -282,21 +282,16 @@ fn write_value(path: &Path, value: &Value) {
 
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"));
-    let root = manifest.join("../../..");
     let modules = [
         (manifest.join("assets/copy.py"), true, "settings_copy.rs"),
         (
-            root.join("solstone/apps/settings/install_copy.py"),
+            manifest.join("assets/install_copy.py"),
             true,
             "install_copy.rs",
         ),
+        (manifest.join("assets/chat_copy.py"), false, "chat_copy.rs"),
         (
-            root.join("solstone/apps/chat/copy.py"),
-            false,
-            "chat_copy.rs",
-        ),
-        (
-            root.join("solstone/convey/sol_initiated/copy.py"),
+            manifest.join("assets/sol_initiated_copy.py"),
             false,
             "sol_voice_copy.rs",
         ),
@@ -323,7 +318,7 @@ fn main() {
             &exported_constants(&source, use_all),
         );
     }
-    let backup_copy = root.join("solstone/apps/backup/copy.py");
+    let backup_copy = manifest.join("assets/backup_copy.py");
     println!("cargo:rerun-if-changed={}", backup_copy.display());
     let backup_assignments =
         assignments(&fs::read_to_string(&backup_copy).expect("backup copy module is readable"));
@@ -341,7 +336,7 @@ fn main() {
         })
         .collect();
     write_constants(&output.join("backup_copy.rs"), &backup_constants);
-    let activities = root.join("solstone/think/activities.py");
+    let activities = manifest.join("assets/activities.py");
     println!("cargo:rerun-if-changed={}", activities.display());
     let activities_source = fs::read_to_string(&activities).expect("activities module is readable");
     write_value(

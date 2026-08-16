@@ -224,10 +224,7 @@ mod tests {
 
     #[tokio::test]
     async fn ac5_import_shell_matches_real_shell_bytes_in_established_phases() {
-        let shell = include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../solstone/convey/static/shell.html"
-        ));
+        let shell = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
         for phase in ["empty", "populated"] {
             let root = phase_root(phase);
             let (status, content_type, _, body) =
@@ -726,11 +723,7 @@ mod tests {
             (
                 StatusCode::OK,
                 "text/markdown; charset=utf-8".to_owned(),
-                include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/../../../solstone/apps/import/guides/ics.md"
-                ))
-                .to_vec()
+                include_bytes!("../assets/guides/ics.md").to_vec()
             )
         );
         let (code, missing) = json_request(root.path(), "GET", "/app/import/api/guide/nope").await;

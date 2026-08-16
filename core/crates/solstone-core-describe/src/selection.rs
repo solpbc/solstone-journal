@@ -15,8 +15,8 @@ use solstone_core_generate::{
 use crate::categories::CATEGORIES_META;
 use crate::session::DescribeSession;
 
-const PROMPT: &str = include_str!("../../../../solstone/observe/extract.md");
-const SCHEMA: &str = include_str!("../../../../solstone/observe/extract.schema.json");
+const PROMPT: &str = include_str!("../assets/extract.md");
+const SCHEMA: &str = include_str!("../assets/extract.schema.json");
 const REQUEST_ID: &str = "selection:attempt:0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

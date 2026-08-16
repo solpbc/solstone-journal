@@ -1,0 +1,124 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>chat bar reasons test</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    .pass { color: #0a7a2f; }
+    .fail { color: #b00020; }
+    #chatBarStatus { display: flex; align-items: center; gap: 6px; }
+    .chat-bar-status-action { margin-left: 8px; }
+  </style>
+  <script src="../chat_reasons.js"></script>
+</head>
+<body>
+  <div id="chatBarStatus">
+    <span id="chatBarStatusText"></span>
+  </div>
+  <div id="test-results">RUNNING chat bar reasons</div>
+  <ol id="results"></ol>
+
+  <script>
+    const statusWrap = document.getElementById('chatBarStatus');
+    const statusText = document.getElementById('chatBarStatusText');
+    const summary = document.getElementById('test-results');
+    const results = document.getElementById('results');
+    let failures = 0;
+
+    function report(name, ok, detail) {
+      const item = document.createElement('li');
+      item.className = ok ? 'pass' : 'fail';
+      item.textContent = `${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
+      results.appendChild(item);
+      if (!ok) failures += 1;
+    }
+
+    function assert(name, condition) {
+      report(name, !!condition);
+    }
+
+    function setStatus(text, title, action) {
+      statusText.textContent = String(text || '').trim();
+      statusText.title = String(title || text || '').trim();
+      statusWrap.title = statusText.title;
+      let actionEl = statusWrap.querySelector('.chat-bar-status-action');
+      if (action && action.label && action.href) {
+        if (!actionEl) {
+          actionEl = document.createElement('a');
+          actionEl.className = 'chat-bar-status-action';
+          actionEl.addEventListener('click', (event) => event.stopPropagation());
+          statusText.insertAdjacentElement('afterend', actionEl);
+        }
+        actionEl.textContent = action.label;
+        actionEl.href = action.href;
+      } else if (actionEl) {
+        actionEl.remove();
+      }
+    }
+
+    function dispatchChatError(reason, provider) {
+      const rendered = window.renderChatReason(reason, provider || '');
+      setStatus(rendered.message, rendered.message, rendered.action);
+    }
+
+    const cases = [
+      ['provider_key_invalid', 'google', "your Gemini key didn't validate", true],
+      ['provider_quota_exceeded', 'google', 'your Gemini quota is spent', false],
+      ['network_unreachable', '', "I couldn't reach the network", false],
+      ['provider_response_invalid', 'google', "Gemini's response didn't match the expected shape — try rephrasing or asking something more specific.", false],
+      ['provider_unavailable', 'google', 'Gemini is having trouble right now', false],
+      ['chat_pipeline_unavailable', '', "the chat pipeline isn't ready yet", false],
+      ['chat_timeout', '', 'chat took too long', false],
+      ['incomplete_json_length', '', 'the answer ran out of room before it finished', false],
+      ['unknown', '', 'chat had trouble', false]
+    ];
+
+    function runTests() {
+      cases.forEach(([code, provider, expected, hasAction]) => {
+        dispatchChatError(code, provider);
+        assert(`${code} text`, statusText.textContent === expected);
+        const action = statusWrap.querySelector('.chat-bar-status-action');
+        assert(`${code} action presence`, hasAction ? !!action : !action);
+        if (hasAction) {
+          assert(`${code} action label`, action.textContent === 'Open Thinking');
+          assert(`${code} action href`, action.getAttribute('href') === '/app/thinking/#main');
+        }
+      });
+
+      dispatchChatError('provider_key_invalid', 'google');
+      assert('action initially present', !!statusWrap.querySelector('.chat-bar-status-action'));
+      dispatchChatError('chat_timeout', '');
+      assert('action removed on no-action state', !statusWrap.querySelector('.chat-bar-status-action'));
+
+      dispatchChatError('something old and verbatim', '');
+      assert('legacy text passthrough', statusText.textContent === 'something old and verbatim');
+      assert('legacy has no action', !statusWrap.querySelector('.chat-bar-status-action'));
+
+      let parentClicks = 0;
+      statusWrap.addEventListener('click', () => { parentClicks += 1; });
+      dispatchChatError('provider_key_invalid', 'google');
+      const clickAction = statusWrap.querySelector('.chat-bar-status-action');
+      clickAction.addEventListener('click', (event) => event.preventDefault(), { once: true });
+      clickAction.click();
+      assert('action click stops propagation', parentClicks === 0);
+
+      summary.className = failures ? 'fail' : 'pass';
+      summary.textContent = failures
+        ? `FAIL chat bar reasons: ${failures} failure(s)`
+        : 'PASS chat bar reasons: 0 failure(s)';
+    }
+
+    try {
+      runTests();
+    } catch (error) {
+      failures += 1;
+      report('uncaught exception', false, error && error.message ? error.message : String(error));
+      summary.className = 'fail';
+      summary.textContent = `FAIL chat bar reasons: ${failures} failure(s)`;
+    }
+  </script>
+</body>
+</html>

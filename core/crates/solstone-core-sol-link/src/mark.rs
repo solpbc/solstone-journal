@@ -14,9 +14,9 @@ const COLOR_COUNT: usize = 16;
 const WORD_COUNT: usize = 7776;
 const MARK_ARGON2_SALT: &[u8] = b"solstone-journal-mark-v1";
 
-const GLYPHS_JSON: &str = include_str!("../../../../solstone/think/link/mark_assets/glyphs.json");
-const COLORS_JSON: &str = include_str!("../../../../solstone/think/link/mark_assets/colors.json");
-const WORDS_JSON: &str = include_str!("../../../../solstone/think/link/mark_assets/words.json");
+const GLYPHS_JSON: &str = include_str!("../assets/mark_assets/glyphs.json");
+const COLORS_JSON: &str = include_str!("../assets/mark_assets/colors.json");
+const WORDS_JSON: &str = include_str!("../assets/mark_assets/words.json");
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct MarkColor {

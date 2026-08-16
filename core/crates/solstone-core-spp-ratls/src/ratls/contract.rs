@@ -308,9 +308,13 @@ mod tests {
 
     #[test]
     fn checked_in_contract_matches_structurally() {
-        let artifact: Value = serde_json::from_str(include_str!(
-            "../../../../../solstone/think/services/spp_attest/ratls/ratls-contract.json"
-        ))
+        let artifact: Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../solstone/think/services/spp_attest/ratls/ratls-contract.json"),
+            )
+            .expect("checked-in contract artifact is readable"),
+        )
         .expect("valid checked-in contract artifact");
         assert_eq!(
             artifact["protocol_version"].as_u64(),

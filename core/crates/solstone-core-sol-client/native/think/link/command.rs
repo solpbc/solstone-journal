@@ -1242,11 +1242,11 @@ mod tests {
     use super::*;
 
     const OBSERVER_PEER_JSON: &str =
-        include_str!("../../../../core/fixtures/native-sol/link-join/observer_ascii_peer.json");
+        include_str!("../../../../../fixtures/native-sol/link-join/observer_ascii_peer.json");
     const PEER_NON_ASCII_JSON: &str =
-        include_str!("../../../../core/fixtures/native-sol/link-join/peer_non_ascii_peer.json");
+        include_str!("../../../../../fixtures/native-sol/link-join/peer_non_ascii_peer.json");
     const NESTED_ENDPOINTS_JSON: &str =
-        include_str!("../../../../core/fixtures/native-sol/link-join/nested_endpoints_peer.json");
+        include_str!("../../../../../fixtures/native-sol/link-join/nested_endpoints_peer.json");
 
     static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
     #[cfg(unix)]

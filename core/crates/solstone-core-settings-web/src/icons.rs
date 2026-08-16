@@ -10,24 +10,21 @@ use serde_json::{Value, json};
 use crate::http::json_response;
 
 static ICONS: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../solstone/convey/static/icons/lucide.json"
-    )))
+    serde_json::from_str(include_str!(
+        "../../solstone-core-convey-shell/assets/static/icons/lucide.json"
+    ))
     .expect("embedded Lucide catalogue")
 });
 static TAGS: LazyLock<HashMap<String, Vec<String>>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../solstone/convey/static/icons/lucide-tags.json"
-    )))
+    serde_json::from_str(include_str!(
+        "../../solstone-core-convey-shell/assets/static/icons/lucide-tags.json"
+    ))
     .expect("embedded Lucide tags")
 });
 static EMOJI: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../solstone/convey/static/icons/emoji-lucide.json"
-    )))
+    serde_json::from_str(include_str!(
+        "../../solstone-core-convey-shell/assets/static/icons/emoji-lucide.json"
+    ))
     .expect("embedded emoji icon map")
 });
 

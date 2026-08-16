@@ -17,10 +17,7 @@ use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::chat_state;
 
-const SHELL: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/convey/static/shell.html"
-));
+const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
 const WORKSPACE: &str = include_str!("../assets/chat/workspace.html");
 
 pub fn router(journal_root: PathBuf) -> Router {

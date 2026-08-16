@@ -10,38 +10,14 @@ use crate::http::{bytes, error, html_not_found};
 
 const WORKSPACE: &[u8] = include_bytes!("../assets/workspace.html");
 const IMPORT_DETAIL_JS: &[u8] = include_bytes!("../assets/import_detail.js");
-const SHELL: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/convey/static/shell.html"
-));
-const CHATGPT_GUIDE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/apps/import/guides/chatgpt.md"
-));
-const CLAUDE_GUIDE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/apps/import/guides/claude.md"
-));
-const GEMINI_GUIDE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/apps/import/guides/gemini.md"
-));
-const ICS_GUIDE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/apps/import/guides/ics.md"
-));
-const JOURNAL_ARCHIVE_GUIDE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/apps/import/guides/journal_archive.md"
-));
-const KINDLE_GUIDE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/apps/import/guides/kindle.md"
-));
-const OBSIDIAN_GUIDE: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../solstone/apps/import/guides/obsidian.md"
-));
+const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
+const CHATGPT_GUIDE: &[u8] = include_bytes!("../assets/guides/chatgpt.md");
+const CLAUDE_GUIDE: &[u8] = include_bytes!("../assets/guides/claude.md");
+const GEMINI_GUIDE: &[u8] = include_bytes!("../assets/guides/gemini.md");
+const ICS_GUIDE: &[u8] = include_bytes!("../assets/guides/ics.md");
+const JOURNAL_ARCHIVE_GUIDE: &[u8] = include_bytes!("../assets/guides/journal_archive.md");
+const KINDLE_GUIDE: &[u8] = include_bytes!("../assets/guides/kindle.md");
+const OBSIDIAN_GUIDE: &[u8] = include_bytes!("../assets/guides/obsidian.md");
 
 pub(crate) async fn workspace() -> Response {
     bytes(WORKSPACE, "text/html; charset=utf-8").into_response()

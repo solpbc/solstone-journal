@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>diagnostic console smoke</title>
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; }
+  .pass { color: #166534; }
+  .fail { color: #b91c1c; }
+</style>
+<div class="facet-bar"><button class="status-icon"></button></div>
+<aside id="diagnostic-console" class="diagnostic-console" tabindex="-1" aria-hidden="true">
+  <div class="diagnostic-console-content">
+    <header class="diagnostic-console-header">
+      <h3 id="diagnostic-console-title">system messages</h3>
+      <div class="diagnostic-console-actions">
+        <button type="button" data-diagnostic-action="clear">clear</button>
+        <button type="button" data-diagnostic-action="send-all">send all</button>
+        <button type="button" data-diagnostic-action="close" aria-label="close">&times;</button>
+      </div>
+    </header>
+    <p data-diagnostic-reporting-off hidden>I can show these messages, but sending reports is off.</p>
+    <div class="diagnostic-console-tabs" role="tablist">
+      <button type="button" data-diagnostic-filter="all" aria-selected="true">all <span data-diagnostic-count="all">0</span></button>
+      <button type="button" data-diagnostic-filter="error" aria-selected="false">errors <span data-diagnostic-count="error">0</span></button>
+      <button type="button" data-diagnostic-filter="warning" aria-selected="false">warnings <span data-diagnostic-count="warning">0</span></button>
+      <button type="button" data-diagnostic-filter="info" aria-selected="false">info <span data-diagnostic-count="info">0</span></button>
+    </div>
+    <div id="diagnostic-console-list"></div>
+    <p id="diagnostic-console-empty" hidden>I haven't seen any system messages this session.</p>
+  </div>
+</aside>
+<div id="errorModal" class="modal"><div class="modal-content"><button class="close"></button><pre id="errorMessage"></pre></div></div>
+<div id="results"></div>
+<script>
+  window.CONVEY_COPY = {
+    CONSOLE_HEADING: 'system messages',
+    CONSOLE_EMPTY: "I haven't seen any system messages this session.",
+    CONSOLE_TAB_ALL: 'all',
+    CONSOLE_TAB_ERRORS: 'errors',
+    CONSOLE_TAB_WARNINGS: 'warnings',
+    CONSOLE_TAB_INFO: 'info',
+    CONSOLE_LINK_LABEL: 'system messages',
+    CONSOLE_ACTION_SEND: 'send',
+    CONSOLE_ACTION_SEND_ALL: 'send all',
+    CONSOLE_ACTION_CLEAR: 'clear',
+    CONSOLE_ACTION_SHOW_DETAILS: 'show details',
+    CONSOLE_ACTION_CLOSE: 'close',
+    CONSOLE_REPORTING_OFF: 'I can show these messages, but sending reports is off.',
+    CONSOLE_SNAPSHOT_HEADING: 'snapshot of {count} system messages',
+    CONSOLE_REPORT_HEADING: 'Last {count} console entries:',
+    CONSOLE_TRUNCATED: '[older entries truncated]',
+    CONSOLE_DETAIL_MESSAGE_LABEL: 'message',
+    CONSOLE_DETAIL_STACK_LABEL: 'stack',
+    CONSOLE_DETAIL_LOCATION_LABEL: 'location'
+  };
+  window.CONVEY_SETTINGS = { reportingEnabled: true };
+  window.convey = {
+    reportError(context) {
+      window.reportCalls.push(context);
+    }
+  };
+  window.reportCalls = [];
+</script>
+<script src="../error-handler.js"></script>
+<script src="../diagnostic-console.js"></script>
+<script>
+  const STORAGE_KEY = 'solstone:diagnostic-console';
+  const results = document.getElementById('results');
+  let failures = 0;
+  let reloadCounter = 0;
+
+  function assert(name, condition, detail) {
+    const row = document.createElement('div');
+    row.className = condition ? 'pass' : 'fail';
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` - ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  function tick() {
+    return new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  function reloadDiagnosticConsole() {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = `../diagnostic-console.js?reload=${reloadCounter++}`;
+      script.onload = () => tick().then(resolve);
+      script.onerror = reject;
+      document.body.appendChild(script);
+    });
+  }
+
+  async function flushStorage() {
+    await Promise.resolve();
+    await tick();
+  }
+
+  async function runTests() {
+    sessionStorage.removeItem(STORAGE_KEY);
+    let diagnostic = window.convey.diagnosticConsole;
+    diagnostic.clear();
+
+    const pushed = diagnostic.push({
+      severity: 'error',
+      source: 'api',
+      summary: 'GET 500 /bad',
+      detail: { apiError: { status: 500, statusText: 'Server Error', url: '/bad', serverMessage: 'broken' } }
+    });
+    assert('push returns id', !!pushed.id);
+    assert('push/list stores entry', diagnostic.list().length === 1 && diagnostic.list()[0].summary === 'GET 500 /bad');
+    assert('unread increments', diagnostic.unreadCount() === 1);
+    diagnostic.markAllRead();
+    assert('markAllRead resets unread count', diagnostic.unreadCount() === 0);
+
+    diagnostic.clear();
+    for (let i = 0; i < 250; i += 1) {
+      diagnostic.push({ severity: 'info', source: 'manual', summary: `entry ${i}`, detail: { index: i } });
+    }
+    const capped = diagnostic.list();
+    assert('FIFO cap keeps 200 entries', capped.length === 200);
+    assert('FIFO cap evicts oldest', capped[0].summary === 'entry 50');
+    assert('neighborhood centered length', diagnostic.neighborhood(capped[50].id, 5).length === 11);
+    assert('neighborhood unknown empty', diagnostic.neighborhood('missing', 5).length === 0);
+
+    diagnostic.clear();
+    const circular = {};
+    circular.self = circular;
+    diagnostic.push({
+      severity: 'warning',
+      source: 'manual',
+      summary: 'safe context',
+      detail: { keep: 'yes', circular, error: new Error('nested') }
+    });
+    const safeDetail = diagnostic.list()[0].detail;
+    assert('safeContext keeps serializable values', safeDetail.keep === 'yes');
+    assert('safeContext drops circular values', !Object.prototype.hasOwnProperty.call(safeDetail, 'circular'));
+    assert('safeContext coerces Error values', safeDetail.error.message === 'nested');
+
+    diagnostic.clear();
+    diagnostic.push({ severity: 'info', source: 'manual', summary: 'persisted', detail: {} });
+    await flushStorage();
+    await reloadDiagnosticConsole();
+    diagnostic = window.convey.diagnosticConsole;
+    assert('sessionStorage restores entries after reload', diagnostic.list().length === 1 && diagnostic.list()[0].summary === 'persisted');
+
+    sessionStorage.setItem(STORAGE_KEY, 'not-json');
+    await reloadDiagnosticConsole();
+    diagnostic = window.convey.diagnosticConsole;
+    assert('corrupt storage starts fresh', diagnostic.list().length === 0);
+
+    diagnostic.clear();
+    diagnostic.push({ severity: 'error', source: 'api', summary: 'api one', detail: { apiError: { status: 500, url: '/one', serverMessage: 'one' } } });
+    diagnostic.push({ severity: 'warning', source: 'manual', summary: 'warning one', detail: { message: 'warn' } });
+    diagnostic.open();
+    assert('open marks entries read', diagnostic.unreadCount() === 0);
+    document.querySelector('[data-diagnostic-filter="warning"]').click();
+    assert('severity filter updates list', document.querySelectorAll('#diagnostic-console-list details').length === 1);
+    document.querySelector('[data-diagnostic-filter="all"]').click();
+    document.querySelector('[data-diagnostic-send]').click();
+    let lastReport = window.reportCalls.at(-1);
+    assert('entry send calls reportError with entries', lastReport.source === 'console-entry' && lastReport.consoleEntries.length === 2);
+    document.querySelector('[data-diagnostic-action="send-all"]').click();
+    lastReport = window.reportCalls.at(-1);
+    assert('send all calls reportError with visible entries', lastReport.source === 'manual' && lastReport.consoleEntries.length === 2);
+
+    diagnostic.clear();
+    window.logError(new Error('strip check'), { context: 'smoke' });
+    assert('error-handler does not create bottom strip', !document.getElementById('error-log'));
+    assert('error-handler routes to diagnostic console', diagnostic.list().length === 1 && diagnostic.list()[0].summary.includes('strip check'));
+
+    assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+  }
+
+  runTests().catch(error => {
+    assert('summary', false, error && error.message ? error.message : String(error));
+  });
+</script>
+</html>

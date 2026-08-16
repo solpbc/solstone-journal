@@ -27,7 +27,7 @@ use crate::establish::{self, EstablishError};
 use crate::ledger::{AuthorizedClientsRead, read_authorized_clients};
 use crate::mark::mark_from_jid;
 
-const INIT_HTML: &str = include_str!("../../../../solstone/convey/templates/init.html");
+const INIT_HTML: &str = include_str!("../assets/init.html");
 const INIT_LOCAL_ONLY_DETAIL: &str = "setup routes require a localhost connection";
 
 #[derive(Clone)]

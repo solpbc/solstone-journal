@@ -12,7 +12,14 @@ use solstone_core_import_host::cli_argv;
 use tempfile::TempDir;
 
 const GRAMMAR: &str = include_str!("../../../fixtures/journal_source_reference_grammar.json");
-const AUTHORITY: &str = include_str!("../../../../solstone/think/native/import/authority.toml");
+
+fn authority() -> String {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../solstone/think/native/import/authority.toml"),
+    )
+    .expect("import authority.toml is readable")
+}
 
 fn args(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
@@ -167,8 +174,9 @@ fn parent_treats_journal_source_as_media_and_authority_declares_an_argument() {
             .stdout
             .contains("usage: journal importer journal-source")
     );
-    assert!(AUTHORITY.contains("journal_source"));
-    let block = AUTHORITY.split("journal_source").nth(1).unwrap();
+    let authority = authority();
+    assert!(authority.contains("journal_source"));
+    let block = authority.split("journal_source").nth(1).unwrap();
     assert!(block.contains("kind = \"argument\""));
     assert!(!block.contains("kind = \"option\""));
 }

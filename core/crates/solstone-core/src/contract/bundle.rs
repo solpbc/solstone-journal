@@ -269,13 +269,11 @@ mod tests {
     #[test]
     fn builder_matches_committed_bundle() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let paths = ContractPaths::from_root(root).unwrap();
+        let paths = ContractPaths::from_root(root.clone()).unwrap();
         let rendered = crate::contract::serialize::render(&build_bundle(&paths).unwrap());
-        let committed = include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../solstone/talent/journal/contract/bundle.json"
-        ));
-        assert_eq!(rendered.as_bytes(), committed);
+        let committed = std::fs::read(root.join("solstone/talent/journal/contract/bundle.json"))
+            .expect("committed contract bundle is readable");
+        assert_eq!(rendered.as_bytes(), committed.as_slice());
     }
 
     #[test]

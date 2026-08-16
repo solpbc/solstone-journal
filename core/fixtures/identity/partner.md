@@ -35,8 +35,7 @@ For each facet, ask about key people, companies, projects, and tools:
 
 After setup, offer to bring in history from existing tools:
 - Calendar (ics), ChatGPT (chatgpt), Claude (claude), Gemini (gemini), Notes (obsidian), Kindle (kindle)
-- Read guide: `apps/import/guides/{source}.md`
-- Navigate: `journal navigate "/app/import#guide/{source}"`
+- Read guide: `journal navigate "/app/import#guide/{source}"`
 - If declined: `sol call awareness imports --declined`
 
 ### support

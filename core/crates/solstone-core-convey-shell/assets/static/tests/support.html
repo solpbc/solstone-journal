@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>support.js smoke</title>
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; }
+  .pass { color: #166534; }
+  .fail { color: #b91c1c; }
+</style>
+<h1>support.js smoke</h1>
+<div id="results"></div>
+<div id="fixture"></div>
+<script src="../relative-time.js"></script>
+<script>
+  window.ConveyIcons = {
+    svg: name => `<svg data-icon="${name}"></svg>`
+  };
+  window.SurfaceState = {
+    loading({ text = '' } = {}) {
+      return `<div class="surface-state surface-state--loading" role="status" aria-busy="true">`
+        + `<div class="surface-state-spinner" aria-hidden="true"></div>`
+        + `${text ? `<span class="surface-state-text" data-role="loading-status">${text}</span>` : ''}`
+        + `</div>`;
+    },
+    empty({ icon = '', heading = '', desc = '', action = '' } = {}) {
+      return `<div class="surface-state surface-state--empty">`
+        + `${icon ? `<div class="surface-state-icon" aria-hidden="true">${icon}</div>` : ''}`
+        + `${heading ? `<h2 class="surface-state-heading">${heading}</h2>` : ''}`
+        + `${desc ? `<p class="surface-state-desc">${desc}</p>` : ''}`
+        + `${action ? `<div class="surface-state-action">${action}</div>` : ''}`
+        + `</div>`;
+    },
+    error({ heading = '', desc = '', retry = false, retryLabel = 'try again' } = {}) {
+      return `<div class="surface-state surface-state--error" role="alert">`
+        + `${heading ? `<h2 class="surface-state-heading">${heading}</h2>` : ''}`
+        + `${desc ? `<p class="surface-state-desc">${desc}</p>` : ''}`
+        + `${retry ? `<button type="button" class="surface-state-retry">${retryLabel}</button>` : ''}`
+        + `</div>`;
+    }
+  };
+</script>
+<script src="/app/support/static/support.js"></script>
+<script>
+  const results = document.getElementById('results');
+  const fixture = document.getElementById('fixture');
+  let failures = 0;
+  let openCalls = [];
+  let tabCalls = [];
+
+  function assert(name, condition, detail) {
+    const row = document.createElement('div');
+    row.className = condition ? 'pass' : 'fail';
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  async function withFetch(impl, fn) {
+    const originalFetch = window.fetch;
+    window.fetch = impl;
+    try {
+      return await fn();
+    } finally {
+      window.fetch = originalFetch;
+    }
+  }
+
+  function response({ status = 200, body = {} }) {
+    return { status, ok: status >= 200 && status < 300, json: async () => body };
+  }
+
+  function malformedResponse() {
+    return { status: 200, ok: true, json: async () => { throw new SyntaxError('bad json'); } };
+  }
+
+  function neverSettles() {
+    return new Promise(() => {});
+  }
+
+  async function flush() {
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  function resetFixture() {
+    fixture.innerHTML = `
+      <button id="diagnostics-btn">run diagnostics</button>
+      <div id="diagnostics-loading" style="display:none;">running diagnostics...</div>
+      <div id="diagnostics-results" style="display:none;"></div>
+      <div id="diagnostics-error" style="display:none;"></div>
+      <nav class="support-nav">
+        <button type="button" id="tab-tickets" class="active" data-section="tickets">active tickets</button>
+      </nav>
+      <div id="support-main">
+        <div id="tickets-list"></div>
+        <div id="ticket-detail"></div>
+      </div>
+      <div id="support-disabled" style="display:none;"></div>
+    `;
+    openCalls = [];
+    tabCalls = [];
+  }
+
+  function deps() {
+    return {
+      openTicket: (...args) => openCalls.push(args),
+      activateTab: section => tabCalls.push(section)
+    };
+  }
+
+  function visible(id) {
+    return document.getElementById(id).style.display !== 'none';
+  }
+
+  function hidden(id) {
+    return document.getElementById(id).style.display === 'none';
+  }
+
+  function text(selector) {
+    const el = document.querySelector(selector);
+    return el ? el.textContent : '';
+  }
+
+  async function run() {
+    resetFixture();
+    await withFetch(async () => response({
+      body: { services: { callosum: 'running', cortex: 'stopped' }, recent_errors: [] }
+    }), async () => {
+      window.SupportUI.runDiagnostics();
+      await flush();
+      assert(
+        'diagnostics success',
+        visible('diagnostics-results') &&
+          text('#diagnostics-results').includes('1 of 2 services running') &&
+          hidden('diagnostics-loading') &&
+          hidden('diagnostics-error') &&
+          document.getElementById('diagnostics-btn').disabled === false
+      );
+    });
+
+    resetFixture();
+    await withFetch(async () => response({ status: 500 }), async () => {
+      window.SupportUI.runDiagnostics();
+      await flush();
+      assert(
+        'diagnostics non-OK HTTP 500',
+        visible('diagnostics-error') &&
+          text('#diagnostics-error').includes('HTTP 500') &&
+          hidden('diagnostics-results') &&
+          document.getElementById('diagnostics-results').innerHTML === '' &&
+          hidden('diagnostics-loading') &&
+          document.getElementById('diagnostics-btn').disabled === false
+      );
+    });
+
+    resetFixture();
+    await withFetch(async () => { throw new Error('network down'); }, async () => {
+      window.SupportUI.runDiagnostics();
+      await flush();
+      assert(
+        'diagnostics thrown fetch',
+        visible('diagnostics-error') &&
+          text('#diagnostics-error').includes('network down') &&
+          hidden('diagnostics-loading') &&
+          document.getElementById('diagnostics-btn').disabled === false
+      );
+    });
+
+    resetFixture();
+    await withFetch(async () => malformedResponse(), async () => {
+      window.SupportUI.runDiagnostics();
+      await flush();
+      assert(
+        'diagnostics malformed JSON',
+        visible('diagnostics-error') &&
+          hidden('diagnostics-results') &&
+          hidden('diagnostics-loading') &&
+          document.getElementById('diagnostics-btn').disabled === false
+      );
+    });
+
+    resetFixture();
+    let capturedTimeoutFn;
+    window.SupportUI.__setTimers(fn => { capturedTimeoutFn = fn; return 1; }, () => {});
+    try {
+      await withFetch(() => neverSettles(), async () => {
+        window.SupportUI.runDiagnostics();
+        capturedTimeoutFn();
+        await flush();
+        assert(
+          'diagnostics timeout',
+          visible('diagnostics-error') &&
+            hidden('diagnostics-results') &&
+            hidden('diagnostics-loading') &&
+            document.getElementById('diagnostics-btn').disabled === false
+        );
+      });
+    } finally {
+      window.SupportUI.__setTimers();
+    }
+
+    resetFixture();
+    await withFetch(async () => { throw new Error('first failure'); }, async () => {
+      window.SupportUI.runDiagnostics();
+      await flush();
+    });
+    window.SupportUI.__setTimers(fn => { capturedTimeoutFn = fn; return 1; }, () => {});
+    try {
+      await withFetch(() => neverSettles(), async () => {
+        window.SupportUI.runDiagnostics();
+        assert(
+          'diagnostics rerun-clears-stale',
+          hidden('diagnostics-results') &&
+            document.getElementById('diagnostics-results').innerHTML === '' &&
+            hidden('diagnostics-error') &&
+            document.getElementById('diagnostics-error').innerHTML === '' &&
+            visible('diagnostics-loading') &&
+            document.getElementById('diagnostics-btn').disabled === true
+        );
+        capturedTimeoutFn();
+        await flush();
+      });
+    } finally {
+      window.SupportUI.__setTimers();
+    }
+
+    resetFixture();
+    const hostileSubject = '<scr' + 'ipt>alert(1)</scr' + 'ipt>';
+    await withFetch(async () => response({
+      body: [{
+        id: '7" onclick="alert(1)',
+        subject: hostileSubject,
+        status: 'open',
+        product: 'solstone',
+        created_at: '2026-06-01T00:00:00Z'
+      }]
+    }), async () => {
+      await window.SupportUI.loadTickets(deps());
+      const badge = document.getElementById('tab-tickets-badge');
+      const ticket = document.querySelector('.support-ticket');
+      assert(
+        'tickets success-with-tickets',
+        !!ticket &&
+          text('.support-ticket-subject') === hostileSubject &&
+          text('.support-ticket-id') === '#7" onclick="alert(1)' &&
+          !ticket.hasAttribute('onclick') &&
+          !!badge &&
+          badge.textContent === '1'
+      );
+    });
+
+    resetFixture();
+    await withFetch(async () => response({ body: [] }), async () => {
+      await window.SupportUI.loadTickets(deps());
+      assert(
+        'tickets empty',
+        text('#tickets-list .surface-state-heading') === 'no tickets yet — that\'s a good thing' &&
+          !document.getElementById('tab-tickets-badge') &&
+          tabCalls.includes('help')
+      );
+    });
+
+    resetFixture();
+    await withFetch(async () => response({ status: 403 }), async () => {
+      await window.SupportUI.loadTickets(deps());
+      assert(
+        'tickets 403',
+        document.getElementById('support-main').style.display === 'none' &&
+          document.getElementById('support-disabled').style.display === ''
+      );
+    });
+
+    resetFixture();
+    await withFetch(async () => response({ status: 500 }), async () => {
+      await window.SupportUI.loadTickets(deps());
+      assert(
+        'tickets non-OK HTTP 500',
+        !!document.querySelector('#tickets-list .surface-state-retry') &&
+          text('#tickets-list .surface-state-heading') === 'unable to load tickets'
+      );
+    });
+
+    resetFixture();
+    await withFetch(async () => { throw new Error('network down'); }, async () => {
+      await window.SupportUI.loadTickets(deps());
+      assert('tickets thrown fetch', !!document.querySelector('#tickets-list .surface-state-retry'));
+    });
+
+    resetFixture();
+    await withFetch(async () => malformedResponse(), async () => {
+      await window.SupportUI.loadTickets(deps());
+      assert('tickets malformed JSON', !!document.querySelector('#tickets-list .surface-state-retry'));
+    });
+
+    resetFixture();
+    window.SupportUI.__setTimers(fn => { capturedTimeoutFn = fn; return 1; }, () => {});
+    try {
+      await withFetch(() => neverSettles(), async () => {
+        const pending = window.SupportUI.loadTickets(deps());
+        capturedTimeoutFn();
+        await pending;
+        assert('tickets timeout', !!document.querySelector('#tickets-list .surface-state-retry'));
+      });
+    } finally {
+      window.SupportUI.__setTimers();
+    }
+
+    resetFixture();
+    await withFetch(async () => response({ status: 500 }), async () => {
+      await window.SupportUI.loadTickets(deps());
+    });
+    window.SupportUI.__setTimers(() => 1, () => {});
+    try {
+      await withFetch(() => neverSettles(), async () => {
+        document.querySelector('#tickets-list .surface-state-retry').click();
+        assert(
+          'tickets retry-re-enters-spinner',
+          text('#tickets-list .surface-state-text') === 'checking for tickets'
+        );
+      });
+    } finally {
+      window.SupportUI.__setTimers();
+    }
+
+    resetFixture();
+    document.getElementById('tickets-list').innerHTML = '<div>stale tickets</div>';
+    let sawSpinner = false;
+    await withFetch(async () => {
+      sawSpinner = text('#tickets-list .surface-state-text') === 'checking for tickets';
+      return response({ body: [] });
+    }, async () => {
+      await window.SupportUI.loadTickets(deps());
+      assert('tickets spinner-rendered-before-fetch', sawSpinner);
+    });
+
+    assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+  }
+
+  run();
+</script>
+</html>

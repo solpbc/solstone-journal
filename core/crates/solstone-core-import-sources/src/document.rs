@@ -1133,7 +1133,8 @@ fn generate_for_page(
 }
 
 fn reading_prompt() -> &'static str {
-    let source = include_str!("../../../../solstone/observe/categories/reading.md");
+    let source =
+        include_str!("../../solstone-core-describe-categories/assets/categories/reading.md");
     source
         .split_once("\n}\n")
         .map_or(source, |(_, prompt)| prompt)

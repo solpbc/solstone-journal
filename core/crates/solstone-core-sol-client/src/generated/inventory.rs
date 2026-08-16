@@ -4,51 +4,51 @@
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
 
-#[path = "../../../../../solstone/apps/activities/native/command.rs"]
+#[path = "../../native/apps/activities/command.rs"]
 mod solstone_apps_activities_native_command_rs;
-#[path = "../../../../../solstone/apps/awareness/native/command.rs"]
+#[path = "../../native/apps/awareness/command.rs"]
 mod solstone_apps_awareness_native_command_rs;
-#[path = "../../../../../solstone/apps/body/native/command.rs"]
+#[path = "../../native/apps/body/command.rs"]
 mod solstone_apps_body_native_command_rs;
-#[path = "../../../../../solstone/apps/chat/native/command.rs"]
+#[path = "../../native/apps/chat/command.rs"]
 mod solstone_apps_chat_native_command_rs;
-#[path = "../../../../../solstone/apps/entities/native/command.rs"]
+#[path = "../../native/apps/entities/command.rs"]
 mod solstone_apps_entities_native_command_rs;
-#[path = "../../../../../solstone/apps/facets/native/command.rs"]
+#[path = "../../native/apps/facets/command.rs"]
 mod solstone_apps_facets_native_command_rs;
-#[path = "../../../../../solstone/apps/import/native/command.rs"]
+#[path = "../../native/apps/import/command.rs"]
 mod solstone_apps_import_native_command_rs;
-#[path = "../../../../../solstone/apps/network/native/command.rs"]
+#[path = "../../native/apps/network/command.rs"]
 mod solstone_apps_network_native_command_rs;
-#[path = "../../../../../solstone/apps/settings/native/command.rs"]
+#[path = "../../native/apps/settings/command.rs"]
 mod solstone_apps_settings_native_command_rs;
-#[path = "../../../../../solstone/apps/sol/native/command.rs"]
+#[path = "../../native/apps/sol/command.rs"]
 mod solstone_apps_sol_native_command_rs;
-#[path = "../../../../../solstone/apps/speakers/native/command.rs"]
+#[path = "../../native/apps/speakers/command.rs"]
 mod solstone_apps_speakers_native_command_rs;
-#[path = "../../../../../solstone/apps/support/native/command.rs"]
+#[path = "../../native/apps/support/command.rs"]
 mod solstone_apps_support_native_command_rs;
-#[path = "../../../../../solstone/apps/thinking/native/command.rs"]
+#[path = "../../native/apps/thinking/command.rs"]
 mod solstone_apps_thinking_native_command_rs;
-#[path = "../../../../../solstone/apps/transcripts/native/command.rs"]
+#[path = "../../native/apps/transcripts/command.rs"]
 mod solstone_apps_transcripts_native_command_rs;
-#[path = "../../../../../solstone/think/native/chat/command.rs"]
+#[path = "../../native/think/chat/command.rs"]
 mod solstone_think_native_chat_command_rs;
-#[path = "../../../../../solstone/think/native/import/command.rs"]
+#[path = "../../native/think/import/command.rs"]
 mod solstone_think_native_import_command_rs;
-#[path = "../../../../../solstone/think/native/link/command.rs"]
+#[path = "../../native/think/link/command.rs"]
 mod solstone_think_native_link_command_rs;
-#[path = "../../../../../solstone/think/native/moved/command.rs"]
+#[path = "../../native/think/moved/command.rs"]
 mod solstone_think_native_moved_command_rs;
-#[path = "../../../../../solstone/think/native/status/command.rs"]
+#[path = "../../native/think/status/command.rs"]
 mod solstone_think_native_status_command_rs;
-#[path = "../../../../../solstone/think/tools/native/health/command.rs"]
+#[path = "../../native/tools/health/command.rs"]
 mod solstone_think_tools_native_health_command_rs;
-#[path = "../../../../../solstone/think/tools/native/journal/command.rs"]
+#[path = "../../native/tools/journal/command.rs"]
 mod solstone_think_tools_native_journal_command_rs;
-#[path = "../../../../../solstone/think/tools/native/ledger/command.rs"]
+#[path = "../../native/tools/ledger/command.rs"]
 mod solstone_think_tools_native_ledger_command_rs;
-#[path = "../../../../../solstone/think/tools/native/profile/command.rs"]
+#[path = "../../native/tools/profile/command.rs"]
 mod solstone_think_tools_native_profile_command_rs;
 
 pub const ENTRIES: &[InventoryEntry] = &[

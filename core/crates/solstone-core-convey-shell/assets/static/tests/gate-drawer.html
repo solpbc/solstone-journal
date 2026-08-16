@@ -1,0 +1,158 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>gate-drawer.js smoke</title>
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; }
+  .pass { color: var(--success-ink); }
+  .fail { color: var(--danger); }
+  #fixture { max-width: 720px; }
+</style>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../drawer.css">
+<h1>gate-drawer.js smoke</h1>
+<div id="results"></div>
+<div id="fixture"></div>
+<script src="../drawer.js"></script>
+<script src="../gate-drawer.js"></script>
+<script>
+  const results = document.getElementById('results');
+  const fixture = document.getElementById('fixture');
+  let failures = 0;
+
+  function assert(name, condition, detail) {
+    const row = document.createElement('div');
+    row.className = condition ? 'pass' : 'fail';
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` - ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  function equal(name, actual, expected) {
+    assert(name, actual === expected, `expected "${expected}", got "${actual}"`);
+  }
+
+  function payload(overrides) {
+    return {
+      status: 'low_quality',
+      source: 'candidate_pool',
+      low_quality_reason: 'too_few_stmts',
+      observed_value: 5,
+      threshold_value: 30,
+      manual_tags_count: 11,
+      segments_available: 12,
+      embeddings_available: 13,
+      can_build_from_tags: false,
+      ...overrides
+    };
+  }
+
+  function renderToFixture(data, options = {}) {
+    fixture.innerHTML = window.GateDrawer.render(data, options);
+    return fixture.querySelector('.drawer');
+  }
+
+  function lineEl(drawer) {
+    return drawer.querySelector('.drawer-line');
+  }
+
+  function formatMetric(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return 'n/a';
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  }
+
+  function formatWithUnit(value, unit) {
+    const text = formatMetric(value);
+    return text === 'n/a' ? text : `${text}${unit}`;
+  }
+
+  function boldTexts(drawer) {
+    return Array.from(lineEl(drawer).querySelectorAll('b')).map((node) => node.textContent);
+  }
+
+  function run() {
+    equal('public keys', Object.keys(window.GateDrawer).join(','), 'render');
+
+    const tooFewPayload = payload();
+    let drawer = renderToFixture(tooFewPayload, { actionHtml: '<button id="spkOwnerBuildFromTags">build</button>' });
+    const tooFewLine = lineEl(drawer).textContent;
+    const tooFewObserved = formatMetric(tooFewPayload.observed_value);
+    const tooFewThreshold = formatMetric(tooFewPayload.threshold_value);
+    equal('data id', drawer.getAttribute('data-drawer-id'), 'speakers-owner-gate-diagnostics');
+    assert('label text renders', drawer.querySelector('.drawer-label').textContent.trim().length > 0);
+    assert('no drawer chip', drawer.querySelector('.drawer-chip') === null);
+    assert('too few line includes payload values', tooFewLine.includes(tooFewObserved) && tooFewLine.includes(tooFewThreshold));
+    assert('too few line emphasizes observed first', boldTexts(drawer).join('|') === [tooFewObserved, tooFewThreshold].join('|'));
+    equal('statements row label', drawer.querySelector('.gate-row > span:first-child').textContent, 'statements');
+    assert('gate need renders', drawer.querySelector('.gate-need') !== null);
+    assert('gate next renders', drawer.querySelector('.gate-next') !== null);
+    assert('carried body values render', drawer.textContent.includes(tooFewPayload.source) && drawer.textContent.includes(String(tooFewPayload.manual_tags_count)) && drawer.textContent.includes(String(tooFewPayload.segments_available)) && drawer.textContent.includes(String(tooFewPayload.embeddings_available)));
+    assert('action html renders', drawer.querySelector('#spkOwnerBuildFromTags') !== null);
+
+    const medianPayload = payload({
+      low_quality_reason: 'median_duration_too_short',
+      observed_value: 1.5,
+      threshold_value: 2,
+    });
+    drawer = renderToFixture(medianPayload);
+    const medianObserved = formatWithUnit(medianPayload.observed_value, 's');
+    const medianThreshold = formatWithUnit(medianPayload.threshold_value, 's');
+    assert('median line includes payload values', lineEl(drawer).textContent.includes(medianObserved) && lineEl(drawer).textContent.includes(medianThreshold));
+    assert('median line emphasizes seconds', boldTexts(drawer).join('|') === [medianObserved, medianThreshold].join('|'));
+    equal('median row label', drawer.querySelector('.gate-row > span:first-child').textContent, 'median length');
+
+    drawer = renderToFixture(payload({
+      low_quality_reason: 'cluster_too_diffuse',
+      observed_value: 0.2,
+      threshold_value: 0.3,
+    }));
+    assert('cohesion line renders text', lineEl(drawer).textContent.trim().length > 0);
+    assert('cohesion line has no digits', !/\d/.test(lineEl(drawer).textContent));
+    assert('cohesion line has no emphasis', lineEl(drawer).querySelector('b') === null);
+    equal('consistency row label', drawer.querySelector('.gate-row > span:first-child').textContent, 'consistency');
+
+    const zeroPayload = payload({
+      low_quality_reason: 'median_duration_too_short',
+      observed_value: 0,
+      threshold_value: 1.5,
+    });
+    drawer = renderToFixture(zeroPayload);
+    assert('zero observed renders', lineEl(drawer).textContent.includes(formatWithUnit(zeroPayload.observed_value, 's')));
+
+    drawer = renderToFixture(payload({ threshold_value: 0 }));
+    assert('missing threshold omits needs', !lineEl(drawer).textContent.includes('needs'));
+    assert('incomplete triple omits bar', drawer.querySelector('.gate-bar') === null);
+
+    drawer = renderToFixture(payload({ observed_value: Number.NaN }));
+    assert('observed nan renders n/a', lineEl(drawer).textContent.includes('n/a'));
+    assert('nan never reaches output', !drawer.textContent.includes('NaN') && !drawer.innerHTML.includes('NaN'));
+    assert('undefined never reaches output', !drawer.textContent.includes('undefined') && !drawer.innerHTML.includes('undefined'));
+
+    drawer = renderToFixture(payload({ observed_value: payload().threshold_value * 2 }));
+    assert('bar caps at one hundred', drawer.querySelector('.gate-bar > span').getAttribute('style').includes('100.00%'));
+
+    fixture.innerHTML = window.GateDrawer.render(payload()) + window.GateDrawer.render(payload({ observed_value: 6 }));
+    fixture.querySelector('[data-drawer-id="speakers-owner-gate-diagnostics"]').open = true;
+    window.Drawer.preserveOpen(fixture, () => {
+      fixture.innerHTML = window.GateDrawer.render(payload({ observed_value: 7 }));
+    });
+    assert('preserve restores gate drawer', fixture.querySelector('[data-drawer-id="speakers-owner-gate-diagnostics"]').open === true);
+
+    if (failures > 0) {
+      throw new Error(`${failures} gate drawer smoke assertion(s) failed`);
+    }
+  }
+
+  try {
+    run();
+  } catch (error) {
+    const row = document.createElement('div');
+    row.className = 'fail';
+    row.textContent = `FAIL unhandled error - ${error.message}`;
+    results.appendChild(row);
+    throw error;
+  }
+</script>
+</html>

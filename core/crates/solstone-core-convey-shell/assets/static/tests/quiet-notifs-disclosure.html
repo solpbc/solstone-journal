@@ -1,0 +1,234 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>quiet notifications disclosure test</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    .pass { color: #0a7a2f; }
+    .fail { color: #b00020; }
+  </style>
+</head>
+<body>
+  <div id="quiet-notifs-section" style="margin-top: 16px;">
+    <h3 style="margin-bottom: 8px;">quiet notifications</h3>
+    <div id="quiet-notifs-list" style="display: flex; flex-direction: column; gap: 4px; font-size: 13px;"></div>
+  </div>
+  <div id="test-results">RUNNING quiet notifications disclosure</div>
+  <ol id="results"></ol>
+
+  <script>
+    const longMessage = 'long detail ' + 'x'.repeat(260);
+    const xssMessage = 'markup stays literal: <img src=x onerror="window.__xss=1"> and <b>bold</b>.';
+    const shortMessage = 'short detail';
+    const fakeNotifs = [
+      { id: 1, source: 'svc-long', message: longMessage, ts: 1 },
+      { id: 2, source: 'svc-xss', message: xssMessage, ts: 2 },
+      { id: 3, source: 'svc-short', message: shortMessage, ts: 3 }
+    ];
+
+    window.AppServices = {
+      quietNotifs: {
+        getAll() {
+          return fakeNotifs;
+        }
+      },
+      notifications: {
+        _getRelativeTime() {
+          return '1m';
+        }
+      }
+    };
+
+    const summary = document.getElementById('test-results');
+    const results = document.getElementById('results');
+    let failures = 0;
+
+    function report(name, ok, detail) {
+      const item = document.createElement('li');
+      item.className = ok ? 'pass' : 'fail';
+      item.textContent = `${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
+      results.appendChild(item);
+      if (!ok) failures += 1;
+    }
+
+    function assert(name, condition) {
+      report(name, !!condition);
+    }
+
+    function renderQuietNotifs() {
+      const section = document.getElementById('quiet-notifs-section');
+      const list = document.getElementById('quiet-notifs-list');
+      if (!section || !list) return;
+
+      const notifs = window.AppServices?.quietNotifs?.getAll() || [];
+      section.style.display = notifs.length > 0 ? '' : 'none';
+
+      if (notifs.length === 0) {
+        list.textContent = '';
+        const empty = document.createElement('span');
+        empty.style.color = '#9ca3af';
+        empty.textContent = 'no quiet notifications';
+        list.appendChild(empty);
+        return;
+      }
+
+      const newIds = new Set(notifs.map(n => String(n.id)));
+      const existingById = new Map();
+      for (const child of Array.from(list.children)) {
+        const k = child.getAttribute('data-id');
+        if (k) existingById.set(k, child);
+      }
+      // drop stale rows AND any non-keyed node (e.g. a prior "no quiet notifications" span)
+      for (const child of Array.from(list.children)) {
+        const k = child.getAttribute('data-id');
+        if (!k || !newIds.has(k)) list.removeChild(child);
+      }
+
+      for (const n of notifs) {
+        const key = String(n.id);
+        let row = existingById.get(key);
+        let btn, panel;
+        if (!row) {
+          row = document.createElement('div');
+          row.setAttribute('data-id', key);
+          row.style.cssText = 'padding: 4px 0;';
+
+          const panelId = 'quiet-notif-panel-' + key;
+          btn = document.createElement('button');
+          btn.type = 'button';
+          btn.setAttribute('data-action', 'toggle-quiet-notif');
+          btn.setAttribute('aria-expanded', 'false');
+          btn.setAttribute('aria-controls', panelId);
+          btn.style.cssText = 'display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer;';
+          row.appendChild(btn);
+
+          panel = document.createElement('div');
+          panel.id = panelId;
+          panel.hidden = true;
+          panel.setAttribute('data-quiet-notif-panel', 'true');
+          panel.style.cssText = 'padding: 4px 0 2px; color: #fca5a5; font-size: 13px; white-space: pre-wrap; word-break: break-word;';
+          row.appendChild(panel);
+        } else {
+          btn = row.querySelector('[data-action="toggle-quiet-notif"]');
+          panel = row.querySelector('[data-quiet-notif-panel]');
+        }
+
+        const relativeAge = window.AppServices.notifications._getRelativeTime(n.ts);
+        btn.textContent = '';
+        const ageSpan = document.createElement('span');
+        ageSpan.style.cssText = 'color: #9ca3af; font-size: 11px; flex-shrink: 0;';
+        ageSpan.textContent = relativeAge;
+        btn.appendChild(ageSpan);
+
+        const srcCode = document.createElement('code');
+        srcCode.style.cssText = 'flex-shrink: 0; font-size: 11px;';
+        srcCode.textContent = n.source || '';
+        btn.appendChild(srcCode);
+
+        const snippet = document.createElement('span');
+        snippet.style.cssText = 'color: #fca5a5; font-size: 13px; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+        snippet.textContent = n.message || '';
+        btn.appendChild(snippet);
+
+        const hint = document.createElement('span');
+        hint.setAttribute('data-quiet-notif-hint', 'true');
+        hint.style.cssText = 'flex-shrink: 0; color: #9ca3af; font-size: 11px;';
+        hint.textContent = btn.getAttribute('aria-expanded') === 'true' ? 'hide details' : 'show details';
+        btn.appendChild(hint);
+
+        panel.textContent = n.message || '';
+
+        list.appendChild(row);
+      }
+    }
+
+    const quietNotifsList = document.getElementById('quiet-notifs-list');
+    if (quietNotifsList) {
+      quietNotifsList.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-action="toggle-quiet-notif"]');
+        if (!btn) return;
+        const expanded = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        const panel = document.getElementById(btn.getAttribute('aria-controls'));
+        if (panel) panel.hidden = expanded;
+        const hint = btn.querySelector('[data-quiet-notif-hint]');
+        if (hint) hint.textContent = expanded ? 'show details' : 'hide details';
+      });
+    }
+
+    function buttonFor(id) {
+      return document.querySelector(`[data-id="${id}"] [data-action="toggle-quiet-notif"]`);
+    }
+
+    function panelFor(button) {
+      return document.getElementById(button.getAttribute('aria-controls'));
+    }
+
+    function snippetFor(button, text) {
+      return Array.from(button.querySelectorAll('span')).find(span => span.textContent.includes(text));
+    }
+
+    function runTests() {
+      renderQuietNotifs();
+
+      const longBtn = buttonFor(1);
+      const longPanel = panelFor(longBtn);
+      assert('toggle is a real button', longBtn.tagName === 'BUTTON');
+      longBtn.focus();
+      assert('toggle is focusable', document.activeElement === longBtn);
+      assert('initially collapsed', longBtn.getAttribute('aria-expanded') === 'false' && longPanel.hidden);
+      assert('aria-controls resolves', document.getElementById(longBtn.getAttribute('aria-controls')) === longPanel);
+
+      longBtn.click();
+      assert(
+        'expands with aria state and hint',
+        longBtn.getAttribute('aria-expanded') === 'true'
+          && !longPanel.hidden
+          && longBtn.querySelector('[data-quiet-notif-hint]').textContent === 'hide details'
+      );
+      assert('expanded panel keeps full long message', longPanel.textContent === longMessage);
+
+      longBtn.click();
+      assert(
+        'collapses with aria state and hint',
+        longBtn.getAttribute('aria-expanded') === 'false'
+          && longPanel.hidden
+          && longBtn.querySelector('[data-quiet-notif-hint]').textContent === 'show details'
+      );
+
+      const xssBtn = buttonFor(2);
+      const xssPanel = panelFor(xssBtn);
+      const xssSnippet = snippetFor(xssBtn, '<b>bold</b>');
+      xssBtn.click();
+      assert('xss panel has no parsed markup', xssPanel.querySelector('img') === null && xssPanel.querySelector('b') === null);
+      assert('xss panel keeps literal markup text', xssPanel.textContent.includes('<b>bold</b>'));
+      assert('xss handler did not execute', window.__xss === undefined);
+      assert('xss snippet has no parsed markup', xssSnippet.querySelector('img') === null && xssSnippet.querySelector('b') === null);
+      assert('xss snippet keeps literal markup text', xssSnippet.textContent.includes('<b>bold</b>'));
+
+      longBtn.click();
+      fakeNotifs.push({ id: 4, source: 'svc-new', message: 'new quiet notification', ts: 4 });
+      renderQuietNotifs();
+      const rerenderedLongBtn = buttonFor(1);
+      const rerenderedLongPanel = panelFor(rerenderedLongBtn);
+      assert(
+        'expanded row survives re-render',
+        rerenderedLongBtn.getAttribute('aria-expanded') === 'true' && !rerenderedLongPanel.hidden
+      );
+
+      const shortBtn = buttonFor(3);
+      const shortPanel = panelFor(shortBtn);
+      shortBtn.click();
+      assert('short row expands with same detail text', !shortPanel.hidden && shortPanel.textContent === shortMessage);
+
+      summary.textContent = failures ? `FAIL ${failures} failure(s)` : 'PASS quiet notifications disclosure';
+      summary.className = failures ? 'fail' : 'pass';
+    }
+
+    runTests();
+  </script>
+</body>
+</html>

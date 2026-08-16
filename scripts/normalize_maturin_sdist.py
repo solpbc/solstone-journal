@@ -41,6 +41,7 @@ CORE_SDIST_GLOB_INJECTION_PATTERNS = (
     "solstone/apps/*/native/*",
     "solstone/think/native/**/*",
     "solstone/think/tools/native/**/*",
+    "core/crates/solstone-core-sol-client/native/**/*",
 )
 
 
