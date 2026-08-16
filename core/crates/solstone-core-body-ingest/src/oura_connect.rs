@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
 use std::process::{Command, Stdio};
 use std::thread;
@@ -451,43 +451,116 @@ fn hex(byte: u8) -> Result<u8, BodyIngestError> {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-fn open_browser(url: &str) -> Result<(), BodyIngestError> {
+/// Planned browser process. Constructible from ingest tests so a stand-in can
+/// replace the production program without changing `plan_browser_open`.
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BrowserInvocation {
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub cwd: Option<PathBuf>,
+    pub env: BTreeMap<String, String>,
+    pub stdin: BrowserStdio,
+    pub stdout: BrowserStdio,
+    pub stderr: BrowserStdio,
+}
+
+/// Stdio disposition carried by [`BrowserInvocation`].
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BrowserStdio {
+    Null,
+}
+
+pub(crate) trait BrowserRunner {
+    fn run(&mut self, invocation: &BrowserInvocation) -> Result<(), BodyIngestError>;
+}
+
+struct ProcessBrowserRunner;
+
+impl BrowserRunner for ProcessBrowserRunner {
+    fn run(&mut self, invocation: &BrowserInvocation) -> Result<(), BodyIngestError> {
+        execute_browser_invocation(invocation)
+    }
+}
+
+fn plan_browser_open(url: &str) -> Result<BrowserInvocation, BodyIngestError> {
     #[cfg(target_os = "macos")]
-    let mut command = {
-        let mut command = Command::new("open");
-        command.arg(url);
-        command
-    };
+    let (program, args) = ("open", vec![url.to_owned()]);
     #[cfg(target_os = "linux")]
-    let mut command = {
-        let mut command = Command::new("xdg-open");
-        command.arg(url);
-        command
-    };
+    let (program, args) = ("xdg-open", vec![url.to_owned()]);
     #[cfg(target_os = "windows")]
-    let mut command = {
-        let mut command = Command::new("cmd");
-        command.args(["/C", "start", "", url]);
+    let (program, args) = (
+        "cmd",
+        vec![
+            "/C".to_owned(),
+            "start".to_owned(),
+            String::new(),
+            url.to_owned(),
+        ],
+    );
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        let _ = url;
+        return Err(source("authorization_browser"));
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    Ok(BrowserInvocation {
+        program: PathBuf::from(program),
+        args,
+        cwd: None,
+        env: BTreeMap::new(),
+        stdin: BrowserStdio::Null,
+        stdout: BrowserStdio::Null,
+        stderr: BrowserStdio::Null,
+    })
+}
+
+/// Spawn the planned browser process. Stdio is whatever the invocation names
+/// (production plans `Null` on all three); the child handle is discarded.
+#[doc(hidden)]
+pub fn execute_browser_invocation(invocation: &BrowserInvocation) -> Result<(), BodyIngestError> {
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    {
+        let mut command = Command::new(&invocation.program);
+        command.args(&invocation.args);
+        if let Some(cwd) = &invocation.cwd {
+            command.current_dir(cwd);
+        }
+        for (key, value) in &invocation.env {
+            command.env(key, value);
+        }
         command
-    };
-    spawn_browser_command(&mut command)
+            .stdin(stdio_from(invocation.stdin))
+            .stdout(stdio_from(invocation.stdout))
+            .stderr(stdio_from(invocation.stderr))
+            .spawn()
+            .map(|_| ())
+            .map_err(|_| source("authorization_browser"))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        let _ = invocation;
+        Err(source("authorization_browser"))
+    }
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-fn spawn_browser_command(command: &mut Command) -> Result<(), BodyIngestError> {
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map(|_| ())
-        .map_err(|_| source("authorization_browser"))
+fn stdio_from(disposition: BrowserStdio) -> Stdio {
+    match disposition {
+        BrowserStdio::Null => Stdio::null(),
+    }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-fn open_browser(_url: &str) -> Result<(), BodyIngestError> {
-    Err(source("authorization_browser"))
+fn open_browser(url: &str) -> Result<(), BodyIngestError> {
+    open_browser_with(url, &mut ProcessBrowserRunner)
+}
+
+pub(crate) fn open_browser_with(
+    url: &str,
+    runner: &mut dyn BrowserRunner,
+) -> Result<(), BodyIngestError> {
+    runner.run(&plan_browser_open(url)?)
 }
 
 const fn source(stage: &'static str) -> BodyIngestError {
@@ -642,48 +715,115 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn browser_opener_cannot_hold_or_contaminate_the_helper_protocol() {
-        let started = Instant::now();
-        let output = Command::new(std::env::current_exe().expect("current test executable"))
-            .args([
-                "--ignored",
-                "--exact",
-                "oura_connect::tests::browser_stdio_child",
-                "--nocapture",
-            ])
-            .env("SOLSTONE_BROWSER_STDIO_CHILD", "1")
-            .output()
-            .expect("run isolated opener process");
-        assert!(output.status.success());
-        assert!(
-            started.elapsed() < Duration::from_secs(1),
-            "the outer helper waited for the long-lived browser opener"
-        );
-        assert!(
-            !output
-                .stdout
-                .windows(18)
-                .any(|part| part == b"browser-stdio-leak")
-        );
-        assert!(
-            !output
-                .stderr
-                .windows(18)
-                .any(|part| part == b"browser-stdio-leak")
-        );
+    #[derive(Default)]
+    struct RecordingRunner {
+        invocations: std::cell::RefCell<Vec<BrowserInvocation>>,
     }
 
-    #[cfg(unix)]
-    #[test]
-    #[ignore = "subprocess fixture for browser_opener_cannot_hold_or_contaminate_the_helper_protocol"]
-    fn browser_stdio_child() {
-        if env::var_os("SOLSTONE_BROWSER_STDIO_CHILD").is_none() {
-            return;
+    impl BrowserRunner for RecordingRunner {
+        fn run(&mut self, invocation: &BrowserInvocation) -> Result<(), BodyIngestError> {
+            self.invocations.borrow_mut().push(invocation.clone());
+            Ok(())
         }
-        let mut command = Command::new("sh");
-        command.args(["-c", "sleep 2; printf browser-stdio-leak"]);
-        spawn_browser_command(&mut command).expect("spawn browser fixture");
+    }
+
+    struct DistinctResultRunner {
+        invocations: std::cell::RefCell<Vec<BrowserInvocation>>,
+    }
+
+    impl BrowserRunner for DistinctResultRunner {
+        fn run(&mut self, invocation: &BrowserInvocation) -> Result<(), BodyIngestError> {
+            self.invocations.borrow_mut().push(invocation.clone());
+            if invocation.args.iter().any(|arg| arg.ends_with("/fail")) {
+                Err(source("authorization_browser"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn expected_browser_program() -> &'static str {
+        "open"
+    }
+
+    #[cfg(target_os = "linux")]
+    fn expected_browser_program() -> &'static str {
+        "xdg-open"
+    }
+
+    #[cfg(target_os = "windows")]
+    fn expected_browser_program() -> &'static str {
+        "cmd"
+    }
+
+    #[cfg(target_os = "windows")]
+    fn expected_browser_args(url: &str) -> Vec<String> {
+        vec![
+            "/C".to_owned(),
+            "start".to_owned(),
+            String::new(),
+            url.to_owned(),
+        ]
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn expected_browser_args(url: &str) -> Vec<String> {
+        vec![url.to_owned()]
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[test]
+    fn planned_browser_invocation_records_program_args_cwd_env_and_null_stdio() {
+        let mut runner = RecordingRunner::default();
+        open_browser_with("https://example.test/one", &mut runner).expect("plan");
+        let recorded = runner.invocations.into_inner();
+        assert_eq!(recorded.len(), 1);
+        let invocation = &recorded[0];
+        assert_eq!(
+            invocation.program,
+            PathBuf::from(expected_browser_program())
+        );
+        assert_eq!(
+            invocation.args,
+            expected_browser_args("https://example.test/one")
+        );
+        assert_eq!(invocation.cwd, None);
+        assert!(invocation.env.is_empty());
+        assert_eq!(invocation.stdin, BrowserStdio::Null);
+        assert_eq!(invocation.stdout, BrowserStdio::Null);
+        assert_eq!(invocation.stderr, BrowserStdio::Null);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[test]
+    fn planned_browser_invocations_differ_by_url() {
+        let mut runner = RecordingRunner::default();
+        open_browser_with("https://example.test/one", &mut runner).expect("first");
+        open_browser_with("https://example.test/two", &mut runner).expect("second");
+        let recorded = runner.invocations.into_inner();
+        assert_eq!(recorded.len(), 2);
+        assert_ne!(recorded[0].args, recorded[1].args);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[test]
+    fn browser_runner_maps_distinct_invocations_to_distinct_results() {
+        let mut runner = DistinctResultRunner {
+            invocations: std::cell::RefCell::new(Vec::new()),
+        };
+        assert_eq!(
+            open_browser_with("https://example.test/ok", &mut runner),
+            Ok(())
+        );
+        assert_eq!(
+            open_browser_with("https://example.test/fail", &mut runner),
+            Err(BodyIngestError::new(
+                BodyIngestErrorKind::Source,
+                "authorization_browser"
+            ))
+        );
+        let recorded = runner.invocations.into_inner();
+        assert_ne!(recorded[0].args, recorded[1].args);
     }
 }

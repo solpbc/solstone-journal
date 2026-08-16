@@ -16,25 +16,10 @@ id = "solstone-core-backup::core/crates/solstone-core-backup/src/state.rs::tests
 id = "solstone-core-backup::core/crates/solstone-core-backup/src/state.rs::tests::disjoint_mutations_survive_deterministic_contention::scheduling"
 
 [[findings]]
-id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/apple.rs::tests::waiting_save_rechecks_retention_after_acquiring_the_lock::scheduling"
-
-[[findings]]
-id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::browser_opener_cannot_hold_or_contaminate_the_helper_protocol::clock"
-
-[[findings]]
-id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::browser_opener_cannot_hold_or_contaminate_the_helper_protocol::process"
-
-[[findings]]
-id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::browser_stdio_child::process"
-
-[[findings]]
 id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::new::clock"
 
 [[findings]]
 id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_sync.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_sync.rs::tests::waiting_save_reads_tokens_only_after_acquiring_the_shared_lock::scheduling"
 
 [[findings]]
 id = "solstone-core-body-rebuild::core/crates/solstone-core-body-rebuild/src/lib.rs::tests::new::clock"

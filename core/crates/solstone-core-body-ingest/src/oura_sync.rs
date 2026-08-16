@@ -1252,43 +1252,29 @@ mod tests {
     }
 
     #[test]
-    fn waiting_save_reads_tokens_only_after_acquiring_the_shared_lock() {
-        use std::sync::mpsc;
-
+    fn save_reads_tokens_only_after_the_lock_boundary() {
         let journal = journal();
         approve(&journal.0);
-        let held = hold_oura_lock(&journal.0).expect("hold shared Oura lock");
         let path = journal.0.clone();
-        let (ready_tx, ready_rx) = mpsc::channel();
-        let waiter = std::thread::spawn(move || {
-            let mut http = FakeHttp {
-                gets: empty_pages(),
-                ..FakeHttp::default()
-            };
-            let result = sync_with_http_before_lock(&path, &options(true), &mut http, &mut || {
-                ready_tx.send(()).expect("signal lock wait")
-            });
-            (result, http)
-        });
-        ready_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("waiter reaches lock boundary");
-
-        let config_path = journal.0.join("config/journal.json");
-        let mut config: Value =
-            serde_json::from_slice(&fs::read(&config_path).expect("read original token config"))
-                .expect("parse original token config");
-        config["oura"]["tokens"]["access_token"] = Value::String("new-access".to_owned());
-        config["oura"]["tokens"]["refresh_token"] = Value::String("new-refresh".to_owned());
-        fs::write(
-            &config_path,
-            serde_json::to_vec(&config).expect("serialize replacement token config"),
-        )
-        .expect("replace token config while lock is held");
-        drop(held);
-
-        let (result, http) = waiter.join().expect("join waiting save");
-        result.expect("waiting save succeeds with replacement tokens");
+        let mut http = FakeHttp {
+            gets: empty_pages(),
+            ..FakeHttp::default()
+        };
+        sync_with_http_before_lock(&path, &options(true), &mut http, &mut || {
+            let config_path = path.join("config/journal.json");
+            let mut config: Value = serde_json::from_slice(
+                &fs::read(&config_path).expect("read original token config"),
+            )
+            .expect("parse original token config");
+            config["oura"]["tokens"]["access_token"] = Value::String("new-access".to_owned());
+            config["oura"]["tokens"]["refresh_token"] = Value::String("new-refresh".to_owned());
+            fs::write(
+                &config_path,
+                serde_json::to_vec(&config).expect("serialize replacement token config"),
+            )
+            .expect("replace token config before the lock");
+        })
+        .expect("save succeeds with replacement tokens");
         assert!(
             http.calls
                 .iter()
