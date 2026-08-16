@@ -21,14 +21,14 @@ pub fn set_name(ctx: CommandContext<'_>) -> CommandOutput {
     let status = parsed.value("--status").unwrap_or("chosen");
     post_json(
         ctx,
-        "/app/sol/api/set-name",
+        "/app/thinking/api/set-name",
         json!({"name": name, "status": status}),
     )
 }
 
 #[must_use]
 pub fn reset(ctx: CommandContext<'_>) -> CommandOutput {
-    post_json(ctx, "/app/sol/api/reset", Value::Null)
+    post_json(ctx, "/app/thinking/api/reset", Value::Null)
 }
 
 #[must_use]
@@ -46,14 +46,14 @@ pub fn set_owner(ctx: CommandContext<'_>) -> CommandOutput {
         .unwrap_or(Value::Null);
     post_json(
         ctx,
-        "/app/sol/api/set-owner",
+        "/app/thinking/api/set-owner",
         json!({"name": name, "bio": bio}),
     )
 }
 
 #[must_use]
 pub fn sol_init(ctx: CommandContext<'_>) -> CommandOutput {
-    post_json(ctx, "/app/sol/api/sol-init", Value::Null)
+    post_json(ctx, "/app/thinking/api/sol-init", Value::Null)
 }
 
 #[derive(Debug, Default)]

@@ -51,6 +51,7 @@ host = [
     "dep:solstone-core-thinking",
     "dep:solstone-core-thinking-copy",
     "dep:solstone-core-journal-config-write",
+    "dep:solstone-core-identity",
     "solstone-core-sol-link/host",
     "dep:rustls",
     "dep:socket2",
@@ -84,6 +85,7 @@ solstone-core-journal-io.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write = { workspace = true, optional = true }
+solstone-core-identity = { workspace = true, optional = true }
 solstone-core-model-pricing.workspace = true
 solstone-core-npy.workspace = true
 solstone-core-observer.workspace = true

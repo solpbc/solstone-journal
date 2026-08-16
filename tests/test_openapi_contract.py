@@ -30,6 +30,17 @@ from tests._baseline_harness import (
     prepare_isolated_journal,
 )
 
+# These operations terminate in Rust Convey, so Flask is not their route owner.
+# Keep this narrow list aligned with scripts/check_native_sol_conformance.py.
+RUST_CONVEY_OPERATION_PREFIXES = (
+    "body.",
+    "import.",
+    "settings.",
+    "sol.",
+    "speakers.",
+    "transcripts.",
+)
+
 
 def _all_operations():
     operations = []
@@ -251,6 +262,10 @@ def test_all_fragment_routes_resolve(contract_app):
     assert build_document()["paths"]
 
     for operation in _all_operations():
+        # These operations terminate in Rust Convey, so Flask is not their
+        # route owner. Keep this exemption identical to the native-sol gates.
+        if operation.operation_id.startswith(RUST_CONVEY_OPERATION_PREFIXES):
+            continue
         matches = [
             rule
             for rule in app.url_map.iter_rules()

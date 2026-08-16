@@ -9459,278 +9459,6 @@
         ]
       }
     },
-    "/app/sol/api/reset": {
-      "post": {
-        "description": "Restore the default agent identity fields.",
-        "operationId": "sol.reset",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "name": {
-                      "type": "string"
-                    },
-                    "name_status": {
-                      "type": "string"
-                    },
-                    "named_date": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Reset agent identity."
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The identity config could not be locked.",
-            "x-reason-codes": [
-              "identity_busy"
-            ]
-          }
-        },
-        "summary": "Reset the agent name",
-        "tags": [
-          "sol"
-        ]
-      }
-    },
-    "/app/sol/api/set-name": {
-      "post": {
-        "description": "Set the owner-visible agent name and name status.",
-        "operationId": "sol.set-name",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "name": "Sol",
-                "status": "chosen"
-              },
-              "schema": {
-                "additionalProperties": true,
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "status": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "name"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "name": {
-                      "type": "string"
-                    },
-                    "name_status": {
-                      "type": "string"
-                    },
-                    "named_date": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Updated agent identity."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The request body was missing, malformed, or incomplete.",
-            "x-reason-codes": [
-              "invalid_json_request",
-              "missing_request_body",
-              "missing_required_field"
-            ]
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The identity config could not be locked.",
-            "x-reason-codes": [
-              "identity_busy"
-            ]
-          }
-        },
-        "summary": "Set the agent name",
-        "tags": [
-          "sol"
-        ]
-      }
-    },
-    "/app/sol/api/set-owner": {
-      "post": {
-        "description": "Set the journal owner's name and optional bio.",
-        "operationId": "sol.set-owner",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "bio": "First programmer.",
-                "name": "Ada"
-              },
-              "schema": {
-                "additionalProperties": true,
-                "properties": {
-                  "bio": {
-                    "type": "string"
-                  },
-                  "name": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "name"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "bio": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "bio"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Updated owner identity."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The request body was missing, malformed, or incomplete.",
-            "x-reason-codes": [
-              "invalid_json_request",
-              "missing_request_body",
-              "missing_required_field"
-            ]
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The identity config could not be locked.",
-            "x-reason-codes": [
-              "identity_busy"
-            ]
-          }
-        },
-        "summary": "Set the journal owner",
-        "tags": [
-          "sol"
-        ]
-      }
-    },
-    "/app/sol/api/sol-init": {
-      "post": {
-        "description": "Ensure the identity directory exists.",
-        "operationId": "sol.sol-init",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "identity_dir": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "identity_dir",
-                    "status"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Identity directory status."
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The identity config could not be locked.",
-            "x-reason-codes": [
-              "identity_busy"
-            ]
-          }
-        },
-        "summary": "Initialize the identity directory",
-        "tags": [
-          "sol"
-        ]
-      }
-    },
     "/app/support/api/announcements": {
       "get": {
         "description": "Return active product announcements and known issues.",
@@ -12106,6 +11834,278 @@
         "summary": "Read local provider status",
         "tags": [
           "thinking"
+        ]
+      }
+    },
+    "/app/thinking/api/reset": {
+      "post": {
+        "description": "Restore the default agent identity fields.",
+        "operationId": "sol.reset",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "name_status": {
+                      "type": "string"
+                    },
+                    "named_date": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Reset agent identity."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The identity config could not be locked.",
+            "x-reason-codes": [
+              "identity_busy"
+            ]
+          }
+        },
+        "summary": "Reset the agent name",
+        "tags": [
+          "sol"
+        ]
+      }
+    },
+    "/app/thinking/api/set-name": {
+      "post": {
+        "description": "Set the owner-visible agent name and name status.",
+        "operationId": "sol.set-name",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "name": "Sol",
+                "status": "chosen"
+              },
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "name_status": {
+                      "type": "string"
+                    },
+                    "named_date": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Updated agent identity."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The request body was missing, malformed, or incomplete.",
+            "x-reason-codes": [
+              "invalid_json_request",
+              "missing_request_body",
+              "missing_required_field"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The identity config could not be locked.",
+            "x-reason-codes": [
+              "identity_busy"
+            ]
+          }
+        },
+        "summary": "Set the agent name",
+        "tags": [
+          "sol"
+        ]
+      }
+    },
+    "/app/thinking/api/set-owner": {
+      "post": {
+        "description": "Set the journal owner's name and optional bio.",
+        "operationId": "sol.set-owner",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "bio": "First programmer.",
+                "name": "Ada"
+              },
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "bio": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "bio": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "bio"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Updated owner identity."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The request body was missing, malformed, or incomplete.",
+            "x-reason-codes": [
+              "invalid_json_request",
+              "missing_request_body",
+              "missing_required_field"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The identity config could not be locked.",
+            "x-reason-codes": [
+              "identity_busy"
+            ]
+          }
+        },
+        "summary": "Set the journal owner",
+        "tags": [
+          "sol"
+        ]
+      }
+    },
+    "/app/thinking/api/sol-init": {
+      "post": {
+        "description": "Ensure the identity directory exists.",
+        "operationId": "sol.sol-init",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "identity_dir": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "identity_dir",
+                    "status"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Identity directory status."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The identity config could not be locked.",
+            "x-reason-codes": [
+              "identity_busy"
+            ]
+          }
+        },
+        "summary": "Initialize the identity directory",
+        "tags": [
+          "sol"
         ]
       }
     },

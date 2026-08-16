@@ -267,6 +267,22 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
             "/app/thinking/api/identity",
             get(crate::thinking_sol_reads::api_identity),
         )
+        .route(
+            "/app/thinking/api/set-name",
+            post(crate::thinking_sol_writes::api_set_name),
+        )
+        .route(
+            "/app/thinking/api/reset",
+            post(crate::thinking_sol_writes::api_reset),
+        )
+        .route(
+            "/app/thinking/api/set-owner",
+            post(crate::thinking_sol_writes::api_set_owner),
+        )
+        .route(
+            "/app/thinking/api/sol-init",
+            post(crate::thinking_sol_writes::api_sol_init),
+        )
         .layer(Extension(journal))
         .layer(Extension(Arc::new(
             crate::thinking_sol_reads::TalentRoots::production(),

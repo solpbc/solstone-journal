@@ -52,7 +52,7 @@ OPERATIONS: list[OperationSpec] = [
     OperationSpec(
         operation_id="sol.set-name",
         method="POST",
-        rule="/app/sol/api/set-name",
+        rule="/app/thinking/api/set-name",
         summary="Set the agent name",
         description="Set the owner-visible agent name and name status.",
         request=RequestSpec(
@@ -74,7 +74,7 @@ OPERATIONS: list[OperationSpec] = [
     OperationSpec(
         operation_id="sol.reset",
         method="POST",
-        rule="/app/sol/api/reset",
+        rule="/app/thinking/api/reset",
         summary="Reset the agent name",
         description="Restore the default agent identity fields.",
         responses=(
@@ -89,7 +89,7 @@ OPERATIONS: list[OperationSpec] = [
     OperationSpec(
         operation_id="sol.set-owner",
         method="POST",
-        rule="/app/sol/api/set-owner",
+        rule="/app/thinking/api/set-owner",
         summary="Set the journal owner",
         description="Set the journal owner's name and optional bio.",
         request=RequestSpec(
@@ -114,7 +114,7 @@ OPERATIONS: list[OperationSpec] = [
     OperationSpec(
         operation_id="sol.sol-init",
         method="POST",
-        rule="/app/sol/api/sol-init",
+        rule="/app/thinking/api/sol-init",
         summary="Initialize the identity directory",
         description="Ensure the identity directory exists.",
         responses=(

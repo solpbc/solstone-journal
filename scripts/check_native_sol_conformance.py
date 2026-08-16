@@ -55,6 +55,7 @@ RUST_CONVEY_OPERATION_PREFIXES = (
     "body.",
     "import.",
     "settings.",
+    "sol.",
     "speakers.",
     "transcripts.",
 )

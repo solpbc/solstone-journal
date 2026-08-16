@@ -26,7 +26,8 @@ pub use commit::{
     CommitConfigError, ConfigConflict, ConfigExpectation, ConfigFingerprint, commit_journal_config,
 };
 pub use config::{
-    ConfigMutationError, JournalConfigMutation, JournalConfigTransaction, mutate_journal_config,
+    CasConfigMutationError, ConfigMutationError, JournalConfigMutation, JournalConfigTransaction,
+    mutate_journal_config, mutate_journal_config_cas,
 };
 pub use pairing_migration::{PairingAddressMigrationReport, migrate_pairing_home_address};
 pub use solstone_core_journal_config::ConfigLoadError;

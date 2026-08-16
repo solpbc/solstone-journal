@@ -14,6 +14,9 @@ use serde_json::{Value, json};
 use solstone_core_convey_shell::router;
 use tower::ServiceExt;
 
+#[path = "thinking_sol_writes.rs"]
+mod thinking_sol_writes;
+
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture(PathBuf);

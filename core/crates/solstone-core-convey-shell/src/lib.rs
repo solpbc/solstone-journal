@@ -153,6 +153,10 @@ mod thinking_sol_reads;
 #[cfg(all(test, feature = "host"))]
 mod thinking_sol_reads_contract;
 #[cfg(feature = "host")]
+mod thinking_sol_writes;
+#[cfg(all(test, feature = "host"))]
+mod thinking_sol_writes_contract;
+#[cfg(feature = "host")]
 pub use network_writes::{
     NetworkOperationsOverride, SplDisableFailureOverride, SplEnrollment, SplPoll, SplPollOutcome,
     SplRuntimeOverride,
