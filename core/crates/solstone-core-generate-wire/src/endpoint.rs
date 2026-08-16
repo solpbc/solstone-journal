@@ -835,7 +835,10 @@ mod tests {
 
     impl Drop for GateEntry<'_> {
         fn drop(&mut self) {
-            let mut state = self.gate.inner.lock().expect("admission gate lock");
+            let mut state = match self.gate.inner.lock() {
+                Ok(state) => state,
+                Err(poisoned) => poisoned.into_inner(),
+            };
             state.current = state.current.saturating_sub(1);
             self.gate.entered.notify_all();
         }
@@ -847,7 +850,10 @@ mod tests {
 
     impl Drop for ReleaseOnDrop {
         fn drop(&mut self) {
-            let mut state = self.gate.inner.lock().expect("admission gate lock");
+            let mut state = match self.gate.inner.lock() {
+                Ok(state) => state,
+                Err(poisoned) => poisoned.into_inner(),
+            };
             state.release = true;
             self.gate.released.notify_all();
         }
@@ -861,8 +867,6 @@ mod tests {
         posts: Vec<Value>,
         get_credentials: Vec<Option<String>>,
         post_credentials: Vec<Option<String>>,
-        get_timeouts: Vec<Duration>,
-        post_timeouts: Vec<Duration>,
         gate: Option<Arc<AdmissionGate>>,
     }
 
@@ -872,11 +876,10 @@ mod tests {
             _base_url: &str,
             _path: &str,
             credential: Option<&str>,
-            timeout: Duration,
+            _timeout: Duration,
         ) -> Result<HttpResponse, EndpointTransportError> {
             self.get_calls += 1;
             self.get_credentials.push(credential.map(str::to_owned));
-            self.get_timeouts.push(timeout);
             if !self.get_script.is_empty() {
                 return self.get_script.remove(0);
             }
@@ -893,20 +896,25 @@ mod tests {
         ) -> Result<HttpResponse, EndpointTransportError> {
             self.posts.push(body.clone());
             self.post_credentials.push(credential.map(str::to_owned));
-            self.post_timeouts.push(timeout);
             let _entry = self.gate.as_ref().map(|gate| {
-                let mut state = gate.inner.lock().expect("admission gate lock");
-                state.current += 1;
-                state.peak = state.peak.max(state.current);
-                let after_release = state.release;
-                state.records.push((body.clone(), timeout, after_release));
-                if state.current == 2 {
-                    gate.entered.notify_all();
+                {
+                    let mut state = gate.inner.lock().expect("admission gate lock");
+                    state.current += 1;
+                    state.peak = state.peak.max(state.current);
+                    let after_release = state.release;
+                    state.records.push((body.clone(), timeout, after_release));
+                    if state.current == 2 {
+                        gate.entered.notify_all();
+                    }
                 }
-                while !state.release {
-                    state = gate.released.wait(state).expect("admission gate wait");
+                let entry = GateEntry { gate };
+                {
+                    let mut state = gate.inner.lock().expect("admission gate lock");
+                    while !state.release {
+                        state = gate.released.wait(state).expect("admission gate wait");
+                    }
                 }
-                GateEntry { gate }
+                entry
             });
             if !self.post_script.is_empty() {
                 return self.post_script.remove(0);
@@ -941,7 +949,7 @@ mod tests {
             (true, false, true),
             (false, true, true),
         ] {
-            let mut endpoint = endpoint("http://127.0.0.1:1");
+            let mut endpoint = endpoint("http://endpoint");
             endpoint.is_bundled = is_bundled;
             endpoint.is_confidential = is_confidential;
             let journal = journal_path();
@@ -1126,8 +1134,8 @@ mod tests {
             ],
             ..Default::default()
         };
-        let mut endpoint_a = endpoint("http://endpoint-a");
-        let mut endpoint_b = endpoint("http://endpoint-b");
+        let endpoint_a = endpoint("http://endpoint-a");
+        let endpoint_b = endpoint("http://endpoint-b");
         let mut endpoint_other = endpoint("http://endpoint-a");
         endpoint_other.served_model_id = "other".into();
 
@@ -1381,16 +1389,31 @@ mod tests {
             let journal = journal_path();
             let mut endpoint = endpoint("http://endpoint");
             endpoint.credential = configured.map(str::to_owned);
+            let request = request(None);
             let mut transport = StubTransport {
                 get_script: vec![Ok(HttpResponse {
                     status: 200,
                     body: json!({"data": []}).to_string(),
                 })],
-                post_script: vec![Ok(bad_request(&format!("invalid credential {credential}")))],
+                post_script: vec![
+                    Ok(response()),
+                    Ok(bad_request(&format!("invalid credential {credential}"))),
+                ],
                 ..Default::default()
             };
+            let EndpointResult::Generated(generated) = endpoint_generate_with(
+                &request,
+                &journal,
+                &endpoint,
+                &Map::new(),
+                &runtime,
+                &mut transport,
+                Instant::now(),
+            ) else {
+                panic!("credentialed generate must succeed before the refusal probe");
+            };
             let EndpointResult::Failed(failed) = endpoint_generate_with(
-                &request(None),
+                &request,
                 &journal,
                 &endpoint,
                 &Map::new(),
@@ -1413,16 +1436,23 @@ mod tests {
             );
             assert_eq!(
                 transport.post_credentials,
-                vec![configured.map(str::to_owned)]
+                vec![configured.map(str::to_owned), configured.map(str::to_owned)]
             );
-            assert!(!transport.posts[0].to_string().contains(credential));
+            for body in &transport.posts {
+                assert!(!body.to_string().contains(credential));
+            }
             assert!(!format!("{failed:?}").contains(credential));
             assert!(!format!("{refusal:?}").contains(credential));
+            let usage = generated
+                .usage
+                .as_ref()
+                .and_then(|usage| serde_json::to_value(usage).ok())
+                .unwrap_or_else(|| json!({}));
             crate::record_generate_usage(
                 &journal,
-                "served",
-                "test.generate",
-                &crate::usage_for_log(&json!({})),
+                &generated.model,
+                &request.context,
+                &crate::usage_for_log(&usage),
                 None,
             )
             .expect("token log write");
@@ -1546,6 +1576,7 @@ mod tests {
             ..endpoint("http://endpoint")
         };
         let config = served_window_config();
+        let timeout_s = Some(10.0);
         let gate = Arc::new(AdmissionGate {
             inner: Mutex::new(GateState::default()),
             entered: Condvar::new(),
@@ -1563,7 +1594,7 @@ mod tests {
         for label in ["w1", "w2"] {
             let journal = journal.clone();
             let endpoint = endpoint.clone();
-            let mut request = request(Some(10.0));
+            let mut request = request(timeout_s);
             request.contents = vec![ContentPart::Text { text: label.into() }];
             let config = config.clone();
             let mut transport = template.clone();
@@ -1588,7 +1619,7 @@ mod tests {
         let before = wait_ticket_names(&journal);
         let journal_w3 = journal.clone();
         let endpoint_w3 = endpoint.clone();
-        let mut request_w3 = request(Some(10.0));
+        let mut request_w3 = request(timeout_s);
         request_w3.contents = vec![ContentPart::Text { text: "w3".into() }];
         let config_w3 = config.clone();
         let mut transport_w3 = template.clone();
@@ -1623,22 +1654,6 @@ mod tests {
         }
         let state = gate.inner.lock().expect("admission gate lock");
         assert_eq!(state.peak, 2, "peak admission depth: {}", state.peak);
-        let timeout_for = |label: &str| {
-            state
-                .records
-                .iter()
-                .find(|(body, _, _)| body.to_string().contains(label))
-                .map(|(_, timeout, _)| *timeout)
-                .expect("labeled post")
-        };
-        let first = timeout_for("w1");
-        let second = timeout_for("w2");
-        let queued = timeout_for("w3");
-        assert!(queued < first, "queued timeout {queued:?} vs w1 {first:?}");
-        assert!(
-            queued < second,
-            "queued timeout {queued:?} vs w2 {second:?}"
-        );
         let after_release = |label: &str| {
             state
                 .records
@@ -1650,6 +1665,17 @@ mod tests {
         assert!(!after_release("w1"));
         assert!(!after_release("w2"));
         assert!(after_release("w3"));
+        let queued = state
+            .records
+            .iter()
+            .find(|(body, _, _)| body.to_string().contains("w3"))
+            .map(|(_, timeout, _)| *timeout)
+            .expect("labeled post");
+        assert!(
+            queued < request_timeout(timeout_s),
+            "queued post timeout {queued:?} was not reduced from {:?}",
+            request_timeout(timeout_s)
+        );
         let _ = std::fs::remove_dir_all(cleanup_journal);
     }
 
