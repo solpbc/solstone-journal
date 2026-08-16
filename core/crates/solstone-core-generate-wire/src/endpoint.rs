@@ -805,8 +805,6 @@ fn classify_ureq_error(error: ureq::Error) -> EndpointTransportError {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
-    use std::net::TcpListener;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Condvar};
     use std::thread;
@@ -818,14 +816,54 @@ mod tests {
     static NEXT_JOURNAL: AtomicUsize = AtomicUsize::new(0);
 
     #[derive(Default)]
+    struct GateState {
+        current: u32,
+        peak: u32,
+        release: bool,
+        records: Vec<(Value, Duration, bool)>,
+    }
+
+    struct AdmissionGate {
+        inner: Mutex<GateState>,
+        entered: Condvar,
+        released: Condvar,
+    }
+
+    struct GateEntry<'a> {
+        gate: &'a AdmissionGate,
+    }
+
+    impl Drop for GateEntry<'_> {
+        fn drop(&mut self) {
+            let mut state = self.gate.inner.lock().expect("admission gate lock");
+            state.current = state.current.saturating_sub(1);
+            self.gate.entered.notify_all();
+        }
+    }
+
+    struct ReleaseOnDrop {
+        gate: Arc<AdmissionGate>,
+    }
+
+    impl Drop for ReleaseOnDrop {
+        fn drop(&mut self) {
+            let mut state = self.gate.inner.lock().expect("admission gate lock");
+            state.release = true;
+            self.gate.released.notify_all();
+        }
+    }
+
+    #[derive(Clone, Default)]
     struct StubTransport {
-        get_result: Option<Result<HttpResponse, EndpointTransportError>>,
-        post_result: Option<Result<HttpResponse, EndpointTransportError>>,
-        post_results: Vec<Result<HttpResponse, EndpointTransportError>>,
+        get_script: Vec<Result<HttpResponse, EndpointTransportError>>,
+        post_script: Vec<Result<HttpResponse, EndpointTransportError>>,
         get_calls: usize,
         posts: Vec<Value>,
         get_credentials: Vec<Option<String>>,
         post_credentials: Vec<Option<String>>,
+        get_timeouts: Vec<Duration>,
+        post_timeouts: Vec<Duration>,
+        gate: Option<Arc<AdmissionGate>>,
     }
 
     impl EndpointTransport for StubTransport {
@@ -834,13 +872,15 @@ mod tests {
             _base_url: &str,
             _path: &str,
             credential: Option<&str>,
-            _timeout: Duration,
+            timeout: Duration,
         ) -> Result<HttpResponse, EndpointTransportError> {
             self.get_calls += 1;
             self.get_credentials.push(credential.map(str::to_owned));
-            self.get_result
-                .clone()
-                .unwrap_or(Err(EndpointTransportError::Other))
+            self.get_timeouts.push(timeout);
+            if !self.get_script.is_empty() {
+                return self.get_script.remove(0);
+            }
+            Err(EndpointTransportError::Other)
         }
 
         fn post_json(
@@ -849,64 +889,29 @@ mod tests {
             _path: &str,
             body: &Value,
             credential: Option<&str>,
-            _timeout: Duration,
+            timeout: Duration,
         ) -> Result<HttpResponse, EndpointTransportError> {
             self.posts.push(body.clone());
             self.post_credentials.push(credential.map(str::to_owned));
-            if !self.post_results.is_empty() {
-                return self.post_results.remove(0);
-            }
-            self.post_result
-                .clone()
-                .unwrap_or(Err(EndpointTransportError::Other))
-        }
-    }
-
-    #[derive(Default)]
-    struct ConcurrencyState {
-        current: u32,
-        peak: u32,
-        post_timeouts: Vec<Duration>,
-    }
-
-    #[derive(Clone)]
-    struct HoldingTransport {
-        state: Arc<(Mutex<ConcurrencyState>, Condvar)>,
-        hold: Duration,
-    }
-
-    impl EndpointTransport for HoldingTransport {
-        fn get(
-            &mut self,
-            _base_url: &str,
-            _path: &str,
-            _credential: Option<&str>,
-            _timeout: Duration,
-        ) -> Result<HttpResponse, EndpointTransportError> {
-            Err(EndpointTransportError::Other)
-        }
-
-        fn post_json(
-            &mut self,
-            _base_url: &str,
-            _path: &str,
-            _body: &Value,
-            _credential: Option<&str>,
-            timeout: Duration,
-        ) -> Result<HttpResponse, EndpointTransportError> {
-            let (state, started) = &*self.state;
-            {
-                let mut state = state.lock().expect("concurrency state lock");
+            self.post_timeouts.push(timeout);
+            let _entry = self.gate.as_ref().map(|gate| {
+                let mut state = gate.inner.lock().expect("admission gate lock");
                 state.current += 1;
                 state.peak = state.peak.max(state.current);
-                state.post_timeouts.push(timeout);
+                let after_release = state.release;
+                state.records.push((body.clone(), timeout, after_release));
                 if state.current == 2 {
-                    started.notify_all();
+                    gate.entered.notify_all();
                 }
+                while !state.release {
+                    state = gate.released.wait(state).expect("admission gate wait");
+                }
+                GateEntry { gate }
+            });
+            if !self.post_script.is_empty() {
+                return self.post_script.remove(0);
             }
-            thread::sleep(self.hold);
-            state.lock().expect("concurrency state lock").current -= 1;
-            Ok(response())
+            Err(EndpointTransportError::Other)
         }
     }
 
@@ -946,7 +951,7 @@ mod tests {
             let runtime = EndpointRuntime::default();
             let config = served_window_config();
             let mut transport = StubTransport {
-                post_result: Some(Ok(response())),
+                post_script: vec![Ok(response())],
                 ..Default::default()
             };
             endpoint_converse_with(
@@ -1030,6 +1035,25 @@ mod tests {
             .clone()
     }
 
+    fn models_response(model_id: &str, max_model_len: u32) -> HttpResponse {
+        HttpResponse {
+            status: 200,
+            body: json!({"data": [{"id": model_id, "max_model_len": max_model_len}]}).to_string(),
+        }
+    }
+
+    fn wait_ticket_names(journal: &Path) -> BTreeSet<String> {
+        std::fs::read_dir(admission_dir(journal))
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .filter_map(|entry| entry.file_name().into_string().ok())
+                    .filter(|name| name.starts_with("wait-") && name.ends_with(".ticket"))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     #[test]
     fn zero_or_absent_request_timeout_uses_the_default() {
         for timeout_s in [None, Some(0.0)] {
@@ -1042,8 +1066,8 @@ mod tests {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let mut transport = StubTransport {
-            get_result: Some(Err(EndpointTransportError::Other)),
-            post_result: Some(Ok(response())),
+            get_script: vec![Err(EndpointTransportError::Other)],
+            post_script: vec![Ok(response())],
             ..Default::default()
         };
         let result = endpoint_generate_with(
@@ -1083,29 +1107,125 @@ mod tests {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let now = Instant::now();
+        let mut wide = request(None);
+        wide.max_output_tokens = 4_000;
         let mut transport = StubTransport {
-            get_result: Some(Ok(HttpResponse {
-                status: 200,
-                body: json!({"data": [{"id": "served", "max_model_len": 4096}]}).to_string(),
-            })),
-            post_result: Some(Ok(response())),
+            get_script: vec![
+                Ok(models_response("served", 4096)),
+                Ok(models_response("served", 8192)),
+                Ok(models_response("other", 2048)),
+                Ok(models_response("served", 4096)),
+            ],
+            post_script: vec![
+                Ok(response()),
+                Ok(response()),
+                Ok(response()),
+                Ok(response()),
+                Ok(response()),
+                Ok(response()),
+            ],
             ..Default::default()
         };
-        for _ in 0..2 {
-            assert!(matches!(
-                endpoint_generate_with(
-                    &request(None),
-                    &journal,
-                    &endpoint("http://endpoint"),
-                    &Map::new(),
-                    &runtime,
-                    &mut transport,
-                    now,
-                ),
-                EndpointResult::Generated(_)
-            ));
-        }
+        let mut endpoint_a = endpoint("http://endpoint-a");
+        let mut endpoint_b = endpoint("http://endpoint-b");
+        let mut endpoint_other = endpoint("http://endpoint-a");
+        endpoint_other.served_model_id = "other".into();
+
+        assert!(matches!(
+            endpoint_generate_with(
+                &wide,
+                &journal,
+                &endpoint_a,
+                &Map::new(),
+                &runtime,
+                &mut transport,
+                now,
+            ),
+            EndpointResult::Generated(_)
+        ));
         assert_eq!(transport.get_calls, 1);
+        let max_tokens_am = transport.posts[0]["max_tokens"].clone();
+
+        assert!(matches!(
+            endpoint_generate_with(
+                &wide,
+                &journal,
+                &endpoint_a,
+                &Map::new(),
+                &runtime,
+                &mut transport,
+                now,
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(transport.get_calls, 1);
+        assert_eq!(transport.posts[1]["max_tokens"], max_tokens_am);
+
+        assert!(matches!(
+            endpoint_generate_with(
+                &wide,
+                &journal,
+                &endpoint_b,
+                &Map::new(),
+                &runtime,
+                &mut transport,
+                now,
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(transport.get_calls, 2);
+        let max_tokens_bm = transport.posts[2]["max_tokens"].clone();
+        assert_ne!(max_tokens_bm, max_tokens_am);
+
+        assert!(matches!(
+            endpoint_generate_with(
+                &wide,
+                &journal,
+                &endpoint_other,
+                &Map::new(),
+                &runtime,
+                &mut transport,
+                now,
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(transport.get_calls, 3);
+        let max_tokens_an = transport.posts[3]["max_tokens"].clone();
+        assert_ne!(max_tokens_an, max_tokens_am);
+        assert_ne!(max_tokens_an, max_tokens_bm);
+
+        assert!(matches!(
+            endpoint_generate_with(
+                &wide,
+                &journal,
+                &endpoint_a,
+                &Map::new(),
+                &runtime,
+                &mut transport,
+                now,
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(transport.get_calls, 3);
+        assert_eq!(transport.posts[4]["max_tokens"], max_tokens_am);
+
+        let expired = now
+            .checked_add(ENDPOINT_SERVED_WINDOW_CACHE_TTL)
+            .and_then(|instant| instant.checked_add(Duration::from_nanos(1)))
+            .expect("served-window TTL fits Instant");
+        assert!(matches!(
+            endpoint_generate_with(
+                &wide,
+                &journal,
+                &endpoint_a,
+                &Map::new(),
+                &runtime,
+                &mut transport,
+                expired,
+            ),
+            EndpointResult::Generated(_)
+        ));
+        assert_eq!(transport.get_calls, 4);
         let _ = std::fs::remove_dir_all(journal);
     }
 
@@ -1114,24 +1234,31 @@ mod tests {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let mut transport = StubTransport {
-            post_result: Some(Ok(HttpResponse {
+            post_script: vec![Ok(HttpResponse {
                 status: 200,
                 body: "{}".into(),
-            })),
+            })],
             ..Default::default()
         };
-        assert_eq!(
-            endpoint_generate_with(
-                &request(None),
-                &journal,
-                &endpoint("http://endpoint"),
-                &served_window_config(),
-                &runtime,
-                &mut transport,
-                Instant::now(),
-            ),
-            failure("provider_response_invalid")
+        let result = endpoint_generate_with(
+            &request(None),
+            &journal,
+            &endpoint("http://endpoint"),
+            &served_window_config(),
+            &runtime,
+            &mut transport,
+            Instant::now(),
         );
+        let EndpointResult::Failed(failed) = result else {
+            panic!("empty object must refuse");
+        };
+        assert_eq!(
+            failed.reason_code.as_deref(),
+            Some("provider_response_invalid")
+        );
+        let refusal =
+            crate::refusal_for(&crate::LaneOutcome::EndpointFailure(failed), "local", None);
+        assert_eq!(refusal.detail, "fixture provider-response-invalid");
         let _ = std::fs::remove_dir_all(journal);
     }
 
@@ -1141,7 +1268,7 @@ mod tests {
         let journal = journal_path();
         let overflow = "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion";
         let mut transport = StubTransport {
-            post_results: vec![Ok(bad_request(overflow)), Ok(response())],
+            post_script: vec![Ok(bad_request(overflow)), Ok(response())],
             ..Default::default()
         };
         assert!(matches!(
@@ -1167,7 +1294,7 @@ mod tests {
         let journal = journal_path();
         let overflow = "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion";
         let mut transport = StubTransport {
-            post_result: Some(Ok(bad_request(overflow))),
+            post_script: vec![Ok(bad_request(overflow)), Ok(bad_request(overflow))],
             ..Default::default()
         };
         assert_eq!(
@@ -1192,7 +1319,7 @@ mod tests {
         let journal = journal_path();
         let overflow = "maximum context length of 1000 tokens: 800 tokens from the input messages and 400 tokens for the completion";
         let mut transport = StubTransport {
-            post_result: Some(Ok(bad_request(overflow))),
+            post_script: vec![Ok(bad_request(overflow))],
             ..Default::default()
         };
         assert_eq!(
@@ -1226,7 +1353,7 @@ mod tests {
             let runtime = EndpointRuntime::default();
             let journal = journal_path();
             let mut transport = StubTransport {
-                post_result: Some(Ok(bad_request(body))),
+                post_script: vec![Ok(bad_request(body))],
                 ..Default::default()
             };
             assert_eq!(
@@ -1255,14 +1382,14 @@ mod tests {
             let mut endpoint = endpoint("http://endpoint");
             endpoint.credential = configured.map(str::to_owned);
             let mut transport = StubTransport {
-                get_result: Some(Ok(HttpResponse {
+                get_script: vec![Ok(HttpResponse {
                     status: 200,
                     body: json!({"data": []}).to_string(),
-                })),
-                post_result: Some(Ok(bad_request(&format!("invalid credential {credential}")))),
+                })],
+                post_script: vec![Ok(bad_request(&format!("invalid credential {credential}")))],
                 ..Default::default()
             };
-            let EndpointResult::Failed(failure) = endpoint_generate_with(
+            let EndpointResult::Failed(failed) = endpoint_generate_with(
                 &request(None),
                 &journal,
                 &endpoint,
@@ -1273,8 +1400,11 @@ mod tests {
             ) else {
                 panic!("plain 400 must refuse");
             };
-            let refusal =
-                crate::refusal_for(&crate::LaneOutcome::EndpointFailure(failure), "local", None);
+            let refusal = crate::refusal_for(
+                &crate::LaneOutcome::EndpointFailure(failed.clone()),
+                "local",
+                None,
+            );
             assert_eq!(refusal.detail, "fixture provider-response-invalid");
             assert!(!refusal.detail.contains(credential));
             assert_eq!(
@@ -1285,25 +1415,46 @@ mod tests {
                 transport.post_credentials,
                 vec![configured.map(str::to_owned)]
             );
+            assert!(!transport.posts[0].to_string().contains(credential));
+            assert!(!format!("{failed:?}").contains(credential));
+            assert!(!format!("{refusal:?}").contains(credential));
+            crate::record_generate_usage(
+                &journal,
+                "served",
+                "test.generate",
+                &crate::usage_for_log(&json!({})),
+                None,
+            )
+            .expect("token log write");
+            let tokens = journal.join("tokens");
+            let files: Vec<_> = std::fs::read_dir(&tokens)
+                .expect("tokens directory")
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
+                .collect();
+            assert_eq!(files.len(), 1);
+            let log = std::fs::read_to_string(&files[0]).expect("read token log");
+            assert!(!log.contains(credential));
             let _ = std::fs::remove_dir_all(journal);
         }
     }
 
     #[test]
     fn refused_connection_is_endpoint_unreachable() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        drop(listener);
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         assert_eq!(
             endpoint_generate_with(
-                &request(Some(0.05)),
+                &request(None),
                 &journal,
-                &endpoint(&format!("http://{address}")),
+                &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
-                &mut UreqEndpointTransport,
+                &mut StubTransport {
+                    post_script: vec![Err(EndpointTransportError::Connection)],
+                    ..Default::default()
+                },
                 Instant::now(),
             ),
             failure("local_endpoint_unreachable")
@@ -1316,7 +1467,7 @@ mod tests {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let mut transport = StubTransport {
-            post_result: Some(Err(EndpointTransportError::Other)),
+            post_script: vec![Err(EndpointTransportError::Other)],
             ..Default::default()
         };
         assert_eq!(
@@ -1336,29 +1487,23 @@ mod tests {
 
     #[test]
     fn response_timeout_after_connection_is_capacity_exhausted() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 4096];
-            let _ = stream.read(&mut request);
-            thread::sleep(Duration::from_millis(150));
-        });
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         assert_eq!(
             endpoint_generate_with(
-                &request(Some(0.05)),
+                &request(None),
                 &journal,
-                &endpoint(&format!("http://{address}")),
+                &endpoint("http://endpoint"),
                 &served_window_config(),
                 &runtime,
-                &mut UreqEndpointTransport,
+                &mut StubTransport {
+                    post_script: vec![Err(EndpointTransportError::Capacity)],
+                    ..Default::default()
+                },
                 Instant::now(),
             ),
             failure("local_capacity_exhausted")
         );
-        server.join().unwrap();
         let _ = std::fs::remove_dir_all(journal);
     }
 
@@ -1372,7 +1517,7 @@ mod tests {
             ..endpoint("http://endpoint")
         };
         let mut transport = StubTransport {
-            post_result: Some(Ok(response())),
+            post_script: vec![Ok(response())],
             ..Default::default()
         };
 
@@ -1400,20 +1545,28 @@ mod tests {
             parallel_slots: Some(2),
             ..endpoint("http://endpoint")
         };
-        let request = request(Some(10.0));
         let config = served_window_config();
-        let state = Arc::new((Mutex::new(ConcurrencyState::default()), Condvar::new()));
-        let transport = HoldingTransport {
-            state: Arc::clone(&state),
-            hold: Duration::from_millis(200),
+        let gate = Arc::new(AdmissionGate {
+            inner: Mutex::new(GateState::default()),
+            entered: Condvar::new(),
+            released: Condvar::new(),
+        });
+        let _release = ReleaseOnDrop {
+            gate: Arc::clone(&gate),
+        };
+        let template = StubTransport {
+            post_script: vec![Ok(response())],
+            gate: Some(Arc::clone(&gate)),
+            ..Default::default()
         };
         let mut workers = Vec::new();
-        for _ in 0..2 {
+        for label in ["w1", "w2"] {
             let journal = journal.clone();
             let endpoint = endpoint.clone();
-            let request = request.clone();
+            let mut request = request(Some(10.0));
+            request.contents = vec![ContentPart::Text { text: label.into() }];
             let config = config.clone();
-            let mut transport = transport.clone();
+            let mut transport = template.clone();
             workers.push(thread::spawn(move || {
                 endpoint_generate_with(
                     &request,
@@ -1426,76 +1579,122 @@ mod tests {
                 )
             }));
         }
-        let (state_lock, started) = &*state;
-        let mut guard = state_lock.lock().expect("concurrency state lock");
-        while guard.current < 2 {
-            guard = started.wait(guard).expect("concurrency state wait");
+        {
+            let mut state = gate.inner.lock().expect("admission gate lock");
+            while state.current < 2 {
+                state = gate.entered.wait(state).expect("admission gate wait");
+            }
         }
-        drop(guard);
-        let journal = journal.clone();
-        let endpoint = endpoint.clone();
-        let request = request.clone();
-        let config = config.clone();
-        let mut transport = transport.clone();
+        let before = wait_ticket_names(&journal);
+        let journal_w3 = journal.clone();
+        let endpoint_w3 = endpoint.clone();
+        let mut request_w3 = request(Some(10.0));
+        request_w3.contents = vec![ContentPart::Text { text: "w3".into() }];
+        let config_w3 = config.clone();
+        let mut transport_w3 = template.clone();
         workers.push(thread::spawn(move || {
             endpoint_generate_with(
-                &request,
-                &journal,
-                &endpoint,
-                &config,
+                &request_w3,
+                &journal_w3,
+                &endpoint_w3,
+                &config_w3,
                 &EndpointRuntime::default(),
-                &mut transport,
+                &mut transport_w3,
                 Instant::now(),
             )
         }));
+        while wait_ticket_names(&journal)
+            .difference(&before)
+            .next()
+            .is_none()
+        {
+            thread::yield_now();
+        }
+        {
+            let mut state = gate.inner.lock().expect("admission gate lock");
+            state.release = true;
+            gate.released.notify_all();
+        }
         for worker in workers {
             assert!(matches!(
                 worker.join().expect("join endpoint worker"),
                 EndpointResult::Generated(_)
             ));
         }
-        let state = state_lock.lock().expect("concurrency state lock");
-        assert!(state.peak <= 2, "peak admission depth: {}", state.peak);
-        assert_eq!(state.post_timeouts.len(), 3);
-        let queued_wait = state.post_timeouts[0]
-            .checked_sub(state.post_timeouts[2])
-            .expect("queued request receives less post timeout");
+        let state = gate.inner.lock().expect("admission gate lock");
+        assert_eq!(state.peak, 2, "peak admission depth: {}", state.peak);
+        let timeout_for = |label: &str| {
+            state
+                .records
+                .iter()
+                .find(|(body, _, _)| body.to_string().contains(label))
+                .map(|(_, timeout, _)| *timeout)
+                .expect("labeled post")
+        };
+        let first = timeout_for("w1");
+        let second = timeout_for("w2");
+        let queued = timeout_for("w3");
+        assert!(queued < first, "queued timeout {queued:?} vs w1 {first:?}");
         assert!(
-            queued_wait >= Duration::from_millis(150),
-            "queued post timeout was only reduced by {queued_wait:?}"
+            queued < second,
+            "queued timeout {queued:?} vs w2 {second:?}"
         );
+        let after_release = |label: &str| {
+            state
+                .records
+                .iter()
+                .find(|(body, _, _)| body.to_string().contains(label))
+                .map(|(_, _, after)| *after)
+                .expect("labeled post")
+        };
+        assert!(!after_release("w1"));
+        assert!(!after_release("w2"));
+        assert!(after_release("w3"));
         let _ = std::fs::remove_dir_all(cleanup_journal);
     }
 
     #[test]
     fn transport_timeout_releases_admission_for_the_next_request() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 4096];
-            let _ = stream.read(&mut request);
-            thread::sleep(Duration::from_millis(150));
-        });
         let journal = journal_path();
         let config = served_window_config();
+        let permit = acquire_local_slot(
+            &admission_dir(&journal),
+            1,
+            Some(Duration::from_secs(2)),
+            false,
+        )
+        .expect("held permit");
         assert_eq!(
             endpoint_generate_with(
                 &request(Some(0.05)),
                 &journal,
-                &endpoint(&format!("http://{address}")),
+                &endpoint("http://endpoint"),
                 &config,
                 &EndpointRuntime::default(),
-                &mut UreqEndpointTransport,
+                &mut StubTransport {
+                    post_script: vec![Ok(response())],
+                    ..Default::default()
+                },
+                Instant::now(),
+            ),
+            failure("local_queue_timeout")
+        );
+        drop(permit);
+        assert_eq!(
+            endpoint_generate_with(
+                &request(Some(0.2)),
+                &journal,
+                &endpoint("http://endpoint"),
+                &config,
+                &EndpointRuntime::default(),
+                &mut StubTransport {
+                    post_script: vec![Err(EndpointTransportError::Capacity)],
+                    ..Default::default()
+                },
                 Instant::now(),
             ),
             failure("local_capacity_exhausted")
         );
-        server.join().unwrap();
-        let mut transport = StubTransport {
-            post_result: Some(Ok(response())),
-            ..Default::default()
-        };
         assert!(matches!(
             endpoint_generate_with(
                 &request(Some(0.2)),
@@ -1503,7 +1702,10 @@ mod tests {
                 &endpoint("http://endpoint"),
                 &config,
                 &EndpointRuntime::default(),
-                &mut transport,
+                &mut StubTransport {
+                    post_script: vec![Ok(response())],
+                    ..Default::default()
+                },
                 Instant::now(),
             ),
             EndpointResult::Generated(_)
@@ -1562,7 +1764,7 @@ mod tests {
                 },
             ];
             let mut transport = StubTransport {
-                post_result: Some(Ok(converse_response(name))),
+                post_script: vec![Ok(converse_response(name))],
                 ..Default::default()
             };
             let turn = endpoint_converse_with(
@@ -1634,7 +1836,7 @@ mod tests {
             text: "latest".into(),
         });
         let mut transport = StubTransport {
-            post_result: Some(Ok(response())),
+            post_script: vec![Ok(response())],
             ..Default::default()
         };
         let config = json!({"providers": {"local": {"served_context_window": 2048}}})
@@ -1702,7 +1904,7 @@ mod tests {
             .expect("config object")
             .clone();
         let mut transport = StubTransport {
-            post_result: Some(Ok(response())),
+            post_script: vec![Ok(response())],
             ..Default::default()
         };
         endpoint_converse_with(
@@ -1748,6 +1950,41 @@ mod tests {
         assert!(!assistant_call_ids.is_empty());
         assert!(assistant_call_ids.len() < 5);
         assert_eq!(assistant_call_ids, tool_result_ids);
+        assert_eq!(transport.posts.len(), 1);
+
+        let unfittable = vec![
+            ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "huge".into(),
+                    name: "weather".into(),
+                    arguments: json!({"note": "x".repeat(20_000)}),
+                    not_offered: false,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "huge".into(),
+                tool_name: "weather".into(),
+                output: "y".repeat(20_000),
+            },
+        ];
+        let mut blocked = StubTransport::default();
+        let error = endpoint_converse_with(
+            EndpointConverseCall {
+                request: &request(None),
+                messages: &unfittable,
+                tools: &tools,
+                journal_path: &journal,
+                endpoint: &endpoint("http://endpoint"),
+                config: &config,
+                runtime: &runtime,
+            },
+            &mut blocked,
+            Instant::now(),
+        )
+        .expect_err("unfittable pair must fail before transport");
+        assert_eq!(error.reason_code, "context_budget_exceeded");
+        assert!(blocked.posts.is_empty());
         let _ = std::fs::remove_dir_all(journal);
     }
 
@@ -1803,7 +2040,7 @@ mod tests {
         let tools = converse_tools();
         let config = served_window_config();
         let mut transport = StubTransport {
-            post_result: Some(Ok(converse_response("weather"))),
+            post_script: vec![Ok(converse_response("weather"))],
             ..Default::default()
         };
         let turn = endpoint_converse_with(
@@ -1831,6 +2068,21 @@ mod tests {
             enforce_responsiveness: false,
         });
         assert_eq!(assessment.failure, None);
+        let empty = json!({});
+        let rejected = crate::assess_provider_result(crate::ProviderResultView {
+            journal_path: &journal,
+            context: "test.converse",
+            model: &turn.model,
+            text: "",
+            finish_reason: "stop",
+            usage: &empty,
+            json_output: false,
+            enforce_responsiveness: false,
+        });
+        assert_eq!(
+            rejected.failure,
+            Some(crate::ValidationFailure::ProviderResponseInvalid)
+        );
         let _ = std::fs::remove_dir_all(journal);
     }
 
@@ -1840,8 +2092,8 @@ mod tests {
         let journal = journal_path();
         let messages = vec![ConverseMessage::User { text: "ask".into() }];
         let mut transport = StubTransport {
-            get_result: Some(Err(EndpointTransportError::Other)),
-            post_result: Some(Ok(response())),
+            get_script: vec![Err(EndpointTransportError::Other)],
+            post_script: vec![Ok(response())],
             ..Default::default()
         };
         assert!(

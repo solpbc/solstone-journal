@@ -2220,6 +2220,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-generate-wire::endpoint_transport"
+package = "solstone-core-generate-wire"
+target = "endpoint_transport"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-generate-wire::frozen_seam_oracles"
 package = "solstone-core-generate-wire"
 target = "frozen_seam_oracles"

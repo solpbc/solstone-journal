@@ -27,6 +27,10 @@ regex = "1.13.1"
 differential = []
 
 [[test]]
+name = "endpoint_transport"
+path = "tests/endpoint_transport.rs"
+
+[[test]]
 name = "responsiveness_differential"
 path = "tests/responsiveness_differential.rs"
 required-features = ["differential"]

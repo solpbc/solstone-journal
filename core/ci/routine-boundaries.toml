@@ -523,28 +523,16 @@ id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/e
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::overflow_reclamps_once_then_generates::clock"
 
 [[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::post_json::clock"
-
-[[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::qwen_sampling_controls_follow_the_endpoint_lane_flags::clock"
 
 [[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::refused_connection_is_endpoint_unreachable::clock"
 
 [[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::refused_connection_is_endpoint_unreachable::network"
-
-[[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::repeated_overflow_is_context_window_exceeded_without_a_third_post::clock"
 
 [[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::response_timeout_after_connection_is_capacity_exhausted::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::response_timeout_after_connection_is_capacity_exhausted::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::response_timeout_after_connection_is_capacity_exhausted::scheduling"
 
 [[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::served_window_discovery_is_cached_within_ttl::clock"
@@ -554,12 +542,6 @@ id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/e
 
 [[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::transport_timeout_releases_admission_for_the_next_request::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::transport_timeout_releases_admission_for_the_next_request::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::transport_timeout_releases_admission_for_the_next_request::scheduling"
 
 [[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/google.rs::tests::process_environment_key_is_ignored_when_config_key_is_absent::process"
