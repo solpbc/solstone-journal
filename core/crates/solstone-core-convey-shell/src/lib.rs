@@ -755,6 +755,7 @@ pub fn router(journal_root: PathBuf) -> Router {
             journal_root.clone(),
             solstone_core_facets_web::Clock::local(),
         ))
+        .merge(solstone_core_support_web::routes(journal_root.clone()))
         .layer(Extension(shell))
         .layer(Extension(route_journal_root));
     session_gate::apply_layer(routes, journal_root).fallback(not_found)

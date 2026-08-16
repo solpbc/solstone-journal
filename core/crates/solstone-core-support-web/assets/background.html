@@ -1,0 +1,39 @@
+let badgeTask = null;
+
+AppServices.register('support', {
+    initialize() {
+      badgeTask = AppServices.registerTask('support', 'badge-count', {
+        intervalMs: 5 * 60 * 1000,
+        run: async ({ apiJson }) => apiJson('/app/support/api/badge-count'),
+        onSuccess: (data) => {
+          AppServices.badges.app.set('support', data.count ?? 0);
+        }
+      });
+
+      // Listen for proactive suggestions from callosum
+      if (window.appEvents) {
+        window.appEvents.listen('support', function(msg) {
+          if (msg.event === 'proactive_suggestion') {
+            const service = msg.service || 'unknown';
+            AppServices.notifications.show({
+              app: 'support',
+              icon: 'life-buoy',
+              key: `support:proactive_suggestion:${service}`,
+              title: 'Support suggestion',
+              message: msg.message || 'Something may need attention.',
+              action: '/app/support',
+              dismissible: true,
+              autoDismiss: 30000
+            });
+          }
+        });
+      }
+    },
+
+    stop() {
+      if (badgeTask) {
+        badgeTask.stop();
+        badgeTask = null;
+      }
+    }
+  });

@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-support-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["tokio"] }
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+solstone-core-convey-http.workspace = true
+solstone-core-support-portal.workspace = true
+tower.workspace = true
+
+[dev-dependencies]
+sha2.workspace = true
+solstone-core-convey-shell.workspace = true
+tempfile = "3.24.0"
+tokio = { workspace = true, features = ["macros", "rt"] }
+tower.workspace = true

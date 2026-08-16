@@ -3186,6 +3186,7 @@ dependencies = [
  "solstone-core-speaker-resolve",
  "solstone-core-spl",
  "solstone-core-stats-web",
+ "solstone-core-support-web",
  "solstone-core-system",
  "solstone-core-talent-cli",
  "solstone-core-talent-config",
@@ -4399,6 +4400,23 @@ dependencies = [
  "unicode-normalization",
  "ureq",
  "uuid",
+]
+
+[[package]]
+name = "solstone-core-support-web"
+version = "1.0.22"
+dependencies = [
+ "axum",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-convey-http",
+ "solstone-core-convey-shell",
+ "solstone-core-support-portal",
+ "tempfile",
+ "tokio",
+ "tower",
 ]
 
 [[package]]

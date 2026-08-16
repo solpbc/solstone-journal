@@ -16,6 +16,11 @@ path = "tests/convey_authorization_contracts.rs"
 name = "convey_route_contracts"
 path = "tests/convey_route_contracts.rs"
 
+# Cargo auto-discovery is disabled for this package, so this corpus target is explicit.
+[[test]]
+name = "corpus"
+path = "tests/corpus.rs"
+
 [[test]]
 name = "convey_speaker_contracts"
 path = "tests/convey_speaker_contracts.rs"
@@ -94,6 +99,7 @@ solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-settings-web.workspace = true
 solstone-core-import-web.workspace = true
+solstone-core-support-web.workspace = true
 solstone-core-transcripts-web.workspace = true
 solstone-core-health-web.workspace = true
 solstone-core-stats-web.workspace = true
