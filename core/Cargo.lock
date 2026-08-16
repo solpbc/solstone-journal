@@ -4407,16 +4407,19 @@ name = "solstone-core-support-web"
 version = "1.0.22"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "chrono",
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-chat-append",
  "solstone-core-convey-http",
  "solstone-core-convey-shell",
  "solstone-core-support-portal",
  "tempfile",
  "tokio",
  "tower",
+ "uuid",
 ]
 
 [[package]]

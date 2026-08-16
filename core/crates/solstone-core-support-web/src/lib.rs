@@ -3,23 +3,29 @@
 
 //! Native read and page routes for the Support Convey surface.
 
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path as FsPath, PathBuf};
 
 use axum::{
     Router,
-    extract::{Path, Query},
+    body::{Body, to_bytes},
+    extract::{DefaultBodyLimit, FromRequest, Json, Multipart, Path, Query, Request},
     http::{StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Redirect, Response},
-    routing::get,
+    routing::{get, post},
 };
-use chrono::Local;
-use serde_json::{Value, json};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use chrono::{Local, Utc};
+use serde_json::{Map, Value, json};
+use solstone_core_chat_append::{append_support_draft, record_draft_captured};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_support_portal::{
-    PortalClient, PortalOperationError, collect_all, is_enabled, native_platform,
+    OperationError, PortalClient, PortalOperationError, collect_all, is_enabled, native_platform,
     portal_url_from_settings,
 };
+use tempfile::Builder;
+use uuid::Uuid;
 
 const SHELL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -41,6 +47,15 @@ pub fn routes(journal_root: PathBuf) -> Router {
     let announcements_root = journal_root.clone();
     let diagnostics_root = journal_root.clone();
     let badge_root = journal_root;
+    let draft_root = layer_root.clone();
+    let register_root = layer_root.clone();
+    let create_root = layer_root.clone();
+    let reply_root = layer_root.clone();
+    let attachment_root = layer_root.clone();
+    let close_root = layer_root.clone();
+    let confirm_root = layer_root.clone();
+    let still_need_help_root = layer_root.clone();
+    let feedback_root = layer_root.clone();
     Router::new()
         .route(
             "/app/support",
@@ -56,7 +71,8 @@ pub fn routes(journal_root: PathBuf) -> Router {
         )
         .route(
             "/app/support/api/tickets",
-            get(move |query| tickets(tickets_root.clone(), query)),
+            get(move |query| tickets(tickets_root.clone(), query))
+                .post(move |headers, payload| create_ticket(create_root.clone(), headers, payload)),
         )
         .route(
             "/app/support/api/tickets/closed",
@@ -86,6 +102,43 @@ pub fn routes(journal_root: PathBuf) -> Router {
             "/app/support/api/badge-count",
             get(move || badge_count(badge_root.clone())),
         )
+        .route(
+            "/app/support/api/draft",
+            post(move |request| capture_draft(draft_root.clone(), request)),
+        )
+        .route(
+            "/app/support/api/register",
+            post(move || register(register_root.clone())),
+        )
+        .route(
+            "/app/support/api/tickets/{id}/reply",
+            post(move |id, headers, payload| {
+                reply_to_ticket(reply_root.clone(), id, headers, payload)
+            }),
+        )
+        .route(
+            "/app/support/api/tickets/{id}/attachments",
+            post(move |id, headers, multipart| {
+                upload_attachment(attachment_root.clone(), id, headers, multipart)
+            }),
+        )
+        .route(
+            "/app/support/api/tickets/{id}/close",
+            post(move |id, headers| close_ticket(close_root.clone(), id, headers)),
+        )
+        .route(
+            "/app/support/api/tickets/{id}/resolution/confirm",
+            post(move |id, headers| confirm_resolution(confirm_root.clone(), id, headers)),
+        )
+        .route(
+            "/app/support/api/tickets/{id}/resolution/still-need-help",
+            post(move |id, headers| still_need_help(still_need_help_root.clone(), id, headers)),
+        )
+        .route(
+            "/app/support/api/feedback",
+            post(move |headers, payload| submit_feedback(feedback_root.clone(), headers, payload)),
+        )
+        .layer(DefaultBodyLimit::disable())
         .layer(middleware::from_fn(move |request, next| {
             drain_before_and_after(layer_root.clone(), request, next)
         }))
@@ -101,7 +154,7 @@ async fn background() -> Response {
     bytes(BACKGROUND, "text/html; charset=utf-8")
 }
 async fn support_js() -> Response {
-    bytes(SUPPORT_JS, "application/javascript")
+    bytes(SUPPORT_JS, "text/javascript; charset=utf-8")
 }
 
 fn bytes(value: &'static [u8], content_type: &'static str) -> Response {
@@ -259,10 +312,521 @@ fn http_not_found() -> Response {
     error_envelope(
         "http_error",
         "I couldn't complete that request.",
-        "Not Found",
+        "",
         StatusCode::NOT_FOUND,
     )
     .into_response()
+}
+
+fn request_error(
+    reason: &'static str,
+    message: &'static str,
+    detail: impl Into<String>,
+) -> Response {
+    error_envelope(reason, message, detail.into(), StatusCode::BAD_REQUEST).into_response()
+}
+
+fn missing_required(detail: impl Into<String>) -> Response {
+    request_error(
+        "missing_required_field",
+        "I couldn't find a required field.",
+        detail,
+    )
+}
+
+fn invalid_value(detail: impl Into<String>) -> Response {
+    request_error(
+        "invalid_request_value",
+        "I couldn't use one of those values.",
+        detail,
+    )
+}
+
+fn action_id(headers: &axum::http::HeaderMap) -> Option<String> {
+    headers
+        .get("Idempotency-Key")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn ticket_id(id: &str) -> Option<i64> {
+    id.parse::<i64>().ok()
+}
+
+fn with_mutation_client<T>(
+    root: &FsPath,
+    anonymous: bool,
+    operation: impl FnOnce(&mut PortalClient) -> Result<T, PortalOperationError>,
+) -> Result<T, PortalOperationError> {
+    let mut client = PortalClient::from_journal_settings(root, None, anonymous)
+        .map_err(PortalOperationError::Portal)?;
+    operation(&mut client)
+}
+
+fn mutation_response(result: Result<Value, PortalOperationError>) -> Response {
+    match result {
+        Ok(value) => (StatusCode::CREATED, axum::Json(value)).into_response(),
+        Err(PortalOperationError::Operation(error)) => operation_error_response(error),
+        Err(PortalOperationError::Portal(error)) => portal_failed(&error.to_string()),
+    }
+}
+
+fn operation_error_response(error: OperationError) -> Response {
+    let reason = error
+        .reason_code()
+        .expect("all operation errors map to routes");
+    let status = StatusCode::from_u16(
+        error
+            .http_status()
+            .expect("all operation errors have a status"),
+    )
+    .expect("operation status is valid");
+    error_envelope(
+        reason,
+        error
+            .owner_message()
+            .expect("all operation errors have a message"),
+        error.to_string(),
+        status,
+    )
+    .into_response()
+}
+
+fn object_text<'a>(payload: &'a Value, key: &str) -> Option<&'a str> {
+    payload.get(key).and_then(Value::as_str)
+}
+
+fn draft_id() -> String {
+    Uuid::new_v4().simple().to_string()
+}
+
+fn captured_day() -> String {
+    Local::now().format("%Y%m%d").to_string()
+}
+
+fn capture_draft_event(
+    root: &FsPath,
+    verb: &str,
+    payload: Value,
+    diagnostics_snapshot: Value,
+) -> Response {
+    let ts = Utc::now().timestamp_millis();
+    let draft_id = draft_id();
+    let captured_day = captured_day();
+    let event = Map::from_iter([
+        ("ts".to_owned(), json!(ts)),
+        ("draft_id".to_owned(), json!(draft_id)),
+        ("captured_day".to_owned(), json!(captured_day)),
+        ("verb".to_owned(), json!(verb)),
+        ("payload".to_owned(), payload),
+        ("diagnostics_snapshot".to_owned(), diagnostics_snapshot),
+    ]);
+    if let Err(error) = record_draft_captured(root, &draft_id, &captured_day) {
+        return portal_failed(&error.to_string());
+    }
+    if let Err(error) = append_support_draft(root, event) {
+        return portal_failed(&error.to_string());
+    }
+    json_response(json!({"draft_id": draft_id}))
+}
+
+async fn capture_draft(root: PathBuf, request: Request) -> Response {
+    if let Some(response) = disabled(&root, false) {
+        return response;
+    }
+    let (parts, body) = request.into_parts();
+    let multipart = parts
+        .headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("multipart/form-data"));
+    let body = match to_bytes(body, usize::MAX).await {
+        Ok(body) => body,
+        Err(error) => return invalid_value(error.to_string()),
+    };
+    if multipart {
+        let request = Request::from_parts(parts, Body::from(body.clone()));
+        let mut multipart = match Multipart::from_request(request, &()).await {
+            Ok(multipart) => multipart,
+            Err(error) => return invalid_value(error.to_string()),
+        };
+        let mut fields = std::collections::BTreeMap::new();
+        let mut upload = None;
+        loop {
+            let field = match multipart.next_field().await {
+                Ok(Some(field)) => field,
+                Ok(None) => break,
+                Err(error) => return invalid_value(error.to_string()),
+            };
+            let name = field.name().unwrap_or_default().to_owned();
+            let filename = field.file_name().map(ToOwned::to_owned);
+            let bytes = match field.bytes().await {
+                Ok(bytes) => bytes,
+                Err(error) => return invalid_value(error.to_string()),
+            };
+            if name == "file" {
+                upload = Some((filename, bytes));
+            } else if let Ok(value) = String::from_utf8(bytes.to_vec()) {
+                fields.insert(name, value);
+            }
+        }
+        if let Some((filename, bytes)) = upload {
+            let verb = fields.get("verb").map(String::as_str);
+            if verb != Some("attach") {
+                return invalid_value("verb must be attach for multipart draft capture");
+            }
+            let ticket_id = match fields
+                .get("ticket_id")
+                .and_then(|value| value.parse::<i64>().ok())
+            {
+                Some(ticket_id) => ticket_id,
+                None => return invalid_value("ticket_id must be an integer"),
+            };
+            let filename = match filename.filter(|filename| !filename.is_empty()) {
+                Some(filename) => filename,
+                None => return missing_required("No filename"),
+            };
+            let suffix = FsPath::new(&filename)
+                .extension()
+                .and_then(|suffix| suffix.to_str())
+                .map_or_else(String::new, |suffix| {
+                    format!(".{}", suffix.to_ascii_lowercase())
+                });
+            let Some((_, content_type)) = PortalClient::allowed_content_types()
+                .iter()
+                .find(|(allowed, _)| *allowed == suffix)
+            else {
+                return invalid_value(unsupported_suffix_detail(&suffix));
+            };
+            if bytes.len() as u64 > PortalClient::MAX_ATTACHMENT_SIZE {
+                return invalid_value(format!(
+                    "File too large: {:.1} MB (max {:.0} MB)",
+                    bytes.len() as f64 / 1024.0 / 1024.0,
+                    PortalClient::MAX_ATTACHMENT_SIZE as f64 / 1024.0 / 1024.0
+                ));
+            }
+            return capture_draft_event(
+                &root,
+                "attach",
+                json!({
+                    "ticket_id": ticket_id,
+                    "filename": filename,
+                    "content_type": content_type,
+                    "byte_size": bytes.len(),
+                    "content_b64": STANDARD.encode(bytes),
+                }),
+                Value::Null,
+            );
+        }
+    }
+    let payload: Value = match serde_json::from_slice(&body) {
+        Ok(payload) => payload,
+        Err(error) => return invalid_value(error.to_string()),
+    };
+    let verb = payload.get("verb").and_then(Value::as_str);
+    let draft_payload = payload.get("payload").filter(|value| !value.is_null());
+    let (Some(verb), Some(draft_payload)) = (verb, draft_payload) else {
+        return missing_required("verb and payload are required");
+    };
+    if !matches!(
+        verb,
+        "create" | "feedback" | "reply" | "close" | "resolved" | "still_need_help"
+    ) || !draft_payload.is_object()
+    {
+        return invalid_value(
+            "verb must be create|feedback|reply|close|resolved|still_need_help and payload must be an object",
+        );
+    }
+    capture_draft_event(
+        &root,
+        verb,
+        draft_payload.clone(),
+        payload
+            .get("diagnostics_snapshot")
+            .cloned()
+            .unwrap_or(Value::Null),
+    )
+}
+
+async fn register(root: PathBuf) -> Response {
+    if let Some(response) = disabled(&root, false) {
+        return response;
+    }
+    let mut client = match PortalClient::from_journal_settings(&root, None, false) {
+        Ok(client) => client,
+        Err(_) => return portal_failed("Registration with the support portal failed."),
+    };
+    if client.register().is_err() {
+        return portal_failed("Registration with the support portal failed.");
+    }
+    json_response(json!({"handle": client.handle()}))
+}
+
+async fn create_ticket(
+    root: PathBuf,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<Value>,
+) -> Response {
+    if let Some(response) = disabled(&root, false) {
+        return response;
+    }
+    let action_id = match action_id(&headers) {
+        Some(action_id) => action_id,
+        None => return missing_required("Idempotency-Key header is required"),
+    };
+    let (Some(subject), Some(description)) = (
+        object_text(&payload, "subject").filter(|value| !value.is_empty()),
+        object_text(&payload, "description").filter(|value| !value.is_empty()),
+    ) else {
+        return missing_required("subject and description are required");
+    };
+    let auto_context = payload
+        .get("auto_context")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let user_context = if auto_context {
+        let mut diagnostics = collect_all(&root, Local::now(), native_platform());
+        if let Some(context) = payload.get("user_context").and_then(Value::as_object) {
+            diagnostics.extend(context.clone());
+        }
+        Some(Value::Object(diagnostics))
+    } else {
+        payload.get("user_context").cloned()
+    };
+    mutation_response(with_mutation_client(
+        &root,
+        payload
+            .get("anonymous")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        |client| {
+            client.create_ticket(
+                object_text(&payload, "product").unwrap_or("solstone"),
+                subject,
+                description,
+                object_text(&payload, "severity").unwrap_or("medium"),
+                object_text(&payload, "category"),
+                object_text(&payload, "user_email"),
+                user_context,
+                &action_id,
+            )
+        },
+    ))
+}
+
+async fn reply_to_ticket(
+    root: PathBuf,
+    Path(id): Path<String>,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<Value>,
+) -> Response {
+    let ticket_id = match ticket_id(&id) {
+        Some(ticket_id) => ticket_id,
+        None => return http_not_found(),
+    };
+    if let Some(response) = disabled(&root, false) {
+        return response;
+    }
+    let action_id = match action_id(&headers) {
+        Some(action_id) => action_id,
+        None => return missing_required("Idempotency-Key header is required"),
+    };
+    let Some(content) = object_text(&payload, "content").filter(|value| !value.is_empty()) else {
+        return missing_required("content is required");
+    };
+    mutation_response(with_mutation_client(&root, false, |client| {
+        client.reply_to_ticket(ticket_id, content, &action_id)
+    }))
+}
+
+fn unsupported_suffix_detail(suffix: &str) -> String {
+    let mut suffixes = PortalClient::allowed_content_types()
+        .iter()
+        .map(|(suffix, _)| *suffix)
+        .collect::<Vec<_>>();
+    suffixes.sort_unstable();
+    format!(
+        "Unsupported file type: {suffix}. Allowed: {}",
+        suffixes.join(", ")
+    )
+}
+
+async fn upload_attachment(
+    root: PathBuf,
+    Path(id): Path<String>,
+    headers: axum::http::HeaderMap,
+    mut multipart: Multipart,
+) -> Response {
+    let ticket_id = match ticket_id(&id) {
+        Some(ticket_id) => ticket_id,
+        None => return http_not_found(),
+    };
+    if let Some(response) = disabled(&root, false) {
+        return response;
+    }
+    let action_id = match action_id(&headers) {
+        Some(action_id) => action_id,
+        None => return missing_required("Idempotency-Key header is required"),
+    };
+    let mut index = None;
+    let mut file = None;
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(error) => return invalid_value(error.to_string()),
+        };
+        let name = field.name().unwrap_or_default().to_owned();
+        let filename = field.file_name().map(ToOwned::to_owned);
+        let bytes = match field.bytes().await {
+            Ok(bytes) => bytes,
+            Err(error) => return invalid_value(error.to_string()),
+        };
+        if name == "file" {
+            file = Some((filename, bytes));
+        } else if name == "index" {
+            index = String::from_utf8(bytes.to_vec()).ok();
+        }
+    }
+    let (filename, bytes) = match file {
+        Some((filename, bytes)) => (filename, bytes),
+        None => return missing_required("No file provided"),
+    };
+    let filename = match filename.filter(|filename| !filename.is_empty()) {
+        Some(filename) => filename,
+        None => return missing_required("No filename"),
+    };
+    let index = match index.as_deref().unwrap_or("0").parse::<i64>() {
+        Ok(index) => index,
+        Err(_) => return invalid_value("index must be an integer"),
+    };
+    if index < 0 {
+        return invalid_value("index must be non-negative");
+    }
+    let suffix = FsPath::new(&filename)
+        .extension()
+        .and_then(|suffix| suffix.to_str())
+        .map_or_else(String::new, |suffix| {
+            format!(".{}", suffix.to_ascii_lowercase())
+        });
+    if !PortalClient::allowed_content_types()
+        .iter()
+        .any(|(allowed, _)| *allowed == suffix)
+    {
+        return invalid_value(unsupported_suffix_detail(&suffix));
+    }
+    let mut temp = match Builder::new().suffix(&suffix).tempfile() {
+        Ok(temp) => temp,
+        Err(error) => return portal_failed(&error.to_string()),
+    };
+    #[cfg(unix)]
+    if let Err(error) = {
+        use std::os::unix::fs::PermissionsExt;
+        temp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))
+    } {
+        return portal_failed(&error.to_string());
+    }
+    if let Err(error) = temp.write_all(&bytes).and_then(|()| temp.flush()) {
+        return portal_failed(&error.to_string());
+    }
+    mutation_response(with_mutation_client(&root, false, |client| {
+        client.attach_file(
+            ticket_id,
+            temp.path(),
+            &action_id,
+            index as u64,
+            Some(&filename),
+            None,
+        )
+    }))
+}
+
+async fn close_ticket(
+    root: PathBuf,
+    Path(id): Path<String>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    lifecycle_mutation(root, id, headers, |client, ticket_id, action_id| {
+        client.close_ticket(ticket_id, action_id)
+    })
+}
+
+async fn confirm_resolution(
+    root: PathBuf,
+    Path(id): Path<String>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    lifecycle_mutation(root, id, headers, |client, ticket_id, action_id| {
+        client.confirm_resolution(ticket_id, action_id)
+    })
+}
+
+async fn still_need_help(
+    root: PathBuf,
+    Path(id): Path<String>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    lifecycle_mutation(root, id, headers, |client, ticket_id, action_id| {
+        client.still_need_help(ticket_id, action_id)
+    })
+}
+
+fn lifecycle_mutation(
+    root: PathBuf,
+    id: String,
+    headers: axum::http::HeaderMap,
+    operation: impl FnOnce(&mut PortalClient, i64, &str) -> Result<Value, PortalOperationError>,
+) -> Response {
+    let ticket_id = match ticket_id(&id) {
+        Some(ticket_id) => ticket_id,
+        None => return http_not_found(),
+    };
+    if let Some(response) = disabled(&root, false) {
+        return response;
+    }
+    let action_id = match action_id(&headers) {
+        Some(action_id) => action_id,
+        None => return missing_required("Idempotency-Key header is required"),
+    };
+    mutation_response(with_mutation_client(&root, false, |client| {
+        operation(client, ticket_id, &action_id)
+    }))
+}
+
+async fn submit_feedback(
+    root: PathBuf,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<Value>,
+) -> Response {
+    if let Some(response) = disabled(&root, false) {
+        return response;
+    }
+    let action_id = match action_id(&headers) {
+        Some(action_id) => action_id,
+        None => return missing_required("Idempotency-Key header is required"),
+    };
+    let Some(body) = object_text(&payload, "body").filter(|value| !value.is_empty()) else {
+        return missing_required("body is required");
+    };
+    let anonymous = payload
+        .get("anonymous")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let user_email = (!anonymous)
+        .then(|| object_text(&payload, "user_email").map(str::trim))
+        .flatten()
+        .filter(|email| !email.is_empty());
+    mutation_response(with_mutation_client(&root, anonymous, |client| {
+        client.submit_feedback(
+            body,
+            object_text(&payload, "product").unwrap_or("solstone"),
+            user_email,
+            None,
+            &action_id,
+        )
+    }))
 }
 
 #[derive(serde::Deserialize)]
