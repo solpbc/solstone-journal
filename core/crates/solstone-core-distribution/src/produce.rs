@@ -510,7 +510,12 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
     for (package, bin) in lane.bins {
         command.arg("-p").arg(package).arg("--bin").arg(bin);
     }
+    let host_arch = lane.host.split('-').next().unwrap_or_default();
+    let target_arch = lane.triple.split('-').next().unwrap_or_default();
     for (key, value) in lane.vars {
+        if key == lanes::describe_cc_key() && host_arch != target_arch {
+            continue;
+        }
         command.env(key, value);
     }
     if let Some((_, ar)) = lane.vars.iter().find(|(key, _)| key.starts_with("AR_")) {
@@ -519,8 +524,6 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
     if let Some((_, ranlib)) = lane.vars.iter().find(|(key, _)| key.starts_with("RANLIB_")) {
         command.env("RANLIB", ranlib);
     }
-    let host_arch = lane.host.split('-').next().unwrap_or_default();
-    let target_arch = lane.triple.split('-').next().unwrap_or_default();
     if host_arch == target_arch {
         if let Some((_, cc)) = lane.vars.iter().find(|(key, _)| key.starts_with("CC_")) {
             command.env("CC", cc);
