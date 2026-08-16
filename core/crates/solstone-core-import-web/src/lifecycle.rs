@@ -3,6 +3,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    ffi::OsString,
     io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -77,7 +78,7 @@ const EXIFTOOL_TIMEOUT: Duration = Duration::from_secs(2);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MetadataCommandPlan {
     pub program: PathBuf,
-    pub args: Vec<String>,
+    pub args: Vec<OsString>,
     pub path: PathBuf,
     pub timeout: Duration,
 }
@@ -93,7 +94,7 @@ pub enum MetadataCommandOutcome {
 fn metadata_command_plan(path: &Path) -> MetadataCommandPlan {
     MetadataCommandPlan {
         program: PathBuf::from("exiftool"),
-        args: vec!["-json".to_owned(), path.to_string_lossy().into_owned()],
+        args: vec![OsString::from("-json"), path.as_os_str().to_os_string()],
         path: path.to_path_buf(),
         timeout: EXIFTOOL_TIMEOUT,
     }
@@ -107,7 +108,9 @@ fn parse_metadata_timestamp(stdout: &[u8]) -> Option<String> {
 /// Run the planned metadata helper and classify the process outcome.
 pub fn run_metadata_command(plan: &MetadataCommandPlan) -> MetadataCommandOutcome {
     let mut command = Command::new(&plan.program);
-    command.args(&plan.args);
+    for arg in &plan.args {
+        command.arg(arg);
+    }
     command.stdout(Stdio::piped()).stderr(Stdio::null());
     let mut child = match command.spawn() {
         Ok(child) => child,
@@ -940,7 +943,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, fs, os::unix::fs::PermissionsExt, rc::Rc};
+    use std::{
+        cell::RefCell, ffi::OsString, fs, os::unix::fs::PermissionsExt, rc::Rc, time::Duration,
+    };
 
     use axum::{
         body::{Body, to_bytes},
@@ -1172,9 +1177,9 @@ mod tests {
         assert_eq!(result, None);
         let (program, args, planned_path, timeout) = recorded.expect("recorded plan");
         assert_eq!(program, std::path::Path::new("exiftool"));
-        assert_eq!(args, ["-json", "photo.jpg"]);
+        assert_eq!(args, [OsString::from("-json"), OsString::from("photo.jpg")]);
         assert_eq!(planned_path, path);
-        assert_eq!(timeout, super::EXIFTOOL_TIMEOUT);
+        assert_eq!(timeout, Duration::from_secs(2));
     }
 
     #[test]
