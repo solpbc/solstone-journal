@@ -89,7 +89,7 @@ ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # `make install` fail on a clean environment while every Rust gate stayed green,
 # because the gates carry the export and check-differentials inherits it when it
 # shells into install.
-install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
@@ -271,7 +271,21 @@ JOURNAL_GROUP := $(if $(filter cuda,$(JOURNAL_VARIANT)),journal-cuda,journal-cpu
 # report uv-absence themselves. Rust-only and frozen/gated goals are likewise
 # optional; Python-dependent goals outside this list still abort at parse time.
 UV := $(shell command -v uv 2>/dev/null)
-UV_OPTIONAL_GOALS := preflight install render-packaging check-rust-fmt check-rust-msrv check-rust-clippy check-rust-test check-rust-race check-rust-ios check-rust-macos check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-deny check-service-legacy-evidence service-legacy-evidence-capture audit ci verify test build format format-check test-cov test-integration test-release test-performance test-app test-only watch coverage release release-test release-checks publish-release publish-release-test check-transparency-minisign publish-transparency resign-transparency-pointer
+UV_OPTIONAL_GOALS := \
+	preflight install render-packaging \
+	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
+	check-rust-unit check-rust-doc check-rust-test check-rust-race \
+	check-rust-ios check-rust-macos check-rust-deny check-rust-describe-cli-stubs \
+	check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-ready check-rust-onnx-test \
+	check-rust-pdf-stage check-rust-pdf-ready check-rust-pdf-test $(PDF_RUNTIME_HOST_LINK_DIR) \
+	check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries \
+	check-rust-ci-topology ci ci-under-poison ci-full ci-full-under-poison ci-full-plan \
+	ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf \
+	verify test build format format-check \
+	check-service-legacy-evidence service-legacy-evidence-capture audit \
+	test-cov test-integration test-release test-performance test-app test-only watch coverage \
+	release release-test release-checks publish-release publish-release-test \
+	check-transparency-minisign publish-transparency resign-transparency-pointer
 ifndef UV
 ifneq ($(filter-out $(UV_OPTIONAL_GOALS),$(MAKECMDGOALS)),)
 $(error uv is not installed. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh)
@@ -483,6 +497,23 @@ check-rust-pdf-stage:
 	@$(MAKE) --no-print-directory "$(PDF_RUNTIME_HOST_LINK_DIR)"
 	@echo "host PDFium runtime staged at $(PDF_RUNTIME_HOST_LINK_DIR)"
 
+.PHONY: ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
+.NOTPARALLEL: ci-full-prep
+
+# Preparation is the only full-CI surface allowed to fetch Cargo inputs or
+# repair native runtime stages. The validation runner itself stays offline.
+ci-full-prep: ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
+
+ci-full-prep-cargo:
+	@$(REQUIRE_CARGO)
+	cargo fetch --manifest-path $(RUST_MANIFEST) --locked
+
+ci-full-prep-onnx:
+	@$(MAKE) --no-print-directory check-rust-onnx-stage
+
+ci-full-prep-pdf:
+	@$(MAKE) --no-print-directory check-rust-pdf-stage
+
 # Read-only native-runtime readiness checks. The runner may verify prepared
 # inputs, but only the explicit prep targets above are allowed to repair them.
 check-rust-onnx-ready:
@@ -553,7 +584,7 @@ check-rust-msrv:
 
 check-rust-clippy:
 	@$(REQUIRE_CARGO)
-	cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --all-targets --locked -- -D warnings
+	cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked -- -D warnings
 
 check-rust-clippy-full:
 	@$(REQUIRE_CARGO)
@@ -566,18 +597,22 @@ check-rust-unit:
 	@$(REQUIRE_CARGO)
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked -- --test-threads=1
 
+check-rust-doc:
+	@$(REQUIRE_CARGO)
+	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --doc --locked -- --test-threads=1
+
 SOLSTONE_CI_RUNNER := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-repository-contracts --bin solstone-ci --locked --offline --
 
 # Export selector values directly instead of interpolating them into a shell
 # command. This preserves comma- or space-separated values literally and keeps
 # metacharacters from becoming shell syntax.
-ci-full-plan ci-full-runner-under-poison: export SOLSTONE_CI_SETS := $(SETS)
-ci-full-plan ci-full-runner-under-poison: export SOLSTONE_CI_AREAS := $(AREAS)
-ci-full-plan ci-full-runner-under-poison: export SOLSTONE_CI_PACKAGES := $(PACKAGES)
-ci-full-plan ci-full-runner-under-poison: export SOLSTONE_CI_TARGETS := $(TARGETS)
-ci-full-runner-under-poison: export SOLSTONE_CI_RECEIPT := $(RECEIPT)
+export SOLSTONE_CI_SETS := $(SETS)
+export SOLSTONE_CI_AREAS := $(AREAS)
+export SOLSTONE_CI_PACKAGES := $(PACKAGES)
+export SOLSTONE_CI_TARGETS := $(TARGETS)
+export SOLSTONE_CI_RECEIPT := $(RECEIPT)
 
-.PHONY: check-rust-ci-topology ci-full-plan ci-full-runner ci-full-runner-under-poison check-rust-clippy-full check-rust-onnx-ready check-rust-pdf-ready check-rust-registry-suite check-rust-registry-package
+.PHONY: check-rust-ci-topology ci-full-plan check-rust-clippy-full check-rust-doc check-rust-onnx-ready check-rust-pdf-ready check-rust-registry-suite check-rust-registry-package
 
 check-rust-ci-topology:
 	@$(REQUIRE_CARGO)
@@ -586,13 +621,6 @@ check-rust-ci-topology:
 ci-full-plan:
 	@$(REQUIRE_CARGO)
 	$(SOLSTONE_CI_RUNNER) plan
-
-ci-full-runner:
-	$(call run-rust-gate-under-poison,ci-full-runner-under-poison)
-
-ci-full-runner-under-poison:
-	@test "$$SOLSTONE_CI_POISONED" = 1 || { echo "ci-full-runner-under-poison is internal; run 'make ci-full-runner'" >&2; exit 2; }
-	$(SOLSTONE_CI_RUNNER) run
 
 # Per-registry-entry wrappers preserve the native runtime contract while the
 # runner keeps ownership of selection, timeout, logging, and aggregation.
@@ -777,7 +805,6 @@ check-rust-ios:
 
 check-rust-deny:
 	@$(REQUIRE_CARGO)
-	cargo fetch --manifest-path $(RUST_MANIFEST) --locked
 	cargo deny --manifest-path $(RUST_MANIFEST) --locked --offline check bans licenses sources
 
 # Cross-language differentials: Rust tests whose oracle is the running Python
@@ -1379,28 +1406,15 @@ ci-under-poison:
 	@$(MAKE) check-rust-ci-topology
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-unit
-	@echo "Efficient CI checks passed (format, all-target static compilation, and library/binary unit tests)."
+	@echo "Efficient CI checks passed (format, library/binary static compilation, and library/binary unit tests)."
 	@echo "Run 'make ci-full' from an operator final-tree session for the canonical host gate."
 
-ci-full: check-rust-onnx-stage check-rust-pdf-stage
+ci-full:
 	$(call run-rust-gate-under-poison,ci-full-under-poison)
 
 ci-full-under-poison:
 	@test "$$SOLSTONE_CI_POISONED" = 1 || { echo "ci-full-under-poison is internal; run 'make ci-full'" >&2; exit 2; }
-	@$(MAKE) check-rust-fmt
-	@$(MAKE) check-rust-ci-topology
-	@$(MAKE) check-rust-msrv
-	@$(MAKE) check-rust-clippy
-	@$(MAKE) check-rust-deny
-	@$(MAKE) check-rust-test
-	@$(MAKE) check-rust-describe-cli-stubs
-	@$(MAKE) check-rust-onnx-test
-	@$(MAKE) check-rust-pdf-test
-	@$(MAKE) check-rust-shipped-binaries
-	@$(MAKE) check-rust-ios
-	@$(MAKE) check-rust-macos
-	@echo "All full CI checks passed (Rust-only; Rust-conversion freeze in effect — see docs/PORTING.md)"
-	@echo "Not run here: the cross-language differentials, which need a Python install. Run 'make check-differentials' when you touch a seam both languages implement; run 'make check-rust-race' for concurrency-sensitive supervisor changes."
+	$(SOLSTONE_CI_RUNNER) run
 
 verify: ci
 	@echo "Verification complete! (alias for ci during the Rust-conversion freeze)"

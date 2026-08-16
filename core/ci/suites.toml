@@ -68,6 +68,17 @@ timeout = "extended"
 default_full = true
 
 [[legs]]
+id = "doctests"
+make_target = "check-rust-doc"
+set = "component"
+areas = ["workspace"]
+packages = ["workspace"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "extended"
+default_full = true
+
+[[legs]]
 id = "describe-stubs"
 make_target = "check-rust-describe-cli-stubs"
 set = "native"
