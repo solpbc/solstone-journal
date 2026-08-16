@@ -91,52 +91,7 @@ id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests:
 id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::wait_for_file::clock"
 
 [[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::ac12_exposes_malformed_and_single_eviction_counters::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::ac13_stalled_client_does_not_block_healthy_delivery_and_is_evicted::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::accept_connected_raw_peer::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::capacity_one_priority_latch_preserves_saturation_and_recovery_order::clock"
-
-[[findings]]
 id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::decode_fragmented::scheduling"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::next::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::next_event::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::observed_connected_client::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::raw::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::raw_line::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::repeated_saturation_coalesces_one_gap_epoch::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::stop_joins_while_disconnect_gap_is_unconsumed::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::unconsumed_disconnect_gap_blocks_retry_until_delivery::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::wait_for_clients::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::wait_for_counter::clock"
-
-[[findings]]
-id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::wait_for_pending_priority::clock"
 
 [[findings]]
 id = "solstone-core-chat-append::core/crates/solstone-core-chat-append/src/lib.rs::tests::ac12_static_lock_keeps_two_concurrent_appends::scheduling"

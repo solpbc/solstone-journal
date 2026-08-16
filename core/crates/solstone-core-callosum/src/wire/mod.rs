@@ -12,6 +12,9 @@ pub use connection::{
 };
 pub use server::{CallosumSocketServer, CallosumSocketServerError};
 
+#[cfg(any(test, feature = "test-hooks"))]
+pub mod test_support;
+
 pub(crate) const CLIENT_RECONNECT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 pub(crate) const CLIENT_SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 pub(crate) const CLIENT_OUTBOUND_CAPACITY: usize = 1_000;

@@ -26,4 +26,7 @@ pub use wire::{
     CallosumSocketConnection, CallosumSocketServer, CallosumSocketServerError,
     CallosumStoppedReason, TokioRetrySource,
 };
+#[cfg(all(feature = "wire", any(test, feature = "test-hooks")))]
+#[doc(hidden)]
+pub use wire::test_support;
 pub use writer::{CallosumWriteError, append_durable_event};

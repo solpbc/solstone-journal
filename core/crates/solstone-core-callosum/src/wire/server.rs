@@ -63,7 +63,7 @@ struct ServerInner {
     malformed_frame_drops: AtomicU64,
     broadcast_saturation_drops: AtomicU64,
     stalled_client_evictions: AtomicU64,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     hooks: Option<Arc<ServerTestHooks>>,
 }
 
@@ -82,8 +82,8 @@ impl CallosumSocketServer {
 
     async fn bind_inner(
         socket_path: PathBuf,
-        #[cfg(test)] hooks: Option<Arc<ServerTestHooks>>,
-        #[cfg(not(test))] _hooks: Option<()>,
+        #[cfg(any(test, feature = "test-hooks"))] hooks: Option<Arc<ServerTestHooks>>,
+        #[cfg(not(any(test, feature = "test-hooks")))] _hooks: Option<()>,
     ) -> Result<Self, CallosumSocketServerError> {
         if let Some(parent) = socket_path.parent() {
             fs::create_dir_all(parent).map_err(CallosumSocketServerError::Io)?;
@@ -105,7 +105,7 @@ impl CallosumSocketServer {
             malformed_frame_drops: AtomicU64::new(0),
             broadcast_saturation_drops: AtomicU64::new(0),
             stalled_client_evictions: AtomicU64::new(0),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-hooks"))]
             hooks,
         });
         track_task(
@@ -192,8 +192,9 @@ impl CallosumSocketServer {
         let _ = fs::remove_file(&self.inner.socket_path);
     }
 
-    #[cfg(test)]
-    pub(crate) async fn bind_with_test_hooks(
+    #[cfg(any(test, feature = "test-hooks"))]
+    #[doc(hidden)]
+    pub async fn bind_with_test_hooks(
         socket_path: impl AsRef<Path>,
         hooks: Arc<ServerTestHooks>,
     ) -> Result<Self, CallosumSocketServerError> {
@@ -338,12 +339,12 @@ async fn run_client(
 }
 
 async fn write_client_line(
-    #[cfg_attr(not(test), allow(unused_variables))] inner: &ServerInner,
-    #[cfg_attr(not(test), allow(unused_variables))] id: u64,
+    #[cfg_attr(not(any(test, feature = "test-hooks")), allow(unused_variables))] inner: &ServerInner,
+    #[cfg_attr(not(any(test, feature = "test-hooks")), allow(unused_variables))] id: u64,
     write_half: &mut tokio::net::unix::OwnedWriteHalf,
     line: &[u8],
 ) -> std::io::Result<()> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     if let Some(hooks) = &inner.hooks
         && hooks.blocked_client.load(Ordering::Acquire) == id
     {
@@ -370,7 +371,7 @@ fn queue_broadcast(inner: &ServerInner, envelope: CallosumEnvelope) -> bool {
     }
 }
 
-fn stamp_timestamp(envelope: &mut CallosumEnvelope) {
+pub(crate) fn stamp_timestamp(envelope: &mut CallosumEnvelope) {
     if envelope.ts.is_none() {
         let millis = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -411,24 +412,25 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-#[cfg(test)]
-pub(crate) struct ServerTestHooks {
+#[cfg(any(test, feature = "test-hooks"))]
+#[doc(hidden)]
+pub struct ServerTestHooks {
     blocked_client: AtomicU64,
     write_started: tokio::sync::Notify,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 impl ServerTestHooks {
-    pub(crate) fn block_client(&self, id: u64) {
+    pub fn block_client(&self, id: u64) {
         self.blocked_client.store(id, Ordering::Release);
     }
 
-    pub(crate) async fn wait_for_write(&self) {
+    pub async fn wait_for_write(&self) {
         self.write_started.notified().await;
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 impl Default for ServerTestHooks {
     fn default() -> Self {
         Self {

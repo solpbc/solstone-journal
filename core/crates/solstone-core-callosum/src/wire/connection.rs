@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+#[cfg(any(test, feature = "test-hooks"))]
+use std::sync::atomic::AtomicUsize;
 
 use serde_json::{Map, Value};
 use tokio::io::AsyncWriteExt;
@@ -213,6 +215,20 @@ impl InboundQueues {
     }
 }
 
+#[cfg(any(test, feature = "test-hooks"))]
+struct FrameProgress {
+    count: AtomicUsize,
+    changed: Notify,
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+impl FrameProgress {
+    fn record(&self) {
+        self.count.fetch_add(1, Ordering::AcqRel);
+        self.changed.notify_waiters();
+    }
+}
+
 /// Long-lived, reconnecting Callosum Unix-socket client.
 pub struct CallosumSocketConnection {
     socket_path: PathBuf,
@@ -231,6 +247,8 @@ pub struct CallosumSocketConnection {
     delivered_epoch: u64,
     initial_counters: ConnectionCounters,
     initial_first_attempt: bool,
+    #[cfg(any(test, feature = "test-hooks"))]
+    frames: Arc<FrameProgress>,
 }
 
 impl CallosumSocketConnection {
@@ -305,6 +323,11 @@ impl CallosumSocketConnection {
             delivered_epoch: 0,
             initial_counters: ConnectionCounters::initial(),
             initial_first_attempt: true,
+            #[cfg(any(test, feature = "test-hooks"))]
+            frames: Arc::new(FrameProgress {
+                count: AtomicUsize::new(0),
+                changed: Notify::new(),
+            }),
         }
     }
 
@@ -351,6 +374,8 @@ impl CallosumSocketConnection {
             malformed_frame_drops: Arc::clone(&self.malformed_frame_drops),
             counters,
             first_attempt,
+            #[cfg(any(test, feature = "test-hooks"))]
+            frames: Arc::clone(&self.frames),
         })));
     }
 
@@ -451,14 +476,31 @@ impl CallosumSocketConnection {
         self.outbound_saturation_drops.load(Ordering::Acquire)
     }
 
-    #[cfg(test)]
-    pub(crate) fn has_pending_priority(&self) -> bool {
+    #[cfg(any(test, feature = "test-hooks"))]
+    #[doc(hidden)]
+    pub fn has_pending_priority(&self) -> bool {
         self.queues.priority.pending()
     }
 
-    #[cfg(test)]
-    pub(crate) fn is_running(&self) -> bool {
+    #[cfg(any(test, feature = "test-hooks"))]
+    #[doc(hidden)]
+    pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Acquire)
+    }
+
+    #[cfg(any(test, feature = "test-hooks"))]
+    #[doc(hidden)]
+    pub async fn wait_for_frames_processed(&self, at_least: usize) {
+        timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if self.frames.count.load(Ordering::Acquire) >= at_least {
+                    return;
+                }
+                self.frames.changed.notified().await;
+            }
+        })
+        .await
+        .expect("frames should be processed");
     }
 
     pub async fn stop(&mut self) {
@@ -524,6 +566,8 @@ struct ConnectionRun {
     malformed_frame_drops: Arc<AtomicU64>,
     counters: ConnectionCounters,
     first_attempt: bool,
+    #[cfg(any(test, feature = "test-hooks"))]
+    frames: Arc<FrameProgress>,
 }
 
 async fn run_connection(run: ConnectionRun) {
@@ -537,6 +581,8 @@ async fn run_connection(run: ConnectionRun) {
         malformed_frame_drops,
         mut counters,
         mut first_attempt,
+        #[cfg(any(test, feature = "test-hooks"))]
+        frames,
     } = run;
     let mut stream: Option<ConnectedStream> = None;
     let mut buffer = Vec::new();
@@ -677,24 +723,39 @@ async fn run_connection(run: ConnectionRun) {
                 Ok(ReadFrame::Envelope(message)) => {
                     if !queues.try_send_envelope(counters.generation, counters.epoch, message) {
                         if enter_gap(&queues, &mut counters, &mut gapped, CallosumGapReason::InboundSaturated, 1) {
+                            #[cfg(any(test, feature = "test-hooks"))]
+                            frames.record();
                             break;
                         }
                         resume_current = stream.is_some();
                     }
+                    #[cfg(any(test, feature = "test-hooks"))]
+                    frames.record();
                 }
-                Ok(ReadFrame::Whitespace) => {}
+                Ok(ReadFrame::Whitespace) => {
+                    #[cfg(any(test, feature = "test-hooks"))]
+                    frames.record();
+                }
                 Ok(ReadFrame::Malformed) | Ok(ReadFrame::InvalidUtf8) => {
                     let _ = malformed_frame_drops.fetch_add(1, Ordering::AcqRel);
                     if enter_gap(&queues, &mut counters, &mut gapped, CallosumGapReason::MalformedFrameDropped, 1) {
+                        #[cfg(any(test, feature = "test-hooks"))]
+                        frames.record();
                         break;
                     }
                     resume_current = stream.is_some();
+                    #[cfg(any(test, feature = "test-hooks"))]
+                    frames.record();
                 }
                 Ok(ReadFrame::Eof) | Err(_) => {
                     if enter_gap(&queues, &mut counters, &mut gapped, CallosumGapReason::Disconnected, 1) {
+                        #[cfg(any(test, feature = "test-hooks"))]
+                        frames.record();
                         break;
                     }
                     stream = None;
+                    #[cfg(any(test, feature = "test-hooks"))]
+                    frames.record();
                 }
             },
         }

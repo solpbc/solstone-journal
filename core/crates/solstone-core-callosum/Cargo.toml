@@ -11,9 +11,12 @@ publish = false
 
 [features]
 default = []
-# Live-wire behavioral tests (AC7-18):
+# Deterministic in-crate wire tests (continuity markers, AC6 framing,
+# AC8/9/11/17/18 in-memory counterparts):
 # cargo test --manifest-path core/Cargo.toml -p solstone-core-callosum --features wire --locked --lib wire::tests::
 wire = ["dep:tokio"]
+# Hidden door for live-socket wire tests. Production crates must not enable this.
+test-hooks = []
 # Cross-language Callosum differentials (AC19-22), run by `make check-differentials`.
 differential = ["wire"]
 
@@ -32,6 +35,11 @@ solstone-core-system = { workspace = true }
 name = "callosum_cross_process"
 path = "tests/callosum_cross_process.rs"
 required-features = ["differential"]
+
+[[test]]
+name = "callosum_wire_component"
+path = "tests/callosum_wire_component.rs"
+required-features = ["test-hooks", "wire"]
 
 [[test]]
 name = "registry_conformance"

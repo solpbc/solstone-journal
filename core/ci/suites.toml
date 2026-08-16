@@ -1911,6 +1911,19 @@ required_features = ["differential"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-callosum::callosum_wire_component"
+package = "solstone-core-callosum"
+target = "callosum_wire_component"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks", "wire"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-callosum::cogitate_wire_conformance"
 package = "solstone-core-callosum"
 target = "cogitate_wire_conformance"
