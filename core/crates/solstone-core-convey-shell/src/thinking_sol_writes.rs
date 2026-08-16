@@ -39,18 +39,29 @@ pub(crate) async fn api_set_name(
         .filter(|value| truthy(value))
         .cloned()
         .unwrap_or_else(|| json!("chosen"));
-    let today = Utc::now().format("%Y-%m-%d").to_string();
 
     match mutate_journal_config_cas(&journal.0, |config| {
-        let mut agent = object_or_default(config.get("agent"), default_agent);
+        let mut agent = match object_or_default(config.get("agent"), "agent", default_agent) {
+            Ok(agent) => agent,
+            Err(detail) => {
+                return JournalConfigMutation {
+                    changed: false,
+                    value: Err(detail),
+                };
+            }
+        };
+        let today = Utc::now().format("%Y-%m-%d").to_string();
         let changed = apply_set_name(&mut agent, name, status.clone(), &today);
         config.insert("agent".to_owned(), Value::Object(agent.clone()));
         JournalConfigMutation {
             changed,
-            value: agent,
+            value: Ok(agent),
         }
     }) {
-        Ok(transaction) => Json(Value::Object(transaction.value)).into_response(),
+        Ok(transaction) => match transaction.value {
+            Ok(agent) => Json(Value::Object(agent)).into_response(),
+            Err(detail) => operation_failed(detail),
+        },
         Err(CasConfigMutationError::Timeout(_)) => identity_busy(),
         Err(error) => operation_failed(error.to_string()),
     }
@@ -58,7 +69,15 @@ pub(crate) async fn api_set_name(
 
 pub(crate) async fn api_reset(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
     match mutate_journal_config_cas(&journal.0, |config| {
-        let mut agent = object_or_default(config.get("agent"), default_agent);
+        let mut agent = match object_or_default(config.get("agent"), "agent", default_agent) {
+            Ok(agent) => agent,
+            Err(detail) => {
+                return JournalConfigMutation {
+                    changed: false,
+                    value: Err(detail),
+                };
+            }
+        };
         let previous = agent.clone();
         agent.insert("name".to_owned(), json!("sol"));
         agent.insert("name_status".to_owned(), json!("default"));
@@ -66,10 +85,13 @@ pub(crate) async fn api_reset(Extension(journal): Extension<Arc<JournalRoot>>) -
         config.insert("agent".to_owned(), Value::Object(agent.clone()));
         JournalConfigMutation {
             changed: agent != previous,
-            value: agent,
+            value: Ok(agent),
         }
     }) {
-        Ok(transaction) => Json(Value::Object(transaction.value)).into_response(),
+        Ok(transaction) => match transaction.value {
+            Ok(agent) => Json(Value::Object(agent)).into_response(),
+            Err(detail) => operation_failed(detail),
+        },
         Err(CasConfigMutationError::Timeout(_)) => identity_busy(),
         Err(error) => operation_failed(error.to_string()),
     }
@@ -89,7 +111,15 @@ pub(crate) async fn api_set_owner(
     let bio = body.get("bio").cloned().unwrap_or(Value::Null);
 
     match mutate_journal_config_cas(&journal.0, |config| {
-        let mut identity = object_or_default(config.get("identity"), Map::new);
+        let mut identity = match object_or_default(config.get("identity"), "identity", Map::new) {
+            Ok(identity) => identity,
+            Err(detail) => {
+                return JournalConfigMutation {
+                    changed: false,
+                    value: Err(detail),
+                };
+            }
+        };
         let previous = identity.clone();
         identity.insert("name".to_owned(), json!(name));
         if !bio.is_null() {
@@ -98,10 +128,13 @@ pub(crate) async fn api_set_owner(
         config.insert("identity".to_owned(), Value::Object(identity.clone()));
         JournalConfigMutation {
             changed: identity != previous,
-            value: (),
+            value: Ok(()),
         }
     }) {
-        Ok(_) => Json(json!({"name": name, "bio": response_bio(&bio)})).into_response(),
+        Ok(transaction) => match transaction.value {
+            Ok(()) => Json(json!({"name": name, "bio": response_bio(&bio)})).into_response(),
+            Err(detail) => operation_failed(detail),
+        },
         Err(CasConfigMutationError::Timeout(_)) => identity_busy(),
         Err(error) => operation_failed(error.to_string()),
     }
@@ -118,6 +151,9 @@ pub(crate) async fn api_sol_init(Extension(journal): Extension<Arc<JournalRoot>>
 }
 
 async fn json_body(request: Request) -> Result<Map<String, Value>, Response> {
+    // Unlike Flask's get_json(silent=True), this does not inspect Content-Type.
+    // Raw-byte parsing matches speakers_cli_owner; checking only here would be
+    // inconsistent, and the released `sol call sol` client sends application/json.
     let bytes = to_bytes(request.into_body(), usize::MAX)
         .await
         .map_err(|_| missing_body("Unable to read request body"))?;
@@ -127,7 +163,7 @@ async fn json_body(request: Request) -> Result<Map<String, Value>, Response> {
     serde_json::from_slice::<Value>(&bytes)
         .ok()
         .and_then(|value| value.as_object().cloned())
-        .ok_or_else(|| invalid_json())
+        .ok_or_else(invalid_json)
 }
 
 fn required<'a>(body: &'a Map<String, Value>, field: &str) -> Option<&'a str> {
@@ -148,12 +184,14 @@ fn default_agent() -> Map<String, Value> {
 
 fn object_or_default(
     value: Option<&Value>,
+    key: &str,
     default: impl FnOnce() -> Map<String, Value>,
-) -> Map<String, Value> {
-    value
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_else(default)
+) -> Result<Map<String, Value>, String> {
+    match value {
+        Some(Value::Object(value)) => Ok(value.clone()),
+        None => Ok(default()),
+        Some(_) => Err(format!("{key} must be a JSON object")),
+    }
 }
 
 fn apply_set_name(agent: &mut Map<String, Value>, name: &str, status: Value, today: &str) -> bool {
@@ -220,6 +258,9 @@ fn identity_busy() -> Response {
 }
 
 fn operation_failed(detail: String) -> Response {
+    // Flask lets non-timeout exceptions reach its generic handler. Native routes
+    // return internal_error instead; only Timeout maps to identity_busy, so no
+    // other failure can be misreported as busy.
     error_envelope(
         "internal_error",
         "I couldn't update my identity right now.",

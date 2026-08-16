@@ -52,6 +52,18 @@ fn journal_config(fixture: &Fixture) -> Value {
         .expect("config JSON")
 }
 
+fn utc_day() -> String {
+    Utc::now().format("%Y-%m-%d").to_string()
+}
+
+fn assert_named_date_is_current(value: &Value, before: &str, after: &str) {
+    let named_date = value["named_date"].as_str().expect("named date");
+    assert!(
+        named_date == before || named_date == after,
+        "named_date {named_date} was neither {before} nor {after}"
+    );
+}
+
 #[cfg(unix)]
 fn history_line_count(path: &std::path::Path) -> usize {
     fs::read_to_string(path)
@@ -88,14 +100,13 @@ async fn set_name_matches_validation_and_status_truthiness() {
         (r#"{"name":"Nova","status":123}"#, json!(123)),
         (r#"{"name":"Nova","status":["x"]}"#, json!(["x"])),
     ] {
+        let before = utc_day();
         let (status, value) = post("/app/thinking/api/set-name", body, &fixture).await;
+        let after = utc_day();
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(value["name"], json!("Nova"));
         assert_eq!(value["name_status"], expected_status);
-        assert_eq!(
-            value["named_date"],
-            json!(Utc::now().format("%Y-%m-%d").to_string())
-        );
+        assert_named_date_is_current(&value, &before, &after);
     }
 
     for (body, code, detail) in [
@@ -290,8 +301,6 @@ async fn sol_init_append_failure_rolls_back_new_seed_files() {
 
 #[tokio::test]
 async fn populated_different_mutations_preserve_siblings_and_reference_responses() {
-    let today = Utc::now().format("%Y-%m-%d").to_string();
-
     let fixture = Fixture::new();
     write_json(
         &fixture.0.join("config/journal.json"),
@@ -306,19 +315,22 @@ async fn populated_different_mutations_preserve_siblings_and_reference_responses
             },
         }),
     );
-    let expected_agent = json!({
-        "name": "Nova",
-        "name_status": "chosen",
-        "named_date": today,
-        "sibling": {"keep": true},
-    });
+    let before = utc_day();
     let (status, value) = post(
         "/app/thinking/api/set-name",
         r#"{"name":"Nova","status":"chosen"}"#,
         &fixture,
     )
     .await;
+    let after = utc_day();
     assert_eq!(status, StatusCode::OK);
+    assert_named_date_is_current(&value, &before, &after);
+    let expected_agent = json!({
+        "name": "Nova",
+        "name_status": "chosen",
+        "named_date": value["named_date"],
+        "sibling": {"keep": true},
+    });
     assert_eq!(value, expected_agent);
     assert_eq!(journal_config(&fixture)["agent"], expected_agent);
     assert_eq!(journal_config(&fixture)["root_sibling"], json!(true));
@@ -407,33 +419,110 @@ async fn absent_owned_state_persists_only_when_the_mutation_changes_something() 
         &fixture.0.join("config/journal.json"),
         json!({"setup": {"completed_at": 1}}),
     );
+    let before = utc_day();
     let (status, value) = post(
         "/app/thinking/api/set-name",
         r#"{"name":"Nova","status":"chosen"}"#,
         &fixture,
     )
     .await;
+    let after = utc_day();
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        value,
-        json!({
-            "name": "Nova",
-            "name_status": "chosen",
-            "named_date": Utc::now().format("%Y-%m-%d").to_string(),
-        })
-    );
+    assert_named_date_is_current(&value, &before, &after);
+    assert_eq!(value["name"], json!("Nova"));
+    assert_eq!(value["name_status"], json!("chosen"));
     assert_eq!(journal_config(&fixture)["agent"], value);
+}
+
+#[tokio::test]
+async fn non_object_owned_state_is_refused_without_replacement() {
+    for (path, body, config, key) in [
+        (
+            "/app/thinking/api/set-name",
+            r#"{"name":"Nova"}"#,
+            json!({"setup":{"completed_at":1},"agent":7}),
+            "agent",
+        ),
+        (
+            "/app/thinking/api/reset",
+            "not-json",
+            json!({"setup":{"completed_at":1},"agent":7}),
+            "agent",
+        ),
+        (
+            "/app/thinking/api/set-owner",
+            r#"{"name":"Ada"}"#,
+            json!({"setup":{"completed_at":1},"identity":7}),
+            "identity",
+        ),
+    ] {
+        let fixture = Fixture::new();
+        let config_path = fixture.0.join("config/journal.json");
+        write_json(&config_path, config);
+        let bytes = fs::read(&config_path).expect("config bytes");
+
+        let (status, value) = post(path, body, &fixture).await;
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{path}");
+        assert_eq!(value["reason_code"], json!("internal_error"), "{path}");
+        assert_eq!(
+            value["detail"],
+            json!(format!("{key} must be a JSON object"))
+        );
+        assert_eq!(
+            fs::read(&config_path).expect("config bytes"),
+            bytes,
+            "{path}"
+        );
+    }
 }
 
 #[cfg(unix)]
 #[tokio::test]
-async fn populated_same_mutations_leave_bytes_inode_and_lock_mtime_unchanged() {
+async fn populated_same_set_name_leaves_bytes_inode_and_lock_mtime_unchanged() {
+    let before = utc_day();
+    let fixture = Fixture::new();
+    let config_path = fixture.0.join("config/journal.json");
+    write_json(
+        &config_path,
+        json!({"setup":{"completed_at":1},"agent":{"name":"Nova","name_status":"chosen","named_date":before,"sibling":true}}),
+    );
+    let sentinel = fixture.0.join("config/journal.json.lock");
+    fs::write(&sentinel, b"sentinel").expect("sentinel");
+    let bytes = fs::read(&config_path).expect("bytes");
+    let inode = fs::metadata(&config_path).expect("metadata").ino();
+    let sentinel_mtime = fs::metadata(&sentinel)
+        .expect("sentinel metadata")
+        .modified()
+        .expect("mtime");
+
+    let (status, _value) = post(
+        "/app/thinking/api/set-name",
+        r#"{"name":"Nova","status":"chosen"}"#,
+        &fixture,
+    )
+    .await;
+    let after = utc_day();
+    if before != after {
+        return;
+    }
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fs::read(&config_path).expect("bytes"), bytes);
+    assert_eq!(fs::metadata(&config_path).expect("metadata").ino(), inode);
+    assert_eq!(
+        fs::metadata(&sentinel)
+            .expect("sentinel metadata")
+            .modified()
+            .expect("mtime"),
+        sentinel_mtime
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn populated_same_reset_and_set_owner_leave_bytes_inode_and_lock_mtime_unchanged() {
     for (path, body, config) in [
-        (
-            "/app/thinking/api/set-name",
-            format!(r#"{{"name":"Nova","status":"chosen"}}"#,),
-            json!({"setup":{"completed_at":1},"agent":{"name":"Nova","name_status":"chosen","named_date":Utc::now().format("%Y-%m-%d").to_string(),"sibling":true}}),
-        ),
         (
             "/app/thinking/api/reset",
             "not-json".to_owned(),
