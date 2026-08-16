@@ -579,9 +579,10 @@ AC 4, compat boundary untouched:
 
 AC 5, loopback bind assertion:
 
-- `core/crates/solstone-core-sol-link/src/serve.rs::status_request_does_not_open_carrier_but_ordinary_request_does`
-  starts on a reserved free port, connects to `127.0.0.1:{port}`, and checks the
-  peer socket fact that is observable from the connection.
+- `core/crates/solstone-core-sol-link/tests/sol_link_serving.rs::status_request_does_not_open_carrier_but_ordinary_request_does`
+  binds the loopback listener on port `0`, connects to the OS-assigned
+  `handle.port()` at `127.0.0.1`, and checks the peer socket fact that is
+  observable from the connection.
 - `core/crates/solstone-core-sol-link/src/serve.rs::solstone_adapter_adds_no_wildcard_bind_host_literal`
   asserts the new adapter code adds no wildcard or named-loopback bind host.
 - Limit: in a single-interface container, connect-and-check alone can be weak;
@@ -598,7 +599,7 @@ AC 7, status path local only:
 
 - `core/crates/solstone-core-sol-link/src/serve.rs::bridge_policy_status_is_local_and_attribution_hook_is_empty`
   asserts the nine-key JSON status body and no attribution output.
-- `core/crates/solstone-core-sol-link/src/serve.rs::status_request_does_not_open_carrier_but_ordinary_request_does`.
+- `core/crates/solstone-core-sol-link/tests/sol_link_serving.rs::status_request_does_not_open_carrier_but_ordinary_request_does`.
   Use a counting fake `CarrierOpener`; status request asserts zero opens and
   local JSON response headers.
 - The same fixture drives a non-status request and asserts the carrier-open
@@ -614,7 +615,7 @@ AC 8, bundle selection including ambiguous labels:
 
 AC 9, streaming latch:
 
-- `core/crates/solstone-core-sol-link/src/serve.rs::proxied_response_streams_before_upstream_completion`.
+- `core/crates/solstone-core-sol-link/tests/sol_link_serving.rs::proxied_response_streams_before_upstream_completion`.
   Start a real in-process `journal_bridge::start` with a local SPL transport
   peer. The peer writes the response head and a first body chunk beginning with
   byte `A`, then blocks on a test-owned latch before writing `B` and closing.
