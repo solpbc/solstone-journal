@@ -464,11 +464,17 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
     for (key, value) in lane.vars {
         command.env(key, value);
     }
-    if let Some(ar) = lane.vars.iter().find(|(key, _)| key.starts_with("AR_")) {
-        command.env("AR", ar.1);
+    if let Some((_, ar)) = lane.vars.iter().find(|(key, _)| key.starts_with("AR_")) {
+        command.env("AR", ar);
     }
-    if let Some(ranlib) = lane.vars.iter().find(|(key, _)| key.starts_with("RANLIB_")) {
-        command.env("RANLIB", ranlib.1);
+    if let Some((_, ranlib)) = lane.vars.iter().find(|(key, _)| key.starts_with("RANLIB_")) {
+        command.env("RANLIB", ranlib);
+    }
+    if let Some((_, cc)) = lane.vars.iter().find(|(key, _)| key.starts_with("CC_")) {
+        command.env("CC", cc);
+    }
+    if let Some((_, cxx)) = lane.vars.iter().find(|(key, _)| key.starts_with("CXX_")) {
+        command.env("CXX", cxx);
     }
     let output = command
         .output()
