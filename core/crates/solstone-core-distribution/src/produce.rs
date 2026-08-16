@@ -221,7 +221,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         &["worktree", "remove", "--force", &checkout.to_string_lossy()],
     );
     let _ = fs::remove_dir_all(&checkout);
-    if let Err(error) = git_run(
+    git_run(
         repo,
         &[
             "worktree",
@@ -230,9 +230,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             &checkout.to_string_lossy(),
             &commit,
         ],
-    ) {
-        return Err(error);
-    }
+    )?;
 
     let result = (|| {
         let host = rustc_host()?;
@@ -284,16 +282,22 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             format!("--remap-path-prefix={}=/target", target_dir.display()),
             format!("--remap-path-prefix={sysroot}=/rustc"),
         ];
-        let musl_rustflags = {
-            let mut flags = remap.clone();
-            flags.extend(["-C".to_owned(), "link-arg=--build-id=none".to_owned()]);
-            flags.join("\x1f")
-        };
-        let gnu_rustflags = {
-            let mut flags = remap;
-            flags.extend(["-C".to_owned(), "link-arg=-Wl,--build-id=none".to_owned()]);
-            flags.join("\x1f")
-        };
+        let musl_rustflags = [
+            remap[0].clone(),
+            remap[1].clone(),
+            remap[2].clone(),
+            "-C".to_owned(),
+            "link-arg=--build-id=none".to_owned(),
+        ]
+        .join("\x1f");
+        let gnu_rustflags = [
+            remap[0].clone(),
+            remap[1].clone(),
+            remap[2].clone(),
+            "-C".to_owned(),
+            "link-arg=-Wl,--build-id=none".to_owned(),
+        ]
+        .join("\x1f");
 
         let mut artifacts = BTreeMap::new();
         let musl_bins = bins_for_lane(&inventory, &args.target_id, "musl-static");
