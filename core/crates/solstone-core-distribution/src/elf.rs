@@ -311,10 +311,11 @@ pub fn inspect_gnu_helper(
         Some(version) => unexpected.push(format!("GLIBC_{}.{}", version.0, version.1)),
         None => unexpected.push("missing GLIBC verneed".to_owned()),
     }
-    if let Some(expected) = runpath {
-        if info.runpath.as_deref() != Some(expected) && info.rpath.as_deref() != Some(expected) {
-            unexpected.push(format!("DT_RUNPATH {:?}", info.runpath));
-        }
+    if let Some(expected) = runpath
+        && info.runpath.as_deref() != Some(expected)
+        && info.rpath.as_deref() != Some(expected)
+    {
+        unexpected.push(format!("DT_RUNPATH {:?}", info.runpath));
     }
     for name in needed {
         if !info.needed.iter().any(|item| item == name) {
@@ -468,11 +469,13 @@ fn build_gnu(
         &mut bytes,
         phoff,
         ph,
-        PT_LOAD,
-        5,
-        0,
-        total as u64,
-        total as u64,
+        PhdrSpec {
+            p_type: PT_LOAD,
+            flags: 5,
+            offset: 0,
+            filesz: total as u64,
+            memsz: total as u64,
+        },
     );
     ph += 1;
     if let Some(interp_bytes) = &interp_bytes {
@@ -480,11 +483,13 @@ fn build_gnu(
             &mut bytes,
             phoff,
             ph,
-            PT_INTERP,
-            4,
-            interp_off as u64,
-            interp_bytes.len() as u64,
-            interp_bytes.len() as u64,
+            PhdrSpec {
+                p_type: PT_INTERP,
+                flags: 4,
+                offset: interp_off as u64,
+                filesz: interp_bytes.len() as u64,
+                memsz: interp_bytes.len() as u64,
+            },
         );
         bytes[interp_off..interp_off + interp_bytes.len()].copy_from_slice(interp_bytes);
         ph += 1;
@@ -493,11 +498,13 @@ fn build_gnu(
         &mut bytes,
         phoff,
         ph,
-        PT_DYNAMIC,
-        6,
-        dyn_off as u64,
-        dynamic.len() as u64,
-        dynamic.len() as u64,
+        PhdrSpec {
+            p_type: PT_DYNAMIC,
+            flags: 6,
+            offset: dyn_off as u64,
+            filesz: dynamic.len() as u64,
+            memsz: dynamic.len() as u64,
+        },
     );
 
     // Patch DT_STRTAB to the file offset (vaddr == offset for this fixture).
@@ -510,7 +517,7 @@ fn build_gnu(
     bytes[shstr_off..shstr_off + shstrtab.len()].copy_from_slice(shstrtab);
 
     let mut shndx = 0;
-    write_shdr(&mut bytes, shoff, shndx, 0, 0, 0, 0, 0, 0, 0);
+    write_shdr(&mut bytes, shoff, shndx, ShdrSpec::default());
     shndx += 1;
     let mut name = 1;
     if interp.is_some() {
@@ -518,13 +525,14 @@ fn build_gnu(
             &mut bytes,
             shoff,
             shndx,
-            name,
-            1,
-            interp_off as u64,
-            interp_len as u64,
-            0,
-            0,
-            1,
+            ShdrSpec {
+                name,
+                sh_type: 1,
+                offset: interp_off as u64,
+                size: interp_len as u64,
+                entsize: 1,
+                ..ShdrSpec::default()
+            },
         );
         shndx += 1;
         name += ".interp".len() as u32 + 1;
@@ -534,13 +542,14 @@ fn build_gnu(
         &mut bytes,
         shoff,
         shndx,
-        name,
-        SHT_STRTAB,
-        dynstr_off as u64,
-        dynstr.len() as u64,
-        0,
-        0,
-        1,
+        ShdrSpec {
+            name,
+            sh_type: SHT_STRTAB,
+            offset: dynstr_off as u64,
+            size: dynstr.len() as u64,
+            entsize: 1,
+            ..ShdrSpec::default()
+        },
     );
     shndx += 1;
     name += ".dynstr".len() as u32 + 1;
@@ -548,13 +557,15 @@ fn build_gnu(
         &mut bytes,
         shoff,
         shndx,
-        name,
-        SHT_DYNAMIC,
-        dyn_off as u64,
-        dynamic.len() as u64,
-        dynstr_ndx as u32,
-        0,
-        16,
+        ShdrSpec {
+            name,
+            sh_type: SHT_DYNAMIC,
+            offset: dyn_off as u64,
+            size: dynamic.len() as u64,
+            link: dynstr_ndx as u32,
+            entsize: 16,
+            ..ShdrSpec::default()
+        },
     );
     shndx += 1;
     name += ".dynamic".len() as u32 + 1;
@@ -563,13 +574,15 @@ fn build_gnu(
             &mut bytes,
             shoff,
             shndx,
-            name,
-            SHT_GNU_VERNEED,
-            ver_off as u64,
-            verneed.len() as u64,
-            dynstr_ndx as u32,
-            1,
-            0,
+            ShdrSpec {
+                name,
+                sh_type: SHT_GNU_VERNEED,
+                offset: ver_off as u64,
+                size: verneed.len() as u64,
+                link: dynstr_ndx as u32,
+                info: 1,
+                ..ShdrSpec::default()
+            },
         );
         shndx += 1;
         name += ".gnu.version_r".len() as u32 + 1;
@@ -578,13 +591,14 @@ fn build_gnu(
         &mut bytes,
         shoff,
         shndx,
-        name,
-        SHT_STRTAB,
-        shstr_off as u64,
-        shstrtab.len() as u64,
-        0,
-        0,
-        1,
+        ShdrSpec {
+            name,
+            sh_type: SHT_STRTAB,
+            offset: shstr_off as u64,
+            size: shstrtab.len() as u64,
+            entsize: 1,
+            ..ShdrSpec::default()
+        },
     );
     bytes
 }
@@ -607,31 +621,28 @@ fn elf_hash(name: &str) -> u32 {
     hash
 }
 
-fn write_phdr(
-    bytes: &mut [u8],
-    phoff: usize,
-    index: usize,
+struct PhdrSpec {
     p_type: u32,
     flags: u32,
     offset: u64,
     filesz: u64,
     memsz: u64,
-) {
+}
+
+fn write_phdr(bytes: &mut [u8], phoff: usize, index: usize, spec: PhdrSpec) {
     let off = phoff + index * ELF64_PHDR;
-    write_u32(bytes, off, p_type);
-    write_u32(bytes, off + 4, flags);
-    write_u64(bytes, off + 8, offset);
-    write_u64(bytes, off + 16, offset);
-    write_u64(bytes, off + 24, offset);
-    write_u64(bytes, off + 32, filesz);
-    write_u64(bytes, off + 40, memsz);
+    write_u32(bytes, off, spec.p_type);
+    write_u32(bytes, off + 4, spec.flags);
+    write_u64(bytes, off + 8, spec.offset);
+    write_u64(bytes, off + 16, spec.offset);
+    write_u64(bytes, off + 24, spec.offset);
+    write_u64(bytes, off + 32, spec.filesz);
+    write_u64(bytes, off + 40, spec.memsz);
     write_u64(bytes, off + 48, 8);
 }
 
-fn write_shdr(
-    bytes: &mut [u8],
-    shoff: usize,
-    index: usize,
+#[derive(Default)]
+struct ShdrSpec {
     name: u32,
     sh_type: u32,
     offset: u64,
@@ -639,16 +650,18 @@ fn write_shdr(
     link: u32,
     info: u32,
     entsize: u64,
-) {
+}
+
+fn write_shdr(bytes: &mut [u8], shoff: usize, index: usize, spec: ShdrSpec) {
     let off = shoff + index * ELF64_SHDR;
-    write_u32(bytes, off, name);
-    write_u32(bytes, off + 4, sh_type);
-    write_u64(bytes, off + 16, offset);
-    write_u64(bytes, off + 24, offset);
-    write_u64(bytes, off + 32, size);
-    write_u32(bytes, off + 40, link);
-    write_u32(bytes, off + 44, info);
-    write_u64(bytes, off + 56, entsize);
+    write_u32(bytes, off, spec.name);
+    write_u32(bytes, off + 4, spec.sh_type);
+    write_u64(bytes, off + 16, spec.offset);
+    write_u64(bytes, off + 24, spec.offset);
+    write_u64(bytes, off + 32, spec.size);
+    write_u32(bytes, off + 40, spec.link);
+    write_u32(bytes, off + 44, spec.info);
+    write_u64(bytes, off + 56, spec.entsize);
 }
 
 fn align4(value: usize) -> usize {

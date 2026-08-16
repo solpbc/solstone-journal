@@ -69,9 +69,7 @@ pub fn plan_from_inventory(inventory: &Inventory) -> Result<CleanroomPlan, Strin
     let mut unexpected = BTreeSet::new();
     let mut subjects = Vec::new();
     for subject in &inventory.cleanroom.subject {
-        if let Err(error) = refuse_unpinned(subject) {
-            return Err(error);
-        }
+        refuse_unpinned(subject)?;
         if subject.network != SUBJECT_NETWORK {
             unexpected.insert(format!("{} network {}", subject.id, subject.network));
         }
@@ -144,9 +142,7 @@ pub fn bind_loopback() -> io::Result<(TcpListener, u16)> {
 pub fn serve_directory(listener: TcpListener, root: &Path) -> io::Result<()> {
     for incoming in listener.incoming() {
         let stream = incoming?;
-        if let Err(error) = handle_get(stream, root) {
-            return Err(error);
-        }
+        handle_get(stream, root)?;
     }
     Ok(())
 }

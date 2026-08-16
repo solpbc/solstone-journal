@@ -44,7 +44,7 @@ fn control_tar(meta: DebMeta<'_>) -> io::Result<Vec<u8>> {
     let mut builder = Builder::new(Vec::new());
     append_regular(&mut builder, "control", control.as_bytes(), 0o644)?;
     builder.finish()?;
-    Ok(builder.into_inner()?)
+    builder.into_inner()
 }
 
 fn data_tar(stage: &Path) -> io::Result<Vec<u8>> {
@@ -62,7 +62,7 @@ fn data_tar(stage: &Path) -> io::Result<Vec<u8>> {
         append_regular(&mut builder, &archive, &bytes, mode)?;
     }
     builder.finish()?;
-    Ok(builder.into_inner()?)
+    builder.into_inner()
 }
 
 pub fn list_deb(path: &Path) -> io::Result<Vec<String>> {

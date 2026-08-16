@@ -68,10 +68,7 @@ pub fn musl_lane_env(
         &zig_target,
         wrapper_dir,
         host_triple,
-        None,
-        None,
-        None,
-        None,
+        LaneOptional::default(),
     )
 }
 
@@ -89,11 +86,21 @@ pub fn gnu_lane_env(
         &target.zig_gnu,
         wrapper_dir,
         host_triple,
-        Some(bindgen_args(target, zig_lib)),
-        Some(include),
-        helper_lib,
-        Some(zig_lib),
+        LaneOptional {
+            bindgen: Some(bindgen_args(target, zig_lib)),
+            describe_include: Some(include),
+            helper_lib,
+            zig_lib: Some(zig_lib),
+        },
     )
+}
+
+#[derive(Default)]
+struct LaneOptional<'a> {
+    bindgen: Option<String>,
+    describe_include: Option<PathBuf>,
+    helper_lib: Option<&'a Path>,
+    zig_lib: Option<&'a Path>,
 }
 
 fn lane_env(
@@ -101,10 +108,7 @@ fn lane_env(
     zig_target: &str,
     wrapper_dir: &Path,
     host_triple: &str,
-    bindgen: Option<String>,
-    describe_include: Option<PathBuf>,
-    helper_lib: Option<&Path>,
-    zig_lib: Option<&Path>,
+    optional: LaneOptional<'_>,
 ) -> Result<LaneEnv, LaneError> {
     let env_target = env_target(triple);
     let env_upper = env_target.to_uppercase();
@@ -145,13 +149,13 @@ fn lane_env(
         format!("RANLIB_{env_target}"),
         ranlib_wrapper.display().to_string(),
     );
-    if let Some(zig_lib) = zig_lib {
+    if let Some(zig_lib) = optional.zig_lib {
         vars.insert("ZIG_LIB_DIR".to_owned(), zig_lib.display().to_string());
     }
-    if let Some(bindgen) = bindgen {
+    if let Some(bindgen) = optional.bindgen {
         vars.insert(format!("BINDGEN_EXTRA_CLANG_ARGS_{env_target}"), bindgen);
     }
-    if let Some(include) = describe_include {
+    if let Some(include) = optional.describe_include {
         vars.insert(
             format!("CFLAGS_{env_target}"),
             format!("-I{}", include.display()),
@@ -161,7 +165,7 @@ fn lane_env(
             format!("zig cc -target {zig_target} -I{}", include.display()),
         );
     }
-    if let Some(helper_lib) = helper_lib {
+    if let Some(helper_lib) = optional.helper_lib {
         vars.insert("ORT_PREFER_DYNAMIC_LINK".to_owned(), "true".to_owned());
         vars.insert("ORT_LIB_PATH".to_owned(), helper_lib.display().to_string());
     }

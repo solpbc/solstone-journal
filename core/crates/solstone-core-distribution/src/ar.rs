@@ -34,7 +34,7 @@ fn write_member<W: Write>(out: &mut W, name: &str, body: &[u8]) -> io::Result<()
     out.write_all(&header)?;
     out.write_all(body)?;
     if body.len() % 2 == 1 {
-        out.write_all(&[b'\n'])?;
+        out.write_all(b"\n")?;
     }
     Ok(())
 }
