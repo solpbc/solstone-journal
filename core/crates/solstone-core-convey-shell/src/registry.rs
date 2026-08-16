@@ -228,7 +228,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: None,
         facets_enabled: false,
         has_background: true,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "thinking",

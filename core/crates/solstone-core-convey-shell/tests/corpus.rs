@@ -467,11 +467,14 @@ async fn an_unconverted_app_refusal_is_never_a_success_status() {
         "/app/activities/workspace",
         // `/app/tokens/background` was here until 2026-08-15, when the tokens
         // registry entry was removed and its usage surface moved natively under
-        // stats. The INVARIANT is unchanged -- an unconverted app's refusal is
-        // never 2xx -- only this example went stale. Replaced with a
-        // still-unconverted app rather than deleted, so the assertion keeps
-        // covering a background path.
-        "/app/support/background",
+        // stats; `/app/support/background` replaced it and went stale the same
+        // day, when the support conversion landed and made that path serve the
+        // app's real backdrop -- support is the only app in its plate whose
+        // background is real content rather than a 404. The INVARIANT is
+        // unchanged -- an unconverted app's refusal is never 2xx -- only these
+        // examples went stale. Replaced with a still-unconverted app rather than
+        // deleted, so the assertion keeps covering a background path.
+        "/app/activities/background",
         // `/app/sol/background` was here until 2026-08-15, when Sol's
         // registry entry was removed after its identity mutations moved
         // natively under Thinking. The INVARIANT is unchanged -- an
