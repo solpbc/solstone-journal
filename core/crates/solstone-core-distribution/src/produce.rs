@@ -233,6 +233,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
 
     let result = (|| {
         let host = rustc_host()?;
+        let sysroot = command_stdout(Path::new("rustc"), &["--print", "sysroot"])?;
         let spec = onnx_runtime::spec_for(&args.target_id).ok_or_else(|| {
             ProduceError::new(format!(
                 "missing required:\n  onnx runtime {}",
@@ -244,8 +245,25 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         onnx_runtime::write_staged_runtime(spec, &staged_runtime, &onnx_dir)
             .map_err(|error| ProduceError::new(error.to_string()))?;
 
-        let musl_env = lanes::musl_lane_env(target, &wrappers, &host)
+        let mut musl_env = lanes::musl_lane_env(target, &wrappers, &host)
             .map_err(|error| ProduceError::new(error.to_string()))?;
+        let rust_lld = PathBuf::from(&sysroot)
+            .join("lib/rustlib")
+            .join(&host)
+            .join("bin/rust-lld");
+        if !rust_lld.is_file() {
+            return Err(ProduceError::new(format!(
+                "missing required:\n  rust-lld {}",
+                rust_lld.display()
+            )));
+        }
+        musl_env.vars.insert(
+            format!(
+                "CARGO_TARGET_{}_LINKER",
+                lanes::env_target(&target.triple_musl).to_uppercase()
+            ),
+            rust_lld.display().to_string(),
+        );
         let gnu_env = lanes::gnu_lane_env(
             target,
             &wrappers,
@@ -258,7 +276,6 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         write_wrappers(&musl_env).map_err(|error| ProduceError::new(error.to_string()))?;
         write_wrappers(&gnu_env).map_err(|error| ProduceError::new(error.to_string()))?;
 
-        let sysroot = command_stdout(Path::new("rustc"), &["--print", "sysroot"])?;
         let rustflags = [
             format!("--remap-path-prefix={}=/source", checkout.display()),
             format!("--remap-path-prefix={}=/target", target_dir.display()),
@@ -487,13 +504,33 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
         .map_err(|error| ProduceError::new(format!("cargo: {error}")))?;
     if !output.status.success() {
         return Err(ProduceError::new(format!(
-            "cargo {} failed:\n{}",
+            "cargo {} failed:\n{}\n{}",
             lane.triple,
-            String::from_utf8_lossy(&output.stderr)
+            String::from_utf8_lossy(&output.stderr),
+            cargo_rendered_errors(&String::from_utf8_lossy(&output.stdout))
         )));
     }
     bind_cargo_json(&String::from_utf8_lossy(&output.stdout))
         .map_err(|error| ProduceError::new(error.to_string()))
+}
+
+fn cargo_rendered_errors(stdout: &str) -> String {
+    let mut messages = Vec::new();
+    for line in stdout.lines() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if value.get("reason").and_then(|item| item.as_str()) != Some("compiler-message") {
+            continue;
+        }
+        if let Some(rendered) = value
+            .pointer("/message/rendered")
+            .and_then(|item| item.as_str())
+        {
+            messages.push(rendered.to_owned());
+        }
+    }
+    messages.join("")
 }
 
 fn merge_artifacts(into: &mut BTreeMap<ArtifactId, PathBuf>, from: BTreeMap<ArtifactId, PathBuf>) {
