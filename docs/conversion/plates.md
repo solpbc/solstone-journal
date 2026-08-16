@@ -886,13 +886,23 @@ Model and runtime **artifact management** — what an owner's machine downloads,
 
 ## `P-distribution`
 
-**How the journal reaches a machine.** The artifact an owner installs, the layout inside it, and what installing it is allowed to require of the host.
+**How the journal reaches a machine.** ⛔ **Three things, not one: the tool that PRODUCES the artifacts, the artifacts themselves, and the path an owner installs them by.** All three are inside this plate.
 
 🆕 **Added 2026-08-16 by operator ruling.**
 
-🔴 **The boundary, and the only reason this plate exists:** ⛔ **a released artifact carries no dependency on a language runtime the product does not itself ship.** An owner installs the journal and runs it; nothing has to be on the machine first.
+🔴 **The boundary, and the only reason this plate exists:** ⛔ **no Python anywhere in producing, publishing or installing the product.** Not in the artifact, and not in the machinery that builds it. An owner installs the journal and runs it; nothing has to be on the machine first.
+
+⚠ **This is narrower than the general build-tooling rule and deliberately so.** *"Python in build-time tooling is fine"* holds across the tree; ⛔ **it does not hold here.** A distribution produced by a Python toolchain cannot be verified by an instrument that has no interpreter, so the producer and the artifact stand or fall together.
 
 🔴 **A done-condition satisfiable on a host that already has Python does not test this plate.** Every other boundary is graded on a dev checkout or an installed wheel, and both of those already have an interpreter — which is how the delivery layer stayed unowned while every plate went green. ✅ **The instrument runs on a host with no interpreter present, against a control on a host that has one**, so a zero can be distinguished from a blind probe.
+
+### The producer
+
+**One Rust binary over a declarative inventory, emitting every container from one staged tree.** ⛔ Not a script per format, and ⛔ not a Python build backend wrapping native output.
+
+✅ **The shape already exists in this workspace and is days old** — `solstone-ci` (`core/crates/solstone-core-repository-contracts/src/bin/solstone-ci.rs`) drives `core/ci/*.toml` and is invoked from `make` as `cargo run -p … --bin solstone-ci`. The distribution producer is that pattern pointed at packaging.
+
+✅ **Every dependency it needs is already a workspace dependency, used in shipped crates:** `tar` and `flate2` both read and write gzipped tarballs today (`solstone-core-transfer/src/export.rs` writes, `solstone-core-local/src/install/archive.rs` reads); `sha2` digests; `ureq` fetches. ⛔ **No external packaging toolchain is permitted** — a `.deb` is an `ar` container over two tarballs the workspace can already write, and an `.rpm` is produced by a pure-Rust builder. `dpkg-deb`, `rpmbuild`, `maturin`, `setuptools` and `twine` are all outside this plate.
 
 ### The artifact
 
@@ -921,6 +931,16 @@ share/  notices and licences
 **Containers, all derived from the one tree:** `.tar.gz` is the primitive · `.deb` and `.rpm` relocate it under a system prefix and put the three launchers on `PATH` · macOS takes the same tree signed and notarized. ⛔ Windows is unsupported and is not a container.
 
 🔴 **A Python wheel is not one of them.** A native core delivered inside a `.whl`, unpacked by a Python package manager into `site-packages`, and gated at runtime on Python package metadata is a native core wearing Python packaging. ⛔ **Thinness is not the test; delivery is.**
+
+### The install path
+
+**The default path is a one-command bootstrap that assumes nothing but a POSIX shell and a fetcher**, in the shape every native tool ships: detect `(os, arch)`, fetch that tree, verify its digest, extract it under a prefix, put `bin/` on `PATH`.
+
+⚠ **A shell bootstrap is not a violation of this plate — an interpreter the product does not ship is.** `sh` is on every supported host by definition; Python is not. ⛔ Keep the shell to detect-fetch-verify-extract; anything that needs judgment belongs in a Rust verb the tree already carries.
+
+✅ **The origin is already ours and already covenant-enforced.** `solstone-core-artifact-download` pins a single-element allow-list (`updates.solstone.app`), refuses any other host with `HostRefused` and any `http` scheme with `InsecureScheme`, **per redirect hop**. ⛔ Distribution does not introduce a second origin, and a fetch path that cannot be expressed through that primitive is a design error rather than an exception.
+
+⛔ **The owner-facing install text is part of this plate, not documentation about it.** `INSTALL.md`, `solstone-core-check`'s closing line, and every doctor remediation string name an installer; they are wrong the moment the container changes, and they reach owners before anything else here does.
 
 ### Carry forward, non-negotiable
 
