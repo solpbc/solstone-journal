@@ -371,6 +371,23 @@ First-run journal establishment. **Creates the identity root** that `S:device-li
 
 ---
 
+## Tier 1 — distribution
+
+`P-distribution` connects through two strands. See [`plates.md`](plates.md) § `P-distribution` for the artifact layout and the carry-forward invariants.
+
+| Strand | For | Owner | Tier |
+|---|---|---|---|
+| `S:*:distribution` | **what the artifact must contain** — every binary, shared library and data asset a plate needs on an owner's machine, and where in the tree it is placed | `P-distribution` | fixture |
+| `S:distribution:system-models` | **the ship-versus-fetch boundary** — which artifacts travel inside the release and which the owner's machine downloads afterwards | `P-system-models` | schema |
+
+🔴 **The first strand is the release inventory, and rule 1 puts the contract at `P-distribution`'s end** — it is the one-to-many end, it serves every plate that needs something on disk, and it cannot negotiate a different layout per plate. ⚠ **Today that contract exists only in fragments** — `scripts/release_package_inventory.py`, `scripts/check_wheel_contents.py`, and a `dependencies` list in each of thirteen `packages/*/pyproject.toml` — which is the two-places-own-one-thing class this rule makes unrepresentable rather than merely detectable.
+
+⛔ **An inventory is an allow-list, never a directory listing.** A default release build produces test binaries and stub helpers alongside the product ones; see the carry-forward in `plates.md`.
+
+⚠ **The second strand is where a name is decided rather than defaulted.** `P-system-models` already owns *what an owner's machine downloads, where it comes from, and whether the host can run it*, and it enforces a single-element origin allow-list inside one fetch primitive. The three bundled speaker/VAD graphs (`wespeaker-resnet34-256` · `pyannote-segmentation-3.0` · `silero_vad_v6`) are the boundary case: **every install needs all three**, they are digest-pinned in the consuming crate (`solstone-core-transcribe/src/model_assets.rs`), and they are today delivered as a Python wheel. 🔴 **Shipping them and fetching them are both defensible; having a Python package own the answer is not.** The contract at this strand's end says which, per artifact, and a rebuild that leaves it implicit reproduces the same nobody's-contract shape one layer down.
+
+---
+
 ## Tier 1 — retention
 
 `P-journal-retention` connects through five strands, each a different contract:
