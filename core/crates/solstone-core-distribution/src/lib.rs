@@ -675,6 +675,12 @@ fn provenance_refuses_dirty_stale_and_wrong_commit() {
     let json = r#"{"reason":"compiler-artifact","package_id":"solstone-core 1.0.22","target":{"name":"solstone-core","kind":["bin"]},"filenames":["/work/x86_64-unknown-linux-musl/release/solstone-core"]}"#;
     let artifacts = provenance::bind_cargo_json(json).unwrap();
     assert_eq!(artifacts.len(), 1);
+    let modern = r#"{"reason":"compiler-artifact","package_id":"path+file:///repo/core/crates/solstone-core-journal-bin#1.0.22","target":{"name":"solstone-core-journal","kind":["bin"]},"filenames":["/work/x86_64-unknown-linux-musl/release/solstone-core-journal"]}"#;
+    let modern_artifacts = provenance::bind_cargo_json(modern).unwrap();
+    assert_eq!(
+        modern_artifacts.keys().next().unwrap().package,
+        "solstone-core-journal-bin"
+    );
 }
 
 #[cfg(test)]

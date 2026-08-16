@@ -102,8 +102,7 @@ pub fn bind_cargo_json(lines: &str) -> Result<BTreeMap<ArtifactId, PathBuf>, Pro
         let package = message
             .package_id
             .as_deref()
-            .and_then(|id| id.split_once(' '))
-            .map(|(name, _)| name.to_owned())
+            .map(|id| package_from_id(id, &bin))
             .unwrap_or_else(|| bin.clone());
         let Some(filenames) = message.filenames else {
             continue;
@@ -128,4 +127,28 @@ pub fn bind_cargo_json(lines: &str) -> Result<BTreeMap<ArtifactId, PathBuf>, Pro
         }
     }
     Ok(artifacts)
+}
+
+fn package_from_id(id: &str, bin: &str) -> String {
+    if let Some((name, rest)) = id.split_once(' ')
+        && !name.contains(['/', '\\', '+', '#'])
+        && rest
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_digit() || ch == '(')
+    {
+        return name.to_owned();
+    }
+    if let Some((path, after_hash)) = id.rsplit_once('#') {
+        let hashed = after_hash.split('@').next().unwrap_or(after_hash);
+        if !hashed.is_empty() && hashed.chars().next().is_some_and(|ch| !ch.is_ascii_digit()) {
+            return hashed.to_owned();
+        }
+        if let Some(name) = path.rsplit('/').next()
+            && !name.is_empty()
+        {
+            return name.to_owned();
+        }
+    }
+    bin.to_owned()
 }
