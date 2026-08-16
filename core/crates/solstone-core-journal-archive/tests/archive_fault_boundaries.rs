@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#![allow(clippy::disallowed_methods, clippy::disallowed_types)]
-
 mod common;
 
 use std::fs::{self, File};
@@ -30,6 +28,7 @@ const DESCENDANT_BARRIER_KIND: &str = "SOLSTONE_ARCHIVE_DESCENDANT_BARRIER_KIND"
 const DESCENDANT_MEMBER: &str = "imports/import-1/source.bin";
 const STDERR_CHILD: &str = "SOLSTONE_ARCHIVE_STDERR_CHILD";
 
+#[allow(clippy::disallowed_methods)]
 fn nested_journal(temporary: &TempDir, bytes: &[u8]) -> PathBuf {
     let root = temporary.path().join("outer/inner/journal");
     let source = root.join(DESCENDANT_MEMBER);
@@ -51,6 +50,7 @@ fn noisy_bytes(length: usize) -> Vec<u8> {
         .collect()
 }
 
+#[allow(clippy::disallowed_methods)]
 fn encode_source_fixture(name: &str) -> (TempDir, ArchiveSource, PathBuf) {
     let temporary = TempDir::new(name);
     let root = temporary.path().join("journal");
@@ -262,6 +262,7 @@ fn descendant_stat_to_open_swaps_are_bounded_and_changed() {
 }
 
 #[test]
+#[allow(clippy::disallowed_methods)]
 #[ignore = "subprocess fixture for controlled_failures_never_reach_zip_drop_stderr"]
 fn stderr_oracle_child() {
     match std::env::var(STDERR_CHILD).as_deref() {

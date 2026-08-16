@@ -68,6 +68,7 @@ struct TraceState {
     successful: Vec<AcquisitionPrimitive>,
     attempted: Vec<AcquisitionPrimitive>,
     barrier: Option<(usize, Box<dyn FnOnce()>)>,
+    #[cfg(test)]
     barrier_fired: bool,
     fault: Option<InjectedFault>,
     fault_consumed: bool,
@@ -76,8 +77,11 @@ struct TraceState {
 #[cfg(any(test, feature = "test-hooks"))]
 #[derive(Debug)]
 pub(crate) struct TraceOutcome {
+    #[cfg(test)]
     pub(crate) successful: Vec<AcquisitionPrimitive>,
+    #[cfg(test)]
     pub(crate) attempted: Vec<AcquisitionPrimitive>,
+    #[cfg(test)]
     pub(crate) barrier_fired: bool,
     pub(crate) fault_consumed: bool,
 }
@@ -137,6 +141,7 @@ struct DescendantTraceState {
     attempted: Vec<DescendantEvent>,
     successful: Vec<DescendantEvent>,
     fault: Option<DescendantFault>,
+    #[cfg(test)]
     fault_consumed: bool,
     barrier: Option<DescendantBarrier>,
     barrier_fired: bool,
@@ -145,8 +150,11 @@ struct DescendantTraceState {
 #[cfg(any(test, feature = "test-hooks"))]
 #[derive(Debug)]
 pub(crate) struct DescendantTraceOutcome {
+    #[cfg(test)]
     pub(crate) attempted: Vec<DescendantEvent>,
+    #[cfg(test)]
     pub(crate) successful: Vec<DescendantEvent>,
+    #[cfg(test)]
     pub(crate) fault_consumed: bool,
     pub(crate) barrier_fired: bool,
 }
@@ -200,6 +208,7 @@ pub(crate) fn trace_scenario<T>(
             successful: Vec::new(),
             attempted: Vec::new(),
             barrier,
+            #[cfg(test)]
             barrier_fired: false,
             fault,
             fault_consumed: false,
@@ -217,8 +226,11 @@ pub(crate) fn trace_scenario<T>(
     (
         result,
         TraceOutcome {
+            #[cfg(test)]
             successful: state.successful,
+            #[cfg(test)]
             attempted: state.attempted,
+            #[cfg(test)]
             barrier_fired: state.barrier_fired,
             fault_consumed: state.fault_consumed,
         },
@@ -258,7 +270,10 @@ fn record_success(primitive: AcquisitionPrimitive) {
         state.successful.push(primitive);
         (state.barrier.as_ref().map(|(position, _)| *position) == Some(state.successful.len()))
             .then(|| {
-                state.barrier_fired = true;
+                #[cfg(test)]
+                {
+                    state.barrier_fired = true;
+                }
                 state.barrier.take().expect("pending acquisition barrier").1
             })
     });
@@ -294,6 +309,7 @@ pub(crate) fn trace_descendants<T>(
             attempted: Vec::new(),
             successful: Vec::new(),
             fault,
+            #[cfg(test)]
             fault_consumed: false,
             barrier,
             barrier_fired: false,
@@ -311,8 +327,11 @@ pub(crate) fn trace_descendants<T>(
     (
         result,
         DescendantTraceOutcome {
+            #[cfg(test)]
             attempted: state.attempted,
+            #[cfg(test)]
             successful: state.successful,
+            #[cfg(test)]
             fault_consumed: state.fault_consumed,
             barrier_fired: state.barrier_fired,
         },
@@ -350,7 +369,10 @@ fn attempt_descendant(event: &DescendantEvent) -> Result<(), Errno> {
                 && fault.ordinal == ordinal
         }) {
             let fault = state.fault.take().expect("matching descendant fault");
-            state.fault_consumed = true;
+            #[cfg(test)]
+            {
+                state.fault_consumed = true;
+            }
             return Err(fault.error);
         }
         Ok(())

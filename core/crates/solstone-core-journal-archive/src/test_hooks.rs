@@ -38,11 +38,6 @@ pub fn run_with_acquisition_fault<T>(
         error: Errno::from_raw(raw_errno),
     };
     let (result, outcome) = trace_scenario(None, Some(fault), op);
-    let _ = (
-        &outcome.successful,
-        &outcome.attempted,
-        outcome.barrier_fired,
-    );
     (result, outcome.fault_consumed)
 }
 
@@ -63,11 +58,6 @@ pub fn run_with_descendant_barrier<T>(
         callback: Box::new(callback),
     };
     let (result, outcome) = trace_descendants(None, Some(barrier), op);
-    let _ = (
-        &outcome.attempted,
-        &outcome.successful,
-        outcome.fault_consumed,
-    );
     (result, outcome.barrier_fired)
 }
 

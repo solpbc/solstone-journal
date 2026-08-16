@@ -186,6 +186,7 @@ struct TestTraceEvent {
 
 #[cfg(any(test, feature = "test-hooks"))]
 pub(crate) enum TestSourceAction {
+    #[cfg(test)]
     RemoveBeforeOpen {
         member: String,
         path: std::path::PathBuf,
@@ -196,6 +197,7 @@ pub(crate) enum TestSourceAction {
         path: std::path::PathBuf,
         length: u64,
     },
+    #[cfg(test)]
     AppendBeforeFinalRevalidate {
         path: std::path::PathBuf,
         bytes: Vec<u8>,
@@ -218,7 +220,9 @@ struct TestControl {
     action: Option<TestSourceAction>,
     preflight_fault: Option<TestPreflightOperation>,
     body_write_failure: Option<String>,
+    #[cfg(test)]
     finish_calls: usize,
+    #[cfg(test)]
     abort_calls: usize,
 }
 
@@ -232,7 +236,9 @@ impl TestControl {
             action: None,
             preflight_fault: None,
             body_write_failure: None,
+            #[cfg(test)]
             finish_calls: 0,
+            #[cfg(test)]
             abort_calls: 0,
         }
     }
@@ -260,29 +266,12 @@ pub(crate) fn install_encode_control(
 
 #[cfg(feature = "test-hooks")]
 pub(crate) fn encode_injected_operation_fired() -> bool {
-    TEST_CONTROL.with(|control| {
-        let control = control.borrow();
-        let _ = (
-            control.boundary,
-            control.finish_calls,
-            control.abort_calls,
-            control.preflight_fault,
-        );
-        control.trace.iter().any(|event| event.faulted)
-    })
+    TEST_CONTROL.with(|control| control.borrow().trace.iter().any(|event| event.faulted))
 }
 
 #[cfg(feature = "test-hooks")]
 pub(crate) fn reset_encode_control() {
     TEST_CONTROL.with(|control| *control.borrow_mut() = TestControl::new());
-    let _ = TestSourceAction::RemoveBeforeOpen {
-        member: String::new(),
-        path: std::path::PathBuf::new(),
-    };
-    let _ = TestSourceAction::AppendBeforeFinalRevalidate {
-        path: std::path::PathBuf::new(),
-        bytes: Vec::new(),
-    };
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -367,6 +356,7 @@ fn test_run_source_action(member: &ArchiveMemberName, copied: Option<u64>) {
     TEST_CONTROL.with(|control| {
         let mut control = control.borrow_mut();
         let should_run = match control.action.as_ref() {
+            #[cfg(test)]
             Some(TestSourceAction::RemoveBeforeOpen { member: target, .. }) => {
                 copied.is_none() && target == member.as_str()
             }
@@ -375,12 +365,16 @@ fn test_run_source_action(member: &ArchiveMemberName, copied: Option<u64>) {
                 copied: target_copied,
                 ..
             }) => copied == Some(*target_copied) && target == member.as_str(),
+            #[cfg(test)]
             Some(TestSourceAction::AppendBeforeFinalRevalidate { .. }) | None => false,
+            #[cfg(not(test))]
+            None => false,
         };
         if !should_run {
             return;
         }
         match control.action.take().expect("matched source action") {
+            #[cfg(test)]
             TestSourceAction::RemoveBeforeOpen { path, .. } => {
                 std::fs::remove_file(path).expect("remove source before open");
             }
@@ -392,15 +386,17 @@ fn test_run_source_action(member: &ArchiveMemberName, copied: Option<u64>) {
                     .set_len(length)
                     .expect("truncate source before read");
             }
+            #[cfg(test)]
             TestSourceAction::AppendBeforeFinalRevalidate { .. } => unreachable!(),
         }
     });
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
-#[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 fn test_before_final_revalidate() {
     test_set_boundary(TestBoundary::FinalRevalidate);
+    #[cfg(test)]
+    #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
     TEST_CONTROL.with(|control| {
         let mut control = control.borrow_mut();
         if !matches!(
@@ -428,6 +424,7 @@ fn test_before_final_revalidate() {}
 #[cfg(any(test, feature = "test-hooks"))]
 fn test_before_abort() {
     test_set_boundary(TestBoundary::Abort);
+    #[cfg(test)]
     TEST_CONTROL.with(|control| control.borrow_mut().abort_calls += 1);
 }
 
@@ -437,6 +434,7 @@ fn test_before_abort() {}
 #[cfg(any(test, feature = "test-hooks"))]
 fn test_before_finish() {
     test_set_boundary(TestBoundary::Finish);
+    #[cfg(test)]
     TEST_CONTROL.with(|control| control.borrow_mut().finish_calls += 1);
 }
 
