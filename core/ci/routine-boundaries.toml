@@ -232,235 +232,7 @@ id = "solstone-core-check::core/crates/solstone-core-check/src/lib.rs::tests::js
 id = "solstone-core-check::core/crates/solstone-core-check/src/lib.rs::tests::vulkan_gpu_uses_shared_cpu_placement_decision::native"
 
 [[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_assets_command_without_arguments::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_brain_verbs::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_each_grab_boolean_option_individually::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_each_spl_service_flag::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_grab_option_forms_duplicates_and_contiguous_trailing_options::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_grab_zero_through_many_positional_tokens::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_counts_and_read_verbs::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_rebuild_edges_composed_with_rescan::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_rescan_file::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_rescan_full_reset_and_override::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_search_with_filters_and_options::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_without_operation_flags::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_config_read_and_commit::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_path::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_path_create::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_path_create_override::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_path_override::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_path_override_create::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_local_install_parakeet_verbs::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_local_plan_connect_and_generate::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_local_probe_nvidia::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_native_indexer_mutation_verbs::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_spl_service::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_spl_service_verbose_and_debug_flags_in_either_order::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_version_flag::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::check_rejects_unknown_and_help_flags_with_verb_results::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::classifies_cogitate_arguments_without_usage_errors::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::classifies_generate_arguments_without_usage_errors::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::cortex_help_matches_argparse_body_verbatim::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::cortex_nonsense_is_detail_carrying_usage_error::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::doctor_rejects_unknown_and_help_flags_with_verb_results::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::grab_end_of_options_and_help_short_circuit::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_detached_values_match_argparse_optional_classification::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_end_of_options_cannot_activate_later_help::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_long_options_use_argparse_unique_prefixes::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_non_utf8_arguments_are_usage_carriers::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_preserves_value_order_and_argparse_help_precedence::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_short_clusters_match_argparse_consumption::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::identity_help_and_usage_are_scope_specific_carriers::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::indexer::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::install_provider_rejects_unknown_and_serves_help_with_verb_results::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::navigate_help_is_a_carrier_before_parsing::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::navigate_malformed_arguments_are_usage_carriers::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::navigate_non_utf8_arguments_are_usage_carriers::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_bare_health_flags_and_health_logs_grammar::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_body_apple_preview_and_save_without_ambiguous_flags::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_body_oura_connect_and_sync_without_ambiguous_authority::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_body_rebuild_options_and_rejects_ambiguous_forms::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_contract_leaves_before_execution::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_convey_options_and_rejects_invalid_ports::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_facet_candidates_arguments::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_identity_grammar_with_click_value_spellings::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_install_models_options_and_rejects_conflicts::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_install_provider_name_without_validating_it::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_navigate_arguments_in_either_option_position::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_schedule_arguments_before_execution::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_sense_batch_options_before_any_runtime_touch::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_speaker_resolve_verbs::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_speaker_transcript_write_without_arguments::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_supervisor_journal_override::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_supervisor_stack_options_in_any_order::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_top_flags_and_uses_command_specific_usage::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_transfer_send_options_and_rejects_ambiguous_forms::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_duplicate_or_unknown_spl_service_flags::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_grab_malformed_and_interspersed_argv::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_incomplete_unknown_and_extra_spl_args::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_invalid_brain_args::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_invalid_supervisor_stack_options::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_spl_service_extra_args::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::sense_event_options_keep_jobs_as_an_inert_parse_value::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::sense_help_and_invalid_combinations_have_verb_owned_outcomes::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::service_args_foundation_has_no_execution_or_python_bridge::process"
-
-[[findings]]
 id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::service_args_foundation_has_no_execution_or_python_bridge::scheduling"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::service_logs_keeps_ignored_non_utf8_opaque_but_rejects_route_bytes::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::service_logs_selects_follow_anywhere_and_ignores_other_trailing_tokens::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::supervisor_lifecycle_parse_failures_return_redirect::process"
-
-[[findings]]
-id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::transcribe_intercepts_help_and_discards_logging_flags::process"
 
 [[findings]]
 id = "solstone-core-cogitate-runtime::core/crates/solstone-core-cogitate-runtime/src/tests.rs::temp_journal::process"
@@ -787,9 +559,6 @@ id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thi
 id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking_sol_reads_contract.rs::ac11_synthetic_process_launch_is_rejected::host-tool"
 
 [[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking_sol_reads_contract.rs::ac11_synthetic_process_launch_is_rejected::process"
-
-[[findings]]
 id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking_sol_reads_contract.rs::ac11_synthetic_process_launch_is_rejected::scheduling"
 
 [[findings]]
@@ -973,16 +742,7 @@ id = "solstone-core-depict::core/crates/solstone-core-depict/src/lib.rs::tests::
 id = "solstone-core-describe::core/crates/solstone-core-describe/src/detect.rs::tests::native_install_query_covers_all_provider_worlds_at_the_given_journal::process"
 
 [[findings]]
-id = "solstone-core-describe::core/crates/solstone-core-describe/src/main.rs::tests::explicit_describe_mode_is_required_and_parses_arguments::process"
-
-[[findings]]
-id = "solstone-core-describe::core/crates/solstone-core-describe/src/main.rs::tests::owner_debug_and_verbose_flags_are_noops::process"
-
-[[findings]]
 id = "solstone-core-describe::core/crates/solstone-core-describe/src/merge.rs::tests::artifact_reader_preserves_raw_lines_and_marks_bad_rows::clock"
-
-[[findings]]
-id = "solstone-core-describe::core/crates/solstone-core-describe/src/request.rs::tests::category_rendering_uses_embedded_metadata::process"
 
 [[findings]]
 id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/disk_space.rs::tests::uses_the_retained_ten_gib_threshold_and_staged_resolution::host-tool"
@@ -1576,43 +1336,16 @@ id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/coher
 id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/coherence.rs::tests::new::process"
 
 [[findings]]
-id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::evaluate_args_classifies_root_grammar::process"
-
-[[findings]]
-id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::evaluate_args_preserves_non_utf8_owner_argv::process"
-
-[[findings]]
-id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::evaluate_args_recognizes_processes_and_preserves_owner_argv::process"
-
-[[findings]]
 id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::every_python_process_spec_builds_exact_bootstrap_argv::scheduling"
 
 [[findings]]
 id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::native_process_specs_bypass_python_with_exact_argv::scheduling"
 
 [[findings]]
-id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::non_process_categories_never_invoke_the_spawner::process"
-
-[[findings]]
 id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::non_process_categories_never_invoke_the_spawner::scheduling"
 
 [[findings]]
 id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::spawn::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/notify_handler.rs::tests::failing_sink_collapses_to_send_failure::process"
-
-[[findings]]
-id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/notify_handler.rs::tests::help_matches_argparse_bytes::process"
-
-[[findings]]
-id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/notify_handler.rs::tests::message_only_emits_minimal_notification_line::process"
-
-[[findings]]
-id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/notify_handler.rs::tests::no_sink_collapses_to_send_failure::process"
-
-[[findings]]
-id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/notify_handler.rs::tests::run_notify_case::process"
 
 [[findings]]
 id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/runner.rs::tests::new::clock"
@@ -1963,33 +1696,6 @@ id = "solstone-core-observe-audio::core/crates/solstone-core-observe-audio/src/d
 id = "solstone-core-observe-audio::core/crates/solstone-core-observe-audio/src/sidecar.rs::tests::temporary_path::process"
 
 [[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/command.rs::tests::accepts_json_on_both_sides_of_verb::process"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/command.rs::tests::reconcile_is_dry_run_unless_commit_is_explicit::process"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::dry_run_does_not_modify_observer_tree::process"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::dry_run_snapshot_keeps_every_path_size_and_mtime::process"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::errors_have_python_messages::process"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::reconcile_commit_keeps_oldest_sums_stats_and_prints_truthy_duplicates::process"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::reconcile_commit_omits_duplicates_line_when_counter_is_absent::process"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::rename_and_revoke_json_shapes_and_action_params_match_python::process"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::rename_revoke_and_reconcile_retain_every_unowned_field::process"
-
-[[findings]]
 id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::root::clock"
 
 [[findings]]
@@ -2075,9 +1781,6 @@ id = "solstone-core-records-web::core/crates/solstone-core-records-web/src/journ
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/ci.rs::tests::fixture::native"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/ci.rs::tests::routine_boundary_detects_new_risky_test_and_only_shrinks_deliberately::process"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_input_failure_is_not_misreported_as_a_broken_verifier::host-tool"
@@ -2221,16 +1924,10 @@ id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-c
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/retention_client_contracts.rs::retention_client_has_no_unapproved_workspace_dependents::process"
 
 [[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/retention_client_contracts.rs::retention_client_source_has_one_bounded_process_path::process"
-
-[[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/retention_client_contracts.rs::retention_client_source_has_one_bounded_process_path::scheduling"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/schedule_read_only_architecture.rs::schedule_read_path_has_no_spawn_or_ambient_reach::host-tool"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/schedule_read_only_architecture.rs::schedule_read_path_has_no_spawn_or_ambient_reach::process"
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/service_legacy_gate_purity.rs::service_legacy_evidence_is_standalone_and_has_one_named_gate::host-tool"
@@ -2249,9 +1946,6 @@ id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-c
 
 [[findings]]
 id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/stats_dispatch_audit.rs::ac18_rejects_forbidden_spawn_mutation_at_each_stats_graph_seam::host-tool"
-
-[[findings]]
-id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/stats_dispatch_audit.rs::ac18_rejects_forbidden_spawn_mutation_at_each_stats_graph_seam::process"
 
 [[findings]]
 id = "solstone-core-retention-client::core/crates/solstone-core-retention-client/src/lib.rs::tests::per_target_bytes_is_measured_from_an_assumed_capacity_target_outcome::clock"
@@ -2329,9 +2023,6 @@ id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs
 id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::seam_contention_and_reentrancy::scheduling"
 
 [[findings]]
-id = "solstone-core-settings-web::core/crates/solstone-core-settings-web/src/build_contract.rs::ac15_settings_sources_allow_only_bounded_retention_executor_spawn::process"
-
-[[findings]]
 id = "solstone-core-settings-web::core/crates/solstone-core-settings-web/src/build_contract.rs::ac15_settings_sources_allow_only_bounded_retention_executor_spawn::scheduling"
 
 [[findings]]
@@ -2344,55 +2035,16 @@ id = "solstone-core-setup::core/crates/solstone-core-setup/src/args.rs::tests::f
 id = "solstone-core-setup::core/crates/solstone-core-setup/src/clean_uninstall.rs::tests::root::process"
 
 [[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/clean_uninstall.rs::tests::run::process"
-
-[[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/lib.rs::tests::clean_uninstall_narrates_every_step_not_only_the_count::process"
-
-[[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/lib.rs::tests::owner_boundary_prints_dead_end_or_emits_terminal_jsonl_events::process"
-
-[[findings]]
 id = "solstone-core-setup::core/crates/solstone-core-setup/src/lib.rs::tests::root::process"
-
-[[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/lib.rs::tests::run::process"
-
-[[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/lib.rs::tests::wrapper_worktree_detection_uses_executable_install_root_not_caller_directory::process"
 
 [[findings]]
 id = "solstone-core-setup::core/crates/solstone-core-setup/src/manifest.rs::tests::root::process"
 
 [[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::brain_mutates_local_provider_before_skipping_and_warning_keeps_its_distinct_shape::process"
-
-[[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::doctor_jsonl_emits_advisory_warning_fields::process"
-
-[[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::doctor_jsonl_forwards_only_the_documented_doctor_events::process"
-
-[[findings]]
 id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::fixture::process"
 
 [[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::force_reruns_prior_ok_step::process"
-
-[[findings]]
 id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::is_installed::scheduling"
-
-[[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::jsonl_step_events_include_the_documented_command_and_duration::process"
-
-[[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::run::process"
-
-[[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::service_resume_covers_all_five_branches_and_fallthroughs_execute_install::process"
-
-[[findings]]
-id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::skills_failures_continue_and_single_failure_uses_its_exit_code::process"
 
 [[findings]]
 id = "solstone-core-setup::core/crates/solstone-core-setup/src/user_config.rs::tests::temp_root::process"
@@ -2524,13 +2176,7 @@ id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::canoni
 id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::project_root_prefers_installed_package_layout_over_checkout_ancestor::host-tool"
 
 [[findings]]
-id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::service_host_command_moves_to_journal::process"
-
-[[findings]]
 id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::temp_path::clock"
-
-[[findings]]
-id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::unknown_command_is_explicitly_unsupported::process"
 
 [[findings]]
 id = "solstone-core-sol::core/crates/solstone-core-sol/src/skills.rs::tests::mixed_writability_installs_writable_agent_and_reports_unwritable_agent::process"
@@ -2974,9 +2620,6 @@ id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests
 id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::legacy_projections_preserve_queue_count_rules::clock"
 
 [[findings]]
-id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::plan_spawner::process"
-
-[[findings]]
 id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::plan_spawner::scheduling"
 
 [[findings]]
@@ -3013,24 +2656,6 @@ id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests
 id = "solstone-core-system::core/crates/solstone-core-system/src/status_wire.rs::tests::recent::clock"
 
 [[findings]]
-id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::help_and_invalid_top_level_match_owner_program_name::process"
-
-[[findings]]
-id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::inventory_parses_options_help_and_errors::process"
-
-[[findings]]
-id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::log_parser_accepts_interspersed_flags::process"
-
-[[findings]]
-id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::log_parser_matches_help_and_error_boundaries::process"
-
-[[findings]]
-id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::logs_parser_uses_its_own_help_and_integer_errors::process"
-
-[[findings]]
-id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::show_parser_matches_help_and_interspersed_options::process"
-
-[[findings]]
 id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs::tests::colour_is_tty_conditional::clock"
 
 [[findings]]
@@ -3044,9 +2669,6 @@ id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs
 
 [[findings]]
 id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs::tests::table_name_width_uses_code_points::clock"
-
-[[findings]]
-id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/show.rs::tests::prompt_refusals_never_have_a_process_execution_path::process"
 
 [[findings]]
 id = "solstone-core-talent-runtime::core/crates/solstone-core-talent-runtime/src/documents.rs::tests::criterion_11_reads_process_environment_not_request_env::process"
@@ -3283,22 +2905,10 @@ id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/s
 id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::active_distinguishes_missing_and_corrupt::process"
 
 [[findings]]
-id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::move_failures_restart_a_service_stopped_before_the_move::process"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::move_uses_service_bin_to_stop_and_journal_wrapper_bin_to_start::process"
-
-[[findings]]
 id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::new::scheduling"
 
 [[findings]]
 id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::non_strict_resolution_matches_pathlib_for_relative_home_and_missing_paths::process"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::run::process"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::run_move_covers_the_eleven_reference_exit_sites::process"
 
 [[findings]]
 id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::test_root::process"
@@ -3353,12 +2963,6 @@ id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::s
 
 [[findings]]
 id = "solstone-core::core/crates/solstone-core/src/navigate.rs::tests::navigate_exit_codes_are_distinct::scheduling"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/service.rs::tests::launchd_runtime_requires_path_program_and_arguments::process"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/service.rs::tests::runtime_truth_requires_complete_managed_identity::process"
 
 [[findings]]
 id = "solstone-core::core/crates/solstone-core/src/supervisor/tick.rs::tests::app_observation_requires_a_captured_start_and_preserves_poll_outcomes::clock"

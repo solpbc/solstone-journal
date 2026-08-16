@@ -974,7 +974,7 @@ fn risk_patterns() -> &'static [(&'static str, &'static [&'static str])] {
             "network",
             &["TcpListener", "TcpStream", "UdpSocket", "reqwest", "ureq"],
         ),
-        ("process", &["Command", "process ::"]),
+        ("process", &["Command :: new", "process ::"]),
         (
             "native",
             &[
@@ -1138,10 +1138,15 @@ mod tests {
             version: 1,
             findings: Vec::new(),
         };
+        fs::write(
+            temp.path().join("core/crates/a/src/lib.rs"),
+            "#[cfg(test)] mod tests { enum Command { Version } #[test] fn parses_domain_command() { let command = Command::Version; assert!(matches!(command, Command::Version)); } }\n",
+        )
+        .expect("safe domain command");
         assert_eq!(validate_boundary(temp.path(), &clean), Ok(()));
         fs::write(
             temp.path().join("core/crates/a/src/lib.rs"),
-            "#[cfg(test)] mod tests { #[test] fn reaches_host() { std::process::Command::new(\"cargo\"); } }\n",
+            "#[cfg(test)] mod tests { use std::process::Command; #[test] fn reaches_host() { Command::new(\"cargo\"); } }\n",
         )
         .expect("mutate lib");
         let errors = validate_boundary(temp.path(), &clean).expect_err("new risk must red");
