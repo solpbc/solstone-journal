@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+[package]
+name = "solstone-core-distribution"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "solstone-distribution"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+toml_edit = { workspace = true, features = ["serde"] }

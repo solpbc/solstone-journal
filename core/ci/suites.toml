@@ -527,6 +527,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-distribution"
+package = "solstone-core-distribution"
+set = "policy"
+areas = ["repository"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-doctor"
 package = "solstone-core-doctor"
 set = "component"

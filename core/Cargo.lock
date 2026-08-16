@@ -3296,6 +3296,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-distribution"
+version = "1.0.22"
+dependencies = [
+ "serde",
+ "toml_edit",
+]
+
+[[package]]
 name = "solstone-core-doctor"
 version = "1.0.22"
 dependencies = [

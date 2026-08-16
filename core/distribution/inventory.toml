@@ -1,0 +1,254 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+
+version = 1
+product = "solstone-journal"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+
+[artifact]
+basename = "solstone-journal-{version}-linux-{arch}"
+
+[[target]]
+id = "linux-x86_64"
+os = "linux"
+arch = "x86_64"
+deb_arch = "amd64"
+rpm_arch = "x86_64"
+triple_musl = "x86_64-unknown-linux-musl"
+triple_gnu = "x86_64-unknown-linux-gnu"
+zig_gnu = "x86_64-linux-gnu.2.27"
+
+[[target]]
+id = "linux-aarch64"
+os = "linux"
+arch = "aarch64"
+deb_arch = "arm64"
+rpm_arch = "aarch64"
+triple_musl = "aarch64-unknown-linux-musl"
+triple_gnu = "aarch64-unknown-linux-gnu"
+zig_gnu = "aarch64-linux-gnu.2.27"
+
+[[entry]]
+kind = "bin"
+package = "solstone-core"
+bin = "solstone-core"
+dest = "bin/solstone-core"
+mode = 0o755
+lane = "musl-static"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-journal-bin"
+bin = "solstone-core-journal"
+dest = "bin/solstone-core-journal"
+mode = 0o755
+lane = "musl-static"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-sol-bin"
+bin = "solstone-core-sol"
+dest = "bin/solstone-core-sol"
+mode = 0o755
+lane = "musl-static"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-depict"
+bin = "solstone-core-depict"
+dest = "bin/solstone-core-depict"
+mode = 0o755
+lane = "musl-static"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-retention-cli"
+bin = "solstone-retention"
+dest = "bin/solstone-retention"
+mode = 0o755
+lane = "musl-static"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-describe"
+bin = "solstone-core-describe"
+dest = "bin/solstone-core-describe"
+mode = 0o755
+lane = "zig-gnu-2.27"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-speakers-analyze"
+bin = "solstone-core-speakers-analyze"
+dest = "bin/solstone-core-speakers-analyze"
+mode = 0o755
+lane = "zig-gnu-2.27"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "bin"
+package = "solstone-core-vulkan-probe"
+bin = "solstone-core-vulkan-probe"
+dest = "bin/solstone-core-vulkan-probe"
+mode = 0o755
+lane = "zig-gnu-2.27"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "launcher"
+source = "scripts/root-launchers/sol"
+dest = "bin/sol"
+mode = 0o755
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "launcher"
+source = "scripts/root-launchers/solstone"
+dest = "bin/solstone"
+mode = 0o755
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "launcher"
+source = "packages/solstone-journal/scripts/journal"
+dest = "bin/journal"
+mode = 0o755
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "model-asset"
+source = "packages/solstone-journal-models/solstone_journal_models/assets/wespeaker-resnet34-256.onnx"
+dest = "lib/solstone_journal_models/assets/wespeaker-resnet34-256.onnx"
+mode = 0o644
+digest_const = "WESPEAKER_RESNET34_SHA256"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "model-asset"
+source = "packages/solstone-journal-models/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx"
+dest = "lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx"
+mode = 0o644
+digest_const = "PYANNOTE_SEGMENTATION_SHA256"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "model-asset"
+source = "packages/solstone-journal-models/solstone_journal_models/assets/silero_vad_v6.onnx"
+dest = "lib/solstone_journal_models/assets/silero_vad_v6.onnx"
+mode = 0o644
+digest_const = "SILERO_VAD_V6_SHA256"
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "onnx-runtime"
+dest_dir = "lib/solstone-core-speakers-analyze"
+mode = 0o755
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[entry]]
+kind = "copy"
+source = "LICENSE"
+dest = "share/LICENSE"
+mode = 0o644
+targets = ["linux-x86_64", "linux-aarch64"]
+
+[[deny]]
+bin = "solstone-transcribe"
+reason = "product-ish helper; not in the admitted eight; inventory allow-list decides"
+
+[[deny]]
+bin = "solstone-brain"
+reason = "product-ish helper; not in the admitted eight"
+
+[[deny]]
+bin = "solstone-core-pdf"
+reason = "product-ish helper; not in the admitted eight; Linux pdfium leaf stays off this tree"
+
+[[deny]]
+bin = "solstone-core-vad-analyze"
+reason = "product-ish helper; not in the admitted eight; VAD ships inside transcribe/speakers, not this tree"
+
+[[deny]]
+bin = "setup-fixture-journal"
+reason = "test fixture; default release build emits it; never ship"
+
+[[deny]]
+bin = "solstone-describe-detect-stub"
+reason = "test stub; default release build emits it; never ship"
+
+[[deny]]
+bin = "solstone-describe-session-stub"
+reason = "test stub; never ship"
+
+[[deny]]
+bin = "solstone-transcribe-speakers-stub"
+reason = "test stub; never ship"
+
+[[deny]]
+bin = "solstone-transcribe-vad-stub"
+reason = "test stub; never ship"
+
+[[deny]]
+bin = "solstone-generate-one-shot-stub"
+reason = "test stub; never ship"
+
+[[deny]]
+bin = "solstone-generate-session-stub"
+reason = "test stub; never ship"
+
+[[deny]]
+bin = "solstone-core-generate-session-kill-helper"
+reason = "test helper; never ship"
+
+[[deny]]
+bin = "solstone-core-sense-test-handler"
+reason = "test handler; never ship"
+
+[[deny]]
+bin = "solstone-core-system-test-child"
+reason = "test child; never ship"
+
+[[deny]]
+bin = "solstone-system-test-child"
+reason = "test child; never ship"
+
+[[deny]]
+bin = "solstone-resident-fixture"
+reason = "test fixture; never ship"
+
+[[deny]]
+bin = "solstone-core-race-classifier"
+reason = "dev classifier; never ship"
+
+[[deny]]
+bin = "maint-worker-helper"
+reason = "test helper; never ship"
+
+[[deny]]
+bin = "resolve_parity_leaves"
+reason = "test helper; never ship"
+
+[[deny]]
+bin = "solstone-ci"
+reason = "repository tooling; never ship"
+
+[[deny]]
+bin = "solstone-distribution"
+reason = "this producer; never ship inside the product tree"
+
+[[cleanroom.subject]]
+id = "debian-bookworm-no-python"
+image = "debian:bookworm-slim"
+
+[[cleanroom.builder]]
+id = "rust-zig-no-python"
+from_subject = "debian-bookworm-no-python"
+rustc = "1.97.1"
+zig = "0.16.0"

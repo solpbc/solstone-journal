@@ -7,6 +7,9 @@ pub mod ci;
 #[path = "contracts/ci_gate_purity.rs"]
 mod ci_gate_purity;
 #[cfg(test)]
+#[path = "contracts/distribution_payload.rs"]
+mod distribution_payload;
+#[cfg(test)]
 #[path = "contracts/journal_io_deny_policy.rs"]
 mod journal_io_deny_policy;
 #[cfg(test)]

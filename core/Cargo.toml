@@ -85,6 +85,7 @@ members = [
     "crates/solstone-core-pdf",
     "crates/solstone-core-describe",
     "crates/solstone-core-describe-categories",
+    "crates/solstone-core-distribution",
     "crates/solstone-core-grab",
     "crates/solstone-core-observe-audio",
     "crates/solstone-core-depict",
