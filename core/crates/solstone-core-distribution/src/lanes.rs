@@ -112,10 +112,10 @@ fn lane_env(
 ) -> Result<LaneEnv, LaneError> {
     let env_target = env_target(triple);
     let env_upper = env_target.to_uppercase();
-    let cc_wrapper = wrapper_dir.join(format!("{zig_target}-gcc"));
-    let cxx_wrapper = wrapper_dir.join(format!("{zig_target}-g++"));
-    let ar_wrapper = wrapper_dir.join(format!("{zig_target}-ar"));
-    let ranlib_wrapper = wrapper_dir.join(format!("{zig_target}-ranlib"));
+    let cc_wrapper = wrapper_dir.join(format!("{triple}-gcc"));
+    let cxx_wrapper = wrapper_dir.join(format!("{triple}-g++"));
+    let ar_wrapper = wrapper_dir.join(format!("{triple}-ar"));
+    let ranlib_wrapper = wrapper_dir.join(format!("{triple}-ranlib"));
     let mut wrappers = BTreeMap::new();
     wrappers.insert(
         cc_wrapper.display().to_string(),
