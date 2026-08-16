@@ -190,7 +190,29 @@ fn wrapper_script(command: &str, zig_target: &str) -> String {
     match command {
         "ar" | "ranlib" => format!("#!/bin/sh\nexec zig {command} \"$@\"\n"),
         _ => format!(
-            "#!/bin/sh\nexec zig {command} -g -fno-sanitize=all -target {zig_target} \"$@\"\n"
+            r#"#!/bin/sh
+skip=
+n=0
+for arg in "$@"; do
+  if [ -n "$skip" ]; then
+    skip=
+    continue
+  fi
+  case "$arg" in
+    --target=*|-target=*) continue ;;
+    --target|-target) skip=1; continue ;;
+  esac
+  n=$((n+1))
+  eval "a$n=\$arg"
+done
+set --
+i=1
+while [ "$i" -le "$n" ]; do
+  eval "set -- \"\$@\" \"\$a$i\""
+  i=$((i+1))
+done
+exec zig {command} -g -fno-sanitize=all -target {zig_target} "$@"
+"#
         ),
     }
 }
