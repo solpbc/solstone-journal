@@ -10,7 +10,7 @@ use axum::Extension;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use chrono::Local;
-use serde_json::Value;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_shell::authorization_gate::authorized_router;
@@ -105,6 +105,43 @@ fn apply_permanent_tokens_removal_divergence(expected: &mut Value) {
         "frozen shell contains exactly one tokens app"
     );
     apps.retain(|app| app["name"] != "tokens");
+}
+
+/// Permanent documented divergence, introduced 2026-08-15, with no expiry
+/// condition: the frozen corpus permanently records the deleted reference's
+/// `sol` app, whose identity mutations moved natively under Thinking. The
+/// corpus CANNOT be regenerated -- its generator needs a runnable reference
+/// tree and this wave removes it -- so the fixture is a frozen record and the
+/// divergence is absorbed here instead. Because this cannot expire,
+/// narrowness is the safeguard: it is keyed to the one dropped entry and
+/// removes exactly that element. Never generalize this into a rule over app
+/// names, and never retire it.
+fn apply_permanent_sol_removal_divergence(expected: &mut Value) {
+    let apps = expected["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    assert_eq!(
+        apps.iter().filter(|app| app["name"] == "sol").count(),
+        1,
+        "frozen shell contains exactly one sol app"
+    );
+    apps.retain(|app| app["name"] != "sol");
+}
+
+#[test]
+fn permanent_sol_removal_divergence_requires_exactly_one_sol_row() {
+    for (case, mut expected) in [
+        ("zero", json!({"apps": []})),
+        ("two", json!({"apps": [{"name": "sol"}, {"name": "sol"}]})),
+    ] {
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                apply_permanent_sol_removal_divergence(&mut expected);
+            }))
+            .is_err(),
+            "{case} sol rows must fail the narrow divergence"
+        );
+    }
 }
 
 fn apply_permanent_devices_shell_divergence(expected: &mut Value) {
@@ -263,6 +300,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     apply_permanent_devices_shell_divergence(&mut expected);
                     apply_permanent_reflections_drop_divergence(&mut expected);
                     apply_permanent_tokens_removal_divergence(&mut expected);
+                    apply_permanent_sol_removal_divergence(&mut expected);
                 }
                 normalize(&mut actual, &journal.0.display().to_string(), "");
                 normalize(&mut expected, &journal.0.display().to_string(), "");
@@ -309,7 +347,7 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
     let shell: Value = serde_json::from_slice(&shell_body).expect("shell parses");
     let apps = shell["apps"].as_array().expect("apps array");
     assert_eq!(shell["chat_bar"]["placeholder"], "send a message…");
-    assert_eq!(apps.len(), 21);
+    assert_eq!(apps.len(), 20);
     for app in apps {
         assert_eq!(app.as_object().unwrap().len(), 10);
         assert!(app["icon_svg"].is_string());
@@ -337,6 +375,62 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
     let refusal: Value = serde_json::from_slice(&body).expect("refusal parses");
     assert_eq!(refusal["reason_code"], "app_not_converted");
     assert_eq!(refusal["app"], "activities");
+}
+
+#[tokio::test]
+async fn sol_cut_uses_unknown_app_404_and_router_405_without_session_gate_change() {
+    let journal = journal_for_phase("established");
+    let app = router(journal.0.clone());
+    let mut first_404_body = None;
+    for path in ["/app/sol", "/app/sol/", "/app/sol/background"] {
+        let (status, content_type, location, body) = get(app.clone(), path).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+        assert_eq!(content_type, "text/html; charset=utf-8", "{path}");
+        assert!(location.is_none(), "{path}");
+        if let Some(expected) = &first_404_body {
+            assert_eq!(&body, expected, "{path}");
+        } else {
+            first_404_body = Some(body);
+        }
+    }
+
+    for path in [
+        "/app/sol/api/set-name",
+        "/app/sol/api/reset",
+        "/app/sol/api/set-owner",
+        "/app/sol/api/sol-init",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(path)
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+            .expect("router responds");
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED, "{path}");
+        assert!(response.headers().get("location").is_none(), "{path}");
+    }
+
+    for phase in ["unestablished", "corrupt"] {
+        let journal = journal_for_phase(phase);
+        let app = router(journal.0.clone());
+        let (status, _content_type, location, _body) = get(app.clone(), "/app/sol/").await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{phase}");
+        assert!(location.is_none(), "{phase}");
+
+        let response = app
+            .oneshot(
+                Request::post("/app/sol/api/set-name")
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+            .expect("router responds");
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED, "{phase}");
+        assert!(response.headers().get("location").is_none(), "{phase}");
+    }
 }
 
 #[tokio::test]
@@ -378,13 +472,13 @@ async fn an_unconverted_app_refusal_is_never_a_success_status() {
         // still-unconverted app rather than deleted, so the assertion keeps
         // covering a background path.
         "/app/support/background",
-        // `/app/timeline/background` was here until 2026-08-14, when the
-        // timeline conversion landed and made it a real 200 serving the app's
-        // background fragment. The INVARIANT is unchanged -- an unconverted
-        // app's refusal is never 2xx -- only this example went stale. Replaced
-        // with a still-unconverted app rather than deleted, so the assertion
-        // keeps covering a background path.
-        "/app/sol/background",
+        // `/app/sol/background` was here until 2026-08-15, when Sol's
+        // registry entry was removed after its identity mutations moved
+        // natively under Thinking. The INVARIANT is unchanged -- an
+        // unconverted app's refusal is never 2xx -- only this example went
+        // stale. Replaced with a still-unconverted app rather than deleted,
+        // so the assertion keeps covering a background path.
+        "/app/network/background",
     ] {
         let (status, _content_type, _location, body) = get(router(journal.0.clone()), path).await;
         assert!(

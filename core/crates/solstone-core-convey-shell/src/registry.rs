@@ -201,16 +201,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         converted: true,
     },
     AppDefinition {
-        name: "sol",
-        icon: "🦾",
-        label: "sol",
-        lucide_icon: "bot",
-        date_nav: Some(content_date_nav("run", "runs", "no runs")),
-        facets_enabled: true,
-        has_background: false,
-        converted: false,
-    },
-    AppDefinition {
         name: "speakers",
         icon: "🎙️",
         label: "speakers",
@@ -362,7 +352,7 @@ mod tests {
     use axum::http::{Request, StatusCode, header};
     use tower::ServiceExt;
 
-    use super::{APP_REGISTRY, shell_payload};
+    use super::{APP_REGISTRY, known_app, shell_payload};
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -432,6 +422,31 @@ mod tests {
         assert_eq!(stats[0].workspace_url, "/app/stats/workspace");
         assert!(!payload.apps.iter().any(|app| {
             app.name == "tokens" || app.label == "tokens" || app.workspace_url.contains("tokens")
+        }));
+    }
+
+    #[test]
+    fn thinking_is_converted_and_sol_is_removed_from_the_registry() {
+        let thinking: Vec<_> = APP_REGISTRY
+            .iter()
+            .filter(|app| app.name == "thinking")
+            .collect();
+        assert_eq!(thinking.len(), 1);
+        assert!(thinking[0].converted);
+        assert!(known_app("sol").is_none());
+    }
+
+    #[test]
+    fn shell_payload_lists_thinking_once_and_omits_sol_entirely() {
+        let payload = shell_payload();
+        let thinking: Vec<_> = payload
+            .apps
+            .iter()
+            .filter(|app| app.name == "thinking")
+            .collect();
+        assert_eq!(thinking.len(), 1);
+        assert!(!payload.apps.iter().any(|app| {
+            app.name == "sol" || app.label == "sol" || app.workspace_url.contains("sol")
         }));
     }
 

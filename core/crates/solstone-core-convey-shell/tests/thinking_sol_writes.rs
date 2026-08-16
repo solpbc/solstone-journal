@@ -48,10 +48,8 @@ fn established() -> Fixture {
 }
 
 fn journal_config(fixture: &Fixture) -> Value {
-    serde_json::from_slice(
-        &fs::read(fixture.0.join("config/journal.json")).expect("config"),
-    )
-    .expect("config JSON")
+    serde_json::from_slice(&fs::read(fixture.0.join("config/journal.json")).expect("config"))
+        .expect("config JSON")
 }
 
 #[cfg(unix)]
@@ -167,10 +165,9 @@ async fn set_owner_preserves_null_bio_and_returns_reference_shape() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(value, json!({"name":"Ada","bio":""}));
-    let config: Value = serde_json::from_slice(
-        &fs::read(fixture.0.join("config/journal.json")).expect("config"),
-    )
-    .expect("config JSON");
+    let config: Value =
+        serde_json::from_slice(&fs::read(fixture.0.join("config/journal.json")).expect("config"))
+            .expect("config JSON");
     assert_eq!(config["identity"]["bio"], json!(0.0));
 }
 
@@ -220,9 +217,11 @@ async fn sol_init_preserves_existing_seed_files_and_history() {
     );
     assert!(identity_dir.join("health.md").exists());
     assert_eq!(history_line_count(&history), 1);
-    assert!(fs::read_to_string(&history)
-        .expect("history")
-        .contains(r#""file":"health.md""#));
+    assert!(
+        fs::read_to_string(&history)
+            .expect("history")
+            .contains(r#""file":"health.md""#)
+    );
 
     let fixture = established();
     let identity_dir = fixture.0.join("identity");
@@ -385,13 +384,7 @@ async fn absent_owned_state_persists_only_when_the_mutation_changes_something() 
         &fixture.0.join("config/journal.json"),
         json!({"setup": {"completed_at": 1}}),
     );
-    let (status, value) = request(
-        "/app/thinking/api/reset",
-        "POST",
-        Body::empty(),
-        &fixture,
-    )
-    .await;
+    let (status, value) = request("/app/thinking/api/reset", "POST", Body::empty(), &fixture).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         value,
