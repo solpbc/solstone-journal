@@ -240,16 +240,39 @@ pub fn write_wrappers(env: &LaneEnv) -> Result<(), LaneError> {
             std::fs::create_dir_all(parent).map_err(|error| LaneError::new(error.to_string()))?;
         }
         std::fs::write(&path, body).map_err(|error| LaneError::new(error.to_string()))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = std::fs::metadata(&path)
-                .map_err(|error| LaneError::new(error.to_string()))?
-                .permissions();
-            permissions.set_mode(0o700);
-            std::fs::set_permissions(&path, permissions)
-                .map_err(|error| LaneError::new(error.to_string()))?;
-        }
+        set_executable(&path)?;
+    }
+    if let Some(dir) = env
+        .wrappers
+        .keys()
+        .next()
+        .map(Path::new)
+        .and_then(Path::parent)
+    {
+        write_executable(dir.join("ar"), &wrapper_script("ar", "unused"))?;
+        write_executable(dir.join("ranlib"), &wrapper_script("ranlib", "unused"))?;
+    }
+    Ok(())
+}
+
+fn write_executable(path: PathBuf, body: &str) -> Result<(), LaneError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| LaneError::new(error.to_string()))?;
+    }
+    std::fs::write(&path, body).map_err(|error| LaneError::new(error.to_string()))?;
+    set_executable(&path)
+}
+
+fn set_executable(path: &Path) -> Result<(), LaneError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(path)
+            .map_err(|error| LaneError::new(error.to_string()))?
+            .permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(path, permissions)
+            .map_err(|error| LaneError::new(error.to_string()))?;
     }
     Ok(())
 }

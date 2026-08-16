@@ -212,6 +212,10 @@ pub fn write_staged_runtime(
         LIB_MODE,
     )
     .map_err(|error| StageError::new(error.to_string()))?;
+    for name in spec.link_names {
+        crate::stage::write_staged_file_mode(dest_dir, name, &staged.library, LIB_MODE)
+            .map_err(|error| StageError::new(error.to_string()))?;
+    }
     for (name, bytes) in &staged.notices {
         crate::stage::write_staged_file_mode(dest_dir, name, bytes, NOTICE_MODE)
             .map_err(|error| StageError::new(error.to_string()))?;
