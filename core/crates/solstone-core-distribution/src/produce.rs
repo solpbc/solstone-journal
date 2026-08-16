@@ -314,6 +314,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 zig_dir,
                 wrapper_dir: &wrappers,
                 triple: &target.triple_musl,
+                host: &host,
                 bins: &musl_bins,
                 vars: &musl_env.vars,
                 rustflags: &musl_rustflags,
@@ -328,6 +329,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 zig_dir,
                 wrapper_dir: &wrappers,
                 triple: &target.triple_gnu,
+                host: &host,
                 bins: &gnu_bins,
                 vars: &gnu_env.vars,
                 rustflags: &gnu_rustflags,
@@ -458,6 +460,7 @@ struct BuildLane<'a> {
     zig_dir: &'a Path,
     wrapper_dir: &'a Path,
     triple: &'a str,
+    host: &'a str,
     bins: &'a [(String, String)],
     vars: &'a BTreeMap<String, String>,
     rustflags: &'a str,
@@ -509,11 +512,15 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
     if let Some((_, ranlib)) = lane.vars.iter().find(|(key, _)| key.starts_with("RANLIB_")) {
         command.env("RANLIB", ranlib);
     }
-    if let Some((_, cc)) = lane.vars.iter().find(|(key, _)| key.starts_with("CC_")) {
-        command.env("CC", cc);
-    }
-    if let Some((_, cxx)) = lane.vars.iter().find(|(key, _)| key.starts_with("CXX_")) {
-        command.env("CXX", cxx);
+    let host_arch = lane.host.split('-').next().unwrap_or_default();
+    let target_arch = lane.triple.split('-').next().unwrap_or_default();
+    if host_arch == target_arch {
+        if let Some((_, cc)) = lane.vars.iter().find(|(key, _)| key.starts_with("CC_")) {
+            command.env("CC", cc);
+        }
+        if let Some((_, cxx)) = lane.vars.iter().find(|(key, _)| key.starts_with("CXX_")) {
+            command.env("CXX", cxx);
+        }
     }
     let output = command
         .output()
