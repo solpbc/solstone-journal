@@ -128,22 +128,51 @@ impl ThinkContext {
 }
 
 fn package_roots() -> (PathBuf, PathBuf) {
-    let starts = [
-        std::env::current_exe()
-            .ok()
-            .and_then(|path| path.parent().map(Path::to_path_buf)),
-        std::env::current_dir().ok(),
-    ];
-    for start in starts.into_iter().flatten() {
-        for root in start.ancestors() {
-            let talent = root.join("solstone/talent");
-            if talent.is_dir() {
-                return (talent, root.join("solstone/apps"));
-            }
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .and_then(|directory| package_roots_from_executable_dir(&directory))
+        .unwrap_or((PathBuf::new(), PathBuf::new()))
+}
+
+fn package_roots_from_executable_dir(executable_dir: &Path) -> Option<(PathBuf, PathBuf)> {
+    let root =
+        solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)?;
+    let talent = root.join("solstone/talent");
+    let apps = root.join("solstone/apps");
+    (talent.is_dir() && apps.is_dir()).then_some((talent, apps))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn share_layout_requires_both_roots_and_fails_when_anchor_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let prefix = root.path().join("tree");
+        let bin = prefix.join("bin");
+        let share = prefix.join("share");
+        fs::create_dir_all(&bin).unwrap();
+        for relative in [
+            solstone_core_journal::LAYOUT_BUNDLE_ANCHOR,
+            solstone_core_journal::LAYOUT_LAYOUT_ANCHOR,
+            solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            let path = share.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, relative).unwrap();
         }
+        assert!(
+            package_roots_from_executable_dir(&bin).is_none(),
+            "talent without apps must fail closed"
+        );
+        fs::create_dir_all(share.join("solstone/apps")).unwrap();
+        let (talent, apps) = package_roots_from_executable_dir(&bin).unwrap();
+        assert_eq!(talent, share.join("solstone/talent"));
+        assert_eq!(apps, share.join("solstone/apps"));
+        fs::remove_file(share.join(solstone_core_journal::LAYOUT_BUNDLE_ANCHOR)).unwrap();
+        assert!(package_roots_from_executable_dir(&bin).is_none());
     }
-    (
-        PathBuf::from("solstone/talent"),
-        PathBuf::from("solstone/apps"),
-    )
 }

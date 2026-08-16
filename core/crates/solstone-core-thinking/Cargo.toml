@@ -22,6 +22,7 @@ solstone-core-brain.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-generate-wire.workspace = true
+solstone-core-journal.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-local.workspace = true

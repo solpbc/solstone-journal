@@ -100,6 +100,10 @@ pub fn helper_forbidden_runtime_pair() -> (onnx_runtime::TargetSpec, Vec<u8>) {
     onnx_runtime::forbidden_member_fixture_wheel()
 }
 
+pub fn helper_dependency_needles() -> &'static [&'static str] {
+    &[elf::HELPER_SONAME, "onnxruntime"]
+}
+
 #[cfg(test)]
 fn committed_inventory() -> Inventory {
     let path =
@@ -118,11 +122,9 @@ fn selection_from_default_cargo_output_names_missing_required_and_admitted_forbi
     fs::create_dir_all(&output).expect("create fixture dir");
     fs::create_dir_all(&artifacts_dir).expect("create artifact dir");
 
-    const HOST_EXCLUDED_DENIED: &str = "solstone-core-vad-analyze";
-    for name in inventory.forbidden_bins() {
-        if name != HOST_EXCLUDED_DENIED {
-            fs::write(output.join(&name), []).expect("write denied fixture");
-        }
+    let forbidden = inventory.forbidden_bins();
+    for name in &forbidden {
+        fs::write(output.join(name), name.as_bytes()).expect("write stub fixture");
     }
 
     let target = inventory
@@ -168,14 +170,28 @@ fn selection_from_default_cargo_output_names_missing_required_and_admitted_forbi
     let _ = fs::remove_dir_all(&stage);
     select::stage_selected(&selection, &stage).expect("stage selected");
     let staged = stage::staged_files(&stage).expect("list staged");
-    let leaked = inventory
-        .forbidden_bins()
-        .into_iter()
+    let present_in_output = forbidden
+        .iter()
+        .filter(|name| output.join(name).is_file())
+        .count();
+    let leaked = forbidden
+        .iter()
         .filter(|name| staged.iter().any(|dest| dest.ends_with(name.as_str())))
+        .cloned()
         .collect::<Vec<_>>();
     let _ = fs::remove_dir_all(&output);
     let _ = fs::remove_dir_all(&artifacts_dir);
     let _ = fs::remove_dir_all(&stage);
+    assert_eq!(
+        present_in_output,
+        forbidden.len(),
+        "fixture output must contain the full stub set"
+    );
+    assert!(
+        leaked.is_empty(),
+        "unexpected:\n  {}",
+        leaked.join("\n  ")
+    );
     assert!(
         selection.admitted.contains("solstone-core-speakers-analyze"),
         "missing required:\n  solstone-core-speakers-analyze"
@@ -184,7 +200,6 @@ fn selection_from_default_cargo_output_names_missing_required_and_admitted_forbi
         !selection.admitted.contains("setup-fixture-journal"),
         "admitted forbidden:\n  setup-fixture-journal"
     );
-    assert!(leaked.is_empty(), "unexpected:\n  {}", leaked.join("\n  "));
 }
 
 #[cfg(test)]
@@ -250,6 +265,80 @@ fn containers_disagree_on_required_entry() {
     assert_eq!(x86.rpm_arch, "x86_64");
     assert_eq!(arm.deb_arch, "arm64");
     assert_eq!(arm.rpm_arch, "aarch64");
+}
+
+#[cfg(test)]
+#[test]
+fn arch_mapping_modes_and_clean_package_depends() {
+    let inventory = committed_inventory();
+    let version = env!("CARGO_PKG_VERSION");
+    let root = PathBuf::from("/var/tmp/solstone-distribution-arch-stage");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    stage::write_staged_file_mode(&root, "bin/solstone-core", b"core", 0o755).unwrap();
+    stage::write_staged_file_mode(&root, "share/LICENSE", b"license", 0o644).unwrap();
+    stage::write_staged_file_mode(&root, "lib/solstone_journal_models/assets/model.bin", b"m", 0o644)
+        .unwrap();
+    for target in &inventory.target {
+        let out = PathBuf::from(format!(
+            "/var/tmp/solstone-distribution-arch-out-{}",
+            target.id
+        ));
+        let _ = fs::remove_dir_all(&out);
+        write_containers(
+            &root,
+            &out,
+            ContainerMeta {
+                version,
+                deb_arch: &target.deb_arch,
+                rpm_arch: &target.rpm_arch,
+            },
+        )
+        .unwrap();
+        let control = deb::deb_control_text(&out.join("tree.deb")).unwrap();
+        let requires = rpm::rpm_requires(&out.join("tree.rpm")).unwrap();
+        let arch = rpm::rpm_arch(&out.join("tree.rpm")).unwrap();
+        assert!(control.contains("Package: solstone-journal"));
+        assert!(control.contains(&format!("Version: {version}")));
+        assert!(control.contains(&format!("Architecture: {}", target.deb_arch)));
+        assert_eq!(arch, target.rpm_arch);
+        match target.id.as_str() {
+            "linux-x86_64" => {
+                assert_eq!(target.deb_arch, "amd64");
+                assert_eq!(target.rpm_arch, "x86_64");
+            }
+            "linux-aarch64" => {
+                assert_eq!(target.deb_arch, "arm64");
+                assert_eq!(target.rpm_arch, "aarch64");
+            }
+            other => panic!("unexpected target {other}"),
+        }
+        for records in [
+            tar::tar_records(&fs::read(out.join("tree.tar.gz")).unwrap()).unwrap(),
+            deb::deb_records(&out.join("tree.deb")).unwrap(),
+            rpm::rpm_records(&out.join("tree.rpm")).unwrap(),
+        ] {
+            for record in &records {
+                if record.dest.starts_with("bin/") {
+                    assert_eq!(record.mode, 0o755, "{}", record.dest);
+                } else {
+                    assert_eq!(record.mode, 0o644, "{}", record.dest);
+                }
+            }
+        }
+        for needle in helper_dependency_needles() {
+            assert!(
+                !control.contains(needle),
+                "deb Depends must not name {needle}"
+            );
+            assert!(
+                !requires.iter().any(|item| item.contains(needle)),
+                "rpm requires must not name {needle}"
+            );
+        }
+        let _ = fs::remove_dir_all(&out);
+    }
+    let _ = fs::remove_dir_all(&root);
 }
 
 #[cfg(test)]

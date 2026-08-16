@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::thread;
 
@@ -62,15 +62,9 @@ pub async fn run_native_service(
         .parent()
         .map(PathBuf::from)
         .ok_or(CortexServiceError::Runtime)?;
-    let root =
-        solstone_core_journal::resolve_installation_root_from_executable_dir(&executable_dir)
+    let (talent_root, apps_root, templates_dir) =
+        package_roots_from_executable_dir(&executable_dir)
             .ok_or_else(|| CortexServiceError::InstallationRoot(executable_dir.clone()))?;
-    let talent_root = root.join("solstone/talent");
-    let apps_root = root.join("solstone/apps");
-    let templates_dir = talent_root
-        .parent()
-        .map(|root| root.join("think/templates"))
-        .ok_or(CortexServiceError::Runtime)?;
     let connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), Map::new());
     run_until(
@@ -83,6 +77,17 @@ pub async fn run_native_service(
         shutdown_signal(),
     )
     .await
+}
+
+pub(crate) fn package_roots_from_executable_dir(
+    executable_dir: &Path,
+) -> Option<(PathBuf, PathBuf, PathBuf)> {
+    let root =
+        solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)?;
+    let talent_root = root.join("solstone/talent");
+    let apps_root = root.join("solstone/apps");
+    let templates_dir = talent_root.parent()?.join("think/templates");
+    Some((talent_root, apps_root, templates_dir))
 }
 
 pub async fn run_until<F>(
@@ -430,5 +435,29 @@ mod tests {
         assert_eq!(running.len(), 1);
         assert_eq!(running[0].pgid, 0);
         assert_eq!(state.running().len(), 1);
+    }
+
+    #[test]
+    fn share_layout_resolves_and_fails_when_anchor_removed() {
+        let directory = tempfile::tempdir().unwrap();
+        let prefix = directory.path().join("tree");
+        let bin = prefix.join("bin");
+        let share = prefix.join("share");
+        std::fs::create_dir_all(&bin).unwrap();
+        for relative in [
+            solstone_core_journal::LAYOUT_BUNDLE_ANCHOR,
+            solstone_core_journal::LAYOUT_LAYOUT_ANCHOR,
+            solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            let path = share.join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, relative).unwrap();
+        }
+        let (talent, apps, templates) = package_roots_from_executable_dir(&bin).unwrap();
+        assert_eq!(talent, share.join("solstone/talent"));
+        assert_eq!(apps, share.join("solstone/apps"));
+        assert_eq!(templates, share.join("solstone/think/templates"));
+        std::fs::remove_file(share.join(solstone_core_journal::LAYOUT_BUNDLE_ANCHOR)).unwrap();
+        assert!(package_roots_from_executable_dir(&bin).is_none());
     }
 }

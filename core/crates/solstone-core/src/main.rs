@@ -807,7 +807,10 @@ fn run_journal_stats(args: Vec<OsString>) -> ExitCode {
                 return ExitCode::from(EXIT_TEMPFAIL);
             }
         };
-        let (system_talent_root, apps_root) = discover_package_roots();
+        let Some((system_talent_root, apps_root)) = discover_package_roots() else {
+            eprintln!("journal-stats failed: could not locate packaged talent roots");
+            return ExitCode::from(EXIT_TEMPFAIL);
+        };
         (journal_root, system_talent_root, apps_root)
     };
     let backlog_reader = solstone_core_journal_stats_cli::FilesystemBacklogViewReader;
@@ -5583,22 +5586,11 @@ fn discover_binary_home() -> Result<PathBuf, HomeError> {
 }
 
 // Packaged installs may not retain source-package roots and therefore report zero talent configs.
-fn discover_package_roots() -> (PathBuf, PathBuf) {
-    if let Some(start) = env::current_exe()
+fn discover_package_roots() -> Option<(PathBuf, PathBuf)> {
+    env::current_exe()
         .ok()
         .and_then(|executable| executable.parent().map(Path::to_path_buf))
-    {
-        for ancestor in start.ancestors() {
-            let candidate = ancestor.join("solstone");
-            if candidate.join("talent").is_dir() && candidate.join("apps").is_dir() {
-                return (candidate.join("talent"), candidate.join("apps"));
-            }
-        }
-    }
-    (
-        PathBuf::from("solstone/talent"),
-        PathBuf::from("solstone/apps"),
-    )
+        .and_then(|directory| crate::contract::paths::package_roots_from_executable_dir(&directory))
 }
 
 fn eprint_journal_path_error(error: JournalPathError) {

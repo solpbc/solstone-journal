@@ -251,6 +251,50 @@ pub fn rpm_requires(path: &Path) -> io::Result<Vec<String>> {
     read_require_names(&bytes[sig_end..])
 }
 
+pub fn rpm_arch(path: &Path) -> io::Result<String> {
+    let bytes = fs::read(path)?;
+    let sig_end = skip_one_header(&bytes, LEAD_LEN)?;
+    read_string_tag(&bytes[sig_end..], TAG_ARCH)
+}
+
+fn read_string_tag(header: &[u8], wanted: i32) -> io::Result<String> {
+    if header.len() < 16 || header[..8] != HEADER_MAGIC {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid rpm header",
+        ));
+    }
+    let index = u32::from_be_bytes(header[8..12].try_into().unwrap()) as usize;
+    let data = u32::from_be_bytes(header[12..16].try_into().unwrap()) as usize;
+    let store_at = 16 + index * 16;
+    if store_at + data > header.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "truncated rpm header store",
+        ));
+    }
+    let store = &header[store_at..store_at + data];
+    for slot in 0..index {
+        let base = 16 + slot * 16;
+        let tag = i32::from_be_bytes(header[base..base + 4].try_into().unwrap());
+        if tag != wanted {
+            continue;
+        }
+        let offset = i32::from_be_bytes(header[base + 8..base + 12].try_into().unwrap()) as usize;
+        let end = store[offset..]
+            .iter()
+            .position(|byte| *byte == 0)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "unterminated rpm string"))?;
+        return std::str::from_utf8(&store[offset..offset + end])
+            .map(str::to_owned)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error));
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        format!("rpm tag {wanted} missing"),
+    ))
+}
+
 fn read_require_names(header: &[u8]) -> io::Result<Vec<String>> {
     if header.len() < 16 || header[..8] != HEADER_MAGIC {
         return Err(io::Error::new(

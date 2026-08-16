@@ -11,6 +11,7 @@ chrono = { workspace = true }
 nix = { workspace = true, features = ["signal"] }
 serde_json = { workspace = true }
 solstone-core-cli-boundary = { workspace = true }
+solstone-core-journal = { workspace = true }
 solstone-core-sol-client = { workspace = true }
 solstone-core-sol-client-cli = { workspace = true }
 solstone-core-skill-state = { workspace = true }

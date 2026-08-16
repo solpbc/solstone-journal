@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 mod bundle;
-mod paths;
+pub(crate) mod paths;
 pub(crate) mod serialize;
 mod validate;
 
@@ -87,15 +87,22 @@ pub(crate) fn run_check(journals: Vec<PathBuf>, root: Option<PathBuf>) -> ExitCo
         );
         failed = true;
     }
-    if !paths.fixture.join("chronicle").is_dir() {
-        eprintln!(
-            "contract: journal tree not found: {} (expected {})",
-            paths.fixture.display(),
-            paths.fixture.join("chronicle").display()
-        );
-        failed = true;
-    } else {
-        failed |= report_tree(&paths.fixture, &current);
+    match paths.fixture_journal() {
+        Ok(fixture) if fixture.join("chronicle").is_dir() => {
+            failed |= report_tree(fixture, &current);
+        }
+        Ok(fixture) => {
+            eprintln!(
+                "contract: journal tree not found: {} (expected {})",
+                fixture.display(),
+                fixture.join("chronicle").display()
+            );
+            failed = true;
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            failed = true;
+        }
     }
     for journal in journals {
         // The Python reference treats a missing chronicle directory as an empty

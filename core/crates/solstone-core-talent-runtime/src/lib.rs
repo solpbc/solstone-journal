@@ -184,7 +184,7 @@ fn runtime_paths_from_current_executable() -> Result<prepare::RuntimePaths, Stri
     runtime_paths_from_executable_dir(executable_dir)
 }
 
-fn runtime_paths_from_executable_dir(
+pub(crate) fn runtime_paths_from_executable_dir(
     executable_dir: &Path,
 ) -> Result<prepare::RuntimePaths, String> {
     let root = solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)
@@ -1374,5 +1374,28 @@ mod tests {
             output_events[1],
             json!({"event":"finish", "name":"ordered-skip", "skip_reason":"no_input"})
         );
+    }
+
+    #[test]
+    fn share_layout_resolves_and_fails_when_anchor_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let prefix = root.path().join("tree");
+        let bin = prefix.join("bin");
+        let share = prefix.join("share");
+        fs::create_dir_all(&bin).unwrap();
+        for relative in [
+            solstone_core_journal::LAYOUT_BUNDLE_ANCHOR,
+            solstone_core_journal::LAYOUT_LAYOUT_ANCHOR,
+            solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            let path = share.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, relative).unwrap();
+        }
+        let paths = runtime_paths_from_executable_dir(&bin).unwrap();
+        assert_eq!(paths.talent_root, share.join("solstone/talent"));
+        assert_eq!(paths.apps_root, share.join("solstone/apps"));
+        fs::remove_file(share.join(solstone_core_journal::LAYOUT_LAYOUT_ANCHOR)).unwrap();
+        assert!(runtime_paths_from_executable_dir(&bin).is_err());
     }
 }

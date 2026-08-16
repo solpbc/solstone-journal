@@ -2,8 +2,6 @@
 // Copyright (c) 2026 sol pbc
 
 use std::env;
-use std::ffi::OsStr;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -35,18 +33,15 @@ impl ContractPaths {
                 executable.display()
             ));
         };
-        if let Some(site_packages) = installed_site_packages_from_executable_dir(executable_dir) {
-            return Self::from_root(site_packages);
-        }
-        for candidate in executable_dir.ancestors() {
-            if is_solstone_checkout_root(candidate) {
-                return Self::from_root(candidate.to_path_buf());
-            }
-        }
-        Err(format!(
-            "contract: could not locate installed solstone package or source checkout from {}",
-            executable.display()
-        ))
+        let Some(root) =
+            solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)
+        else {
+            return Err(format!(
+                "contract: could not locate installed solstone package or source checkout from {}",
+                executable.display()
+            ));
+        };
+        Self::from_root(root)
     }
 
     pub(crate) fn from_root(root: PathBuf) -> Result<Self, String> {
@@ -65,56 +60,24 @@ impl ContractPaths {
             solstone,
         })
     }
-}
 
-fn installed_site_packages_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
-    let prefix = executable_dir.parent()?;
-    let entries = fs::read_dir(prefix).ok()?;
-    let mut candidates = Vec::new();
-    for lib_entry in entries.flatten() {
-        let lib_path = lib_entry.path();
-        if !lib_path.is_dir()
-            || !lib_path
-                .file_name()
-                .and_then(OsStr::to_str)
-                .is_some_and(|name| name.starts_with("lib"))
-        {
-            continue;
+    pub(crate) fn fixture_journal(&self) -> Result<&Path, String> {
+        if !self.fixture.is_dir() {
+            return Err(format!(
+                "contract: fixture journal missing: {}",
+                self.fixture.display()
+            ));
         }
-        let Ok(python_entries) = fs::read_dir(&lib_path) else {
-            continue;
-        };
-        for python_entry in python_entries.flatten() {
-            let python_path = python_entry.path();
-            if !python_path.is_dir()
-                || !python_path
-                    .file_name()
-                    .and_then(OsStr::to_str)
-                    .is_some_and(|name| name.starts_with("python"))
-            {
-                continue;
-            }
-            for name in ["site-packages", "dist-packages"] {
-                let package_dir = python_path.join(name);
-                if package_dir.join("solstone/__init__.py").is_file() {
-                    candidates.push(package_dir);
-                }
-            }
-        }
+        Ok(&self.fixture)
     }
-    let mut canonical = candidates
-        .into_iter()
-        .filter_map(|candidate| fs::canonicalize(candidate).ok())
-        .collect::<Vec<_>>();
-    canonical.sort();
-    canonical.dedup();
-    canonical.into_iter().next()
 }
 
-fn is_solstone_checkout_root(candidate: &Path) -> bool {
-    candidate.join("pyproject.toml").is_file()
-        && candidate.join(".git").exists()
-        && candidate.join("solstone").is_dir()
+pub(crate) fn package_roots_from_executable_dir(executable_dir: &Path) -> Option<(PathBuf, PathBuf)> {
+    let root =
+        solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)?;
+    let talent = root.join("solstone/talent");
+    let apps = root.join("solstone/apps");
+    (talent.is_dir() && apps.is_dir()).then_some((talent, apps))
 }
 
 #[cfg(test)]
@@ -127,14 +90,46 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let bin = temp.path().join("bin");
         let package = temp.path().join("lib/python3.12/site-packages");
-        fs::create_dir_all(package.join("solstone")).unwrap();
-        fs::create_dir_all(&bin).unwrap();
-        fs::write(package.join("solstone/__init__.py"), "").unwrap();
-        let found = installed_site_packages_from_executable_dir(&bin).unwrap();
+        std::fs::create_dir_all(package.join("solstone")).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(package.join("solstone/__init__.py"), "").unwrap();
+        let found = solstone_core_journal::installed_site_packages_from_executable_dir(&bin).unwrap();
         let paths = ContractPaths::from_root(found).unwrap();
         assert_eq!(
             paths.solstone,
-            fs::canonicalize(package.join("solstone")).unwrap()
+            std::fs::canonicalize(package.join("solstone")).unwrap()
         );
+        assert!(paths.fixture_journal().is_err());
+        assert!(
+            paths
+                .fixture_journal()
+                .unwrap_err()
+                .contains(&paths.fixture.display().to_string())
+        );
+    }
+
+    #[test]
+    fn share_layout_resolves_and_fails_when_anchor_removed() {
+        let temp = TempDir::new().unwrap();
+        let prefix = temp.path().join("tree");
+        let bin = prefix.join("bin");
+        let share = prefix.join("share");
+        std::fs::create_dir_all(&bin).unwrap();
+        for relative in [
+            solstone_core_journal::LAYOUT_BUNDLE_ANCHOR,
+            solstone_core_journal::LAYOUT_LAYOUT_ANCHOR,
+            solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            let path = share.join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, relative).unwrap();
+        }
+        std::fs::create_dir_all(share.join("solstone/apps")).unwrap();
+        let paths = ContractPaths::resolve_from_executable(&bin.join("solstone-core")).unwrap();
+        assert_eq!(paths.root, share);
+        assert!(package_roots_from_executable_dir(&bin).is_some());
+        std::fs::remove_file(share.join(solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR)).unwrap();
+        assert!(ContractPaths::resolve_from_executable(&bin.join("solstone-core")).is_err());
+        assert!(package_roots_from_executable_dir(&bin).is_none());
     }
 }

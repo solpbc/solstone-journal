@@ -162,64 +162,6 @@ impl std::fmt::Display for ProjectRootError {
 
 impl std::error::Error for ProjectRootError {}
 
-fn resolve_canonical_site_packages(candidates: &[PathBuf]) -> Option<PathBuf> {
-    let mut canonical = candidates
-        .iter()
-        .filter_map(|candidate| fs::canonicalize(candidate).ok())
-        .collect::<Vec<_>>();
-    // Canonicalize before sorting so read_dir order and lib64 -> lib aliases collapse.
-    canonical.sort();
-    canonical.dedup();
-    canonical.into_iter().next()
-}
-
-fn installed_site_packages_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
-    let prefix = executable_dir.parent()?;
-    let entries = fs::read_dir(prefix).ok()?;
-    let mut candidates = Vec::new();
-    for lib_entry in entries.flatten() {
-        let lib_path = lib_entry.path();
-        if !lib_path.is_dir() {
-            continue;
-        }
-        let Some(lib_name) = lib_path.file_name().and_then(OsStr::to_str) else {
-            continue;
-        };
-        if !lib_name.starts_with("lib") {
-            continue;
-        }
-        let Ok(python_entries) = fs::read_dir(&lib_path) else {
-            continue;
-        };
-        for python_entry in python_entries.flatten() {
-            let python_path = python_entry.path();
-            if !python_path.is_dir() {
-                continue;
-            }
-            let Some(python_name) = python_path.file_name().and_then(OsStr::to_str) else {
-                continue;
-            };
-            if !python_name.starts_with("python") {
-                continue;
-            }
-            for package_dir_name in ["site-packages", "dist-packages"] {
-                let package_dir = python_path.join(package_dir_name);
-                let init = package_dir.join("solstone").join("__init__.py");
-                if fs::metadata(&init).is_ok_and(|metadata| metadata.is_file()) {
-                    candidates.push(package_dir);
-                }
-            }
-        }
-    }
-    resolve_canonical_site_packages(&candidates)
-}
-
-fn is_solstone_checkout_root(candidate: &Path) -> bool {
-    candidate.join("pyproject.toml").is_file()
-        && candidate.join(".git").exists()
-        && candidate.join("solstone").is_dir()
-}
-
 fn run_root() -> ExitCode {
     match resolve_project_root() {
         Ok(root) => render_output(CommandOutput::success(format!("{}\n", root.display()))),
@@ -239,15 +181,8 @@ fn resolve_project_root_from_executable(executable: &Path) -> Result<PathBuf, Pr
     let Some(executable_dir) = executable.parent() else {
         return Err(ProjectRootError::Unclassified(executable.to_path_buf()));
     };
-    if let Some(site_packages) = installed_site_packages_from_executable_dir(executable_dir) {
-        return Ok(site_packages);
-    }
-    for candidate in executable_dir.ancestors() {
-        if is_solstone_checkout_root(candidate) {
-            return Ok(candidate.to_path_buf());
-        }
-    }
-    Err(ProjectRootError::Unclassified(executable.to_path_buf()))
+    solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)
+        .ok_or_else(|| ProjectRootError::Unclassified(executable.to_path_buf()))
 }
 
 fn run_call(
@@ -1139,83 +1074,6 @@ mod tests {
     }
 
     #[test]
-    fn canonical_site_packages_empty_candidates_return_none() {
-        assert_eq!(resolve_canonical_site_packages(&[]), None);
-    }
-
-    #[test]
-    fn canonical_site_packages_returns_single_plain_candidate() {
-        let root = temp_path("single-site-packages");
-        let site_packages = root
-            .path()
-            .join("lib")
-            .join("python3.13")
-            .join("site-packages");
-        fs::create_dir_all(&site_packages).expect("create site-packages");
-        let expected = fs::canonicalize(&site_packages).expect("canonical site-packages");
-
-        assert_eq!(
-            resolve_canonical_site_packages(std::slice::from_ref(&site_packages)),
-            Some(expected)
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn canonical_site_packages_collapses_lib64_alias_in_both_orders() {
-        let root = temp_path("lib64-site-packages");
-        let site_packages = root
-            .path()
-            .join("lib")
-            .join("python3.13")
-            .join("site-packages");
-        fs::create_dir_all(&site_packages).expect("create lib site-packages");
-        std::os::unix::fs::symlink("lib", root.path().join("lib64")).expect("create lib64 symlink");
-        let lib64_site_packages = root
-            .path()
-            .join("lib64")
-            .join("python3.13")
-            .join("site-packages");
-        let expected = fs::canonicalize(&site_packages).expect("canonical lib site-packages");
-
-        assert_eq!(
-            resolve_canonical_site_packages(&[site_packages.clone(), lib64_site_packages.clone()]),
-            Some(expected.clone())
-        );
-        assert_eq!(
-            resolve_canonical_site_packages(&[lib64_site_packages, site_packages]),
-            Some(expected)
-        );
-    }
-
-    #[test]
-    fn canonical_site_packages_selects_distinct_real_candidates_deterministically() {
-        let root = temp_path("distinct-site-packages");
-        let first = root
-            .path()
-            .join("a")
-            .join("python3.13")
-            .join("site-packages");
-        let second = root
-            .path()
-            .join("z")
-            .join("python3.13")
-            .join("site-packages");
-        fs::create_dir_all(&first).expect("create first site-packages");
-        fs::create_dir_all(&second).expect("create second site-packages");
-        let expected = fs::canonicalize(&first).expect("canonical first site-packages");
-
-        assert_eq!(
-            resolve_canonical_site_packages(&[second.clone(), first.clone()]),
-            Some(expected.clone())
-        );
-        assert_eq!(
-            resolve_canonical_site_packages(&[first, second]),
-            Some(expected)
-        );
-    }
-
-    #[test]
     fn version_output_matches_restored_native_contract() {
         let output = version_output();
         assert_eq!(output.stderr, "");
@@ -1352,6 +1210,39 @@ mod tests {
         assert!(error.to_string().contains(
             "native sol project root resolution failed: could not locate source checkout or installed solstone package"
         ));
+    }
+
+    fn write_layout_share(share: &Path) {
+        for relative in [
+            solstone_core_journal::LAYOUT_BUNDLE_ANCHOR,
+            solstone_core_journal::LAYOUT_LAYOUT_ANCHOR,
+            solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            let path = share.join(relative);
+            fs::create_dir_all(path.parent().expect("anchor parent")).expect("anchor dir");
+            fs::write(&path, relative).expect("anchor");
+        }
+        fs::create_dir_all(share.join("solstone/talent")).expect("talent");
+        fs::create_dir_all(share.join("solstone/apps")).expect("apps");
+    }
+
+    #[test]
+    fn project_root_resolves_share_layout_and_fails_when_anchor_removed() {
+        let root = temp_path("share-layout-root");
+        let prefix = root.path().join("tree");
+        let bin = prefix.join("bin");
+        fs::create_dir_all(&bin).expect("bin");
+        write_layout_share(&prefix.join("share"));
+        let resolved = resolve_project_root_from_executable(&bin.join("sol"))
+            .expect("share layout should resolve");
+        assert_eq!(resolved, prefix.join("share"));
+        fs::remove_file(
+            prefix
+                .join("share")
+                .join(solstone_core_journal::LAYOUT_BUNDLE_ANCHOR),
+        )
+        .expect("remove bundle");
+        assert!(resolve_project_root_from_executable(&bin.join("sol")).is_err());
     }
 
     #[test]

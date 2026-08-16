@@ -13,34 +13,28 @@ use solstone_core_talent_config::{TalentFilter, context_key, load_talent_configs
 
 use crate::MutationError;
 
-/// Discover packaged prompt roots in the same production order as
-/// `solstone-core`'s `discover_package_roots`: executable layout first, then
-/// the invoking directory, and finally source-relative paths.
-pub fn discover_package_roots() -> (PathBuf, PathBuf) {
-    for start in [
-        env::current_exe()
-            .ok()
-            .and_then(|path| path.parent().map(Path::to_path_buf)),
-        env::current_dir().ok(),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        for ancestor in start.ancestors() {
-            let candidate = ancestor.join("solstone");
-            if candidate.join("talent").is_dir() && candidate.join("apps").is_dir() {
-                return (candidate.join("talent"), candidate.join("apps"));
-            }
-        }
-    }
-    (
-        PathBuf::from("solstone/talent"),
-        PathBuf::from("solstone/apps"),
-    )
+/// Discover packaged prompt roots from the executable's installation root.
+pub fn discover_package_roots() -> Option<(PathBuf, PathBuf)> {
+    env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .and_then(|directory| discover_package_roots_from_executable_dir(&directory))
+}
+
+pub fn discover_package_roots_from_executable_dir(
+    executable_dir: &Path,
+) -> Option<(PathBuf, PathBuf)> {
+    let root =
+        solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)?;
+    let talent = root.join("solstone/talent");
+    let apps = root.join("solstone/apps");
+    (talent.is_dir() && apps.is_dir()).then_some((talent, apps))
 }
 
 pub fn generators(config: &Map<String, Value>) -> Result<Value, String> {
-    let (system_root, apps_root) = discover_package_roots();
+    let (system_root, apps_root) = discover_package_roots().ok_or_else(|| {
+        "could not locate packaged talent roots from the current executable".to_owned()
+    })?;
     generators_from_roots(config, &system_root, &apps_root)
 }
 
@@ -225,5 +219,29 @@ mod tests {
                 .unwrap()["daily"][0]["disabled"],
             "yes"
         );
+    }
+
+    #[test]
+    fn share_layout_resolves_and_fails_when_anchor_removed() {
+        let root = tempfile::tempdir().unwrap();
+        let prefix = root.path().join("tree");
+        let bin = prefix.join("bin");
+        let share = prefix.join("share");
+        fs::create_dir_all(&bin).unwrap();
+        for relative in [
+            solstone_core_journal::LAYOUT_BUNDLE_ANCHOR,
+            solstone_core_journal::LAYOUT_LAYOUT_ANCHOR,
+            solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            let path = share.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, relative).unwrap();
+        }
+        fs::create_dir_all(share.join("solstone/apps")).unwrap();
+        let (talent, apps) = discover_package_roots_from_executable_dir(&bin).unwrap();
+        assert_eq!(talent, share.join("solstone/talent"));
+        assert_eq!(apps, share.join("solstone/apps"));
+        fs::remove_file(share.join(solstone_core_journal::LAYOUT_LAYOUT_ANCHOR)).unwrap();
+        assert!(discover_package_roots_from_executable_dir(&bin).is_none());
     }
 }

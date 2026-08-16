@@ -274,12 +274,31 @@ fn site_packages_from_executable_dir(
     resolve_canonical_site_packages(&candidates)
 }
 
+pub const LAYOUT_BUNDLE_ANCHOR: &str = "solstone/talent/journal/contract/bundle.json";
+pub const LAYOUT_LAYOUT_ANCHOR: &str = "solstone/think/contract/layout.json";
+pub const LAYOUT_TEMPLATE_ANCHOR: &str = "solstone/think/templates/segment_preamble.md";
+
 pub fn resolve_installation_root_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
-    installed_site_packages_from_executable_dir(executable_dir).or_else(|| {
-        executable_dir
-            .ancestors()
-            .find_map(is_solstone_checkout_root)
-    })
+    installed_site_packages_from_executable_dir(executable_dir)
+        .or_else(|| {
+            executable_dir
+                .ancestors()
+                .find_map(is_solstone_checkout_root)
+        })
+        .or_else(|| executable_dir.parent().and_then(is_layout_install_root))
+}
+
+fn is_layout_install_root(prefix: &Path) -> Option<PathBuf> {
+    let share = prefix.join("share");
+    let anchors = [
+        share.join(LAYOUT_BUNDLE_ANCHOR),
+        share.join(LAYOUT_LAYOUT_ANCHOR),
+        share.join(LAYOUT_TEMPLATE_ANCHOR),
+    ];
+    anchors
+        .iter()
+        .all(|path| fs::metadata(path).is_ok_and(|metadata| metadata.is_file()))
+        .then_some(share)
 }
 
 pub fn installed_distributions(
@@ -793,6 +812,130 @@ mod tests {
             Some(checkout.clone())
         );
         fs::remove_dir_all(root).expect("cleanup installation helpers");
+    }
+
+    fn write_layout_anchors(share: &Path) {
+        for relative in [
+            LAYOUT_BUNDLE_ANCHOR,
+            LAYOUT_LAYOUT_ANCHOR,
+            LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            let path = share.join(relative);
+            fs::create_dir_all(path.parent().expect("anchor parent")).expect("create anchor dir");
+            fs::write(&path, relative).expect("write layout anchor");
+        }
+    }
+
+    #[test]
+    fn layout_install_root_requires_three_regular_file_anchors() {
+        let root = unique_temp("layout-anchors");
+        let prefix = root.join("tree");
+        let bin = prefix.join("bin");
+        let share = prefix.join("share");
+        fs::create_dir_all(&bin).expect("create bin");
+        assert_eq!(resolve_installation_root_from_executable_dir(&bin), None);
+
+        write_layout_anchors(&share);
+        assert_eq!(
+            resolve_installation_root_from_executable_dir(&bin),
+            Some(share.clone())
+        );
+
+        for relative in [
+            LAYOUT_BUNDLE_ANCHOR,
+            LAYOUT_LAYOUT_ANCHOR,
+            LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            let path = share.join(relative);
+            let bytes = fs::read(&path).expect("read anchor");
+            fs::remove_file(&path).expect("remove one anchor");
+            assert_eq!(
+                resolve_installation_root_from_executable_dir(&bin),
+                None,
+                "{relative} must be required"
+            );
+            fs::write(&path, &bytes).expect("restore anchor");
+            assert_eq!(
+                resolve_installation_root_from_executable_dir(&bin),
+                Some(share.clone())
+            );
+            fs::remove_file(&path).expect("remove for directory stand-in");
+            fs::create_dir(&path).expect("directory is not a regular file");
+            assert_eq!(
+                resolve_installation_root_from_executable_dir(&bin),
+                None,
+                "{relative} must be a regular file"
+            );
+            fs::remove_dir(&path).expect("remove directory stand-in");
+            fs::write(&path, &bytes).expect("restore file");
+        }
+
+        assert_eq!(
+            resolve_installation_root_from_executable_dir(&prefix.join("bin")),
+            Some(share.clone())
+        );
+        let neighbor = root.join("neighbor/share");
+        write_layout_anchors(&neighbor);
+        assert_eq!(
+            resolve_installation_root_from_executable_dir(&bin),
+            Some(share.clone())
+        );
+        fs::remove_dir_all(root).expect("cleanup layout anchors");
+    }
+
+    #[test]
+    fn layout_install_root_uses_immediate_parent_only_and_survives_relocate() {
+        let root = unique_temp("layout-relocate");
+        let prefix = root.join("arbitrary-name");
+        let bin = prefix.join("bin");
+        fs::create_dir_all(&bin).expect("create bin");
+        write_layout_anchors(&prefix.join("share"));
+        assert_eq!(
+            resolve_installation_root_from_executable_dir(&bin),
+            Some(prefix.join("share"))
+        );
+        assert_eq!(
+            resolve_installation_root_from_executable_dir(&bin.join("nested")),
+            None,
+            "must not walk ancestors for the layout candidate"
+        );
+
+        let moved = root.join("relocated-name");
+        fs::rename(&prefix, &moved).expect("relocate tree without rewriting files");
+        assert_eq!(
+            resolve_installation_root_from_executable_dir(&moved.join("bin")),
+            Some(moved.join("share"))
+        );
+        fs::remove_dir_all(root).expect("cleanup relocated layout");
+    }
+
+    #[test]
+    fn site_packages_and_checkout_still_precede_layout_install() {
+        let root = unique_temp("layout-precedence");
+        let prefix = root.join("prefix");
+        let bin = prefix.join("bin");
+        fs::create_dir_all(&bin).expect("create bin");
+        write_layout_anchors(&prefix.join("share"));
+        let site_packages = prefix.join("lib/python3.12/site-packages");
+        fs::create_dir_all(site_packages.join("solstone")).expect("site package");
+        fs::write(site_packages.join("solstone/__init__.py"), "").expect("init");
+        assert_eq!(
+            resolve_installation_root_from_executable_dir(&bin),
+            Some(fs::canonicalize(&site_packages).expect("canonical site-packages"))
+        );
+
+        let checkout = root.join("checkout");
+        let checkout_bin = checkout.join("bin");
+        fs::create_dir_all(&checkout_bin).expect("checkout bin");
+        fs::create_dir_all(checkout.join("solstone")).expect("checkout package");
+        fs::create_dir_all(checkout.join(".git")).expect("git");
+        fs::write(checkout.join("pyproject.toml"), "").expect("pyproject");
+        write_layout_anchors(&checkout.join("share"));
+        assert_eq!(
+            resolve_installation_root_from_executable_dir(&checkout_bin),
+            Some(checkout.clone())
+        );
+        fs::remove_dir_all(root).expect("cleanup precedence");
     }
 
     #[test]

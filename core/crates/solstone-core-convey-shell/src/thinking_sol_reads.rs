@@ -36,20 +36,20 @@ pub(crate) struct TalentRoots {
 
 impl TalentRoots {
     pub(crate) fn production() -> Self {
-        let root = std::env::current_exe()
+        std::env::current_exe()
             .ok()
             .and_then(|path| path.parent().map(PathBuf::from))
-            .and_then(|directory| {
-                solstone_core_journal::resolve_installation_root_from_executable_dir(&directory)
-            });
-        match root {
-            Some(root) => Self::from_root(root),
-            None => Self {
-                talent_root: PathBuf::from("solstone/talent"),
-                apps_root: PathBuf::from("solstone/apps"),
-                templates_dir: PathBuf::from("solstone/think/templates"),
-            },
-        }
+            .and_then(|directory| Self::from_executable_dir(&directory))
+            .unwrap_or_else(|| Self {
+                talent_root: PathBuf::new(),
+                apps_root: PathBuf::new(),
+                templates_dir: PathBuf::new(),
+            })
+    }
+
+    fn from_executable_dir(directory: &Path) -> Option<Self> {
+        solstone_core_journal::resolve_installation_root_from_executable_dir(directory)
+            .map(Self::from_root)
     }
 
     fn from_root(root: PathBuf) -> Self {
@@ -932,5 +932,27 @@ mod tests {
         assert_eq!(empty["description"], "");
         assert_eq!(empty["color"], "");
         assert_eq!(empty["source"], "");
+    }
+
+    #[test]
+    fn share_layout_resolves_and_fails_when_anchor_removed() {
+        let root = tempfile::TempDir::new_in("/var/tmp").expect("share layout root");
+        let bin = root.path().join("bin");
+        let share = root.path().join("share");
+        fs::create_dir_all(&bin).unwrap();
+        for relative in [
+            solstone_core_journal::LAYOUT_BUNDLE_ANCHOR,
+            solstone_core_journal::LAYOUT_LAYOUT_ANCHOR,
+            solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            let path = share.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, relative).unwrap();
+        }
+        let roots = TalentRoots::from_executable_dir(&bin).unwrap();
+        assert_eq!(roots.talent_root, share.join("solstone/talent"));
+        assert_eq!(roots.apps_root, share.join("solstone/apps"));
+        fs::remove_file(share.join(solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR)).unwrap();
+        assert!(TalentRoots::from_executable_dir(&bin).is_none());
     }
 }
