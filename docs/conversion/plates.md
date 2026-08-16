@@ -884,6 +884,52 @@ Model and runtime **artifact management** — what an owner's machine downloads,
 
 ⚠ **`warm` is deliberately NOT in this plate's cut.** Its contract is that the *Python payload* loads — six extension modules — which is logically incompatible with a guard whose pass condition is that Python was never reached. Rehoming that coverage needs a sibling-helper leaf, since `crt-static` forbids `dlopen`.
 
+## `P-distribution`
+
+**How the journal reaches a machine.** The artifact an owner installs, the layout inside it, and what installing it is allowed to require of the host.
+
+🆕 **Added 2026-08-16 by operator ruling.**
+
+🔴 **The boundary, and the only reason this plate exists:** ⛔ **a released artifact carries no dependency on a language runtime the product does not itself ship.** An owner installs the journal and runs it; nothing has to be on the machine first.
+
+🔴 **A done-condition satisfiable on a host that already has Python does not test this plate.** Every other boundary is graded on a dev checkout or an installed wheel, and both of those already have an interpreter — which is how the delivery layer stayed unowned while every plate went green. ✅ **The instrument runs on a host with no interpreter present, against a control on a host that has one**, so a zero can be distinguished from a blind probe.
+
+### The artifact
+
+**One relocatable tree per (os, arch). Every container is a wrapping of that tree, never a separate build.**
+
+```
+bin/    journal · sol · solstone            POSIX-shell launchers, $0-relative
+        solstone-core · solstone-core-journal · solstone-core-sol
+        solstone-core-describe · solstone-core-depict
+        solstone-core-speakers-analyze · solstone-core-vulkan-probe
+        solstone-retention
+lib/    solstone-core-speakers-analyze/libonnxruntime.so.1
+        solstone_journal_models/assets/*.onnx
+share/  notices and licences
+```
+
+✅ **The shipped binaries already resolve against this layout with no code change.** That property is what the plate is built on, and each half of it is a fact about code in this tree rather than an intention:
+
+- the three launchers walk `$0` symlinks and `exec` a native sibling resolved from their own directory (`scripts/root-launchers/`) — ⛔ nothing in them is virtualenv-aware
+- `libonnxruntime.so.1` is reached by the rpath `$ORIGIN/../lib/solstone-core-speakers-analyze`, emitted by `core/crates/solstone-core-speakers-analyze/build.rs`, over bytes staged from the pinned-digest table in `scripts/stage_speakers_analyze_runtime.py`
+- model assets resolve at `<ancestor-of-exe>/lib/solstone_journal_models/assets` and that candidate is tried **before** any `site-packages` path (`core/crates/solstone-core-transcribe/src/model_assets.rs`)
+- `solstone-core` is fully static; every other binary links base system libraries only
+
+⚠ **`journal` must be on `PATH`, not merely present.** The sense dispatcher spawns handlers by name (`["journal", "describe", …]`), so an install that lays the tree down without exporting `bin/` makes **every** handler spawn fail rather than one. See `P-segment-sense`.
+
+**Containers, all derived from the one tree:** `.tar.gz` is the primitive · `.deb` and `.rpm` relocate it under a system prefix and put the three launchers on `PATH` · macOS takes the same tree signed and notarized. ⛔ Windows is unsupported and is not a container.
+
+🔴 **A Python wheel is not one of them.** A native core delivered inside a `.whl`, unpacked by a Python package manager into `site-packages`, and gated at runtime on Python package metadata is a native core wearing Python packaging. ⛔ **Thinness is not the test; delivery is.**
+
+### Carry forward, non-negotiable
+
+- 🔴 **One artifact, one version.** Every binary in a tree comes from one build of one commit. The failure class *"a thin client upgraded out of step with a leaf"* — which `core/crates/solstone-core-journal-cli/src/coherence.rs` exists to detect, by reading `site-packages/*.dist-info/METADATA` before **43 of 46** process verbs — becomes **unrepresentable** here rather than merely detected. ⚠ Two properties of that check matter to whoever removes it: it **self-disables** when no `site-packages` is found, so it does not block a tree install, it is inert weight there; and its escape list `KNOWN_SOLSTONE_PACKAGE_NAMES` (`core/crates/solstone-core-journal/src/lib.rs:77`) names **none** of the `solstone-core-*` family that every current install has, while `target_from_dist_info_directory` (`:401`) claims their dist-info directories by prefix — so on a wheel install it refuses those verbs.
+- 🔴 **Nothing in the artifact is test material.** `setup-fixture-journal`, `solstone-transcribe-*-stub`, `solstone-describe-*-stub`, `solstone-generate-*-stub` and the `*-test-child` helpers are plain `[[bin]]` targets with **no `required-features`**, so a default release build produces them and any packaging step that ships *"the binaries"* ships those too. The inventory is an allow-list, never a directory listing.
+- 🔴 **The install-time copy an owner reads belongs to this plate.** `solstone-core-check` renders *"Ready — install the journal next: `uv tool install {package}`"*, and ten of the doctor's checks are about the Python install layout — `python_version` · `sol_importable` · `host_dependencies` · `journal_leaf_exclusivity` · `journal_package_version` · `retired_host_shim` · `package_metadata` · `local_bin_sol_reachable` · `stale_alias_symlink` · `disk_space` — several rendering `pip install` / `pipx` / `uv tool` remediation. A packaging change that leaves them is a native product diagnosing a layout it no longer has and sending owners to fetch a Python installer.
+- **Model bytes are either inside the artifact or fetched from our origin — never both, and never neither.** See `S:distribution:system-models`.
+- ⚠ **The instrument that tests an install must be able to fail.** `scripts/cleanroom-install.sh` accepts only `python:3.12-slim` / `python:3.12`, so the one tool in this repository aimed at install correctness is structurally incapable of testing a host without an interpreter.
+
 ## `P-body-source`
 
 Owner **body** data arriving from outside: Oura and Apple Health. ⚠ **Ingress, not egress.** This body-import path uploads no body records or other journal content.
