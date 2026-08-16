@@ -246,6 +246,9 @@ reason = "this producer; never ship inside the product tree"
 [[cleanroom.subject]]
 id = "debian-bookworm-no-python"
 image = "debian:bookworm-slim"
+digest = "sha256:362e64223cc0da95422b3b13c045186fc0a81250e765d31c025fbddf257f6143"
+network = "none"
+python = false
 
 [[cleanroom.builder]]
 id = "rust-zig-no-python"

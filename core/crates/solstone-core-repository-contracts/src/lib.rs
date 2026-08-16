@@ -22,6 +22,9 @@ mod distribution_workspace_bins;
 #[path = "contracts/distribution_no_independent_resolvers.rs"]
 mod distribution_no_independent_resolvers;
 #[cfg(test)]
+#[path = "contracts/distribution_install_archive_refusals.rs"]
+mod distribution_install_archive_refusals;
+#[cfg(test)]
 #[path = "contracts/journal_io_deny_policy.rs"]
 mod journal_io_deny_policy;
 #[cfg(test)]

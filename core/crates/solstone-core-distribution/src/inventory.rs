@@ -102,6 +102,15 @@ pub struct Cleanroom {
 pub struct CleanroomSubject {
     pub id: String,
     pub image: String,
+    pub digest: String,
+    #[serde(default = "default_cleanroom_network")]
+    pub network: String,
+    #[serde(default)]
+    pub python: bool,
+}
+
+fn default_cleanroom_network() -> String {
+    "none".to_owned()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -251,7 +260,51 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             payload_path.display()
         )));
     }
+
+    let mut unpinned = BTreeSet::new();
+    let mut unexpected_network = BTreeSet::new();
+    let mut python_subjects = BTreeSet::new();
+    for subject in &inventory.cleanroom.subject {
+        if !digest_is_pinned(&subject.digest) {
+            unpinned.insert(subject.id.clone());
+        }
+        if subject.network != "none" {
+            unexpected_network.insert(format!("{}={}", subject.id, subject.network));
+        }
+        if subject.python {
+            python_subjects.insert(subject.id.clone());
+        }
+    }
+    if !unpinned.is_empty() {
+        return Err(InventoryError::new(format_named_list(
+            "unpinned cleanroom subject",
+            &unpinned,
+        )));
+    }
+    if !unexpected_network.is_empty() {
+        return Err(InventoryError::new(format_named_list(
+            "unexpected cleanroom network",
+            &unexpected_network,
+        )));
+    }
+    if !python_subjects.is_empty() {
+        return Err(InventoryError::new(format_named_list(
+            "unexpected python subject",
+            &python_subjects,
+        )));
+    }
     Ok(())
+}
+
+#[must_use]
+pub fn digest_is_pinned(digest: &str) -> bool {
+    let Some(hex) = digest.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64
+        && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && !hex.eq_ignore_ascii_case("REFUSEUNPINNED")
+        && hex.bytes().any(|byte| byte != b'0')
 }
 
 fn entry_fields(entry: &Entry) -> (Vec<&str>, &Vec<String>, Option<&String>) {

@@ -5,6 +5,9 @@ use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use solstone_core_distribution::cleanroom::{
+    bind_loopback, plan_text_from_inventory_path, serve_directory, serve_root_from_args,
+};
 use solstone_core_distribution::discover_and_validate_inventory;
 
 fn main() -> ExitCode {
@@ -32,13 +35,66 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Some("cleanroom-plan") => {
+            let start = args
+                .next()
+                .map(PathBuf::from)
+                .or_else(|| env::current_dir().ok())
+                .unwrap_or_else(|| PathBuf::from("."));
+            let path = start.join("core/distribution/inventory.toml");
+            let inventory_path = if path.is_file() {
+                path
+            } else {
+                start.clone()
+            };
+            match plan_text_from_inventory_path(&inventory_path) {
+                Ok(text) => {
+                    print!("{text}");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("cleanroom-serve") => {
+            let rest = args.collect::<Vec<_>>();
+            match serve_root_from_args(&rest) {
+                Ok(root) => match bind_loopback() {
+                    Ok((listener, port)) => {
+                        println!("127.0.0.1:{port}");
+                        let _ = std::io::Write::flush(&mut std::io::stdout());
+                        match serve_directory(listener, &root) {
+                            Ok(()) => ExitCode::SUCCESS,
+                            Err(error) => {
+                                eprintln!("{error}");
+                                ExitCode::from(2)
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("{error}");
+                        ExitCode::from(2)
+                    }
+                },
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         Some("help" | "--help" | "-h") | None => {
-            println!("usage: solstone-distribution <validate|help> [START_DIR]");
+            println!(
+                "usage: solstone-distribution <validate|cleanroom-plan|cleanroom-serve|help> [ARG]"
+            );
             ExitCode::SUCCESS
         }
         Some(other) => {
             eprintln!("unknown command {other:?}");
-            eprintln!("usage: solstone-distribution <validate|help> [START_DIR]");
+            println!(
+                "usage: solstone-distribution <validate|cleanroom-plan|cleanroom-serve|help> [ARG]"
+            );
             ExitCode::from(2)
         }
     }

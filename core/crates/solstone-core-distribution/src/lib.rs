@@ -3,6 +3,7 @@
 
 pub mod ar;
 pub mod archive;
+pub mod cleanroom;
 pub mod deb;
 pub mod digest;
 pub mod elf;
