@@ -552,6 +552,18 @@ check-rust-unit:
 	@$(REQUIRE_CARGO)
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked -- --test-threads=1
 
+SOLSTONE_CI_RUNNER := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-repository-contracts --bin solstone-ci --locked --
+
+.PHONY: check-rust-ci-topology ci-full-plan
+
+check-rust-ci-topology:
+	@$(REQUIRE_CARGO)
+	$(SOLSTONE_CI_RUNNER) validate
+
+ci-full-plan:
+	@$(REQUIRE_CARGO)
+	$(SOLSTONE_CI_RUNNER) plan
+
 check-rust-test:
 	@$(REQUIRE_CARGO)
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked -- --test-threads=1
@@ -1307,6 +1319,7 @@ ci:
 ci-under-poison:
 	@test "$$SOLSTONE_CI_POISONED" = 1 || { echo "ci-under-poison is internal; run 'make ci'" >&2; exit 2; }
 	@$(MAKE) check-rust-fmt
+	@$(MAKE) check-rust-ci-topology
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-unit
 	@echo "Efficient CI checks passed (format, all-target static compilation, and library/binary unit tests)."
@@ -1318,6 +1331,7 @@ ci-full: check-rust-onnx-stage check-rust-pdf-stage
 ci-full-under-poison:
 	@test "$$SOLSTONE_CI_POISONED" = 1 || { echo "ci-full-under-poison is internal; run 'make ci-full'" >&2; exit 2; }
 	@$(MAKE) check-rust-fmt
+	@$(MAKE) check-rust-ci-topology
 	@$(MAKE) check-rust-msrv
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-deny

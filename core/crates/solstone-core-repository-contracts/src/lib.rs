@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+pub mod ci;
+
 #[cfg(test)]
 #[path = "contracts/ci_gate_purity.rs"]
 mod ci_gate_purity;

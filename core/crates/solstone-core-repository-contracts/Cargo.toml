@@ -6,9 +6,15 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[dependencies]
+quote = "1.0.47"
+serde.workspace = true
+serde_json.workspace = true
+syn = { version = "2.0.119", features = ["full", "visit"] }
+toml_edit = { workspace = true, features = ["serde"] }
+
 [lints]
 workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 tempfile = "3.24.0"

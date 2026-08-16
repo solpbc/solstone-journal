@@ -1,0 +1,2026 @@
+version = 1
+sets = ["component", "native", "differential", "race", "policy", "package", "platform"]
+areas = ["audio", "backup", "body", "cognition", "commands", "core", "health", "home", "import", "indexing", "ingest", "journal", "media", "observation", "platform", "repository", "retention", "services", "stats", "system", "transfer", "trust", "workspace"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "cargo-deny", "ffmpeg-toolchain", "msrv", "onnx-runtime", "pdf-runtime", "apple-sdk", "host-tools"]
+serial_groups = ["host-contention", "local-services", "native-runtime"]
+
+[timeouts]
+quick = 120
+standard = 600
+slow = 1200
+extended = 1800
+
+[[legs]]
+id = "fmt"
+make_target = "check-rust-fmt"
+set = "policy"
+areas = ["repository"]
+packages = ["workspace"]
+platforms = ["linux", "macos"]
+prerequisites = []
+timeout = "quick"
+default_full = true
+
+[[legs]]
+id = "msrv"
+make_target = "check-rust-msrv"
+set = "policy"
+areas = ["workspace"]
+packages = ["workspace"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "msrv"]
+timeout = "extended"
+default_full = true
+
+[[legs]]
+id = "clippy-full"
+make_target = "check-rust-clippy-full"
+set = "policy"
+areas = ["workspace"]
+packages = ["workspace"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "extended"
+default_full = true
+
+[[legs]]
+id = "dependency-policy"
+make_target = "check-rust-deny"
+set = "policy"
+areas = ["repository"]
+packages = ["workspace"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "cargo-deny"]
+timeout = "standard"
+default_full = true
+
+[[legs]]
+id = "lib-bin"
+make_target = "check-rust-unit"
+set = "component"
+areas = ["workspace"]
+packages = ["workspace"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "extended"
+default_full = true
+
+[[legs]]
+id = "describe-stubs"
+make_target = "check-rust-describe-cli-stubs"
+set = "native"
+areas = ["media"]
+packages = ["solstone-core-describe"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "slow"
+default_full = true
+
+[[legs]]
+id = "onnx-host-tests"
+make_target = "check-rust-onnx-test"
+set = "native"
+areas = ["audio"]
+packages = ["solstone-core-speakers-analyze", "solstone-core-speakers-onnx", "solstone-core-vad-analyze"]
+platforms = ["linux"]
+prerequisites = ["cargo-cache", "onnx-runtime"]
+timeout = "extended"
+serial_group = "native-runtime"
+default_full = true
+
+[[legs]]
+id = "pdf-host-tests"
+make_target = "check-rust-pdf-test"
+set = "native"
+areas = ["media"]
+packages = ["solstone-core-pdf"]
+platforms = ["linux"]
+prerequisites = ["cargo-cache", "pdf-runtime"]
+timeout = "slow"
+serial_group = "native-runtime"
+default_full = true
+
+[[legs]]
+id = "shipped-binaries"
+make_target = "check-rust-shipped-binaries"
+set = "package"
+areas = ["commands", "audio", "media"]
+packages = ["workspace"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "onnx-runtime"]
+timeout = "extended"
+serial_group = "native-runtime"
+default_full = true
+
+[[legs]]
+id = "ios"
+make_target = "check-rust-ios"
+set = "platform"
+areas = ["platform"]
+packages = ["workspace"]
+platforms = ["macos"]
+prerequisites = ["cargo-cache", "apple-sdk"]
+timeout = "extended"
+default_full = true
+
+[[legs]]
+id = "macos"
+make_target = "check-rust-macos"
+set = "platform"
+areas = ["platform"]
+packages = ["workspace"]
+platforms = ["macos"]
+prerequisites = ["cargo-cache", "apple-sdk", "onnx-runtime"]
+timeout = "extended"
+default_full = true
+
+[[legs]]
+id = "race"
+make_target = "check-rust-race"
+set = "race"
+areas = ["services"]
+packages = ["solstone-core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "extended"
+serial_group = "host-contention"
+default_full = false
+
+[[suites]]
+id = "solstone-core::core_brain_contracts"
+package = "solstone-core"
+target = "core_brain_contracts"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core::core_cli_contracts"
+package = "solstone-core"
+target = "core_cli_contracts"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core::core_convey_contracts"
+package = "solstone-core"
+target = "core_convey_contracts"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core::core_differentials"
+package = "solstone-core"
+target = "core_differentials"
+set = "differential"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core::core_journal_contracts"
+package = "solstone-core"
+target = "core_journal_contracts"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core::core_supervisor_contracts"
+package = "solstone-core"
+target = "core_supervisor_contracts"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core::identity_cli"
+package = "solstone-core"
+target = "identity_cli"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core::supervisor_app_stack"
+package = "solstone-core"
+target = "supervisor_app_stack"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core::supervisor_shutdown"
+package = "solstone-core"
+target = "supervisor_shutdown"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core::supervisor_tick"
+package = "solstone-core"
+target = "supervisor_tick"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core::think_verb_fidelity"
+package = "solstone-core"
+target = "think_verb_fidelity"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-ingest::apple_ingest"
+package = "solstone-core-body-ingest"
+target = "apple_ingest"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-ingest::oura_ingest"
+package = "solstone-core-body-ingest"
+target = "oura_ingest"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-rebuild::rebuild"
+package = "solstone-core-body-rebuild"
+target = "rebuild"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-source::body_source_allocation"
+package = "solstone-core-body-source"
+target = "body_source_allocation"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-source::body_source_envelope"
+package = "solstone-core-body-source"
+target = "body_source_envelope"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-source::body_source_ledger"
+package = "solstone-core-body-source"
+target = "body_source_ledger"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-source::body_source_manifest"
+package = "solstone-core-body-source"
+target = "body_source_manifest"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-source::body_source_sources"
+package = "solstone-core-body-source"
+target = "body_source_sources"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-store::bundle_replay"
+package = "solstone-core-body-store"
+target = "bundle_replay"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-store::fixture_integration"
+package = "solstone-core-body-store"
+target = "fixture_integration"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-store::legacy_replay"
+package = "solstone-core-body-store"
+target = "legacy_replay"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-store::state_errors"
+package = "solstone-core-body-store"
+target = "state_errors"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-store::state_tables"
+package = "solstone-core-body-store"
+target = "state_tables"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-body-store::state_upsert"
+package = "solstone-core-body-store"
+target = "state_upsert"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-brain-cli::inspect"
+package = "solstone-core-brain-cli"
+target = "inspect"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-callosum::callosum_cross_process"
+package = "solstone-core-callosum"
+target = "callosum_cross_process"
+set = "differential"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-callosum::cogitate_wire_conformance"
+package = "solstone-core-callosum"
+target = "cogitate_wire_conformance"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-callosum::registry_conformance"
+package = "solstone-core-callosum"
+target = "registry_conformance"
+set = "differential"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-check::check_corpus"
+package = "solstone-core-check"
+target = "check_corpus"
+set = "component"
+areas = ["health"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-convey-shell::convey_authorization_contracts"
+package = "solstone-core-convey-shell"
+target = "convey_authorization_contracts"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-convey-shell::convey_route_contracts"
+package = "solstone-core-convey-shell"
+target = "convey_route_contracts"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-convey-shell::convey_speaker_contracts"
+package = "solstone-core-convey-shell"
+target = "convey_speaker_contracts"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-convey-shell::corpus"
+package = "solstone-core-convey-shell"
+target = "corpus"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-convey-shell::restart_protocol"
+package = "solstone-core-convey-shell"
+target = "restart_protocol"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-convey-shell::thinking_runs_contracts"
+package = "solstone-core-convey-shell"
+target = "thinking_runs_contracts"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-convey-shell::thinking_runs_dom"
+package = "solstone-core-convey-shell"
+target = "thinking_runs_dom"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-convey-shell::thinking_sol_reads"
+package = "solstone-core-convey-shell"
+target = "thinking_sol_reads"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-describe::cli"
+package = "solstone-core-describe"
+target = "cli"
+set = "native"
+areas = ["media"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "standard"
+default_full = true
+required_features = ["test-stubs"]
+
+[[suites]]
+id = "solstone-core-generate::contract_precedence"
+package = "solstone-core-generate"
+target = "contract_precedence"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-generate::no_downgrade"
+package = "solstone-core-generate"
+target = "no_downgrade"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-generate::one_shot_stub"
+package = "solstone-core-generate"
+target = "one_shot_stub"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-generate::session"
+package = "solstone-core-generate"
+target = "session"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-generate::session_real"
+package = "solstone-core-generate"
+target = "session_real"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-generate::session_stub"
+package = "solstone-core-generate"
+target = "session_stub"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-generate::support"
+package = "solstone-core-generate"
+target = "support"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-generate::wire"
+package = "solstone-core-generate"
+target = "wire"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-generate-wire::frozen_seam_oracles"
+package = "solstone-core-generate-wire"
+target = "frozen_seam_oracles"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-generate-wire::responsiveness_differential"
+package = "solstone-core-generate-wire"
+target = "responsiveness_differential"
+set = "differential"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-generate-wire::token_log_differential"
+package = "solstone-core-generate-wire"
+target = "token_log_differential"
+set = "differential"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-home-web::removals"
+package = "solstone-core-home-web"
+target = "removals"
+set = "component"
+areas = ["home"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-import::import_cli"
+package = "solstone-core-import"
+target = "import_cli"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-import::import_foundation"
+package = "solstone-core-import"
+target = "import_foundation"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-import::import_sync"
+package = "solstone-core-import"
+target = "import_sync"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-import::import_text"
+package = "solstone-core-import"
+target = "import_text"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-import-host::import_host"
+package = "solstone-core-import-host"
+target = "import_host"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-import-sources::archive_merge_oracle"
+package = "solstone-core-import-sources"
+target = "archive_merge_oracle"
+set = "differential"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-import-sources::source_archive_contracts"
+package = "solstone-core-import-sources"
+target = "source_archive_contracts"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-import-sources::source_document_contracts"
+package = "solstone-core-import-sources"
+target = "source_document_contracts"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-import-sources::source_format_contracts"
+package = "solstone-core-import-sources"
+target = "source_format_contracts"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-import-sources::source_planning_contracts"
+package = "solstone-core-import-sources"
+target = "source_planning_contracts"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-indexer::architecture"
+package = "solstone-core-indexer"
+target = "architecture"
+set = "component"
+areas = ["indexing"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-indexer-store::schema_drift"
+package = "solstone-core-indexer-store"
+target = "schema_drift"
+set = "component"
+areas = ["indexing"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-ingest::observer_listing"
+package = "solstone-core-ingest"
+target = "observer_listing"
+set = "component"
+areas = ["ingest"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-archive::architecture"
+package = "solstone-core-journal-archive"
+target = "architecture"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-archive::capability_rooting"
+package = "solstone-core-journal-archive"
+target = "capability_rooting"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-archive::count_semantics"
+package = "solstone-core-journal-archive"
+target = "count_semantics"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-archive::encode"
+package = "solstone-core-journal-archive"
+target = "encode"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-archive::inventory_snapshot"
+package = "solstone-core-journal-archive"
+target = "inventory_snapshot"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-archive::post_inventory_barriers"
+package = "solstone-core-journal-archive"
+target = "post_inventory_barriers"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-archive::rejected_entries"
+package = "solstone-core-journal-archive"
+target = "rejected_entries"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_doctor_native_cutover"
+package = "solstone-core-journal-bin"
+target = "journal_doctor_native_cutover"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_export_native_cutover"
+package = "solstone-core-journal-bin"
+target = "journal_export_native_cutover"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_facet_navigate_native_cutover"
+package = "solstone-core-journal-bin"
+target = "journal_facet_navigate_native_cutover"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_health_native_body"
+package = "solstone-core-journal-bin"
+target = "journal_health_native_body"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_identity"
+package = "solstone-core-journal-bin"
+target = "journal_identity"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_identity_native_cutover"
+package = "solstone-core-journal-bin"
+target = "journal_identity_native_cutover"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_importer_native_cutover"
+package = "solstone-core-journal-bin"
+target = "journal_importer_native_cutover"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_native_dispatch"
+package = "solstone-core-journal-bin"
+target = "journal_native_dispatch"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_native_process_contract"
+package = "solstone-core-journal-bin"
+target = "journal_native_process_contract"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_observer_native_cutover"
+package = "solstone-core-journal-bin"
+target = "journal_observer_native_cutover"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_process_bootstrap"
+package = "solstone-core-journal-bin"
+target = "journal_process_bootstrap"
+set = "differential"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-journal-bin::journal_settings_native_cutover"
+package = "solstone-core-journal-bin"
+target = "journal_settings_native_cutover"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-journal-cli::process_census_fixture"
+package = "solstone-core-journal-cli"
+target = "process_census_fixture"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-local::admission_cross_process"
+package = "solstone-core-local"
+target = "admission_cross_process"
+set = "differential"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-local::downloading_installers_differential"
+package = "solstone-core-local"
+target = "downloading_installers_differential"
+set = "differential"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-local::install_provider_differential"
+package = "solstone-core-local"
+target = "install_provider_differential"
+set = "differential"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-local::local_fit_report_differential"
+package = "solstone-core-local"
+target = "local_fit_report_differential"
+set = "differential"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-local::vulkan_differential"
+package = "solstone-core-local"
+target = "vulkan_differential"
+set = "differential"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-maint::cli_contract"
+package = "solstone-core-maint"
+target = "cli_contract"
+set = "component"
+areas = ["backup"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-maint::runner_self_spawn"
+package = "solstone-core-maint"
+target = "runner_self_spawn"
+set = "component"
+areas = ["backup"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-observe-audio::audio_differential"
+package = "solstone-core-observe-audio"
+target = "audio_differential"
+set = "differential"
+areas = ["observation"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-observer::observer_differentials"
+package = "solstone-core-observer"
+target = "observer_differentials"
+set = "differential"
+areas = ["observation"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "local-services"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-observer::observer_prune_contracts"
+package = "solstone-core-observer"
+target = "observer_prune_contracts"
+set = "component"
+areas = ["observation"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "local-services"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-pdf::pdf_contract"
+package = "solstone-core-pdf"
+target = "pdf_contract"
+set = "native"
+areas = ["media"]
+platforms = ["linux"]
+prerequisites = ["cargo-cache", "pdf-runtime"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-retention::architecture"
+package = "solstone-core-retention"
+target = "architecture"
+set = "component"
+areas = ["retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-retention::index_ordering"
+package = "solstone-core-retention"
+target = "index_ordering"
+set = "component"
+areas = ["retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-retention::log_retention"
+package = "solstone-core-retention"
+target = "log_retention"
+set = "component"
+areas = ["retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-retention::marks"
+package = "solstone-core-retention"
+target = "marks"
+set = "component"
+areas = ["retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-retention::release_oracle"
+package = "solstone-core-retention"
+target = "release_oracle"
+set = "package"
+areas = ["retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-retention::scan_segment"
+package = "solstone-core-retention"
+target = "scan_segment"
+set = "component"
+areas = ["retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-retention::staged_name"
+package = "solstone-core-retention"
+target = "staged_name"
+set = "component"
+areas = ["retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-retention::sweep_pass"
+package = "solstone-core-retention"
+target = "sweep_pass"
+set = "component"
+areas = ["retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-retention-cli::prune_logs"
+package = "solstone-core-retention-cli"
+target = "prune_logs"
+set = "component"
+areas = ["retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-retention-cli::verbs"
+package = "solstone-core-retention-cli"
+target = "verbs"
+set = "component"
+areas = ["retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-segment::stream_record_readcompat"
+package = "solstone-core-segment"
+target = "stream_record_readcompat"
+set = "component"
+areas = ["ingest"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-segment-cli::storage_ops_grammar_fixture_content"
+package = "solstone-core-segment-cli"
+target = "storage_ops_grammar_fixture_content"
+set = "component"
+areas = ["ingest"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-sense::service_e2e"
+package = "solstone-core-sense"
+target = "service_e2e"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-service-unit::derivation"
+package = "solstone-core-service-unit"
+target = "derivation"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-service-unit::evidence_selection"
+package = "solstone-core-service-unit"
+target = "evidence_selection"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-service-unit::hostile_round_trip"
+package = "solstone-core-service-unit"
+target = "hostile_round_trip"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-sol::resident"
+package = "solstone-core-sol"
+target = "resident"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-sol-bin::skills"
+package = "solstone-core-sol-bin"
+target = "skills"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-sol-bin::sol_identity"
+package = "solstone-core-sol-bin"
+target = "sol_identity"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-sol-client::json_numeric_roundtrip"
+package = "solstone-core-sol-client"
+target = "json_numeric_roundtrip"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-sol-client-cli::parity"
+package = "solstone-core-sol-client-cli"
+target = "parity"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-sol-link::device_door_identity"
+package = "solstone-core-sol-link"
+target = "device_door_identity"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = true
+required_features = ["host"]
+
+[[suites]]
+id = "solstone-core-sol-link::device_door_tls"
+package = "solstone-core-sol-link"
+target = "device_door_tls"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = true
+required_features = ["host"]
+
+[[suites]]
+id = "solstone-core-sound-tags::tag_audio"
+package = "solstone-core-sound-tags"
+target = "tag_audio"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-speaker-id::calibration"
+package = "solstone-core-speaker-id"
+target = "calibration"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-speaker-id::corrections"
+package = "solstone-core-speaker-id"
+target = "corrections"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-speaker-id::json"
+package = "solstone-core-speaker-id"
+target = "json"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-speaker-id::labels"
+package = "solstone-core-speaker-id"
+target = "labels"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-speaker-id::transcript"
+package = "solstone-core-speaker-id"
+target = "transcript"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-speaker-id::writer"
+package = "solstone-core-speaker-id"
+target = "writer"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-speaker-resolve::speaker_bootstrap_contracts"
+package = "solstone-core-speaker-resolve"
+target = "speaker_bootstrap_contracts"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-speaker-resolve::speaker_identification_contracts"
+package = "solstone-core-speaker-resolve"
+target = "speaker_identification_contracts"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-speaker-resolve::speaker_owner_contracts"
+package = "solstone-core-speaker-resolve"
+target = "speaker_owner_contracts"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-speaker-resolve::speaker_resolution_contracts"
+package = "solstone-core-speaker-resolve"
+target = "speaker_resolution_contracts"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-speaker-resolve::speaker_voiceprint_contracts"
+package = "solstone-core-speaker-resolve"
+target = "speaker_voiceprint_contracts"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-spp-attest::spp_attest_differential"
+package = "solstone-core-spp-attest"
+target = "spp_attest_differential"
+set = "differential"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-spp-ratls::composite_differential"
+package = "solstone-core-spp-ratls"
+target = "composite_differential"
+set = "differential"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-steward-prune::adversarial"
+package = "solstone-core-steward-prune"
+target = "adversarial"
+set = "component"
+areas = ["backup"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-steward-prune::allocation_accounting"
+package = "solstone-core-steward-prune"
+target = "allocation_accounting"
+set = "component"
+areas = ["backup"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-steward-prune::reference_oracle"
+package = "solstone-core-steward-prune"
+target = "reference_oracle"
+set = "component"
+areas = ["backup"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-steward-prune::rows"
+package = "solstone-core-steward-prune"
+target = "rows"
+set = "component"
+areas = ["backup"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-streams-cli::storage_ops_grammar_fixture_shape"
+package = "solstone-core-streams-cli"
+target = "storage_ops_grammar_fixture_shape"
+set = "component"
+areas = ["commands"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-system::system_contracts"
+package = "solstone-core-system"
+target = "system_contracts"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-system::system_differentials"
+package = "solstone-core-system"
+target = "system_differentials"
+set = "differential"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-system::system_lifecycle"
+package = "solstone-core-system"
+target = "system_lifecycle"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-system::system_provider_runtime"
+package = "solstone-core-system"
+target = "system_provider_runtime"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-system::system_schedule_queue"
+package = "solstone-core-system"
+target = "system_schedule_queue"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-system-health::pipeline_health_oracle"
+package = "solstone-core-system-health"
+target = "pipeline_health_oracle"
+set = "differential"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-system-health::system_health_state_contracts"
+package = "solstone-core-system-health"
+target = "system_health_state_contracts"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-system-health::system_health_static_contracts"
+package = "solstone-core-system-health"
+target = "system_health_static_contracts"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-top::render_reference"
+package = "solstone-core-top"
+target = "render_reference"
+set = "component"
+areas = ["stats"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-top::top_reducer_render_contracts"
+package = "solstone-core-top"
+target = "top_reducer_render_contracts"
+set = "component"
+areas = ["stats"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-top::top_runtime_contracts"
+package = "solstone-core-top"
+target = "top_runtime_contracts"
+set = "component"
+areas = ["stats"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-transcribe::transcribe_differential"
+package = "solstone-core-transcribe"
+target = "transcribe_differential"
+set = "differential"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-transcribe::transcribe_sound_tags_differential"
+package = "solstone-core-transcribe"
+target = "transcribe_sound_tags_differential"
+set = "differential"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-transcribe::transcribe_vad_differential"
+package = "solstone-core-transcribe"
+target = "transcribe_vad_differential"
+set = "differential"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-transcribe-cli::reachability"
+package = "solstone-core-transcribe-cli"
+target = "reachability"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-transfer::transfer"
+package = "solstone-core-transfer"
+target = "transfer"
+set = "component"
+areas = ["transfer"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+
+[[suites]]
+id = "solstone-core-transfer::transfer_differential"
+package = "solstone-core-transfer"
+target = "transfer_differential"
+set = "differential"
+areas = ["transfer"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]
+
+[[suites]]
+id = "solstone-core-vad-analyze::vad_differential"
+package = "solstone-core-vad-analyze"
+target = "vad_differential"
+set = "differential"
+areas = ["core"]
+platforms = ["linux"]
+prerequisites = ["cargo-cache", "onnx-runtime"]
+timeout = "standard"
+default_full = false
+required_features = ["differential"]

@@ -484,7 +484,7 @@ fn assert_gate_never_executes_forbidden_interpreters(gate: &str, expected: &[&st
 
 #[test]
 fn make_ci_never_executes_forbidden_interpreters() {
-    assert_gate_never_executes_forbidden_interpreters("ci", &["fmt", "clippy", "test"]);
+    assert_gate_never_executes_forbidden_interpreters("ci", &["fmt", "run", "clippy", "test"]);
 }
 
 #[test]
@@ -493,7 +493,9 @@ fn make_ci_full_never_executes_forbidden_interpreters() {
     // failure cannot hide it. The trailing "test" is
     // check-rust-describe-cli-stubs, immediately after that workspace leg.
     // ONNX and PDF each add one Linux-only test.
-    let mut expected = vec!["fmt", "check", "clippy", "fetch", "deny", "test", "test"];
+    let mut expected = vec![
+        "fmt", "run", "check", "clippy", "fetch", "deny", "test", "test",
+    ];
     if cfg!(target_os = "linux") {
         expected.extend(["test", "test"]);
     }

@@ -1,0 +1,3676 @@
+version = 1
+
+[[findings]]
+id = "solstone-core-artifact-download::core/crates/solstone-core-artifact-download/src/lib.rs::tests::byte_download_http_status_is_not_retried::scheduling"
+
+[[findings]]
+id = "solstone-core-artifact-download::core/crates/solstone-core-artifact-download/src/lib.rs::tests::byte_download_retries_transport_then_verifies::scheduling"
+
+[[findings]]
+id = "solstone-core-artifact-download::core/crates/solstone-core-artifact-download/src/lib.rs::tests::clearing_quarantine_is_recursive_and_idempotent::process"
+
+[[findings]]
+id = "solstone-core-backup-cli::core/crates/solstone-core-backup-cli/src/lib.rs::tests::destination_set_persists_before_validation_and_maps_status_exits::clock"
+
+[[findings]]
+id = "solstone-core-backup-cli::core/crates/solstone-core-backup-cli/src/lib.rs::tests::restore_requires_a_recovery_key_and_uses_exact_owner_messages::clock"
+
+[[findings]]
+id = "solstone-core-backup-cli::core/crates/solstone-core-backup-cli/src/lib.rs::tests::run_result_branches_use_owner_output::clock"
+
+[[findings]]
+id = "solstone-core-backup-cli::core/crates/solstone-core-backup-cli/src/lib.rs::tests::teardown_result_branches_use_owner_output::clock"
+
+[[findings]]
+id = "solstone-core-backup-runtime::core/crates/solstone-core-backup-runtime/src/destination.rs::tests::maps_reference_statuses_and_uses_stored_backend_values::clock"
+
+[[findings]]
+id = "solstone-core-backup-runtime::core/crates/solstone-core-backup-runtime/src/destination.rs::tests::run::clock"
+
+[[findings]]
+id = "solstone-core-backup-runtime::core/crates/solstone-core-backup-runtime/src/hosted_runtime.rs::tests::broker_request_has_reference_auth_shape_and_validates_failure_classes::clock"
+
+[[findings]]
+id = "solstone-core-backup-runtime::core/crates/solstone-core-backup-runtime/src/hosted_runtime.rs::tests::debug_redacts_http_and_hosted_session_secrets::clock"
+
+[[findings]]
+id = "solstone-core-backup-runtime::core/crates/solstone-core-backup-runtime/src/runner.rs::tests::debug_redacts_process_environment_and_raw_output::clock"
+
+[[findings]]
+id = "solstone-core-backup-runtime::core/crates/solstone-core-backup-runtime/src/runner.rs::tests::maps_all_reference_return_codes::clock"
+
+[[findings]]
+id = "solstone-core-backup-runtime::core/crates/solstone-core-backup-runtime/src/runner.rs::tests::timeout_scrubs_partial_output_and_passes_live_key_fd::clock"
+
+[[findings]]
+id = "solstone-core-backup-runtime::core/crates/solstone-core-backup-runtime/src/s3_wipe.rs::tests::batch_delete_error_and_transport_timeout_remain_errors::clock"
+
+[[findings]]
+id = "solstone-core-backup-web::core/crates/solstone-core-backup-web/src/assets.rs::tests::backup_status_reason_labels_are_closed::clock"
+
+[[findings]]
+id = "solstone-core-backup::core/crates/solstone-core-backup/src/state.rs::tests::concurrent_key_generation_converges_on_one_persisted_pair::scheduling"
+
+[[findings]]
+id = "solstone-core-backup::core/crates/solstone-core-backup/src/state.rs::tests::disjoint_mutations_survive_deterministic_contention::scheduling"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/apple.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/apple.rs::tests::waiting_save_rechecks_retention_after_acquiring_the_lock::clock"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/apple.rs::tests::waiting_save_rechecks_retention_after_acquiring_the_lock::scheduling"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/approval.rs::tests::temporary_journal::process"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/bundle.rs::tests::temporary_imports::process"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura.rs::tests::retained_parsed_pages_keep_each_validated_page_and_pagination_token::clock"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::browser_opener_cannot_hold_or_contaminate_the_helper_protocol::clock"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::browser_opener_cannot_hold_or_contaminate_the_helper_protocol::process"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::browser_stdio_child::clock"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::browser_stdio_child::process"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::browser_stdio_child::scheduling"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_sync.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_sync.rs::tests::save_gate_runs_before_transport_or_lock_and_unknown_forbidden_fails_closed::clock"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_sync.rs::tests::waiting_save_reads_tokens_only_after_acquiring_the_shared_lock::clock"
+
+[[findings]]
+id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_sync.rs::tests::waiting_save_reads_tokens_only_after_acquiring_the_shared_lock::scheduling"
+
+[[findings]]
+id = "solstone-core-body-rebuild::core/crates/solstone-core-body-rebuild/src/lib.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-body-rebuild::core/crates/solstone-core-body-rebuild/src/lib.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-body-source::core/crates/solstone-core-body-source/src/parser.rs::test_corpus::fixture_inputs::host-tool"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/corpus_tests.rs::new::clock"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/corpus_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/inspect.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/inspect.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/runtime_health.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/runtime_health.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::begin_pause_command::process"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::begin_pause_helper::clock"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::crash_after_begin_keeps_checking_record_and_kernel_releases_lease::scheduling"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::helper::process"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::key_generation_race_keeps_one_key::scheduling"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_lock_pause_command::process"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_lock_pause_helper::clock"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_writes_serialize_behind_a_real_process_lock::clock"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_writes_serialize_behind_a_real_process_lock::scheduling"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::refresh_contention_returns_no_permit_while_renewal_returns_busy::scheduling"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::renewal_pause_command::process"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::renewal_pause_helper::clock"
+
+[[findings]]
+id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::wait_for_file::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/connection.rs::counter_tests::counter_overflow_is_delivered_as_a_stopped_continuity_event::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::ac11_malformed_json_is_dropped_without_disconnect::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::ac12_exposes_malformed_and_single_eviction_counters::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::ac13_stalled_client_does_not_block_healthy_delivery_and_is_evicted::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::ac9_missing_required_fields_are_dropped_without_disconnect::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::accept_connected_raw_peer::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::capacity_one_priority_latch_preserves_saturation_and_recovery_order::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::continuity_lost_connection_emits_one_disconnected_marker::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::decode_fragmented::scheduling"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::drop_shuts_down_while_disconnect_gap_is_unconsumed::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::next::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::next_event::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::observed_connected_client::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::observed_connected_client::scheduling"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::priority_latch_starts_connecting_and_coalesces_unavailable::scheduling"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::raw::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::raw_line::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::real_adapter_retry_source_never_and_late_connect::scheduling"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::repeated_saturation_coalesces_one_gap_epoch::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::stop_joins_while_disconnect_gap_is_unconsumed::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::unconsumed_disconnect_gap_blocks_retry_until_delivery::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::wait_for_clients::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::wait_for_counter::clock"
+
+[[findings]]
+id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::wait_for_pending_priority::clock"
+
+[[findings]]
+id = "solstone-core-chat-append::core/crates/solstone-core-chat-append/src/lib.rs::tests::ac12_static_lock_keeps_two_concurrent_appends::scheduling"
+
+[[findings]]
+id = "solstone-core-chat-append::core/crates/solstone-core-chat-append/src/lib.rs::tests::ac12_static_lock_serializes_segment_selection::scheduling"
+
+[[findings]]
+id = "solstone-core-chat-append::core/crates/solstone-core-chat-append/src/lib.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-check::core/crates/solstone-core-check/src/lib.rs::tests::json_platform_python_is_null::host-tool"
+
+[[findings]]
+id = "solstone-core-check::core/crates/solstone-core-check/src/lib.rs::tests::json_platform_python_is_null::native"
+
+[[findings]]
+id = "solstone-core-check::core/crates/solstone-core-check/src/lib.rs::tests::vulkan_gpu_uses_shared_cpu_placement_decision::native"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_assets_command_without_arguments::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_brain_verbs::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_each_grab_boolean_option_individually::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_each_spl_service_flag::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_grab_option_forms_duplicates_and_contiguous_trailing_options::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_grab_zero_through_many_positional_tokens::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_counts_and_read_verbs::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_rebuild_edges_composed_with_rescan::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_rescan_file::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_rescan_full_reset_and_override::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_search_with_filters_and_options::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_indexer_without_operation_flags::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_config_read_and_commit::clock"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_config_read_and_commit::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_path::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_path_create::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_path_create_override::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_path_override::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_journal_path_override_create::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_local_install_parakeet_verbs::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_local_plan_connect_and_generate::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_local_probe_nvidia::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_native_indexer_mutation_verbs::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_spl_service::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_spl_service_verbose_and_debug_flags_in_either_order::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::accepts_version_flag::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::check_rejects_unknown_and_help_flags_with_verb_results::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::classifies_cogitate_arguments_without_usage_errors::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::classifies_generate_arguments_without_usage_errors::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::cortex_help_matches_argparse_body_verbatim::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::cortex_nonsense_is_detail_carrying_usage_error::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::doctor_rejects_unknown_and_help_flags_with_verb_results::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::grab_end_of_options_and_help_short_circuit::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_detached_values_match_argparse_optional_classification::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_end_of_options_cannot_activate_later_help::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_long_options_use_argparse_unique_prefixes::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_non_utf8_arguments_are_usage_carriers::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_preserves_value_order_and_argparse_help_precedence::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::health_logs_short_clusters_match_argparse_consumption::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::identity_help_and_usage_are_scope_specific_carriers::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::indexer::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::install_provider_rejects_unknown_and_serves_help_with_verb_results::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::navigate_help_is_a_carrier_before_parsing::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::navigate_malformed_arguments_are_usage_carriers::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::navigate_non_utf8_arguments_are_usage_carriers::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_bare_health_flags_and_health_logs_grammar::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_body_apple_preview_and_save_without_ambiguous_flags::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_body_oura_connect_and_sync_without_ambiguous_authority::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_body_rebuild_options_and_rejects_ambiguous_forms::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_contract_leaves_before_execution::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_convey_options_and_rejects_invalid_ports::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_facet_candidates_arguments::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_identity_grammar_with_click_value_spellings::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_install_models_options_and_rejects_conflicts::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_install_provider_name_without_validating_it::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_navigate_arguments_in_either_option_position::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_schedule_arguments_before_execution::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_sense_batch_options_before_any_runtime_touch::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_speaker_resolve_verbs::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_speaker_transcript_write_without_arguments::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_supervisor_journal_override::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_supervisor_stack_options_in_any_order::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_top_flags_and_uses_command_specific_usage::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::parses_transfer_send_options_and_rejects_ambiguous_forms::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_duplicate_or_unknown_spl_service_flags::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_grab_malformed_and_interspersed_argv::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_incomplete_unknown_and_extra_spl_args::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_invalid_brain_args::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_invalid_journal_config_args::clock"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_invalid_supervisor_stack_options::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::rejects_spl_service_extra_args::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::sense_event_options_keep_jobs_as_an_inert_parse_value::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::sense_help_and_invalid_combinations_have_verb_owned_outcomes::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::service_args_foundation_has_no_execution_or_python_bridge::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::service_args_foundation_has_no_execution_or_python_bridge::scheduling"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::service_logs_keeps_ignored_non_utf8_opaque_but_rejects_route_bytes::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::service_logs_selects_follow_anywhere_and_ignores_other_trailing_tokens::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::supervisor_lifecycle_parse_failures_return_redirect::process"
+
+[[findings]]
+id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::transcribe_intercepts_help_and_discards_logging_flags::process"
+
+[[findings]]
+id = "solstone-core-cogitate-runtime::core/crates/solstone-core-cogitate-runtime/src/tests.rs::temp_journal::process"
+
+[[findings]]
+id = "solstone-core-cogitate-tools::core/crates/solstone-core-cogitate-tools/src/list_directory.rs::trailing_slash_tests::a_trailing_slash_resolves_the_same_directory::process"
+
+[[findings]]
+id = "solstone-core-cogitate-tools::core/crates/solstone-core-cogitate-tools/src/paths.rs::tests::containment_keeps_missing_inside_and_rejects_escape_symlinks::clock"
+
+[[findings]]
+id = "solstone-core-cogitate-tools::core/crates/solstone-core-cogitate-tools/src/runtime_conformance.rs::slot_reacquire_branches_match_the_provider_sequence::scheduling"
+
+[[findings]]
+id = "solstone-core-cogitate-tools::core/crates/solstone-core-cogitate-tools/src/sol_execution.rs::tests::timeout_preserves_partial_output::clock"
+
+[[findings]]
+id = "solstone-core-cogitate-tools::core/crates/solstone-core-cogitate-tools/src/sol_execution.rs::tests::unique_temp_dir::clock"
+
+[[findings]]
+id = "solstone-core-cogitate-tools::core/crates/solstone-core-cogitate-tools/src/walk.rs::tests::root::clock"
+
+[[findings]]
+id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::ambient_provider_key_does_not_bypass_missing_journal_credential::process"
+
+[[findings]]
+id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::confidential_dispatch_stops_at_attestation_before_endpoint_transport::clock"
+
+[[findings]]
+id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::confidential_dispatch_stops_at_attestation_before_endpoint_transport::network"
+
+[[findings]]
+id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::confidential_dispatch_stops_at_attestation_before_endpoint_transport::process"
+
+[[findings]]
+id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::env_child::process"
+
+[[findings]]
+id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::malformed_requests_are_rejected_with_specific_messages::clock"
+
+[[findings]]
+id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::request_value::clock"
+
+[[findings]]
+id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::run_endpoint_request::scheduling"
+
+[[findings]]
+id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::spawn_stub::network"
+
+[[findings]]
+id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::spawn_stub::scheduling"
+
+[[findings]]
+id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::valid_request_round_trips_to_runtime_input::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/aggregate.rs::tests::cache_identity_changes_when_database_signature_changes::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/aggregate.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/archive.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/archive.rs::tests::rail_uses_glucose_ladder_and_stage_aware_sleep_pair::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/chronicle.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::availability_and_failures::empty_day_keeps_nearest_navigation::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::corpus_replay::baseline_fields_are::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::cross_month_dedupe_and_mirrors::sleep_adjacent_strings_and_null_preserve_the_null_fact::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::row::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::row::process"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::seed_populated_body_journal::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::sleep_and_boundaries::duration_fields_distinguish_full_partial_and_missing_stage_detail::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::sleep_and_boundaries::longest_source_wins_and_axis_end_naps_drop::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::sleep_and_boundaries::main_session_and_nap_keep_their_separate_windows::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::sleep_and_boundaries::month_end_bedtime_is_not_a_nap_but_midmonth_nap_is::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::sleep_and_boundaries::seeded_naps_appear_in_the_sleep_list_and_bar_segments::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::sleep_and_boundaries::seeded_secondary_sleep_source_is_named_without_summing_coverage::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::sleep_and_boundaries::sleep_comparison_requires_ring_and_cross_device_main_sessions::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/freshness.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/health.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/inventory.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/month.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/router.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/router.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/seed.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/shard.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/shard.rs::tests::preserves_non_numeric_values_and_all_three_time_sources::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/sleep.rs::tests::main_naps_and_primary_source_follow_canonical_rules::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/sleep.rs::tests::sessions_obey_gap_boundaries_and_union_overlap::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/sleep.rs::tests::staged_asleep_minutes_do_not_fill_the_whole_session::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::cache_replaces_stale_signature_without_accumulating_entries::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::clear_cache::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::completion::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::failed_warm_writes_constructed_sink_and_route_keeps_warming::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::first_run_route_is_python_exact_while_injected_fold_is_held::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::global_single_flight_serves_cache_and_recovers_after_panic::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::payload_shape_and_typical_filter_match_python_contract::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::ribbon_constant_matches_reference::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::seed_fixed::clock"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::signature_before_fold_caches_under_the_old_signature_then_refolds::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::sink::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/window.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-http::core/crates/solstone-core-convey-http/src/listener.rs::tests::duplex_probe::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-http::core/crates/solstone-core-convey-http/src/listener.rs::tests::loopback_and_supplied_identities_round_trip::network"
+
+[[findings]]
+id = "solstone-core-convey-http::core/crates/solstone-core-convey-http/src/listener.rs::tests::loopback_and_supplied_identities_round_trip::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-http::core/crates/solstone-core-convey-http/src/serve.rs::tests::response_after_one_read::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-http::core/crates/solstone-core-convey-http/src/serve.rs::tests::response_until_closed::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/authorization_gate.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/authorization_gate.rs::tests::pairing_confinement_checks_window_then_path_and_covers_unmatched_routes::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/authorization_gate.rs::tests::pairing_confinement_checks_window_then_path_and_covers_unmatched_routes::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/authorization_gate.rs::tests::pairing_peer_falls_through_the_authorization_gate::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/body.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/body.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/devices.rs::tests::temporary_path::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/devices.rs::tests::temporary_path::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/door.rs::access_tests::queued_pair_request_is_in_flight_before_it_acquires_the_carrier_lock::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/door.rs::tests::certless_window_stamps_a_pairing_basis_but_closed_window_does_not::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/entities.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/entities.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/entities.rs::tests::paired_device_confinement_and_authorization_precede_entities_handlers::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/entities.rs::tests::socket_request::network"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/entities.rs::tests::socket_request::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::clients_until::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::converted_transcripts_chat_and_search_routes_are_real_and_unserved_paths_are_404::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::loopback_status::network"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::relay_health_subscriber_starts_late_and_drives_live_status::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::relay_health_subscriber_starts_late_and_drives_live_status::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::relay_health_subscriber_starts_late_and_drives_live_status::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::router_invokes_trends_warm_once::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::router_invokes_trends_warm_once::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::status_until::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/link_health_cache.rs::tests::generation_guard_rejects_missing_and_older_but_refreshes_equal::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/network.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/network_status.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/registry.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/registry.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/session.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/session.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/session_gate.rs::tests::unlisted_routes_are_gated_by_default::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/speakers.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/speakers.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/speakers_analyze_client.rs::tests::helper_script::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/speakers_analyze_client.rs::tests::oversized_stdout_is_rejected_while_the_helper_is_running::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/speakers_analyze_client.rs::tests::test_budget::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/speakers_analyze_client.rs::tests::timeout_terminates_then_kills_after_the_grace_period::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking.rs::tests::portal_body_timeout_keeps_polling::network"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking.rs::tests::temporary_journal::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking_sol_reads.rs::tests::preview_composes_distinct_sections_without_journal_write::clock"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking_sol_reads.rs::tests::preview_composes_distinct_sections_without_journal_write::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking_sol_reads_contract.rs::ac11_synthetic_process_launch_is_rejected::host-tool"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking_sol_reads_contract.rs::ac11_synthetic_process_launch_is_rejected::process"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking_sol_reads_contract.rs::ac11_synthetic_process_launch_is_rejected::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking_sol_reads_contract.rs::ac11_thinking_sol_read_handlers_contain_no_process_launch::scheduling"
+
+[[findings]]
+id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking_sol_writes_contract.rs::thinking_sol_write_handlers_contain_no_process_launch_or_direct_write_owner::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex-client::core/crates/solstone-core-cortex-client/src/lib.rs::tests::concurrent_allocator_bumps_same_millisecond_ids::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex-client::core/crates/solstone-core-cortex-client/src/lib.rs::tests::no_deadline_still_uses_the_bounded_poll_interval::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::captured_process_group_survives_direct_child_reap::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::captured_process_group_survives_direct_child_reap::process"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::captured_process_group_survives_direct_child_reap::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::cogitate_terminal_usage_writes_record::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::cogitate_terminal_usage_writes_record::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::cogitate_with_declared_journal_cwd_runs_child_in_journal_root::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::cogitate_without_declared_cwd_does_not_set_child_cwd::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::generate_talent_does_not_set_child_cwd::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::generate_terminal_usage_does_not_write_record::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::generate_terminal_usage_does_not_write_record::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::native_sibling_avoids_path_poison_and_lands_output::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::native_sibling_avoids_path_poison_and_lands_output::host-tool"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::native_sibling_avoids_path_poison_and_lands_output::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::native_sibling_is_reached_only_by_deliberate_spawn::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::native_sibling_is_reached_only_by_deliberate_spawn::host-tool"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::native_sibling_is_reached_only_by_deliberate_spawn::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::non_json_stdout_is_log_only_info_and_error_defaults_terminal::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::renewal_cycle_never_reaches_injected_interpreters_but_deliberate_spawn_does::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::renewal_cycle_never_reaches_injected_interpreters_but_deliberate_spawn_does::host-tool"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::renewal_cycle_never_reaches_injected_interpreters_but_deliberate_spawn_does::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::spawn_and_read_child_cwd::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::spawn_and_read_child_cwd::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::stdin_write_failure_terminates_and_reaps_spawned_child::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::stdin_write_failure_terminates_and_reaps_spawned_child::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::stdout_augmentation_fills_only_absent_values::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::stop_group_waits_for_a_graceful_exit_within_ten_seconds::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::stop_group_waits_for_a_graceful_exit_within_ten_seconds::process"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::stop_group_waits_for_a_graceful_exit_within_ten_seconds::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::timeout_prefers_request_then_resolved_talent_then_default::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::timeout_prefers_request_then_resolved_talent_then_default::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::brain_state_read_failure_does_not_stop_renewal_worker::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::fake::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::fingerprint_read_failure_does_not_stop_renewal_worker::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::handle::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::mismatch::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::outbound_send_failure_does_not_stop_renewal_worker::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::run_two_worker_iterations::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::shipped_stderr_sink_renders_and_writes_the_exact_renewal_line::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::startup_refresh_predicate_fires_four_cases_and_suppresses_three_cases::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::startup_refresh_send_failure_is_diagnosed::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::worker_caps_a_multi_hour_planned_wait_at_sixty_seconds::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tests::dispatch_filters_only_at_service_boundary::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tests::drain_keeps_running_use_alive_until_its_own_exit_then_becomes_idle::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tests::renewal_handle::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tests::running_state::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tests::running_state::process"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tests::running_state::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tests::service_starts_one_renewal_worker_once_even_when_start_requested_twice::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tests::startup_refresh_is_emitted_before_the_single_renewal_worker_starts::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/state.rs::tests::compare_and_take_finalization_allows_only_one_terminal_owner::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/state.rs::tests::failed_spawn_send_terminalizes_claim_and_leaves_drain_idle::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/state.rs::tests::immediate_stop_terminalizes_queued_claim_without_starting_it::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/state.rs::tests::nameless_request_is_silent_except_for_stderr_diagnostic::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/state.rs::tests::resolved_talent_state_is_available_until_finalization::clock"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/state.rs::tests::resolved_talent_state_is_available_until_finalization::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/state.rs::tests::status_reports_queue_depth_without_a_running_use::scheduling"
+
+[[findings]]
+id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/storage.rs::tests::temporary_link_names_are_thread_unique::scheduling"
+
+[[findings]]
+id = "solstone-core-depict::core/crates/solstone-core-depict/src/lib.rs::tests::fixture_image::clock"
+
+[[findings]]
+id = "solstone-core-depict::core/crates/solstone-core-depict/src/lib.rs::tests::native_rfdetr_query_requires_the_pinned_sidecar_and_artifacts::clock"
+
+[[findings]]
+id = "solstone-core-depict::core/crates/solstone-core-depict/src/lib.rs::tests::request_builder_preserves_resized_image_and_contract_defaults::clock"
+
+[[findings]]
+id = "solstone-core-describe::core/crates/solstone-core-describe/src/detect.rs::tests::native_install_query_covers_all_provider_worlds_at_the_given_journal::process"
+
+[[findings]]
+id = "solstone-core-describe::core/crates/solstone-core-describe/src/main.rs::tests::explicit_describe_mode_is_required_and_parses_arguments::process"
+
+[[findings]]
+id = "solstone-core-describe::core/crates/solstone-core-describe/src/main.rs::tests::owner_debug_and_verbose_flags_are_noops::process"
+
+[[findings]]
+id = "solstone-core-describe::core/crates/solstone-core-describe/src/merge.rs::tests::artifact_reader_preserves_raw_lines_and_marks_bad_rows::clock"
+
+[[findings]]
+id = "solstone-core-describe::core/crates/solstone-core-describe/src/request.rs::tests::category_rendering_uses_embedded_metadata::process"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/disk_space.rs::tests::uses_the_retained_ten_gib_threshold_and_staged_resolution::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/host_dependencies.rs::tests::checks_staged_module_shapes_and_both_battery_bindings::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/host_dependencies.rs::tests::checks_staged_module_shapes_and_both_battery_bindings::native"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/journal_leaf_exclusivity.rs::tests::reports_staged_leaf_states_and_missing_site_packages::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/journal_package_version.rs::tests::compares_staged_versions_and_skips_when_site_packages_is_unresolved::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/python_version.rs::tests::missing_metadata_uses_python_312_fallback_and_fix::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/python_version.rs::tests::uses_pyvenv_cfg_before_the_staged_python_directory_fallback::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/retired_host_shim.rs::tests::reports_retired_shim_states_from_staged_metadata::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/sol_importable.rs::tests::checks_staged_checkout_venv_presence_without_executing_python::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/sol_importable.rs::tests::reports_honest_packaged_presence_and_not_found_results::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/checks/stale_alias_symlink.rs::tests::reports_real_tmp_partial_migration_backups_and_cleans_them_up::process"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::feature_environment_inspection_matrix::native"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::fixture::clock"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::fixture::process"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::incomplete::clock"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::parakeet_cpp_fixture_states_are_distinct::native"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::poisoned_interpreters_positive_control_and_battery::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::poisoned_interpreters_positive_control_and_battery::process"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::speakers_model_ready::native"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::stage_feature::native"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::stage_parakeet_ready::native"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::task_pace_with::clock"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::task_pace_with::scheduling"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac15_service_running_receives_ok_and_crash_status_over_callosum::clock"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac15_service_running_receives_ok_and_crash_status_over_callosum::scheduling"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac18_silent_present_socket_warns_without_execution_error::clock"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac18_silent_present_socket_warns_without_execution_error::scheduling"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac18_silent_present_socket_with_failed_service_command_fails::clock"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac18_silent_present_socket_with_failed_service_command_fails::scheduling"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac9_full_batteries_never_invoke_poisoned_interpreters::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac9_full_batteries_never_invoke_poisoned_interpreters::process"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::context::clock"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::context::process"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::run_ac9_child::clock"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::stage_ac9_batteries::host-tool"
+
+[[findings]]
+id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::stage_ac9_batteries::native"
+
+[[findings]]
+id = "solstone-core-entities::core/crates/solstone-core-entities/src/router_tests.rs::await_deferred_delete_phase::clock"
+
+[[findings]]
+id = "solstone-core-entities::core/crates/solstone-core-entities/src/router_tests.rs::deferred_delete_cancel_preserves_entity_and_logs_cancellation::clock"
+
+[[findings]]
+id = "solstone-core-entities::core/crates/solstone-core-entities/src/router_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-entities::core/crates/solstone-core-entities/src/router_tests.rs::refusal_sites_batch_1_direct_write_error_classifiers_are_exact::clock"
+
+[[findings]]
+id = "solstone-core-entities::core/crates/solstone-core-entities/src/router_tests.rs::refusal_sites_batch_3_resolution_and_merge_conditions_are_exact::clock"
+
+[[findings]]
+id = "solstone-core-entities::core/crates/solstone-core-entities/src/router_tests.rs::synthetic_lock_timeout::clock"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/lifecycle_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/merge_payload_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/merge_tests.rs::voiceprint_journal::process"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/resolution_tests.rs::mutation_resolution_waits_for_the_outermost_trust_guard::clock"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/resolution_tests.rs::mutation_resolution_waits_for_the_outermost_trust_guard::scheduling"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/resolution_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/review_candidate_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/store_tests.rs::identity_repair_waits_for_the_journal_trust_lock::clock"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/store_tests.rs::identity_repair_waits_for_the_journal_trust_lock::scheduling"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/store_tests.rs::identity_writer_trust_lock_timeout_refuses_without_writing::clock"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/store_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/trust_lock_tests.rs::nested_lock_reuses_the_sidecar_until_the_outermost_drop::clock"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/trust_lock_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/trust_lock_tests.rs::second_thread_waits_for_the_outermost_guard_to_drop::clock"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/trust_lock_tests.rs::second_thread_waits_for_the_outermost_guard_to_drop::scheduling"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/trust_lock_tests.rs::short_options::clock"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/undo_tests.rs::undo_journal::process"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/voiceprint_tests.rs::concurrent_batch_saves_preserve_both_updates::clock"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/voiceprint_tests.rs::concurrent_batch_saves_preserve_both_updates::scheduling"
+
+[[findings]]
+id = "solstone-core-entity::core/crates/solstone-core-entity/src/voiceprint_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-facets-web::core/crates/solstone-core-facets-web/src/activities/mod.rs::tests::lock_timeout_uses_the_canonical_activities_busy_reason::clock"
+
+[[findings]]
+id = "solstone-core-facets::core/crates/solstone-core-facets/src/lifecycle_tests.rs::block_holds_entity_trust_through_relationship_detachment::scheduling"
+
+[[findings]]
+id = "solstone-core-facets::core/crates/solstone-core-facets/src/lifecycle_tests.rs::delete_lock_contention_observed::scheduling"
+
+[[findings]]
+id = "solstone-core-facets::core/crates/solstone-core-facets/src/lifecycle_tests.rs::guarded_delete_contention_observed::scheduling"
+
+[[findings]]
+id = "solstone-core-facets::core/crates/solstone-core-facets/src/observation_tests.rs::add_retries_io_but_not_lock_timeout_while_record_retries_both::clock"
+
+[[findings]]
+id = "solstone-core-facets::core/crates/solstone-core-facets/src/observation_tests.rs::timeout_error::clock"
+
+[[findings]]
+id = "solstone-core-facets::core/crates/solstone-core-facets/src/review_candidate_tests.rs::record_facet_candidates_propagates_lock_contention_without_writing::clock"
+
+[[findings]]
+id = "solstone-core-facets::core/crates/solstone-core-facets/src/store/awareness.rs::tests::temporary_journal::clock"
+
+[[findings]]
+id = "solstone-core-facets::core/crates/solstone-core-facets/src/store/awareness.rs::tests::temporary_journal::process"
+
+[[findings]]
+id = "solstone-core-facets::core/crates/solstone-core-facets/src/store/seeding.rs::tests::seed_entities_reports_lock_timeout_without_aborting_the_batch::clock"
+
+[[findings]]
+id = "solstone-core-facets::core/crates/solstone-core-facets/src/store_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-format::core/crates/solstone-core-format/src/briefing.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-format::core/crates/solstone-core-format/src/briefing.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-format::core/crates/solstone-core-format/src/chunker.rs::tests::markdown_chunks_match_python_oracle_tokens::host-tool"
+
+[[findings]]
+id = "solstone-core-format::core/crates/solstone-core-format/src/content/chat.rs::tests::falsy_chat_fields_match_python_coercion_boundaries::scheduling"
+
+[[findings]]
+id = "solstone-core-format::core/crates/solstone-core-format/src/content/chat.rs::tests::missing_chat_fields_render_as_empty_strings::scheduling"
+
+[[findings]]
+id = "solstone-core-format::core/crates/solstone-core-format/src/content/chat.rs::tests::renders_chat_content_and_skips_non_content_kinds::scheduling"
+
+[[findings]]
+id = "solstone-core-format::core/crates/solstone-core-format/src/content/talent_projections.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-format::core/crates/solstone-core-format/src/content/talent_projections.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/anthropic.rs::tests::override_key_is_transport_only_and_not_emitted::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/anthropic.rs::tests::override_key_is_transport_only_and_not_emitted::process"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/anthropic.rs::tests::process_env_key_is_ignored_when_config_key_is_absent::process"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/anthropic.rs::tests::request::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::bundled_converse_applies_the_context_floor_and_rejects_unfittable_history::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::bundled_converse_preserves_valid_context_window_overrides::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::bundled_converse_rejects_tool_request_contract_failures_and_releases_admission::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::bundled_converse_replaces_invalid_context_window_overrides_with_the_floor::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::bundled_converse_shares_and_releases_the_local_admission_pool::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::bundled_converse_shares_and_releases_the_local_admission_pool::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::bundled_with::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::converse_request::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::journal_path::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::journal_path::process"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::post_json::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::request::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::success::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::attested_transport_applies_the_endpoint_request_timeout::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::attested_transport_applies_the_endpoint_request_timeout::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::attested_transport_applies_the_endpoint_request_timeout::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::channel_failure_refuses_without_an_endpoint_request::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::confidential_converse_without_a_served_window_posts_nothing_after_attestation::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::confidential_converse_without_a_served_window_posts_nothing_after_attestation::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::converse_channel_failure_refuses_without_an_endpoint_request::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::converse_channel_failure_refuses_without_an_endpoint_request::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::converse_readiness_failure_refuses_without_attempting_a_channel::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::converse_stale_session_refuses_before_readiness_or_channel_establishment::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::endpoint_and_confidential_converse_parse_the_same_tool_turn::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::endpoint_and_confidential_converse_parse_the_same_tool_turn::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::endpoint_and_confidential_converse_parse_the_same_tool_turn::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::fresh_attestation_uses_one_channel_converse_request_with_qwen_controls::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::fresh_attestation_uses_one_channel_converse_request_with_qwen_controls::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::fresh_attestation_uses_one_channel_request_with_confidential_qwen_controls::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::fresh_attestation_uses_one_channel_request_with_confidential_qwen_controls::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::journal::process"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::readiness_failure_refuses_without_attempting_a_channel::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::request::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::stale_session_refuses_before_readiness_or_channel_establishment::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::admission_limits_concurrency_and_spends_queued_timeout::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::admission_limits_concurrency_and_spends_queued_timeout::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::confidential_endpoint_does_not_create_a_local_admission_directory::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::context_and_contract_400s_are_not_retried::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::converse_fits_growing_history_before_its_single_post::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::converse_fitting_evicts_tool_call_pairs_without_orphans::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::converse_posts_chat_completions_history_and_marks_unoffered_calls::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::converse_reason_codes_use_shared_failure_flags::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::converse_without_a_served_window_uses_the_plain_endpoint_fallback::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::credentials_are_threaded_and_provider_text_never_reaches_refusal_detail::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::discovery_failure_does_not_block_generation_or_add_budgets::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::endpoint_converse_tool_calls_are_accepted_with_blank_text::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::invalid_endpoint_response_uses_contract_provider_response_invalid::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::journal_path::process"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::other_post_failure_is_provider_response_invalid::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::overflow_reclamps_once_then_generates::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::post_json::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::qwen_sampling_controls_follow_the_endpoint_lane_flags::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::refused_connection_is_endpoint_unreachable::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::refused_connection_is_endpoint_unreachable::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::repeated_overflow_is_context_window_exceeded_without_a_third_post::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::request::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::response_timeout_after_connection_is_capacity_exhausted::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::response_timeout_after_connection_is_capacity_exhausted::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::response_timeout_after_connection_is_capacity_exhausted::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::served_window_discovery_is_cached_within_ttl::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::too_small_reclamp_is_context_budget_exceeded_without_retry::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::transport_timeout_releases_admission_for_the_next_request::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::transport_timeout_releases_admission_for_the_next_request::network"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::transport_timeout_releases_admission_for_the_next_request::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::zero_or_absent_request_timeout_uses_the_default::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/google.rs::tests::process_environment_key_is_ignored_when_config_key_is_absent::process"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/google.rs::tests::request::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/google.rs::tests::temp_journal::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/openai.rs::tests::process_environment_key_is_ignored_when_config_key_is_absent::process"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/openai.rs::tests::request::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/openai.rs::tests::temp_journal::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/overrides.rs::tests::child::process"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/session.rs::tests::the_session_loop_runs_in_process_and_answers_every_request::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/session.rs::tests::the_session_loop_runs_in_process_and_answers_every_request::scheduling"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/token_log.rs::tests::appends_exactly_one_line_per_completion::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/token_log.rs::tests::generate_wrapper_remains_identical_to_generalized_generate_record::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/token_log.rs::tests::writes_non_responsive_metadata_only_when_present::clock"
+
+[[findings]]
+id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/validation.rs::tests::temp_journal::clock"
+
+[[findings]]
+id = "solstone-core-generate::core/crates/solstone-core-generate/src/codec.rs::tests::request::clock"
+
+[[findings]]
+id = "solstone-core-generate::core/crates/solstone-core-generate/src/codec.rs::tests::request_decoder_applies_fixture_defaults::clock"
+
+[[findings]]
+id = "solstone-core-grab::core/crates/solstone-core-grab/src/extract.rs::tests::ffmpeg::native"
+
+[[findings]]
+id = "solstone-core-grab::core/crates/solstone-core-grab/src/extract.rs::tests::ffmpeg::process"
+
+[[findings]]
+id = "solstone-core-grab::core/crates/solstone-core-grab/src/extract.rs::tests::pts_null_and_broken_media_have_the_expected_failure_surface::native"
+
+[[findings]]
+id = "solstone-core-grab::core/crates/solstone-core-grab/src/extract.rs::tests::requested_ids_use_pts_based_linear_identity_and_preserve_order::native"
+
+[[findings]]
+id = "solstone-core-health-web::core/crates/solstone-core-health-web/src/corpus.rs::ac16_poisoned_python_is_observable_only_under_ci::host-tool"
+
+[[findings]]
+id = "solstone-core-health-web::core/crates/solstone-core-health-web/src/corpus.rs::ac16_poisoned_python_is_observable_only_under_ci::process"
+
+[[findings]]
+id = "solstone-core-home-web::core/crates/solstone-core-home-web/src/lib.rs::tests::forbidden_patterns::host-tool"
+
+[[findings]]
+id = "solstone-core-home-web::core/crates/solstone-core-home-web/src/lib.rs::tests::forbidden_patterns::scheduling"
+
+[[findings]]
+id = "solstone-core-identity::core/crates/solstone-core-identity/src/store.rs::tests::identity_writes_use_only_the_sentinel_sidecar_and_report_short_timeouts::clock"
+
+[[findings]]
+id = "solstone-core-identity::core/crates/solstone-core-identity/src/store.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-identity::core/crates/solstone-core-identity/src/store.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-identity::core/crates/solstone-core-identity/src/store.rs::tests::short_lock_options::clock"
+
+[[findings]]
+id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/corpus.rs::tests::ac17_status_timeout_and_processing_completed_are_derivations::clock"
+
+[[findings]]
+id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/corpus.rs::tests::ac17a_upload_timestamp_is_the_shared_sort_and_timeout_time::clock"
+
+[[findings]]
+id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/journal_sources.rs::tests::concurrent_received_counters_reload_under_one_source_lock::scheduling"
+
+[[findings]]
+id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/journal_sources.rs::tests::concurrent_revoke_and_counter_update_preserve_both_changes::scheduling"
+
+[[findings]]
+id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/lifecycle.rs::tests::metadata_detection_times_out_like_an_unavailable_exiftool::clock"
+
+[[findings]]
+id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/lifecycle.rs::tests::metadata_detection_times_out_like_an_unavailable_exiftool::process"
+
+[[findings]]
+id = "solstone-core-indexer-query::core/crates/solstone-core-indexer-query/src/edges_tests.rs::root::clock"
+
+[[findings]]
+id = "solstone-core-indexer-query::core/crates/solstone-core-indexer-query/src/execute_tests.rs::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-indexer-store::core/crates/solstone-core-indexer-store/src/db.rs::tests::creates_schema_and_pragmas::clock"
+
+[[findings]]
+id = "solstone-core-indexer-store::core/crates/solstone-core-indexer-store/src/db.rs::tests::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-indexer-store::core/crates/solstone-core-indexer-store/src/merge.rs::tests::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-indexer-store::core/crates/solstone-core-indexer-store/src/migrations/index_stream.rs::tests::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-indexer-store::core/crates/solstone-core-indexer-store/src/scan.rs::tests::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/discovery.rs::tests::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/edges/candidates.rs::tests::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/edges/discovery.rs::tests::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/edges/mod.rs::tests::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/edges/speaker.rs::tests::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/entity_search.rs::tests::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/stream.rs::tests::temp_root::clock"
+
+[[findings]]
+id = "solstone-core-ingest-resolve::core/crates/solstone-core-ingest-resolve/src/apply.rs::tests::root::clock"
+
+[[findings]]
+id = "solstone-core-ingest-resolve::core/crates/solstone-core-ingest-resolve/src/manifest.rs::tests::merge_preserves_other_entries_and_skips_unwritten_files::clock"
+
+[[findings]]
+id = "solstone-core-ingest-resolve::core/crates/solstone-core-ingest-resolve/src/quarantine.rs::tests::failed_bytes_land_only_in_operator_quarantine::clock"
+
+[[findings]]
+id = "solstone-core-ingest-resolve::core/crates/solstone-core-ingest-resolve/src/resolve.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-ingest-resolve::core/crates/solstone-core-ingest-resolve/src/resolve.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-ingest::core/crates/solstone-core-ingest/src/listing.rs::tests::received_not_written_is_dropped_before_same_name_different_sha_reduction::clock"
+
+[[findings]]
+id = "solstone-core-ingest::core/crates/solstone-core-ingest/src/router.rs::tests::root::clock"
+
+[[findings]]
+id = "solstone-core-ingest::core/crates/solstone-core-ingest/src/router.rs::tests::shared_connection_limit_rejects_oversized_declared_body::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/encode.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/encode.rs::tests::run_stderr_child::clock"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/encode.rs::tests::run_stderr_child::process"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/encode.rs::tests::run_stderr_child::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::acquisition_faults_are_thread_local::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::descendant_stat_to_open_swaps_are_bounded_and_changed::clock"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::descendant_stat_to_open_swaps_are_bounded_and_changed::process"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::descendant_stat_to_open_swaps_are_bounded_and_changed::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::replacement_barrier::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::short_temp_dir::process"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/target.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/target.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/writer.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/coherence.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/coherence.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::evaluate_args_classifies_root_grammar::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::evaluate_args_preserves_non_utf8_owner_argv::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::evaluate_args_recognizes_processes_and_preserves_owner_argv::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::every_python_process_spec_builds_exact_bootstrap_argv::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::native_process_specs_bypass_python_with_exact_argv::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::non_process_categories_never_invoke_the_spawner::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::non_process_categories_never_invoke_the_spawner::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/lib.rs::tests::spawn::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/notify_handler.rs::tests::failing_sink_collapses_to_send_failure::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/notify_handler.rs::tests::help_matches_argparse_bytes::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/notify_handler.rs::tests::message_only_emits_minimal_notification_line::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/notify_handler.rs::tests::no_sink_collapses_to_send_failure::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/notify_handler.rs::tests::run_notify_case::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/runner.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/runner.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/runner.rs::tests::sibling_interpreter_prefers_python3_and_rejects_non_executables::host-tool"
+
+[[findings]]
+id = "solstone-core-journal-config-write::core/crates/solstone-core-journal-config-write/src/commit.rs::tests::commit_timeout_reports_the_protected_path_and_timeout::clock"
+
+[[findings]]
+id = "solstone-core-journal-config-write::core/crates/solstone-core-journal-config-write/src/config.rs::tests::cas_same_value_returns_without_waiting_for_held_lock::clock"
+
+[[findings]]
+id = "solstone-core-journal-config::core/crates/solstone-core-journal-config/src/tests.rs::new::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/atomic.rs::tests::atomic_replace_survives_kill_at_every_boundary::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/atomic.rs::tests::atomic_replace_survives_kill_at_every_boundary::process"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/atomic.rs::tests::atomic_replace_survives_kill_at_every_boundary::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::contention_returns_none_from_another_process::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::lease_is_released_when_the_holder_dies::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::lease_is_released_when_the_holder_dies::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::lease_pause_helper::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::spawn_lease_holder::process"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::spawn_lease_holder::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::wait_for_marker::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::zero_attempts_and_retry_window_make_one_immediate_attempt::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::zero_attempts_and_retry_window_make_one_immediate_attempt::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::acquire::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::existing_parent_lock_first_time_contenders_produce_one_winner::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::existing_parent_lock_leaves_umask_restricted_creation_unrepaired::process"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::existing_parent_lock_matching_identity_yields_timeout_at_expiry::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::lock_is_released_when_the_holder_dies::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::lock_is_released_when_the_holder_dies::process"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::lock_is_released_when_the_holder_dies::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::lock_pause_helper::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::timeout_reports_the_protected_path_and_timeout::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/readers.rs::tests::install_logger::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/readers.rs::tests::log::scheduling"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/staged.rs::tests::killed_publish_never_exposes_a_torn_set::clock"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/staged.rs::tests::killed_publish_never_exposes_a_torn_set::process"
+
+[[findings]]
+id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/staged.rs::tests::killed_publish_never_exposes_a_torn_set::scheduling"
+
+[[findings]]
+id = "solstone-core-journal::core/crates/solstone-core-journal/src/lib.rs::tests::assert_error_class::host-tool"
+
+[[findings]]
+id = "solstone-core-journal::core/crates/solstone-core-journal/src/lib.rs::tests::unique_temp::clock"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/admission.rs::tests::child_holds_slot_until_killed::clock"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/admission.rs::tests::killed_holder_releases_slot_without_repair::clock"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/admission.rs::tests::killed_holder_releases_slot_without_repair::process"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/admission.rs::tests::killed_holder_releases_slot_without_repair::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/admission.rs::tests::root::process"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/connect.rs::tests::connect_reports_transport_failure::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/connect.rs::tests::health_response_timeout_is_bounded::clock"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/connect.rs::tests::health_response_timeout_is_bounded::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/connect.rs::tests::health_response_timeout_is_bounded::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/connect.rs::tests::journal_without_port::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/connect.rs::tests::serve::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/connect.rs::tests::serve::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/generate.rs::tests::input::clock"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/coreml_install.rs::tests::response_server::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/coreml_install.rs::tests::response_server::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/coreml_install.rs::tests::server::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/coreml_install.rs::tests::server::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/fit_report.rs::tests::local_builder_force_cpu_false_has_no_placement_suffix::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/fit_report.rs::tests::local_builder_matrix_has_nineteen_constructible_branches::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/rerank_install.rs::tests::sound_no_force_install_keeps_rerank_files_and_sweeps_no_temps::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/rfdetr_install.rs::tests::extracted_binary_digest_mismatch_cleans_install_outputs::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/rfdetr_install.rs::tests::extracted_binary_digest_mismatch_cleans_install_outputs::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::coreml_install_stages_all_catalog_paths_from_the_origin::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::coreml_install_stages_all_catalog_paths_from_the_origin::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::dispatch_paths_parakeet_with_explicit_artifact_key_is_host_independent::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::dispatch_pins_parakeet_matches_the_pins_table::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_artifact_refuses_disallowed_redirect_target_in_envelope::clock"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_artifact_refuses_disallowed_redirect_target_in_envelope::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_artifact_refuses_disallowed_redirect_target_in_envelope::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_artifact_refuses_userinfo_url_with_distinct_envelope_reason::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_artifact_reports_redirect_hop_limit::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_artifact_reports_redirect_hop_limit::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_digest_mismatch_removes_destination_and_partial_file::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_digest_mismatch_removes_destination_and_partial_file::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_verified_accepts_case_insensitive_allowed_host::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_verified_accepts_case_insensitive_allowed_host::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_verified_follows_allowlisted_redirect_chain_and_commits_verified_bytes::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_verified_follows_allowlisted_redirect_chain_and_commits_verified_bytes::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_verified_reports_size_mismatch_before_digest_mismatch::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_verified_reports_size_mismatch_before_digest_mismatch::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_verified_requests_the_origin_key_not_the_catalog_upstream_url::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_verified_requests_the_origin_key_not_the_catalog_upstream_url::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_verified_resolves_relative_locations_for_redirect_statuses::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::download_verified_resolves_relative_locations_for_redirect_statuses::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::every_flipped_catalog_unit_contacts_only_its_origin_for_each_failure_class::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::flipped_origin_artifacts::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::inspect_local_resolves_backend_and_exposes_supervisor_host_fields::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::inspect_parakeet_isolates_each_corrupt_artifact_proof::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::inspect_parakeet_reports_ready_per_artifact_proofs::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::inspect_parakeet_reports_unrunnable_cpu_binary::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::local_target_fingerprint_matches_python_vulkan_reference::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::metal_candidate_inspect_is_pure_and_reports_component_reasons_and_fit::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::metal_target_reuses_the_shared_4b_model_and_darwin_runtime_pin::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::origin_contact_assertion_rejects_a_test_double_upstream_fallback::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::origin_failures_have_a_distinct_reason_code_and_retain_the_host::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::origin_failures_have_a_distinct_reason_code_and_retain_the_host::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::origin_http_statuses_map_to_origin_unreachable::network"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::origin_http_statuses_map_to_origin_unreachable::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::origin_url_for_arch_key_is_host_independent_and_catalog_derived::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::origin_urls_follow_the_catalog_for_every_rust_download_unit::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::parakeet_backend_pin_is_none_for_an_unknown_backend_or_key::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::parakeet_pin_tables_cover_every_pinned_platform_and_backend::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::pin_tables_cover_every_pinned_platform::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::preflip_fixture_preserves_paths_and_native_pins_json_fields::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::preflip_origin_readiness_fixture_preserves_all_pin_identities_and_proofs::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::progress_writes_are_coalesced_until_the_window_elapses::clock"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::record_http_hosts::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::record_tls_hosts::scheduling"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::registry_binds_existing_pins_and_the_python_parakeet_model_pin::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::registry_preserves_prechange_identity_literals::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::replay_status_special_cases::clock"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::request_host::clock"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::stage_ready_parakeet::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::temp::process"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::two_real_processes_cannot_hold_the_same_lease::process"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/plan.rs::tests::bind_address_drives_argv_and_plan_input_rejects_non_loopback::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/plan.rs::tests::input::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/plan.rs::tests::vulkan_argv_is_pinned::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/plan.rs::tests::vulkan_override_rejects_invalid_selection_and_missing_binary::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/plan.rs::tests::vulkan_override_skips_backend_decision_inputs::native"
+
+[[findings]]
+id = "solstone-core-local::core/crates/solstone-core-local/src/vulkan.rs::tests::non_memoized_child_contract_distinguishes_clean_empty_from_failures::clock"
+
+[[findings]]
+id = "solstone-core-maintenance::core/crates/solstone-core-maintenance/src/bodies/timeline.rs::tests::canned::scheduling"
+
+[[findings]]
+id = "solstone-core-maintenance::core/crates/solstone-core-maintenance/src/bodies/timeline.rs::tests::error_when::scheduling"
+
+[[findings]]
+id = "solstone-core-maintenance::core/crates/solstone-core-maintenance/src/bodies/timeline.rs::tests::picker_request_and_response_sanitization_match_the_rollup_contract::clock"
+
+[[findings]]
+id = "solstone-core-observe-audio::core/crates/solstone-core-observe-audio/src/decode.rs::tests::temporary_path::process"
+
+[[findings]]
+id = "solstone-core-observe-audio::core/crates/solstone-core-observe-audio/src/sidecar.rs::tests::temporary_path::process"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/command.rs::tests::accepts_json_on_both_sides_of_verb::process"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/command.rs::tests::reconcile_is_dry_run_unless_commit_is_explicit::process"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::dry_run_does_not_modify_observer_tree::process"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::dry_run_snapshot_keeps_every_path_size_and_mtime::process"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::errors_have_python_messages::process"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::reconcile_commit_keeps_oldest_sums_stats_and_prints_truthy_duplicates::process"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::reconcile_commit_omits_duplicates_line_when_counter_is_absent::process"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::rename_and_revoke_json_shapes_and_action_params_match_python::process"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::rename_revoke_and_reconcile_retain_every_unowned_field::process"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::root::clock"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/history.rs::tests::stops_at_first_malformed_line_without_mutating_file::clock"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/prune/attribution.rs::tests::root::clock"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/prune/history.rs::tests::root::clock"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/prune/marker.rs::tests::root::clock"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/reload.rs::tests::root::clock"
+
+[[findings]]
+id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/write.rs::tests::save_is_pretty_has_no_trailing_newline_and_preserves_fields::clock"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::gate_loopback_verifies_bytes_and_inner_slash_origin_key::native"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::gate_never_falls_back_to_the_upstream_listener::clock"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::gate_never_falls_back_to_the_upstream_listener::network"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::gate_never_falls_back_to_the_upstream_listener::scheduling"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::head_only_key_names_head_unreleased::native"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_follows_validated_loopback_redirects::scheduling"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_read_back_failure_leaves_no_provenance_row::scheduling"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_read_back_is_shared_after_single_shot_publish::scheduling"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_refuses_huggingface_git_blob_etag_that_does_not_match_the_body::scheduling"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_refuses_redirect_to_a_disallowed_host::scheduling"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_uses_loopback_github_digest_metadata_then_reads_back::scheduling"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_uses_loopback_huggingface_git_blob_metadata::scheduling"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_uses_loopback_huggingface_sha256_metadata::scheduling"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::read_request::clock"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::server::network"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::server::scheduling"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::status_server::network"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::status_server::scheduling"
+
+[[findings]]
+id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::temp::process"
+
+[[findings]]
+id = "solstone-core-processing-record::core/crates/solstone-core-processing-record/src/reentry.rs::tests::temporary_path::clock"
+
+[[findings]]
+id = "solstone-core-records-web::core/crates/solstone-core-records-web/src/journal_read.rs::tests::root::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/ci.rs::tests::fixture::clock"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/ci.rs::tests::fixture::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/ci.rs::tests::routine_boundary_detects_new_risky_test_and_only_shrinks_deliberately::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_input_failure_is_not_misreported_as_a_broken_verifier::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_input_failure_is_not_misreported_as_a_broken_verifier::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_input_failure_is_not_misreported_as_a_broken_verifier::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_verifier_must_prove_itself_before_runtime_data_is_judged::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_verifier_must_prove_itself_before_runtime_data_is_judged::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::checksum_verifier_must_prove_itself_before_runtime_data_is_judged::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::differential_gate_requires_validated_onnx_staging::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::every_host_excluded_crate_is_tested_by_a_ci_target::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::every_linux_runtime_link_is_required_by_the_real_consumer::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::every_linux_runtime_link_is_required_by_the_real_consumer::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::every_linux_runtime_link_is_required_by_the_real_consumer::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::full_ci_stages_host_runtimes_before_entering_the_poisoned_gate::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::macos_gate_rejects_each_missing_or_corrupt_runtime_before_cargo::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::macos_gate_rejects_each_missing_or_corrupt_runtime_before_cargo::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::macos_gate_rejects_each_missing_or_corrupt_runtime_before_cargo::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::make_ci_full_builds_and_exercises_every_host_packaged_binary::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::make_ci_full_serializes_workspace_tests_that_compete_for_host_resources::clock"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::make_ci_runs_only_library_and_binary_unit_harnesses::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::make_clean_reclaims_default_and_configured_cargo_targets::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::make_clean_reclaims_default_and_configured_cargo_targets::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::manual_race_gate_is_selectable_without_uv::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::manual_race_gate_is_selectable_without_uv::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_ignores_make_control_plane_overrides::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_ignores_make_control_plane_overrides::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_ignores_make_control_plane_overrides::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_records_the_full_workspace_test_compile::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_records_the_full_workspace_test_compile::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::native_macos_gate_records_the_full_workspace_test_compile::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_is_a_noop_when_every_pinned_link_is_healthy::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_is_a_noop_when_every_pinned_link_is_healthy::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_is_a_noop_when_every_pinned_link_is_healthy::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_preserves_a_failed_staging_status_even_if_files_were_repaired::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_preserves_a_failed_staging_status_even_if_files_were_repaired::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_preserves_a_failed_staging_status_even_if_files_were_repaired::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_repairs_then_independently_validates_every_link::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_repairs_then_independently_validates_every_link::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::onnx_stage_repairs_then_independently_validates_every_link::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::pdf_runtime_mapping_ignores_make_control_plane_overrides::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::pdf_runtime_mapping_ignores_make_control_plane_overrides::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::pdf_runtime_mapping_ignores_make_control_plane_overrides::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::rust_host_excludes_match_the_workspace_onnx_closure::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::supported_linux_skips_the_macos_gate_before_tool_requirements::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::unsupported_host_fails_only_when_a_host_gate_is_selected::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::unsupported_host_fails_only_when_a_host_gate_is_selected::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::unsupported_pdf_host_fails_before_staging::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs::unsupported_pdf_host_fails_before_staging::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/retention_client_contracts.rs::retention_client_has_no_unapproved_workspace_dependents::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/retention_client_contracts.rs::retention_client_has_no_unapproved_workspace_dependents::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/retention_client_contracts.rs::retention_client_source_has_one_bounded_process_path::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/retention_client_contracts.rs::retention_client_source_has_one_bounded_process_path::scheduling"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/schedule_read_only_architecture.rs::schedule_read_path_has_no_spawn_or_ambient_reach::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/schedule_read_only_architecture.rs::schedule_read_path_has_no_spawn_or_ambient_reach::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/service_legacy_gate_purity.rs::service_legacy_evidence_is_standalone_and_has_one_named_gate::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/service_legacy_gate_purity.rs::service_legacy_evidence_is_standalone_and_has_one_named_gate::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/settings_native_linkage.rs::ac16_settings_adds_no_native_linkage::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/settings_native_linkage.rs::ac16_settings_adds_no_native_linkage::native"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/settings_native_linkage.rs::ac16_settings_adds_no_native_linkage::process"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/stats_dispatch_audit.rs::ac18_rejects_forbidden_spawn_mutation_at_each_stats_graph_seam::host-tool"
+
+[[findings]]
+id = "solstone-core-repository-contracts::core/crates/solstone-core-repository-contracts/src/contracts/stats_dispatch_audit.rs::ac18_rejects_forbidden_spawn_mutation_at_each_stats_graph_seam::process"
+
+[[findings]]
+id = "solstone-core-reprocess-cli::core/crates/solstone-core-reprocess-cli/src/lib.rs::tests::writers_reach_every_repair_and_drain_projection::clock"
+
+[[findings]]
+id = "solstone-core-retention-client::core/crates/solstone-core-retention-client/src/lib.rs::tests::per_target_bytes_is_measured_from_an_assumed_capacity_target_outcome::clock"
+
+[[findings]]
+id = "solstone-core-retention-client::core/crates/solstone-core-retention-client/src/lib.rs::tests::temp_path::process"
+
+[[findings]]
+id = "solstone-core-retention::core/crates/solstone-core-retention/src/door.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-segment::core/crates/solstone-core-segment/src/stream_record.rs::tests::advance_reallocates_past_a_legacy_record_that_arrives_after_reservation::clock"
+
+[[findings]]
+id = "solstone-core-segment::core/crates/solstone-core-segment/src/stream_record.rs::tests::advance_reallocates_past_a_legacy_record_that_arrives_after_reservation::scheduling"
+
+[[findings]]
+id = "solstone-core-segment::core/crates/solstone-core-segment/src/stream_repair.rs::tests::marker_repair_reports_a_held_lock::clock"
+
+[[findings]]
+id = "solstone-core-segment::core/crates/solstone-core-segment/src/supervisor.rs::tests::recorded_convey_listener_marks_solstone_up::network"
+
+[[findings]]
+id = "solstone-core-sense::core/crates/solstone-core-sense/src/dispatch.rs::tests::deferred_and_no_engine_do_not_admit_a_file::scheduling"
+
+[[findings]]
+id = "solstone-core-sense::core/crates/solstone-core-sense/src/dispatch.rs::tests::idle_status_tick_resets_the_rolling_beacon_error_count::scheduling"
+
+[[findings]]
+id = "solstone-core-sense::core/crates/solstone-core-sense/src/dispatch.rs::tests::live_completion_touches_stream_marker_but_batch_does_not::scheduling"
+
+[[findings]]
+id = "solstone-core-sense::core/crates/solstone-core-sense/src/dispatch.rs::tests::same_segment_name_in_two_streams_emits_two_observed_events::scheduling"
+
+[[findings]]
+id = "solstone-core-sense::core/crates/solstone-core-sense/src/dispatch.rs::tests::tree_not_reaped_detail_reaches_observed_error_channel::clock"
+
+[[findings]]
+id = "solstone-core-sense::core/crates/solstone-core-sense/src/dispatch.rs::tests::tree_not_reaped_detail_reaches_observed_error_channel::scheduling"
+
+[[findings]]
+id = "solstone-core-sense::core/crates/solstone-core-sense/src/dispatch.rs::tests::unavailable_pool_does_not_remove_a_multifile_segment_before_other_work_starts::clock"
+
+[[findings]]
+id = "solstone-core-sense::core/crates/solstone-core-sense/src/dispatch.rs::tests::unavailable_pool_does_not_remove_a_multifile_segment_before_other_work_starts::scheduling"
+
+[[findings]]
+id = "solstone-core-sense::core/crates/solstone-core-sense/src/dispatch.rs::tests::unavailable_worker_pool_completes_segment_with_error::scheduling"
+
+[[findings]]
+id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::assert_contender_acquires::clock"
+
+[[findings]]
+id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::assert_contender_acquires::scheduling"
+
+[[findings]]
+id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::cancellation_release::clock"
+
+[[findings]]
+id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::cancellation_release::scheduling"
+
+[[findings]]
+id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::normal_completion_release::clock"
+
+[[findings]]
+id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::normal_completion_release::scheduling"
+
+[[findings]]
+id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::panic_release::clock"
+
+[[findings]]
+id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::panic_release::scheduling"
+
+[[findings]]
+id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::seam_contention_and_reentrancy::clock"
+
+[[findings]]
+id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::seam_contention_and_reentrancy::scheduling"
+
+[[findings]]
+id = "solstone-core-settings-web::core/crates/solstone-core-settings-web/src/build_contract.rs::ac15_settings_sources_allow_only_bounded_retention_executor_spawn::process"
+
+[[findings]]
+id = "solstone-core-settings-web::core/crates/solstone-core-settings-web/src/build_contract.rs::ac15_settings_sources_allow_only_bounded_retention_executor_spawn::scheduling"
+
+[[findings]]
+id = "solstone-core-settings-web::core/crates/solstone-core-settings-web/src/mutations.rs::ac10_config_busy_routes_and_chat_timeout_twin::clock"
+
+[[findings]]
+id = "solstone-core-settings-web::core/crates/solstone-core-settings-web/src/mutations.rs::prune_logs_replay_refuses_even_when_a_host_executor_is_resolvable::scheduling"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/args.rs::tests::args_resolved_matches_the_reference_key_value_and_source_contract::clock"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/args.rs::tests::fixture::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/clean_uninstall.rs::tests::root::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/clean_uninstall.rs::tests::run::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/lib.rs::tests::clean_uninstall_narrates_every_step_not_only_the_count::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/lib.rs::tests::owner_boundary_prints_dead_end_or_emits_terminal_jsonl_events::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/lib.rs::tests::root::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/lib.rs::tests::run::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/lib.rs::tests::wrapper_worktree_detection_uses_executable_install_root_not_caller_directory::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/manifest.rs::tests::root::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::brain_mutates_local_provider_before_skipping_and_warning_keeps_its_distinct_shape::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::doctor_jsonl_emits_advisory_warning_fields::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::doctor_jsonl_forwards_only_the_documented_doctor_events::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::fixture::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::force_reruns_prior_ok_step::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::is_installed::scheduling"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::jsonl_step_events_include_the_documented_command_and_duration::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::plan_header_carries_every_resolved_value_with_its_source::clock"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::run::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::service_resume_covers_all_five_branches_and_fallthroughs_execute_install::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/steps.rs::tests::skills_failures_continue_and_single_failure_uses_its_exit_code::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/user_config.rs::tests::temp_root::process"
+
+[[findings]]
+id = "solstone-core-setup::core/crates/solstone-core-setup/src/wrapper.rs::tests::root::process"
+
+[[findings]]
+id = "solstone-core-skill-state::core/crates/solstone-core-skill-state/src/lib.rs::tests::classifies_expected_foreign_and_stale_links::process"
+
+[[findings]]
+id = "solstone-core-sol-client::core/crates/solstone-core-sol-client/src/decode.rs::tests::transport_error_messages_are_exact::clock"
+
+[[findings]]
+id = "solstone-core-sol-client::core/crates/solstone-core-sol-client/src/seam.rs::tests::failing_spawner_always_errors::host-tool"
+
+[[findings]]
+id = "solstone-core-sol-client::core/crates/solstone-core-sol-client/src/seam.rs::tests::failing_spawner_always_errors::scheduling"
+
+[[findings]]
+id = "solstone-core-sol-client::core/crates/solstone-core-sol-client/src/seam.rs::tests::fake_clock_advances_without_sleeping::clock"
+
+[[findings]]
+id = "solstone-core-sol-client::core/crates/solstone-core-sol-client/src/transport.rs::tests::api_timeout_detail_includes_method_path_and_limits::clock"
+
+[[findings]]
+id = "solstone-core-sol-client::core/crates/solstone-core-sol-client/src/transport.rs::tests::read_timeout_error_preserves_request_target::clock"
+
+[[findings]]
+id = "solstone-core-sol-client::core/crates/solstone-core-sol-client/src/transport.rs::tests::upload_timeout_detail_includes_method_path_and_limits::clock"
+
+[[findings]]
+id = "solstone-core-sol-client::core/crates/solstone-core-sol-client/src/transport.rs::tests::ureq_connection_refused_is_unreachable::network"
+
+[[findings]]
+id = "solstone-core-sol-client::core/crates/solstone-core-sol-client/src/transport.rs::tests::ureq_io_timeout_is_timeout::network"
+
+[[findings]]
+id = "solstone-core-sol-client::core/crates/solstone-core-sol-client/src/transport.rs::tests::ureq_timeout_variant_is_timeout::network"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/committed.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/committed.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/door.rs::tests::capture_signature::scheduling"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/door.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/door.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/establish.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/establish.rs::tests::run_child_until_pause::process"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/establish.rs::tests::run_child_until_pause::scheduling"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/establish.rs::tests::wait_for_marker::clock"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/http_tests.rs::new::process"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/ledger.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/ledger.rs::tests::reload_detects_atomic_replace_when_mtime_and_size_match::process"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/lib.rs::tests::direct_path_uses_fake_spl_direct_seam_without_sockets::scheduling"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/pairing/mod.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/pairing/nonces.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::http_get::clock"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::http_get::network"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::loopback_get::clock"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::loopback_get::network"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::new::scheduling"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::proxied_response_streams_before_upstream_completion::clock"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::proxied_response_streams_before_upstream_completion::network"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::proxied_response_streams_before_upstream_completion::scheduling"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::resident_serve_answers_the_local_status_route_while_on_duty::scheduling"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::unused_loopback_port::network"
+
+[[findings]]
+id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/service_identity.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::canonical_site_packages_collapses_lib64_alias_in_both_orders::host-tool"
+
+[[findings]]
+id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::canonical_site_packages_returns_single_plain_candidate::host-tool"
+
+[[findings]]
+id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::canonical_site_packages_selects_distinct_real_candidates_deterministically::host-tool"
+
+[[findings]]
+id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::project_root_prefers_installed_package_layout_over_checkout_ancestor::host-tool"
+
+[[findings]]
+id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::service_host_command_moves_to_journal::process"
+
+[[findings]]
+id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::temp_path::clock"
+
+[[findings]]
+id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::unknown_command_is_explicitly_unsupported::process"
+
+[[findings]]
+id = "solstone-core-sol::core/crates/solstone-core-sol/src/skills.rs::tests::mixed_writability_installs_writable_agent_and_reports_unwritable_agent::process"
+
+[[findings]]
+id = "solstone-core-sol::core/crates/solstone-core-sol/src/skills.rs::tests::unique_temp::clock"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/artifact_wipe.rs::tests::test_root::process"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/backfill.rs::tests::ac2_backfill_write_preserves_user_prefix_and_persists_full_resolve_output::process"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/candidate_tracker.rs::tests::ac11_process_segment_merges_at_threshold_and_creates_below_it::clock"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/candidate_tracker.rs::tests::ac14_confirmation_and_pair_gates_match_boundaries::clock"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/candidate_tracker.rs::tests::ac15_process_segment_creates_once_and_deduplicates_the_source_key::clock"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/candidate_tracker.rs::tests::ac16_process_segment_times_out_before_reload_or_write_when_pool_is_locked::clock"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/candidate_tracker.rs::tests::candidate::clock"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/candidate_tracker.rs::tests::merge_candidate_pair_keeps_lowest_id_and_persists_confirmed_entity::clock"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/candidate_tracker.rs::tests::temporary_journal::process"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/identify_cluster.rs::tests::identify_retro_plan_ignores_rejected_candidates::clock"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/identify_cluster.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/identify_undo.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/identify_undo_phases.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/speaker_candidate_pair_review_candidates.rs::tests::temporary_journal::clock"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/speaker_candidate_pair_review_candidates.rs::tests::temporary_journal::process"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/speaker_review_candidates.rs::tests::temporary_journal::clock"
+
+[[findings]]
+id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/speaker_review_candidates.rs::tests::temporary_journal::process"
+
+[[findings]]
+id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/diarization.rs::tests::interval_finding_clamps_every_flush_to_audio_duration::clock"
+
+[[findings]]
+id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/diarization.rs::tests::interval_finding_flushes_active_class_change_and_active_end::clock"
+
+[[findings]]
+id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/diarization.rs::tests::interval_finding_keeps_thirty_frames_and_drops_twenty_nine::clock"
+
+[[findings]]
+id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/diarization.rs::tests::interval_finding_uses_raw_argmax_but_softmax_confidence::clock"
+
+[[findings]]
+id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/diarization.rs::tests::intervals_for_run::clock"
+
+[[findings]]
+id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/diarization.rs::tests::sentence_assignment_equal_overlap_takes_first_interval_label::clock"
+
+[[findings]]
+id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/diarization.rs::tests::sentence_assignment_invalid_timestamps_are_unlabelled::clock"
+
+[[findings]]
+id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/diarization.rs::tests::sentence_assignment_label_base_is_one_indexed::clock"
+
+[[findings]]
+id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/diarization.rs::tests::sentence_assignment_matches_fixture_assigned_sentences::clock"
+
+[[findings]]
+id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/discovery.rs::tests::benchmark_10_000_by_256_discovery_clustering::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/link_state_files.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/loopback_pipe.rs::tests::fixed::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/loopback_pipe.rs::tests::forwards_loopback_responses_to_the_tunnel::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/loopback_pipe.rs::tests::replays_buffered_tls_bytes_first_and_forwards_both_directions::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/loopback_pipe.rs::tests::replays_initial_prefix_once_before_tunnel_payload::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/loopback_pipe.rs::tests::websocket_eof_writes_tcp_eof_and_cancels_reverse_read::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/private_link.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/private_link.rs::tests::relay_response::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/private_link.rs::tests::relay_response::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::a_quiet_connected_listener_keeps_refreshing_its_health_snapshot::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::a_quiet_connected_listener_keeps_refreshing_its_health_snapshot::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::a_quiet_connected_listener_keeps_refreshing_its_health_snapshot::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::client_config::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::continuously_acknowledged_listener_earns_backoff_reset::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::continuously_acknowledged_listener_earns_backoff_reset::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::continuously_acknowledged_listener_earns_backoff_reset::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::default::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_ack_before_stability_window_does_not_reset_backoff::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_ack_before_stability_window_does_not_reset_backoff::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_ack_before_stability_window_does_not_reset_backoff::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_dispatches_tls_to_loopback_and_replays_the_peeked_prefix::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_dispatches_tls_to_loopback_and_replays_the_peeked_prefix::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_dispatches_tls_to_loopback_and_replays_the_peeked_prefix::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_requires_a_matching_pong_before_reporting_connected::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_requires_a_matching_pong_before_reporting_connected::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_requires_a_matching_pong_before_reporting_connected::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_stability_uses_the_exact_monotonic_boundary::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::new::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::replacement_generation_keeps_old_ack_but_stays_connecting_until_its_pong::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::replacement_generation_keeps_old_ack_but_stays_connecting_until_its_pong::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::replacement_generation_keeps_old_ack_but_stays_connecting_until_its_pong::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::short_prefix_error_releases_the_global_admission_slot::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::short_prefix_error_releases_the_global_admission_slot::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::short_prefix_error_releases_the_global_admission_slot::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::stop_emits_final_disconnect_and_health_before_run_task_cancellation::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::stop_emits_final_disconnect_and_health_before_run_task_cancellation::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::stop_emits_final_disconnect_and_health_before_run_task_cancellation::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::stop_race_after_pair_emits_one_terminal_close_and_health::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::tunnel_lifecycle_drop_releases_its_coalescing_id::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::tunnel_offers_coalesce_across_listener_generations::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::tunnel_offers_coalesce_across_listener_generations::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::tunnel_offers_coalesce_across_listener_generations::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::unsupported_prefixes_close_as_the_same_unknown_route::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::unsupported_prefixes_close_as_the_same_unknown_route::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::unsupported_prefixes_close_as_the_same_unknown_route::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::wrong_pongs_and_control_traffic_do_not_extend_the_ack_deadline::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::wrong_pongs_and_control_traffic_do_not_extend_the_ack_deadline::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::wrong_pongs_and_control_traffic_do_not_extend_the_ack_deadline::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_websocket.rs::tests::listen_events_surface_pongs_and_flush_automatic_ping_replies::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_websocket.rs::tests::listen_events_surface_pongs_and_flush_automatic_ping_replies::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_websocket.rs::tests::listen_events_surface_pongs_and_flush_automatic_ping_replies::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_websocket.rs::tests::split_adapter_preserves_binary_and_text_source_bytes::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_websocket.rs::tests::split_adapter_preserves_binary_and_text_source_bytes::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::completed_relay_run_is_a_fatal_class_error::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::exact_spl_with_a_token_starts_a_relay::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::final_callosum_hook_runs_when_relay_start_fails::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::idle_posture_read_failure_fails_closed_without_starting_a_relay::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::missing_token_notice_is_one_shot_and_resets_after_posture_change::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::only_exact_spl_starts_a_relay::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::parked_posture_read_failure_keeps_the_existing_relay_until_shutdown::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::posture_departure_stops_tunnels_before_cancelling_the_run_task::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::read_intervals::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::start_relay::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::state::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::wait_for_poll::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::concrete_service_client_stop_then_aborts_the_live_listen_socket::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::concrete_service_client_stop_then_aborts_the_live_listen_socket::network"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::concrete_service_client_stop_then_aborts_the_live_listen_socket::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::saturated_regular_output_preserves_each_tunnel_close_id_and_health::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::saturated_regular_output_preserves_each_tunnel_close_id_and_health::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::saturated_regular_output_still_delivers_the_final_lifecycle_tail::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::saturated_regular_output_still_delivers_the_final_lifecycle_tail::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::test_deps::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::wedged_callosum_never_blocks_terminal_emit_or_output_shutdown::clock"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_shutdown.rs::tests::reports_an_unexpected_listen_task_failure::scheduling"
+
+[[findings]]
+id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_shutdown.rs::tests::stops_before_cancelling_and_awaits_the_listen_task::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-attest::core/crates/solstone-core-spp-attest/src/binding.rs::tests::binding_hash_matches_fixture_vector::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-attest::core/crates/solstone-core-spp-attest/src/nvgpu/appraise.rs::tests::appraise::clock"
+
+[[findings]]
+id = "solstone-core-spp-attest::core/crates/solstone-core-spp-attest/src/nvgpu/appraise.rs::tests::appraiser_maps_timeout_to_gpu_appraisal_failed::clock"
+
+[[findings]]
+id = "solstone-core-spp-attest::core/crates/solstone-core-spp-attest/src/nvgpu/appraise.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-spp-attest::core/crates/solstone-core-spp-attest/src/nvgpu/binary.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-spp-attest::core/crates/solstone-core-spp-attest/src/snp.rs::tests::cpu_evidence::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-attest::core/crates/solstone-core-spp-attest/src/snp.rs::tests::fixture_inputs::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/nvattest.rs::tests::composite_failures_are_all_failed_not_unreachable::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/nvattest.rs::tests::only_an_unreachable_gateway_is_unreachable::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::closed_loopback_port_is_unreachable_and_evidence_rejection_is_failed::network"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::closed_loopback_port_is_unreachable_and_evidence_rejection_is_failed::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::establish::clock"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::establish::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::evidence_bearing_certificate_and_bound_exporter_proof_establish_channel::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::json_request_uses_plain_read_write_transport_with_bounded_response_parsing::network"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::json_request_uses_plain_read_write_transport_with_bounded_response_parsing::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::rejected::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::start_gateway::clock"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::start_gateway::network"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::start_gateway::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::teardown_precedes_failure_recording::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::test_verdict::clock"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/production_verifier.rs::tests::cpu_failure_does_not_call_gpu_or_leak_fixture_material::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/production_verifier.rs::tests::load::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/production_verifier.rs::tests::verify::clock"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/production_verifier.rs::tests::verify::scheduling"
+
+[[findings]]
+id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/verify.rs::tests::certificate_evidence_carries_the_injected_composite_seam::clock"
+
+[[findings]]
+id = "solstone-core-streams-cli::core/crates/solstone-core-streams-cli/src/lib.rs::tests::rebuild_lock_and_write_failures_are_typed_anomalies::clock"
+
+[[findings]]
+id = "solstone-core-support-portal::core/crates/solstone-core-support-portal/src/operations_client.rs::tests::arm_06_preserves_record_content_after_marking_in_progress::scheduling"
+
+[[findings]]
+id = "solstone-core-system-health::core/crates/solstone-core-system-health/src/catchup_state.rs::tests::writers_populate_shipped_repair_and_drain_projections::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/catchup.rs::tests::eligible_days_caps_natural_days_but_keeps_forced_days::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/catchup.rs::tests::updated_days_honors_exclusion_and_marker_order::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/catchup.rs::tests::writers_preserve_repair_transitions_and_daily_retention::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/lifecycle/mod.rs::tests::ac3_injected_start_time_rejects_reused_pid::process"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/lifecycle/readiness.rs::tests::ac3_ac8_injected_start_time_rejects_reused_pid::process"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/memory_admission.rs::tests::waiting_has_stop_and_no_stop_blocking_arms_without_expiry::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/memory_admission.rs::tests::waiting_has_stop_and_no_stop_blocking_arms_without_expiry::scheduling"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/process/log.rs::tests::ac19_rollover_open_failure_retains_old_handle_for_retry::process"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/process/observation.rs::tests::classifies_the_closed_process_observation_matrix::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/process/observation.rs::tests::live_uptime_uses_the_supplied_monotonic_sample::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/process/observation.rs::tests::tuple::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/admission.rs::tests::lock_epoch::scheduling"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/admission.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/launch.rs::tests::already_gone_ready_cleanup_removes_local_observation_residue::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet.rs::tests::already_gone_ready_cleanup_removes_parakeet_observation_residue::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet.rs::tests::stopping_the_same_managed_process_twice_is_idempotent::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet.rs::tests::stopping_the_same_managed_process_twice_is_idempotent::process"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet.rs::tests::stopping_the_same_managed_process_twice_is_idempotent::scheduling"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet_truth_seam.rs::tests::auto_backend_uses_an_injected_gpu::native"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet_truth_seam.rs::tests::dispatch_truth_re_fires_and_records_two_independent_results::native"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet_truth_seam.rs::tests::plan_builder_maps_vulkan_backend_to_gpu_placement_and_cpu_to_cpu_placement::native"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/readiness.rs::tests::binary_probe_reaps_a_timed_out_child::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/readiness.rs::tests::binary_probe_reaps_a_timed_out_child::process"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/store.rs::tests::current_process_resolution_classifies_absent_and_residual_states::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/store.rs::tests::current_process_resolution_rejects_every_mismatched_identity_member::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/store.rs::tests::current_process_resolution_rejects_incomplete_and_multiple_tuples::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/store.rs::tests::current_process_resolution_selects_one_coherent_fence_tuple::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/store.rs::tests::current_process_resolution_uses_fence_when_pid_is_reused::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/store.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/store.rs::tests::ready_tuple_insert_and_cleanup_are_fence_isolated_under_reused_identity::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::add_active::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::add_active::scheduling"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::emit::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::legacy_projections_preserve_queue_count_rules::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::plan_spawner::process"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::plan_spawner::scheduling"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::poll_and_terminate_errors_still_cleanup_and_advance::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::poll_and_terminate_errors_still_cleanup_and_advance::scheduling"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::queue_with_sink::scheduling"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::snapshot_history_is_fifo_and_keeps_active_reference::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::spawn_failure_completes_and_advances_the_follower::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::spawn_failure_completes_and_advances_the_follower::scheduling"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::status_seam_sink::scheduling"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::status_snapshot_covers_every_normal_completion_seam_and_rejects_torn_reads::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::status_snapshot_is_ordered_coherent_and_stable::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/queue.rs::tests::wait_for::clock"
+
+[[findings]]
+id = "solstone-core-system::core/crates/solstone-core-system/src/status_wire.rs::tests::recent::clock"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::help_and_invalid_top_level_match_owner_program_name::process"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::inventory_parses_options_help_and_errors::process"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::log_parser_accepts_interspersed_flags::process"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::log_parser_matches_help_and_error_boundaries::process"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::logs_parser_uses_its_own_help_and_integer_errors::process"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/args.rs::tests::show_parser_matches_help_and_interspersed_options::process"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/lib.rs::tests::resolve_execution_facts_keeps_raw_cwd_distinct_from_composer_default::clock"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs::tests::colour_is_tty_conditional::clock"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs::tests::daily_fallback_is_lazy_raw_keyed_and_memoized::clock"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs::tests::local_time::clock"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs::tests::run::clock"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs::tests::table_name_width_uses_code_points::clock"
+
+[[findings]]
+id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/show.rs::tests::prompt_refusals_never_have_a_process_execution_path::process"
+
+[[findings]]
+id = "solstone-core-talent-runtime::core/crates/solstone-core-talent-runtime/src/documents.rs::tests::criterion_11_reads_process_environment_not_request_env::process"
+
+[[findings]]
+id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::capture_logs::scheduling"
+
+[[findings]]
+id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::gate_preserves_four_outcomes::scheduling"
+
+[[findings]]
+id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::helpers_emit_status_and_day_log_match_the_reference_shapes::clock"
+
+[[findings]]
+id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::helpers_emit_status_and_day_log_match_the_reference_shapes::scheduling"
+
+[[findings]]
+id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::log::scheduling"
+
+[[findings]]
+id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::run_segment_with::clock"
+
+[[findings]]
+id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::warnings::scheduling"
+
+[[findings]]
+id = "solstone-core-thinking::core/crates/solstone-core-thinking/src/confidential.rs::tests::exhausted_generation_refuses_to_reuse_an_identity::scheduling"
+
+[[findings]]
+id = "solstone-core-thinking::core/crates/solstone-core-thinking/src/local.rs::tests::temporary_journal::process"
+
+[[findings]]
+id = "solstone-core-thinking::core/crates/solstone-core-thinking/src/providers.rs::tests::expected_validation_request::clock"
+
+[[findings]]
+id = "solstone-core-thinking::core/crates/solstone-core-thinking/src/providers.rs::tests::new::process"
+
+[[findings]]
+id = "solstone-core-thinking::core/crates/solstone-core-thinking/src/providers.rs::tests::temporary_journal::process"
+
+[[findings]]
+id = "solstone-core-top::core/crates/solstone-core-top/src/loop.rs::tests::retained_loop_failure_shapes_acquire_and_cleanup_correctly::clock"
+
+[[findings]]
+id = "solstone-core-top::core/crates/solstone-core-top/src/loop.rs::tests::sleep::clock"
+
+[[findings]]
+id = "solstone-core-top::core/crates/solstone-core-top/src/process.rs::tests::linux_fixture_parser_handles_live_zombie_and_missing_without_panicking::clock"
+
+[[findings]]
+id = "solstone-core-top::core/crates/solstone-core-top/src/process.rs::tests::linux_fixture_parser_handles_live_zombie_and_missing_without_panicking::process"
+
+[[findings]]
+id = "solstone-core-top::core/crates/solstone-core-top/src/production.rs::tests::production_receive_is_driven_while_the_sync_consumer_polls::clock"
+
+[[findings]]
+id = "solstone-core-top::core/crates/solstone-core-top/src/production.rs::tests::production_receive_is_driven_while_the_sync_consumer_polls::scheduling"
+
+[[findings]]
+id = "solstone-core-top::core/crates/solstone-core-top/src/production.rs::tests::terminal_decodes_only_complete_up_and_down_escape_sequences::scheduling"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/args.rs::tests::recorded_convey_listener_marks_solstone_up::network"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::attestation_reason_mapper_covers_the_initial_and_failure_states::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::invalid_target_failure_refuses_before_a_channel_attempt::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::invalid_target_failure_refuses_before_a_channel_attempt::scheduling"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::multipart_request_uses_one_plain_tcp_channel_with_expected_fields::network"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::multipart_request_uses_one_plain_tcp_channel_with_expected_fields::scheduling"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::multipart_transport_retries_interrupted_io::network"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::multipart_transport_retries_interrupted_io::scheduling"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::new::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::plausible_channel_requires_a_confidential_byo_endpoint_and_credential::scheduling"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::readiness_failure_refuses_before_an_endpoint_request::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::readiness_failure_refuses_before_an_endpoint_request::network"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::round_trip_hosted_response::network"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::round_trip_hosted_response::scheduling"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::set_io_timeout::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::stale_session_refuses_before_readiness_or_endpoint_request::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::stale_session_refuses_before_readiness_or_endpoint_request::network"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::stale_session_refuses_before_readiness_or_endpoint_request::scheduling"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::transport_failure_defers_without_a_second_request::network"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::transport_failure_defers_without_a_second_request::scheduling"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_coreml.rs::tests::large_helper_stdout_is_drained_before_exit::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_coreml.rs::tests::timed_out_helper_defers::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_coreml.rs::tests::transcribe::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_coreml.rs::tests::transcribe_with_timeout::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::catch_all_ureq_error_defers_with_transport_error::network"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::disconnected_transcription_defers_with_server_disconnected::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::health_and_transcription_use_the_expected_wire_paths_and_form_fields::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::live_http_500_is_a_hard_transcription_error::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::malformed_live_json_is_a_hard_error::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::parakeet_coreml_timeout_config_does_not_set_cpp_device::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::read_request::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::refused_health_defers_with_server_not_ready::network"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::refused_transcription_defers_with_connect_error::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::refused_transcription_defers_with_connect_error::network"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::start::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::start::network"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::start::scheduling"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::text_without_word_timings_is_a_hard_contract_error::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::timed_out_transcription_defers_with_read_timeout::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/config.rs::tests::parakeet_coreml_values_read_only_their_keys_and_validate_defaults::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/config.rs::tests::parakeet_cpp_device_reads_only_its_device_key::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/event.rs::tests::speaker_analysis_event_fields_are_reused_verbatim::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/lib.rs::tests::batch_absorbs_deferred_and_speaker_analysis_failures_then_exits_zero::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/lib.rs::tests::model_asset_errors_are_configuration_failures::native"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/model_assets.rs::tests::has_python_package_layout::host-tool"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/model_assets.rs::tests::missing_assets_search_executable_relative_paths_before_python_layouts::host-tool"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/speakers.rs::tests::speaker_analysis_failures_always_exit_one::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/speakers.rs::tests::stale_sweep_removes_old_directory_and_keeps_fresh_one::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/speakers.rs::tests::timeout_escalates_to_kill_after_termination_grace::clock"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/speakers.rs::tests::timeout_escalates_to_kill_after_termination_grace::process"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/speakers.rs::tests::timeout_escalates_to_kill_after_termination_grace::scheduling"
+
+[[findings]]
+id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/speakers.rs::tests::valid_response::clock"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::cancellation_preserves_the_segment_and_never_commits::clock"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::deferred_delete_commits_to_a_tombstone_and_logs_pending_then_committed::clock"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::redirect_target_and_workspace_asset_are_deterministic::host-tool"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::redirect_target_and_workspace_asset_are_deterministic::process"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::search_index_warning_tracks_the_native_supervisor_identity_contract::process"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::snapshot::clock"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::stats_cache_wins_and_month_validation_is_exact::clock"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::this_process_started_at::process"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/deferred.rs::tests::cancellation_prevents_the_scheduled_commit::clock"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/deferred.rs::tests::deadline_commits_once_and_makes_the_id_unavailable::clock"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::concurrent_reprocess_creates_one_marker_and_spawns_once::clock"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::repair_modality_markers_is_noop_fresh_and_repairs_a_populated_stale_marker::clock"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::sense_spawn_resolution_uses_only_the_current_executable_sibling::process"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::snapshot::clock"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::spawn::scheduling"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::test_router::scheduling"
+
+[[findings]]
+id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::wait::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/brain_owner.rs::tests::owner_cogitate_outer_timeout_is_distinct_from_process_failure::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/brain_owner.rs::tests::owner_probe_reason_vocabulary_and_cogitate_terminals_are_closed::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::active_distinguishes_missing_and_corrupt::process"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::move_failures_restart_a_service_stopped_before_the_move::process"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::move_uses_service_bin_to_stop_and_journal_wrapper_bin_to_start::process"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::new::scheduling"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::non_strict_resolution_matches_pathlib_for_relative_home_and_missing_paths::process"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::run::process"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::run_move_covers_the_eleven_reference_exit_sites::process"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::test_root::process"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes::scheduling"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/health.rs::tests::expired_deadline_does_not_wait_for_listener_stop::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/health.rs::tests::filters_envelopes_without_a_socket::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/health.rs::tests::reports_malformed_frames_observed_before_timeout_without_a_socket::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::bundled_asset_gate_names_only_speaker_assets_and_never_enters_the_installer::native"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::real_asset_gate_reports_wespeaker_digest_mismatch_before_installing::native"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::real_asset_gate_reports_wespeaker_digest_mismatch_before_installing::process"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::same_target_held_lease_is_observed_to_ready::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::same_target_held_lease_is_observed_to_ready::native"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::same_target_held_lease_is_observed_to_ready::scheduling"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::local_install_busy_observes_the_existing_local_attempt::scheduling"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::local_override_accepts_python_integer_strings_but_corrupt_config_surfaces::native"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::local_preheld_lease_observes_the_existing_local_attempt::scheduling"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::stage_ready_parakeet::native"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::supervisor_gate_reproduces_all_four_reference_rows::scheduling"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/main.rs::tests::anthropic_generated_response_preserves_thinking_blocks::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/main.rs::tests::body_rebuild_errors_distinguish_data_io_and_retryable_lock_failure::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/main.rs::tests::commit_config_error_exit_maps_all_variants::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/navigate.rs::tests::navigate_exit_codes_are_distinct::scheduling"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/service.rs::tests::launchd_runtime_requires_path_program_and_arguments::process"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/service.rs::tests::runtime_truth_requires_complete_managed_identity::process"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/supervisor/tick.rs::tests::app_observation_requires_a_captured_start_and_preserves_poll_outcomes::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/supervisor/tick.rs::tests::check_segment_flush_forces_expected_command_and_marks_state::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/supervisor/tick.rs::tests::check_segment_flush_is_a_remote_mode_noop::clock"
+
+[[findings]]
+id = "solstone-core::core/crates/solstone-core/src/supervisor/tick.rs::tests::handle_daily_tasks_rollover_forces_flush_and_caps_catchup::clock"
