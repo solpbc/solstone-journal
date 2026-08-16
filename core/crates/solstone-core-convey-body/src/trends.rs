@@ -17,11 +17,12 @@
 //! fold: an import landing during the fold then makes the completed payload stale
 //! and causes the next request to retry.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime};
@@ -38,7 +39,10 @@ type TrendsCache = BTreeMap<String, (TrendsSignature, Arc<TrendsPayload>)>;
 type SleepRows = BTreeMap<String, Vec<(String, NaiveDateTime, NaiveDateTime, Option<String>)>>;
 static TRENDS_CACHE: OnceLock<Mutex<TrendsCache>> = OnceLock::new();
 static TRENDS_WARM_FLIGHT: AtomicBool = AtomicBool::new(false);
-static TRENDS_WARM_INVOCATIONS: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    static TRENDS_WARM_INVOCATIONS: Cell<u64> = const { Cell::new(0) };
+}
 
 pub const TYPICAL_BASELINE_DAYS: i64 = 90;
 pub const TYPICAL_MIN_VALUES: usize = 14;
@@ -170,13 +174,42 @@ pub fn replace_trends_cache(
     Ok(payload)
 }
 
-pub fn trends_warm_invocations() -> u64 {
-    TRENDS_WARM_INVOCATIONS.load(Ordering::Relaxed)
+/// Observes `warm_trends` calls on the constructing thread only.
+///
+/// [`Drop`] restores the thread's captured base so nested probes do not accumulate.
+pub struct TrendsWarmProbe {
+    base: u64,
+}
+
+impl TrendsWarmProbe {
+    pub fn new() -> Self {
+        Self {
+            base: TRENDS_WARM_INVOCATIONS.with(Cell::get),
+        }
+    }
+
+    pub fn count(&self) -> u64 {
+        TRENDS_WARM_INVOCATIONS
+            .with(Cell::get)
+            .saturating_sub(self.base)
+    }
+}
+
+impl Default for TrendsWarmProbe {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for TrendsWarmProbe {
+    fn drop(&mut self) {
+        TRENDS_WARM_INVOCATIONS.with(|cell| cell.set(self.base));
+    }
 }
 
 /// Starts the single-flight background fold. Calls count even when another fold owns the flight.
 pub fn warm_trends(journal_root: impl Into<PathBuf>) {
-    TRENDS_WARM_INVOCATIONS.fetch_add(1, Ordering::Relaxed);
+    TRENDS_WARM_INVOCATIONS.with(|cell| cell.set(cell.get() + 1));
     let root = journal_root.into();
     warm_with(
         root.clone(),

@@ -214,22 +214,10 @@ id = "solstone-core-convey-http::core/crates/solstone-core-convey-http/src/serve
 id = "solstone-core-convey-http::core/crates/solstone-core-convey-http/src/serve.rs::tests::response_until_closed::scheduling"
 
 [[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/authorization_gate.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/authorization_gate.rs::tests::pairing_confinement_checks_window_then_path_and_covers_unmatched_routes::clock"
-
-[[findings]]
 id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/authorization_gate.rs::tests::pairing_confinement_checks_window_then_path_and_covers_unmatched_routes::scheduling"
 
 [[findings]]
 id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/authorization_gate.rs::tests::pairing_peer_falls_through_the_authorization_gate::scheduling"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/body.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/devices.rs::tests::temporary_path::clock"
 
 [[findings]]
 id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/door.rs::access_tests::queued_pair_request_is_in_flight_before_it_acquires_the_carrier_lock::scheduling"
@@ -238,64 +226,13 @@ id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/doo
 id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/door.rs::tests::certless_window_stamps_a_pairing_basis_but_closed_window_does_not::scheduling"
 
 [[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/entities.rs::tests::new::clock"
-
-[[findings]]
 id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/entities.rs::tests::paired_device_confinement_and_authorization_precede_entities_handlers::scheduling"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/entities.rs::tests::socket_request::network"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/entities.rs::tests::socket_request::scheduling"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::clients_until::clock"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::loopback_status::network"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::relay_health_subscriber_starts_late_and_drives_live_status::clock"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::relay_health_subscriber_starts_late_and_drives_live_status::scheduling"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::router_invokes_trends_warm_once::clock"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/lib.rs::tests::status_until::clock"
 
 [[findings]]
 id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/link_health_cache.rs::tests::generation_guard_rejects_missing_and_older_but_refreshes_equal::scheduling"
 
 [[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/network.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/network_status.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/registry.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/session.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/speakers.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/speakers_analyze_client.rs::tests::oversized_stdout_is_rejected_while_the_helper_is_running::clock"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/speakers_analyze_client.rs::tests::timeout_terminates_then_kills_after_the_grace_period::clock"
-
-[[findings]]
 id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking.rs::tests::portal_body_timeout_keeps_polling::network"
-
-[[findings]]
-id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thinking_sol_reads.rs::tests::preview_composes_distinct_sections_without_journal_write::clock"
 
 [[findings]]
 id = "solstone-core-cortex-client::core/crates/solstone-core-cortex-client/src/lib.rs::tests::concurrent_allocator_bumps_same_millisecond_ids::scheduling"

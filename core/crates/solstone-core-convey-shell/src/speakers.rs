@@ -66,43 +66,23 @@ pub async fn state() -> Response {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
-    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    struct EstablishedJournal(PathBuf);
+    struct EstablishedJournal(tempfile::TempDir);
 
     impl EstablishedJournal {
         fn new() -> Self {
-            let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock is after epoch")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "solstone-speakers-day-{}-{nanos}-{sequence}",
-                std::process::id()
-            ));
-            fs::create_dir(&path).expect("temporary journal creates");
-            fs::create_dir(path.join("config")).expect("config directory creates");
+            let dir = tempfile::TempDir::new_in("/var/tmp").expect("temporary journal creates");
+            fs::create_dir(dir.path().join("config")).expect("config directory creates");
             fs::write(
-                path.join("config/journal.json"),
+                dir.path().join("config/journal.json"),
                 br#"{"setup":{"completed_at":1767225600}}"#,
             )
             .expect("journal config writes");
-            Self(path)
-        }
-    }
-
-    impl Drop for EstablishedJournal {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            Self(dir)
         }
     }
 
@@ -119,7 +99,7 @@ mod tests {
     #[tokio::test]
     async fn speakers_day_matches_python_empty_and_shell_responses() {
         let journal = EstablishedJournal::new();
-        let app = crate::router(journal.0.clone());
+        let app = crate::router(journal.0.path().to_path_buf());
 
         let invalid = get(app.clone(), "/app/speakers/notaday").await;
         assert_eq!(invalid.status(), StatusCode::NOT_FOUND);

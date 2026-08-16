@@ -68,38 +68,17 @@ pub fn classify_session(journal_root: &Path) -> SessionState {
 mod tests {
     use super::{SessionState, classify_session};
     use std::fs;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    struct TempDir(PathBuf);
+    struct TempDir(tempfile::TempDir);
 
     impl TempDir {
         fn new() -> Self {
-            let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock is after epoch")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "solstone-convey-shell-session-{}-{nanos}-{sequence}",
-                std::process::id()
-            ));
-            fs::create_dir(&path).expect("temporary root creates");
-            Self(path)
+            Self(tempfile::TempDir::new_in("/var/tmp").expect("temporary root creates"))
         }
 
         fn write(&self, bytes: &[u8]) {
-            fs::create_dir_all(self.0.join("config")).expect("config directory creates");
-            fs::write(self.0.join("config/journal.json"), bytes).expect("config writes");
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            fs::create_dir_all(self.0.path().join("config")).expect("config directory creates");
+            fs::write(self.0.path().join("config/journal.json"), bytes).expect("config writes");
         }
     }
 
@@ -136,20 +115,23 @@ mod tests {
         for (bytes, expected) in vectors {
             let temporary = TempDir::new();
             temporary.write(bytes);
-            assert_eq!(classify_session(&temporary.0), expected);
+            assert_eq!(classify_session(temporary.0.path()), expected);
         }
     }
 
     #[test]
     fn missing_config_is_unestablished_and_invalid_shapes_are_corrupt() {
         let missing = TempDir::new();
-        assert_eq!(classify_session(&missing.0), SessionState::Unestablished);
+        assert_eq!(
+            classify_session(missing.0.path()),
+            SessionState::Unestablished
+        );
 
         for bytes in [br#"[]"#.as_slice(), br#"{"setup": "bad""#.as_slice()] {
             let temporary = TempDir::new();
             temporary.write(bytes);
             assert!(matches!(
-                classify_session(&temporary.0),
+                classify_session(temporary.0.path()),
                 SessionState::Corrupt { .. }
             ));
         }

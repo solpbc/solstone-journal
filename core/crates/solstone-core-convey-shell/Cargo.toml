@@ -22,6 +22,11 @@ name = "corpus"
 path = "tests/corpus.rs"
 
 [[test]]
+name = "convey_shell_boundaries"
+path = "tests/convey_shell_boundaries.rs"
+required-features = ["test-hooks"]
+
+[[test]]
 name = "convey_speaker_contracts"
 path = "tests/convey_speaker_contracts.rs"
 
@@ -47,6 +52,7 @@ workspace = true
 
 [features]
 default = ["host"]
+test-hooks = []
 host = [
     "dep:percent-encoding",
     "dep:solstone-core-callosum",
@@ -123,6 +129,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 filetime = "0.2.29"
+tempfile = "3.24.0"
 rcgen.workspace = true
 rustls.workspace = true
 sha2.workspace = true
