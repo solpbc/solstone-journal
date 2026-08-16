@@ -79,6 +79,17 @@ const KNOWN_SOLSTONE_PACKAGE_NAMES: &[&str] = &[
     "solstone-journal",
     "solstone-journal-cuda",
     "solstone-journal-host",
+    "solstone-core",
+    "solstone-core-depict",
+    "solstone-core-describe",
+    "solstone-core-journal",
+    "solstone-core-pdf",
+    "solstone-core-retention",
+    "solstone-core-sol",
+    "solstone-core-speakers-analyze",
+    "solstone-core-vad-analyze",
+    "solstone-core-vulkan-probe",
+    "solstone-journal-models",
 ];
 
 impl fmt::Display for DistributionMetadataError {
@@ -816,17 +827,21 @@ mod tests {
         fs::remove_dir_all(root).expect("cleanup distribution metadata");
     }
 
+    fn write_dist_info(site_packages: &Path, directory: &str, name: &str, version: &str) {
+        let dist_info = site_packages.join(directory);
+        fs::create_dir_all(&dist_info).expect("create dist-info");
+        fs::write(
+            dist_info.join("METADATA"),
+            format!("Name: {name}\nVersion: {version}\n\n"),
+        )
+        .expect("write metadata");
+    }
+
     #[test]
     fn installed_distributions_rejects_unrecognized_name_for_a_target_directory() {
         let root = unique_temp("distribution-name-mismatch");
         let site_packages = root.join("site-packages");
-        let dist_info = site_packages.join("solstone-1.2.3.dist-info");
-        fs::create_dir_all(&dist_info).expect("create dist-info");
-        fs::write(
-            dist_info.join("METADATA"),
-            "Name: unrelated\nVersion: 1.2.3\n\n",
-        )
-        .expect("write mismatched metadata");
+        write_dist_info(&site_packages, "solstone-1.2.3.dist-info", "unrelated", "1.2.3");
 
         let error = installed_distributions(&site_packages, &["solstone"])
             .expect_err("mismatched target metadata must fail");
@@ -835,7 +850,65 @@ mod tests {
                 .to_string()
                 .contains("Name header does not match target package")
         );
+
+        fs::remove_dir_all(&site_packages).expect("remove unrecognized fixture");
+        fs::create_dir_all(&site_packages).expect("recreate site-packages");
+        write_dist_info(
+            &site_packages,
+            "solstone-1.2.3.dist-info",
+            "solstone",
+            "1.2.3",
+        );
+        write_dist_info(
+            &site_packages,
+            "solstone_core_unknown-1.2.3.dist-info",
+            "solstone-core-unknown",
+            "1.2.3",
+        );
+        let error = installed_distributions(&site_packages, &["solstone"])
+            .expect_err("unknown solstone-core-* neighbor must still fail");
+        assert!(
+            error
+                .to_string()
+                .contains("Name header does not match target package")
+        );
         fs::remove_dir_all(root).expect("cleanup distribution metadata");
+    }
+
+    #[test]
+    fn installed_distributions_accepts_known_core_and_models_neighbors() {
+        let root = unique_temp("distribution-known-neighbors");
+        let site_packages = root.join("site-packages");
+        write_dist_info(
+            &site_packages,
+            "solstone-1.0.22.dist-info",
+            "solstone",
+            "1.0.22",
+        );
+        write_dist_info(
+            &site_packages,
+            "solstone_core_journal-1.0.22.dist-info",
+            "solstone-core-journal",
+            "1.0.22",
+        );
+        write_dist_info(
+            &site_packages,
+            "solstone_journal_models-1.0.22.dist-info",
+            "solstone-journal-models",
+            "1.0.22",
+        );
+
+        let distributions = installed_distributions(&site_packages, &["solstone"])
+            .expect("known core and models neighbors must not raise InvalidMetadata");
+        assert_eq!(
+            distributions.get("solstone"),
+            Some(&InstalledDistribution {
+                version: "1.0.22".into(),
+                requires_python: None,
+            })
+        );
+        assert_eq!(distributions.len(), 1);
+        fs::remove_dir_all(root).expect("cleanup known neighbors");
     }
 
     #[test]
