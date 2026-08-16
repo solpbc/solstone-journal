@@ -243,6 +243,7 @@ axum = { version = "0.8.9", default-features = false, features = ["json", "multi
 bytes = "1.12.1"
 hyper = { version = "1.11.0", default-features = false, features = ["server", "http1"] }
 hyper-util = { version = "0.1.20", default-features = false, features = ["tokio", "service"] }
+tracing = "0.1.44"
 solstone-core-speakers = { path = "crates/solstone-core-speakers" }
 solstone-core-speakers-analyze = { path = "crates/solstone-core-speakers-analyze" }
 solstone-core-speaker-id = { path = "crates/solstone-core-speaker-id" }

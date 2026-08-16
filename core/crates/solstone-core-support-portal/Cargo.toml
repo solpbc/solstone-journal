@@ -28,6 +28,7 @@ solstone-core-brain.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-thinking.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 unicode-normalization.workspace = true
 ureq = { workspace = true, features = ["rustls", "multipart"] }
 uuid = { version = "1", features = ["v4"] }

@@ -424,7 +424,7 @@ impl PortalClient {
         let records = ledger.list_pending_acknowledgements()?;
         for record in records {
             let Some(remote_operation_id) = record.remote_operation_id.as_deref() else {
-                eprintln!(
+                tracing::warn!(
                     "support acknowledgement missing operation id for {}",
                     record.child_action_id
                 );
@@ -434,11 +434,11 @@ impl PortalClient {
                 Ok(true) => {
                     let _ = ledger.mark_acknowledged(&record);
                 }
-                Ok(false) => eprintln!(
+                Ok(false) => tracing::info!(
                     "support acknowledgement unavailable for {}",
                     record.child_action_id
                 ),
-                Err(_) => eprintln!(
+                Err(_) => tracing::info!(
                     "support acknowledgement failed for {}",
                     record.child_action_id
                 ),
@@ -458,7 +458,10 @@ impl PortalClient {
         Ok(parse_json(&response.body)?)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the private dispatcher mirrors the public operation's independently optional inputs"
+    )]
     fn dispatch_mutation(
         &mut self,
         method: &str,
