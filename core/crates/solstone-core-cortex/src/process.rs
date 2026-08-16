@@ -83,8 +83,8 @@ fn spawn_one(
     if let Some(resolved) = resolved.as_ref() {
         state.update_resolved_talent(&work.use_id, resolved.clone());
     }
-    // Cortex spawns the native worker directly; its service verb remains outside the
-    // native process table because cortex owns this request/response lifecycle.
+    // Cortex owns this request/response lifecycle and spawns the native worker
+    // directly; the journal boundary also dispatches the service verb natively.
     let worker = solstone_core_journal_cli::sibling_native_in_dir(&executable_dir, "solstone-core")
         .map_err(|error| error.to_string())?;
     let mut command = Command::new(worker);

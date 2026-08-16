@@ -269,18 +269,9 @@ fn think_and_setup_are_registered_for_native_dispatch() {
     );
 }
 
-// This test is committed to fail: `cortex` and `talent` are still
-// Python-routed today, and TALENT_LIFECYCLE_NATIVE_TOKENS records that as a
-// gate for a future native cutover, not a description of current behavior.
-// native_process_dispatch_and_poison_liveness_contract requires PROBES to
-// equal NATIVE_PROCESS_SPECS exactly, so registering these tokens here
-// without a native dispatch path and a matching PROBES row would just move
-// the red into that contract instead of resolving it. What resolves this
-// test: landing a native `cortex`/`talent` dispatch path, adding their rows
-// to NATIVE_PROCESS_SPECS in production_processes (processes.rs), and adding
-// matching PROBES entries so the poison-liveness contract stays green. What
-// does not resolve it: do not #[ignore] this test, and do not change
-// TALENT_LIFECYCLE_NATIVE_TOKENS to shrink or reword the token list.
+// Keep both lifecycle tokens bound to their native owner grammars. The shared
+// poison-liveness contract below requires an exact probe row for every native
+// process-table entry, so a registration without executable proof stays red.
 #[test]
 fn talent_lifecycle_tokens_are_registered_for_native_dispatch() {
     let native_tokens = NATIVE_PROCESS_SPECS
@@ -426,6 +417,12 @@ const PROBES: &[Probe] = &[
         argv: &["--nonsense"],
         expected_exit: 2,
         stderr_anchor: Some(TOP_USAGE.as_bytes()),
+    },
+    Probe {
+        token: "cortex",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal cortex"),
     },
     Probe {
         token: "talent",

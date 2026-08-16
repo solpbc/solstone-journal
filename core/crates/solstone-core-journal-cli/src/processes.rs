@@ -143,6 +143,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         preset_argv: &["top"],
     },
     NativeProcessSpec {
+        token: "cortex",
+        binary: "solstone-core",
+        preset_argv: &["cortex"],
+    },
+    NativeProcessSpec {
         token: "talent",
         binary: "solstone-core",
         preset_argv: &["talent"],
