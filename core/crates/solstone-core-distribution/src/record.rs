@@ -26,7 +26,10 @@ impl FileRecord {
 
     #[must_use]
     pub fn key(&self) -> String {
-        format!("{} {} {:04o} {}", self.kind, self.dest, self.mode, self.digest)
+        format!(
+            "{} {} {:04o} {}",
+            self.kind, self.dest, self.mode, self.digest
+        )
     }
 }
 

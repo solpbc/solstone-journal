@@ -44,7 +44,11 @@ fn rust_const_hex(text: &str) -> BTreeMap<String, String> {
             if let Some((name, after)) = rest.split_once(':') {
                 if after.contains("&str") {
                     if let Some((_, literal)) = trimmed.split_once('=') {
-                        let hex = literal.trim().trim_end_matches(';').trim().trim_matches('"');
+                        let hex = literal
+                            .trim()
+                            .trim_end_matches(';')
+                            .trim()
+                            .trim_matches('"');
                         if hex.len() == 64 {
                             found.insert(name.trim().to_owned(), hex.to_owned());
                             pending = None;

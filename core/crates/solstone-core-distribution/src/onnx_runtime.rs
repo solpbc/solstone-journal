@@ -87,10 +87,7 @@ pub const TARGETS: &[TargetSpec] = &[
         runtime_member: "onnxruntime/capi/libonnxruntime.1.25.0.dylib",
         runtime_sha256: "bafe7d3f3fa8e31195501e5694e73ef240708d5df039feb272b8d506d2783a74",
         runtime_staged_name: "libonnxruntime.1.25.0.dylib",
-        link_names: &[
-            "libonnxruntime.1.25.0.dylib",
-            "libonnxruntime.dylib",
-        ],
+        link_names: &["libonnxruntime.1.25.0.dylib", "libonnxruntime.dylib"],
         notices: COMMON_NOTICES,
     },
 ];
@@ -246,10 +243,7 @@ pub fn identity_fixture_wheel() -> (TargetSpec, Vec<u8>) {
 
 pub fn forbidden_member_fixture_wheel() -> (TargetSpec, Vec<u8>) {
     let (mut spec, _) = identity_fixture_wheel();
-    let files = [(
-        FORBIDDEN_GPU_MEMBERS[0],
-        b"gpu".as_slice(),
-    )];
+    let files = [(FORBIDDEN_GPU_MEMBERS[0], b"gpu".as_slice())];
     let wheel = zip::write_stored_zip(&files).expect("forbidden fixture zip");
     spec.wheel_sha256 = Box::leak(sha256_hex(&wheel).into_boxed_str());
     (spec, wheel)

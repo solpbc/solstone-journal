@@ -984,7 +984,12 @@ mod tests {
     fn installed_distributions_rejects_unrecognized_name_for_a_target_directory() {
         let root = unique_temp("distribution-name-mismatch");
         let site_packages = root.join("site-packages");
-        write_dist_info(&site_packages, "solstone-1.2.3.dist-info", "unrelated", "1.2.3");
+        write_dist_info(
+            &site_packages,
+            "solstone-1.2.3.dist-info",
+            "unrelated",
+            "1.2.3",
+        );
 
         let error = installed_distributions(&site_packages, &["solstone"])
             .expect_err("mismatched target metadata must fail");

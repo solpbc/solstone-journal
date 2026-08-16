@@ -42,11 +42,7 @@ fn main() -> ExitCode {
                 .or_else(|| env::current_dir().ok())
                 .unwrap_or_else(|| PathBuf::from("."));
             let path = start.join("core/distribution/inventory.toml");
-            let inventory_path = if path.is_file() {
-                path
-            } else {
-                start.clone()
-            };
+            let inventory_path = if path.is_file() { path } else { start.clone() };
             match plan_text_from_inventory_path(&inventory_path) {
                 Ok(text) => {
                     print!("{text}");

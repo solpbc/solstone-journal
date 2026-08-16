@@ -91,9 +91,13 @@ fn install_archive_refusals_match_archive_escape_enum() {
     let rust_names = archive_escape_names(&rust);
     let shell_archive = comment_block_names(&shell, "# ARCHIVE_REFUSALS:");
     assert_eq!(
-        rust_names, shell_archive,
+        rust_names,
+        shell_archive,
         "{}\n{}",
-        format_named_list("missing required", &rust_names.difference(&shell_archive).cloned().collect()),
+        format_named_list(
+            "missing required",
+            &rust_names.difference(&shell_archive).cloned().collect()
+        ),
         format_named_list(
             "unexpected",
             &shell_archive.difference(&rust_names).cloned().collect()

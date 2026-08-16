@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::inventory::{format_named_list, Entry, Inventory};
+use crate::inventory::{Entry, Inventory, format_named_list};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ArtifactId {

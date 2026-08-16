@@ -170,7 +170,10 @@ fn lane_env(
             "CARGO_UNSTABLE_TARGET_APPLIES_TO_HOST".to_owned(),
             "true".to_owned(),
         );
-        vars.insert("CARGO_TARGET_APPLIES_TO_HOST".to_owned(), "false".to_owned());
+        vars.insert(
+            "CARGO_TARGET_APPLIES_TO_HOST".to_owned(),
+            "false".to_owned(),
+        );
         vars.insert(
             "__CARGO_TEST_CHANNEL_OVERRIDE_DO_NOT_USE_THIS".to_owned(),
             "nightly".to_owned(),

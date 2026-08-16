@@ -114,8 +114,7 @@ pub fn bind_cargo_json(lines: &str) -> Result<BTreeMap<ArtifactId, PathBuf>, Pro
                 .components()
                 .find_map(|component| {
                     let name = component.as_os_str().to_string_lossy();
-                    name.contains("-unknown-linux-")
-                        .then(|| name.into_owned())
+                    name.contains("-unknown-linux-").then(|| name.into_owned())
                 })
                 .unwrap_or_default();
             artifacts.insert(

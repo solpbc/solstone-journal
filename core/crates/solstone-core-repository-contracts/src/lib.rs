@@ -7,23 +7,23 @@ pub mod ci;
 #[path = "contracts/ci_gate_purity.rs"]
 mod ci_gate_purity;
 #[cfg(test)]
-#[path = "contracts/distribution_payload.rs"]
-mod distribution_payload;
-#[cfg(test)]
-#[path = "contracts/distribution_onnx_runtime_pins.rs"]
-mod distribution_onnx_runtime_pins;
+#[path = "contracts/distribution_install_archive_refusals.rs"]
+mod distribution_install_archive_refusals;
 #[cfg(test)]
 #[path = "contracts/distribution_model_digests.rs"]
 mod distribution_model_digests;
 #[cfg(test)]
-#[path = "contracts/distribution_workspace_bins.rs"]
-mod distribution_workspace_bins;
-#[cfg(test)]
 #[path = "contracts/distribution_no_independent_resolvers.rs"]
 mod distribution_no_independent_resolvers;
 #[cfg(test)]
-#[path = "contracts/distribution_install_archive_refusals.rs"]
-mod distribution_install_archive_refusals;
+#[path = "contracts/distribution_onnx_runtime_pins.rs"]
+mod distribution_onnx_runtime_pins;
+#[cfg(test)]
+#[path = "contracts/distribution_payload.rs"]
+mod distribution_payload;
+#[cfg(test)]
+#[path = "contracts/distribution_workspace_bins.rs"]
+mod distribution_workspace_bins;
 #[cfg(test)]
 #[path = "contracts/journal_io_deny_policy.rs"]
 mod journal_io_deny_policy;

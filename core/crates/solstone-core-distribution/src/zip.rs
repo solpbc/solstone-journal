@@ -23,12 +23,12 @@ pub fn read_members(bytes: &[u8]) -> io::Result<Vec<ZipMember>> {
             break;
         }
         let method = u16::from_le_bytes(bytes[offset + 8..offset + 10].try_into().unwrap());
-        let compressed = u32::from_le_bytes(bytes[offset + 18..offset + 22].try_into().unwrap())
-            as usize;
-        let name_len = u16::from_le_bytes(bytes[offset + 26..offset + 28].try_into().unwrap())
-            as usize;
-        let extra_len = u16::from_le_bytes(bytes[offset + 28..offset + 30].try_into().unwrap())
-            as usize;
+        let compressed =
+            u32::from_le_bytes(bytes[offset + 18..offset + 22].try_into().unwrap()) as usize;
+        let name_len =
+            u16::from_le_bytes(bytes[offset + 26..offset + 28].try_into().unwrap()) as usize;
+        let extra_len =
+            u16::from_le_bytes(bytes[offset + 28..offset + 30].try_into().unwrap()) as usize;
         let name_at = offset + 30;
         let data_at = name_at + name_len + extra_len;
         let data_end = data_at + compressed;
@@ -58,7 +58,10 @@ pub fn read_members(bytes: &[u8]) -> io::Result<Vec<ZipMember>> {
                 ));
             }
         };
-        members.push(ZipMember { name, bytes: payload });
+        members.push(ZipMember {
+            name,
+            bytes: payload,
+        });
         offset = data_end;
     }
     Ok(members)
@@ -69,7 +72,12 @@ pub fn member<'a>(members: &'a [ZipMember], name: &str) -> io::Result<&'a [u8]> 
         .iter()
         .find(|item| item.name == name)
         .map(|item| item.bytes.as_slice())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("zip member {name} missing")))
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("zip member {name} missing"),
+            )
+        })
 }
 
 pub fn write_stored_zip(files: &[(&str, &[u8])]) -> io::Result<Vec<u8>> {

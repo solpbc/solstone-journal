@@ -48,7 +48,11 @@ pub fn refuse_escape(dest: &str) -> Result<(), ArchiveEscape> {
     Ok(())
 }
 
-pub fn refuse_link_target(kind: ArchiveEscape, dest: &str, target: &str) -> Result<(), ArchiveEscape> {
+pub fn refuse_link_target(
+    kind: ArchiveEscape,
+    dest: &str,
+    target: &str,
+) -> Result<(), ArchiveEscape> {
     refuse_escape(dest)?;
     refuse_escape(target).map_err(|_| kind)?;
     if target.starts_with('/') {

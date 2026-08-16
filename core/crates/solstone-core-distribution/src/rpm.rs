@@ -156,10 +156,7 @@ fn pad4(out: &mut Vec<u8>, used: usize) -> io::Result<()> {
 
 fn skip_headers(bytes: &[u8]) -> io::Result<usize> {
     if bytes.len() < LEAD_LEN + 16 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "truncated rpm",
-        ));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "truncated rpm"));
     }
     let mut offset = LEAD_LEN;
     offset = skip_one_header(bytes, offset)?;
@@ -326,7 +323,9 @@ fn read_require_names(header: &[u8]) -> io::Result<Vec<String>> {
             let end = store[cursor..]
                 .iter()
                 .position(|byte| *byte == 0)
-                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "unterminated require"))?;
+                .ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "unterminated require")
+                })?;
             names.push(
                 std::str::from_utf8(&store[cursor..cursor + end])
                     .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?

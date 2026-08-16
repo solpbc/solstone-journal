@@ -188,13 +188,11 @@ fn selection_from_default_cargo_output_names_missing_required_and_admitted_forbi
         forbidden.len(),
         "fixture output must contain the full stub set"
     );
+    assert!(leaked.is_empty(), "unexpected:\n  {}", leaked.join("\n  "));
     assert!(
-        leaked.is_empty(),
-        "unexpected:\n  {}",
-        leaked.join("\n  ")
-    );
-    assert!(
-        selection.admitted.contains("solstone-core-speakers-analyze"),
+        selection
+            .admitted
+            .contains("solstone-core-speakers-analyze"),
         "missing required:\n  solstone-core-speakers-analyze"
     );
     assert!(
@@ -212,8 +210,13 @@ fn containers_disagree_on_required_entry() {
     let _ = fs::remove_dir_all(&out);
     fs::create_dir_all(&root).expect("create stage");
 
-    stage::write_staged_file_mode(&root, "bin/solstone-core-speakers-analyze", b"helper", 0o755)
-        .expect("stage helper");
+    stage::write_staged_file_mode(
+        &root,
+        "bin/solstone-core-speakers-analyze",
+        b"helper",
+        0o755,
+    )
+    .expect("stage helper");
     stage::write_staged_file(
         &root,
         "share/solstone/talent/journal/contract/bundle.json",
@@ -245,12 +248,9 @@ fn containers_disagree_on_required_entry() {
     assert!(control.contains("Version: 1.0.22"));
     assert!(!control.contains(elf::HELPER_SONAME));
     assert!(!requires.iter().any(|item| item == elf::HELPER_SONAME));
-    assert!(
-        tar_manifest
-            .iter()
-            .any(|record| record.dest.ends_with("solstone-core-speakers-analyze")
-                && record.mode == 0o755)
-    );
+    assert!(tar_manifest.iter().any(
+        |record| record.dest.ends_with("solstone-core-speakers-analyze") && record.mode == 0o755
+    ));
     let inventory = committed_inventory();
     let x86 = inventory
         .target
@@ -278,8 +278,13 @@ fn arch_mapping_modes_and_clean_package_depends() {
     fs::create_dir_all(&root).unwrap();
     stage::write_staged_file_mode(&root, "bin/solstone-core", b"core", 0o755).unwrap();
     stage::write_staged_file_mode(&root, "share/LICENSE", b"license", 0o644).unwrap();
-    stage::write_staged_file_mode(&root, "lib/solstone_journal_models/assets/model.bin", b"m", 0o644)
-        .unwrap();
+    stage::write_staged_file_mode(
+        &root,
+        "lib/solstone_journal_models/assets/model.bin",
+        b"m",
+        0o644,
+    )
+    .unwrap();
     for target in &inventory.target {
         let out = PathBuf::from(format!(
             "/var/tmp/solstone-distribution-arch-out-{}",
@@ -450,17 +455,25 @@ fn gnu_lane_sets_host_target_and_wrapper_vars() {
     )
     .unwrap();
     assert_eq!(
-        env.vars.get("CARGO_UNSTABLE_TARGET_APPLIES_TO_HOST").unwrap(),
+        env.vars
+            .get("CARGO_UNSTABLE_TARGET_APPLIES_TO_HOST")
+            .unwrap(),
         "true"
     );
     assert_eq!(
         env.vars.get("CARGO_TARGET_APPLIES_TO_HOST").unwrap(),
         "false"
     );
-    assert!(env.vars.contains_key("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER"));
+    assert!(
+        env.vars
+            .contains_key("CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER")
+    );
     assert!(env.vars.contains_key("AR_x86_64_unknown_linux_gnu"));
     assert!(env.vars.contains_key("RANLIB_x86_64_unknown_linux_gnu"));
-    assert!(env.vars.contains_key("BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_gnu"));
+    assert!(
+        env.vars
+            .contains_key("BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_gnu")
+    );
     assert!(
         env.vars
             .get(lanes::describe_cc_key())
@@ -473,9 +486,10 @@ fn gnu_lane_sets_host_target_and_wrapper_vars() {
         "x86_64-unknown-linux-gnu",
     )
     .unwrap();
-    assert!(musl
-        .vars
-        .contains_key("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER"));
+    assert!(
+        musl.vars
+            .contains_key("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER")
+    );
     assert!(musl.vars.contains_key("AR_x86_64_unknown_linux_musl"));
     assert!(!musl.vars.keys().any(|key| key.contains("RUSTFLAGS")));
     assert_eq!(env.vars.get("ORT_PREFER_DYNAMIC_LINK").unwrap(), "true");
@@ -639,10 +653,12 @@ fn archive_and_zip_refuse_escapes_and_digest_mismatch() {
 #[cfg(test)]
 #[test]
 fn provenance_refuses_dirty_stale_and_wrong_commit() {
-    assert!(provenance::require_clean(true)
-        .unwrap_err()
-        .to_string()
-        .contains("dirty-tree"));
+    assert!(
+        provenance::require_clean(true)
+            .unwrap_err()
+            .to_string()
+            .contains("dirty-tree")
+    );
     assert!(
         provenance::require_commit("aaa", "bbb")
             .unwrap_err()

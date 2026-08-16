@@ -6,10 +6,10 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::deb::{write_deb, DebMeta};
-use crate::inspect::{write_sidecars, ReleaseInfo};
-use crate::provenance::{require_clean, require_commit, require_lock, Provenance};
-use crate::rpm::{write_rpm, RpmMeta};
+use crate::deb::{DebMeta, write_deb};
+use crate::inspect::{ReleaseInfo, write_sidecars};
+use crate::provenance::{Provenance, require_clean, require_commit, require_lock};
+use crate::rpm::{RpmMeta, write_rpm};
 use crate::stage::write_staged_file_mode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,7 +99,10 @@ fn fail_after(request: &PromoteRequest) -> Option<String> {
 
 fn checkpoint(request: &PromoteRequest, step: PromoteStep) -> Result<(), PromoteError> {
     if fail_after(request).as_deref() == Some(step.as_str()) {
-        return Err(PromoteError::new(format!("injected-failure {}", step.as_str())));
+        return Err(PromoteError::new(format!(
+            "injected-failure {}",
+            step.as_str()
+        )));
     }
     Ok(())
 }
@@ -162,11 +165,8 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
 
     require_commit(&request.expected.commit, &request.observed.commit)
         .map_err(|error| PromoteError::new(error.to_string()))?;
-    require_lock(
-        &request.expected.lock_sha256,
-        &request.observed.lock_sha256,
-    )
-    .map_err(|error| PromoteError::new(error.to_string()))?;
+    require_lock(&request.expected.lock_sha256, &request.observed.lock_sha256)
+        .map_err(|error| PromoteError::new(error.to_string()))?;
     checkpoint(request, PromoteStep::Revalidate)?;
 
     checkpoint(request, PromoteStep::Rename)?;

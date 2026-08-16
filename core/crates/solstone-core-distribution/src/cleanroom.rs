@@ -10,9 +10,7 @@ use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 
 use crate::archive::refuse_escape;
-use crate::inventory::{
-    CleanroomSubject, Inventory, digest_is_pinned, format_named_list,
-};
+use crate::inventory::{CleanroomSubject, Inventory, digest_is_pinned, format_named_list};
 
 pub const LOOPBACK_HOST: &str = "127.0.0.1";
 pub const SUBJECT_NETWORK: &str = "none";
@@ -211,7 +209,8 @@ pub fn render_plan(plan: &CleanroomPlan) -> String {
 }
 
 pub fn plan_text_from_inventory_path(path: &Path) -> Result<String, String> {
-    let inventory = crate::validate_distribution_inventory(path).map_err(|error| error.to_string())?;
+    let inventory =
+        crate::validate_distribution_inventory(path).map_err(|error| error.to_string())?;
     let plan = plan_from_inventory(&inventory)?;
     Ok(render_plan(&plan))
 }
@@ -254,14 +253,19 @@ mod tests {
                     .any(|forbidden| tool == forbidden)
             }));
             assert!(subject.mounts.iter().any(|mount| mount.contains("archive")));
-            assert!(subject.commands.iter().any(|command| command.contains("install.sh")));
+            assert!(
+                subject
+                    .commands
+                    .iter()
+                    .any(|command| command.contains("install.sh"))
+            );
             assert!(subject.artifacts.iter().any(|item| item == "current"));
         }
-        assert!(
-            plan.builders
+        assert!(plan.builders.iter().all(|builder| {
+            plan.subjects
                 .iter()
-                .all(|builder| plan.subjects.iter().any(|subject| subject.id == builder.from_subject))
-        );
+                .any(|subject| subject.id == builder.from_subject)
+        }));
     }
 
     #[test]
@@ -291,12 +295,14 @@ mod tests {
         let summary = aggregate(&results);
         assert!(!summary.ok);
         assert_eq!(summary.failed, ["subject"]);
-        assert!(aggregate(&[StepResult {
-            name: "fetch".to_owned(),
-            ok: true,
-            detail: String::new(),
-        }])
-        .ok);
+        assert!(
+            aggregate(&[StepResult {
+                name: "fetch".to_owned(),
+                ok: true,
+                detail: String::new(),
+            }])
+            .ok
+        );
     }
 
     #[test]

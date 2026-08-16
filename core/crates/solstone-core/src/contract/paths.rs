@@ -72,7 +72,9 @@ impl ContractPaths {
     }
 }
 
-pub(crate) fn package_roots_from_executable_dir(executable_dir: &Path) -> Option<(PathBuf, PathBuf)> {
+pub(crate) fn package_roots_from_executable_dir(
+    executable_dir: &Path,
+) -> Option<(PathBuf, PathBuf)> {
     let root =
         solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)?;
     let talent = root.join("solstone/talent");
@@ -93,7 +95,8 @@ mod tests {
         std::fs::create_dir_all(package.join("solstone")).unwrap();
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::write(package.join("solstone/__init__.py"), "").unwrap();
-        let found = solstone_core_journal::installed_site_packages_from_executable_dir(&bin).unwrap();
+        let found =
+            solstone_core_journal::installed_site_packages_from_executable_dir(&bin).unwrap();
         let paths = ContractPaths::from_root(found).unwrap();
         assert_eq!(
             paths.solstone,
