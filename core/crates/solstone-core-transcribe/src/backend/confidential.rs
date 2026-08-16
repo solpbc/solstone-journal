@@ -135,7 +135,7 @@ pub(crate) fn transcribe(
         &wav,
         TRANSCRIBE_TIMEOUT,
     )
-    .map_err(|error| deferred("hosted_transcribe_unreachable", error.to_string()))?;
+    .map_err(hosted_transcribe_transport_error)?;
     hosted_response(response)
 }
 
@@ -229,7 +229,7 @@ where
         wav,
         timeout,
     )
-    .map_err(|error| deferred("hosted_transcribe_unreachable", error.to_string()))?;
+    .map_err(hosted_transcribe_transport_error)?;
     hosted_response(response)
 }
 
@@ -293,13 +293,13 @@ fn ratls_target(base_url: &str) -> Option<RatlsTarget> {
 }
 
 #[derive(Debug)]
-struct HttpResponse {
-    status: u16,
-    body: Vec<u8>,
+pub(crate) struct HttpResponse {
+    pub(crate) status: u16,
+    pub(crate) body: Vec<u8>,
 }
 
 #[derive(Debug)]
-enum HttpError {
+pub(crate) enum HttpError {
     Entropy(getrandom::Error),
     Transport(std::io::Error),
     Protocol(&'static str),
@@ -315,7 +315,7 @@ impl std::fmt::Display for HttpError {
     }
 }
 
-fn send_multipart_request(
+pub(crate) fn send_multipart_request(
     stream: &mut dyn AttestedIo,
     host: &str,
     bearer: Option<&str>,
@@ -511,6 +511,10 @@ fn hosted_response(
     }
 }
 
+pub(crate) fn hosted_transcribe_transport_error(error: HttpError) -> TranscribeError {
+    deferred("hosted_transcribe_unreachable", error.to_string())
+}
+
 fn deferred(reason: impl Into<String>, detail: impl Into<String>) -> TranscribeError {
     TranscribeError::ConfidentialDeferred {
         reason: reason.into(),
@@ -520,13 +524,9 @@ fn deferred(reason: impl Into<String>, detail: impl Into<String>) -> TranscribeE
 
 #[cfg(test)]
 mod tests {
-    use std::io::{self, Read, Write};
-    use std::net::{TcpListener, TcpStream};
     use std::path::Path;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::thread;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, UNIX_EPOCH};
 
     use serde_json::{Value, json};
     use solstone_core_journal_config::JournalConfigRead;
@@ -537,13 +537,14 @@ mod tests {
     };
     use solstone_core_spp_ratls::{
         AttestationFailureKind, AttestationSession, AttestationState, AttestationStateStore,
-        AttestedIo, CompositeVerdict, NvattestEnsureStatus,
+        CompositeVerdict, GPU_REATTEST_INTERVAL, NvattestEnsureStatus, SESSION_CAP,
+        TPM_HEARTBEAT_INTERVAL,
     };
 
     use super::{
         CONFIDENTIAL_STT_MAX_AUDIO_SECONDS, ConfidentialCall, HttpResponse, attestation_reason,
         confidential_channel_plausible, confidential_provenance, confidential_transcribe_with,
-        hosted_response, multipart_boundary, refuse_confidential_egress, send_multipart_request,
+        hosted_response, multipart_boundary, refuse_confidential_egress,
     };
     use crate::TranscribeError;
 
@@ -614,52 +615,21 @@ mod tests {
             ),
         ] {
             assert_deferred_reason(
-                round_trip_hosted_response(status, body).unwrap_err(),
+                hosted_response(HttpResponse {
+                    status,
+                    body: body.as_bytes().to_vec(),
+                })
+                .unwrap_err(),
                 expected,
             );
         }
-    }
-
-    #[test]
-    fn multipart_request_uses_one_plain_tcp_channel_with_expected_fields() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let handle = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let request = read_request(&mut stream);
-            write_response(&mut stream, 200, VALID);
-            request
-        });
-        let mut stream = TcpStream::connect(address).unwrap();
-
-        let response = send_multipart_request(
-            &mut stream,
-            &address.to_string(),
-            Some("credential"),
-            b"WAV",
-            Duration::from_secs(1),
-        )
+        let (_, metadata) = hosted_response(HttpResponse {
+            status: 200,
+            body: VALID.as_bytes().to_vec(),
+        })
         .unwrap();
-        let request = handle.join().unwrap();
-
-        assert_eq!(response.status, 200);
-        assert!(request.starts_with("POST /v1/audio/transcriptions HTTP/1.1\r\n"));
-        assert!(request.contains("Authorization: Bearer credential\r\n"));
-        assert!(!request.contains("x-sol-device"));
-        let boundary = request
-            .lines()
-            .find_map(|line| line.strip_prefix("Content-Type: multipart/form-data; boundary="))
-            .unwrap();
-        assert!(boundary.starts_with(super::MULTIPART_BOUNDARY_PREFIX));
-        assert!(request.contains(&format!("--{boundary}\r\n")));
-        let file = request
-            .find("name=\"file\"; filename=\"audio.wav\"")
-            .unwrap();
-        let format = request.find("name=\"response_format\"").unwrap();
-        let words = request
-            .find("name=\"timestamp_granularities[]=word\"")
-            .unwrap();
-        assert!(file < format && format < words);
+        assert_eq!(metadata.model, "confidential");
+        assert_eq!(metadata.device, "confidential");
     }
 
     #[test]
@@ -673,63 +643,12 @@ mod tests {
     }
 
     #[test]
-    fn transport_failure_defers_without_a_second_request() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let handle = thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            drop(stream);
-        });
-        let mut stream = TcpStream::connect(address).unwrap();
-
-        let error = send_multipart_request(
-            &mut stream,
-            &address.to_string(),
-            None,
-            b"WAV",
-            Duration::from_secs(1),
-        )
-        .map_err(|error| super::deferred("hosted_transcribe_unreachable", error.to_string()))
-        .unwrap_err();
-        handle.join().unwrap();
-
-        assert_deferred_reason(error, "hosted_transcribe_unreachable");
-    }
-
-    #[test]
-    fn multipart_transport_retries_interrupted_io() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let handle = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let _ = read_request(&mut stream);
-            write_response(&mut stream, 200, VALID);
-        });
-        let stream = TcpStream::connect(address).unwrap();
-        let mut stream = InterruptedOnceStream::new(stream);
-
-        let response = send_multipart_request(
-            &mut stream,
-            &address.to_string(),
-            None,
-            b"WAV",
-            Duration::from_secs(1),
-        )
-        .unwrap();
-        handle.join().unwrap();
-
-        assert_eq!(response.status, 200);
-    }
-
-    #[test]
     fn readiness_failure_refuses_before_an_endpoint_request() {
         let store = AttestationStateStore::new();
-        let attempts = Arc::new(AtomicUsize::new(0));
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let unreachable_endpoint = endpoint(&format!("https://{address}"));
+        let readiness_attempts = AtomicUsize::new(0);
+        let channel_attempts = AtomicUsize::new(0);
+        let unreachable_endpoint = endpoint("https://127.0.0.1:9");
         let config = active_config().config.unwrap();
-        let attempts_for_establish = Arc::clone(&attempts);
         let error = confidential_transcribe_with(
             ConfidentialCall {
                 wav: b"WAV",
@@ -737,26 +656,28 @@ mod tests {
                 endpoint: &unreachable_endpoint,
                 config: &config,
                 state: &store,
-                now: SystemTime::now(),
+                now: UNIX_EPOCH,
                 timeout: Duration::from_millis(10),
             },
-            |_| NvattestEnsureStatus::InstallInFlight,
-            move |_, _| {
-                attempts_for_establish.fetch_add(1, Ordering::SeqCst);
-                let _ = TcpStream::connect(address);
+            |_| {
+                readiness_attempts.fetch_add(1, Ordering::SeqCst);
+                NvattestEnsureStatus::InstallInFlight
+            },
+            |_, _| {
+                channel_attempts.fetch_add(1, Ordering::SeqCst);
                 Err("gateway_unreachable")
             },
         )
         .unwrap_err();
         assert_deferred_reason(error, "attestation_unreachable");
-        assert_eq!(attempts.load(Ordering::SeqCst), 0);
-
-        assert_no_endpoint_request(&listener);
+        assert_eq!(readiness_attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(channel_attempts.load(Ordering::SeqCst), 0);
     }
 
     #[test]
     fn invalid_target_failure_refuses_before_a_channel_attempt() {
         let store = AttestationStateStore::new();
+        let channel_attempts = AtomicUsize::new(0);
         let invalid_target_endpoint = endpoint("not-a-url");
         let config = active_config().config.unwrap();
         let error = confidential_transcribe_with(
@@ -766,14 +687,18 @@ mod tests {
                 endpoint: &invalid_target_endpoint,
                 config: &config,
                 state: &store,
-                now: SystemTime::now(),
+                now: UNIX_EPOCH,
                 timeout: Duration::from_millis(10),
             },
             |_| NvattestEnsureStatus::AlreadyInstalled,
-            |_, _| panic!("invalid target must not establish a channel"),
+            |_, _| {
+                channel_attempts.fetch_add(1, Ordering::SeqCst);
+                panic!("invalid target must not establish a channel")
+            },
         )
         .unwrap_err();
         assert_deferred_reason(error, "attestation_failed");
+        assert_eq!(channel_attempts.load(Ordering::SeqCst), 0);
     }
 
     #[test]
@@ -785,9 +710,7 @@ mod tests {
             tpm_heartbeat_at: UNIX_EPOCH,
             gpu_reattest_at: UNIX_EPOCH,
         });
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let endpoint = endpoint(&format!("https://{address}"));
+        let endpoint = endpoint("https://127.0.0.1:9");
         let config = active_config().config.unwrap();
         let readiness_attempts = AtomicUsize::new(0);
         let channel_attempts = AtomicUsize::new(0);
@@ -808,7 +731,6 @@ mod tests {
             },
             |_, _| {
                 channel_attempts.fetch_add(1, Ordering::SeqCst);
-                let _ = TcpStream::connect(address);
                 Err("gateway_unreachable")
             },
         )
@@ -817,15 +739,33 @@ mod tests {
         assert_deferred_reason(error, "attestation_stale");
         assert_eq!(readiness_attempts.load(Ordering::SeqCst), 0);
         assert_eq!(channel_attempts.load(Ordering::SeqCst), 0);
-        assert_no_endpoint_request(&listener);
     }
 
     #[test]
     fn attestation_reason_mapper_covers_the_initial_and_failure_states() {
-        let now = SystemTime::now();
+        let now = UNIX_EPOCH + Duration::from_secs(10_000);
         assert_eq!(
             attestation_reason(&AttestationState::default(), now),
             Some("attestation_not_yet_verified")
+        );
+        let missing = AttestationState {
+            session: None,
+            failure: None,
+            last_verified: Some(verified_session(now)),
+        };
+        assert_eq!(
+            attestation_reason(&missing, now),
+            Some("attestation_not_yet_verified")
+        );
+        assert_eq!(
+            attestation_reason(
+                &AttestationState {
+                    session: Some(verified_session(now)),
+                    ..Default::default()
+                },
+                now
+            ),
+            None
         );
         let unreachable = AttestationState {
             failure: Some(solstone_core_spp_ratls::AttestationFailure {
@@ -846,6 +786,34 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(attestation_reason(&failed, now), Some("attestation_failed"));
+
+        let second = Duration::from_secs(1);
+        let expired = [
+            AttestationSession {
+                tpm_heartbeat_at: now - TPM_HEARTBEAT_INTERVAL,
+                ..verified_session(now)
+            },
+            AttestationSession {
+                gpu_reattest_at: now - GPU_REATTEST_INTERVAL,
+                ..verified_session(now)
+            },
+            AttestationSession {
+                started_at: now - SESSION_CAP,
+                ..verified_session(now)
+            },
+        ];
+        for session in expired {
+            let state = AttestationState {
+                session: Some(session),
+                ..Default::default()
+            };
+            assert_eq!(attestation_reason(&state, now - second), None);
+            assert_eq!(attestation_reason(&state, now), Some("attestation_stale"));
+            assert_eq!(
+                attestation_reason(&state, now + second),
+                Some("attestation_stale")
+            );
+        }
         assert_eq!(CONFIDENTIAL_STT_MAX_AUDIO_SECONDS, 300.0);
     }
 
@@ -876,6 +844,15 @@ mod tests {
             parallel_slots: None,
             is_confidential: true,
             is_bundled: false,
+        }
+    }
+
+    fn verified_session(now: std::time::SystemTime) -> AttestationSession {
+        AttestationSession {
+            verdict: verdict(),
+            started_at: now,
+            tpm_heartbeat_at: now,
+            gpu_reattest_at: now,
         }
     }
 
@@ -933,138 +910,11 @@ mod tests {
         }
     }
 
-    fn read_request(stream: &mut TcpStream) -> String {
-        let mut bytes = Vec::new();
-        let mut buffer = [0_u8; 1024];
-        let header_end = loop {
-            let count = stream.read(&mut buffer).unwrap();
-            bytes.extend_from_slice(&buffer[..count]);
-            if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
-                break index + 4;
-            }
-        };
-        let headers = String::from_utf8_lossy(&bytes[..header_end]);
-        let length = headers
-            .lines()
-            .find_map(|line| {
-                line.strip_prefix("Content-Length:")?
-                    .trim()
-                    .parse::<usize>()
-                    .ok()
-            })
-            .unwrap();
-        while bytes.len() < header_end + length {
-            let count = stream.read(&mut buffer).unwrap();
-            bytes.extend_from_slice(&buffer[..count]);
-        }
-        String::from_utf8_lossy(&bytes).into_owned()
-    }
-
-    fn write_response(stream: &mut TcpStream, status: u16, body: &str) {
-        let response = format!(
-            "HTTP/1.1 {status} OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        stream.write_all(response.as_bytes()).unwrap();
-    }
-
-    fn assert_no_endpoint_request(listener: &TcpListener) {
-        listener.set_nonblocking(true).unwrap();
-        assert!(matches!(
-            listener.accept(),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock
-        ));
-    }
-
-    fn round_trip_hosted_response(
-        status: u16,
-        body: &str,
-    ) -> Result<(super::TranscriptionResponse, super::ModelInfo), TranscribeError> {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let body = body.to_owned();
-        let handle = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let _ = read_request(&mut stream);
-            write_response(&mut stream, status, &body);
-        });
-        let mut stream = TcpStream::connect(address).unwrap();
-        let response = send_multipart_request(
-            &mut stream,
-            &address.to_string(),
-            None,
-            b"WAV",
-            Duration::from_secs(1),
-        )
-        .unwrap();
-        handle.join().unwrap();
-        hosted_response(response)
-    }
-
     fn assert_deferred_reason(error: TranscribeError, expected_reason: &str) {
         assert_eq!(error.exit_code(), 69);
         let TranscribeError::ConfidentialDeferred { reason, .. } = error else {
             panic!("expected confidential deferral");
         };
         assert_eq!(reason, expected_reason);
-    }
-
-    struct InterruptedOnceStream {
-        stream: TcpStream,
-        interrupt_read: bool,
-        interrupt_write: bool,
-        interrupt_flush: bool,
-        interrupt_timeout: bool,
-    }
-
-    impl InterruptedOnceStream {
-        fn new(stream: TcpStream) -> Self {
-            Self {
-                stream,
-                interrupt_read: true,
-                interrupt_write: true,
-                interrupt_flush: true,
-                interrupt_timeout: true,
-            }
-        }
-    }
-
-    impl Read for InterruptedOnceStream {
-        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-            if self.interrupt_read {
-                self.interrupt_read = false;
-                return Err(io::Error::from(io::ErrorKind::Interrupted));
-            }
-            self.stream.read(buffer)
-        }
-    }
-
-    impl Write for InterruptedOnceStream {
-        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-            if self.interrupt_write {
-                self.interrupt_write = false;
-                return Err(io::Error::from(io::ErrorKind::Interrupted));
-            }
-            self.stream.write(buffer)
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            if self.interrupt_flush {
-                self.interrupt_flush = false;
-                return Err(io::Error::from(io::ErrorKind::Interrupted));
-            }
-            self.stream.flush()
-        }
-    }
-
-    impl AttestedIo for InterruptedOnceStream {
-        fn set_io_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()> {
-            if self.interrupt_timeout {
-                self.interrupt_timeout = false;
-                return Err(io::Error::from(io::ErrorKind::Interrupted));
-            }
-            self.stream.set_read_timeout(timeout)?;
-            self.stream.set_write_timeout(timeout)
-        }
     }
 }

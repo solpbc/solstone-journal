@@ -25,6 +25,9 @@ mod speakers;
 mod stage;
 #[allow(dead_code)]
 mod terminal;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod test_hooks;
 #[allow(dead_code)]
 mod transcript;
 

@@ -141,7 +141,7 @@ pub(crate) fn get_model_info(
     })
 }
 
-fn transcribe_with_timeout(
+pub(crate) fn transcribe_with_timeout(
     server: &ParakeetServer,
     wav_bytes: &[u8],
     timeout: Duration,
@@ -364,112 +364,15 @@ fn failure(reason: impl Into<String>, detail: impl Into<String>) -> TranscribeEr
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::io::{Read, Write};
-    use std::net::{TcpListener, TcpStream};
-    use std::sync::{Arc, Mutex};
-    use std::thread;
-    use std::time::Duration;
 
     use serde_json::json;
 
     use super::{
-        COMPUTE_TYPE, HealthState, MODEL_FILENAME, ParakeetServer, WordContractError, connect,
-        get_model_info, map_ureq_error, parse_transcription_response, parse_verbose_json,
-        probe_health, read_placement, read_port, transcribe_with_timeout,
+        COMPUTE_TYPE, MODEL_FILENAME, WordContractError, connect, get_model_info, map_ureq_error,
+        parse_transcription_response, parse_verbose_json, read_placement, read_port,
     };
     use crate::TranscribeError;
     use crate::config::{parakeet_cpp_device, read_transcribe_config};
-
-    enum Reply {
-        Http { status: u16, body: &'static str },
-        Close,
-        Sleep(Duration),
-    }
-
-    #[derive(Debug)]
-    struct CapturedRequest {
-        method: String,
-        path: String,
-        body: String,
-    }
-
-    struct StubServer {
-        base_url: String,
-        requests: Arc<Mutex<Vec<CapturedRequest>>>,
-        handle: thread::JoinHandle<()>,
-    }
-
-    impl StubServer {
-        fn start(replies: Vec<Reply>) -> Self {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let address = listener.local_addr().unwrap();
-            let requests = Arc::new(Mutex::new(Vec::new()));
-            let recorded = Arc::clone(&requests);
-            let handle = thread::spawn(move || {
-                for reply in replies {
-                    let (stream, _) = listener.accept().unwrap();
-                    let request = read_request(stream.try_clone().unwrap());
-                    recorded.lock().unwrap().push(request);
-                    match reply {
-                        Reply::Http { status, body } => {
-                            let mut stream = stream;
-                            let status_text = if status == 200 { "OK" } else { "Error" };
-                            let response = format!(
-                                "HTTP/1.1 {status} {status_text}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                                body.len()
-                            );
-                            let _ = stream.write_all(response.as_bytes());
-                        }
-                        Reply::Close => drop(stream),
-                        Reply::Sleep(duration) => thread::sleep(duration),
-                    }
-                }
-            });
-            Self {
-                base_url: format!("http://{address}"),
-                requests,
-                handle,
-            }
-        }
-
-        fn finish(self) -> Vec<CapturedRequest> {
-            let Self {
-                requests, handle, ..
-            } = self;
-            handle.join().unwrap();
-            Arc::try_unwrap(requests).unwrap().into_inner().unwrap()
-        }
-    }
-
-    #[test]
-    fn health_and_transcription_use_the_expected_wire_paths_and_form_fields() {
-        let temporary = tempfile::tempdir().unwrap();
-        let stub = StubServer::start(vec![
-            Reply::Http {
-                status: 200,
-                body: "{}",
-            },
-            Reply::Http {
-                status: 200,
-                body: r#"{"words":[],"text":""}"#,
-            },
-        ]);
-        write_port(temporary.path(), stub_port(&stub.base_url));
-
-        let server = connect(temporary.path()).unwrap();
-        let response = transcribe_with_timeout(&server, b"wav", Duration::from_secs(1)).unwrap();
-        assert!(response.words.is_empty());
-        let requests = stub.finish();
-
-        assert_eq!(requests[0].method, "GET");
-        assert_eq!(requests[0].path, "/health");
-        assert_eq!(requests[1].method, "POST");
-        assert_eq!(requests[1].path, "/v1/audio/transcriptions");
-        assert!(requests[1].body.contains("response_format"));
-        assert!(requests[1].body.contains("verbose_json"));
-        assert!(requests[1].body.contains("timestamp_granularities[]"));
-        assert!(requests[1].body.contains("word"));
-    }
 
     #[test]
     fn missing_port_defers_with_no_port() {
@@ -481,119 +384,10 @@ mod tests {
     }
 
     #[test]
-    fn non_200_health_defers_with_server_not_ready() {
-        let temporary = tempfile::tempdir().unwrap();
-        let stub = StubServer::start(vec![Reply::Http {
-            status: 503,
-            body: "loading",
-        }]);
-        write_port(temporary.path(), stub_port(&stub.base_url));
-
-        let error = connect(temporary.path()).unwrap_err();
-        stub.finish();
-
-        assert_deferred_reason(error, "server_not_ready");
-    }
-
-    #[test]
-    fn refused_health_defers_with_server_not_ready() {
-        let temporary = tempfile::tempdir().unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        write_port(temporary.path(), port);
-
-        let error = connect(temporary.path()).unwrap_err();
-
-        assert_deferred_reason(error, "server_not_ready");
-    }
-
-    #[test]
-    fn disconnected_transcription_defers_with_server_disconnected() {
-        let stub = StubServer::start(vec![Reply::Close]);
-        let server = server_for(&stub);
-
-        let error = transcribe_with_timeout(&server, b"wav", Duration::from_secs(1)).unwrap_err();
-        stub.finish();
-
-        assert_deferred_reason(error, "server_disconnected");
-    }
-
-    #[test]
-    fn timed_out_transcription_defers_with_read_timeout() {
-        let stub = StubServer::start(vec![Reply::Sleep(Duration::from_millis(150))]);
-        let server = server_for(&stub);
-
-        let error =
-            transcribe_with_timeout(&server, b"wav", Duration::from_millis(25)).unwrap_err();
-        stub.finish();
-
-        assert_deferred_reason(error, "read_timeout");
-    }
-
-    #[test]
-    fn refused_transcription_defers_with_connect_error() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-        let server = ParakeetServer {
-            port,
-            base_url: format!("http://127.0.0.1:{port}"),
-        };
-
-        let error =
-            transcribe_with_timeout(&server, b"wav", Duration::from_millis(50)).unwrap_err();
-
-        assert_deferred_reason(error, "connect_error");
-    }
-
-    #[test]
     fn catch_all_ureq_error_defers_with_transport_error() {
         let error = map_ureq_error(ureq::Error::RedirectFailed);
 
         assert_deferred_reason(error, "transport_error");
-    }
-
-    #[test]
-    fn live_http_500_is_a_hard_transcription_error() {
-        let stub = StubServer::start(vec![Reply::Http {
-            status: 500,
-            body: "broken",
-        }]);
-        let server = server_for(&stub);
-
-        let error = transcribe_with_timeout(&server, b"wav", Duration::from_secs(1)).unwrap_err();
-        stub.finish();
-
-        assert_failure_reason(error, "transcription_http_error");
-    }
-
-    #[test]
-    fn malformed_live_json_is_a_hard_error() {
-        let stub = StubServer::start(vec![Reply::Http {
-            status: 200,
-            body: "not-json",
-        }]);
-        let server = server_for(&stub);
-
-        let error = transcribe_with_timeout(&server, b"wav", Duration::from_secs(1)).unwrap_err();
-        stub.finish();
-
-        assert_failure_reason(error, "invalid_json");
-    }
-
-    #[test]
-    fn text_without_word_timings_is_a_hard_contract_error() {
-        let stub = StubServer::start(vec![Reply::Http {
-            status: 200,
-            body: r#"{"words":[],"text":"hello"}"#,
-        }]);
-        let server = server_for(&stub);
-
-        let error = transcribe_with_timeout(&server, b"wav", Duration::from_secs(1)).unwrap_err();
-        stub.finish();
-
-        assert_failure_reason(error, "contract_violation");
     }
 
     #[test]
@@ -675,58 +469,6 @@ mod tests {
         assert_eq!(parakeet_cpp_device(&config), None);
     }
 
-    #[test]
-    fn health_probe_accepts_only_http_200() {
-        let stub = StubServer::start(vec![Reply::Http {
-            status: 204,
-            body: "",
-        }]);
-
-        assert_eq!(
-            probe_health(&stub.base_url, Duration::from_secs(1)),
-            HealthState::NotReady
-        );
-        stub.finish();
-    }
-
-    fn read_request(mut stream: TcpStream) -> CapturedRequest {
-        stream
-            .set_read_timeout(Some(Duration::from_secs(2)))
-            .unwrap();
-        let mut bytes = Vec::new();
-        let mut buffer = [0_u8; 1024];
-        let header_end = loop {
-            let count = stream.read(&mut buffer).unwrap();
-            bytes.extend_from_slice(&buffer[..count]);
-            if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
-                break index + 4;
-            }
-        };
-        let headers = String::from_utf8_lossy(&bytes[..header_end]).into_owned();
-        let content_length = headers
-            .lines()
-            .find_map(|line| {
-                let (name, value) = line.split_once(':')?;
-                if name.eq_ignore_ascii_case("content-length") {
-                    value.trim().parse::<usize>().ok()
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(0);
-        while bytes.len() < header_end + content_length {
-            let count = stream.read(&mut buffer).unwrap();
-            bytes.extend_from_slice(&buffer[..count]);
-        }
-        let request_line = headers.lines().next().unwrap();
-        let mut request_line = request_line.split_whitespace();
-        CapturedRequest {
-            method: request_line.next().unwrap().to_owned(),
-            path: request_line.next().unwrap().to_owned(),
-            body: String::from_utf8_lossy(&bytes[header_end..]).into_owned(),
-        }
-    }
-
     fn write_port(journal_path: &std::path::Path, port: u16) {
         let health = journal_path.join("health");
         fs::create_dir_all(&health).unwrap();
@@ -737,17 +479,6 @@ mod tests {
         let health = journal_path.join("health");
         fs::create_dir_all(&health).unwrap();
         fs::write(health.join("parakeet-cpp.placement"), device).unwrap();
-    }
-
-    fn stub_port(base_url: &str) -> u16 {
-        base_url.rsplit(':').next().unwrap().parse().unwrap()
-    }
-
-    fn server_for(stub: &StubServer) -> ParakeetServer {
-        ParakeetServer {
-            port: stub_port(&stub.base_url),
-            base_url: stub.base_url.clone(),
-        }
     }
 
     fn assert_deferred_reason(error: TranscribeError, expected_reason: &str) {

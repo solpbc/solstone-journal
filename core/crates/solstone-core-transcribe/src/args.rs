@@ -354,11 +354,10 @@ fn usage(message: &str) -> CliError {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::net::TcpListener;
     use std::path::{Path, PathBuf};
 
     use super::{
-        CliError, check_speakers_analyze_installation_with, is_solstone_up, parse_arguments,
+        CliError, check_speakers_analyze_installation_with, parse_arguments,
         preflight_arguments_with, require_solstone_with, resolve_single_audio_path_with,
         should_skip_batch_processed, should_skip_process_audio_processed,
         should_skip_process_one_processed, validate_selection,
@@ -380,20 +379,6 @@ mod tests {
             || false,
         );
         assert!(result.is_ok());
-    }
-
-    #[test]
-    fn recorded_convey_listener_marks_solstone_up() {
-        let temporary = tempfile::tempdir().unwrap();
-        let health = temporary.path().join("health");
-        fs::create_dir(&health).unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        fs::write(
-            health.join("convey.port"),
-            listener.local_addr().unwrap().port().to_string(),
-        )
-        .unwrap();
-        assert!(is_solstone_up(temporary.path()));
     }
 
     #[test]

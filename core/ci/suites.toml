@@ -3599,3 +3599,17 @@ timeout = "standard"
 default_full = false
 required_features = ["differential"]
 runtime = "onnx"
+
+[[suites]]
+id = "solstone-core-transcribe::transcription_transports"
+package = "solstone-core-transcribe"
+target = "transcription_transports"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"

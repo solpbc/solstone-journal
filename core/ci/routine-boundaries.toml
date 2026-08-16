@@ -1744,73 +1744,7 @@ id = "solstone-core-top::core/crates/solstone-core-top/src/production.rs::tests:
 id = "solstone-core-top::core/crates/solstone-core-top/src/production.rs::tests::terminal_decodes_only_complete_up_and_down_escape_sequences::scheduling"
 
 [[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/args.rs::tests::recorded_convey_listener_marks_solstone_up::network"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::attestation_reason_mapper_covers_the_initial_and_failure_states::clock"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::invalid_target_failure_refuses_before_a_channel_attempt::clock"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::multipart_request_uses_one_plain_tcp_channel_with_expected_fields::network"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::multipart_request_uses_one_plain_tcp_channel_with_expected_fields::scheduling"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::multipart_transport_retries_interrupted_io::network"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::multipart_transport_retries_interrupted_io::scheduling"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::readiness_failure_refuses_before_an_endpoint_request::clock"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::readiness_failure_refuses_before_an_endpoint_request::network"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::round_trip_hosted_response::network"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::round_trip_hosted_response::scheduling"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::stale_session_refuses_before_readiness_or_endpoint_request::network"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::transport_failure_defers_without_a_second_request::network"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/confidential.rs::tests::transport_failure_defers_without_a_second_request::scheduling"
-
-[[findings]]
 id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::catch_all_ureq_error_defers_with_transport_error::network"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::refused_health_defers_with_server_not_ready::network"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::refused_transcription_defers_with_connect_error::network"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::start::clock"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::start::network"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::start::scheduling"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/speakers.rs::tests::stale_sweep_removes_old_directory_and_keeps_fresh_one::clock"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/speakers.rs::tests::timeout_escalates_to_kill_after_termination_grace::process"
-
-[[findings]]
-id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/speakers.rs::tests::timeout_escalates_to_kill_after_termination_grace::scheduling"
 
 [[findings]]
 id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::cancellation_preserves_the_segment_and_never_commits::clock"

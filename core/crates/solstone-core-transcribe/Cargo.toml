@@ -11,6 +11,7 @@ publish = false
 
 [features]
 differential = []
+test-hooks = []
 
 [[test]]
 name = "transcribe_differential"
@@ -26,6 +27,11 @@ required-features = ["differential"]
 name = "transcribe_sound_tags_differential"
 path = "tests/transcribe_sound_tags_differential.rs"
 required-features = ["differential"]
+
+[[test]]
+name = "transcription_transports"
+path = "tests/transcription_transports.rs"
+required-features = ["test-hooks"]
 
 [dependencies]
 chrono = { workspace = true }
@@ -47,7 +53,9 @@ tempfile = "3.24.0"
 ureq = { workspace = true, features = ["multipart"] }
 
 [dev-dependencies]
+socket2 = { workspace = true }
 solstone-core-spp-attest = { workspace = true }
+solstone-core-spp-ratls = { workspace = true }
 
 [lints]
 workspace = true

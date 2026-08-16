@@ -344,7 +344,7 @@ fn invoke_speakers_analyze_helper(
     invoke_child(&mut child, request, raw_path, budget)
 }
 
-fn invoke_child(
+pub(crate) fn invoke_child(
     child: &mut Child,
     request: &[u8],
     raw_path: &Path,
@@ -1353,10 +1353,10 @@ fn safe_temp_part(value: &str) -> String {
 }
 
 #[derive(Debug)]
-struct HelperInvocationResult {
-    returncode: i32,
-    stdout: String,
-    stderr: String,
+pub(crate) struct HelperInvocationResult {
+    pub(crate) returncode: i32,
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
 }
 
 #[derive(Debug)]
@@ -1370,14 +1370,14 @@ mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
-    use std::time::{Duration, SystemTime};
+    use std::time::{Duration, UNIX_EPOCH};
 
     use serde_json::{Map, Value, json};
 
     use super::{
-        RESPONSE_SCHEMA, SpeakerAnalyzeError, SpeakersAnalyzeBudget, accepted_result_from_response,
-        admitted_statement_ids, create_speakers_analyze_temp_dir_in, invoke_child,
-        remove_partial_sidecar, sweep_stale_speakers_analyze_dirs_at, with_cleaned_temp_dir,
+        RESPONSE_SCHEMA, SpeakerAnalyzeError, accepted_result_from_response,
+        admitted_statement_ids, create_speakers_analyze_temp_dir_in, remove_partial_sidecar,
+        sweep_stale_speakers_analyze_dirs_at, with_cleaned_temp_dir,
     };
     use crate::TranscribeError;
 
@@ -1403,28 +1403,32 @@ mod tests {
     #[test]
     fn stale_sweep_removes_old_directory_and_keeps_fresh_one() {
         let root = tempfile::tempdir().unwrap();
+        let now = UNIX_EPOCH + Duration::from_secs(100_000);
         let old = root.path().join("solstone-speakers-analyze-old");
         let fresh = root.path().join("solstone-speakers-analyze-fresh");
+        let unrelated = root.path().join("other-dir");
+        let leftover = root.path().join("readme.txt");
         fs::create_dir(&old).unwrap();
         fs::create_dir(&fresh).unwrap();
+        fs::create_dir(&unrelated).unwrap();
+        fs::write(&leftover, b"keep").unwrap();
         fs::File::open(&old)
             .unwrap()
-            .set_times(
-                std::fs::FileTimes::new()
-                    .set_modified(SystemTime::now() - Duration::from_secs(86_401)),
-            )
+            .set_times(std::fs::FileTimes::new().set_modified(UNIX_EPOCH))
+            .unwrap();
+        fs::File::open(&fresh)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(now - Duration::from_secs(1)))
             .unwrap();
 
         assert_eq!(
-            sweep_stale_speakers_analyze_dirs_at(
-                root.path(),
-                Duration::from_secs(86_400),
-                SystemTime::now()
-            ),
+            sweep_stale_speakers_analyze_dirs_at(root.path(), Duration::from_secs(86_400), now),
             1
         );
         assert!(!old.exists());
         assert!(fresh.exists());
+        assert!(unrelated.exists());
+        assert!(leftover.exists());
     }
 
     #[test]
@@ -1461,32 +1465,6 @@ mod tests {
             },
         );
         assert!(!path.exists());
-    }
-
-    #[test]
-    fn timeout_escalates_to_kill_after_termination_grace() {
-        let mut child = std::process::Command::new("sh")
-            .args(["-c", "trap '' TERM; sleep 1"])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        let error = invoke_child(
-            &mut child,
-            b"{}",
-            Path::new("input.wav"),
-            SpeakersAnalyzeBudget {
-                timeout: Duration::from_millis(20),
-                stdout_limit_bytes: 1024,
-                stderr_limit_bytes: 1024,
-                terminate_grace: Duration::from_millis(20),
-                kill_grace: Duration::from_secs(1),
-            },
-        )
-        .unwrap_err();
-        assert_eq!(error.reason, "timeout");
-        assert!(error.native_exit_code.is_some());
     }
 
     #[test]
