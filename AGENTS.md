@@ -70,13 +70,13 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 
 Two surfaces:
 
-- **`sol <command>`** — native access commands declared under `solstone/think/native/<command>/authority.toml` and implemented by the matching Rust `command.rs` (e.g., `sol import`, `sol chat`).
+- **`sol <command>`** — native access commands declared under `solstone/think/native/<command>/authority.toml` and implemented by `core/crates/solstone-core-sol-client/native/think/<command>/command.rs` (e.g., `sol import`, `sol chat`).
 - **`journal <command>`** — same-device commands owned by `solstone-core-journal`. Local writers execute in Rust; service commands use the native closed process table (e.g., `journal think`, `journal supervisor`, `journal heartbeat`). `journal up/down` are fixed aliases for `journal service up/down`.
-- **`sol call <app> <verb>`** — native app commands declared under `solstone/apps/<app>/native/` or `solstone/think/tools/native/` and generated into the native aggregate inventory. `sol call journal` exposes its native 17-leaf journal group through this boundary.
+- **`sol call <app> <verb>`** — native app commands declared under `solstone/apps/<app>/native/` or `solstone/think/tools/native/` and implemented under `core/crates/solstone-core-sol-client/native/{apps,tools}/`. `sol call journal` exposes its native 17-leaf journal group through this boundary.
 
-**Adding a top-level `sol` command:** add a native authority under `solstone/think/native/<command>/` and wire the Rust handler into the generated native inventory path. Use `solstone/think/native/chat/` and `solstone/think/native/import/` as the current patterns.
+**Adding a top-level `sol` command:** add a native authority under `solstone/think/native/<command>/authority.toml` and implement the handler at `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`. Use `solstone/think/native/chat/authority.toml` with `core/crates/solstone-core-sol-client/native/think/chat/command.rs` as the current pattern.
 
-**Adding a `sol call` sub-verb:** update `solstone/apps/<app>/native/authority.toml`, implement the handler in `command.rs`, and regenerate the native inventory.
+**Adding a `sol call` sub-verb:** update `solstone/apps/<app>/native/authority.toml`, implement the handler in `core/crates/solstone-core-sol-client/native/apps/<app>/command.rs`, and regenerate the native inventory.
 Portable journal archive export is temporarily unavailable while archive support migrates; read-only archive validation lives in `solstone/think/importers/journal_archive.py`.
 
 Run `sol` (no args) for the static grouped command list.

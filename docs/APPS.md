@@ -40,9 +40,8 @@ apps/my_app/
 ├── workspace.html     # Required: Main content template
 ├── routes.py          # Optional: Flask blueprint (only if custom routes needed)
 ├── tools.py           # Optional: App tool functions for agent workflows
-├── native/            # Optional: Native `sol call` authority and Rust handler
-│   ├── authority.toml
-│   └── command.rs
+├── native/            # Optional: Native `sol call` authority (handler is crate-local)
+│   └── authority.toml
 ├── events.py          # Optional: Server-side event handlers (auto-discovered)
 ├── app.json           # Optional: Metadata (icon, label, facet support)
 ├── app_bar.html       # Optional: Bottom bar controls (forms, buttons)
@@ -60,7 +59,7 @@ apps/my_app/
 | `workspace.html` | **Yes** | Main app content (rendered in container) |
 | `routes.py` | No | Flask blueprint for custom routes (API endpoints, forms, etc.) |
 | `tools.py` | No | Callable tool functions for AI agent workflows |
-| `native/authority.toml` + `native/command.rs` | No | Native CLI commands accessed as `sol call <app> <verb>` |
+| `native/authority.toml` | No | Native CLI authority for `sol call <app> <verb>`; handler lives under `core/crates/solstone-core-sol-client/native/apps/<app>/command.rs` |
 | `events.py` | No | Server-side Callosum event handlers (auto-discovered) |
 | `app.json` | No | Icon, label, facet support overrides |
 | `app_bar.html` | No | Bottom fixed bar for app controls |
@@ -256,17 +255,19 @@ Define plain callable tool functions for your app in `tools.py`.
 ### 7. `native/` - CLI Commands
 
 Define app CLI commands as native authorities under `solstone/apps/<app>/native/`.
-Each command pairs an `authority.toml` entry with a Rust handler in `command.rs`
+Each command pairs an `authority.toml` entry with a Rust handler under
+`core/crates/solstone-core-sol-client/native/apps/<app>/command.rs`
 and is regenerated into the production native aggregate inventory.
 
 **Key Points:**
 - Only add a native authority when the app needs human-friendly CLI access to an HTTP operation.
 - Keep `authority.toml` as the source for path, params, operation id, HTTP method, route, and handler name.
-- Implement the handler in `command.rs` using the generated native HTTP client conventions.
+- Implement the handler in `core/crates/solstone-core-sol-client/native/apps/<app>/command.rs` using the generated native HTTP client conventions.
 - Regenerate the inventory with `make build-native-sol-inventory`.
 
 **Reference implementations:**
-- Authority + handler: `solstone/apps/entities/native/{authority.toml,command.rs}`
+- Authority: `solstone/apps/entities/native/authority.toml`
+- Handler: `core/crates/solstone-core-sol-client/native/apps/entities/command.rs`
 - Native CLI routing: [SOLCLI.md](SOLCLI.md)'s Call command inventory
 
 ---

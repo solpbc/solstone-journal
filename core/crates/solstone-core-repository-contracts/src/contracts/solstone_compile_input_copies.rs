@@ -143,13 +143,16 @@ fn dir_mismatch(
     if !changed.is_empty() {
         lines.push(format!("Bytes differ: {}", changed.join(", ")));
     }
+    if lines.is_empty() {
+        lines.push("directory is missing".to_owned());
+    }
     format!(
         "{}\n\n\
          Source dir: {source_dir}\n\
          Crate copy dir: {dest_dir}\n\n\
          Why: {why} so cargo can compile without reading solstone/. \
 This copy disappears when Python is deleted.\n\n\
-         Repair with:\n  cp -a {source_dir}/. {dest_dir}/\n",
+         Repair with:\n  rm -rf {dest_dir} && cp -aL {source_dir} {dest_dir}\n",
         lines.join("\n")
     )
 }

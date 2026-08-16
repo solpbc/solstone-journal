@@ -205,3 +205,40 @@ fn build_rs_scan_ignores_comments_and_flags_path_joins() {
             .is_empty()
     );
 }
+
+fn include_spans_solstone(text: &str) -> Vec<String> {
+    include_spans(text)
+        .into_iter()
+        .filter(|(_, span)| span.contains("solstone/"))
+        .map(|(_, span)| span)
+        .collect()
+}
+
+#[test]
+fn include_spans_flag_multiline_and_concat_compile_inputs() {
+    // Assemble the historical forms at runtime so this file is not itself a
+    // compile-input hit for `no_cargo_compile_input_resolves_under_solstone`.
+    let include_str = "include_str!";
+    let include_bytes = "include_bytes!";
+    let multiline = format!(
+        "const PROMPT: &str = {include_str}(\n    \"../../../../solstone/observe/foo.md\"\n);\n"
+    );
+    let concat = format!(
+        "const PROMPT: &[u8] = {include_bytes}(concat!(\n    env!(\"CARGO_MANIFEST_DIR\"),\n    \"/../../../solstone/observe/foo.md\"\n));\n"
+    );
+    let runtime = r#"
+fn load(root: &Path) -> Vec<u8> {
+    std::fs::read(root.join("solstone/apps/home/workspace.html")).unwrap()
+}
+"#;
+    let multi_hits = include_spans_solstone(&multiline);
+    assert_eq!(multi_hits.len(), 1, "{multi_hits:?}");
+    assert!(multi_hits[0].contains("include_str!"), "{}", multi_hits[0]);
+    let concat_hits = include_spans_solstone(&concat);
+    assert_eq!(concat_hits.len(), 1, "{concat_hits:?}");
+    assert!(concat_hits[0].contains("concat!"), "{}", concat_hits[0]);
+    assert!(
+        include_spans_solstone(runtime).is_empty(),
+        "runtime root.join(solstone/…) must not look like a compile input"
+    );
+}
