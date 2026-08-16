@@ -705,6 +705,7 @@ pub fn scan_routine_boundaries(repo: &Path) -> Result<BTreeSet<String>, String> 
                 relative: &relative,
                 test_scope: file_is_test,
                 module_path: Vec::new(),
+                process_command_aliases: vec![BTreeSet::new()],
                 findings: &mut findings,
             };
             visitor.visit_file(&syntax);
@@ -885,18 +886,42 @@ struct RiskVisitor<'a> {
     relative: &'a str,
     test_scope: bool,
     module_path: Vec<String>,
+    process_command_aliases: Vec<BTreeSet<String>>,
     findings: &'a mut BTreeSet<String>,
 }
 
 impl RiskVisitor<'_> {
-    fn inspect(&mut self, name: &str, tokens: &str) {
+    fn inspect(&mut self, name: &str, block: &syn::Block) {
         let scope = if self.module_path.is_empty() {
             name.to_owned()
         } else {
             format!("{}::{name}", self.module_path.join("::"))
         };
+        let tokens = block.to_token_stream().to_string();
+        let calls = inspect_calls(block, &self.process_command_aliases);
         for (category, needles) in risk_patterns() {
-            if needles.iter().any(|needle| tokens.contains(needle)) {
+            let found = match *category {
+                "clock" => {
+                    calls
+                        .names
+                        .iter()
+                        .any(|name| matches!(name.as_str(), "sleep" | "timeout" | "interval"))
+                        || needles.iter().any(|needle| tokens.contains(needle))
+                }
+                "scheduling" => {
+                    calls
+                        .names
+                        .iter()
+                        .any(|name| matches!(name.as_str(), "spawn" | "channel"))
+                        || needles.iter().any(|needle| tokens.contains(needle))
+                }
+                "process" => calls.launches_process,
+                "host-tool" => {
+                    calls.launches_process && needles.iter().any(|needle| tokens.contains(needle))
+                }
+                _ => needles.iter().any(|needle| tokens.contains(needle)),
+            };
+            if found {
                 self.findings.insert(format!(
                     "{}::{}::{}::{}",
                     self.package, self.relative, scope, category
@@ -907,11 +932,33 @@ impl RiskVisitor<'_> {
 }
 
 impl<'ast> Visit<'ast> for RiskVisitor<'_> {
+    fn visit_file(&mut self, node: &'ast syn::File) {
+        collect_item_process_aliases(
+            &node.items,
+            self.process_command_aliases
+                .last_mut()
+                .expect("root process command alias scope"),
+        );
+        visit::visit_file(self, node);
+    }
+
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
         let prior = self.test_scope;
         self.test_scope = prior || has_test_cfg(&node.attrs) || node.ident == "tests";
         self.module_path.push(node.ident.to_string());
+        let parent_aliases = self
+            .process_command_aliases
+            .last()
+            .expect("parent process command alias scope")
+            .clone();
+        let mut aliases = BTreeSet::new();
+        if let Some((_, items)) = &node.content {
+            collect_item_process_aliases(items, &mut aliases);
+            collect_parent_process_aliases(items, &parent_aliases, &mut aliases);
+        }
+        self.process_command_aliases.push(aliases);
         visit::visit_item_mod(self, node);
+        self.process_command_aliases.pop();
         self.module_path.pop();
         self.test_scope = prior;
     }
@@ -919,10 +966,7 @@ impl<'ast> Visit<'ast> for RiskVisitor<'_> {
     fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
         let is_test = self.test_scope || has_test_attr(&node.attrs);
         if is_test {
-            self.inspect(
-                &node.sig.ident.to_string(),
-                &node.block.to_token_stream().to_string(),
-            );
+            self.inspect(&node.sig.ident.to_string(), &node.block);
         }
         let prior = self.test_scope;
         self.test_scope = is_test;
@@ -932,13 +976,219 @@ impl<'ast> Visit<'ast> for RiskVisitor<'_> {
 
     fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
         if self.test_scope || has_test_attr(&node.attrs) {
-            self.inspect(
-                &node.sig.ident.to_string(),
-                &node.block.to_token_stream().to_string(),
-            );
+            self.inspect(&node.sig.ident.to_string(), &node.block);
         }
         visit::visit_impl_item_fn(self, node);
     }
+}
+
+#[derive(Default)]
+struct CallRisks {
+    names: BTreeSet<String>,
+    launches_process: bool,
+}
+
+fn inspect_calls(block: &syn::Block, module_aliases: &[BTreeSet<String>]) -> CallRisks {
+    let mut visitor = CallRiskVisitor {
+        module_aliases,
+        block_aliases: Vec::new(),
+        risks: CallRisks::default(),
+    };
+    visitor.visit_block(block);
+    visitor.risks
+}
+
+struct CallRiskVisitor<'a> {
+    module_aliases: &'a [BTreeSet<String>],
+    block_aliases: Vec<BTreeSet<String>>,
+    risks: CallRisks,
+}
+
+impl<'ast> Visit<'ast> for CallRiskVisitor<'_> {
+    fn visit_block(&mut self, node: &'ast syn::Block) {
+        let mut aliases = self.block_aliases.last().cloned().unwrap_or_else(|| {
+            self.module_aliases
+                .last()
+                .expect("function module alias scope")
+                .clone()
+        });
+        collect_block_process_aliases(node, &mut aliases);
+        self.block_aliases.push(aliases);
+        visit::visit_block(self, node);
+        self.block_aliases.pop();
+    }
+
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        if let syn::Expr::Path(function) = node.func.as_ref() {
+            if let Some(segment) = function.path.segments.last() {
+                self.risks.names.insert(segment.ident.to_string());
+            }
+            let segments = function
+                .path
+                .segments
+                .iter()
+                .map(|segment| segment.ident.to_string())
+                .collect::<Vec<_>>();
+            self.risks.launches_process |= is_process_constructor(
+                &segments,
+                self.block_aliases.last().expect("call block alias scope"),
+                self.module_aliases,
+            );
+        }
+        visit::visit_expr_call(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        self.risks.names.insert(node.method.to_string());
+        visit::visit_expr_method_call(self, node);
+    }
+}
+
+fn is_process_constructor(
+    segments: &[String],
+    local_aliases: &BTreeSet<String>,
+    module_aliases: &[BTreeSet<String>],
+) -> bool {
+    if segments.last().map(String::as_str) != Some("new") {
+        return false;
+    }
+    let direct = path_ends_with(segments, &["std", "process", "Command", "new"])
+        || path_ends_with(segments, &["tokio", "process", "Command", "new"]);
+    if direct {
+        return true;
+    }
+    let Some((alias, qualifiers)) = segments[..segments.len() - 1].split_last() else {
+        return false;
+    };
+    if qualifiers.is_empty() {
+        return local_aliases.contains(alias);
+    }
+    let target_scope = if qualifiers == ["self"] {
+        module_aliases.last()
+    } else if qualifiers == ["crate"] {
+        module_aliases.first()
+    } else if qualifiers.iter().all(|segment| segment == "super")
+        && qualifiers.len() < module_aliases.len()
+    {
+        module_aliases.get(module_aliases.len() - 1 - qualifiers.len())
+    } else {
+        None
+    };
+    target_scope.is_some_and(|aliases| aliases.contains(alias))
+}
+
+fn path_ends_with(segments: &[String], suffix: &[&str]) -> bool {
+    segments.len() >= suffix.len()
+        && segments[segments.len() - suffix.len()..]
+            .iter()
+            .map(String::as_str)
+            .eq(suffix.iter().copied())
+}
+
+fn collect_item_process_aliases(items: &[syn::Item], aliases: &mut BTreeSet<String>) {
+    for item in items {
+        if let syn::Item::Use(item_use) = item {
+            collect_process_aliases(&item_use.tree, &mut Vec::new(), aliases);
+        }
+    }
+}
+
+fn collect_block_process_aliases(block: &syn::Block, aliases: &mut BTreeSet<String>) {
+    for statement in &block.stmts {
+        if let syn::Stmt::Item(syn::Item::Use(item_use)) = statement {
+            collect_process_aliases(&item_use.tree, &mut Vec::new(), aliases);
+        }
+    }
+}
+
+fn collect_parent_process_aliases(
+    items: &[syn::Item],
+    parent_aliases: &BTreeSet<String>,
+    aliases: &mut BTreeSet<String>,
+) {
+    for item in items {
+        if let syn::Item::Use(item_use) = item {
+            collect_relative_process_aliases(
+                &item_use.tree,
+                &mut Vec::new(),
+                parent_aliases,
+                aliases,
+            );
+        }
+    }
+}
+
+fn collect_relative_process_aliases(
+    tree: &syn::UseTree,
+    prefix: &mut Vec<String>,
+    parent_aliases: &BTreeSet<String>,
+    aliases: &mut BTreeSet<String>,
+) {
+    match tree {
+        syn::UseTree::Path(path) => {
+            prefix.push(path.ident.to_string());
+            collect_relative_process_aliases(&path.tree, prefix, parent_aliases, aliases);
+            prefix.pop();
+        }
+        syn::UseTree::Name(name) => {
+            let name = name.ident.to_string();
+            if prefix.as_slice() == ["super"] && parent_aliases.contains(&name) {
+                aliases.insert(name);
+            }
+        }
+        syn::UseTree::Rename(rename) => {
+            if prefix.as_slice() == ["super"] && parent_aliases.contains(&rename.ident.to_string())
+            {
+                aliases.insert(rename.rename.to_string());
+            }
+        }
+        syn::UseTree::Group(group) => {
+            for item in &group.items {
+                collect_relative_process_aliases(item, prefix, parent_aliases, aliases);
+            }
+        }
+        syn::UseTree::Glob(_) => {
+            if prefix.as_slice() == ["super"] {
+                aliases.extend(parent_aliases.iter().cloned());
+            }
+        }
+    }
+}
+
+fn collect_process_aliases(
+    tree: &syn::UseTree,
+    prefix: &mut Vec<String>,
+    aliases: &mut BTreeSet<String>,
+) {
+    match tree {
+        syn::UseTree::Path(path) => {
+            prefix.push(path.ident.to_string());
+            collect_process_aliases(&path.tree, prefix, aliases);
+            prefix.pop();
+        }
+        syn::UseTree::Name(name) => {
+            if is_process_command_path(prefix, &name.ident.to_string()) {
+                aliases.insert(name.ident.to_string());
+            }
+        }
+        syn::UseTree::Rename(rename) => {
+            if is_process_command_path(prefix, &rename.ident.to_string()) {
+                aliases.insert(rename.rename.to_string());
+            }
+        }
+        syn::UseTree::Group(group) => {
+            for item in &group.items {
+                collect_process_aliases(item, prefix, aliases);
+            }
+        }
+        syn::UseTree::Glob(_) => {}
+    }
+}
+
+fn is_process_command_path(prefix: &[String], name: &str) -> bool {
+    name == "Command"
+        && (path_ends_with(prefix, &["std", "process"])
+            || path_ends_with(prefix, &["tokio", "process"]))
 }
 
 fn has_test_attr(attrs: &[syn::Attribute]) -> bool {
@@ -962,19 +1212,13 @@ fn has_test_cfg(attrs: &[syn::Attribute]) -> bool {
 
 fn risk_patterns() -> &'static [(&'static str, &'static [&'static str])] {
     &[
-        (
-            "clock",
-            &["sleep", "Instant", "SystemTime", "timeout (", "interval ("],
-        ),
-        (
-            "scheduling",
-            &["spawn", "Barrier", "Mutex", "RwLock", "channel", "select !"],
-        ),
+        ("clock", &["Instant", "SystemTime"]),
+        ("scheduling", &["Barrier", "Mutex", "RwLock", "select !"]),
         (
             "network",
             &["TcpListener", "TcpStream", "UdpSocket", "reqwest", "ureq"],
         ),
-        ("process", &["Command :: new", "process ::"]),
+        ("process", &[]),
         (
             "native",
             &[
@@ -1140,20 +1384,162 @@ mod tests {
         };
         fs::write(
             temp.path().join("core/crates/a/src/lib.rs"),
-            "#[cfg(test)] mod tests { enum Command { Version } #[test] fn parses_domain_command() { let command = Command::Version; assert!(matches!(command, Command::Version)); } }\n",
+            r#"use std::process::Command;
+            #[cfg(test)] mod tests {
+                enum Command { Version }
+                struct DomainCommand;
+                impl DomainCommand { fn new() -> Self { Self } }
+                fn temporary_path() { let _ = std::process::id(); }
+                #[test] fn lexical_lookalikes_are_safe() {
+                    let command = Command::Version;
+                    let _domain = DomainCommand::new();
+                    let spawner = "fake";
+                    let sleepy = "fake";
+                    let tool = "cargo";
+                    temporary_path();
+                    assert!(matches!(command, Command::Version));
+                    assert_eq!((spawner, sleepy, tool), ("fake", "fake", "cargo"));
+                }
+                #[test] fn nested_process_alias_does_not_leak() {
+                    {
+                        use std::process::Command as Runner;
+                        let _ = std::mem::size_of::<Runner>();
+                    }
+                    struct Runner;
+                    impl Runner { fn new() -> Self { Self } }
+                    let _domain = Runner::new();
+                }
+            }
+"#,
         )
         .expect("safe domain command");
         assert_eq!(validate_boundary(temp.path(), &clean), Ok(()));
         fs::write(
             temp.path().join("core/crates/a/src/lib.rs"),
-            "#[cfg(test)] mod tests { use std::process::Command; #[test] fn reaches_host() { Command::new(\"cargo\"); } }\n",
+            r#"use std::process::Command as ParentRunner;
+            #[cfg(test)] mod tests {
+                use super::*;
+                fn timeout<T>() {}
+                fn interval<T>() {}
+                fn sleep<T>() {}
+                fn spawn<T>() {}
+
+                use std::process::Command as Runner;
+                use tokio::process::Command as AsyncRunner;
+
+                #[test] fn launches_host_through_explicit_parent_glob() {
+                    ParentRunner::new("cargo");
+                }
+                #[test] fn launches_host_through_qualified_parent() {
+                    super::ParentRunner::new("cargo");
+                }
+                #[test] fn launches_host_through_qualified_crate_root() {
+                    crate::ParentRunner::new("cargo");
+                }
+                #[test] fn launches_host_through_module_alias() {
+                    Runner::new("cargo");
+                }
+                #[test] fn launches_host_through_qualified_self() {
+                    self::Runner::new("cargo");
+                }
+                #[test] fn launches_host_through_local_alias() {
+                    use std::process::Command as LocalRunner;
+                    LocalRunner::new("cargo");
+                }
+                #[test] fn launches_host_through_grouped_alias() {
+                    use std::process::{Command as GroupedRunner};
+                    GroupedRunner::new("cargo");
+                }
+                #[test] fn launches_host_through_async_alias() {
+                    AsyncRunner::new("cargo");
+                }
+                #[test] fn launches_host_through_direct_path() {
+                    std::process::Command::new("cargo");
+                }
+                #[test] fn opens_turbofished_channel() {
+                    let _ = std::sync::mpsc::channel::<()>();
+                }
+                #[test] fn spawns() {
+                    let _ = std::thread::spawn(|| {});
+                }
+                #[test] fn sleeps() {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+                #[test] fn calls_turbofished_timeout() {
+                    timeout::<()>();
+                }
+                #[test] fn calls_turbofished_interval() {
+                    interval::<()>();
+                }
+                #[test] fn calls_turbofished_sleep() {
+                    sleep::<()>();
+                }
+                #[test] fn calls_turbofished_spawn() {
+                    spawn::<()>();
+                }
+                struct Clock;
+                impl Clock { fn sleep(&self) {} }
+                #[test] fn calls_sleep_method() {
+                    Clock.sleep();
+                }
+                struct Spawner;
+                impl Spawner { fn spawn(&self) {} }
+                #[test] fn calls_spawn_method() {
+                    Spawner.spawn();
+                }
+                mod nested {
+                    #[test] fn launches_host_through_two_parents() {
+                        super::super::ParentRunner::new("cargo");
+                    }
+                }
+            }
+"#,
         )
         .expect("mutate lib");
         let errors = validate_boundary(temp.path(), &clean).expect_err("new risk must red");
         assert!(errors.iter().any(|error| error.contains("process")));
         assert!(errors.iter().any(|error| error.contains("host-tool")));
+        assert!(errors.iter().any(|error| error.contains("clock")));
+        assert!(errors.iter().any(|error| error.contains("scheduling")));
 
-        let observed = scan_routine_boundaries(temp.path()).expect("scan");
+        let observed = scan_routine_boundaries(temp.path()).expect("scan risky forms");
+        for expected in [
+            "launches_host_through_explicit_parent_glob::process",
+            "launches_host_through_explicit_parent_glob::host-tool",
+            "launches_host_through_qualified_parent::process",
+            "launches_host_through_qualified_parent::host-tool",
+            "launches_host_through_qualified_crate_root::process",
+            "launches_host_through_qualified_crate_root::host-tool",
+            "launches_host_through_module_alias::process",
+            "launches_host_through_module_alias::host-tool",
+            "launches_host_through_qualified_self::process",
+            "launches_host_through_qualified_self::host-tool",
+            "launches_host_through_local_alias::process",
+            "launches_host_through_local_alias::host-tool",
+            "launches_host_through_grouped_alias::process",
+            "launches_host_through_grouped_alias::host-tool",
+            "launches_host_through_async_alias::process",
+            "launches_host_through_async_alias::host-tool",
+            "launches_host_through_direct_path::process",
+            "launches_host_through_direct_path::host-tool",
+            "opens_turbofished_channel::scheduling",
+            "spawns::scheduling",
+            "sleeps::clock",
+            "calls_turbofished_timeout::clock",
+            "calls_turbofished_interval::clock",
+            "calls_turbofished_sleep::clock",
+            "calls_turbofished_spawn::scheduling",
+            "calls_sleep_method::clock",
+            "calls_spawn_method::scheduling",
+            "nested::launches_host_through_two_parents::process",
+            "nested::launches_host_through_two_parents::host-tool",
+        ] {
+            assert!(
+                observed.iter().any(|finding| finding.ends_with(expected)),
+                "missing scanner control {expected}"
+            );
+        }
+
         let accepted = BoundaryBaseline {
             version: 1,
             findings: observed
