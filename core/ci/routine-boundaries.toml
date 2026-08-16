@@ -781,12 +781,6 @@ id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/journal
 id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/journal_sources.rs::tests::concurrent_revoke_and_counter_update_preserve_both_changes::scheduling"
 
 [[findings]]
-id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/lifecycle.rs::tests::metadata_detection_times_out_like_an_unavailable_exiftool::clock"
-
-[[findings]]
-id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/lifecycle.rs::tests::metadata_detection_times_out_like_an_unavailable_exiftool::process"
-
-[[findings]]
 id = "solstone-core-indexer-query::core/crates/solstone-core-indexer-query/src/edges_tests.rs::root::clock"
 
 [[findings]]

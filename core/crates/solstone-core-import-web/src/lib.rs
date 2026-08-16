@@ -33,6 +33,8 @@ pub(crate) struct AppState {
     root: PathBuf,
 }
 
+pub use lifecycle::{MetadataCommandOutcome, MetadataCommandPlan, run_metadata_command};
+
 pub fn routes(journal_root: PathBuf) -> Router {
     Router::new()
         .route("/app/import/", get(assets::shell))

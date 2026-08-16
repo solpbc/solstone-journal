@@ -9,6 +9,13 @@ publish = false
 [lints]
 workspace = true
 
+[[bin]]
+# Standalone helper-process fixture for the metadata-command integration test.
+# Intentionally not installed or referenced by the production library.
+name = "solstone-import-web-metadata-stub"
+path = "tests/fixtures/metadata_stub.rs"
+test = false
+
 [dependencies]
 axum = { workspace = true, features = ["tokio", "multipart"] }
 base64 = "0.22.1"

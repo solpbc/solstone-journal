@@ -73,6 +73,92 @@ const METADATA_CREATION_FIELDS: [&str; 8] = [
 ];
 const EXIFTOOL_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Planned metadata-helper invocation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MetadataCommandPlan {
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub path: PathBuf,
+    pub timeout: Duration,
+}
+
+/// Result of running one metadata-helper plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MetadataCommandOutcome {
+    Completed(Vec<u8>),
+    Unavailable,
+    TimedOut,
+}
+
+fn metadata_command_plan(path: &Path) -> MetadataCommandPlan {
+    MetadataCommandPlan {
+        program: PathBuf::from("exiftool"),
+        args: vec!["-json".to_owned(), path.to_string_lossy().into_owned()],
+        path: path.to_path_buf(),
+        timeout: EXIFTOOL_TIMEOUT,
+    }
+}
+
+fn parse_metadata_timestamp(stdout: &[u8]) -> Option<String> {
+    let parsed = serde_json::from_slice::<Value>(stdout).ok()?;
+    metadata_timestamp_from_fields(parsed.as_array()?.first()?.as_object()?)
+}
+
+/// Run the planned metadata helper and classify the process outcome.
+pub fn run_metadata_command(plan: &MetadataCommandPlan) -> MetadataCommandOutcome {
+    let mut command = Command::new(&plan.program);
+    command.args(&plan.args);
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(_) => return MetadataCommandOutcome::Unavailable,
+    };
+    let Some(deadline) = Instant::now().checked_add(plan.timeout) else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return MetadataCommandOutcome::Unavailable;
+    };
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return MetadataCommandOutcome::Unavailable;
+                }
+                let mut stdout = Vec::new();
+                match child.stdout.take() {
+                    Some(mut pipe) => match pipe.read_to_end(&mut stdout) {
+                        Ok(_) => return MetadataCommandOutcome::Completed(stdout),
+                        Err(_) => return MetadataCommandOutcome::Unavailable,
+                    },
+                    None => return MetadataCommandOutcome::Unavailable,
+                }
+            }
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return MetadataCommandOutcome::TimedOut;
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(10)),
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return MetadataCommandOutcome::Unavailable;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+fn metadata_timestamp_with_runner(
+    path: &Path,
+    mut runner: impl FnMut(&MetadataCommandPlan) -> MetadataCommandOutcome,
+) -> Option<String> {
+    match runner(&metadata_command_plan(path)) {
+        MetadataCommandOutcome::Completed(output) => parse_metadata_timestamp(&output),
+        MetadataCommandOutcome::Unavailable | MetadataCommandOutcome::TimedOut => None,
+    }
+}
+
 fn metadata_timestamp(value: &str) -> Option<String> {
     let mut normalized = value.trim().replace('T', " ");
     if normalized.starts_with("0000:") || normalized.starts_with("0000-") {
@@ -107,34 +193,9 @@ fn metadata_timestamp_from_fields(metadata: &Map<String, Value>) -> Option<Strin
 }
 
 fn metadata_timestamp_from_file(path: &Path) -> Option<String> {
-    let mut command = Command::new("exiftool");
-    command.arg("-json").arg(path);
-    let output = command_stdout_before(&mut command, EXIFTOOL_TIMEOUT)?;
-    let parsed = serde_json::from_slice::<Value>(&output).ok()?;
-    metadata_timestamp_from_fields(parsed.as_array()?.first()?.as_object()?)
-}
-
-fn command_stdout_before(command: &mut Command, timeout: Duration) -> Option<Vec<u8>> {
-    command.stdout(Stdio::piped()).stderr(Stdio::null());
-    let mut child = command.spawn().ok()?;
-    let deadline = Instant::now().checked_add(timeout)?;
-    loop {
-        match child.try_wait().ok()? {
-            Some(status) => {
-                if !status.success() {
-                    return None;
-                }
-                let mut stdout = Vec::new();
-                child.stdout.take()?.read_to_end(&mut stdout).ok()?;
-                return Some(stdout);
-            }
-            None if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-            None => thread::sleep(Duration::from_millis(10)),
-        }
+    match run_metadata_command(&metadata_command_plan(path)) {
+        MetadataCommandOutcome::Completed(output) => parse_metadata_timestamp(&output),
+        MetadataCommandOutcome::Unavailable | MetadataCommandOutcome::TimedOut => None,
     }
 }
 
@@ -879,14 +940,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        cell::RefCell,
-        fs,
-        os::unix::fs::PermissionsExt,
-        process::Command,
-        rc::Rc,
-        time::{Duration, Instant},
-    };
+    use std::{cell::RefCell, fs, os::unix::fs::PermissionsExt, rc::Rc};
 
     use axum::{
         body::{Body, to_bytes},
@@ -902,7 +956,7 @@ mod tests {
     use tempfile::TempDir;
     use tower::ServiceExt;
 
-    use super::{BusError, command, command_stdout_before, start_with, temporary_hash};
+    use super::{BusError, command, start_with, temporary_hash};
 
     fn staged(root: &std::path::Path, timestamp: &str, metadata: Value) {
         write_import_metadata(root, timestamp, &metadata.as_object().unwrap().clone()).unwrap();
@@ -1102,17 +1156,63 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
-    fn metadata_detection_times_out_like_an_unavailable_exiftool() {
-        let mut command = Command::new("sh");
-        command.args(["-c", "sleep 1"]);
-        let started = Instant::now();
-        assert_eq!(
-            command_stdout_before(&mut command, Duration::from_millis(20)),
-            None
-        );
-        assert!(started.elapsed() < Duration::from_millis(500));
+    fn metadata_plan_uses_exiftool_json_and_the_input_path() {
+        let path = std::path::Path::new("photo.jpg");
+        let mut recorded = None;
+        let result = super::metadata_timestamp_with_runner(path, |plan| {
+            recorded = Some((
+                plan.program.clone(),
+                plan.args.clone(),
+                plan.path.clone(),
+                plan.timeout,
+            ));
+            super::MetadataCommandOutcome::Unavailable
+        });
+        assert_eq!(result, None);
+        let (program, args, planned_path, timeout) = recorded.expect("recorded plan");
+        assert_eq!(program, std::path::Path::new("exiftool"));
+        assert_eq!(args, ["-json", "photo.jpg"]);
+        assert_eq!(planned_path, path);
+        assert_eq!(timeout, super::EXIFTOOL_TIMEOUT);
+    }
+
+    #[test]
+    fn metadata_runner_success_parses_the_authored_exiftool_timestamp() {
+        let path = std::path::Path::new("photo.jpg");
+        let result = super::metadata_timestamp_with_runner(path, |_| {
+            super::MetadataCommandOutcome::Completed(
+                br#"[{"CreateDate":"2026:08:01 12:34:56"}]"#.to_vec(),
+            )
+        });
+        assert_eq!(result.as_deref(), Some("20260801_123456"));
+    }
+
+    #[test]
+    fn metadata_runner_malformed_output_is_none() {
+        let path = std::path::Path::new("photo.jpg");
+        let result = super::metadata_timestamp_with_runner(path, |_| {
+            super::MetadataCommandOutcome::Completed(b"not-json".to_vec())
+        });
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn metadata_runner_unavailable_is_none() {
+        let path = std::path::Path::new("photo.jpg");
+        let result = super::metadata_timestamp_with_runner(path, |_| {
+            super::MetadataCommandOutcome::Unavailable
+        });
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn metadata_runner_timeout_is_none() {
+        let path = std::path::Path::new("photo.jpg");
+        let result = super::metadata_timestamp_with_runner(path, |_| {
+            super::MetadataCommandOutcome::TimedOut
+        });
+        assert_eq!(result, None);
     }
 
     #[test]
