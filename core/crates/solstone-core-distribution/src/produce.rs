@@ -277,6 +277,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 checkout: &checkout,
                 target_dir: &target_dir,
                 zig_dir,
+                wrapper_dir: &wrappers,
                 triple: &target.triple_musl,
                 bins: &musl_bins,
                 vars: &musl_env.vars,
@@ -290,6 +291,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 checkout: &checkout,
                 target_dir: &target_dir,
                 zig_dir,
+                wrapper_dir: &wrappers,
                 triple: &target.triple_gnu,
                 bins: &gnu_bins,
                 vars: &gnu_env.vars,
@@ -421,6 +423,7 @@ struct BuildLane<'a> {
     checkout: &'a Path,
     target_dir: &'a Path,
     zig_dir: &'a Path,
+    wrapper_dir: &'a Path,
     triple: &'a str,
     bins: &'a [(String, String)],
     vars: &'a BTreeMap<String, String>,
@@ -445,7 +448,10 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
         .env("CARGO_ENCODED_RUSTFLAGS", lane.rustflags)
         .env(
             "PATH",
-            prepend_path(lane.zig_dir, &env::var("PATH").unwrap_or_default()),
+            prepend_path(
+                lane.wrapper_dir,
+                &prepend_path(lane.zig_dir, &env::var("PATH").unwrap_or_default()),
+            ),
         )
         .args([
             "build",
