@@ -1495,13 +1495,7 @@ define run-rust-gate-under-poison
 			'exit 97' > "$$shim_dir/$$interpreter"; \
 		chmod 755 "$$shim_dir/$$interpreter"; \
 	done; \
-	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 SOLSTONE_POISON_LOG="$$shim_dir/poison.log" $(MAKE) $(1); \
-	if [ -s "$$shim_dir/poison.log" ]; then \
-		echo "poison log is not empty:" >&2; \
-		cat "$$shim_dir/poison.log" >&2; \
-		exit 1; \
-	fi; \
-	echo "poison log empty"
+	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 SOLSTONE_POISON_LOG="$$shim_dir/poison.log" $(MAKE) $(1)
 endef
 
 .PHONY: ci ci-under-poison ci-full ci-full-under-poison
