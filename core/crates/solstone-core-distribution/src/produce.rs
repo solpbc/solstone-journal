@@ -202,12 +202,11 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         .parent()
         .ok_or_else(|| ProduceError::new("missing required:\n  zig"))?;
 
-    let work = PathBuf::from("/var/tmp/solstone-distribution-work").join(format!(
-        "{}-{}",
-        args.target_id,
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&work);
+    let work = env::var_os("SOLSTONE_DISTRIBUTION_WORK")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from("/var/tmp/solstone-distribution-work").join(&args.target_id)
+        });
     fs::create_dir_all(&work)?;
     let checkout = work.join("checkout");
     let wrappers = work.join("wrappers");
@@ -217,6 +216,11 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
     fs::create_dir_all(&onnx_dir)?;
     fs::create_dir_all(&target_dir)?;
 
+    let _ = git_run(
+        repo,
+        &["worktree", "remove", "--force", &checkout.to_string_lossy()],
+    );
+    let _ = fs::remove_dir_all(&checkout);
     if let Err(error) = git_run(
         repo,
         &[
@@ -227,7 +231,6 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             &commit,
         ],
     ) {
-        let _ = fs::remove_dir_all(&work);
         return Err(error);
     }
 
@@ -276,14 +279,21 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         write_wrappers(&musl_env).map_err(|error| ProduceError::new(error.to_string()))?;
         write_wrappers(&gnu_env).map_err(|error| ProduceError::new(error.to_string()))?;
 
-        let rustflags = [
+        let remap = [
             format!("--remap-path-prefix={}=/source", checkout.display()),
             format!("--remap-path-prefix={}=/target", target_dir.display()),
             format!("--remap-path-prefix={sysroot}=/rustc"),
-            "-C".to_owned(),
-            "link-arg=-Wl,--build-id=none".to_owned(),
-        ]
-        .join("\x1f");
+        ];
+        let musl_rustflags = {
+            let mut flags = remap.clone();
+            flags.extend(["-C".to_owned(), "link-arg=--build-id=none".to_owned()]);
+            flags.join("\x1f")
+        };
+        let gnu_rustflags = {
+            let mut flags = remap;
+            flags.extend(["-C".to_owned(), "link-arg=-Wl,--build-id=none".to_owned()]);
+            flags.join("\x1f")
+        };
 
         let mut artifacts = BTreeMap::new();
         let musl_bins = bins_for_lane(&inventory, &args.target_id, "musl-static");
@@ -298,7 +308,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 triple: &target.triple_musl,
                 bins: &musl_bins,
                 vars: &musl_env.vars,
-                rustflags: &rustflags,
+                rustflags: &musl_rustflags,
                 epoch: &epoch,
             })?,
         );
@@ -312,7 +322,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 triple: &target.triple_gnu,
                 bins: &gnu_bins,
                 vars: &gnu_env.vars,
-                rustflags: &rustflags,
+                rustflags: &gnu_rustflags,
                 epoch: &epoch,
             })?,
         );
@@ -411,9 +421,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         repo,
         &["worktree", "remove", "--force", &checkout.to_string_lossy()],
     );
-    if result.is_ok() {
-        let _ = fs::remove_dir_all(&work);
-    }
+    let _ = fs::remove_dir_all(&checkout);
     result
 }
 
