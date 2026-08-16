@@ -579,11 +579,11 @@ fn remove_bare_parts(value: &mut Value, parts: &[&str], pointer: &str) {
 }
 
 fn is_named_diagnostics_divergence(phase: &str, case: &str, pointer: &str) -> bool {
-    NATIVE_DIAGNOSTICS_CORPUS_DIVERGENCES
-        .iter()
-        .any(|(allowed_phase, allowed_case, allowed_pointer)| {
+    NATIVE_DIAGNOSTICS_CORPUS_DIVERGENCES.iter().any(
+        |(allowed_phase, allowed_case, allowed_pointer)| {
             *allowed_phase == phase && *allowed_case == case && *allowed_pointer == pointer
-        })
+        },
+    )
 }
 
 fn uses_loopback_portal_url_seed(phase: &str, case: &str) -> bool {
@@ -654,13 +654,15 @@ struct HttpReply {
     content_type: String,
 }
 
+type RouteReplyOverrides = BTreeMap<(String, String), VecDeque<HttpReply>>;
+
 /// Test-only route-table fake. The portal crate's fake is a sequential transport;
 /// this one is a loopback HTTP portal for corpus route replay.
 struct FakePortal {
     base_url: String,
     log: Arc<Mutex<Vec<PortalRequest>>>,
     bodies: Arc<Mutex<Vec<Vec<u8>>>>,
-    overrides: Arc<Mutex<BTreeMap<(String, String), VecDeque<HttpReply>>>>,
+    overrides: Arc<Mutex<RouteReplyOverrides>>,
     stop: Arc<AtomicBool>,
     wake: SocketAddr,
     thread: Option<JoinHandle<()>>,
@@ -892,8 +894,7 @@ fn read_portal_request(stream: &mut TcpStream) -> (PortalRequest, Vec<u8>) {
         .and_then(|(_, value)| value.parse::<usize>().ok())
         .unwrap_or(0);
     let chunked = headers.iter().any(|(name, value)| {
-        name.eq_ignore_ascii_case("transfer-encoding")
-            && value.eq_ignore_ascii_case("chunked")
+        name.eq_ignore_ascii_case("transfer-encoding") && value.eq_ignore_ascii_case("chunked")
     });
     let body = if chunked {
         let mut encoded = raw[header_end..].to_vec();
@@ -1021,8 +1022,11 @@ fn phase_root(phase: &str, portal_url: &str) -> TempDir {
             .expect("write app config");
             let health = root.path().join("health");
             std::fs::create_dir_all(&health).expect("health directory");
-            std::fs::write(health.join("observer.pid"), format!("{}\n", std::process::id()))
-                .expect("observer pid");
+            std::fs::write(
+                health.join("observer.pid"),
+                format!("{}\n", std::process::id()),
+            )
+            .expect("observer pid");
             std::fs::write(health.join("cortex.pid"), "not-a-pid\n").expect("cortex pid");
             let now = chrono::Local::now();
             let stamp = (now - chrono::Duration::hours(1)).format("%Y-%m-%dT%H:%M:%S");
@@ -1103,7 +1107,7 @@ fn corpus_request(probe: &CorpusProbe) -> Request<Body> {
     if let Some(key) = probe.key {
         request = request.header("Idempotency-Key", key);
     }
-    let request = if let Some((filename, bytes, content_type)) = probe.file {
+    if let Some((filename, bytes, content_type)) = probe.file {
         const BOUNDARY: &str = "support-corpus-boundary";
         let mut body = Vec::new();
         if let Some(fields) = probe.body {
@@ -1132,7 +1136,10 @@ fn corpus_request(probe: &CorpusProbe) -> Request<Body> {
         body.extend_from_slice(bytes);
         body.extend_from_slice(format!("\r\n--{BOUNDARY}--\r\n").as_bytes());
         request
-            .header("Content-Type", format!("multipart/form-data; boundary={BOUNDARY}"))
+            .header(
+                "Content-Type",
+                format!("multipart/form-data; boundary={BOUNDARY}"),
+            )
             .body(Body::from(body))
             .expect("multipart request")
     } else if let Some(body) = probe.body {
@@ -1142,9 +1149,7 @@ fn corpus_request(probe: &CorpusProbe) -> Request<Body> {
             .expect("json request")
     } else {
         request.body(Body::empty()).expect("empty request")
-    };
-
-    request
+    }
 }
 
 fn multipart_request(
@@ -1171,9 +1176,10 @@ fn multipart_request(
         body.extend_from_slice(b"\r\n");
     }
     body.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
-    let mut request = Request::post(path)
-        .header("Host", "127.0.0.1")
-        .header("Content-Type", format!("multipart/form-data; boundary={BOUNDARY}"));
+    let mut request = Request::post(path).header("Host", "127.0.0.1").header(
+        "Content-Type",
+        format!("multipart/form-data; boundary={BOUNDARY}"),
+    );
     if let Some(key) = key {
         request = request.header("Idempotency-Key", key);
     }
@@ -1192,7 +1198,9 @@ fn keyed_json_request(path: &str, body: Value) -> Request<Body> {
     let mut request = json_request(path, body);
     request.headers_mut().insert(
         "Idempotency-Key",
-        KEY.expect("corpus action key").parse().expect("action header"),
+        KEY.expect("corpus action key")
+            .parse()
+            .expect("action header"),
     );
     request
 }
@@ -1206,7 +1214,10 @@ async fn shell_response(root: &Path, request: Request<Body>) -> (u16, Value) {
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("response body");
-    (status, serde_json::from_slice(&body).expect("json response"))
+    (
+        status,
+        serde_json::from_slice(&body).expect("json response"),
+    )
 }
 
 fn draft_event(root: &Path, draft_id: &str) -> Value {
@@ -1868,10 +1879,7 @@ async fn drain_runs_after_a_create_and_acknowledges_the_completed_operation() {
             .iter()
             .map(|request| (request.method.as_str(), request.path.as_str()))
             .collect::<Vec<_>>(),
-        vec![
-            ("POST", "/api/tickets"),
-            ("POST", "/api/idempotency/ack"),
-        ]
+        vec![("POST", "/api/tickets"), ("POST", "/api/idempotency/ack"),]
     );
     assert!(
         Ledger::new(root.path().join("apps/support/portal"))
@@ -1910,7 +1918,11 @@ async fn established_key_refusals_precede_ledger_and_portal_work() {
             .find(|probe| probe.name == name)
             .unwrap_or_else(|| panic!("no typed probe for {name}"));
         replay_case("established", case, &probe.probe, &fake, root.path()).await;
-        assert_eq!(ledger_contents(root.path()), before, "{name} ledger contents");
+        assert_eq!(
+            ledger_contents(root.path()),
+            before,
+            "{name} ledger contents"
+        );
         assert!(fake.log().is_empty(), "{name} must not contact the portal");
     }
 
@@ -1984,8 +1996,14 @@ async fn draft_json_attach_is_rejected_and_json_capture_stays_local() {
     assert_eq!(event["draft_id"], draft_id);
     assert!(event["captured_day"].as_str().is_some());
     assert_eq!(event["verb"], "create");
-    assert_eq!(event["payload"], serde_json::json!({"subject":"draft subject"}));
-    assert_eq!(event["diagnostics_snapshot"], serde_json::json!({"source":"derivation-test"}));
+    assert_eq!(
+        event["payload"],
+        serde_json::json!({"subject":"draft subject"})
+    );
+    assert_eq!(
+        event["diagnostics_snapshot"],
+        serde_json::json!({"source":"derivation-test"})
+    );
     assert!(fake.log().is_empty(), "a successful draft stays local");
 }
 
@@ -2068,7 +2086,10 @@ async fn multipart_draft_refusals_happy_path_and_json_fallthrough() {
     .await;
     assert_eq!(status, 400);
     assert_eq!(body["reason_code"], "invalid_request_value");
-    assert!(fake.log().is_empty(), "a no-file multipart body falls through locally");
+    assert!(
+        fake.log().is_empty(),
+        "a no-file multipart body falls through locally"
+    );
 
     fake.clear_log();
     let bytes = b"draft attachment bytes";
@@ -2088,7 +2109,11 @@ async fn multipart_draft_refusals_happy_path_and_json_fallthrough() {
     assert_eq!(event["payload"]["filename"], "draft.txt");
     assert_eq!(
         STANDARD
-            .decode(event["payload"]["content_b64"].as_str().expect("base64 draft"))
+            .decode(
+                event["payload"]["content_b64"]
+                    .as_str()
+                    .expect("base64 draft")
+            )
             .expect("draft base64"),
         bytes
     );
@@ -2339,8 +2364,7 @@ async fn ticket_creation_auto_context_prefers_caller_context() {
     let sent: Value = serde_json::from_slice(&fake.bodies()[request_index])
         .expect("portal ticket creation body is JSON");
     assert_eq!(
-        sent["user_context"]["platform"],
-        "caller-supplied platform",
+        sent["user_context"]["platform"], "caller-supplied platform",
         "the caller replaces collect_all's always-present platform diagnostic"
     );
 }
@@ -2360,7 +2384,10 @@ async fn write_path_non_integer_ticket_id_returns_http_not_found() {
     .await;
     assert_eq!(status, 404);
     assert_eq!(body["reason_code"], "http_error");
-    assert!(fake.log().is_empty(), "an invalid path id must not reach the portal");
+    assert!(
+        fake.log().is_empty(),
+        "an invalid path id must not reach the portal"
+    );
 }
 
 #[tokio::test]
@@ -2423,23 +2450,53 @@ async fn established_validation_refusals_and_drain_cases_match_the_corpus() {
     assert!(fake.log().is_empty());
 
     let all_established = [
-        "page_index", "page_workspace", "page_background", "static_support_js", "api_config",
-        "api_tickets_list", "api_tickets_list_status", "api_ticket_get", "api_tickets_closed",
-        "api_articles", "api_article", "api_announcements", "api_diagnostics", "api_badge_count",
-        "routing_404_non_integer_ticket", "api_draft", "api_register", "api_ticket_create",
-        "api_ticket_reply", "api_ticket_attachment", "api_ticket_close", "api_resolution_confirm",
-        "api_resolution_still_need_help", "api_feedback", "api_ticket_create_no_key",
-        "api_ticket_reply_no_key", "api_ticket_attachment_no_key", "api_ticket_close_no_key",
-        "api_resolution_confirm_no_key", "api_resolution_still_need_help_no_key", "api_feedback_no_key",
-        "api_draft_unknown_verb", "api_draft_missing_payload", "api_ticket_create_missing_subject",
-        "api_feedback_missing_body", "api_ticket_attachment_bad_suffix", "api_ticket_create_malformed_key",
-        "drain_on_missing_key_refusal", "drain_on_page_request",
+        "page_index",
+        "page_workspace",
+        "page_background",
+        "static_support_js",
+        "api_config",
+        "api_tickets_list",
+        "api_tickets_list_status",
+        "api_ticket_get",
+        "api_tickets_closed",
+        "api_articles",
+        "api_article",
+        "api_announcements",
+        "api_diagnostics",
+        "api_badge_count",
+        "routing_404_non_integer_ticket",
+        "api_draft",
+        "api_register",
+        "api_ticket_create",
+        "api_ticket_reply",
+        "api_ticket_attachment",
+        "api_ticket_close",
+        "api_resolution_confirm",
+        "api_resolution_still_need_help",
+        "api_feedback",
+        "api_ticket_create_no_key",
+        "api_ticket_reply_no_key",
+        "api_ticket_attachment_no_key",
+        "api_ticket_close_no_key",
+        "api_resolution_confirm_no_key",
+        "api_resolution_still_need_help_no_key",
+        "api_feedback_no_key",
+        "api_draft_unknown_verb",
+        "api_draft_missing_payload",
+        "api_ticket_create_missing_subject",
+        "api_feedback_missing_body",
+        "api_ticket_attachment_bad_suffix",
+        "api_ticket_create_malformed_key",
+        "drain_on_missing_key_refusal",
+        "drain_on_page_request",
     ];
     assert_eq!(all_established.len(), 39);
     assert_eq!(cases.len(), all_established.len());
-    assert!(cases.iter().all(|case| {
-        all_established.contains(&case["name"].as_str().expect("case name"))
-    }));
+    assert!(
+        cases
+            .iter()
+            .all(|case| { all_established.contains(&case["name"].as_str().expect("case name")) })
+    );
 }
 
 #[tokio::test]
@@ -2661,7 +2718,7 @@ fn seed_pending_acknowledgement(root: &Path, parent_action_id: &str) {
             parent_action_id,
             "close",
             &fields,
-        "anonymous",
+            "anonymous",
             0,
             chrono::Utc::now(),
         )
@@ -2738,10 +2795,7 @@ async fn drain_acknowledges_before_a_portal_backed_handler() {
             .iter()
             .map(|request| (request.method.as_str(), request.path.as_str()))
             .collect::<Vec<_>>(),
-        vec![
-            ("POST", "/api/idempotency/ack"),
-            ("GET", "/api/tickets"),
-        ]
+        vec![("POST", "/api/idempotency/ack"), ("GET", "/api/tickets"),]
     );
 }
 
@@ -2852,7 +2906,10 @@ async fn shell_router_applies_the_session_gate_to_support_config() {
 
 #[tokio::test]
 async fn config_fails_open_and_prefers_the_support_url_environment_override() {
-    match std::env::var("SOLSTONE_SUPPORT_CONFIG_TEST_MODE").ok().as_deref() {
+    match std::env::var("SOLSTONE_SUPPORT_CONFIG_TEST_MODE")
+        .ok()
+        .as_deref()
+    {
         None => {
             run_config_environment_child("defaults", None);
             run_config_environment_child("environment", Some("https://environment.example///"));
@@ -2868,8 +2925,7 @@ async fn config_fails_open_and_prefers_the_support_url_environment_override() {
                     let config = root.path().join("config");
                     std::fs::create_dir_all(&config).expect("config directory");
                     if setup == "directory" {
-                        std::fs::create_dir(config.join("config.json"))
-                            .expect("unreadable config");
+                        std::fs::create_dir(config.join("config.json")).expect("unreadable config");
                     } else {
                         std::fs::write(config.join("config.json"), setup)
                             .expect("malformed config");
@@ -2907,11 +2963,8 @@ async fn support_static_and_closed_routes_take_precedence() {
     let root = phase_root("established", fake.url());
 
     fake.clear_log();
-    let (status, content_type, body) = support_route_response(
-        root.path(),
-        "/app/support/api/tickets/closed",
-    )
-    .await;
+    let (status, content_type, body) =
+        support_route_response(root.path(), "/app/support/api/tickets/closed").await;
     assert_eq!(status, 200);
     assert_eq!(content_type, "application/json");
     assert_eq!(
@@ -2921,7 +2974,12 @@ async fn support_static_and_closed_routes_take_precedence() {
             .collect::<Vec<_>>(),
         vec![("GET", "/api/tickets/closed")]
     );
-    assert!(serde_json::from_slice::<Value>(&body).unwrap().get("next_cursor").is_some());
+    assert!(
+        serde_json::from_slice::<Value>(&body)
+            .unwrap()
+            .get("next_cursor")
+            .is_some()
+    );
 
     let response = solstone_core_convey_shell::router(root.path().to_path_buf())
         .oneshot(
@@ -2989,7 +3047,10 @@ async fn gate_phase_ticket_id_divergences_are_named_and_recorded() {
             )
             .await
             .expect("shell response");
-        assert_ne!(fixture_status, native_status, "named divergence must be real");
+        assert_ne!(
+            fixture_status, native_status,
+            "named divergence must be real"
+        );
         assert_eq!(
             response.status().as_u16(),
             native_status,

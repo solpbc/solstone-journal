@@ -1472,23 +1472,24 @@ mod tests {
     #[test]
     fn drain_attempts_each_pending_remote_id_and_acknowledges_only_successes() {
         let dir = TempDir::new().unwrap();
+        let mut portal = client(
+            dir.path(),
+            vec![reply(200, ""), reply(404, ""), reply(200, "")],
+        );
+        let principal = portal.principal().unwrap();
         let ledger = Ledger::new(dir.path());
         for (action_id, remote_operation_id) in
             [("first", "one"), ("second", "two"), ("third", "three")]
         {
             let fields = Map::from_iter([("ticket_id".to_owned(), json!(7))]);
             let record = ledger
-                .begin_operation(action_id, "close", &fields, "principal", 0, Utc::now())
+                .begin_operation(action_id, "close", &fields, &principal, 0, Utc::now())
                 .unwrap();
             let record = ledger.mark_in_progress(&record, Utc::now()).unwrap();
             ledger
                 .mark_completed(&record, Some(remote_operation_id), Utc::now())
                 .unwrap();
         }
-        let mut portal = client(
-            dir.path(),
-            vec![reply(200, ""), reply(404, ""), reply(200, "")],
-        );
         portal.drain_pending_acknowledgements().unwrap();
         let pending = ledger.list_pending_acknowledgements().unwrap();
         assert_eq!(pending.len(), 1);
