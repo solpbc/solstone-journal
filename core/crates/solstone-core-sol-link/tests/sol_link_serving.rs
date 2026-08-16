@@ -297,19 +297,23 @@ fn loopback_get(port: u16, target: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&raw).into_owned())
 }
 
+fn content_length_from_headers(headers: &str) -> Option<usize> {
+    headers.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.trim()
+            .eq_ignore_ascii_case("content-length")
+            .then(|| value.trim().parse::<usize>().ok())?
+    })
+}
+
 /// True once `raw` holds a full header block plus its declared body.
 fn body_is_complete(raw: &[u8]) -> bool {
     let text = String::from_utf8_lossy(raw);
     let Some(header_end) = text.find("\r\n\r\n") else {
         return false;
     };
-    let declared = text[..header_end].lines().find_map(|line| {
-        let (name, value) = line.split_once(':')?;
-        name.trim()
-            .eq_ignore_ascii_case("content-length")
-            .then(|| value.trim().parse::<usize>().ok())?
-    });
-    declared.is_some_and(|length| raw.len() >= header_end + 4 + length)
+    content_length_from_headers(&text[..header_end])
+        .is_some_and(|length| raw.len() >= header_end + 4 + length)
 }
 
 fn resident_serve_request(port: u16) -> LinkServeRequest {
@@ -339,13 +343,7 @@ fn resident_serve_request(port: u16) -> LinkServeRequest {
 
 fn declared_body_length(response: &str) -> usize {
     let header_end = response.find("\r\n\r\n").expect("header terminator");
-    let declared = response[..header_end].lines().find_map(|line| {
-        let (name, value) = line.split_once(':')?;
-        name.trim()
-            .eq_ignore_ascii_case("content-length")
-            .then(|| value.trim().parse::<usize>().ok())?
-    });
-    declared.expect("Content-Length")
+    content_length_from_headers(&response[..header_end]).expect("Content-Length")
 }
 
 #[test]

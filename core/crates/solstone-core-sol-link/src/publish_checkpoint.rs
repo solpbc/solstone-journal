@@ -3,7 +3,6 @@
 
 //! Named publication checkpoints for lock-in interruption and crash witnesses.
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PublishCheckpoint {
     BeforeStagingDirCreate,
@@ -11,12 +10,14 @@ pub enum PublishCheckpoint {
     MidPopulateCert,
     MidPopulateKey,
     AfterPopulate,
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     AfterStagingSync,
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     AfterRename,
 }
 
-#[allow(dead_code)]
 impl PublishCheckpoint {
+    #[cfg_attr(not(any(test, feature = "test-hooks")), allow(dead_code))]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::BeforeStagingDirCreate => "before-staging-dir-create",
@@ -29,6 +30,7 @@ impl PublishCheckpoint {
         }
     }
 
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "before-staging-dir-create" => Some(Self::BeforeStagingDirCreate),
