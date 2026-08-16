@@ -217,23 +217,66 @@ endef
 REQUIRE_ONNX_HOST_RUNTIME = $(DEFINE_ONNX_RUNTIME_VALIDATOR); if validate_onnx_runtime; then :; else validation_status=$$?; echo "$$validation_error" >&2; exit "$$validation_status"; fi
 override PDF_RUNTIME_HOST_TARGET :=
 override PDF_RUNTIME_HOST_LIBRARY :=
+override PDF_RUNTIME_HOST_DIGEST :=
+override PDF_RUNTIME_LINUX_X86_64_DIGEST := 687dce861f959c7097d47c5864509d51a926a71b38322596a8ee3e7a99c6b96e
+override PDF_RUNTIME_LINUX_AARCH64_DIGEST := 933f3d620cc8b58fb30a7f12a1bce8bf276da65caf39ff8fb2d04bc1268d53a3
+override PDF_RUNTIME_MACOS_ARM64_DIGEST := df568fcd17a6a6296956aa79abea1181db187458432f360b084fec1cea7cd4d9
 ifeq ($(HOST_SYSTEM),Linux)
 ifneq ($(filter x86_64 amd64,$(HOST_ARCH)),)
 override PDF_RUNTIME_HOST_TARGET := linux-x86_64
 override PDF_RUNTIME_HOST_LIBRARY := libpdfium.so
+override PDF_RUNTIME_HOST_DIGEST := $(PDF_RUNTIME_LINUX_X86_64_DIGEST)
 else ifneq ($(filter aarch64 arm64,$(HOST_ARCH)),)
 override PDF_RUNTIME_HOST_TARGET := linux-aarch64
 override PDF_RUNTIME_HOST_LIBRARY := libpdfium.so
+override PDF_RUNTIME_HOST_DIGEST := $(PDF_RUNTIME_LINUX_AARCH64_DIGEST)
 endif
 else ifeq ($(HOST_SYSTEM),Darwin)
 ifneq ($(filter arm64 aarch64,$(HOST_ARCH)),)
 override PDF_RUNTIME_HOST_TARGET := macos-arm64
 override PDF_RUNTIME_HOST_LIBRARY := libpdfium.dylib
+override PDF_RUNTIME_HOST_DIGEST := $(PDF_RUNTIME_MACOS_ARM64_DIGEST)
 endif
 endif
 override PDF_RUNTIME_HOST_LINK_DIR := $(REPO_ROOT)/target/pdfium-runtime-link/$(PDF_RUNTIME_HOST_TARGET)
 REQUIRE_SUPPORTED_PDF_HOST = test -n "$(PDF_RUNTIME_HOST_TARGET)" || { echo "unsupported host for the pinned PDFium runtime: observed $(HOST_SYSTEM)/$(HOST_ARCH); supported: Linux/x86_64, Linux/aarch64, Darwin/arm64" >&2; exit 1; }
-REQUIRE_PDF_HOST_RUNTIME = $(REQUIRE_SUPPORTED_PDF_HOST); test -f "$(PDF_RUNTIME_HOST_LINK_DIR)/$(PDF_RUNTIME_HOST_LIBRARY)" || { echo "the pinned host PDFium runtime is required to test solstone-core-pdf; run 'make check-rust-pdf-stage' once outside make ci, then retry" >&2; exit 1; }
+
+define DEFINE_PDF_RUNTIME_VALIDATOR
+validate_pdf_runtime() { \
+	validation_error=''; \
+	if [ ! -x "$(ONNX_RUNTIME_HOST_HASH_PROGRAM)" ]; then \
+		validation_error="PDFium checksum verifier is unavailable: $(ONNX_RUNTIME_HOST_HASH_PROGRAM); install or repair that verifier and retry"; \
+		return 20; \
+	fi; \
+	probe_file=$$(mktemp "$${TMPDIR:-/var/tmp}/solstone-pdfium-hash-probe-XXXXXX") || { validation_error='could not create checksum verifier probe file'; return 20; }; \
+	printf '%s\n' '$(ONNX_RUNTIME_HASH_PROBE_TEXT)' > "$$probe_file"; \
+	if probe_output=$$("$(ONNX_RUNTIME_HOST_HASH_PROGRAM)" $(ONNX_RUNTIME_HOST_HASH_ARGS) "$$probe_file" 2>&1); then probe_status=0; else probe_status=$$?; fi; \
+	rm -f "$$probe_file"; \
+	probe_digest=$${probe_output%%[[:space:]]*}; \
+	if [ "$$probe_status" -ne 0 ] || [ "$$probe_digest" != "$(ONNX_RUNTIME_HASH_PROBE_DIGEST)" ]; then \
+		validation_error="PDFium checksum verifier failed its known-input check: $(ONNX_RUNTIME_HOST_HASH_PROGRAM) $(ONNX_RUNTIME_HOST_HASH_ARGS); install or repair that verifier and retry"; \
+		return 20; \
+	fi; \
+	library_path="$(PDF_RUNTIME_HOST_LINK_DIR)/$(PDF_RUNTIME_HOST_LIBRARY)"; \
+	if [ ! -f "$$library_path" ] || [ ! -r "$$library_path" ]; then \
+		validation_error="invalid pinned host PDFium runtime file: $$library_path (expected sha256 $(PDF_RUNTIME_HOST_DIGEST), actual missing, non-file, or unreadable); run 'make check-rust-pdf-stage' and retry"; \
+		return 10; \
+	fi; \
+	if digest_output=$$("$(ONNX_RUNTIME_HOST_HASH_PROGRAM)" $(ONNX_RUNTIME_HOST_HASH_ARGS) "$$library_path" 2>&1); then digest_status=0; else digest_status=$$?; fi; \
+	actual_digest=$${digest_output%%[[:space:]]*}; \
+	if [ "$$digest_status" -ne 0 ] || [ -z "$$actual_digest" ]; then \
+		validation_error="could not checksum pinned host PDFium runtime file: $$library_path (expected sha256 $(PDF_RUNTIME_HOST_DIGEST), actual checksum input failure); run 'make check-rust-pdf-stage' and retry"; \
+		return 10; \
+	fi; \
+	if [ "$$actual_digest" != "$(PDF_RUNTIME_HOST_DIGEST)" ]; then \
+		validation_error="invalid pinned host PDFium runtime file: $$library_path (expected sha256 $(PDF_RUNTIME_HOST_DIGEST), actual $$actual_digest); run 'make check-rust-pdf-stage' and retry"; \
+		return 10; \
+	fi; \
+	return 0; \
+}
+endef
+
+REQUIRE_PDF_HOST_RUNTIME = $(REQUIRE_SUPPORTED_PDF_HOST); $(DEFINE_PDF_RUNTIME_VALIDATOR); if validate_pdf_runtime; then :; else validation_status=$$?; echo "$$validation_error" >&2; exit "$$validation_status"; fi
 DESCRIBE_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
 DESCRIBE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
 # Derived, never written out: the helper's declared coverage lives in
@@ -494,8 +537,9 @@ $(PDF_RUNTIME_HOST_LINK_DIR):
 
 check-rust-pdf-stage:
 	@$(REQUIRE_SUPPORTED_PDF_HOST)
-	@$(MAKE) --no-print-directory "$(PDF_RUNTIME_HOST_LINK_DIR)"
-	@echo "host PDFium runtime staged at $(PDF_RUNTIME_HOST_LINK_DIR)"
+	python3 scripts/stage_pdfium_runtime.py --target $(PDF_RUNTIME_HOST_TARGET) --package-dir packages/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
+	@set -eu; $(REQUIRE_PDF_HOST_RUNTIME)
+	@echo "host PDFium runtime staged and verified at $(PDF_RUNTIME_HOST_LINK_DIR)"
 
 .PHONY: ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
 .NOTPARALLEL: ci-full-prep

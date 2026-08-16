@@ -37,14 +37,52 @@ test that writes, scans, or rebuilds journal/index state must use the
 ## Running Tests
 
 - `make test` runs the Rust workspace tests only
-- Per the [Makefile](../Makefile), `make ci` runs efficient routine validation:
-  formatting, all-target Clippy checks, and serialized library/binary unit
-  tests. Cargo integration-test targets are checked by Clippy but are not run.
-- `make ci-full` runs the full operator final-tree gate: the former task
-  sequence, including MSRV, all Rust tests, native helper/runtime checks,
-  shipped-binary build/smokes, Apple gates, and dependency policy
+- Per the [Makefile](../Makefile), `make ci` runs the routine code-focused lane:
+  formatting, the CI-topology contract, library/binary Clippy checks, and the
+  serialized library/binary test boundary. During the test-architecture
+  migration, `core/ci/routine-boundaries.toml` records every process, network,
+  clock, scheduling, native, and host-tool finding detected by the topology
+  scanner inside that boundary. The contract rejects new findings and requires
+  the census to shrink deliberately.
+- Prepare the full gate explicitly with `make ci-full-prep`. Preparation owns
+  locked Cargo fetches and staging for the pinned ONNX and PDFium runtimes.
+  Cargo dependency resolution during full-gate validation is locked and offline.
+  Test-level network risks remain in the transitional routine boundary and are
+  tracked by the topology scanner.
+- `make ci-full` runs the default full-gate plan defined in
+  `core/ci/suites.toml`. It keeps
+  going after a failing suite, applies a timeout to every suite or leg command,
+  and writes a revision-bound JSON receipt under `core/target/ci-receipts/`.
+  Outcomes are `PASS`, `FAIL`, `BLOCKED`, `SKIP`, or `INCONCLUSIVE`; anything
+  except `PASS` or a platform `SKIP` makes the command fail. Execution requires
+  a clean Git worktree so the receipt is bound to the clean starting revision.
+- `make ci-full-plan` prints the selected plan without executing it. The same
+  selectors work with both plan and run commands:
+
+  ```bash
+  make ci-full-plan AREAS=stats,support
+  make ci-full AREAS=stats
+  make ci-full SETS=native
+  make ci-full PACKAGES=solstone-core-stats-web
+  make ci-full TARGETS=solstone-core-top::render_reference,fmt
+  ```
+
+  Values separated by commas are unioned within one selector. Supplying more
+  than one selector intersects those dimensions. Unknown values and selections
+  that match nothing are errors, never empty green runs. Use `RECEIPT=path` to
+  choose the receipt location.
+- `core/ci/suites.toml` is the source of truth for integration targets and named
+  full-gate legs. Its contract rejects missing, duplicated, stale, or unknown
+  Cargo targets. The default plan includes MSRV, all-target Clippy, doctest,
+  dependency-policy, native runtime/helper, shipped-binary, and Apple-platform
+  coverage in addition to every ordinary integration target.
 - `make check-differentials` runs Rust tests that compare behavior with the
-  Python implementation; use it when a change touches a shared seam
+  Python implementation; use it when a change touches a shared seam. These
+  remain outside the Rust-only full runner because they intentionally require
+  an interpreter and installed legacy implementation.
+- `make check-rust-race` remains a selectable, repeated contention lane rather
+  than part of the default full plan. Live-service validation remains an
+  operator lane and is never inferred from a successful automated receipt.
 - New concurrency-sensitive supervisor integration tests must use
   `core/crates/solstone-core/tests/support/await_outcome.rs`, emit the
   `SUPERVISOR_RACE_INCONCLUSIVE` marker when that helper returns an inconclusive outcome,

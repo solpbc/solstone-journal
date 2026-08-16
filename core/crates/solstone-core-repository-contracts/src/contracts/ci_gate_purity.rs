@@ -151,6 +151,11 @@ fn write_host_makefile(root: &Path, system: &str, arch: &str) {
             &format!("override ONNX_RUNTIME_{digest_key}_DIGEST := "),
             &format!("override ONNX_RUNTIME_{digest_key}_DIGEST := {EMPTY_SHA256}#"),
         );
+        replace_once(
+            &mut makefile,
+            &format!("override PDF_RUNTIME_{digest_key}_DIGEST := "),
+            &format!("override PDF_RUNTIME_{digest_key}_DIGEST := {EMPTY_SHA256}#"),
+        );
     }
     // Fixtures must use a real checksum implementation available on the
     // executing host, independently of the host tuple they simulate.
@@ -1591,6 +1596,44 @@ fn checksum_verifier_must_prove_itself_before_runtime_data_is_judged() {
         assert!(stderr.contains("install or repair"));
         assert!(!python_sentinel.exists(), "broken verifier invoked Python");
     }
+
+    for state in ["missing", "corrupt", "valid"] {
+        let temp = TempDir::new(&format!("pdf-readiness-{state}"));
+        write_host_makefile(&temp.path, "Linux", "x86_64");
+        let library = temp
+            .path
+            .join("target/pdfium-runtime-link/linux-x86_64/libpdfium.so");
+        if state != "missing" {
+            fs::create_dir_all(library.parent().expect("PDF runtime parent"))
+                .expect("create PDF runtime directory");
+            let bytes = if state == "valid" {
+                b"".as_slice()
+            } else {
+                b"corrupt".as_slice()
+            };
+            fs::write(&library, bytes).expect("write PDF runtime fixture");
+        }
+        let output = Command::new("make")
+            .arg("check-rust-pdf-ready")
+            .current_dir(&temp.path)
+            .output()
+            .expect("run PDF readiness control");
+        if state == "valid" {
+            assert!(
+                output.status.success(),
+                "valid PDF runtime failed readiness: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        } else {
+            assert!(
+                !output.status.success(),
+                "{state} PDF runtime passed readiness"
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(stderr.contains("invalid pinned host PDFium runtime file"));
+            assert!(stderr.contains("run 'make check-rust-pdf-stage' and retry"));
+        }
+    }
 }
 
 #[test]
@@ -1701,6 +1744,8 @@ fn differential_gate_requires_validated_onnx_staging() {
 #[test]
 fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
     let makefile = makefile_text(&repo_root());
+    let pdf_stager = fs::read_to_string(repo_root().join("scripts/stage_pdfium_runtime.py"))
+        .expect("read PDFium staging source");
     let prep = target_body(&makefile, "ci-full-prep");
     for (stage, prep_target) in [
         ("check-rust-onnx-stage", "ci-full-prep-onnx"),
@@ -1720,6 +1765,24 @@ fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
     }
     assert!(target_body(&makefile, "ci-full-prep-onnx").contains("check-rust-onnx-stage"));
     assert!(target_body(&makefile, "ci-full-prep-pdf").contains("check-rust-pdf-stage"));
+    let pdf_stage = target_body(&makefile, "check-rust-pdf-stage");
+    assert!(pdf_stage.contains("scripts/stage_pdfium_runtime.py"));
+    assert!(pdf_stage.contains("REQUIRE_PDF_HOST_RUNTIME"));
+    assert!(target_body(&makefile, "check-rust-pdf-ready").contains("REQUIRE_PDF_HOST_RUNTIME"));
+    for digest in [
+        "687dce861f959c7097d47c5864509d51a926a71b38322596a8ee3e7a99c6b96e",
+        "933f3d620cc8b58fb30a7f12a1bce8bf276da65caf39ff8fb2d04bc1268d53a3",
+        "df568fcd17a6a6296956aa79abea1181db187458432f360b084fec1cea7cd4d9",
+    ] {
+        assert!(
+            makefile.contains(digest),
+            "Makefile omitted PDFium digest {digest}"
+        );
+        assert!(
+            pdf_stager.contains(digest),
+            "PDFium staging source omitted Makefile digest {digest}"
+        );
+    }
     assert!(
         target_body(&makefile, "ci-full-prep-cargo").contains("cargo fetch"),
         "full prep must own Cargo fetching"

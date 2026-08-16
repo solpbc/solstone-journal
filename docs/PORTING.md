@@ -124,10 +124,12 @@ for the helper release lanes.
 | Evidence | Repository command | Class | Notes |
 |----------|--------------------|-------|-------|
 | Rust formatting | `make check-rust-fmt` | GNU-host check | Host source-format evidence only. |
-| Rust MSRV | `make check-rust-msrv` | GNU-host check | Verifies the pinned MSRV rail without changing `rust-version`; excludes `solstone-core-speakers-analyze` and `solstone-core-speakers-onnx` from host coverage and invokes no Python. |
-| Rust lint | `make check-rust-clippy` | GNU-host check | Runs clippy with `-D warnings`; excludes `solstone-core-speakers-analyze` and `solstone-core-speakers-onnx` from host coverage and invokes no Python. |
-| Rust unit tests | `make check-rust-unit` | GNU-host check | Runs workspace library and binary unit harnesses only (`--lib --bins`), serialized. This is the test leg in efficient `make ci`; Cargo integration-test targets remain checked by clippy and run in the full gate. |
-| Rust tests | `make check-rust-test` | GNU-host check | Runs workspace Rust tests on the GNU host, excluding `solstone-core-speakers-analyze` and `solstone-core-speakers-onnx`; invokes no Python. |
+| Rust MSRV | `make check-rust-msrv` | GNU-host check | Verifies the pinned MSRV rail without changing `rust-version`; excludes the three host-native helper packages from host coverage and invokes no Python. |
+| Rust routine lint | `make check-rust-clippy` | GNU-host check | Runs library/binary Clippy with `-D warnings`; excludes the host-native helper packages and invokes no Python. |
+| Rust full lint | `make check-rust-clippy-full` | GNU-host check | Compiles every ordinary target, including Cargo integration targets, with `-D warnings`; part of the default full registry plan. |
+| Rust unit boundary | `make check-rust-unit` | GNU-host check | Runs workspace library and binary harnesses only (`--lib --bins`), serialized. `core/ci/routine-boundaries.toml` prevents the known integration-style risks inside those harnesses from growing while they move to full suites. |
+| Rust doctests | `make check-rust-doc` | GNU-host check | Runs documentation tests explicitly in the default full registry plan; excluded from routine `make ci`. |
+| Rust tests | `make check-rust-test` | GNU-host check | Retained direct legacy command for the workspace Rust tests. The canonical full gate selects every integration target from `core/ci/suites.toml` separately so one failure cannot hide later suites. |
 | Cross-language differentials | `make check-differentials` | GNU-host check | Runs the Rust tests whose oracle is the running Python implementation. They need a populated `.venv`, so the target installs first and they are excluded from `make ci` by `required-features = ["differential"]`. `ci_gate_purity::every_differential_test_is_named_in_its_own_gate` fails if a differential is gated off the native gate without being named in `make check-differentials`. |
 | Rust dependency policy | `make check-rust-deny` | GNU-host check | Locked, offline bans/licenses/sources policy over the supported cargo-deny graph. |
 | SPL dependency pin | `make check-spl-dependency-pin` | GNU-host check | Verifies the Rust core workspace resolves `spl-core` and `spl-transport` only through the workspace-owned `spl-rust` tag pin, with member manifests inheriting it, lockfile binding intact, and local patch/source replacement routes rejected. |
@@ -142,9 +144,10 @@ for the helper release lanes.
 the journal Python environment. It does not download or vendor ONNX Runtime and
 does not read paths from inside the crate. The host Rust commands
 `make check-rust-msrv`, `make check-rust-clippy`, `make check-rust-test`, and
-`make build` exclude `solstone-core-speakers-analyze` and
-`solstone-core-speakers-onnx` through `RUST_HOST_EXCLUDES`, so they require no
-ONNX Runtime or Python provisioning. The frozen `ci`/`build`/`test` path does not
+`make build` exclude `solstone-core-vad-analyze`,
+`solstone-core-speakers-analyze`, and `solstone-core-speakers-onnx` through
+`RUST_HOST_EXCLUDES`, so they require no ONNX Runtime or Python provisioning. The
+frozen `ci`/`build`/`test` path does not
 invoke `scripts/resolve_onnxruntime_capi.py`. That resolver remains in the
 repository and has dedicated Python tests, but no current Makefile recipe invokes
 it. `wheel-speakers-analyze-linux-x86_64`,
@@ -176,14 +179,30 @@ immediately with a freeze diagnostic. The alternate Python test rails
 `test-only`, `watch`, and `coverage` do the same. There is no bypass; this freeze
 lifts only when the Makefile and release script are changed again.
 
-The [Makefile](../Makefile) defines the two Rust paths. `make ci` is the
-efficient routine gate with formatting, all-target Clippy checks, and serialized
-library/binary unit tests. `make ci-full` is the full operator final-tree gate
-and preserves the former task sequence, including MSRV, the complete Rust test
-target set, native runtime/helper checks, shipped-binary build/smokes, Apple
-gates, and dependency policy. Both gates poison Python interpreters. The
-efficient gate runs on a bare checkout; the full gate expects its native runtime
-prerequisites to have been staged. `make verify` remains an alias for efficient
+The [Makefile](../Makefile) defines the two Rust paths. `make ci` is the routine
+code-focused gate with formatting, the topology contract, library/binary
+Clippy, and the current serialized unit boundary. The transitional census in
+`core/ci/routine-boundaries.toml` records topology-scanner findings inside that
+boundary. The topology contract rejects each new finding while the conversion
+moves known process, network, clock, and native cases into full suites.
+
+Run `make ci-full-prep` explicitly before the full gate. Prep may fetch locked
+Cargo inputs and stage pinned native runtimes; `make ci-full` never repairs or
+downloads them. Full validation is registry-driven, and its Cargo dependency
+resolution is locked and offline. It runs selected suites independently,
+continues after failures, applies bounded timeouts to suite and leg commands,
+and writes a JSON receipt bound to the clean starting revision.
+`make ci-full-plan` shows the default or selected plan without executing it;
+`SETS`, `AREAS`, `PACKAGES`, and `TARGETS` provide comma-separated selectors.
+The default includes:
+
+- MSRV, all-target Clippy, Rust doctests, and dependency policy;
+- every ordinary Cargo integration target;
+- native runtime and helper checks;
+- shipped-binary builds and smokes; and
+- Apple gates on applicable hosts.
+
+Both gates poison Python interpreters. `make verify` remains an alias for
 `make ci`.
 
 `make audit` is unaffected and still runs its Python advisory validator.
