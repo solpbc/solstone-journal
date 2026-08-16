@@ -926,6 +926,16 @@ share/  notices and licences
 - model assets resolve at `<ancestor-of-exe>/lib/solstone_journal_models/assets` and that candidate is tried **before** any `site-packages` path (`core/crates/solstone-core-transcribe/src/model_assets.rs`)
 - `solstone-core` is fully static; every other binary links base system libraries only
 
+🔴 **ONE THING IN THE TREE DOES NOT RESOLVE YET, AND IT IS THE INSTALLATION ROOT.** ⛔ **Do not read the four rows above as *"the binaries already work from a tarball"*** — they cover the launchers, the bundled `.so` and the model assets, and a fifth resolution path is not layout-relative at all. `resolve_installation_root_from_executable_dir` (`core/crates/solstone-core-journal/src/lib.rs:266`) offers exactly **two** candidates — an installed `site-packages` containing `solstone/__init__.py`, or a git checkout carrying `pyproject.toml` + `.git` + `solstone/` — and **a relocatable tree is neither, so it returns `None`.**
+
+⚠ **Nine product-path sites resolve through that one function**, several on the owner's first-run path: `solstone-core-setup/src/lib.rs:112` (**`journal setup`**) · `solstone-core-cortex/src/service.rs:66` · `solstone-core-talent-runtime/src/lib.rs:190` · `solstone-core-convey-shell/src/thinking_sol_reads.rs:43` · `solstone-core-stats-web/src/lib.rs:177` · `solstone-core/src/main.rs:856` and `src/contract/paths.rs:38` · `solstone-core-journal-cli/src/layout.rs:92,146` · `solstone-core-sol/src/lib.rs:242`. Seven doctor checks reach it too.
+
+📌 **And what it resolves TO is data, not code: roughly 70 files of shipped product payload** — talents, prompt templates, AMD attestation roots — living under `solstone/` and read out of the installed package directory at runtime. ⚠ **166 files under `solstone/` are reached by the Rust tree and none of them is Python**, so that directory is not reference residue however much of it looks like it.
+
+✅ **The fix is a third candidate in that one function, plus a home for the payload in the tree** — and it belongs to `S:*:distribution`, because the layout is this plate's to name. ⛔ **Never a per-consumer fallback:** nine callers share one resolver precisely so they cannot disagree about where the installation root is, and forking that is the two-places-own-one-thing class rule 1 exists to prevent.
+
+⚠ **This is also a warning about how the plate gets tested.** The obvious smallest-loop proof — capture → segment → index → findable → reads back — **does not reach cortex or the talent runtime**, so an artifact can pass it with thinking dead. ✅ **A tree is not proven until a talent runs from it.**
+
 ⚠ **`journal` must be on `PATH`, not merely present.** The sense dispatcher spawns handlers by name (`["journal", "describe", …]`), so an install that lays the tree down without exporting `bin/` makes **every** handler spawn fail rather than one. See `P-segment-sense`.
 
 **Containers, all derived from the one tree:** `.tar.gz` is the primitive · `.deb` and `.rpm` relocate it under a system prefix and put the three launchers on `PATH` · macOS takes the same tree signed and notarized. ⛔ Windows is unsupported and is not a container.
