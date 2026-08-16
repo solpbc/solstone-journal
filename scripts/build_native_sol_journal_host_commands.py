@@ -24,6 +24,9 @@ SERVICE_SENTINELS = frozenset({"think", "setup"})
 # Commands that remain in the pinned Python oracle but are now implemented as
 # root-native journal primitives. They are not journal-host process commands.
 NATIVE_ROOT_COMMANDS = frozenset({"indexer"})
+# Commands that remain in the pinned Python oracle but have been retired from
+# the live journal host grammar.
+RETIRED_HOST_COMMANDS = frozenset({"warm"})
 # Declaration order is the duplicate-diagnostic section order.
 REGISTRY_SURFACE_POSITIONS = {"COMMANDS": 1, "ALIASES": 2}
 UNAVAILABLE_SURFACE = "<unavailable>"
@@ -199,6 +202,7 @@ def extract(source_text: str | None = None) -> list[str]:
     return sorted(
         set(partitions.service_commands + partitions.service_aliases)
         - NATIVE_ROOT_COMMANDS
+        - RETIRED_HOST_COMMANDS
     )
 
 

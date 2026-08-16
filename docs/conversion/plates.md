@@ -882,7 +882,7 @@ Model and runtime **artifact management** — what an owner's machine downloads,
 
 📌 **Change what is FETCHED, never what is RECORDED.** `pins::model_identity` still records `"revision":"main"` while the fetch moved to a pinned sha, because `prove_manifest` compares identity by exact canonicalized-JSON equality — a changed field re-downloads gigabytes silently, with bandwidth as the owner's only signal. `check_version` rejects `"main"`, so the disagreement is permanent and correct.
 
-⚠ **`warm` is deliberately NOT in this plate's cut.** Its contract is that the *Python payload* loads — six extension modules — which is logically incompatible with a guard whose pass condition is that Python was never reached. Rehoming that coverage needs a sibling-helper leaf, since `crt-static` forbids `dlopen`.
+✅ **The journal `warm` verb and its Python-payload contract are retired.** Owner-facing `journal warm` no longer exists; the dispatcher no longer resolves an interpreter to load extension modules. Native `solstone-core warm` is a different verb and is not this plate.
 
 ## `P-distribution`
 

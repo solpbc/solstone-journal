@@ -6,40 +6,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::processes::ProcessSpec;
-
-pub(crate) const PYTHON_BOOTSTRAP_SCRIPT: &str = "import importlib, logging, sys\nmodule = sys.argv[1]\ndisplay_argv0 = sys.argv[2]\nverbose_marker = sys.argv[3]\nif verbose_marker == \"1\":\n    logging.basicConfig(level=logging.DEBUG)\nsys.argv = [display_argv0, *sys.argv[4:]]\nresult = importlib.import_module(module).main()\nsys.exit(0 if result is None else int(result))\n";
-
-#[derive(Debug)]
-pub enum InterpreterError {
-    CurrentExe(std::io::Error),
-    Missing { dir: PathBuf },
-    NonExecutable { path: PathBuf },
-}
-
-impl std::fmt::Display for InterpreterError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::CurrentExe(error) => write!(
-                formatter,
-                "could not inspect the native journal executable: {error}"
-            ),
-            Self::Missing { dir } => write!(
-                formatter,
-                "native journal Python is missing beside {}. Reinstall solstone and solstone-core.",
-                dir.display()
-            ),
-            Self::NonExecutable { path } => write!(
-                formatter,
-                "native journal Python is not executable: {}. Reinstall solstone and solstone-core.",
-                path.display()
-            ),
-        }
-    }
-}
-
-impl std::error::Error for InterpreterError {}
-
 #[derive(Debug)]
 pub enum NativeExecutableError {
     CurrentExe(std::io::Error),
@@ -70,11 +36,6 @@ impl std::fmt::Display for NativeExecutableError {
 
 impl std::error::Error for NativeExecutableError {}
 
-pub(crate) fn sibling_python_for_current_executable() -> Result<PathBuf, InterpreterError> {
-    let executable = std::env::current_exe().map_err(InterpreterError::CurrentExe)?;
-    sibling_python_for_executable(&executable)
-}
-
 pub(crate) fn sibling_native_for_current_executable(
     binary: &str,
 ) -> Result<PathBuf, NativeExecutableError> {
@@ -99,44 +60,6 @@ pub fn sibling_native_in_dir(dir: &Path, binary: &str) -> Result<PathBuf, Native
         }
         Err(_) => Err(NativeExecutableError::NonExecutable { path: candidate }),
     }
-}
-
-pub(crate) fn sibling_python_for_executable(
-    executable: &Path,
-) -> Result<PathBuf, InterpreterError> {
-    sibling_python_in_dir(&executable_dir(executable))
-}
-
-pub fn sibling_python_in_dir(dir: &Path) -> Result<PathBuf, InterpreterError> {
-    for name in ["python3", "python"] {
-        let candidate = dir.join(name);
-        match fs::metadata(&candidate) {
-            Ok(_) if is_executable(&candidate) => return Ok(candidate),
-            Ok(_) => return Err(InterpreterError::NonExecutable { path: candidate }),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err(InterpreterError::NonExecutable { path: candidate }),
-        }
-    }
-    Err(InterpreterError::Missing {
-        dir: dir.to_path_buf(),
-    })
-}
-
-pub(crate) fn process_args(
-    spec: &ProcessSpec,
-    verbose: bool,
-    owner_argv: &[OsString],
-) -> Vec<OsString> {
-    let mut args = vec![
-        OsString::from("-c"),
-        OsString::from(PYTHON_BOOTSTRAP_SCRIPT),
-        OsString::from(spec.module),
-        OsString::from(format!("journal {}", spec.token)),
-        OsString::from(if verbose { "1" } else { "0" }),
-    ];
-    args.extend(spec.preset_argv.iter().map(OsString::from));
-    args.extend(owner_argv.iter().cloned());
-    args
 }
 
 pub(crate) fn native_process_args(
@@ -228,34 +151,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn sibling_interpreter_prefers_python3_and_rejects_non_executables() {
-        let temp = TempDir::new();
-        let executable = temp.path.join("solstone-core");
-        fs::write(&executable, "native executable").expect("write executable fixture");
-        make_executable(&temp.path.join("python"));
-        make_executable(&temp.path.join("python3"));
-        assert_eq!(
-            sibling_python_for_executable(&executable).expect("python3 should be selected"),
-            temp.path.join("python3")
-        );
-
-        fs::remove_file(temp.path.join("python3")).expect("remove python3 fixture");
-        fs::write(temp.path.join("python3"), "not executable").expect("write non-executable");
-        assert!(matches!(
-            sibling_python_for_executable(&executable),
-            Err(InterpreterError::NonExecutable { path }) if path == temp.path.join("python3")
-        ));
-
-        fs::remove_file(temp.path.join("python3")).expect("remove non-executable");
-        fs::remove_file(temp.path.join("python")).expect("remove python");
-        assert!(matches!(
-            sibling_python_for_executable(&executable),
-            Err(InterpreterError::Missing { dir }) if dir == temp.path
-        ));
-    }
-
-    #[cfg(unix)]
-    #[test]
     fn sibling_native_requires_the_named_executable() {
         let temp = TempDir::new();
         let executable = temp.path.join("solstone-core-journal");
@@ -273,17 +168,6 @@ mod tests {
             sibling_native_for_executable(&executable, "missing-helper"),
             Err(NativeExecutableError::Missing { path }) if path == temp.path.join("missing-helper")
         ));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn process_args_preserves_non_utf8_owner_arguments() {
-        use std::os::unix::ffi::OsStringExt;
-
-        let spec = crate::processes::process_spec_for("up").expect("up ProcessSpec");
-        let owner = vec![OsString::from_vec(vec![0xff])];
-        let args = process_args(spec, false, &owner);
-        assert_eq!(args.last(), owner.last());
     }
 
     #[cfg(unix)]

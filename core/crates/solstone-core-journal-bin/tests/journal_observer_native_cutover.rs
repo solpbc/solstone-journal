@@ -12,9 +12,6 @@
 
 #![cfg(unix)]
 
-#[path = "support/python_process_control.rs"]
-mod python_process_control;
-
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -203,21 +200,5 @@ fn observer_list_and_prune_run_natively_without_touching_the_poisoned_interprete
     assert!(
         String::from_utf8_lossy(&prune.stdout).contains("observer prune dry-run"),
         "native observer prune must return the real dry-run report"
-    );
-}
-
-#[test]
-fn the_poison_is_live_a_still_python_token_actually_reaches_it() {
-    let harness = Harness::new();
-    let token = python_process_control::token();
-    let output = harness.run(&[token]);
-    assert_eq!(
-        output.status.code(),
-        Some(97),
-        "{token} is Python-routed; if this isn't 97 the poison isn't live and the cutover proof above is meaningless"
-    );
-    assert!(
-        harness.poison_marker.exists(),
-        "{token} did not invoke the poisoned interpreter"
     );
 }

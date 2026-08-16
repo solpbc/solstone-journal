@@ -953,7 +953,6 @@ check-differentials: check-rust-onnx-stage build
 		-p solstone-core --test core_differentials -- -D warnings || status=$$?; \
 	for leg in \
 		"-p solstone-core --test core_differentials" \
-		"-p solstone-core-journal-bin --test journal_process_bootstrap" \
 		"-p solstone-core-generate-wire --test responsiveness_differential --test token_log_differential" \
 		"-p solstone-core-spp-attest --test spp_attest_differential" \
 		"-p solstone-core-spp-ratls --test composite_differential" \

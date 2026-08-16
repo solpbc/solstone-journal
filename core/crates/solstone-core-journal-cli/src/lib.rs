@@ -18,9 +18,7 @@ mod runner;
 #[cfg(test)]
 mod test_support;
 
-pub use runner::{
-    InterpreterError, NativeExecutableError, sibling_native_in_dir, sibling_python_in_dir,
-};
+pub use runner::{NativeExecutableError, sibling_native_in_dir};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JournalCommand {
@@ -199,16 +197,10 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
 
 pub use help::JOURNAL_USAGE;
 
-/// Cross-language differential contract for the fixed Python process bootstrap.
-#[must_use]
-pub fn python_bootstrap_script() -> &'static str {
-    runner::PYTHON_BOOTSTRAP_SCRIPT
-}
-
 fn dispatch_process(
     token: &'static str,
     owner_argv: &[OsString],
-    verbose: bool,
+    _verbose: bool,
     spawner: &dyn ProcessSpawner,
 ) -> Outcome {
     let spec = processes::process_spec_for(token)
@@ -221,30 +213,19 @@ fn dispatch_process(
             exit: 1,
         };
     }
-    if let Some(native) = processes::native_process_spec_for(token) {
-        let executable = match runner::sibling_native_for_current_executable(native.binary) {
-            Ok(executable) => executable,
-            Err(error) => {
-                let exit = match error {
-                    runner::NativeExecutableError::Missing { .. }
-                    | runner::NativeExecutableError::NonExecutable { .. } => 70,
-                    runner::NativeExecutableError::CurrentExe(_) => 70,
-                };
-                return Outcome::ProcessFailure {
-                    stderr: format!("native journal process launch failed: {error}\n"),
-                    exit,
-                };
-            }
+    let Some(native) = processes::native_process_spec_for(token) else {
+        return Outcome::ProcessFailure {
+            stderr: format!("native journal process launch failed: no native body for {token}\n"),
+            exit: 70,
         };
-        return dispatch_native_process(native, &executable, owner_argv, spawner);
-    }
-    let interpreter = match runner::sibling_python_for_current_executable() {
-        Ok(interpreter) => interpreter,
+    };
+    let executable = match runner::sibling_native_for_current_executable(native.binary) {
+        Ok(executable) => executable,
         Err(error) => {
             let exit = match error {
-                runner::InterpreterError::Missing { .. }
-                | runner::InterpreterError::NonExecutable { .. } => 69,
-                runner::InterpreterError::CurrentExe(_) => 70,
+                runner::NativeExecutableError::Missing { .. }
+                | runner::NativeExecutableError::NonExecutable { .. } => 70,
+                runner::NativeExecutableError::CurrentExe(_) => 70,
             };
             return Outcome::ProcessFailure {
                 stderr: format!("native journal process launch failed: {error}\n"),
@@ -252,7 +233,7 @@ fn dispatch_process(
             };
         }
     };
-    dispatch_process_with_interpreter(spec, &interpreter, owner_argv, verbose, spawner)
+    dispatch_native_process(native, &executable, owner_argv, spawner)
 }
 
 fn dispatch_native_process(
@@ -263,23 +244,6 @@ fn dispatch_native_process(
 ) -> Outcome {
     let args = runner::native_process_args(spec, owner_argv);
     match spawner.spawn(executable.as_os_str(), &args) {
-        Ok(()) => Outcome::ProcessLaunched,
-        Err(error) => Outcome::ProcessFailure {
-            stderr: format!("native journal process launch failed: {error}\n"),
-            exit: 70,
-        },
-    }
-}
-
-fn dispatch_process_with_interpreter(
-    spec: &processes::ProcessSpec,
-    interpreter: &std::path::Path,
-    owner_argv: &[OsString],
-    verbose: bool,
-    spawner: &dyn ProcessSpawner,
-) -> Outcome {
-    let args = runner::process_args(spec, verbose, owner_argv);
-    match spawner.spawn(interpreter.as_os_str(), &args) {
         Ok(()) => Outcome::ProcessLaunched,
         Err(error) => Outcome::ProcessFailure {
             stderr: format!("native journal process launch failed: {error}\n"),
@@ -429,16 +393,16 @@ mod tests {
     }
 
     #[test]
-    fn manifest_has_fifty_seven_unique_leaf_paths() {
+    fn manifest_has_fifty_six_unique_leaf_paths() {
         let paths = all_leaf_paths();
         let unique = paths
             .iter()
             .map(|path| path.join("\u{0}"))
             .collect::<BTreeSet<_>>();
-        assert_eq!(JOURNAL_COMMAND_COUNT, 57);
+        assert_eq!(JOURNAL_COMMAND_COUNT, 56);
         assert_eq!(paths.len(), JOURNAL_COMMAND_COUNT);
         assert_eq!(unique.len(), JOURNAL_COMMAND_COUNT);
-        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 43);
+        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 42);
         let coherence_tokens = PROCESS_SPECS
             .iter()
             .filter(|spec| spec.kind.requires_coherence())
@@ -448,73 +412,6 @@ mod tests {
             coherence_tokens,
             JOURNAL_HOST_COMMANDS.iter().copied().collect()
         );
-    }
-
-    #[test]
-    fn every_python_process_spec_builds_exact_bootstrap_argv() {
-        let spawner = RecordingSpawner::default();
-        let python_specs = PROCESS_SPECS
-            .iter()
-            .filter(|spec| native_process_spec_for(spec.token).is_none())
-            .collect::<Vec<_>>();
-        let owner_argv = args(&[
-            "has space",
-            "h\u{e9}llo",
-            "--help",
-            "-v",
-            "--verbose",
-            "-V",
-            "0",
-            "1",
-            "solstone.think.service",
-            "journal up",
-            "a.b.c",
-        ]);
-        for verbose in [false, true] {
-            for spec in &python_specs {
-                assert_eq!(
-                    dispatch_process_with_interpreter(
-                        spec,
-                        Path::new("/recording-python"),
-                        &owner_argv,
-                        verbose,
-                        &spawner,
-                    ),
-                    Outcome::ProcessLaunched,
-                    "{}",
-                    spec.token
-                );
-            }
-        }
-        let calls = spawner.calls.borrow();
-        assert_eq!(calls.len(), python_specs.len() * 2);
-        for (verbose, calls) in [false, true]
-            .into_iter()
-            .zip(calls.chunks_exact(python_specs.len()))
-        {
-            for (spec, (program, argv)) in python_specs.iter().zip(calls) {
-                assert_eq!(program, OsStr::new("/recording-python"), "{}", spec.token);
-                let expected = [
-                    vec![
-                        OsString::from("-c"),
-                        OsString::from(python_bootstrap_script()),
-                        OsString::from(spec.module),
-                        OsString::from(format!("journal {}", spec.token)),
-                        OsString::from(if verbose { "1" } else { "0" }),
-                    ],
-                    spec.preset_argv.iter().map(OsString::from).collect(),
-                    owner_argv.clone(),
-                ]
-                .concat();
-                assert_eq!(*argv, expected, "{}", spec.token);
-                assert_eq!(
-                    &argv[5 + spec.preset_argv.len()..],
-                    owner_argv.as_slice(),
-                    "{}",
-                    spec.token
-                );
-            }
-        }
     }
 
     #[test]

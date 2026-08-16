@@ -3,9 +3,6 @@
 
 #![cfg(unix)]
 
-#[path = "support/python_process_control.rs"]
-mod python_process_control;
-
 use std::env;
 use std::fs;
 use std::io::Read;
@@ -261,18 +258,5 @@ fn navigate_happy_path_runs_natively() {
     assert_eq!(
         notification(&listener),
         json!({"tract": "navigate", "event": "request", "path": "/app/work", "facet": "work"})
-    );
-}
-
-#[test]
-fn poison_remains_live_for_a_python_token() {
-    let harness = Harness::new();
-    let token = python_process_control::token();
-    let output = harness.run(&[token], false);
-
-    assert_eq!(output.status.code(), Some(97));
-    assert!(
-        harness.poison_marker.exists(),
-        "{token} did not invoke the poisoned interpreter"
     );
 }

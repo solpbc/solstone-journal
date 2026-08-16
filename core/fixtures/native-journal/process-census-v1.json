@@ -27,7 +27,6 @@
     { "token": "journal-stats", "module": "solstone.think.journal_stats", "preset_argv": [], "surface": "service" },
     { "token": "reprocess", "module": "solstone.think.reprocess", "preset_argv": [], "surface": "service" },
     { "token": "backfill-processing-records", "module": "solstone.think.backfill_processing_records", "preset_argv": [], "surface": "service" },
-    { "token": "warm", "module": "solstone.think.warm", "preset_argv": [], "surface": "service" },
     { "token": "transcribe", "module": "solstone.observe.transcribe", "preset_argv": [], "surface": "service" },
     { "token": "describe", "module": "solstone.observe.describe", "preset_argv": [], "surface": "service" },
     { "token": "depict", "module": "solstone.observe.depict", "preset_argv": [], "surface": "service" },

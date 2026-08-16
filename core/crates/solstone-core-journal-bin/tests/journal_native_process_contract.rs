@@ -59,11 +59,6 @@ const THINK_REQUIRED_NATIVE_TOKENS: &[&str] = &["think"];
 // rebinding it would not compile and would delete that assertion. The value is
 // the contract; the binding name is not.
 const INSTALL_PROVIDER_REQUIRED_NATIVE_TOKENS: &[&str] = &["install-provider"];
-// The dispatcher is the one interpreter-resolution site the shipped tree is
-// allowed to have, and `processes.rs` is the census that measures conversion
-// progress. Any other crate that resolves an interpreter is a second,
-// uncensused site. This is the crate that owns the dispatcher.
-const INTERPRETER_RESOLUTION_OWNER: &str = "solstone-core-journal-cli";
 
 fn run_talent_worker_with_output(
     context: &VerdictContext<'_>,
@@ -190,13 +185,9 @@ fn criterion_18_cortex_spawns_native_talent_worker_without_interpreter_resolutio
             Some(owner.as_os_str().to_string_lossy().into_owned())
         })
         .collect::<BTreeSet<_>>();
-    let extra = resolvers
-        .into_iter()
-        .filter(|owner| owner != INTERPRETER_RESOLUTION_OWNER)
-        .collect::<BTreeSet<_>>();
     assert!(
-        extra.is_empty(),
-        "unexpected interpreter resolvers: {extra:?}"
+        resolvers.is_empty(),
+        "unexpected interpreter resolvers: {resolvers:?}"
     );
 }
 
@@ -918,14 +909,6 @@ fn run_dispatcher_with_bounded_output(
     }))
 }
 
-fn run_dispatcher(
-    context: &VerdictContext<'_>,
-    token: &str,
-    argv: &[&str],
-) -> io::Result<Option<ExitStatus>> {
-    run_dispatcher_with_timeout(context, token, argv, PROBE_TIMEOUT)
-}
-
 fn run_dispatcher_with_timeout(
     context: &VerdictContext<'_>,
     token: &str,
@@ -1309,21 +1292,13 @@ fn native_process_dispatch_and_poison_liveness_contract() {
         probe_tokens, native_tokens,
         "native process probe-table mismatch; verdicts={verdicts:?}"
     );
-    let Some(token) = python_process_control_token() else {
-        eprintln!("skipping poison-liveness assertion: every process token is native");
-        return;
-    };
-    let status = run_dispatcher(&context, token, &[])
-        .expect("runtime-derived Python process should spawn through the dispatcher");
-
+    let process_tokens = PROCESS_SPECS
+        .iter()
+        .map(|spec| spec.token)
+        .collect::<BTreeSet<_>>();
     assert_eq!(
-        status.and_then(|status| status.code()),
-        Some(97),
-        "{token}: poison-liveness expected poisoned interpreter exit 97"
-    );
-    assert!(
-        context.poison_marker.exists(),
-        "{token}: poison-liveness expected the poisoned interpreter marker"
+        process_tokens, native_tokens,
+        "every PROCESS_SPECS token must have a NATIVE_PROCESS_SPECS row"
     );
 }
 
@@ -1380,23 +1355,6 @@ fn native_maint_release_route_runs_all_bodies_and_modes_under_poison() {
         !context.poison_marker.exists(),
         "maint reached a poisoned interpreter"
     );
-}
-
-fn python_process_control_token() -> Option<&'static str> {
-    let native_tokens = NATIVE_PROCESS_SPECS
-        .iter()
-        .map(|spec| spec.token)
-        .collect::<BTreeSet<_>>();
-    // The positive control must be selected from the current Python-routed
-    // difference, not from PROCESS_SPECS declaration order. Native cutovers
-    // may remove any historical first entry (including backup).
-    PROCESS_SPECS
-        .iter()
-        .filter(|spec| !native_tokens.contains(spec.token))
-        .map(|spec| spec.token)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .next()
 }
 
 #[test]
@@ -2199,7 +2157,7 @@ fn native_install_provider_bodies_never_reach_a_poisoned_interpreter() {
 fn native_backfill_commit_dispatches_without_python_and_is_idempotent() {
     let harness = Harness::new();
     let context = harness.context();
-    let _ = fs::remove_file(context.poison_marker);
+    prove_poison_interpreters_live(&context);
 
     fs::create_dir_all(context.home).expect("create home directory");
     let segment = context.journal.join("chronicle/20990101/090000_300");
@@ -2207,14 +2165,6 @@ fn native_backfill_commit_dispatches_without_python_and_is_idempotent() {
     fs::write(segment.join("audio.flac"), b"audio").expect("write audio");
     let sidecar = segment.join("audio.jsonl");
     fs::write(&sidecar, b"{\"raw\":\"audio.flac\"}\n").expect("write sidecar");
-
-    let token = python_process_control_token().expect("a retained Python process token");
-    let python_status = run_dispatcher(&context, token, &[])
-        .expect("run retained Python process")
-        .and_then(|status| status.code());
-    assert_eq!(python_status, Some(97));
-    assert!(context.poison_marker.exists());
-    fs::remove_file(context.poison_marker).expect("clear Python poison marker");
 
     let output = run_dispatcher_with_output(&context, "backfill-processing-records", &["--commit"])
         .expect("run native backfill through dispatcher");
@@ -3076,8 +3026,8 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
     );
 }
 
-/// The talent runtime must not be a plugin host: outside the dispatcher's own
-/// crate, no crate in the shipped tree may resolve an interpreter.
+/// The talent runtime must not be a plugin host: no crate in the shipped tree
+/// may resolve an interpreter.
 ///
 /// Exhaustive over `core/crates/*/src` rather than over an enumerated list of
 /// `think`'s reach, because an enumeration silently stops covering a module
@@ -3117,13 +3067,10 @@ fn only_the_dispatcher_crate_resolves_an_interpreter() {
         owners
     };
 
-    // Positive control aimed at the defect's own shape: the dispatcher crate
-    // resolves an interpreter in its production half, so the instrument is
-    // proven to see exactly the thing being counted.
     let resolvers = owners("sibling_python");
     assert!(
-        resolvers.contains(INTERPRETER_RESOLUTION_OWNER),
-        "instrument saw no interpreter resolution at all; found {resolvers:?}"
+        resolvers.is_empty(),
+        "crates resolve an interpreter: {resolvers:?}"
     );
     // Negative control: a token that cannot occur must return nothing over the
     // same walk, so a nonempty answer is not an artefact of the reader.
@@ -3131,15 +3078,14 @@ fn only_the_dispatcher_crate_resolves_an_interpreter() {
         owners("sibling_pythonium_resolver").is_empty(),
         "impossible token matched; the scan is not reading what it claims to"
     );
-
-    let extra = resolvers
-        .iter()
-        .filter(|owner| owner.as_str() != INTERPRETER_RESOLUTION_OWNER)
-        .cloned()
-        .collect::<Vec<_>>();
+    // Positive control: an independently-guaranteed needle (the SPDX header
+    // every source file carries, per the repo's own mandate) must be found by
+    // the same reader over the same walk. Without this, the walk could be
+    // reading nothing and both assertions above would pass vacuously.
     assert!(
-        extra.is_empty(),
-        "crates outside the dispatcher resolve an interpreter: {extra:?}"
+        !owners("SPDX-License-Identifier").is_empty(),
+        "positive control failed; the scan cannot find a needle known to be \
+         present in every crate, so its emptiness above proves nothing"
     );
 }
 

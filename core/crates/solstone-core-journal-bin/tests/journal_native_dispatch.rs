@@ -3,9 +3,6 @@
 
 #![cfg(unix)]
 
-#[path = "support/python_process_control.rs"]
-mod python_process_control;
-
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -104,10 +101,6 @@ impl Harness {
         fs::read_to_string(&self.record).expect("read native dispatch record")
     }
 
-    fn run_process(&self, token: &str) -> Output {
-        self.run_process_args(token, &["--opaque", "has space"])
-    }
-
     fn run_process_args(&self, token: &str, args: &[&str]) -> Output {
         let _ = fs::remove_file(&self.record);
         let _ = fs::remove_file(&self.poison_marker);
@@ -172,13 +165,6 @@ fn native_process_verbs_exec_their_sibling_without_python() {
     assert_eq!(
         harness.run("identity"),
         "solstone-core\nidentity\n--opaque\nhas space\n"
-    );
-    let token = python_process_control::token();
-    let output = harness.run_process(token);
-    assert_eq!(output.status.code(), Some(97));
-    assert!(
-        harness.poison_marker.exists(),
-        "{token} did not invoke poison"
     );
 }
 

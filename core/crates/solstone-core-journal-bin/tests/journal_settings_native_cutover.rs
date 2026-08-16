@@ -3,9 +3,6 @@
 
 #![cfg(unix)]
 
-#[path = "support/python_process_control.rs"]
-mod python_process_control;
-
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -479,17 +476,4 @@ fn settings_creates_journal_only_after_successful_parsing() {
         assert_eq!(journal.is_dir(), should_create, "{name}");
         harness.assert_python_was_not_invoked();
     }
-}
-
-#[test]
-fn poison_remains_live_for_a_python_token() {
-    let harness = Harness::new();
-    let token = python_process_control::token();
-    let output = harness.run(&[token]);
-
-    assert_eq!(output.status.code(), Some(97));
-    assert!(
-        harness.poison_marker.exists(),
-        "{token} did not invoke the poisoned interpreter"
-    );
 }

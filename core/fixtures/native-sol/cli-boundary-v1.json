@@ -234,8 +234,7 @@
         "top",
         "transcribe",
         "transfer",
-        "up",
-        "warm"
+        "up"
       ],
       "forbidden_grammar": [
         "dotted-module"

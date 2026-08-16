@@ -6,9 +6,6 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[features]
-differential = []
-
 [[bin]]
 name = "solstone-core-journal"
 path = "src/main.rs"
@@ -16,11 +13,6 @@ path = "src/main.rs"
 [[bin]]
 name = "setup-fixture-journal"
 path = "src/setup_fixture_journal.rs"
-
-[[test]]
-name = "journal_process_bootstrap"
-path = "tests/journal_process_bootstrap.rs"
-required-features = ["differential"]
 
 [dependencies]
 solstone-core-journal-cli = { workspace = true }

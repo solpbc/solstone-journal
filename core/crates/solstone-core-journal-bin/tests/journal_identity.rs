@@ -3,9 +3,6 @@
 
 #![cfg(unix)]
 
-#[path = "support/python_process_control.rs"]
-mod python_process_control;
-
 use std::env;
 use std::fs;
 use std::io::{ErrorKind, Read, Write};
@@ -740,80 +737,6 @@ fn journal_identity_notify_reuses_the_native_handler_and_socket_protocol() {
         "{\"tract\": \"notification\", \"event\": \"custom\", \"message\": \"hello world\", \"title\": \"Test\", \"icon\": \"triangle-alert\", \"action\": \"/open\", \"facet\": \"work\", \"app\": \"alerts\", \"badge\": \"7\", \"autoDismiss\": 3000, \"dismissible\": false}\n"
     );
     assert_sentinel_untouched(&sentinel);
-}
-
-#[test]
-fn journal_identity_exec_replaces_itself_and_forwards_process_argv() {
-    use nix::sys::signal::{Signal, kill};
-    use nix::unistd::Pid;
-
-    let temp = TempDir::new("journal-installed-exec");
-    let layout = installed_layout(&temp);
-    let record = temp.path.join("argv.nul");
-    let verbose_record = temp.path.join("verbose.txt");
-    write_recording_interpreter(&layout.bin.join("python3"));
-    fs::write(layout.bin.join("python"), "#!/bin/sh\nexit 98\n")
-        .expect("write fallback interpreter");
-    fs::set_permissions(layout.bin.join("python"), fs::Permissions::from_mode(0o755))
-        .expect("make fallback interpreter executable");
-
-    let root = installed_output(&layout, &["root"]);
-    assert_eq!(root.status.code(), Some(0));
-    assert_eq!(
-        String::from_utf8(root.stdout).expect("root stdout should be utf-8"),
-        format!("{}\n", layout.site_packages.display())
-    );
-    assert_eq!(root.stderr, b"");
-
-    let owner = [
-        "has space",
-        "héllo",
-        "--help",
-        "-v",
-        "--verbose",
-        "-V",
-        "a.b.c",
-    ];
-    let token = python_process_control::token();
-    let mut command = Command::new(&layout.binary);
-    command
-        .arg("-v")
-        .arg(token)
-        .args(owner)
-        .env("RECORD_FILE", &record)
-        .env("VERBOSE_RECORD_FILE", &verbose_record);
-    let mut child = command.spawn().expect("installed journal should start");
-    let pid = child.id();
-    let recorded = wait_for_record(&record);
-    let mut expected = vec![
-        b"-c".to_vec(),
-        solstone_core_journal_cli::python_bootstrap_script()
-            .as_bytes()
-            .to_vec(),
-        python_process_control::module().as_bytes().to_vec(),
-        format!("journal {token}").into_bytes(),
-        b"1".to_vec(),
-    ];
-    expected.extend(
-        python_process_control::preset_argv()
-            .iter()
-            .map(|argument| argument.as_bytes().to_vec()),
-    );
-    expected.extend(owner.iter().map(|argument| argument.as_bytes().to_vec()));
-    assert_eq!(recorded, expected);
-    assert_eq!(
-        fs::read_to_string(&verbose_record).expect("read verbose record"),
-        "1"
-    );
-
-    kill(Pid::from_raw(pid as i32), Signal::SIGTERM).expect("terminate replaced process");
-    let status = child.wait().expect("wait for replaced process");
-    assert_eq!(status.signal(), Some(Signal::SIGTERM as i32));
-    #[cfg(target_os = "linux")]
-    assert!(
-        !Path::new(&format!("/proc/{pid}")).exists(),
-        "exec replacement must not leave the launched process alive"
-    );
 }
 
 #[test]

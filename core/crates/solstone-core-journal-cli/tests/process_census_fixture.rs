@@ -15,7 +15,7 @@ const PROCESS_CENSUS_JSON: &str =
 const EXPECTED_PREDECESSOR_COMMIT: &str = "d8200fdf34e4af31f106c7f28fb73cd439d0081b";
 const EXPECTED_PREDECESSOR_BLOB: &str = "ea62371d5c320329724d051032efbe20f165b25f";
 const EXPECTED_CENSUS_SHA256: &str =
-    "088aa7609828a9074ca68cd446ca2616d3f5b76e0b39ac424b9690ade1e8a8cd";
+    "b88fc7d4bba3c39e919cf1c6094aa4e78abd00edd153d9108eb55ffbe6412d6d";
 
 fn entries<'a>(fixture: &'a Value, key: &str) -> Result<&'a Vec<Value>, String> {
     fixture[key]
@@ -101,8 +101,8 @@ fn validate_fixture(fixture: &Value) -> Result<(), String> {
 
     let commands = entries(fixture, "commands")?;
     let aliases = entries(fixture, "aliases")?;
-    if commands.len() != 44 || aliases.len() != 2 {
-        return Err("expected 44 process commands and two aliases".to_owned());
+    if commands.len() != 43 || aliases.len() != 2 {
+        return Err("expected 43 process commands and two aliases".to_owned());
     }
     if commands
         .iter()
@@ -122,7 +122,7 @@ fn validate_fixture(fixture: &Value) -> Result<(), String> {
         .filter(|entry| entry["surface"] == "universal")
         .map(|entry| text(entry, "token"))
         .collect::<Result<_, _>>()?;
-    if service_commands.len() != 41
+    if service_commands.len() != 40
         || universal_commands != BTreeSet::from(["check", "contract", "doctor"])
         || commands
             .iter()
@@ -152,7 +152,7 @@ fn validate_fixture(fixture: &Value) -> Result<(), String> {
     }
 
     let command_tokens = token_set(commands)?;
-    if !command_tokens.is_disjoint(&alias_tokens) || command_tokens.len() + alias_tokens.len() != 46
+    if !command_tokens.is_disjoint(&alias_tokens) || command_tokens.len() + alias_tokens.len() != 45
     {
         return Err("process tokens must be unique".to_owned());
     }
@@ -191,8 +191,8 @@ fn process_census_is_hash_bound_and_complete() {
 
 #[test]
 fn production_process_table_matches_the_hash_bound_census() {
-    assert_eq!(production_processes::PROCESS_SPECS.len(), 46);
-    assert_eq!(production_processes::process_tokens().count(), 46);
+    assert_eq!(production_processes::PROCESS_SPECS.len(), 45);
+    assert_eq!(production_processes::process_tokens().count(), 45);
     for spec in production_processes::PROCESS_SPECS {
         assert_eq!(
             production_processes::process_spec_for(spec.token),
@@ -204,7 +204,7 @@ fn production_process_table_matches_the_hash_bound_census() {
             .iter()
             .filter(|spec| spec.kind.requires_coherence())
             .count(),
-        43
+        42
     );
     assert_eq!(production_digest(), EXPECTED_CENSUS_SHA256);
 }

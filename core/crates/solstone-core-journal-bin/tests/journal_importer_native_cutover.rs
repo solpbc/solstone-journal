@@ -3,9 +3,6 @@
 
 #![cfg(unix)]
 
-#[path = "support/python_process_control.rs"]
-mod python_process_control;
-
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
@@ -112,18 +109,6 @@ impl Harness {
             .env_remove("SOL_SUPERVISOR_SPAWNED")
             .output()
             .expect("run journal importer")
-    }
-
-    fn run_python_token(&self, token: &str) -> Output {
-        let _ = fs::remove_file(&self.poison);
-        Command::new(&self.binary)
-            .arg(token)
-            .env("POISON_MARKER", &self.poison)
-            .env("HOME", self.root.join("home"))
-            .env("SOLSTONE_JOURNAL", &self.journal)
-            .env("PATH", self.root.join("bin"))
-            .output()
-            .expect("run Python journal token")
     }
 }
 
@@ -631,12 +616,4 @@ fn contains_named_file(root: &Path, name: &str) -> bool {
         path.file_name().is_some_and(|file_name| file_name == name)
             || path.is_dir() && contains_named_file(&path, name)
     })
-}
-
-#[test]
-fn poison_remains_live_for_an_unmigrated_python_process_token() {
-    let harness = Harness::new();
-    let token = python_process_control::token();
-    assert_eq!(harness.run_python_token(token).status.code(), Some(97));
-    assert!(harness.poison.exists());
 }

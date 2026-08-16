@@ -2779,19 +2779,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-journal-bin::journal_process_bootstrap"
-package = "solstone-core-journal-bin"
-target = "journal_process_bootstrap"
-set = "differential"
-areas = ["journal"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "slow"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-journal-bin::journal_settings_native_cutover"
 package = "solstone-core-journal-bin"
 target = "journal_settings_native_cutover"

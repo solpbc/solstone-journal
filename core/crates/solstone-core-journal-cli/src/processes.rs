@@ -412,12 +412,6 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
         kind: ProcessKind::Service,
     },
     ProcessSpec {
-        token: "warm",
-        module: "solstone.think.warm",
-        preset_argv: EMPTY,
-        kind: ProcessKind::Service,
-    },
-    ProcessSpec {
         token: "transcribe",
         module: "solstone.observe.transcribe",
         preset_argv: EMPTY,
