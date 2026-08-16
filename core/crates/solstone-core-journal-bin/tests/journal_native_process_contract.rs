@@ -922,9 +922,10 @@ fn run_dispatcher_with_timeout(
     // not interchangeable and must both hold:
     //
     //   * the SIBLING poison is the load-bearing one. It tests the shipped
-    //     dispatch path, because `sibling_python_for_executable` resolves
-    //     `python3` beside `current_exe()` and never from PATH. A PATH shim
-    //     proves nothing about that route.
+    //     dispatch path: the retired interpreter-resolution family
+    //     (`sibling_python_for_executable`) only ever resolved `python3`
+    //     beside `current_exe()`, never from PATH. A PATH shim alone proves
+    //     nothing about that route.
     //   * PATH was previously INHERITED here, so a native verb that reached an
     //     interpreter the ordinary way -- `Command::new("python3")`, or any
     //     library that shells one -- found the host's real interpreter and this

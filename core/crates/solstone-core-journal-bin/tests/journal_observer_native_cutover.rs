@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Proves `journal observer` is served natively through a SIBLING
-//! interpreter shim, not a `$PATH` shim: `sibling_python_for_executable`
-//! resolves `python3`/`python` as a sibling of `current_exe()` and never
-//! consults `$PATH`, so a `$PATH`-shimmed test would pass identically with
-//! the shims absent and prove nothing. This harness copies the REAL built
-//! `solstone-core` binary (not a recording stub) beside the journal binary,
-//! so `observer list`/`observer prune` must actually succeed against real
-//! logic -- not merely reach a dispatcher that recorded argv.
+//! Proves `journal observer` is served natively through a SIBLING poison
+//! shim, not a `$PATH` shim: the retired interpreter-resolution family
+//! (`sibling_python_for_executable`) only ever resolved `python3`/`python`
+//! as a sibling of `current_exe()` and never consulted `$PATH`, so a
+//! `$PATH`-shimmed test would pass identically with the shims absent and
+//! prove nothing. This harness copies the REAL built `solstone-core` binary
+//! (not a recording stub) beside the journal binary, so `observer
+//! list`/`observer prune` must actually succeed against real logic -- not
+//! merely reach a dispatcher that recorded argv.
 
 #![cfg(unix)]
 
