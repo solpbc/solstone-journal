@@ -24,9 +24,12 @@ pub struct Registry {
     pub platforms: Vec<String>,
     pub prerequisites: Vec<String>,
     pub serial_groups: Vec<String>,
+    pub runtimes: Vec<String>,
     pub timeouts: BTreeMap<String, u64>,
     #[serde(default)]
     pub suites: Vec<Suite>,
+    #[serde(default)]
+    pub package_suites: Vec<PackageSuite>,
     #[serde(default)]
     pub legs: Vec<Leg>,
 }
@@ -48,6 +51,7 @@ pub struct Suite {
     pub default_full: bool,
     #[serde(default)]
     pub required_features: Vec<String>,
+    pub runtime: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -65,6 +69,23 @@ pub struct Leg {
     #[serde(default)]
     pub serial_group: Option<String>,
     pub default_full: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PackageSuite {
+    pub id: String,
+    pub package: String,
+    pub set: String,
+    pub areas: Vec<String>,
+    pub platforms: Vec<String>,
+    #[serde(default)]
+    pub prerequisites: Vec<String>,
+    pub timeout: String,
+    #[serde(default)]
+    pub serial_group: Option<String>,
+    pub default_full: bool,
+    pub runtime: String,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -115,6 +136,7 @@ pub fn validate_registry(repo: &Path, registry: &Registry) -> Result<(), Vec<Str
     validate_vocabulary("platform", &registry.platforms, &mut errors);
     validate_vocabulary("prerequisite", &registry.prerequisites, &mut errors);
     validate_vocabulary("serial group", &registry.serial_groups, &mut errors);
+    validate_vocabulary("runtime", &registry.runtimes, &mut errors);
     if registry.timeouts.is_empty() {
         errors.push("timeout vocabulary is empty".to_owned());
     }
@@ -137,6 +159,14 @@ pub fn validate_registry(repo: &Path, registry: &Registry) -> Result<(), Vec<Str
         .iter()
         .cloned()
         .collect::<BTreeSet<_>>();
+    let known_runtimes = registry.runtimes.iter().cloned().collect::<BTreeSet<_>>();
+    for required in ["differential", "race", "live"] {
+        if !known_sets.contains(required) {
+            errors.push(format!(
+                "set vocabulary must explicitly include excluded lane {required}"
+            ));
+        }
+    }
     let mut ids = BTreeSet::new();
     let mut registered = BTreeMap::new();
 
@@ -200,6 +230,67 @@ pub fn validate_registry(repo: &Path, registry: &Registry) -> Result<(), Vec<Str
                 suite.id
             ));
         }
+        if !known_runtimes.contains(&suite.runtime) {
+            errors.push(format!(
+                "suite {} uses unknown runtime {}",
+                suite.id, suite.runtime
+            ));
+        }
+        validate_default_exclusion(&suite.id, &suite.set, suite.default_full, &mut errors);
+    }
+
+    let mut registered_packages = BTreeSet::new();
+    for package_suite in &registry.package_suites {
+        validate_entry(
+            &package_suite.id,
+            &package_suite.set,
+            &package_suite.areas,
+            &package_suite.platforms,
+            &package_suite.prerequisites,
+            &package_suite.timeout,
+            &known_sets,
+            &known_areas,
+            &known_platforms,
+            &known_prereqs,
+            &registry.timeouts,
+            &mut errors,
+        );
+        if !ids.insert(package_suite.id.clone()) {
+            errors.push(format!("duplicate registry id {}", package_suite.id));
+        }
+        let expected_id = format!("package::{}", package_suite.package);
+        if package_suite.id != expected_id {
+            errors.push(format!(
+                "package suite {} id must be package::name ({expected_id})",
+                package_suite.id
+            ));
+        }
+        if !registered_packages.insert(package_suite.package.clone()) {
+            errors.push(format!(
+                "workspace package {} has more than one package suite",
+                package_suite.package
+            ));
+        }
+        if let Some(group) = &package_suite.serial_group
+            && !known_serial_groups.contains(group)
+        {
+            errors.push(format!(
+                "package suite {} uses unknown serial group {group}",
+                package_suite.id
+            ));
+        }
+        if !known_runtimes.contains(&package_suite.runtime) {
+            errors.push(format!(
+                "package suite {} uses unknown runtime {}",
+                package_suite.id, package_suite.runtime
+            ));
+        }
+        validate_default_exclusion(
+            &package_suite.id,
+            &package_suite.set,
+            package_suite.default_full,
+            &mut errors,
+        );
     }
 
     for leg in &registry.legs {
@@ -234,14 +325,22 @@ pub fn validate_registry(repo: &Path, registry: &Registry) -> Result<(), Vec<Str
         {
             errors.push(format!("leg {} uses unknown serial group {group}", leg.id));
         }
+        validate_default_exclusion(&leg.id, &leg.set, leg.default_full, &mut errors);
     }
 
     match discover_workspace_packages(repo) {
-        Ok(mut packages) => {
-            packages.insert("workspace".to_owned());
+        Ok(packages) => {
+            for package in packages.difference(&registered_packages) {
+                errors.push(format!("workspace package {package} has no package suite"));
+            }
+            for package in registered_packages.difference(&packages) {
+                errors.push(format!("stale or unknown package suite {package}"));
+            }
+            let mut package_selectors = packages;
+            package_selectors.insert("workspace".to_owned());
             for leg in &registry.legs {
                 for package in &leg.packages {
-                    if !packages.contains(package) {
+                    if !package_selectors.contains(package) {
                         errors.push(format!(
                             "leg {} uses unknown package selector {package}",
                             leg.id
@@ -360,6 +459,19 @@ fn validate_vocabulary(kind: &str, values: &[String], errors: &mut Vec<String>) 
         if !observed.insert(value) {
             errors.push(format!("{kind} vocabulary repeats {value}"));
         }
+    }
+}
+
+fn validate_default_exclusion(id: &str, set: &str, default_full: bool, errors: &mut Vec<String>) {
+    if matches!(set, "differential" | "race" | "live") && default_full {
+        errors.push(format!(
+            "entry {id} in excluded set {set} cannot be default_full"
+        ));
+    }
+    if set == "live" {
+        errors.push(format!(
+            "entry {id} attempts to automate the live lane; live validation is operator-only"
+        ));
     }
 }
 
@@ -852,7 +964,7 @@ fn risk_patterns() -> &'static [(&'static str, &'static [&'static str])] {
     &[
         (
             "clock",
-            &["sleep", "Instant", "SystemTime", "timeout", "interval"],
+            &["sleep", "Instant", "SystemTime", "timeout (", "interval ("],
         ),
         (
             "scheduling",
@@ -924,11 +1036,17 @@ mod tests {
         .expect("lib");
         let registry = Registry {
             version: 1,
-            sets: vec!["component".to_owned()],
+            sets: vec![
+                "component".to_owned(),
+                "differential".to_owned(),
+                "race".to_owned(),
+                "live".to_owned(),
+            ],
             areas: vec!["a".to_owned()],
             platforms: vec!["linux".to_owned()],
             prerequisites: vec!["cargo-cache".to_owned()],
             serial_groups: vec!["local-services".to_owned()],
+            runtimes: vec!["none".to_owned()],
             timeouts: BTreeMap::from([("quick".to_owned(), 30)]),
             suites: vec![Suite {
                 id: "a::api".to_owned(),
@@ -942,6 +1060,19 @@ mod tests {
                 serial_group: None,
                 default_full: true,
                 required_features: Vec::new(),
+                runtime: "none".to_owned(),
+            }],
+            package_suites: vec![PackageSuite {
+                id: "package::a".to_owned(),
+                package: "a".to_owned(),
+                set: "component".to_owned(),
+                areas: vec!["a".to_owned()],
+                platforms: vec!["linux".to_owned()],
+                prerequisites: vec!["cargo-cache".to_owned()],
+                timeout: "quick".to_owned(),
+                serial_group: None,
+                default_full: false,
+                runtime: "none".to_owned(),
             }],
             legs: Vec::new(),
         };
@@ -976,6 +1107,27 @@ mod tests {
             errors
                 .join("\n")
                 .contains("unregistered Cargo integration target")
+        );
+    }
+
+    #[test]
+    fn registry_enforces_runtime_and_explicit_default_exclusions() {
+        let (temp, mut registry) = fixture();
+        registry.suites[0].runtime = "ambient".to_owned();
+        registry.suites[0].set = "race".to_owned();
+        let errors = validate_registry(temp.path(), &registry).expect_err("must reject mutation");
+        let joined = errors.join("\n");
+        assert!(joined.contains("unknown runtime ambient"));
+        assert!(joined.contains("excluded set race cannot be default_full"));
+
+        registry.suites[0].runtime = "none".to_owned();
+        registry.suites[0].set = "live".to_owned();
+        registry.suites[0].default_full = false;
+        let errors = validate_registry(temp.path(), &registry).expect_err("live is operator-only");
+        assert!(
+            errors
+                .join("\n")
+                .contains("live validation is operator-only")
         );
     }
 

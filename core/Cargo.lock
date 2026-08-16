@@ -3988,6 +3988,7 @@ dependencies = [
 name = "solstone-core-repository-contracts"
 version = "1.0.22"
 dependencies = [
+ "nix",
  "quote",
  "serde",
  "serde_json",
