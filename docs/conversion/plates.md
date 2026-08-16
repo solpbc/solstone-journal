@@ -919,7 +919,7 @@ lib/    solstone-core-speakers-analyze/libonnxruntime.so.1
 share/  notices and licences
 ```
 
-✅ **The shipped binaries already resolve against this layout with no code change.** That property is what the plate is built on, and each half of it is a fact about code in this tree rather than an intention:
+✅ **Shipped binaries resolve this layout through the third candidate in `resolve_installation_root_from_executable_dir`:** payload lives at `share/solstone/**`, the resolver returns `<prefix>/share`, and tar/deb/rpm normalize to that tree. That property is what the plate is built on, and each half of it is a fact about code in this tree rather than an intention:
 
 - the three launchers walk `$0` symlinks and `exec` a native sibling resolved from their own directory (`scripts/root-launchers/`) — ⛔ nothing in them is virtualenv-aware
 - `libonnxruntime.so.1` is reached by the rpath `$ORIGIN/../lib/solstone-core-speakers-analyze`, emitted by `core/crates/solstone-core-speakers-analyze/build.rs`, over bytes staged from the pinned-digest table in `scripts/stage_speakers_analyze_runtime.py`

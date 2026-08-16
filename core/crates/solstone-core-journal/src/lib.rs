@@ -928,7 +928,7 @@ mod tests {
         let checkout_bin = checkout.join("bin");
         fs::create_dir_all(&checkout_bin).expect("checkout bin");
         fs::create_dir_all(checkout.join("solstone")).expect("checkout package");
-        fs::create_dir_all(checkout.join(".git")).expect("git");
+        fs::create_dir_all(checkout.join(".git")).expect("checkout marker");
         fs::write(checkout.join("pyproject.toml"), "").expect("pyproject");
         write_layout_anchors(&checkout.join("share"));
         assert_eq!(

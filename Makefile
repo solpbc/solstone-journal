@@ -646,6 +646,7 @@ check-rust-doc:
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --doc --locked -- --test-threads=1
 
 SOLSTONE_CI_RUNNER := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-repository-contracts --bin solstone-ci --locked --offline --
+SOLSTONE_DISTRIBUTION := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-distribution --bin solstone-distribution --locked --offline --
 
 # Export selector values directly instead of interpolating them into a shell
 # command. This preserves comma- or space-separated values literally and keeps
@@ -661,6 +662,33 @@ export SOLSTONE_CI_RECEIPT := $(RECEIPT)
 check-rust-ci-topology:
 	@$(REQUIRE_CARGO)
 	$(SOLSTONE_CI_RUNNER) validate
+
+.PHONY: check-rust-distribution check-rust-distribution-under-poison
+check-rust-distribution:
+	$(call run-rust-gate-under-poison,check-rust-distribution-under-poison)
+
+# AR_<triple>/RANLIB_<triple> must point at zig wrappers before this recipe
+# invokes the producer: PATH poison covers `ar`, so cc/ffmpeg-sys-next/ort
+# fallthrough must not find the shim.
+check-rust-distribution-under-poison:
+	@test "$$SOLSTONE_CI_POISONED" = 1 || { echo "check-rust-distribution-under-poison is internal; run 'make check-rust-distribution'" >&2; exit 2; }
+	@$(REQUIRE_CARGO)
+	@set -eu; \
+	wrapper_dir=$$(mktemp -d); \
+	trap 'rm -rf "$$wrapper_dir"' 0 1 2 15; \
+	printf '%s\n' '#!/bin/sh' 'exec zig ar "$$@"' > "$$wrapper_dir/zigar"; \
+	printf '%s\n' '#!/bin/sh' 'exec zig ranlib "$$@"' > "$$wrapper_dir/zigranlib"; \
+	chmod 755 "$$wrapper_dir/zigar" "$$wrapper_dir/zigranlib"; \
+	echo "producing linux-x86_64 and linux-aarch64 under poison"; \
+	AR_x86_64_unknown_linux_gnu="$$wrapper_dir/zigar" \
+	RANLIB_x86_64_unknown_linux_gnu="$$wrapper_dir/zigranlib" \
+	AR_aarch64_unknown_linux_gnu="$$wrapper_dir/zigar" \
+	RANLIB_aarch64_unknown_linux_gnu="$$wrapper_dir/zigranlib" \
+	AR_x86_64_unknown_linux_musl="$$wrapper_dir/zigar" \
+	RANLIB_x86_64_unknown_linux_musl="$$wrapper_dir/zigranlib" \
+	AR_aarch64_unknown_linux_musl="$$wrapper_dir/zigar" \
+	RANLIB_aarch64_unknown_linux_musl="$$wrapper_dir/zigranlib" \
+	$(SOLSTONE_DISTRIBUTION) validate
 
 ci-full-plan:
 	@$(REQUIRE_CARGO)
@@ -1428,16 +1456,20 @@ check-release-package-inventory:
 # It already runs in install-checks, which depends on .installed and is where
 # interpreter-requiring checks belong. Run it directly with
 # `make check-release-package-inventory`.
-CI_FORBIDDEN_INTERPRETERS := python python3 pytest ruff uv
+CI_FORBIDDEN_INTERPRETERS := python python3 pytest ruff uv maturin pip pipx setuptools twine dpkg-deb rpmbuild ar rpm tar cpio curl wget
 define run-rust-gate-under-poison
 	@set -eu; \
 	shim_dir=$$(mktemp -d); \
 	trap 'rm -rf "$$shim_dir"' 0 1 2 15; \
+	export SOLSTONE_POISON_LOG="$$shim_dir/poison.log"; \
 	for interpreter in $(CI_FORBIDDEN_INTERPRETERS); do \
-		printf '%s\n' '#!/bin/sh' 'echo "Rust gate invoked a forbidden interpreter: $$0 $$*" >&2' 'exit 97' > "$$shim_dir/$$interpreter"; \
+		printf '%s\n' '#!/bin/sh' \
+			'if [ -n "$${SOLSTONE_POISON_LOG:-}" ]; then printf "%s %s\n" "$$0" "$$*" >> "$$SOLSTONE_POISON_LOG"; fi' \
+			'echo "Rust gate invoked a forbidden interpreter: $$0 $$*" >&2' \
+			'exit 97' > "$$shim_dir/$$interpreter"; \
 		chmod 755 "$$shim_dir/$$interpreter"; \
 	done; \
-	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 $(MAKE) $(1)
+	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 SOLSTONE_POISON_LOG="$$shim_dir/poison.log" $(MAKE) $(1)
 endef
 
 .PHONY: ci ci-under-poison ci-full ci-full-under-poison
