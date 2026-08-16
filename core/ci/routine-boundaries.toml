@@ -826,24 +826,6 @@ id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/entity_search
 id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/stream.rs::tests::temp_root::clock"
 
 [[findings]]
-id = "solstone-core-ingest-resolve::core/crates/solstone-core-ingest-resolve/src/apply.rs::tests::root::clock"
-
-[[findings]]
-id = "solstone-core-ingest-resolve::core/crates/solstone-core-ingest-resolve/src/manifest.rs::tests::merge_preserves_other_entries_and_skips_unwritten_files::clock"
-
-[[findings]]
-id = "solstone-core-ingest-resolve::core/crates/solstone-core-ingest-resolve/src/quarantine.rs::tests::failed_bytes_land_only_in_operator_quarantine::clock"
-
-[[findings]]
-id = "solstone-core-ingest-resolve::core/crates/solstone-core-ingest-resolve/src/resolve.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-ingest::core/crates/solstone-core-ingest/src/listing.rs::tests::received_not_written_is_dropped_before_same_name_different_sha_reduction::clock"
-
-[[findings]]
-id = "solstone-core-ingest::core/crates/solstone-core-ingest/src/router.rs::tests::root::clock"
-
-[[findings]]
 id = "solstone-core-ingest::core/crates/solstone-core-ingest/src/router.rs::tests::shared_connection_limit_rejects_oversized_declared_body::scheduling"
 
 [[findings]]

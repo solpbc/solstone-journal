@@ -185,8 +185,6 @@ fn applied_file(
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs;
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::Value;
     use solstone_core_segment::ContentName;
@@ -195,14 +193,8 @@ mod tests {
 
     use super::*;
 
-    fn root() -> PathBuf {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("solstone-core-ingest-apply-{suffix}"));
-        fs::create_dir_all(&path).unwrap();
-        path
+    fn root() -> tempfile::TempDir {
+        tempfile::TempDir::new().unwrap()
     }
 
     fn file<'a>(bytes: &'a [u8]) -> IngestFile<'a> {
@@ -214,7 +206,8 @@ mod tests {
 
     #[test]
     fn held_drift_is_stale_and_never_commits_a_manifest() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let segment = root.join("chronicle/20260804/device/120000_1");
         fs::create_dir_all(&segment).unwrap();
         fs::write(segment.join("audio.flac"), b"same").unwrap();
@@ -228,12 +221,12 @@ mod tests {
         fs::write(segment.join("audio.flac"), b"drift").unwrap();
         assert!(matches!(apply_plan(&plan, &files), Err(ApplyError::Stale)));
         assert!(!segment.join("ingest.json").exists());
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
     fn manifest_records_written_and_held_files_with_original_request() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let files = [file(b"sound")];
         let Resolution::Apply(plan) =
             resolve_ingest(&root, "20260804", "device", "120000_1", &files).unwrap()
@@ -248,6 +241,5 @@ mod tests {
         assert_eq!(manifest["schema_version"], 1);
         assert_eq!(manifest["requested_segment"], "120000_1");
         assert_eq!(manifest["files"]["audio.flac"]["size"], 5);
-        let _ = fs::remove_dir_all(root);
     }
 }

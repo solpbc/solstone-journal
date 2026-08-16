@@ -520,41 +520,16 @@ fn segment_exists(path: &Path) -> Result<bool, ResolveError> {
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::UNIX_EPOCH;
 
     use serde_json::{Value, json};
     use solstone_core_segment::ContentName;
 
     use super::*;
 
-    struct TempDir {
-        path: PathBuf,
-    }
-
-    impl TempDir {
-        fn new() -> Self {
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "solstone-core-ingest-resolve-{}-{nanos}",
-                std::process::id()
-            ));
-            fs::create_dir(&path).unwrap();
-            Self { path }
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.path);
-        }
-    }
-
-    fn root() -> TempDir {
-        let temporary = TempDir::new();
-        fs::create_dir(temporary.path.join("journal")).unwrap();
+    fn root() -> tempfile::TempDir {
+        let temporary = tempfile::TempDir::new().unwrap();
+        fs::create_dir(temporary.path().join("journal")).unwrap();
         temporary
     }
 
@@ -584,7 +559,7 @@ mod tests {
 
     fn resolve_with_processing_record_for_file(name: &str, record: Value) -> ApplyPlan {
         let temporary = root();
-        let journal = temporary.path.join("journal");
+        let journal = temporary.path().join("journal");
         let bytes = b"sound";
         let directory = segment(&journal, "20260804", "device", "120000_60");
         fs::write(
@@ -608,7 +583,7 @@ mod tests {
     #[test]
     fn candidate_order_is_requested_then_lexicographic() {
         let temporary = root();
-        let journal = temporary.path.join("journal");
+        let journal = temporary.path().join("journal");
         let bytes = b"new";
         let requested = segment(&journal, "20260804", "device", "120000_300");
         fs::write(requested.join("notes.json"), b"old").unwrap();
@@ -635,7 +610,7 @@ mod tests {
     #[test]
     fn joins_on_disk_bytes_without_a_write() {
         let temporary = root();
-        let journal = temporary.path.join("journal");
+        let journal = temporary.path().join("journal");
         let bytes = b"same";
         let directory = segment(&journal, "20260804", "device", "120000_60");
         fs::write(directory.join("notes.json"), bytes).unwrap();
@@ -663,7 +638,7 @@ mod tests {
     #[test]
     fn matching_manifest_without_proof_needs_missing_content_write() {
         let temporary = root();
-        let journal = temporary.path.join("journal");
+        let journal = temporary.path().join("journal");
         let bytes = b"sound";
         let directory = segment(&journal, "20260804", "device", "120000_60");
         let digest = sha256(bytes);
@@ -696,7 +671,7 @@ mod tests {
     #[test]
     fn terminal_proof_holds_absent_media() {
         let temporary = root();
-        let journal = temporary.path.join("journal");
+        let journal = temporary.path().join("journal");
         let bytes = b"sound";
         let directory = segment(&journal, "20260804", "device", "120000_60");
         fs::write(
@@ -842,7 +817,7 @@ mod tests {
     #[test]
     fn missing_content_outranks_sidecar_conflict() {
         let temporary = root();
-        let journal = temporary.path.join("journal");
+        let journal = temporary.path().join("journal");
         let audio = b"sound";
         let notes = b"new-notes";
         let directory = segment(&journal, "20260804", "device", "120000_60");
@@ -882,7 +857,7 @@ mod tests {
     #[test]
     fn no_media_content_conflict_reallocates_instead_of_dropping() {
         let temporary = root();
-        let journal = temporary.path.join("journal");
+        let journal = temporary.path().join("journal");
         let directory = segment(&journal, "20260804", "device", "120000_300");
         fs::write(directory.join("notes.json"), b"old").unwrap();
 
@@ -910,7 +885,7 @@ mod tests {
     #[test]
     fn attempt_bound_finds_first_free_key_and_reports_exhaustion() {
         let temporary = root();
-        let journal = temporary.path.join("journal");
+        let journal = temporary.path().join("journal");
         let first = segment(&journal, "20260804", "device", "120000_300");
         fs::write(first.join("notes.json"), b"old").unwrap();
         let free = plan(
@@ -927,7 +902,7 @@ mod tests {
         assert_eq!(free.status, PlanStatus::Collision);
 
         let exhausted = root();
-        let exhausted_journal = exhausted.path.join("journal");
+        let exhausted_journal = exhausted.path().join("journal");
         for offset in 0..MAX_INGEST_SEGMENT_ATTEMPTS {
             let directory = segment(
                 &exhausted_journal,
@@ -953,7 +928,7 @@ mod tests {
     #[test]
     fn resolution_never_creates_journal_state() {
         let temporary = root();
-        let journal = temporary.path.join("journal");
+        let journal = temporary.path().join("journal");
         let populated = segment(&journal, "20260804", "device", "120000_60");
         fs::write(populated.join("notes.json"), b"same").unwrap();
         let before = tree_snapshot(&journal);
@@ -990,7 +965,7 @@ mod tests {
     #[test]
     fn fresh_requested_key_is_ok() {
         let temporary = root();
-        let journal = temporary.path.join("journal");
+        let journal = temporary.path().join("journal");
         let result = plan(
             resolve_ingest(
                 &journal,

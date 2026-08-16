@@ -3678,6 +3678,7 @@ dependencies = [
  "solstone-core-ingest-resolve",
  "solstone-core-observer",
  "solstone-core-segment",
+ "tempfile",
  "tokio",
  "tower",
  "tower-http",
@@ -3695,6 +3696,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-segment",
+ "tempfile",
 ]
 
 [[package]]

@@ -19,5 +19,8 @@ solstone-core-journal-io.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-segment.workspace = true
 
+[dev-dependencies]
+tempfile = "3.24.0"
+
 [lints]
 workspace = true

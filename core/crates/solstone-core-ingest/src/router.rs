@@ -682,7 +682,6 @@ mod tests {
     use std::fs;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode, header};
@@ -720,14 +719,8 @@ mod tests {
         }
     }
 
-    fn root() -> std::path::PathBuf {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("solstone-core-ingest-{suffix}"));
-        fs::create_dir_all(&path).unwrap();
-        path
+    fn root() -> tempfile::TempDir {
+        tempfile::TempDir::new().unwrap()
     }
 
     fn basis(did: &str) -> AccessBasis {
@@ -833,7 +826,8 @@ mod tests {
 
     #[test]
     fn resolve_and_apply_reenters_once_after_stale_drift() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let state = IngestState {
             journal_root: root.clone(),
             notifier: Arc::new(solstone_core_ingest_resolve::LoggingIngestNotifier),
@@ -871,12 +865,12 @@ mod tests {
             fs::read(root.join("chronicle/20260804/device/120000_2/audio.flac")).unwrap(),
             b"upload"
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
     fn resolve_and_apply_does_not_retry_a_second_stale_plan() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let state = IngestState {
             journal_root: root.clone(),
             notifier: Arc::new(solstone_core_ingest_resolve::LoggingIngestNotifier),
@@ -901,12 +895,12 @@ mod tests {
                 .join("chronicle/20260804/device/120000_3/audio.flac")
                 .exists()
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn identity_is_from_access_basis_not_envelope_meta() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let envelope = json!({"day":"20260804","segment":"120000_1","meta":{"did":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"files":[{"submitted":"audio.flac","forward":"kept"}]});
         let app = router(&root);
         let (status, body) = call_upload(&app, envelope, "audio.flac", b"sound").await;
@@ -918,12 +912,12 @@ mod tests {
         let event: Value = serde_json::from_str(&events).unwrap();
         assert_eq!(event["did"], DID_A);
         assert_eq!(event["meta"]["did"], DID_B);
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn duplicate_records_event_without_second_stream_advance() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let envelope = json!({"day":"20260804","segment":"120000_1","meta":{"unknown":true},"files":[{"submitted":"audio.flac","extension":{"a":1}}]});
         let app = router(&root);
         assert_eq!(
@@ -1000,12 +994,12 @@ mod tests {
             segments["items"][0]["files"][0]["sha256"],
             format!("{:x}", sha2::Sha256::digest(b"sound"))
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn stream_advance_follows_segment_creation_not_plan_status() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         let stream = root.join("streams/device.json");
         let state = || -> Value {
@@ -1085,13 +1079,13 @@ mod tests {
         );
         assert_eq!(state()["seq"], 2);
         assert_eq!(state()["last_segment"], "120000_62");
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn notification_is_once_for_success_and_never_breaks_durability() {
         for fails in [false, true] {
-            let root = root();
+            let dir = root();
+            let root = dir.path().to_path_buf();
             let spy = Arc::new(SpyNotifier {
                 calls: AtomicUsize::new(0),
                 fails,
@@ -1106,13 +1100,13 @@ mod tests {
                 root.join("chronicle/20260804/device/120000_1/events.jsonl")
                     .exists()
             );
-            let _ = fs::remove_dir_all(root);
         }
     }
 
     #[tokio::test]
     async fn exhausted_resolution_quarantines_without_history_or_notification() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         for offset in 0..solstone_core_ingest_resolve::MAX_INGEST_SEGMENT_ATTEMPTS {
             let directory = root
                 .join("chronicle/20260804/device")
@@ -1144,12 +1138,12 @@ mod tests {
                 .unwrap()
                 .all(|entry| !entry.unwrap().path().join("events.jsonl").exists())
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn append_failure_is_a_hard_error_and_never_notifies() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let segment = root.join("chronicle/20260804/device/120000_1");
         fs::create_dir_all(segment.join("events.jsonl")).unwrap();
         let spy = Arc::new(SpyNotifier {
@@ -1162,12 +1156,12 @@ mod tests {
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(body["reason_code"], "event_append_failed");
         assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn resolution_io_failure_has_no_history_or_manifest() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let stream = root.join("chronicle/20260804/device");
         fs::create_dir_all(stream.parent().unwrap()).unwrap();
         fs::write(&stream, b"blocked").unwrap();
@@ -1179,12 +1173,12 @@ mod tests {
         assert!(!stream.join("120000_1/events.jsonl").exists());
         assert!(!stream.join("120000_1/ingest.json").exists());
         assert!(!root.join("chronicle/20260804/observer/failed").exists());
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn legacy_key_route_is_not_registered() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let mut request = Request::builder()
             .uri("/app/observer/api/deadbeef/key")
             .body(Body::empty())
@@ -1198,12 +1192,12 @@ mod tests {
             .unwrap();
         assert!(!production.contains("/api/"));
         assert!(!production.contains("/key"));
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn oversized_multipart_part_has_its_own_refusal() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         let encoded =
             envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}])).to_string();
@@ -1227,12 +1221,12 @@ mod tests {
             .1["reason_code"],
             "multipart_part_too_large"
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn excess_multipart_files_have_their_own_refusal() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         let names: Vec<String> = (0..9).map(|index| format!("file{index}.flac")).collect();
         let files = Value::Array(names.iter().map(|name| json!({"submitted":name})).collect());
@@ -1268,12 +1262,12 @@ mod tests {
             .1["reason_code"],
             "multipart_too_many_files"
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn excess_multipart_parts_have_their_own_refusal() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         let encoded =
             envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}])).to_string();
@@ -1316,12 +1310,12 @@ mod tests {
             .1["reason_code"],
             "multipart_too_many_parts"
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn oversized_filename_has_its_own_refusal() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         let name = "a".repeat(129);
         let encoded = envelope("20260804", "120002_1", json!([{"submitted":name}])).to_string();
@@ -1344,12 +1338,12 @@ mod tests {
             .1["reason_code"],
             "multipart_filename_too_long"
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn excess_multipart_headers_have_their_own_refusal() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         let encoded =
             envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}])).to_string();
@@ -1372,12 +1366,12 @@ mod tests {
             .1["reason_code"],
             "multipart_too_many_headers"
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn collision_preserves_original_content_and_remaps_segment() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         assert_eq!(
@@ -1455,12 +1449,12 @@ mod tests {
                 .iter()
                 .any(|item| item["key"] == remapped)
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn sidecar_conflict_is_distinct_from_media_collision() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         let request = envelope(
             "20260804",
@@ -1508,12 +1502,12 @@ mod tests {
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["status"], "conflict");
         assert_eq!(body["reason_code"], "content_conflict");
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn localhost_and_bearer_headers_do_not_supply_identity() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         let (content_type, body) = multipart(request.clone(), "audio.flac", b"sound");
@@ -1565,12 +1559,12 @@ mod tests {
         )
         .await;
         assert_eq!(read_body["reason_code"], "linked_device_required");
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn legacy_fields_and_protocol_versions_are_refused() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         for (field, code) in [
             ("stream", "legacy_stream_field"),
@@ -1619,12 +1613,12 @@ mod tests {
             assert_eq!(actual, status);
             assert_eq!(body["reason_code"], code);
         }
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn identity_is_independent_for_each_request() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         for (did, day, segment) in [
             (DID_A, "20260804", "120000_1"),
@@ -1658,12 +1652,12 @@ mod tests {
         assert!(!first.contains(DID_B));
         assert!(second.contains(DID_B));
         assert!(!second.contains(DID_A));
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn read_routes_return_event_provenance_and_present_custody() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         let request = envelope(
             "20260804",
@@ -1733,12 +1727,12 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(refusal["reason_code"], "protocol_version_required");
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn manifest_skips_malformed_device_ingest_events() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let app = router(&root);
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         assert_eq!(
@@ -1765,12 +1759,12 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["days"], json!({}));
-        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
     async fn shared_connection_limit_rejects_oversized_declared_body() {
-        let root = root();
+        let dir = root();
+        let root = dir.path().to_path_buf();
         let (server, mut client) = tokio::io::duplex(128 * 1024);
         let task = tokio::spawn(async move {
             serve_connection(server, router(&root), basis(DID_A), &mux_builder())

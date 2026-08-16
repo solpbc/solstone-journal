@@ -54,7 +54,6 @@ pub fn write_ingest_manifest(
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use solstone_core_segment::{ContentName, SegmentDir};
 
@@ -64,12 +63,9 @@ mod tests {
 
     #[test]
     fn merge_preserves_other_entries_and_skips_unwritten_files() {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("solstone-core-manifest-{suffix}"));
-        let segment = SegmentDir::resolve(&root, "20260804", "120000_1", "device").unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        let segment = SegmentDir::resolve(root, "20260804", "120000_1", "device").unwrap();
         fs::create_dir_all(segment.path()).unwrap();
         fs::write(
             segment.path().join("ingest.json"),
@@ -101,6 +97,5 @@ mod tests {
         assert_eq!(manifest["files"]["older.json"]["sha256"], "old");
         assert_eq!(manifest["files"]["audio.flac"]["size"], 5);
         assert!(manifest["files"].get("notes.json").is_none());
-        let _ = fs::remove_dir_all(root);
     }
 }

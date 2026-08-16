@@ -311,7 +311,6 @@ fn map_evidence_error(error: ObserverEvidenceError) -> ListingError {
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::json;
 
@@ -385,11 +384,8 @@ mod tests {
 
     #[test]
     fn received_not_written_is_dropped_before_same_name_different_sha_reduction() {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("ingest-listing-{suffix}"));
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
         let segment = root.join("chronicle/20260804/laptop/120000_60");
         fs::create_dir_all(&segment).expect("segment directory");
         fs::write(segment.join("audio.flac"), b"held").expect("held media");
@@ -404,10 +400,9 @@ mod tests {
             })],
             ..HistoryEvidence::default()
         };
-        let listing = merge_day_listing(&root, "20260804", None, history, Vec::new())
+        let listing = merge_day_listing(root, "20260804", None, history, Vec::new())
             .expect("audit-only row must not make the name ambiguous");
         assert_eq!(listing.segments[0].files.len(), 1);
         assert_eq!(listing.segments[0].files[0].sha256, "held");
-        fs::remove_dir_all(root).expect("cleanup");
     }
 }

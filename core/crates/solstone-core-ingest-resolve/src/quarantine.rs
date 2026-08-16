@@ -52,7 +52,6 @@ pub fn quarantine_failed(
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use solstone_core_segment::ContentName;
 
@@ -60,19 +59,15 @@ mod tests {
 
     #[test]
     fn failed_bytes_land_only_in_operator_quarantine() {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("solstone-core-quarantine-{suffix}"));
-        fs::create_dir_all(&root).unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
         let bytes = b"unplaced";
         let files = [IngestFile {
             name: ContentName::new("audio.flac").unwrap(),
             bytes,
         }];
         let receipt = quarantine_failed(
-            &root,
+            root,
             "20260804",
             &FailedPlan {
                 requested_segment: "120000_1".to_owned(),
@@ -88,6 +83,5 @@ mod tests {
                 .join(receipt.timestamp_millis.to_string())
                 .join("audio.flac")
         );
-        let _ = fs::remove_dir_all(root);
     }
 }
