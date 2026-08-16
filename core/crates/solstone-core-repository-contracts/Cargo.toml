@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+nix = { workspace = true, features = ["process", "resource", "signal"] }
 quote = "1.0.47"
 serde.workspace = true
 serde_json.workspace = true

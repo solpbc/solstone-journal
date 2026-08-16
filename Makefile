@@ -89,7 +89,7 @@ ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # `make install` fail on a clean environment while every Rust gate stayed green,
 # because the gates carry the export and check-differentials inherits it when it
 # shells into install.
-install .installed build check-rust-msrv check-rust-clippy check-rust-test check-rust-race check-rust-onnx-test check-rust-shipped-binaries check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
@@ -483,6 +483,16 @@ check-rust-pdf-stage:
 	@$(MAKE) --no-print-directory "$(PDF_RUNTIME_HOST_LINK_DIR)"
 	@echo "host PDFium runtime staged at $(PDF_RUNTIME_HOST_LINK_DIR)"
 
+# Read-only native-runtime readiness checks. The runner may verify prepared
+# inputs, but only the explicit prep targets above are allowed to repair them.
+check-rust-onnx-ready:
+	@set -eu; $(REQUIRE_ONNX_HOST_RUNTIME)
+	@echo "host ONNX Runtime ready at $(ONNX_RUNTIME_HOST_LINK_DIR)"
+
+check-rust-pdf-ready:
+	@set -eu; $(REQUIRE_PDF_HOST_RUNTIME)
+	@echo "host PDFium runtime ready at $(PDF_RUNTIME_HOST_LINK_DIR)"
+
 # The ONNX-linked crates' own #[test]s. This runs INSIDE ci: it requires the
 # staged runtime rather than building it, which is exactly the contract
 # check-rust-shipped-binaries has carried since it started building the shipped
@@ -545,6 +555,10 @@ check-rust-clippy:
 	@$(REQUIRE_CARGO)
 	cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --all-targets --locked -- -D warnings
 
+check-rust-clippy-full:
+	@$(REQUIRE_CARGO)
+	cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --all-targets --locked -- -D warnings
+
 # Routine validation runs only in-process unit harnesses from workspace library
 # and binary targets. Cargo integration-test targets remain part of clippy's
 # static compilation above and run only in the explicit full gate below.
@@ -552,9 +566,18 @@ check-rust-unit:
 	@$(REQUIRE_CARGO)
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked -- --test-threads=1
 
-SOLSTONE_CI_RUNNER := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-repository-contracts --bin solstone-ci --locked --
+SOLSTONE_CI_RUNNER := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-repository-contracts --bin solstone-ci --locked --offline --
 
-.PHONY: check-rust-ci-topology ci-full-plan
+# Export selector values directly instead of interpolating them into a shell
+# command. This preserves comma- or space-separated values literally and keeps
+# metacharacters from becoming shell syntax.
+ci-full-plan ci-full-runner-under-poison: export SOLSTONE_CI_SETS := $(SETS)
+ci-full-plan ci-full-runner-under-poison: export SOLSTONE_CI_AREAS := $(AREAS)
+ci-full-plan ci-full-runner-under-poison: export SOLSTONE_CI_PACKAGES := $(PACKAGES)
+ci-full-plan ci-full-runner-under-poison: export SOLSTONE_CI_TARGETS := $(TARGETS)
+ci-full-runner-under-poison: export SOLSTONE_CI_RECEIPT := $(RECEIPT)
+
+.PHONY: check-rust-ci-topology ci-full-plan ci-full-runner ci-full-runner-under-poison check-rust-clippy-full check-rust-onnx-ready check-rust-pdf-ready check-rust-registry-suite check-rust-registry-package
 
 check-rust-ci-topology:
 	@$(REQUIRE_CARGO)
@@ -563,6 +586,40 @@ check-rust-ci-topology:
 ci-full-plan:
 	@$(REQUIRE_CARGO)
 	$(SOLSTONE_CI_RUNNER) plan
+
+ci-full-runner:
+	$(call run-rust-gate-under-poison,ci-full-runner-under-poison)
+
+ci-full-runner-under-poison:
+	@test "$$SOLSTONE_CI_POISONED" = 1 || { echo "ci-full-runner-under-poison is internal; run 'make ci-full-runner'" >&2; exit 2; }
+	$(SOLSTONE_CI_RUNNER) run
+
+# Per-registry-entry wrappers preserve the native runtime contract while the
+# runner keeps ownership of selection, timeout, logging, and aggregation.
+define run-registry-cargo
+	@set -eu; \
+	test -n "$(CI_PACKAGE)" || { echo "CI_PACKAGE is required" >&2; exit 2; }; \
+	run_cargo() { \
+		if [ -n "$(CI_FEATURES)" ]; then \
+			cargo test --manifest-path $(RUST_MANIFEST) --locked --offline $(1) --features "$(CI_FEATURES)" -- --test-threads=1; \
+		else \
+			cargo test --manifest-path $(RUST_MANIFEST) --locked --offline $(1) -- --test-threads=1; \
+		fi; \
+	}; \
+	case "$(CI_RUNTIME)" in \
+		none) run_cargo ;; \
+		onnx) $(REQUIRE_ONNX_HOST_RUNTIME); $(VAD_ANALYZE_HOST_ORT_ENV) run_cargo ;; \
+		pdf) $(REQUIRE_PDF_HOST_RUNTIME); SOLSTONE_CORE_PDF_LIBRARY="$(PDF_RUNTIME_HOST_LINK_DIR)/$(PDF_RUNTIME_HOST_LIBRARY)" run_cargo ;; \
+		*) echo "unknown CI_RUNTIME '$(CI_RUNTIME)'" >&2; exit 2 ;; \
+	esac
+endef
+
+check-rust-registry-suite:
+	@test -n "$(CI_TARGET)" || { echo "CI_TARGET is required" >&2; exit 2; }
+	$(call run-registry-cargo,-p "$(CI_PACKAGE)" --test "$(CI_TARGET)")
+
+check-rust-registry-package:
+	$(call run-registry-cargo,-p "$(CI_PACKAGE)" --lib --bins)
 
 check-rust-test:
 	@$(REQUIRE_CARGO)
