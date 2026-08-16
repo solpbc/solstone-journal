@@ -176,7 +176,9 @@ pub fn replace_trends_cache(
 
 /// Observes `warm_trends` calls on the constructing thread only.
 ///
-/// [`Drop`] restores the thread's captured base so nested probes do not accumulate.
+/// [`Drop`] restores the thread's captured base. That is correct only for LIFO
+/// nesting (inner probe dropped before an outer one); dropping an earlier probe
+/// while a later one is still live rewinds the counter under the later probe.
 pub struct TrendsWarmProbe {
     base: u64,
 }

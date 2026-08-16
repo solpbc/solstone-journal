@@ -105,7 +105,7 @@ async fn relay_health_subscriber_starts_late_and_drives_live_status() {
 
     let (notify, mut applied) = watch::channel(0_u64);
     applied.borrow_and_update();
-    set_relay_health_applied_notify(Some(notify));
+    let _notify = RelayNotifyGuard::install(notify);
 
     let (authorization_sender, _) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
@@ -175,6 +175,20 @@ async fn relay_health_subscriber_starts_late_and_drives_live_status() {
     let offline = loopback_get(handle.loopback_ipv4_addr()).await;
     assert_eq!(offline["relay_state"], "offline");
 
-    set_relay_health_applied_notify(None);
     handle.shutdown();
+}
+
+struct RelayNotifyGuard;
+
+impl RelayNotifyGuard {
+    fn install(sender: watch::Sender<u64>) -> Self {
+        set_relay_health_applied_notify(Some(sender));
+        Self
+    }
+}
+
+impl Drop for RelayNotifyGuard {
+    fn drop(&mut self) {
+        set_relay_health_applied_notify(None);
+    }
 }

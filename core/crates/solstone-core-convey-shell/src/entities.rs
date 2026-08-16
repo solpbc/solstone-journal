@@ -180,7 +180,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn entities_shell_and_state_are_reachable_over_loopback() {
+    async fn entities_shell_and_state_are_reachable_through_the_router() {
         let journal = Journal::established();
         let (status, _headers, body) = routed(&journal, "GET", "/app/entities/", b"").await;
         assert_eq!(status, StatusCode::OK);
