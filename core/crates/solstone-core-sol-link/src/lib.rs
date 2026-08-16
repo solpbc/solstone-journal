@@ -34,6 +34,8 @@ pub mod mark;
 pub mod pairing;
 #[cfg(feature = "client")]
 mod pairing_entry;
+#[cfg(feature = "host")]
+mod publish_checkpoint;
 #[cfg(feature = "client")]
 mod serve;
 #[cfg(feature = "host")]
@@ -52,6 +54,22 @@ pub use door::{
 };
 #[cfg(feature = "client")]
 pub use serve::SplLinkServeRunner;
+
+/// Test-only serve internals for the `sol_link_serving` integration target.
+#[cfg(all(feature = "client", any(test, feature = "host")))]
+#[doc(hidden)]
+pub mod serve_test_support {
+    pub use crate::serve::{
+        STATUS_PATH, StatusClock, StatusTracker, bridge_names, bridge_policy_for_port,
+    };
+}
+
+/// Test-only publication checkpoints for the `sol_link_publish_crash` target.
+#[cfg(all(feature = "host", feature = "test-hooks"))]
+#[doc(hidden)]
+pub mod publish_test_hooks {
+    pub use crate::publish_checkpoint::PublishCheckpoint;
+}
 
 /// Test-only certificate fixtures shared by this package's unit and integration tests.
 #[cfg(any(test, feature = "host"))]

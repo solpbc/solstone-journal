@@ -1282,15 +1282,6 @@ id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/door.rs::te
 id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/door.rs::tests::new::clock"
 
 [[findings]]
-id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/establish.rs::tests::run_child_until_pause::process"
-
-[[findings]]
-id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/establish.rs::tests::run_child_until_pause::scheduling"
-
-[[findings]]
-id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/establish.rs::tests::wait_for_marker::clock"
-
-[[findings]]
 id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/lib.rs::tests::direct_path_uses_fake_spl_direct_seam_without_sockets::scheduling"
 
 [[findings]]
@@ -1300,31 +1291,7 @@ id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/pairing/mod
 id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/pairing/nonces.rs::tests::new::clock"
 
 [[findings]]
-id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::http_get::clock"
-
-[[findings]]
-id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::http_get::network"
-
-[[findings]]
-id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::loopback_get::network"
-
-[[findings]]
 id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::new::scheduling"
-
-[[findings]]
-id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::proxied_response_streams_before_upstream_completion::clock"
-
-[[findings]]
-id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::proxied_response_streams_before_upstream_completion::network"
-
-[[findings]]
-id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::proxied_response_streams_before_upstream_completion::scheduling"
-
-[[findings]]
-id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::resident_serve_answers_the_local_status_route_while_on_duty::scheduling"
-
-[[findings]]
-id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::unused_loopback_port::network"
 
 [[findings]]
 id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::temp_path::clock"
