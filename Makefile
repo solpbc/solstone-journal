@@ -679,7 +679,16 @@ check-rust-distribution-under-poison:
 	printf '%s\n' '#!/bin/sh' 'exec zig ar "$$@"' > "$$wrapper_dir/zigar"; \
 	printf '%s\n' '#!/bin/sh' 'exec zig ranlib "$$@"' > "$$wrapper_dir/zigranlib"; \
 	chmod 755 "$$wrapper_dir/zigar" "$$wrapper_dir/zigranlib"; \
-	echo "producing linux-x86_64 and linux-aarch64 under poison"; \
+	if [ -n "$${SOLSTONE_ZIG:-}" ]; then \
+		zig_bin=$$SOLSTONE_ZIG; \
+		if [ -d "$$zig_bin" ]; then zig_bin=$$zig_bin/zig; fi; \
+		PATH="$$(dirname "$$zig_bin"):$$PATH"; \
+		export PATH; \
+	fi; \
+	out_root=$${SOLSTONE_DISTRIBUTION_OUT:-/var/tmp/solstone-distribution-out}; \
+	echo "producing linux-x86_64 and linux-aarch64 under poison into $$out_root"; \
+	AR=$$wrapper_dir/zigar \
+	RANLIB=$$wrapper_dir/zigranlib \
 	AR_x86_64_unknown_linux_gnu="$$wrapper_dir/zigar" \
 	RANLIB_x86_64_unknown_linux_gnu="$$wrapper_dir/zigranlib" \
 	AR_aarch64_unknown_linux_gnu="$$wrapper_dir/zigar" \
@@ -688,7 +697,24 @@ check-rust-distribution-under-poison:
 	RANLIB_x86_64_unknown_linux_musl="$$wrapper_dir/zigranlib" \
 	AR_aarch64_unknown_linux_musl="$$wrapper_dir/zigar" \
 	RANLIB_aarch64_unknown_linux_musl="$$wrapper_dir/zigranlib" \
-	$(SOLSTONE_DISTRIBUTION) validate
+	$(SOLSTONE_DISTRIBUTION) produce linux-x86_64 "$$out_root/linux-x86_64"; \
+	AR=$$wrapper_dir/zigar \
+	RANLIB=$$wrapper_dir/zigranlib \
+	AR_x86_64_unknown_linux_gnu="$$wrapper_dir/zigar" \
+	RANLIB_x86_64_unknown_linux_gnu="$$wrapper_dir/zigranlib" \
+	AR_aarch64_unknown_linux_gnu="$$wrapper_dir/zigar" \
+	RANLIB_aarch64_unknown_linux_gnu="$$wrapper_dir/zigranlib" \
+	AR_x86_64_unknown_linux_musl="$$wrapper_dir/zigar" \
+	RANLIB_x86_64_unknown_linux_musl="$$wrapper_dir/zigranlib" \
+	AR_aarch64_unknown_linux_musl="$$wrapper_dir/zigar" \
+	RANLIB_aarch64_unknown_linux_musl="$$wrapper_dir/zigranlib" \
+	$(SOLSTONE_DISTRIBUTION) produce linux-aarch64 "$$out_root/linux-aarch64"; \
+	if [ -s "$${SOLSTONE_POISON_LOG:-}" ]; then \
+		echo "poison log is not empty:" >&2; \
+		cat "$$SOLSTONE_POISON_LOG" >&2; \
+		exit 1; \
+	fi; \
+	echo "poison log empty"
 
 ci-full-plan:
 	@$(REQUIRE_CARGO)
@@ -1469,7 +1495,13 @@ define run-rust-gate-under-poison
 			'exit 97' > "$$shim_dir/$$interpreter"; \
 		chmod 755 "$$shim_dir/$$interpreter"; \
 	done; \
-	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 SOLSTONE_POISON_LOG="$$shim_dir/poison.log" $(MAKE) $(1)
+	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 SOLSTONE_POISON_LOG="$$shim_dir/poison.log" $(MAKE) $(1); \
+	if [ -s "$$shim_dir/poison.log" ]; then \
+		echo "poison log is not empty:" >&2; \
+		cat "$$shim_dir/poison.log" >&2; \
+		exit 1; \
+	fi; \
+	echo "poison log empty"
 endef
 
 .PHONY: ci ci-under-poison ci-full ci-full-under-poison

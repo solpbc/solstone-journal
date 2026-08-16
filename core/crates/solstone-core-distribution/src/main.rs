@@ -9,6 +9,11 @@ use solstone_core_distribution::cleanroom::{
     bind_loopback, plan_text_from_inventory_path, serve_directory, serve_root_from_args,
 };
 use solstone_core_distribution::discover_and_validate_inventory;
+use solstone_core_distribution::produce::{self, ProduceArgs};
+
+fn usage() -> &'static str {
+    "usage: solstone-distribution <validate|produce|cleanroom-plan|cleanroom-serve|help> [ARG]"
+}
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
@@ -31,6 +36,39 @@ fn main() -> ExitCode {
                 }
                 Err(error) => {
                     eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("produce") => {
+            let target = args.next();
+            let dest = args.next();
+            match (target, dest) {
+                (Some(target), Some(dest)) => {
+                    let start = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                    match produce::run(ProduceArgs {
+                        target_id: target,
+                        dest: PathBuf::from(dest),
+                        start,
+                    }) {
+                        Ok(report) => {
+                            println!(
+                                "produced target={} commit={} lock_sha256={}",
+                                report.target, report.commit, report.lock_sha256
+                            );
+                            for path in report.artifacts {
+                                println!("{}", path.display());
+                            }
+                            ExitCode::SUCCESS
+                        }
+                        Err(error) => {
+                            eprintln!("{error}");
+                            ExitCode::from(2)
+                        }
+                    }
+                }
+                _ => {
+                    eprintln!("{}", usage());
                     ExitCode::from(2)
                 }
             }
@@ -81,16 +119,12 @@ fn main() -> ExitCode {
             }
         }
         Some("help" | "--help" | "-h") | None => {
-            println!(
-                "usage: solstone-distribution <validate|cleanroom-plan|cleanroom-serve|help> [ARG]"
-            );
+            println!("{}", usage());
             ExitCode::SUCCESS
         }
         Some(other) => {
             eprintln!("unknown command {other:?}");
-            println!(
-                "usage: solstone-distribution <validate|cleanroom-plan|cleanroom-serve|help> [ARG]"
-            );
+            println!("{}", usage());
             ExitCode::from(2)
         }
     }

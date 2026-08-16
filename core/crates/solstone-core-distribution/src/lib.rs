@@ -11,6 +11,7 @@ pub mod inspect;
 pub mod inventory;
 pub mod lanes;
 pub mod onnx_runtime;
+pub mod produce;
 pub mod promote;
 pub mod provenance;
 pub mod record;
