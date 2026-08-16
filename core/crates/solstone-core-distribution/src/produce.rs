@@ -274,7 +274,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         );
         let musl_stubs = work.join("musl-lib-stubs");
         write_musl_lib_stubs(&musl_stubs)?;
-        let gnu_env = lanes::gnu_lane_env(
+        let mut gnu_env = lanes::gnu_lane_env(
             target,
             &wrappers,
             &zig_lib,
@@ -283,6 +283,13 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             &host,
         )
         .map_err(|error| ProduceError::new(error.to_string()))?;
+        if let Some(cflags) = gnu_env
+            .vars
+            .get(&format!("CFLAGS_{}", lanes::env_target(&target.triple_gnu)))
+            .cloned()
+        {
+            gnu_env.vars.insert("CFLAGS".to_owned(), cflags);
+        }
         write_wrappers(&musl_env).map_err(|error| ProduceError::new(error.to_string()))?;
         write_wrappers(&gnu_env).map_err(|error| ProduceError::new(error.to_string()))?;
 
