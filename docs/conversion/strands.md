@@ -384,7 +384,16 @@ First-run journal establishment. **Creates the identity root** that `S:device-li
 
 ⛔ **An inventory is an allow-list, never a directory listing.** A default release build produces test binaries and stub helpers alongside the product ones; see the carry-forward in `plates.md`.
 
-⚠ **The second strand is where a name is decided rather than defaulted.** `P-system-models` already owns *what an owner's machine downloads, where it comes from, and whether the host can run it*, and it enforces a single-element origin allow-list inside one fetch primitive. The three bundled speaker/VAD graphs (`wespeaker-resnet34-256` · `pyannote-segmentation-3.0` · `silero_vad_v6`) are the boundary case: **every install needs all three**, they are digest-pinned in the consuming crate (`solstone-core-transcribe/src/model_assets.rs`), and they are today delivered as a Python wheel. 🔴 **Shipping them and fetching them are both defensible; having a Python package own the answer is not.** The contract at this strand's end says which, per artifact, and a rebuild that leaves it implicit reproduces the same nobody's-contract shape one layer down.
+⚠ **The second strand is where a name is decided rather than defaulted.** `P-system-models` already owns *what an owner's machine downloads, where it comes from, and whether the host can run it*, and it enforces a single-element origin allow-list inside one fetch primitive. ⛔ **Shipping an artifact and fetching it are both defensible; leaving the answer implicit is not** — that reproduces the nobody's-contract shape one layer down.
+
+🔒 **RULED 2026-08-16 — a REQUIRED artifact is bundled.** An artifact without which the journal cannot perform a function every install has is carried **inside** the release tree, not fetched. The boundary this strand draws is *required versus optional*, and it is a property of the artifact rather than of its size.
+
+| | | |
+|---|---|---|
+| **Bundled** | the three speaker/VAD graphs — `wespeaker-resnet34-256` · `pyannote-segmentation-3.0` · `silero_vad_v6` | every install needs all three, they are digest-pinned in the consuming crate (`solstone-core-transcribe/src/model_assets.rs`), and transcription is not an opt-in feature. Placed at `lib/solstone_journal_models/assets/`, which that crate's resolver already searches **before** any `site-packages` candidate |
+| **Fetched** | the large per-platform optional runtimes — `llama-server`, the Core ML transcription models, ced, rerank, rf-detr, the Vulkan probe's targets | gated on host capability or on an owner choosing a provider; **not** every install needs them, and the mirror, catalog and deletion-guard machinery in `P-system-models` exists for exactly this class |
+
+⛔ **The fetched class does not grow by default.** Moving a required artifact out of the tree to save download size is a change to this contract, not a packaging optimization: it converts a working install into a first-run network dependency, and it is the strand's owner who decides it.
 
 ---
 
