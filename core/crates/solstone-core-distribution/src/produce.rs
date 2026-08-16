@@ -265,6 +265,8 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             ),
             rust_lld.display().to_string(),
         );
+        let musl_stubs = work.join("musl-lib-stubs");
+        write_musl_lib_stubs(&musl_stubs)?;
         let gnu_env = lanes::gnu_lane_env(
             target,
             &wrappers,
@@ -288,6 +290,8 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             remap[2].clone(),
             "-C".to_owned(),
             "link-arg=--build-id=none".to_owned(),
+            "-C".to_owned(),
+            format!("link-arg=-L{}", musl_stubs.display()),
         ]
         .join("\x1f");
         let gnu_rustflags = [
@@ -524,6 +528,14 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
     }
     bind_cargo_json(&String::from_utf8_lossy(&output.stdout))
         .map_err(|error| ProduceError::new(error.to_string()))
+}
+
+fn write_musl_lib_stubs(dir: &Path) -> Result<(), ProduceError> {
+    fs::create_dir_all(dir)?;
+    for name in ["libdl.a", "libm.a", "libatomic.a"] {
+        fs::write(dir.join(name), b"!<arch>\n")?;
+    }
+    Ok(())
 }
 
 fn cargo_rendered_errors(stdout: &str) -> String {
