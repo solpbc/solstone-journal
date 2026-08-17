@@ -9,7 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use solstone_core_journal_config::materialized_defaults;
-use solstone_core_journal_config_write::{LockOptions, hold_lock};
+use solstone_core_journal_config_write::{
+    JournalConfigMutation, LockOptions, hold_lock, mutate_journal_config,
+};
 
 fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_solstone-core")
@@ -109,7 +111,12 @@ fn journal_config_read_corrupt_exits_unavailable_without_echoing_content() {
 
     assert_eq!(output.status.code(), Some(69));
     assert_eq!(output.stdout, b"");
-    assert!(!String::from_utf8_lossy(&output.stderr).contains("super-secret-content"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.starts_with("journal-config read failed: "),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("super-secret-content"));
     assert_eq!(fs::read(root.join("config/journal.json")).unwrap(), secret);
     fs::remove_dir_all(root).expect("cleanup root");
 }
@@ -256,7 +263,12 @@ fn journal_config_commit_corrupt_existing_file_exits_unavailable() {
 
     assert_eq!(output.status.code(), Some(69));
     assert_eq!(output.stdout, b"");
-    assert!(!String::from_utf8_lossy(&output.stderr).contains("super-secret-content"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.starts_with("journal-config commit failed: "),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("super-secret-content"));
     assert_eq!(fs::read(root.join("config/journal.json")).unwrap(), secret);
     fs::remove_dir_all(root).expect("cleanup root");
 }
@@ -313,4 +325,113 @@ fn journal_config_commit_lock_io_exits_ioerr() {
     assert_eq!(output.status.code(), Some(74));
     assert_eq!(output.stdout, b"");
     fs::remove_file(root).expect("cleanup root");
+}
+
+fn noop_materialize(
+    root: &Path,
+) -> solstone_core_journal_config_write::JournalConfigTransaction<()> {
+    mutate_journal_config(root, LockOptions::default(), |_config| {
+        JournalConfigMutation {
+            changed: false,
+            value: (),
+        }
+    })
+    .expect("materialize journal config")
+}
+
+#[test]
+fn journal_config_materialization_is_deterministic_across_empty_journals() {
+    let first = temp_path("materialize-a");
+    let second = temp_path("materialize-b");
+    fs::create_dir(&first).expect("create first journal");
+    fs::create_dir(&second).expect("create second journal");
+
+    let first_txn = noop_materialize(&first);
+    let second_txn = noop_materialize(&second);
+    assert!(first_txn.written);
+    assert!(!first_txn.changed);
+    assert!(second_txn.written);
+    assert!(!second_txn.changed);
+
+    let first_bytes = fs::read(first.join("config/journal.json")).expect("read first config");
+    let second_bytes = fs::read(second.join("config/journal.json")).expect("read second config");
+    assert_eq!(first_bytes, second_bytes);
+    fs::remove_dir_all(first).expect("cleanup first");
+    fs::remove_dir_all(second).expect("cleanup second");
+}
+
+#[test]
+fn journal_config_mutate_cycle_writes_only_on_materialize_or_change() {
+    let root = temp_path("mutate-cycle");
+    fs::create_dir(&root).expect("create journal");
+
+    let materialized = noop_materialize(&root);
+    assert!(materialized.written);
+    assert!(!materialized.changed);
+    assert!(root.join("config/journal.json").is_file());
+
+    let noop = noop_materialize(&root);
+    assert!(!noop.written);
+    assert!(!noop.changed);
+
+    let changed = mutate_journal_config(&root, LockOptions::default(), |config| {
+        config.insert("appended".to_owned(), json!("new"));
+        JournalConfigMutation {
+            changed: true,
+            value: (),
+        }
+    })
+    .expect("changed mutation");
+    assert!(changed.written);
+    assert!(changed.changed);
+    let committed: Value =
+        serde_json::from_slice(&fs::read(root.join("config/journal.json")).expect("read config"))
+            .expect("committed JSON");
+    assert_eq!(committed["appended"], "new");
+    fs::remove_dir_all(root).expect("cleanup root");
+}
+
+#[test]
+fn journal_config_commit_preserves_unknown_order_and_raw_utf8() {
+    let root = temp_path("preserve-utf8");
+    write(
+        &root,
+        "config/journal.json",
+        b"{\"known\": \"before\", \"unknown\": \"Ren\xc3\xa9e\", \"ordered\": true}\n",
+    );
+
+    mutate_journal_config(&root, LockOptions::default(), |config| {
+        config.insert("known".to_owned(), json!("after"));
+        config.insert("appended".to_owned(), json!("new"));
+        JournalConfigMutation {
+            changed: true,
+            value: (),
+        }
+    })
+    .expect("preserve mutation");
+
+    let committed = fs::read(root.join("config/journal.json")).expect("read committed config");
+    assert!(
+        committed
+            .windows(b"\"unknown\": \"Ren\xc3\xa9e\"".len())
+            .any(|window| window == b"\"unknown\": \"Ren\xc3\xa9e\""),
+        "unknown UTF-8 value should remain raw"
+    );
+    assert!(
+        !committed
+            .windows(b"Ren\\u00e9e".len())
+            .any(|window| window == b"Ren\\u00e9e"),
+        "unknown UTF-8 value must not be escaped"
+    );
+    let text = String::from_utf8(committed).expect("committed UTF-8");
+    let positions: Vec<_> = ["known", "unknown", "ordered"]
+        .into_iter()
+        .map(|key| {
+            text.find(&format!("\"{key}\""))
+                .expect("top-level key should be present")
+        })
+        .collect();
+    assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(text.contains("\"appended\""));
+    fs::remove_dir_all(root).expect("cleanup root");
 }
