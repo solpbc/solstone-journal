@@ -66,15 +66,13 @@ fn frames_only(file: &str) -> Command {
     command
 }
 
-fn temporary_root(label: &str) -> PathBuf {
+fn temporary_root(_label: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "solstone-describe-{label}-{}-{nanos}",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("solstone-describe-{}-{nanos}", std::process::id()));
     fs::create_dir_all(&path).expect("create temporary root");
     path
 }

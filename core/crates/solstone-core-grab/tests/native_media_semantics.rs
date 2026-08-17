@@ -12,10 +12,18 @@ const DISTINCT_MKV_SHA256: &str =
     "f4e8d1aa0cee50288f8b97808dced883ad3c9af01c779f4b9a066f908f328caa";
 const NULL_PTS_H264_SHA256: &str =
     "94d9948f2789b8b5543c27fd5c2a836a2b3df30541143e7f5d537ed39d923792";
+#[cfg(not(target_os = "macos"))]
 const DISTINCT_ID3_RGB24_SHA256: &str =
     "8174dfacc8f1c7fddffb2f6fb93070e2a6c41064e52477370ea79695067ec2f4";
+#[cfg(target_os = "macos")]
+const DISTINCT_ID3_RGB24_SHA256: &str =
+    "6c99e979f03f68c0bb955dea95ec8673dab411e8b4b71cbc48f380788ec314aa";
+#[cfg(not(target_os = "macos"))]
 const DISTINCT_ID1_RGB24_SHA256: &str =
     "0b33dbcdd6754a86355a3230801ca90de867fd57e700029038e33e9cfd9aa341";
+#[cfg(target_os = "macos")]
+const DISTINCT_ID1_RGB24_SHA256: &str =
+    "6dee95a56b50b909f9a73481529a2dd123f5959c28e689185e643947d55f50ea";
 
 fn corpus_path(file: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

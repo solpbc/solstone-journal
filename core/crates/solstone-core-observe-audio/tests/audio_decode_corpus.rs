@@ -101,6 +101,16 @@ fn generated_decode_corpus(temp: &TempDir) -> Vec<PathBuf> {
     ] {
         let output = temp.path().join(name);
         let args = match codec {
+            Some("libvorbis") if cfg!(target_os = "macos") => vec![
+                "-i",
+                source,
+                "-ac",
+                "2",
+                "-c:a",
+                "vorbis",
+                "-strict",
+                "experimental",
+            ],
             Some(codec) => vec!["-i", source, "-ac", "2", "-c:a", codec],
             None => vec!["-i", source, "-ac", "2"],
         };
