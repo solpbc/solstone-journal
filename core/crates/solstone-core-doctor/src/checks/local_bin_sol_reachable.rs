@@ -16,7 +16,9 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 
-const LOCAL_BIN_SOL_FIX: &str = "Install via `uv tool install solstone` or `pipx install solstone` for the canonical layout, or run `ln -s $(command -v sol) ~/.local/bin/sol` to keep your custom layout.";
+const MISSING_LOCAL_BIN_SOL_FIX: &str = "run journal setup to install the managed sol wrapper";
+const PATH_SOL_FIX: &str =
+    "put ~/.local/bin earlier on PATH, or run journal setup to repoint the managed wrapper";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     // Python's shutil.which reads the process PATH; this check intentionally
@@ -55,11 +57,15 @@ fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -
     }
 
     let mut failures = Vec::new();
-    if !local.exists() {
+    let local_problem = if !local.exists() {
         failures.push(format!("{} is missing", local.display()));
+        true
     } else if !local.is_file() {
         failures.push(format!("{} is not a file", local.display()));
-    }
+        true
+    } else {
+        false
+    };
     match which {
         None => failures.push("sol is not on PATH".into()),
         Some(which) => failures.push(format!(
@@ -72,7 +78,11 @@ fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -
         check,
         Status::Warn,
         failures.join("; "),
-        Some(LOCAL_BIN_SOL_FIX),
+        Some(if local_problem {
+            MISSING_LOCAL_BIN_SOL_FIX
+        } else {
+            PATH_SOL_FIX
+        }),
     ))
 }
 
@@ -127,5 +137,11 @@ mod tests {
         let result = run_with_path(&staged, check, Some(bin.into())).unwrap();
         assert_eq!(result.status, Status::Warn);
         assert!(result.detail.contains("is missing"));
+        assert_eq!(result.fix.as_deref(), Some(MISSING_LOCAL_BIN_SOL_FIX));
+
+        executable(&local);
+        let result = run_with_path(&staged, check, None).unwrap();
+        assert_eq!(result.status, Status::Warn);
+        assert_eq!(result.fix.as_deref(), Some(PATH_SOL_FIX));
     }
 }
