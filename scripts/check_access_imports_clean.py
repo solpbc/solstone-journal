@@ -41,15 +41,15 @@ try:
     from scripts.build_native_sol_journal_host_commands import (
         extract as extract_journal_host_commands,
     )
-    from scripts.check_wheel_contents import CORE_SCRIPT_NAMES, ROOT_LAUNCHER_NAMES
 except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
     from build_native_sol_journal_host_commands import (  # type: ignore[no-redef]
         extract as extract_journal_host_commands,
     )
-    from check_wheel_contents import (  # type: ignore[no-redef]
-        CORE_SCRIPT_NAMES,
-        ROOT_LAUNCHER_NAMES,
-    )
+
+# Inlined when the wheel-contents checker retired with the wheel rail. These are
+# the launcher and core script names the shipped tree installs onto PATH.
+ROOT_LAUNCHER_NAMES = ("sol", "solstone")
+CORE_SCRIPT_NAMES = ("solstone-core",)
 
 from solstone.think.generated.access_rejections import JOURNAL_ACCESS_ONLY_COMMANDS
 

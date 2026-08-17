@@ -14,7 +14,7 @@ export TMPDIR := /var/tmp
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install uninstall test test-cov test-integration test-release release-checks test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices preflight pre-commit skills render-packaging check-release-package-inventory check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-release-advisory-liveness check-rust-release-manifest check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract check-core-sdist-compile-inputs build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean wheel-speakers-analyze-linux wheel-speakers-analyze-linux-x86_64 wheel-speakers-analyze-linux-aarch64 wheel-vad-analyze-linux wheel-vad-analyze-linux-x86_64 wheel-vad-analyze-linux-aarch64 wheel-vulkan-probe-linux wheel-vulkan-probe-linux-x86_64 wheel-vulkan-probe-linux-aarch64 wheel-pdf-linux wheel-pdf-linux-x86_64 wheel-pdf-linux-aarch64 check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test wheel-describe-linux wheel-describe-linux-x86_64 wheel-describe-linux-aarch64 wheel-describe-macos-arm64 wheel-macos wheel-macos-clean verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-thin-base-install check-extras-consistency check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover release release-test publish-release publish-release-test check-cogitate-cutover check-cogitate-cutover-tests FORCE
+.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices preflight pre-commit skills check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover check-cogitate-cutover-tests FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -69,7 +69,7 @@ RUST_RACE_LOAD_JOBS ?= 12
 # a global `export` for one commit and it BROKE the wheel build, because the
 # wheel cross-compiles with zig and a host clang include path injected into a
 # cross-compile makes bindgen fail to find uint8_t. Measured both ways:
-# `make wheel-describe-linux-x86_64` fails with the global export and succeeds
+# A host Rust target that compiles the workspace fails with the global export and succeeds
 # with CLANG_BUILTIN_INCLUDE= empty.
 #
 # ⛔ Do not widen this back to a global export. The wheel recipes must NOT
@@ -276,37 +276,6 @@ validate_pdf_runtime() { \
 }
 endef
 
-REQUIRE_PDF_HOST_RUNTIME = $(REQUIRE_SUPPORTED_PDF_HOST); $(DEFINE_PDF_RUNTIME_VALIDATOR); if validate_pdf_runtime; then :; else validation_status=$$?; echo "$$validation_error" >&2; exit "$$validation_status"; fi
-DESCRIBE_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
-DESCRIBE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
-# Derived, never written out: the helper's declared coverage lives in
-# solstone/think/probe.py, which is stdlib-only precisely so it imports here
-# without a venv. A literal would keep globbing the old filename if the
-# measured macOS minimum ever moves.
-SPEAKERS_ANALYZE_MACOS_TAG = $(shell PYTHONPATH=. python3 -c 'from solstone.think.probe import SOLSTONE_CORE_SPEAKERS_ANALYZE_PLATFORM_TAGS as t; print(t["darwin", "arm64"])')
-# Pick the GPU (CUDA) journal runtime only on x86_64 NVIDIA hosts. The
-# CUDA bundle resolves onnxruntime-gpu, which ships NO aarch64 wheel on PyPI, so
-# an aarch64 NVIDIA host (e.g. DGX Spark / GB10) that auto-selected `cuda` would
-# die in the `.installed` `uv sync` below — before the per-arch `install` guard
-# (which correctly skips non-x86_64 Linux) ever runs. Gating on x86_64 also
-# keeps this coherent with the STT arch decision (aarch64-linux uses the
-# parakeet.cpp CPU/Vulkan bundle). Everything non-x86_64 falls to the CPU
-# `journal-cpu` group, whose onnxruntime has aarch64 wheels.
-JOURNAL_VARIANT ?= $(shell if [ "$$(uname -m)" = "x86_64" ] && nvidia-smi -L >/dev/null 2>&1; then echo cuda; else echo cpu; fi)
-
-# Dev install groups: install exactly ONE journal leaf for this host.
-# `journal-cpu` and `journal-cuda` select the same journal stack and differ only
-# in the ONNX runtime package, so NEVER install both and NEVER use all optional
-# dependency groups:
-#   - `journal-cpu` pulls onnxruntime; `journal-cuda` pulls onnxruntime-gpu. Both
-#     packages own the SAME onnxruntime/ import dir and clobber each other ->
-#     `import onnxruntime` fails (ModuleNotFoundError) even though uv still
-#     lists it installed. Surfaces as `journal install-models` dying with "No
-#     module named 'onnxruntime'".
-#   - on Darwin, resolving the CUDA group also forces cuda's nvidia-* wheels,
-#     which have no arm64 builds, so `uv sync` errors out outright.
-# Pick the GPU group only on NVIDIA hosts; everyone else gets the CPU group.
-JOURNAL_GROUP := $(if $(filter cuda,$(JOURNAL_VARIANT)),journal-cuda,journal-cpu)
 
 # Require uv only for goals that actually use it. `preflight` is a pure
 # stdlib readiness battery and `install` runs preflight as its own fail-fast
@@ -315,7 +284,7 @@ JOURNAL_GROUP := $(if $(filter cuda,$(JOURNAL_VARIANT)),journal-cuda,journal-cpu
 # optional; Python-dependent goals outside this list still abort at parse time.
 UV := $(shell command -v uv 2>/dev/null)
 UV_OPTIONAL_GOALS := \
-	preflight install render-packaging \
+	preflight install \
 	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
 	check-rust-unit check-rust-doc check-rust-test check-rust-race \
 	check-rust-ios check-rust-macos check-rust-deny check-rust-describe-cli-stubs \
@@ -326,9 +295,7 @@ UV_OPTIONAL_GOALS := \
 	ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf \
 	verify test build format format-check \
 	check-service-legacy-evidence service-legacy-evidence-capture audit \
-	test-cov test-integration test-release test-performance test-app test-only watch coverage \
-	release release-test release-checks publish-release publish-release-test \
-	check-transparency-minisign publish-transparency resign-transparency-pointer
+	test-cov test-integration test-performance test-app test-only watch coverage
 ifndef UV
 ifneq ($(filter-out $(UV_OPTIONAL_GOALS),$(MAKECMDGOALS)),)
 $(error uv is not installed. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh)
@@ -382,26 +349,14 @@ USER_BIN := $(HOME)/.local/bin
 	if [ ! -f $@ ] || ! cmp -s "$$tmp_file" $@; then mv "$$tmp_file" $@; else rm -f "$$tmp_file"; fi
 
 # Marker file to track installation
-.installed: pyproject.toml packages/*/pyproject.toml uv.lock .python-version-hash .rust-core-hash
-	python3 scripts/render_packaging.py
+.installed: pyproject.toml uv.lock .python-version-hash .rust-core-hash
 	$(MAKE) preflight
-	@echo "Installing package with uv..."
-	$(UV) sync --group dev --group $(JOURNAL_GROUP)
-	@# Python 3.14+ needs onnxruntime from nightly (not yet on PyPI)
-	@OS_NAME=$$(uname -s); \
-	PY_MINOR=$$($(PYTHON) -c "import sys; print(sys.version_info.minor)"); \
-	if [ "$$OS_NAME" = "Darwin" ] && [ "$$PY_MINOR" -ge 14 ]; then \
-		echo "Python 3.14+ detected - installing onnxruntime from nightly feed..."; \
-		$(UV) pip install --pre --no-deps --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ORT-Nightly/pypi/simple/ onnxruntime; \
-	fi
-	@# The `--group $(JOURNAL_GROUP)` sync above already pulls the right
-	@# ONNX runtime package (journal-cpu = CPU, journal-cuda = GPU).
-	@$(MAKE) --no-print-directory skills
+	@echo "Installing the Python development environment with uv..."
+	$(UV) sync --group dev
 	@touch .installed
 
 # Generate lock file if missing
-uv.lock: pyproject.toml packages/*/pyproject.toml
-	python3 scripts/render_packaging.py
+uv.lock: pyproject.toml
 	$(UV) lock
 
 # Hopper lode setup. Hopper prefers this target over `install` and its contract
@@ -419,93 +374,17 @@ uv.lock: pyproject.toml packages/*/pyproject.toml
 hopper-install: ci-full-prep-cargo
 
 # Install package in editable mode with isolated venv
+# The Python development environment. The journal itself installs from the
+# distribution tree, not from here, and Hopper lodes provision through
+# `hopper-install` instead. What survives is the tooling the remaining
+# repository-maintenance scripts need.
 install: .installed
-	@(cd /tmp && $(CURDIR)/$(VENV_BIN)/python -c "from solstone.think.utils import get_journal") 2>/dev/null || { \
-		echo ">>> re-registering editable install"; \
-		$(UV) pip install -e . --no-deps; \
-		if (cd /tmp && $(CURDIR)/$(VENV_BIN)/python -c "from solstone.think.utils import get_journal"); then \
-			echo ">>> re-registered successfully"; \
-		else \
-			echo ">>> editable install still broken; run make clean-install"; \
-			exit 1; \
-		fi; \
-	}
-	@OS_NAME=$$(uname -s); \
-	ARCH=$$(uname -m); \
-	if [ "$$OS_NAME" = "Darwin" ] && [ "$$ARCH" = "arm64" ]; then \
-		$(MAKE) parakeet-helper || { echo 'parakeet install: helper build failed' >&2; exit 1; }; \
-	elif [ "$$OS_NAME" = "Linux" ]; then \
-		if [ "$$ARCH" = "x86_64" ]; then \
-				echo "journal install: JOURNAL_GROUP=$(JOURNAL_GROUP)"; \
-				$(UV) sync --group dev --group $(JOURNAL_GROUP) || { echo "journal install: uv sync --group dev --group $(JOURNAL_GROUP) failed" >&2; exit 1; }; \
-				if [ "$(JOURNAL_VARIANT)" = "cuda" ]; then \
-					$(UV) sync --group dev --group $(JOURNAL_GROUP) --reinstall-package onnxruntime-gpu || { echo "journal install: failed to force-reinstall onnxruntime-gpu" >&2; exit 1; }; \
-				$(VENV_PY) -c "import onnxruntime as ort; ort.preload_dlls(cuda=True, cudnn=True); assert 'CUDAExecutionProvider' in ort.get_available_providers(), 'CUDAExecutionProvider missing after install'; print('journal install: CUDA runtime ready')" || { echo "journal install: CUDA runtime validation failed" >&2; exit 1; }; \
-			fi; \
-		else \
-			echo "journal install: skipping unsupported Linux arch $$ARCH"; \
-		fi; \
-	else \
-		echo "parakeet install: unsupported host '$$OS_NAME/$$ARCH'; supported: darwin/arm64, linux/x86_64" >&2; \
-		exit 1; \
-	fi
-	@$(MAKE) speakers-analyze-helper || { echo 'speakers-analyze helper install failed' >&2; exit 1; }
-	@touch .installed
-	@$(VENV_BIN)/journal install-models || { echo "journal install-models failed" >&2; exit 1; }
+	@echo "Python development environment ready."
 
 # Stdlib-only install-readiness battery — runs before `.venv`/`uv` exist; a
 # blocker failure exits non-zero. Also wired as the first step of `.installed`.
 preflight:
 	python3 scripts/preflight.py
-
-render-packaging:
-	python3 scripts/render_packaging.py
-
-wheel-speakers-analyze-linux: wheel-speakers-analyze-linux-x86_64
-
-wheel-speakers-analyze-linux-x86_64:
-	python3 scripts/stage_speakers_analyze_runtime.py --target linux-x86_64
-	rm -f dist/solstone_core_speakers_analyze-*.whl
-	ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(CURDIR)/target/speakers-analyze-runtime-link/linux-x86_64" MATURIN_PEP517_ARGS="$(SPEAKERS_ANALYZE_LINUX_X86_64_MATURIN_ARGS)" $(UV) build --package solstone-core-speakers-analyze --wheel
-
-wheel-speakers-analyze-linux-aarch64:
-	python3 scripts/stage_speakers_analyze_runtime.py --target linux-aarch64
-	rm -f dist/solstone_core_speakers_analyze-*.whl
-	ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(CURDIR)/target/speakers-analyze-runtime-link/linux-aarch64" MATURIN_PEP517_ARGS="$(SPEAKERS_ANALYZE_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-speakers-analyze --wheel
-
-wheel-vad-analyze-linux: wheel-vad-analyze-linux-x86_64
-
-wheel-vad-analyze-linux-x86_64:
-	python3 scripts/stage_speakers_analyze_runtime.py --target linux-x86_64 --package-dir packages/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/linux-x86_64.json
-	rm -f dist/solstone_core_vad_analyze-*.whl
-	ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(CURDIR)/target/speakers-analyze-runtime-link/linux-x86_64" MATURIN_PEP517_ARGS="$(VAD_ANALYZE_LINUX_X86_64_MATURIN_ARGS)" $(UV) build --package solstone-core-vad-analyze --wheel
-
-wheel-vad-analyze-linux-aarch64:
-	python3 scripts/stage_speakers_analyze_runtime.py --target linux-aarch64 --package-dir packages/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/linux-aarch64.json
-	rm -f dist/solstone_core_vad_analyze-*.whl
-	ORT_PREFER_DYNAMIC_LINK=true ORT_LIB_PATH="$(CURDIR)/target/speakers-analyze-runtime-link/linux-aarch64" MATURIN_PEP517_ARGS="$(VAD_ANALYZE_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-vad-analyze --wheel
-
-wheel-pdf-linux: wheel-pdf-linux-x86_64
-
-wheel-pdf-linux-x86_64:
-	python3 scripts/stage_pdfium_runtime.py --target linux-x86_64 --package-dir packages/solstone-core-pdf --receipt target/pdfium-runtime-provenance/linux-x86_64.json
-	rm -f dist/solstone_core_pdf-*.whl
-	MATURIN_PEP517_ARGS="$(PDF_LINUX_X86_64_MATURIN_ARGS)" $(UV) build --package solstone-core-pdf --wheel
-
-wheel-pdf-linux-aarch64:
-	python3 scripts/stage_pdfium_runtime.py --target linux-aarch64 --package-dir packages/solstone-core-pdf --receipt target/pdfium-runtime-provenance/linux-aarch64.json
-	rm -f dist/solstone_core_pdf-*.whl
-	MATURIN_PEP517_ARGS="$(PDF_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-pdf --wheel
-
-wheel-vulkan-probe-linux: wheel-vulkan-probe-linux-x86_64
-
-wheel-vulkan-probe-linux-x86_64:
-	rm -f dist/solstone_core_vulkan_probe-*.whl
-	MATURIN_PEP517_ARGS="$(SPEAKERS_ANALYZE_LINUX_X86_64_MATURIN_ARGS)" $(UV) build --package solstone-core-vulkan-probe --wheel
-
-wheel-vulkan-probe-linux-aarch64:
-	rm -f dist/solstone_core_vulkan_probe-*.whl
-	MATURIN_PEP517_ARGS="$(SPEAKERS_ANALYZE_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-vulkan-probe --wheel
 
 # Staging the shared host runtime is BUILD-TIME tooling: it shells to Python, so
 # it stays OUTSIDE both poisoned Rust gates, which cannot shell to an interpreter at
@@ -610,25 +489,6 @@ check-rust-pdf-test:
 # Retained name: check-rust-shipped-binaries' recovery message named it for
 # months and it is in muscle memory. It now stages AND runs all three crates.
 check-rust-vad-analyze-test: check-rust-onnx-stage check-rust-onnx-test
-
-wheel-describe-linux: wheel-describe-linux-x86_64
-
-wheel-describe-linux-x86_64:
-	rm -f dist/solstone_core_describe-*.whl
-	# ffmpeg-sys-next's bindgen invocation needs Zig's target headers separately.
-	ZIG_LIB_DIR="$$(zig env | sed -n 's/.*\.lib_dir = "\([^"]*\)".*/\1/p')"; \
-	BINDGEN_EXTRA_CLANG_ARGS="-nostdinc --target=x86_64-unknown-linux-gnu -isystem $$ZIG_LIB_DIR/include -isystem $$ZIG_LIB_DIR/libc/include/x86-linux-gnu -isystem $$ZIG_LIB_DIR/libc/include/generic-glibc -isystem $$ZIG_LIB_DIR/libc/include/x86-linux-any -isystem $$ZIG_LIB_DIR/libc/include/any-linux-any"; \
-	export BINDGEN_EXTRA_CLANG_ARGS; \
-	# FFmpeg's configure sees this native Rust target as host; force its C probe to the wheel baseline.
-	cc="zig cc -target x86_64-linux-gnu.2.27 -I$(CURDIR)/core/crates/solstone-core-describe/build-support/zig-glibc" MATURIN_PEP517_ARGS="$(DESCRIBE_LINUX_X86_64_MATURIN_ARGS)" $(UV) build --package solstone-core-describe --wheel
-
-wheel-describe-linux-aarch64:
-	rm -f dist/solstone_core_describe-*.whl
-	MATURIN_PEP517_ARGS="$(DESCRIBE_LINUX_AARCH64_MATURIN_ARGS)" $(UV) build --package solstone-core-describe --wheel
-
-wheel-describe-macos-arm64:
-	rm -f dist/solstone_core_describe-*.whl
-	MACOSX_DEPLOYMENT_TARGET=14.0 MATURIN_PEP517_ARGS="--locked --target aarch64-apple-darwin" $(UV) build --package solstone-core-describe --wheel
 
 check-rust-fmt:
 	@$(REQUIRE_CARGO)
@@ -1050,8 +910,7 @@ check-rust-shipped-binaries: build
 
 audit:
 	@$(REQUIRE_CARGO)
-	@python3 scripts/check_release_preflight.py cargo-deny >&2
-	@python3 scripts/advisory_mirror_audit.py --bundle "$(AUDIT_ADVISORY_BUNDLE)" --receipt "$(AUDIT_ADVISORY_RECEIPT)" --pubkey "$(AUDIT_ADVISORY_PUBKEY)" --locator "$(AUDIT_ADVISORY_LOCATOR)"
+	cargo deny --manifest-path $(RUST_MANIFEST) check
 
 # Setup skill symlinks
 skills:
@@ -1208,33 +1067,9 @@ parakeet-helper-clean:
 # does not depend on `.installed` — the wheel build is fully decoupled from
 # the dev venv install state.
 ifeq ($(shell uname -s)/$(shell uname -m),Darwin/arm64)
-wheel-macos: parakeet-helper
-	@ROOT_FACTS=$$(mktemp); \
-	trap 'rm -f "$$ROOT_FACTS"' EXIT; \
-	echo "==> signing and notarizing parakeet-helper"; \
-	./scripts/sign-and-notarize-helper.sh solstone/observe/transcribe/parakeet_helper/.build/release/parakeet-helper > "$$ROOT_FACTS"; \
-	echo "==> staging helper into _bin/"; \
-	mkdir -p solstone/observe/transcribe/parakeet_helper/_bin; \
-	cp solstone/observe/transcribe/parakeet_helper/.build/release/parakeet-helper solstone/observe/transcribe/parakeet_helper/_bin/parakeet-helper; \
-	echo "==> building macosx_14_0_arm64 platform wheel"; \
-	rm -rf build/ *.egg-info/; \
-	$(UV) build --wheel -C--build-option=--plat-name=macosx_14_0_arm64; \
-	ROOT_MAC_WHEEL=$$(ls dist/solstone-*-macosx_14_0_arm64.whl); \
-	SOURCE_COMMIT=$$(git rev-parse HEAD); \
-	CORE_LOCK_SHA256=$$(shasum -a 256 core/Cargo.lock | awk '{print $$1}'); \
-	python3 -m scripts.record_macos_native_wheel --role root --wheel "$$ROOT_MAC_WHEEL" --signing-facts "$$ROOT_FACTS" --source-commit "$$SOURCE_COMMIT" --core-lock-sha256 "$$CORE_LOCK_SHA256" --out dist/macos-native-root.json
-	@echo "==> building, signing, and recording declared macOS native packages"
-	python3 scripts/build_macos_release_packages.py
-else
-wheel-macos:
-	@echo "wheel-macos: only supported on Darwin/arm64 (got $(shell uname -s)/$(shell uname -m))" >&2
-	@exit 1
 endif
 
-# Remove the staged helper copy that wheel-macos installs into _bin/
-wheel-macos-clean:
-	rm -rf solstone/observe/transcribe/parakeet_helper/_bin
-
+# Remove the staged helper copy under _bin/
 # Test environment - use fixtures journal for all tests
 TEST_ENV = SOLSTONE_JOURNAL=tests/fixtures/journal
 
@@ -1251,12 +1086,6 @@ test-cov:
 	$(call FREEZE_GUARD,$@)
 
 test-integration:
-	$(call FREEZE_GUARD,$@)
-
-test-release:
-	$(call FREEZE_GUARD,$@)
-
-release-checks:
 	$(call FREEZE_GUARD,$@)
 
 test-performance:
@@ -1344,7 +1173,6 @@ install-checks: .installed
 	@$(MAKE) check-schema-bounds
 	@echo ""
 	@echo "=== Running rust release-manifest check ==="
-	@$(MAKE) check-rust-release-manifest
 	@echo ""
 	@echo "=== Running SPL dependency-pin check ==="
 	@$(MAKE) check-spl-dependency-pin
@@ -1384,7 +1212,6 @@ install-checks: .installed
 	@$(MAKE) check-native-sol-root-contract
 	@echo ""
 	@echo "=== Checking core sdist compile inputs ==="
-	@$(MAKE) check-core-sdist-compile-inputs
 	@echo ""
 	@echo "=== Checking native sol journal-host command inventory ==="
 	@$(MAKE) check-native-sol-journal-host-commands
@@ -1433,9 +1260,6 @@ install-checks: .installed
 	@echo "=== Checking core fixtures ==="
 	@$(MAKE) check-core-fixtures
 	@echo ""
-	@echo "=== Checking packaging render ==="
-	@python3 scripts/render_packaging.py --check
-	@echo ""
 	@echo "=== Checking journal resolution vectors ==="
 	@$(MAKE) check-journal-resolution-vectors
 	@echo ""
@@ -1460,20 +1284,7 @@ install-checks: .installed
 	@echo "=== Running rust dependency policy check ==="
 	@$(MAKE) check-rust-deny
 	@echo ""
-	@echo "=== Checking extras consistency ==="
-	@$(VENV_BIN)/python scripts/check_extras_consistency.py
-	@echo ""
-	@echo "=== Checking release package inventory ==="
-	@python3 scripts/release_package_inventory.py
-	@echo ""
 
-check-release-package-inventory:
-	@python3 scripts/release_package_inventory.py
-
-# check-release-package-inventory is deliberately NOT here: it shells to python3.
-# It already runs in install-checks, which depends on .installed and is where
-# interpreter-requiring checks belong. Run it directly with
-# `make check-release-package-inventory`.
 CI_FORBIDDEN_INTERPRETERS := python python3 pytest ruff uv
 DISTRIBUTION_FORBIDDEN_TOOLS := $(CI_FORBIDDEN_INTERPRETERS) maturin pip pipx setuptools twine dpkg-deb rpmbuild ar rpm tar cpio curl wget
 define run-rust-gate-under-poison
@@ -1598,9 +1409,6 @@ check-schema-bounds: .installed
 	$(VENV_BIN)/python scripts/check_schema_bounds.py
 
 # Rust release-manifest schema, semantic, determinism, and transaction gate
-check-rust-release-manifest: .installed
-	$(VENV_BIN)/python scripts/check_rust_release_manifest.py
-
 # SPL git dependency pin guard
 check-spl-dependency-pin:
 	python3 scripts/check_spl_dependency_pin.py
@@ -1662,9 +1470,6 @@ check-spl-health-vocabulary:
 	python3 scripts/check_spl_health_vocabulary.py
 
 # Package dependency and script ownership consistency gate
-check-extras-consistency: .installed
-	$(VENV_BIN)/python scripts/check_extras_consistency.py
-
 # Thin sol access surface import-clean gate (fast meta_path simulation; in ci)
 check-access-imports-clean: .installed
 	$(VENV_BIN)/python scripts/check_access_imports_clean.py
@@ -1677,9 +1482,6 @@ check-convey-bind-imports-clean: .installed
 # extras) and assert the access surface imports clean against it. Heavier than
 # check-access-imports-clean (does a real install) — operator/release opt-in,
 # NOT part of `make ci` (which uses the fast simulation above).
-check-thin-base-install:
-	python3 scripts/check_access_imports_clean.py --real-install
-
 # Generated router skill references gate
 check-skill-references: .installed
 	$(VENV_BIN)/python scripts/build_skill_references.py --check
@@ -1722,9 +1524,6 @@ build-native-sol-root-contract:
 
 check-native-sol-root-contract:
 	python3 scripts/check_native_sol_root_contract.py
-
-check-core-sdist-compile-inputs:
-	python3 scripts/check_core_sdist_compile_inputs.py
 
 build-native-sol-journal-host-commands:
 	python3 scripts/build_native_sol_journal_host_commands.py
@@ -1800,44 +1599,3 @@ check-core-fixtures: .installed
 	$(VENV_BIN)/python scripts/build_core_fixtures.py --check
 	$(VENV_BIN)/python scripts/check_service_runtime_reference.py
 
-check-release-advisory-liveness: .installed
-	$(VENV_BIN)/python scripts/check_release_advisory_liveness.py
-
-release: ## Locked publication entrypoint
-	$(call FREEZE_GUARD,$@)
-
-release-test: ## Locked test-publication entrypoint
-	$(call FREEZE_GUARD,$@)
-
-.PHONY: check-transparency-minisign
-check-transparency-minisign:
-ifeq ($(TRANSPARENCY_ACTIVATED),1)
-	@$(MAKE) .installed
-	$(VENV_BIN)/python scripts/check_transparency_minisign.py
-else
-	$(call TRANSPARENCY_GUARD,$@)
-endif
-
-.PHONY: publish-release publish-release-test publish-transparency resign-transparency-pointer
-publish-release:
-	$(call FREEZE_GUARD,$@)
-
-publish-release-test:
-	$(call FREEZE_GUARD,$@)
-
-publish-transparency:
-ifeq ($(TRANSPARENCY_ACTIVATED),1)
-	@test -n "$(RELEASE_DIR)" || { echo "publish-transparency: set RELEASE_DIR=<retained ready dir>" >&2; exit 1; }
-	@$(MAKE) .installed
-	RELEASE_DIR="$(RELEASE_DIR)" SOURCE_COMMIT="$(SOURCE_COMMIT)" $(VENV_BIN)/python scripts/transparency_publish.py publish --root .
-else
-	$(call TRANSPARENCY_GUARD,$@)
-endif
-
-resign-transparency-pointer:
-ifeq ($(TRANSPARENCY_ACTIVATED),1)
-	@$(MAKE) .installed
-	$(VENV_BIN)/python scripts/transparency_publish.py resign-transparency-pointer --root .
-else
-	$(call TRANSPARENCY_GUARD,$@)
-endif

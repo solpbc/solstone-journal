@@ -43,10 +43,6 @@ dependencies = [
     "requests",
     "psutil",
     "userpath>=1.9.2,<2",
-    "solstone-core-sol==1.0.22; sys_platform == 'linux' and platform_machine == 'x86_64'",
-    "solstone-core-sol==1.0.22; sys_platform == 'linux' and platform_machine == 'aarch64'",
-    "solstone-core-sol==1.0.22; sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "solstone-core-unsupported-platform==1.0.22; (sys_platform != 'linux' and sys_platform != 'darwin') or (sys_platform == 'linux' and platform_machine != 'x86_64' and platform_machine != 'aarch64') or (sys_platform == 'darwin' and platform_machine != 'arm64')",
 ]
 
 [project.optional-dependencies]
@@ -88,7 +84,6 @@ pdf = [
 # CPU-vs-CUDA choice made by the solstone-journal leaf packages). Not a
 # user-facing extra — always pulled in by a leaf package.
 journal-host = [
-    "solstone-journal-models==1.0.1",
     "python-dotenv",
     # Private-link host/runtime helpers: local CA, CSR/cert handling, secure
     # listener pairing, and PL transfer. Public `sol link` caller commands are
@@ -138,13 +133,12 @@ journal-host = [
 # journal via:
 #     pip install solstone-journal          # the journal (CPU)
 #     pip install solstone-journal-cuda     # the journal on NVIDIA CUDA
-# The pin is STATIC (never rewritten per release); render_packaging.py --check
+# The pin is STATIC (never rewritten per release)
 # and check_extras_consistency.py verify it stays exactly this.
 journal = ["solstone-journal-host==0.7.0"]
 
 # TOMBSTONE (see [journal] above). Retired — same loud-failure tombstone pin.
 # Install `solstone-journal-cuda` for the NVIDIA CUDA runtime.
-journal-cuda = ["solstone-journal-host==0.7.0"]
 
 [project.urls]
 Homepage = "https://github.com/solpbc/solstone-journal"
@@ -176,9 +170,6 @@ include-package-data = true
 include = ["solstone*"]
 exclude = ["*.tests", "*.tests.*"]
 
-[tool.setuptools.cmdclass]
-build_py = "build_hooks.BuildPyWithoutTests"
-
 [tool.uv]
 # Some published dependencies must NOT resolve during workspace development.
 # Tombstones are build-fails-by-design distributions; the speakers-analyze and
@@ -189,34 +180,7 @@ build_py = "build_hooks.BuildPyWithoutTests"
 # The marker `python_version < '3.12'` contradicts requires-python = ">=3.12", so
 # uv drops each override from the active dev environment. [tool.uv] is never
 # published, so end-user wheel METADATA still carries the real pins.
-override-dependencies = [
-    "solstone-journal-host==0.7.0; python_version < '3.12'",
-    "solstone-core-unsupported-platform==1.0.22; python_version < '3.12'",
-    "solstone-core-speakers-analyze==1.0.22; python_version < '3.12'",
-    "solstone-core-vad-analyze==1.0.22; python_version < '3.12'",
-    "solstone-core-vulkan-probe==1.0.22; python_version < '3.12'",
-    "solstone-core-pdf==1.0.22; python_version < '3.12'",
-]
 
-[tool.uv.workspace]
-members = ["packages/solstone-journal", "packages/solstone-journal-cuda", "packages/solstone-journal-models", "packages/solstone-core", "packages/solstone-core-sol", "packages/solstone-core-journal", "packages/solstone-core-retention", "packages/solstone-core-speakers-analyze", "packages/solstone-core-vad-analyze", "packages/solstone-core-vulkan-probe", "packages/solstone-core-pdf", "packages/solstone-core-describe", "packages/solstone-core-depict"]
-
-[tool.uv.sources]
-solstone-journal = {workspace = true}
-solstone-journal-cuda = {workspace = true}
-solstone-journal-models = {workspace = true}
-solstone-core = {workspace = true}
-solstone-core-sol = {workspace = true}
-solstone-core-journal = {workspace = true}
-solstone-core-retention = {workspace = true}
-solstone-core-speakers-analyze = {workspace = true}
-solstone-core-vad-analyze = {workspace = true}
-solstone-core-vulkan-probe = {workspace = true}
-solstone-core-pdf = {workspace = true}
-solstone-core-describe = {workspace = true}
-solstone-core-depict = {workspace = true}
-
-# Development tools configuration
 [tool.ruff]
 target-version = "py312"
 exclude = [".venv", "scratch", "logs", "build", "dist"]
@@ -267,5 +231,3 @@ dev = [
     # Test-only: encrypted PDF fixture construction in tests/pdf_worker_fixtures.py.
     "pypdf>=4.0.0",
 ]
-journal-cpu = ["solstone-journal"]
-journal-cuda = ["solstone-journal-cuda"]

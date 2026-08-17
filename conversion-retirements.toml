@@ -1,18 +1,15 @@
 schema_version = 2
 dependency_files = [
   "pyproject.toml",
-  "packages/*/pyproject.toml",
 ]
 content_roots = [
   "Makefile",
-  "packages",
   "scripts",
   "solstone",
 ]
 content_exclusions = [
   "scripts/check_conversion_retirements.py",
   "scripts/check_convey_bind_imports_clean.py",
-  "scripts/check_wheel_contents.py",
   "scripts/check_cogitate_cutover.py",
 ]
 

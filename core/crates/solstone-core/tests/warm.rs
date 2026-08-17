@@ -10,8 +10,6 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[path = "support/maturin_leaves.rs"]
-mod maturin_leaves;
 // This integration test directly exercises only a subset of warm module items.
 #[allow(dead_code)]
 #[path = "../src/warm.rs"]
@@ -294,91 +292,6 @@ fn repo_root() -> PathBuf {
 }
 
 #[test]
-fn inventory_and_maturin_leaf_derivation_are_equal_both_directions() {
-    let inventory: BTreeSet<_> = inventory_rows()
-        .iter()
-        .map(|row| (row.crate_name.to_owned(), row.binary_name.to_owned()))
-        .collect();
-    let derived = maturin_leaves::host_packaged_binaries(&repo_root());
-    assert!(
-        inventory.is_subset(&derived),
-        "inventory has undeclared leaves"
-    );
-    assert!(
-        derived.is_subset(&inventory),
-        "maturin leaves are absent from inventory"
-    );
-}
-
-#[test]
-fn inventory_applicability_matches_packaged_target_families() {
-    let root = repo_root();
-    let macos_families = maturin_leaves::macos_native_target_families(&root);
-    let packaging_source = root.join("scripts/release_package_inventory.py");
-    let leaves = maturin_leaves::host_packaged_leaves(&root);
-    let inventory = inventory_rows()
-        .iter()
-        .map(|row| ((row.crate_name.to_owned(), row.binary_name.to_owned()), row))
-        .collect::<BTreeMap<_, _>>();
-    let mut derived = BTreeSet::new();
-
-    // This treats a family outside the macOS set as Linux-only. That remains valid only because
-    // release_candidate_driver.py builds every current family for both Linux architectures.
-    // It binds only the getter's family-set literal and each leaf's declared target-family, not
-    // NativePackage construction or native_packages filtering; a divergence or dropped leaf there
-    // can change real macOS coverage without this test noticing.
-    for leaf in leaves {
-        let family = leaf.target_family.as_deref().unwrap_or_else(|| {
-            panic!(
-                "{}: missing [tool.solstone-release].target-family for {} ({})",
-                leaf.pyproject.display(),
-                leaf.crate_name,
-                leaf.binary_name
-            )
-        });
-        let key = (leaf.crate_name.clone(), leaf.binary_name.clone());
-        let row = inventory.get(&key).unwrap_or_else(|| {
-            panic!(
-                "{}: leaf {} ({family}) is absent from warm INVENTORY",
-                leaf.pyproject.display(),
-                leaf.binary_name
-            )
-        });
-        let expected = if macos_families.contains(family) {
-            PlatformApplicability::All
-        } else {
-            PlatformApplicability::Linux
-        };
-        assert_eq!(
-            row.applicability,
-            expected,
-            "{}: warm row {} ({}) in target-family {family} disagrees with {}: expected {expected:?}, got {:?}",
-            leaf.pyproject.display(),
-            leaf.crate_name,
-            leaf.binary_name,
-            packaging_source.display(),
-            row.applicability,
-        );
-        derived.insert(key);
-    }
-
-    for (crate_name, binary_name) in inventory.keys() {
-        assert!(
-            derived.contains(&(crate_name.clone(), binary_name.clone())),
-            "warm INVENTORY row {binary_name} ({crate_name}) is absent from packages/*/pyproject.toml target-family derivation",
-        );
-    }
-}
-
-fn describe_row() -> InventoryRow {
-    inventory_rows()
-        .iter()
-        .copied()
-        .find(|row| row.binary_name == "solstone-core-describe")
-        .expect("describe must be a warm inventory row")
-}
-
-#[test]
 fn linux_only_row_is_named_and_non_failing_on_simulated_macos() {
     let temp = TempDir::new();
     let report =
@@ -402,32 +315,3 @@ fn linux_only_row_is_missing_and_failing_on_simulated_linux() {
     assert!(report.failed());
 }
 
-#[test]
-fn shared_derivation_ignores_non_bin_maturin_packages() {
-    let temp = TempDir::new();
-    let packages = temp.path().join("packages");
-    let valid = packages.join("valid");
-    fs::create_dir_all(valid.join("crate")).expect("create valid package");
-    fs::write(
-        valid.join("pyproject.toml"),
-        "build-backend = \"maturin\"\nbindings = \"bin\"\nmanifest-path = \"crate/Cargo.toml\"\n",
-    )
-    .expect("write valid pyproject");
-    fs::write(
-        valid.join("crate/Cargo.toml"),
-        "[package]\nname = \"valid-crate\"\nversion = \"0.1.0\"\n[[bin]]\nname = \"valid-bin\"\npath = \"src/main.rs\"\n",
-    )
-    .expect("write valid manifest");
-    let invalid = packages.join("invalid");
-    fs::create_dir_all(&invalid).expect("create invalid package");
-    fs::write(
-        invalid.join("pyproject.toml"),
-        "build-backend = \"maturin\"\nbindings = \"pyo3\"\nmanifest-path = \"Cargo.toml\"\n",
-    )
-    .expect("write invalid pyproject");
-
-    assert_eq!(
-        maturin_leaves::host_packaged_binaries(temp.path()),
-        BTreeSet::from([("valid-crate".to_owned(), "valid-bin".to_owned())])
-    );
-}

@@ -9,10 +9,22 @@ use std::path::{Path, PathBuf};
 
 use crate::ci::{Registry, load_registry};
 
-#[path = "../../../solstone-core/tests/support/maturin_leaves.rs"]
-mod maturin_leaves;
-
-use maturin_leaves::{host_packaged_binaries, package_name};
+/// Inlined when the wheel packaging leaves retired. Reads the `[package] name`
+/// out of a Cargo manifest; nothing here is wheel-specific.
+fn package_name(manifest: &str) -> String {
+    let mut in_package = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_package = trimmed == "[package]";
+            continue;
+        }
+        if in_package && let Some(value) = trimmed.strip_prefix("name = ") {
+            return value.trim().trim_matches('"').to_owned();
+        }
+    }
+    panic!("manifest has no package name")
+}
 
 fn repo_root() -> PathBuf {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -183,61 +195,6 @@ fn make_ci_full_checks_dependency_policy_before_the_long_workspace_suite() {
     );
 }
 
-#[test]
-fn make_ci_full_builds_and_exercises_every_host_packaged_binary() {
-    let root = repo_root();
-    let makefile = makefile_text(&root);
-    let expected = host_packaged_binaries(&root);
-    let smoke = target_body(&makefile, "check-rust-shipped-binaries");
-    let exercised = smoke
-        .lines()
-        .filter(|line| line.contains("cargo run"))
-        .map(|line| {
-            let words = line.split_whitespace().collect::<Vec<_>>();
-            let package = words
-                .windows(2)
-                .find_map(|pair| (pair[0] == "-p").then_some(pair[1]))
-                .expect("cargo run smoke must name its package");
-            let binary = words
-                .windows(2)
-                .find_map(|pair| (pair[0] == "--bin").then_some(pair[1]))
-                .expect("cargo run smoke must name its binary");
-            (package.to_owned(), binary.to_owned())
-        })
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        exercised, expected,
-        "the shipped-binary smoke gate must exactly match host-native maturin packaging leaves"
-    );
-    assert!(
-        ci_registry(&root)
-            .legs
-            .iter()
-            .any(|leg| leg.make_target == "check-rust-shipped-binaries" && leg.default_full),
-        "the default full registry must retain the shipped-binary build and smoke gate"
-    );
-    assert!(
-        !target_body(&makefile, "ci-under-poison").contains("$(MAKE) check-rust-shipped-binaries"),
-        "make ci must not link or run the shipped-binary smoke gate"
-    );
-}
-
-/// Every crate `RUST_HOST_EXCLUDES` removes from the workspace test selection
-/// must be named in a package list the full gate actually runs.
-///
-/// This is the guard the tree did not have. The two lists were written months
-/// apart and nothing tied them together, so three crates were excluded from
-/// `check-rust-test` while only one of them was picked up by a target of its
-/// own -- 33 `#[test]`s that no `make` target ran, indistinguishable from
-/// coverage. Adding a fourth `--exclude` without adding it to
-/// `ONNX_HOST_TEST_PACKAGES` reds here.
-///
-/// Pairs with `rust_host_excludes_match_the_workspace_onnx_closure`, which
-/// answers *why* a crate is excluded (it is in the ONNX dependency closure).
-/// Together they close the loop: a new `ort` consumer must join
-/// `RUST_HOST_EXCLUDES` or that test reds, and once it does it must join
-/// `ONNX_HOST_TEST_PACKAGES` or this one does.
 #[test]
 fn every_host_excluded_crate_is_tested_by_a_ci_target() {
     let makefile = makefile_text(&repo_root());

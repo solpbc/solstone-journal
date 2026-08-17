@@ -1,6 +1,0 @@
-# SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (c) 2026 sol pbc
-
-[build-system]
-requires = ["setuptools==83.0.0", "wheel==0.47.0"]
-build-backend = "setuptools.build_meta"

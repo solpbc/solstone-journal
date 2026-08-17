@@ -1,3 +1,0 @@
-recursive-include solstone_journal_models/assets *.onnx
-include solstone_journal_models/*.md
-global-exclude *.py[cod]
