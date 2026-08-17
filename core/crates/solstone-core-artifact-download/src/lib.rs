@@ -15,6 +15,33 @@ use thiserror::Error;
 const MAX_REDIRECT_HOPS: u8 = 5;
 const DOWNLOAD_ALLOWED_HOSTS: &[&str] = &["updates.solstone.app"];
 
+/// Build-time upstreams a developer machine may fetch when preparing a
+/// distribution. These hosts are **not** an owner-facing origin.
+///
+/// `DOWNLOAD_ALLOWED_HOSTS` / `PRODUCTION_DOWNLOAD_POLICY` is a covenant
+/// property of `P-system-models`: an owner's install may only reach
+/// `updates.solstone.app`. Widening that list would let an owner-facing
+/// fetch follow a redirect off our origin.
+///
+/// Builder-input acquisition is a different trust basis. It runs on a
+/// developer or CI machine, never on an owner's host, and consumes
+/// digest-pinned upstream sources (FFmpeg, zig, rust-std, ONNX Runtime
+/// wheels, PDFium). The pin is the admission; the host list only stops
+/// the fetch from wandering. The two policies stay separate so a
+/// reviewer who finds two allow-lists can tell which is which without
+/// guessing: production is the owner's origin, builder-input is the
+/// packaging machine's pin table.
+const BUILDER_INPUT_ALLOWED_HOSTS: &[&str] = &[
+    "github.com",
+    "codeload.github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+    "github-releases.githubusercontent.com",
+    "ziglang.org",
+    "static.rust-lang.org",
+    "files.pythonhosted.org",
+];
+
 #[derive(Debug, Clone, Copy)]
 pub struct DownloadHostPolicy<'a> {
     pub allowed_hosts: &'a [&'a str],
@@ -26,6 +53,18 @@ pub const PRODUCTION_DOWNLOAD_POLICY: DownloadHostPolicy<'static> = DownloadHost
     allowed_hosts: DOWNLOAD_ALLOWED_HOSTS,
     allow_http: false,
     origin_base_url: "https://updates.solstone.app",
+};
+
+/// Policy for digest-pinned builder-input acquisition.
+///
+/// `origin_base_url` is unused: builder inputs are fetched from their
+/// pin-table URL, not composed against a single origin. See
+/// `BUILDER_INPUT_ALLOWED_HOSTS` for why this is not
+/// `PRODUCTION_DOWNLOAD_POLICY`.
+pub const BUILDER_INPUT_DOWNLOAD_POLICY: DownloadHostPolicy<'static> = DownloadHostPolicy {
+    allowed_hosts: BUILDER_INPUT_ALLOWED_HOSTS,
+    allow_http: false,
+    origin_base_url: "",
 };
 
 #[derive(Debug, Error)]
@@ -208,10 +247,33 @@ pub fn download_verified_origin(
     expected_size: Option<u64>,
     destination: &Path,
     policy: &DownloadHostPolicy<'_>,
-    mut progress: impl FnMut(u64, Option<u64>),
+    progress: impl FnMut(u64, Option<u64>),
 ) -> Result<(), ArchiveError> {
     let origin = origin_url(policy.origin_base_url, origin_key);
-    let mut current = validate_url(&origin, policy)?;
+    download_verified_url(
+        &origin,
+        sha256,
+        expected_size,
+        destination,
+        policy,
+        progress,
+    )
+}
+
+/// Fetch `url` through `policy`, write `destination`, and require `sha256`.
+///
+/// Use [`PRODUCTION_DOWNLOAD_POLICY`] for owner-facing origin keys and
+/// [`BUILDER_INPUT_DOWNLOAD_POLICY`] for pin-table builder inputs. The
+/// policies are not interchangeable: see `BUILDER_INPUT_ALLOWED_HOSTS`.
+pub fn download_verified_url(
+    url: &str,
+    sha256: &str,
+    expected_size: Option<u64>,
+    destination: &Path,
+    policy: &DownloadHostPolicy<'_>,
+    mut progress: impl FnMut(u64, Option<u64>),
+) -> Result<(), ArchiveError> {
+    let mut current = validate_url(url, policy)?;
     let agent = ureq::agent();
     let mut followed = 0_u8;
     let response = loop {
@@ -294,6 +356,27 @@ pub fn download_verified_origin(
         let _ = fs::remove_file(&temporary);
     }
     result
+}
+
+/// Like [`download_verified_url`], but skip the network when `destination`
+/// already matches `sha256`. Returns `true` when a fetch ran.
+pub fn ensure_verified_url(
+    url: &str,
+    sha256: &str,
+    expected_size: Option<u64>,
+    destination: &Path,
+    policy: &DownloadHostPolicy<'_>,
+    progress: impl FnMut(u64, Option<u64>),
+) -> Result<bool, ArchiveError> {
+    if destination.is_file() {
+        match verify_sha256(destination, sha256) {
+            Ok(_) => return Ok(false),
+            Err(ArchiveError::DigestMismatch) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    download_verified_url(url, sha256, expected_size, destination, policy, progress)?;
+    Ok(true)
 }
 
 #[derive(Debug, Clone)]
@@ -635,5 +718,65 @@ mod tests {
             *backoff.delays.borrow(),
             [Duration::from_millis(250), Duration::from_millis(500)]
         );
+    }
+
+    #[test]
+    fn production_policy_refuses_a_builder_input_host() {
+        let error = validate_url(
+            "https://github.com/FFmpeg/FFmpeg/archive/deadbeef.tar.gz",
+            &PRODUCTION_DOWNLOAD_POLICY,
+        )
+        .expect_err("owner-facing policy must not admit github.com");
+        assert!(matches!(
+            error,
+            ArchiveError::HostRefused { host } if host == "github.com"
+        ));
+    }
+
+    #[test]
+    fn builder_input_policy_refuses_the_owner_origin() {
+        let error = validate_url(
+            "https://updates.solstone.app/assets/tool",
+            &BUILDER_INPUT_DOWNLOAD_POLICY,
+        )
+        .expect_err("builder-input policy must not admit the owner origin");
+        assert!(matches!(
+            error,
+            ArchiveError::HostRefused { host } if host == "updates.solstone.app"
+        ));
+    }
+
+    #[test]
+    fn builder_input_policy_admits_each_pinned_upstream() {
+        for url in [
+            "https://github.com/FFmpeg/FFmpeg/archive/deadbeef.tar.gz",
+            "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz",
+            "https://static.rust-lang.org/dist/rust-std.tar.xz",
+            "https://files.pythonhosted.org/packages/onnxruntime.whl",
+        ] {
+            validate_url(url, &BUILDER_INPUT_DOWNLOAD_POLICY)
+                .unwrap_or_else(|error| panic!("{url}: {error}"));
+        }
+    }
+
+    #[test]
+    fn ensure_verified_url_skips_a_matching_cache() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("cached");
+        File::create(&path).unwrap().write_all(b"cached").unwrap();
+        let digest: String = Sha256::digest(b"cached")
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        let fetched = ensure_verified_url(
+            "https://github.com/example/missing",
+            &digest,
+            Some(6),
+            &path,
+            &BUILDER_INPUT_DOWNLOAD_POLICY,
+            |_, _| {},
+        )
+        .expect("matching cache must not fetch");
+        assert!(!fetched);
     }
 }

@@ -5,6 +5,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use solstone_core_distribution::acquire;
 use solstone_core_distribution::cleanroom::{
     bind_loopback, plan_text_from_inventory_path, serve_directory, serve_generation_fixture,
     serve_root_from_args,
@@ -13,7 +14,7 @@ use solstone_core_distribution::discover_and_validate_inventory;
 use solstone_core_distribution::produce::{self, ProduceArgs};
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
+    "usage: solstone-distribution <validate|produce|acquire|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
 }
 
 fn main() -> ExitCode {
@@ -35,6 +36,16 @@ fn main() -> ExitCode {
                     );
                     ExitCode::SUCCESS
                 }
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("acquire") => {
+            let rest = args.collect::<Vec<_>>();
+            match acquire::run(&rest) {
+                Ok(()) => ExitCode::SUCCESS,
                 Err(error) => {
                     eprintln!("{error}");
                     ExitCode::from(2)

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Pinned CPU runtime table ported from scripts/stage_speakers_analyze_runtime.py.
-//! That script is neither invoked nor edited.
+//! Pinned CPU runtime table. `solstone-distribution acquire onnx` stages
+//! from this table through the builder-input download policy.
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Read;
 use std::path::Path;
+
+use solstone_core_artifact_download::{BUILDER_INPUT_DOWNLOAD_POLICY, ensure_verified_url};
 
 use crate::digest::sha256_hex;
 use crate::zip;
@@ -173,21 +174,25 @@ pub fn stage_from_path(spec: &TargetSpec, path: &Path) -> Result<StagedRuntime, 
     stage_from_bytes(spec, &bytes)
 }
 
-/// Single origin primitive: only pin-table URLs may be fetched.
+/// Single origin primitive: only pin-table URLs may be fetched, and only
+/// through the builder-input policy. This is not the owner-facing allow-list.
 pub fn fetch_origin(url: &str) -> Result<Vec<u8>, StageError> {
-    if !TARGETS.iter().any(|item| item.wheel_url == url) {
-        return Err(StageError::new(format!("unexpected:\n  {url}")));
-    }
-    let response = ureq::get(url)
-        .call()
-        .map_err(|error| StageError::new(error.to_string()))?;
-    let mut bytes = Vec::new();
-    response
-        .into_body()
-        .as_reader()
-        .read_to_end(&mut bytes)
-        .map_err(|error| StageError::new(error.to_string()))?;
-    Ok(bytes)
+    let spec = TARGETS
+        .iter()
+        .find(|item| item.wheel_url == url)
+        .ok_or_else(|| StageError::new(format!("unexpected:\n  {url}")))?;
+    let dest =
+        std::env::temp_dir().join(format!("solstone-builder-onnx-{}.whl", spec.wheel_sha256));
+    ensure_verified_url(
+        spec.wheel_url,
+        spec.wheel_sha256,
+        None,
+        &dest,
+        &BUILDER_INPUT_DOWNLOAD_POLICY,
+        |_, _| {},
+    )
+    .map_err(|error| StageError::new(error.to_string()))?;
+    fs::read(&dest).map_err(|error| StageError::new(error.to_string()))
 }
 
 pub fn fetch_wheel(spec: &TargetSpec) -> Result<Vec<u8>, StageError> {

@@ -598,23 +598,22 @@ fn quoted_values(line: &str) -> Vec<String> {
         .collect()
 }
 
-fn python_runtime_specs(text: &str) -> BTreeMap<String, RuntimeSpecContract> {
+fn rust_runtime_specs(text: &str) -> BTreeMap<String, RuntimeSpecContract> {
     let target_start = text
-        .find("TARGETS = {")
-        .expect("stage script must define TARGETS");
+        .find("pub const TARGETS: &[TargetSpec] = &[")
+        .expect("onnx_runtime.rs must define TARGETS");
     let mut specs = BTreeMap::new();
     let mut current_key: Option<String> = None;
     let mut current_digest: Option<String> = None;
     let mut current_links = Vec::new();
     let mut reading_links = false;
-    let mut reading_digest = false;
 
     for line in text[target_start..].lines().skip(1) {
         let trimmed = line.trim();
-        if trimmed == "}" {
+        if trimmed == "];" {
             break;
         }
-        if trimmed.starts_with('"') && trimmed.contains(": TargetSpec(") {
+        if trimmed.starts_with("key:") {
             if let Some(key) = current_key.take() {
                 specs.insert(
                     key,
@@ -626,31 +625,18 @@ fn python_runtime_specs(text: &str) -> BTreeMap<String, RuntimeSpecContract> {
             }
             current_key = quoted_values(trimmed).into_iter().next();
             reading_links = false;
-            reading_digest = false;
             continue;
         }
-        if trimmed.starts_with("runtime_sha256") {
-            let value = trimmed
-                .split_once('=')
-                .map(|(_name, value)| value)
-                .expect("runtime_sha256 assignment");
-            current_digest = quoted_values(value).into_iter().next();
-            reading_digest = current_digest.is_none();
-            continue;
-        }
-        if reading_digest {
+        if trimmed.starts_with("runtime_sha256:") {
             current_digest = quoted_values(trimmed).into_iter().next();
-            if current_digest.is_some() {
-                reading_digest = false;
-            }
             continue;
         }
-        if trimmed.starts_with("link_names=") {
+        if trimmed.starts_with("link_names:") {
             reading_links = true;
         }
         if reading_links {
             current_links.extend(quoted_values(trimmed));
-            if trimmed.ends_with("),") {
+            if trimmed.contains(']') {
                 reading_links = false;
             }
         }
@@ -680,9 +666,10 @@ fn make_assignment(makefile: &str, name: &str) -> String {
 fn make_onnx_runtime_mapping_matches_the_staging_source_of_truth() {
     let root = repo_root();
     let makefile = makefile_text(&root);
-    let script = fs::read_to_string(root.join("scripts/stage_speakers_analyze_runtime.py"))
-        .expect("read runtime staging script");
-    let actual = python_runtime_specs(&script);
+    let source =
+        fs::read_to_string(root.join("core/crates/solstone-core-distribution/src/onnx_runtime.rs"))
+            .expect("read runtime staging source");
+    let actual = rust_runtime_specs(&source);
     assert_eq!(
         actual.keys().cloned().collect::<Vec<_>>(),
         ["linux-aarch64", "linux-x86_64", "macos-arm64"],
@@ -694,7 +681,7 @@ fn make_onnx_runtime_mapping_matches_the_staging_source_of_truth() {
         ("LINUX_AARCH64", "linux-aarch64"),
         ("MACOS_ARM64", "macos-arm64"),
     ] {
-        let expected = actual.get(script_key).expect("script target must exist");
+        let expected = actual.get(script_key).expect("source target must exist");
         assert_eq!(
             make_assignment(&makefile, &format!("ONNX_RUNTIME_{make_key}_TARGET")),
             script_key
@@ -708,7 +695,7 @@ fn make_onnx_runtime_mapping_matches_the_staging_source_of_truth() {
                 .split_whitespace()
                 .collect::<Vec<_>>(),
             expected.links,
-            "Make link names drifted from scripts/stage_speakers_analyze_runtime.py for {script_key}"
+            "Make link names drifted from onnx_runtime.rs for {script_key}"
         );
     }
 }
@@ -716,22 +703,20 @@ fn make_onnx_runtime_mapping_matches_the_staging_source_of_truth() {
 #[test]
 fn runtime_target_parser_ignores_decoys_and_formatting() {
     let fixture = r#"
-DECOY = TargetSpec(
-    runtime_sha256="wrong",
-    link_names=("wrong",),
-)
-TARGETS = {
-  "fixture": TargetSpec(
-      runtime_sha256 =
-          "abc",
-      link_names=(
-          "one",
-          "two",
-      ),
-  ),
-}
+const DECOY: TargetSpec = TargetSpec {
+    key: "decoy",
+    runtime_sha256: "wrong",
+    link_names: &["wrong"],
+};
+pub const TARGETS: &[TargetSpec] = &[
+    TargetSpec {
+        key: "fixture",
+        runtime_sha256: "abc",
+        link_names: &["one", "two"],
+    },
+];
 "#;
-    let parsed = python_runtime_specs(fixture);
+    let parsed = rust_runtime_specs(fixture);
     assert_eq!(parsed.len(), 1);
     assert_eq!(
         parsed.get("fixture"),
@@ -745,8 +730,10 @@ TARGETS = {
 #[test]
 fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
     let makefile = makefile_text(&repo_root());
-    let pdf_stager = fs::read_to_string(repo_root().join("scripts/stage_pdfium_runtime.py"))
-        .expect("read PDFium staging source");
+    let pdf_stager = fs::read_to_string(
+        repo_root().join("core/crates/solstone-core-distribution/src/pdfium.rs"),
+    )
+    .expect("read PDFium staging source");
     let prep = target_body(&makefile, "ci-full-prep");
     for (stage, prep_target) in [
         ("check-rust-onnx-stage", "ci-full-prep-onnx"),
@@ -761,7 +748,7 @@ fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
         let body = target_body(&makefile, gate);
         assert!(
             !body.contains("check-rust-onnx-stage") && !body.contains("check-rust-pdf-stage"),
-            "{gate} must not invoke Python-backed runtime staging"
+            "{gate} must not invoke runtime staging"
         );
     }
     assert!(target_body(&makefile, "ci-full-prep-onnx").contains("check-rust-onnx-stage"));
@@ -778,9 +765,12 @@ fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
         "runtime prep must keep generated package-shaped staging under target/"
     );
     let pdf_stage = target_body(&makefile, "check-rust-pdf-stage");
-    assert!(pdf_stage.contains("scripts/stage_pdfium_runtime.py"));
+    assert!(pdf_stage.contains("acquire pdfium"));
+    assert!(!pdf_stage.contains("python3"));
     assert!(pdf_stage.contains("REQUIRE_PDF_HOST_RUNTIME"));
     assert!(target_body(&makefile, "check-rust-pdf-ready").contains("REQUIRE_PDF_HOST_RUNTIME"));
+    assert!(target_body(&makefile, "check-rust-onnx-stage").contains("acquire onnx"));
+    assert!(!target_body(&makefile, "check-rust-onnx-stage").contains("python3"));
     for digest in [
         "687dce861f959c7097d47c5864509d51a926a71b38322596a8ee3e7a99c6b96e",
         "933f3d620cc8b58fb30a7f12a1bce8bf276da65caf39ff8fb2d04bc1268d53a3",
@@ -801,7 +791,8 @@ fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
     );
     let cargo_prep = target_body(&makefile, "ci-full-prep-cargo");
     assert!(
-        cargo_prep.contains("builder-inputs.toml")
+        cargo_prep.contains("acquire ffmpeg")
+            && !cargo_prep.contains("python3")
             && cargo_prep.contains("FFMPEG_SOURCE_ARCHIVE")
             && cargo_prep.contains("cargo check")
             && cargo_prep.contains("$(RUST_HOST_EXCLUDES)")

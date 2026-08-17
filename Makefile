@@ -120,8 +120,8 @@ VAD_ANALYZE_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylin
 PDF_LINUX_X86_64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target x86_64-unknown-linux-gnu
 PDF_LINUX_AARCH64_MATURIN_ARGS := --locked --zig --compatibility manylinux_2_27 --auditwheel skip --target aarch64-unknown-linux-gnu
 # Host link inputs for the ONNX-bundling helpers. There is exactly ONE staged
-# runtime directory per target — scripts/stage_speakers_analyze_runtime.py owns
-# the pinned URL/digest table — and the VAD targets reuse it rather than
+# runtime directory per target — solstone-distribution acquire onnx owns the
+# pinned URL/digest table — and the VAD targets reuse it rather than
 # provisioning a second copy. Only the wheel *payload* is per-package, because
 # each helper's build.rs rpath points at its own $ORIGIN/../lib/<package>.
 # These inputs define what the native integrity gate measures. Protect the
@@ -405,6 +405,7 @@ install: .installed
 # was before this target became a validator; validation and Cargo consumption
 # are not an atomic snapshot.
 check-rust-onnx-stage:
+	@$(REQUIRE_CARGO)
 	@set -u; \
 	$(REQUIRE_SUPPORTED_ONNX_HOST); \
 	$(DEFINE_ONNX_RUNTIME_VALIDATOR); \
@@ -420,7 +421,7 @@ check-rust-onnx-stage:
 	fi; \
 	echo "$$validation_error" >&2; \
 	echo "repairing the pinned host ONNX Runtime stage" >&2; \
-	if ! python3 scripts/stage_speakers_analyze_runtime.py --target $(ONNX_RUNTIME_HOST_TARGET) --package-dir target/runtime-package-staging/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/$(ONNX_RUNTIME_HOST_TARGET).json; then \
+	if ! $(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire onnx --target $(ONNX_RUNTIME_HOST_TARGET) --package-dir target/runtime-package-staging/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/$(ONNX_RUNTIME_HOST_TARGET).json; then \
 		echo "failed to stage the pinned host ONNX Runtime" >&2; \
 		exit 1; \
 	fi; \
@@ -432,15 +433,17 @@ check-rust-onnx-stage:
 		exit "$$validation_status"; \
 	fi
 
-# Staging PDFium also shells to Python and verifies a GitHub attestation, so it
-# stays OUTSIDE both poisoned Rust gates. The runtime-loaded crate itself remains in
-# ordinary host Cargo selection; only its real binary tests require this stage.
+# Staging PDFium fetches a digest-pinned archive and verifies a GitHub
+# attestation, so it stays OUTSIDE both poisoned Rust gates. The runtime-loaded
+# crate itself remains in ordinary host Cargo selection; only its real binary
+# tests require this stage.
 $(PDF_RUNTIME_HOST_LINK_DIR):
-	python3 scripts/stage_pdfium_runtime.py --target $(PDF_RUNTIME_HOST_TARGET) --package-dir target/runtime-package-staging/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
+	$(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire pdfium --target $(PDF_RUNTIME_HOST_TARGET) --package-dir target/runtime-package-staging/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
 
 check-rust-pdf-stage:
+	@$(REQUIRE_CARGO)
 	@$(REQUIRE_SUPPORTED_PDF_HOST)
-	python3 scripts/stage_pdfium_runtime.py --target $(PDF_RUNTIME_HOST_TARGET) --package-dir target/runtime-package-staging/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
+	$(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire pdfium --target $(PDF_RUNTIME_HOST_TARGET) --package-dir target/runtime-package-staging/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
 	@set -eu; $(REQUIRE_PDF_HOST_RUNTIME)
 	@echo "host PDFium runtime staged and verified at $(PDF_RUNTIME_HOST_LINK_DIR)"
 
@@ -448,6 +451,7 @@ check-rust-pdf-stage:
 .NOTPARALLEL: ci-full-prep
 ci-full ci-full-under-poison ci-full-prep ci-full-prep-cargo: export SOLSTONE_FFMPEG_SOURCE_ARCHIVE := $(FFMPEG_SOURCE_ARCHIVE)
 ci-full ci-full-under-poison ci-full-prep ci-full-prep-cargo: export SOLSTONE_DISTRIBUTION_OFFLINE := 1
+ci-full ci-full-under-poison ci-full-prep check-rust-distribution check-rust-distribution-under-poison: export SOLSTONE_DISTRIBUTION_ONNX_ARCHIVE_DIR := $(ONNX_RUNTIME_ARCHIVE_DIR)
 
 # Preparation is the only full-CI surface allowed to fetch Cargo inputs or
 # repair native runtime stages. The validation runner itself stays offline.
@@ -455,7 +459,7 @@ ci-full-prep: ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
 
 ci-full-prep-cargo:
 	@$(REQUIRE_CARGO)
-	python3 -c 'import hashlib, pathlib, tempfile, tomllib, urllib.request; root = pathlib.Path.cwd(); pin = tomllib.loads((root / "core/distribution/builder-inputs.toml").read_text(encoding="utf-8"))["ffmpeg"]; dest = pathlib.Path("$(FFMPEG_SOURCE_ARCHIVE)"); dest.parent.mkdir(parents=True, exist_ok=True); cached = dest.read_bytes() if dest.is_file() else b""; data = cached if hashlib.sha256(cached).hexdigest() == pin["sha256"] else urllib.request.urlopen(pin["url"], timeout=60).read(); actual = hashlib.sha256(data).hexdigest(); assert actual == pin["sha256"], f"FFmpeg source digest mismatch: expected {pin['"'"'sha256'"'"']}, actual {actual}"; temporary = tempfile.NamedTemporaryFile(prefix=f"{dest.name}.", suffix=".part", dir=dest.parent, delete=False); temporary.write(data); temporary.close(); pathlib.Path(temporary.name).replace(dest)'
+	$(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire ffmpeg --dest $(FFMPEG_SOURCE_ARCHIVE)
 	cargo fetch --manifest-path $(RUST_MANIFEST) --locked
 	cargo check --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --no-run --locked
@@ -536,6 +540,10 @@ check-rust-doc:
 
 SOLSTONE_CI_RUNNER := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-repository-contracts --bin solstone-ci --locked --offline --
 SOLSTONE_DISTRIBUTION := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-distribution --bin solstone-distribution --locked --offline --
+# Acquire is the only distribution surface allowed to fetch. The producer
+# itself stays offline and consumes the files this writes.
+SOLSTONE_DISTRIBUTION_ACQUIRE := cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-distribution --bin solstone-distribution --locked --
+ONNX_RUNTIME_ARCHIVE_DIR := $(CURDIR)/target/speakers-analyze-runtime-cache
 
 # Export selector values directly instead of interpolating them into a shell
 # command. This preserves comma- or space-separated values literally and keeps

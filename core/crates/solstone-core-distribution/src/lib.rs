@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+pub mod acquire;
 pub mod apple;
 pub mod ar;
 pub mod archive;
@@ -13,6 +14,7 @@ pub mod inventory;
 pub mod lanes;
 pub mod macho;
 pub mod onnx_runtime;
+pub mod pdfium;
 pub mod produce;
 pub mod promote;
 pub mod provenance;

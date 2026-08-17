@@ -3305,10 +3305,10 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-artifact-download",
  "tar",
  "tempfile",
  "toml_edit",
- "ureq",
 ]
 
 [[package]]

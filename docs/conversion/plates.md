@@ -922,7 +922,7 @@ share/  notices and licences
 ✅ **Shipped binaries resolve this layout through the third candidate in `resolve_installation_root_from_executable_dir`:** payload lives at `share/solstone/**`, the resolver returns `<prefix>/share`, and tar/deb/rpm normalize to that tree. That property is what the plate is built on, and each half of it is a fact about code in this tree rather than an intention:
 
 - the three launchers walk `$0` symlinks and `exec` a native sibling resolved from their own directory (`scripts/root-launchers/`) — ⛔ nothing in them is virtualenv-aware
-- `libonnxruntime.so.1` is reached by the rpath `$ORIGIN/../lib/solstone-core-speakers-analyze`, emitted by `core/crates/solstone-core-speakers-analyze/build.rs`, over bytes staged from the pinned-digest table in `scripts/stage_speakers_analyze_runtime.py`
+- `libonnxruntime.so.1` is reached by the rpath `$ORIGIN/../lib/solstone-core-speakers-analyze`, emitted by `core/crates/solstone-core-speakers-analyze/build.rs`, over bytes staged from the pinned-digest table in `core/crates/solstone-core-distribution/src/onnx_runtime.rs`
 - model assets resolve at `<ancestor-of-exe>/lib/solstone_journal_models/assets` and that candidate is tried **before** any `site-packages` path (`core/crates/solstone-core-transcribe/src/model_assets.rs`)
 - `solstone-core` is fully static; every other binary links base system libraries only
 
