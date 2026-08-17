@@ -30,6 +30,9 @@ pub use anthropic::{
 pub use bundled::{
     BundledError, LOCAL_MODEL_ID, bundled_converse, bundled_generate, bundled_input,
 };
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use confidential::test_support;
 pub use confidential::{ConfidentialResult, confidential_converse, confidential_generate};
 pub use converse::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,

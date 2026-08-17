@@ -25,6 +25,7 @@ regex = "1.13.1"
 # Cross-language differentials against the Python reference implementation.
 # They need a populated `.venv` (`make install`).
 differential = []
+test-hooks = []
 
 [[test]]
 name = "endpoint_transport"
@@ -39,6 +40,11 @@ required-features = ["differential"]
 name = "token_log_differential"
 path = "tests/token_log_differential.rs"
 required-features = ["differential"]
+
+[[test]]
+name = "confidential_transport"
+path = "tests/confidential_transport.rs"
+required-features = ["test-hooks"]
 
 [dev-dependencies]
 solstone-core-spp-attest.workspace = true
