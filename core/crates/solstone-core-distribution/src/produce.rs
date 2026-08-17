@@ -68,11 +68,11 @@ pub fn resolve_zig_binary(
     if let Some(value) = override_value {
         let candidate = PathBuf::from(value);
         if candidate.is_file() {
-            return Ok(candidate);
+            return Ok(candidate.canonicalize()?);
         }
         let nested = candidate.join("zig");
         if nested.is_file() {
-            return Ok(nested);
+            return Ok(nested.canonicalize()?);
         }
         return Err(ProduceError::new(format!(
             "missing required:\n  zig ({ZIG_OVERRIDE}={value})"
@@ -81,7 +81,7 @@ pub fn resolve_zig_binary(
     for entry in env::split_paths(path) {
         let candidate = entry.join("zig");
         if candidate.is_file() {
-            return Ok(candidate);
+            return Ok(candidate.canonicalize()?);
         }
     }
     Err(ProduceError::new("missing required:\n  zig"))
@@ -802,6 +802,24 @@ mod tests {
         let missing =
             resolve_zig_binary(None, "/var/tmp/solstone-distribution-no-zig").unwrap_err();
         assert!(missing.to_string().contains("missing required:"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_zig_resolves_path_symlink_to_install_root() {
+        let root = PathBuf::from("/var/tmp/solstone-distribution-zig-path-symlink");
+        let _ = fs::remove_dir_all(&root);
+        let install = root.join("install");
+        let bin = root.join("bin");
+        fs::create_dir_all(install.join("lib")).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        let real = install.join("zig");
+        fs::write(&real, b"zig").unwrap();
+        let link = bin.join("zig");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let got = resolve_zig_binary(None, bin.to_str().unwrap()).unwrap();
+        assert_eq!(got, real.canonicalize().unwrap());
+        assert!(got.parent().unwrap().join("lib").is_dir());
         let _ = fs::remove_dir_all(&root);
     }
 
