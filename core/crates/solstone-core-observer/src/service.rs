@@ -8,7 +8,9 @@ use serde_json::{Value, json};
 use solstone_core_facets::append_action_log;
 
 use crate::command::ObserverCommand;
-use crate::store::format::{fmt_bytes, render_list, render_status_all, render_status_single};
+use crate::store::format::{
+    TimeDisplay, fmt_bytes, render_list, render_status_all, render_status_single,
+};
 use crate::store::prune::{DaySelector, format_result, resolve_prune_days, run_prune};
 use crate::store::reconcile::{ReconcilePlan, reconcile_plan};
 use crate::store::record::ObserverRecord;
@@ -119,17 +121,33 @@ pub fn execute(
         ObserverCommand::Prune { .. } => {
             unreachable!("prune is dispatched via execute_prune, not execute")
         }
-        ObserverCommand::List { json } => Ok(render_list(&load(journal_root)?, json, now_ms)),
+        ObserverCommand::List { json } => Ok(render_list(
+            &load(journal_root)?,
+            json,
+            now_ms,
+            TimeDisplay::Local,
+        )),
         ObserverCommand::Status {
             identifier: None,
             json,
-        } => Ok(render_status_all(&load(journal_root)?, json, now_ms)),
+        } => Ok(render_status_all(
+            &load(journal_root)?,
+            json,
+            now_ms,
+            TimeDisplay::Local,
+        )),
         ObserverCommand::Status {
             identifier: Some(identifier),
             json,
         } => {
             let record = find(journal_root, &identifier)?;
-            Ok(render_status_single(journal_root, &record, json, now_ms))
+            Ok(render_status_single(
+                journal_root,
+                &record,
+                json,
+                now_ms,
+                TimeDisplay::Local,
+            ))
         }
         ObserverCommand::Rename { old, new, json } => rename(journal_root, &old, new, json),
         ObserverCommand::Revoke { identifier, json } => {

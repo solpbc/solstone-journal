@@ -135,8 +135,7 @@ pub fn run_prune(
     }
 }
 
-/// Format prune output for the operator CLI: this exact shape is what the
-/// cross-language differential test compares against the Python oracle.
+/// Format prune output for the operator CLI.
 pub fn format_result(result: &PruneResult) -> String {
     let candidates: Vec<&PruneCandidate> = result
         .groups

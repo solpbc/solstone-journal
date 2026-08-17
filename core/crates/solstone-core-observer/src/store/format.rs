@@ -14,15 +14,11 @@ use super::record::ObserverRecord;
 
 const CONNECTED_THRESHOLD_MS: i64 = 2 * 60 * 1000;
 
-#[cfg(feature = "differential")]
-static DIFFERENTIAL_UTC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// Rust 2024 makes process-environment mutation unsafe, and this workspace
-/// forbids unsafe code. Differential tests use this feature-gated display-zone
-/// hook instead of changing `TZ` in-process.
-#[cfg(feature = "differential")]
-pub fn use_utc_for_differential_tests() {
-    DIFFERENTIAL_UTC.store(true, std::sync::atomic::Ordering::Relaxed);
+/// Display zone for human-formatted observer clocks.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum TimeDisplay {
+    Local,
+    Utc,
 }
 
 pub fn status_label(record: &ObserverRecord, now_ms: i64) -> &'static str {
@@ -55,25 +51,24 @@ fn format_number(value: f64, suffix: &str) -> String {
     }
 }
 
-pub fn fmt_time(value: Option<i64>) -> String {
+pub fn fmt_time(value: Option<i64>, zone: TimeDisplay) -> String {
     value
-        .and_then(display_time)
+        .and_then(|value| display_time(value, zone))
         .map(|time| time.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|| "never".to_owned())
 }
 
-fn display_time(value: i64) -> Option<chrono::DateTime<chrono::FixedOffset>> {
-    #[cfg(feature = "differential")]
-    if DIFFERENTIAL_UTC.load(std::sync::atomic::Ordering::Relaxed) {
-        return chrono::Utc
+fn display_time(value: i64, zone: TimeDisplay) -> Option<chrono::DateTime<chrono::FixedOffset>> {
+    match zone {
+        TimeDisplay::Utc => chrono::Utc
             .timestamp_millis_opt(value)
             .single()
-            .map(|time| time.fixed_offset());
+            .map(|time| time.fixed_offset()),
+        TimeDisplay::Local => Local
+            .timestamp_millis_opt(value)
+            .single()
+            .map(|time| time.fixed_offset()),
     }
-    Local
-        .timestamp_millis_opt(value)
-        .single()
-        .map(|time| time.fixed_offset())
 }
 
 pub fn fmt_compact_age(value: &Value, now_ms: i64) -> String {
@@ -98,7 +93,12 @@ pub fn fmt_compact_age(value: &Value, now_ms: i64) -> String {
     format!("{}d", hours / 24)
 }
 
-pub fn render_list(records: &[ObserverRecord], json_output: bool, now_ms: i64) -> String {
+pub fn render_list(
+    records: &[ObserverRecord],
+    json_output: bool,
+    now_ms: i64,
+    zone: TimeDisplay,
+) -> String {
     if json_output {
         return serde_json::to_string(&Value::Array(
             records
@@ -126,7 +126,7 @@ pub fn render_list(records: &[ObserverRecord], json_output: bool, now_ms: i64) -
             record.prefix(),
             status_label(record, now_ms),
             record.device_binding_kind().unwrap_or("unbound"),
-            fmt_time(record.last_seen()),
+            fmt_time(record.last_seen(), zone),
             compact_field(record.last_segment_received_at(), now_ms),
             metric_display(stats, "segments_received"),
             fmt_bytes(metric_number(stats, "bytes_received"))
@@ -135,7 +135,12 @@ pub fn render_list(records: &[ObserverRecord], json_output: bool, now_ms: i64) -
     lines.join("\n")
 }
 
-pub fn render_status_all(records: &[ObserverRecord], json_output: bool, now_ms: i64) -> String {
+pub fn render_status_all(
+    records: &[ObserverRecord],
+    json_output: bool,
+    now_ms: i64,
+    zone: TimeDisplay,
+) -> String {
     if !json_output && records.is_empty() {
         return "No observers registered.".to_owned();
     }
@@ -181,7 +186,7 @@ pub fn render_status_all(records: &[ObserverRecord], json_output: bool, now_ms: 
             record.prefix(),
             status_label(record, now_ms),
             record.device_binding_kind().unwrap_or("unbound"),
-            fmt_time(record.last_seen()),
+            fmt_time(record.last_seen(), zone),
             compact_field(record.last_segment_received_at(), now_ms)
         ));
     }
@@ -193,12 +198,13 @@ pub fn render_status_single(
     record: &ObserverRecord,
     json_output: bool,
     now_ms: i64,
+    zone: TimeDisplay,
 ) -> String {
     if json_output {
         let stats = record.stats();
         return serde_json::to_string(&json!({"name":record.name().unwrap_or_default(),"prefix":record.prefix(),"status":status_label(record, now_ms),"device_binding_kind":record.device_binding_kind(),"created_at":record.created_at(),"last_seen":record.last_seen(),"last_segment_received_at":record.last_segment_received_at(),"last_segment_day":record.last_segment_day(),"revoked":record.revoked(),"segments":metric_value(stats,"segments_received"),"bytes":metric_value(stats,"bytes_received")})).expect("JSON values serialize");
     }
-    let today = display_time(now_ms)
+    let today = display_time(now_ms, zone)
         .expect("valid current time")
         .format("%Y%m%d")
         .to_string();
@@ -236,11 +242,19 @@ pub fn render_status_single(
         "Binding:",
         record.device_binding_kind().unwrap_or("unbound"),
     );
-    field(&mut lines, "Created:", &fmt_time(record.created_at()));
-    field(&mut lines, "Last seen:", &fmt_time(record.last_seen()));
+    field(&mut lines, "Created:", &fmt_time(record.created_at(), zone));
+    field(
+        &mut lines,
+        "Last seen:",
+        &fmt_time(record.last_seen(), zone),
+    );
     field(&mut lines, "Last segment:", &context);
     if record.revoked() {
-        field(&mut lines, "Revoked at:", &fmt_time(record.revoked_at()));
+        field(
+            &mut lines,
+            "Revoked at:",
+            &fmt_time(record.revoked_at(), zone),
+        );
     }
     field(
         &mut lines,
@@ -281,7 +295,7 @@ pub fn render_status_single(
                 upload.get("segment").and_then(Value::as_str).unwrap_or("?"),
                 files.len(),
                 fmt_bytes(total),
-                fmt_time(python_numeric_ms(upload.get("ts")))
+                fmt_time(python_numeric_ms(upload.get("ts")), zone)
             ));
         }
     }
@@ -405,14 +419,20 @@ mod tests {
     }
     #[test]
     fn empty_registry_has_all_four_render_forms() {
-        assert_eq!(render_list(&[], false, 0), "No observers registered.");
-        assert_eq!(render_list(&[], true, 0), "[]");
-        assert_eq!(render_status_all(&[], false, 0), "No observers registered.");
-        assert!(render_status_all(&[], true, 0).contains("\"total\":0"));
+        assert_eq!(
+            render_list(&[], false, 0, TimeDisplay::Utc),
+            "No observers registered."
+        );
+        assert_eq!(render_list(&[], true, 0, TimeDisplay::Utc), "[]");
+        assert_eq!(
+            render_status_all(&[], false, 0, TimeDisplay::Utc),
+            "No observers registered."
+        );
+        assert!(render_status_all(&[], true, 0, TimeDisplay::Utc).contains("\"total\":0"));
     }
     #[test]
     fn list_uses_python_column_widths() {
-        let output = render_list(&[record()], false, 2_000);
+        let output = render_list(&[record()], false, 2_000, TimeDisplay::Utc);
         assert_eq!(output.lines().nth(1), Some("-".repeat(118).as_str()));
     }
 }
