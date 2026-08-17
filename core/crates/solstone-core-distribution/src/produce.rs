@@ -942,7 +942,7 @@ fn stage_layout(
         .map_err(|error| ProduceError::new(error.to_string()))?
     {
         let dest = payload_dest(&inventory.payload_dest_prefix, &source);
-        let bytes = fs::read(repo.join(&source))?;
+        let bytes = fs::read(repo.join(&inventory.payload_src_root).join(&source))?;
         stage::write_staged_file_mode(stage, &dest, &bytes, 0o644)?;
     }
     Ok(())

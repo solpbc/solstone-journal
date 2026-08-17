@@ -269,10 +269,10 @@ mod tests {
     #[test]
     fn builder_matches_committed_bundle() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let paths = ContractPaths::from_root(root.clone()).unwrap();
+        let paths = ContractPaths::from_root(root).unwrap();
         let rendered = crate::contract::serialize::render(&build_bundle(&paths).unwrap());
-        let committed = std::fs::read(root.join("solstone/talent/journal/contract/bundle.json"))
-            .expect("committed contract bundle is readable");
+        let committed =
+            std::fs::read(&paths.artifact).expect("committed contract bundle is readable");
         assert_eq!(rendered.as_bytes(), committed.as_slice());
     }
 

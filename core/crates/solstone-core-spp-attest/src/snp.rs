@@ -1259,7 +1259,7 @@ mod tests {
             .to_path_buf();
         for root in embedded_root_pairs() {
             let source_root = repository_root
-                .join("solstone/think/services/spp_attest/roots/amd")
+                .join("core/payload/solstone/think/services/spp_attest/roots/amd")
                 .join(root.product);
             assert_eq!(
                 root.ark_pem.as_bytes(),

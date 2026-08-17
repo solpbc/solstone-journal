@@ -1590,6 +1590,7 @@ check-contract:
 
 check-contract-parity: .installed
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; cp -R solstone "$$scratch/solstone"; \
+	cp -R core/payload/solstone/. "$$scratch/solstone/"; \
 	$(VENV_BIN)/python -c 'from pathlib import Path; import sys; from solstone.think.contract.journal import build_bundle, render_bundle_json; print(render_bundle_json(build_bundle(Path(sys.argv[1]))), end="")' "$$scratch" > "$$scratch/python.json"; \
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build --root "$$scratch" >/dev/null; \
 	cmp "$$scratch/python.json" "$$scratch/solstone/talent/journal/contract/bundle.json"

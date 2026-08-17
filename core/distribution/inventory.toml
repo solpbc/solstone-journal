@@ -5,6 +5,16 @@ version = 1
 product = "solstone-journal"
 payload = "payload.txt"
 payload_dest_prefix = "share"
+# Where payload.txt's paths are rooted in the repository. The payload is the
+# product data the shipped binary reads at runtime, so it is not part of the
+# Python package tree even though its installed layout keeps the `solstone/`
+# name; `core/payload` is the checkout's stand-in for the installed `share/`
+# prefix, which is what lets one set of paths describe both.
+#
+# Note the two `source` conventions in this file: `[[entry]].source` is
+# repository-root-relative and payload.txt's lines are `payload_src_root`-
+# relative. Nothing in the syntax distinguishes them.
+payload_src_root = "core/payload"
 
 [artifact]
 basename = "solstone-journal-{version}-{os}-{arch}"

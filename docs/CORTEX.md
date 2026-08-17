@@ -265,7 +265,7 @@ When an agent completes successfully, its result can be automatically written to
 
 ## Talent Configuration
 
-Talents use configurations stored in the `solstone/talent/` directory. Each talent is a `.md` file containing:
+Talents use configurations stored in the `core/payload/solstone/talent/` directory. Each talent is a `.md` file containing:
 - JSON frontmatter with metadata and configuration
 - The talent-specific prompt and instructions in the content
 
@@ -278,7 +278,7 @@ When spawning a talent:
    - `extra_context`: Runtime context (facets, generators list, datetime)
    - `user_instruction`: The agent's `.md` file content
 
-Agents define specialized behaviors and facet expertise. Available agents can be discovered using `get_talent_configs(type="cogitate")` or by listing files in the `solstone/talent/` directory.
+Agents define specialized behaviors and facet expertise. Available agents can be discovered using `get_talent_configs(type="cogitate")` or by listing files in the `core/payload/solstone/talent/` directory.
 
 ### Agent Configuration Options
 

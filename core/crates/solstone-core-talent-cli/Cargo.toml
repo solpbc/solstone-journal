@@ -25,4 +25,5 @@ solstone-core-journal-config.workspace = true
 solstone-core-talent-config.workspace = true
 
 [dev-dependencies]
+solstone-core-journal.workspace = true
 tempfile = "3.24.0"

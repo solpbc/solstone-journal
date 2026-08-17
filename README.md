@@ -60,7 +60,7 @@ Python 3.12+, Linux + macOS, AGPL-3.0-only, maintained by [sol pbc](https://solp
 ```
 
 - **observe** — receives audio and screen observations from standalone observers (solstone-linux, solstone-tmux, solstone-macos) via observer ingest. processes FLAC audio, WebM screen media, and timestamped metadata.
-- **think** — transcribes audio with Parakeet, analyzes screen observations, surfaces entities, detects meetings, and indexes everything into SQLite. runs 30 configurable agent/generator templates from `solstone/talent/`.
+- **think** — transcribes audio with Parakeet, analyzes screen observations, surfaces entities, detects meetings, and indexes everything into SQLite. runs 30 configurable agent/generator templates from `core/payload/solstone/talent/`.
 - **cortex** — orchestrates agent execution. receives events, dispatches agents, writes results back to the journal.
 - **callosum** — async message bus connecting all services. enables event-driven coordination between observe, think, cortex, and convey.
 - **convey** — Flask-based web interface with 17 pluggable apps for navigating journal data.
@@ -112,7 +112,7 @@ Run `sol help` for the full command reference.
 |-------|----------|
 | Installation and setup | [INSTALL.md](INSTALL.md) |
 | Developing from source | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Journal structure and data model | [solstone/talent/journal/SKILL.md](solstone/talent/journal/SKILL.md) |
+| Journal structure and data model | [core/payload/solstone/talent/journal/SKILL.md](core/payload/solstone/talent/journal/SKILL.md) |
 | Observe pipeline | [docs/OBSERVE.md](docs/OBSERVE.md) |
 | Processing and agents | [docs/THINK.md](docs/THINK.md) |
 | Web interface | [docs/CONVEY.md](docs/CONVEY.md) |

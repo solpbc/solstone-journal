@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use crate::payload_inventory::{declared_paths, is_payload_path};
+use crate::payload_inventory::{declared_paths, is_payload_path, payload_src_root};
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -37,6 +37,15 @@ fn is_confined_regular_file(root: &Path, relative: &str) -> bool {
 #[test]
 fn payload_txt_is_confined_and_present() {
     let root = repository_root();
+    // payload.txt is `payload_src_root`-relative, so confinement is checked
+    // against that root rather than against the repository root.
+    let payload_root = root.join(
+        payload_src_root(
+            &fs::read_to_string(root.join("core/distribution/inventory.toml"))
+                .expect("read distribution inventory"),
+        )
+        .expect("inventory declares payload_src_root"),
+    );
     let listed = declared_paths(
         &fs::read_to_string(root.join("core/distribution/payload.txt")).expect("read payload.txt"),
     );
@@ -53,8 +62,9 @@ fn payload_txt_is_confined_and_present() {
     assert!(
         listed
             .iter()
-            .all(|path| is_confined_regular_file(&root, path)),
-        "every declared payload path must exist as a regular, non-symlink file"
+            .all(|path| is_confined_regular_file(&payload_root, path)),
+        "every declared payload path must exist as a regular, non-symlink file under {}",
+        payload_root.display()
     );
     assert!(
         listed
@@ -67,6 +77,26 @@ fn payload_txt_is_confined_and_present() {
             .iter()
             .any(|path| path == "solstone/think/contract/layout.json"),
         "payload declaration must include the layout contract anchor"
+    );
+}
+
+/// The producer reads the payload root from the inventory and the runtime
+/// resolver carries it as a constant. They describe the same directory, so a
+/// change to either without the other is drift that no other gate would see:
+/// the producer would keep staging from a directory the binary no longer reads.
+#[test]
+fn declared_payload_root_matches_the_resolver_constant() {
+    let root = repository_root();
+    let declared = payload_src_root(
+        &fs::read_to_string(root.join("core/distribution/inventory.toml"))
+            .expect("read distribution inventory"),
+    )
+    .expect("inventory declares payload_src_root");
+    assert_eq!(
+        declared,
+        solstone_core_journal::CHECKOUT_PAYLOAD_ROOT,
+        "core/distribution/inventory.toml payload_src_root and \
+         solstone_core_journal::CHECKOUT_PAYLOAD_ROOT must name the same directory"
     );
 }
 

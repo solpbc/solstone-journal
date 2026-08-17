@@ -3,6 +3,26 @@
 
 use std::collections::BTreeSet;
 
+/// The repository directory `payload.txt`'s paths are rooted in, read from the
+/// distribution inventory rather than restated here.
+///
+/// The payload's repository location and its declaration have to agree, and a
+/// second copy of the root in this crate is a second place that can disagree
+/// with the first. Reading the key means changing it in the inventory moves
+/// this contract with it — and pointing it at a directory that does not exist
+/// turns the whole tracked set empty, which is what the emptiness assertion in
+/// `payload_txt_matches_git_tracked_inventory` exists to catch.
+pub fn payload_src_root(inventory_toml: &str) -> Result<String, String> {
+    let document = inventory_toml
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|error| format!("parse distribution inventory: {error}"))?;
+    document
+        .get("payload_src_root")
+        .and_then(toml_edit::Item::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| "distribution inventory has no payload_src_root".to_owned())
+}
+
 pub fn declared_paths(contents: &str) -> Vec<String> {
     contents
         .lines()
@@ -59,6 +79,18 @@ pub fn payload_set(paths: impl IntoIterator<Item = Vec<u8>>) -> BTreeSet<Vec<u8>
         .collect()
 }
 
+/// Strip the payload source root from a repository-relative Git path.
+///
+/// `payload.txt` is `payload_src_root`-relative and `git ls-files` is
+/// repository-relative, so the two are only comparable after this. A path
+/// outside the root is dropped rather than passed through, so a stray file
+/// cannot be mistaken for a declared one.
+pub fn strip_payload_src_root(root: &str, path: &[u8]) -> Option<Vec<u8>> {
+    let mut prefix = root.as_bytes().to_vec();
+    prefix.push(b'/');
+    path.strip_prefix(prefix.as_slice()).map(<[u8]>::to_vec)
+}
+
 pub fn inventory_diff(
     declared: &BTreeSet<Vec<u8>>,
     tracked: &BTreeSet<Vec<u8>>,
@@ -101,6 +133,35 @@ mod tests {
             ]
             .into_iter()
             .collect()
+        );
+    }
+
+    #[test]
+    fn payload_src_root_is_read_from_the_inventory() {
+        assert_eq!(
+            payload_src_root("version = 1\npayload_src_root = \"core/payload\"\n")
+                .expect("declared root"),
+            "core/payload"
+        );
+        assert_eq!(
+            payload_src_root("version = 1\n").expect_err("absent root fails"),
+            "distribution inventory has no payload_src_root"
+        );
+    }
+
+    #[test]
+    fn stripping_the_source_root_drops_paths_outside_it() {
+        assert_eq!(
+            strip_payload_src_root("core/payload", b"core/payload/solstone/talent/chat.md"),
+            Some(b"solstone/talent/chat.md".to_vec())
+        );
+        assert_eq!(
+            strip_payload_src_root("core/payload", b"solstone/talent/chat.md"),
+            None
+        );
+        assert_eq!(
+            strip_payload_src_root("core/payload", b"core/payloadish/solstone/talent/chat.md"),
+            None
         );
     }
 

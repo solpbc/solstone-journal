@@ -126,7 +126,7 @@ Recommended rendered content by mode:
 - The facet newsletter writer is `sol call journal news`, implemented by `solstone/think/tools/facets.py:61-106`.
 - The newsletter prompt key is stable: `facet_newsletter`.
   Reason:
-  system talent config keys come from `solstone/talent/*.md` filename stems in `solstone/think/talent.py:228-235`, and the file is `solstone/talent/facet_newsletter.md:1-15`.
+  system talent config keys come from `core/payload/solstone/talent/*.md` filename stems in `solstone/think/talent.py:228-235`, and the file is `core/payload/solstone/talent/facet_newsletter.md:1-15`.
   Think logs emit `name=prompt_name` unchanged for dispatch and fail/complete events in `solstone/think/thinking.py:1277-1292` and `solstone/think/thinking.py:365-389`.
 
 ### Option A — re-parse think JSONL for newsletter-specific facet fails

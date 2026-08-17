@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub(crate) struct ContractPaths {
     pub(crate) root: PathBuf,
+    /// Where the contract's schema *sources* live. In a repository checkout
+    /// these stay in the package tree; in an installed tree only the payload
+    /// ships, and the two roots coincide.
     pub(crate) solstone: PathBuf,
     pub(crate) layout: PathBuf,
     pub(crate) artifact: PathBuf,
@@ -33,6 +36,15 @@ impl ContractPaths {
                 executable.display()
             ));
         };
+        // A checkout is asked for by name rather than taken from the
+        // installation resolver, which returns the *payload* root. The bundle
+        // is built from schema sources that only a repository has, so building
+        // from the payload root would silently discover a fraction of them.
+        if let Some(repository) =
+            solstone_core_journal::resolve_checkout_root_from_executable_dir(executable_dir)
+        {
+            return Self::from_root(repository);
+        }
         let Some(root) =
             solstone_core_journal::resolve_installation_root_from_executable_dir(executable_dir)
         else {
@@ -52,9 +64,26 @@ impl ContractPaths {
                 solstone.display()
             ));
         }
+        // The generated layout and bundle are payload, and a checkout keeps its
+        // payload outside the package tree. Everywhere else — an installed
+        // tree, a synthetic root under test — the payload root is the root.
+        //
+        // The test is structural on purpose. `payload_root_in_checkout` gates on
+        // the three layout anchors, which is right for *finding* an installation
+        // but wrong here: this type has to name where the bundle belongs even
+        // when the bundle is missing, and an anchor-gated answer would silently
+        // relocate the artifact the moment it was deleted.
+        let payload_solstone = root
+            .join(solstone_core_journal::CHECKOUT_PAYLOAD_ROOT)
+            .join("solstone");
+        let payload = if payload_solstone.is_dir() {
+            payload_solstone
+        } else {
+            solstone.clone()
+        };
         Ok(Self {
-            layout: solstone.join("think/contract/layout.json"),
-            artifact: solstone.join("talent/journal/contract/bundle.json"),
+            layout: payload.join("think/contract/layout.json"),
+            artifact: payload.join("talent/journal/contract/bundle.json"),
             fixture: root.join("tests/fixtures/journal"),
             root,
             solstone,

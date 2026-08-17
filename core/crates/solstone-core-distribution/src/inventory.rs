@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -24,6 +24,11 @@ pub struct Inventory {
     pub product: String,
     pub payload: String,
     pub payload_dest_prefix: String,
+    /// The repository directory `payload.txt`'s paths are rooted in. A checkout
+    /// keeps the shipped payload here rather than in the Python package tree;
+    /// the installed layout is unchanged, so `payload.txt` names one set of
+    /// paths and the producer joins this root to read them.
+    pub payload_src_root: String,
     pub artifact: Artifact,
     pub target: Vec<Target>,
     pub entry: Vec<Entry>,
@@ -480,6 +485,20 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
         )));
     }
 
+    // `payload_src_root` is joined to a repository root the validator does not
+    // have, so what it can check is the shape: a relative path with no escape.
+    // The producer's own read failure names the missing file if it is wrong.
+    if inventory.payload_src_root.is_empty()
+        || Path::new(&inventory.payload_src_root)
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(InventoryError::new(format!(
+            "payload_src_root must be a relative path with no parent escape: {}",
+            inventory.payload_src_root
+        )));
+    }
+
     let mut unpinned = BTreeSet::new();
     let mut unexpected_network = BTreeSet::new();
     let mut invalid_controls = BTreeSet::new();
@@ -768,6 +787,7 @@ version = 1
 product = "p"
 payload = "payload.txt"
 payload_dest_prefix = "share"
+payload_src_root = "core/payload"
 entry = []
 deny = []
 [artifact]
@@ -790,6 +810,7 @@ version = 1
 product = "p"
 payload = "payload.txt"
 payload_dest_prefix = "share"
+payload_src_root = "core/payload"
 entry = []
 deny = []
 [artifact]
@@ -812,6 +833,7 @@ version = 1
 product = "p"
 payload = "payload.txt"
 payload_dest_prefix = "share"
+payload_src_root = "core/payload"
 entry = []
 deny = []
 [artifact]
@@ -855,6 +877,7 @@ version = 1
 product = "p"
 payload = "payload.txt"
 payload_dest_prefix = "share"
+payload_src_root = "core/payload"
 entry = []
 deny = []
 [artifact]

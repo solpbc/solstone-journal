@@ -519,7 +519,8 @@ mod tests {
 
     #[test]
     fn chat_pre_hook_uses_python_dict_rendering() {
-        let chat = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../solstone/talent/chat.md");
+        let chat = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../core/payload/solstone/talent/chat.md");
         let parsed = read_frontmatter(&chat).expect("checked-in chat talent");
         assert_eq!(
             python_str(parsed.metadata.get("hook").expect("hook")),
@@ -529,7 +530,8 @@ mod tests {
 
     #[test]
     fn checked_in_read_talent_is_the_cogitate_static_view_fixture() {
-        let read = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../solstone/talent/read.md");
+        let read = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../core/payload/solstone/talent/read.md");
         let parsed = read_frontmatter(&read).expect("checked-in read talent");
         assert_eq!(
             parsed.metadata.get("type"),

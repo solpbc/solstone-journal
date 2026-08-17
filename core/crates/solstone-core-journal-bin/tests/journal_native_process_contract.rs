@@ -2642,21 +2642,20 @@ fn native_think_cadence_run_reaches_the_talent_plane_without_python() {
     let context = harness.context();
     prove_poison_interpreters_live(&context);
 
-    // A fake installation root beside the sibling directory, in BOTH shapes the
-    // tree already uses to locate shipped talents: `discover_package_roots`
-    // walks the executable's ancestors for `<ancestor>/solstone/{talent,apps}`,
-    // and `is_solstone_checkout_root` additionally wants `pyproject.toml` and
-    // `.git`. Satisfying both leaves the resolution choice to the port.
-    let install_root = context
+    // A fake checkout beside the sibling directory, in the shape the resolver
+    // recognises: `pyproject.toml` and `.git` at the root, and the shipped
+    // payload under `core/payload` carrying the three layout anchors. The
+    // payload is deliberately NOT in the package tree, so seeding
+    // `<root>/solstone/talent` here would leave the resolver with nothing.
+    let checkout_root = context
         .sibling_dir
         .parent()
         .expect("sibling directory parent");
+    let install_root = seed_fixture_checkout(checkout_root);
     let talent_root = install_root.join("solstone/talent");
     let apps_root = install_root.join("solstone/apps");
     fs::create_dir_all(&talent_root).expect("create fixture talent root");
     fs::create_dir_all(&apps_root).expect("create fixture apps root");
-    fs::create_dir_all(install_root.join(".git")).expect("create fixture checkout marker");
-    fs::write(install_root.join("pyproject.toml"), b"").expect("create fixture project marker");
 
     let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -2665,7 +2664,7 @@ fn native_think_cadence_run_reaches_the_talent_plane_without_python() {
         .expect("repository root")
         .to_path_buf();
     for name in ["pulse", "steward"] {
-        let source = repository.join(format!("solstone/talent/{name}.md"));
+        let source = repository.join(format!("core/payload/solstone/talent/{name}.md"));
         let body = fs::read(&source)
             .unwrap_or_else(|error| panic!("read shipped talent {}: {error}", source.display()));
         // Both shipped cadence talents declare a hook object; if that ever
@@ -2747,16 +2746,34 @@ fn cadence_run_logs(journal: &Path) -> Vec<PathBuf> {
     found
 }
 
+/// Make `root` look like a source checkout to the installation resolver and
+/// return the payload root the resolver will hand back.
+fn seed_fixture_checkout(root: &Path) -> PathBuf {
+    fs::create_dir_all(root.join(".git")).expect("create fixture checkout marker");
+    fs::write(root.join("pyproject.toml"), b"").expect("create fixture project marker");
+    let payload = root.join(solstone_core_journal::CHECKOUT_PAYLOAD_ROOT);
+    for anchor in [
+        solstone_core_journal::LAYOUT_BUNDLE_ANCHOR,
+        solstone_core_journal::LAYOUT_LAYOUT_ANCHOR,
+        solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR,
+    ] {
+        let path = payload.join(anchor);
+        fs::create_dir_all(path.parent().expect("anchor parent")).expect("create anchor directory");
+        fs::write(&path, anchor).expect("write fixture layout anchor");
+    }
+    payload
+}
+
 fn seed_think_install(context: &VerdictContext<'_>, talents: &[(&str, &str)]) {
-    let install_root = context
-        .sibling_dir
-        .parent()
-        .expect("sibling directory parent");
+    let install_root = seed_fixture_checkout(
+        context
+            .sibling_dir
+            .parent()
+            .expect("sibling directory parent"),
+    );
     let talent_root = install_root.join("solstone/talent");
     fs::create_dir_all(&talent_root).expect("create fixture talent root");
     fs::create_dir_all(install_root.join("solstone/apps")).expect("create fixture apps root");
-    fs::create_dir_all(install_root.join(".git")).expect("create fixture checkout marker");
-    fs::write(install_root.join("pyproject.toml"), b"").expect("create fixture project marker");
     for (name, body) in talents {
         fs::write(talent_root.join(format!("{name}.md")), body).expect("seed think talent");
     }

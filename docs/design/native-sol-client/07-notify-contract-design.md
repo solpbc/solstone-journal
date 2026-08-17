@@ -308,7 +308,7 @@ Exact replacements:
 | `solstone/think/contract/journal.py:157` | stale bundle message ending ``run `sol contract build``` | same message ending ``run `python -m solstone.think.contract_cli build``` |
 | `solstone/think/contract_cli.py:35` | missing bundle message ending ``run `sol contract build``` | same message ending ``run `python -m solstone.think.contract_cli build``` |
 
-`solstone/talent/journal/contract/bundle.json` is generated and should change
+`core/payload/solstone/talent/journal/contract/bundle.json` is generated and should change
 through `make contract`, not by hand. The historical design reference in
 `docs/design/native-sol-client/06-cutover-design.md:287` stays unchanged.
 
@@ -427,7 +427,7 @@ not live network or service dependencies.
    `python -m solstone.think.contract_cli build`.
 
 9. Run `make contract`. Generated artifact:
-   `solstone/talent/journal/contract/bundle.json`.
+   `core/payload/solstone/talent/journal/contract/bundle.json`.
 
 10. Final implementation validation should use the requested narrow gates,
     including the native inventory, coverage, conformance, root-contract,

@@ -58,6 +58,7 @@ pub(crate) fn context() -> StagedContext {
             hostname: "test-host".into(),
             machine_id: Some("test-machine".into()),
             checkout_root: None,
+            payload_root: None,
             port: 5015,
             service_status_timeout: Duration::from_millis(10),
             service_status_command_override: None,

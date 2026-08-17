@@ -199,6 +199,52 @@ pub const LAYOUT_BUNDLE_ANCHOR: &str = "solstone/talent/journal/contract/bundle.
 pub const LAYOUT_LAYOUT_ANCHOR: &str = "solstone/think/contract/layout.json";
 pub const LAYOUT_TEMPLATE_ANCHOR: &str = "solstone/think/templates/segment_preamble.md";
 
+/// Where a repository checkout keeps the shipped payload.
+///
+/// The payload is product data the binary reads at runtime, not part of the
+/// Python package tree, so it does not live under `solstone/` in the
+/// repository even though its installed layout keeps that name. This directory
+/// is the checkout's stand-in for the installed `share/` prefix, which is what
+/// lets one set of relative paths describe both.
+///
+/// `core/distribution/inventory.toml` declares the same root as
+/// `payload_src_root` for the producer; `repository_payload_inventory` pins the
+/// two together so neither can move without the other.
+pub const CHECKOUT_PAYLOAD_ROOT: &str = "core/payload";
+
+/// Whether a directory is a payload root: the three anchors the installed
+/// layout is recognised by, checked against any candidate root.
+fn has_layout_anchors(root: &Path) -> bool {
+    [
+        LAYOUT_BUNDLE_ANCHOR,
+        LAYOUT_LAYOUT_ANCHOR,
+        LAYOUT_TEMPLATE_ANCHOR,
+    ]
+    .iter()
+    .all(|anchor| fs::metadata(root.join(anchor)).is_ok_and(|metadata| metadata.is_file()))
+}
+
+/// The payload root inside a repository checkout, when that checkout carries
+/// one. `None` for a repository whose payload is absent or incomplete.
+pub fn payload_root_in_checkout(root: &Path) -> Option<PathBuf> {
+    let payload = root.join(CHECKOUT_PAYLOAD_ROOT);
+    has_layout_anchors(&payload).then_some(payload)
+}
+
+/// The repository root an executable was built inside, when that checkout also
+/// carries the shipped payload.
+///
+/// Deliberately distinct from `resolve_installation_root_from_executable_dir`,
+/// which returns the root the payload is *read* from. In an installed tree the
+/// two coincide; in a checkout they do not, and a consumer that wants the
+/// repository — the developer journal, `.venv` discovery, the contract's schema
+/// sources — must ask for it by name rather than take the payload root and hope.
+pub fn resolve_checkout_root_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
+    executable_dir.ancestors().find_map(|candidate| {
+        detect_checkout_root(candidate).filter(|root| payload_root_in_checkout(root).is_some())
+    })
+}
+
 pub fn resolve_installation_root_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
     installed_site_packages_from_executable_dir(executable_dir)
         .or_else(|| {
@@ -211,15 +257,7 @@ pub fn resolve_installation_root_from_executable_dir(executable_dir: &Path) -> O
 
 fn is_layout_install_root(prefix: &Path) -> Option<PathBuf> {
     let share = prefix.join("share");
-    let anchors = [
-        share.join(LAYOUT_BUNDLE_ANCHOR),
-        share.join(LAYOUT_LAYOUT_ANCHOR),
-        share.join(LAYOUT_TEMPLATE_ANCHOR),
-    ];
-    anchors
-        .iter()
-        .all(|path| fs::metadata(path).is_ok_and(|metadata| metadata.is_file()))
-        .then_some(share)
+    has_layout_anchors(&share).then_some(share)
 }
 
 fn resolve_canonical_site_packages(candidates: &[PathBuf]) -> Option<PathBuf> {
@@ -232,11 +270,18 @@ fn resolve_canonical_site_packages(candidates: &[PathBuf]) -> Option<PathBuf> {
     canonical.into_iter().next()
 }
 
+/// The checkout candidate of the installation-root resolver.
+///
+/// It returns the checkout's *payload* root rather than its repository root,
+/// which is what keeps every consumer's `root.join("solstone/...")` correct in
+/// all three layouts. The anchors are the same three the installed layout is
+/// recognised by, so a repository that still has a `solstone/` directory but no
+/// payload no longer matches — the previous `solstone` directory test would
+/// have kept matching and handed back a root whose payload reads all fail.
 fn is_solstone_checkout_root(candidate: &Path) -> Option<PathBuf> {
-    (candidate.join("pyproject.toml").is_file()
-        && candidate.join(".git").exists()
-        && candidate.join("solstone").is_dir())
-    .then(|| candidate.to_path_buf())
+    (candidate.join("pyproject.toml").is_file() && candidate.join(".git").exists())
+        .then(|| payload_root_in_checkout(candidate))
+        .flatten()
 }
 
 pub fn ensure_journal_dir(path: &Path, source: Source) -> Result<(), EnsureJournalDirError> {
@@ -539,10 +584,26 @@ mod tests {
         fs::create_dir_all(checkout.join("solstone")).expect("create checkout package");
         fs::create_dir_all(checkout.join(".git")).expect("create checkout git marker");
         fs::write(checkout.join("pyproject.toml"), "").expect("write checkout marker");
+        // A checkout with a `solstone` directory but no payload must not match.
+        // Before the payload moved out of the package tree these two facts were
+        // the same fact; now a survivor directory is not evidence of a payload.
         assert_eq!(
             resolve_installation_root_from_executable_dir(&checkout_bin),
-            Some(checkout.clone())
+            None,
+            "a solstone directory without the payload is not an installation root"
         );
+        let payload = checkout.join(CHECKOUT_PAYLOAD_ROOT);
+        write_layout_anchors(&payload);
+        assert_eq!(
+            resolve_installation_root_from_executable_dir(&checkout_bin),
+            Some(payload.clone())
+        );
+        assert_eq!(
+            resolve_checkout_root_from_executable_dir(&checkout_bin),
+            Some(checkout.clone()),
+            "the repository root stays reachable by its own name"
+        );
+        assert_eq!(payload_root_in_checkout(&checkout), Some(payload));
         fs::remove_dir_all(root).expect("cleanup installation helpers");
     }
 
@@ -663,9 +724,11 @@ mod tests {
         fs::create_dir_all(checkout.join(".git")).expect("checkout marker");
         fs::write(checkout.join("pyproject.toml"), "").expect("pyproject");
         write_layout_anchors(&checkout.join("share"));
+        write_layout_anchors(&checkout.join(CHECKOUT_PAYLOAD_ROOT));
         assert_eq!(
             resolve_installation_root_from_executable_dir(&checkout_bin),
-            Some(checkout.clone())
+            Some(checkout.join(CHECKOUT_PAYLOAD_ROOT)),
+            "the checkout candidate still precedes the layout install candidate"
         );
         fs::remove_dir_all(root).expect("cleanup precedence");
     }

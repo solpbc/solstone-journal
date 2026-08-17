@@ -461,7 +461,8 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
             .nth(3)
-            .expect("talent runtime crate is nested under the repository root");
+            .expect("talent runtime crate is nested under the repository root")
+            .join("core/payload");
         solstone_core_talent_config::discover(
             &root.join("solstone/talent"),
             &root.join("solstone/apps"),

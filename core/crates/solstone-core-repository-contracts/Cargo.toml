@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 nix = { workspace = true, features = ["process", "resource", "signal"] }
+solstone-core-journal.workspace = true
 quote = "1.0.47"
 serde.workspace = true
 serde_json.workspace = true

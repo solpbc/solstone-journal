@@ -1065,11 +1065,14 @@ mod tests {
             .join("../../../core/fixtures/native-sol/skills-parity-v1/vectors.json")
     }
 
+    /// The payload root of this checkout — the directory `sol skills install`
+    /// resolves to at runtime, which is what these fixtures are standing in for.
     fn source_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../..")
+            .join(solstone_core_journal::CHECKOUT_PAYLOAD_ROOT)
             .canonicalize()
-            .expect("source checkout root should canonicalize")
+            .expect("source checkout payload root should canonicalize")
     }
 
     fn subst(text: &str, values: &BTreeMap<String, String>) -> String {

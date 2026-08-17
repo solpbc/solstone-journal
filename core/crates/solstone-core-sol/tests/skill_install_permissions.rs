@@ -76,7 +76,8 @@ fn mixed_writability_child() {
 
     assert_eq!(exit, ExitCode::from(1));
     assert_eq!(listing(&claude_target), before);
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../solstone/talent/sol");
+    let source =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../core/payload/solstone/talent/sol");
     assert_eq!(
         fs::read(home.join(".codex/skills/sol/SKILL.md")).unwrap(),
         fs::read(source.join("SKILL.md")).unwrap()

@@ -237,5 +237,5 @@ but deliberately cannot reconstruct a retry delay from discarded provider text.
 | Command / write policy | `core/crates/solstone-core-cogitate/src/policy.rs` and `core/crates/solstone-core-cogitate-tools/` |
 | Finalization | `core/crates/solstone-core-cogitate/src/finalization.rs` and the native cogitate tools |
 | Deterministic post-run failure caps | `solstone/think/deterministic_failure_caps.py` |
-| Talent configs (prompts + frontmatter) | `solstone/talent/*.md`, `solstone/apps/*/talent/*.md` |
+| Talent configs (prompts + frontmatter) | `core/payload/solstone/talent/*.md`, `core/payload/solstone/apps/*/talent/*.md` |
 | Talent execution lifecycle | `docs/CORTEX.md`, `docs/THINK.md` |

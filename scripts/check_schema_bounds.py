@@ -54,14 +54,22 @@ ALLOWLIST: dict[str, str] = {
 }
 
 
+# The shipped payload lives outside the package tree, so the talent and app
+# schemas are found under a second root. Keying each by its path relative to the
+# root it was found in keeps every allowlist entry below spelled the way the
+# installed layout spells it.
+PAYLOAD_SRC_ROOT = "core/payload"
+
+
 def discover_schemas(root: Path) -> dict[str, dict[str, Any]]:
     """Return generation schemas keyed by stable schema id."""
     discovered: dict[str, dict[str, Any]] = {}
-    for path in sorted((root / "solstone").glob("**/*.schema.json")):
-        schema = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(schema.get("x-journal-contract"), dict):
-            continue
-        discovered[path.relative_to(root).as_posix()] = schema
+    for base in (root, root / PAYLOAD_SRC_ROOT):
+        for path in sorted((base / "solstone").glob("**/*.schema.json")):
+            schema = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(schema.get("x-journal-contract"), dict):
+                continue
+            discovered[path.relative_to(base).as_posix()] = schema
     discovered["build_rollup_schema(3)"] = build_rollup_schema(3)
     return discovered
 

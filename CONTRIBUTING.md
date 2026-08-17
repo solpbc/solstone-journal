@@ -111,9 +111,9 @@ If you want a journal seeded with public-domain audio and screen media instead o
 
 ## Repo layout
 
-Start with [AGENTS.md](AGENTS.md) or [CLAUDE.md](CLAUDE.md) for the developer-facing repo map, layer hygiene rules, make targets, and coding invariants. Most implementation work lives in `solstone/think/`, `solstone/observe/`, `solstone/convey/`, `solstone/apps/`, `solstone/talent/`, and `tests/`.
+Start with [AGENTS.md](AGENTS.md) or [CLAUDE.md](CLAUDE.md) for the developer-facing repo map, layer hygiene rules, make targets, and coding invariants. Most implementation work lives in `solstone/think/`, `solstone/observe/`, `solstone/convey/`, `solstone/apps/`, `core/payload/solstone/talent/`, and `tests/`.
 
-For app work, read [docs/APPS.md](docs/APPS.md) before changing `solstone/apps/`. For provider work, read [docs/PROVIDERS.md](docs/PROVIDERS.md). For journal layout, use `solstone/talent/journal/SKILL.md`.
+For app work, read [docs/APPS.md](docs/APPS.md) before changing `solstone/apps/`. For provider work, read [docs/PROVIDERS.md](docs/PROVIDERS.md). For journal layout, use `core/payload/solstone/talent/journal/SKILL.md`.
 
 ## Running the test suite
 
@@ -176,9 +176,9 @@ If you change the helper source, rebuild it before testing the CoreML parakeet p
 
 ### Skills and talents
 
-Talent prompts live under `solstone/talent/<name>.md`; apps may add app-specific talent files under `solstone/apps/<app>/talent/`. Talent frontmatter declares type, schedule, provider/model behavior, hooks, priority, and output expectations.
+Talent prompts live under `core/payload/solstone/talent/<name>.md`; apps may add app-specific talent files under `core/payload/solstone/apps/<app>/talent/`. Talent frontmatter declares type, schedule, provider/model behavior, hooks, priority, and output expectations.
 
-The installed project skills are the two router skills under `solstone/talent/sol/` and `solstone/talent/journal/`. App command fragments under `solstone/apps/<app>/talent/<app>/SKILL.md` feed the generated router references; they are not installed as top-level skills.
+The installed project skills are the two router skills under `core/payload/solstone/talent/sol/` and `core/payload/solstone/talent/journal/`. App command fragments under `core/payload/solstone/apps/<app>/talent/<app>/SKILL.md` feed the generated router references; they are not installed as top-level skills.
 
 After changing a router skill or an app command fragment, run:
 

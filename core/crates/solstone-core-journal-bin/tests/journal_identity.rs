@@ -607,11 +607,20 @@ fn journal_identity_runs_path_status_and_root_without_spawning() {
     );
     assert_eq!(status.stderr, b"");
 
+    // `journal root` prints the installation root, which in a checkout is the
+    // payload root and not the repository. This is the CLI-observable form of
+    // the resolver guarantee: whatever this prints, `solstone/talent/...` joins
+    // onto it and resolves, in all three layouts.
     let root = run_journal_with_journal(&["root"], Some(&path), &journal);
     assert_eq!(root.status.code(), Some(0));
     assert_eq!(
         String::from_utf8(root.stdout).expect("stdout should be utf-8"),
-        format!("{}\n", repo_root().display())
+        format!(
+            "{}\n",
+            repo_root()
+                .join(solstone_core_journal::CHECKOUT_PAYLOAD_ROOT)
+                .display()
+        )
     );
     assert_eq!(root.stderr, b"");
     assert_sentinel_untouched(&sentinel);

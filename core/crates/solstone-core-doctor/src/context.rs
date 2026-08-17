@@ -27,7 +27,13 @@ pub struct CheckContext {
     pub host_arch: String,
     pub hostname: String,
     pub machine_id: Option<String>,
+    /// The repository root, when the doctor is running from a source checkout.
+    /// This is what the developer journal is resolved against.
     pub checkout_root: Option<PathBuf>,
+    /// The shipped payload's root inside that checkout — a different directory
+    /// from `checkout_root`, because the payload does not live in the package
+    /// tree. Anything joining `solstone/...` wants this one.
+    pub payload_root: Option<PathBuf>,
     pub port: u16,
     pub service_status_timeout: Duration,
     pub service_status_command_override: Option<(PathBuf, Vec<String>)>,
@@ -53,7 +59,11 @@ impl CheckContext {
         let config = read_config_journal(&home_dir).map_err(|e| format!("{e:?}"))?;
         let executable = env::current_exe().map_err(|error| error.to_string())?;
         let cwd = env::current_dir().map_err(|error| error.to_string())?;
-        let checkout_root = checkout_ancestor(&executable).or_else(|| checkout_ancestor(&cwd));
+        let (checkout_root, payload_root) =
+            match checkout_ancestor(&executable).or_else(|| checkout_ancestor(&cwd)) {
+                Some((repository, payload)) => (Some(repository), Some(payload)),
+                None => (None, None),
+            };
         let journal_path = resolve_journal_path(
             env::var_os("SOLSTONE_JOURNAL").as_deref(),
             config.as_deref(),
@@ -81,6 +91,7 @@ impl CheckContext {
             hostname,
             machine_id: (!machine_id.is_empty()).then_some(machine_id),
             checkout_root,
+            payload_root,
             port,
             service_status_timeout: Duration::from_secs(10),
             service_status_command_override: None,
@@ -91,12 +102,19 @@ impl CheckContext {
     }
 }
 
-fn checkout_ancestor(path: &Path) -> Option<PathBuf> {
+/// The repository root and its payload root, together.
+///
+/// These were one value until the payload left the package tree. Keeping them
+/// together here is deliberate: the router-skill sources are found under the
+/// payload root, and the developer journal under the repository root, and
+/// resolving one from the other after the fact is how the two get confused.
+fn checkout_ancestor(path: &Path) -> Option<(PathBuf, PathBuf)> {
     let start = if path.is_dir() { path } else { path.parent()? };
     start.ancestors().find_map(|candidate| {
-        solstone_core_journal::detect_checkout_root(candidate).filter(|root| {
-            root.join("solstone/talent/sol/SKILL.md").is_file()
-                && root.join("solstone/talent/journal/SKILL.md").is_file()
-        })
+        let repository = solstone_core_journal::detect_checkout_root(candidate)?;
+        let payload = solstone_core_journal::payload_root_in_checkout(&repository)?;
+        (payload.join("solstone/talent/sol/SKILL.md").is_file()
+            && payload.join("solstone/talent/journal/SKILL.md").is_file())
+        .then_some((repository, payload))
     })
 }

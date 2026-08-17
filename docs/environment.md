@@ -56,7 +56,7 @@ Store API keys in `.env` file, never commit to repository.
 - Update README files for new functionality
 - Code comments explain "why" not "what"
 - Function signatures should include type hints; highlight gaps when touching older modules
-- **All docs in `docs/` plus journal references in `solstone/talent/journal/`**: Browse `solstone/talent/journal/SKILL.md`, APPS.md, CORTEX.md, CALLOSUM.md, THINK.md, and more
+- **All docs in `docs/` plus journal references in `core/payload/solstone/talent/journal/`**: Browse `core/payload/solstone/talent/journal/SKILL.md`, APPS.md, CORTEX.md, CALLOSUM.md, THINK.md, and more
 - Each package has a README.md symlink pointing to its documentation in `docs/`.
 - **App/UI work**: [docs/APPS.md](docs/APPS.md) is required reading before modifying `solstone/apps/`
 

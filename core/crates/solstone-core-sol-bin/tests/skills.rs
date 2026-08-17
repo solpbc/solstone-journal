@@ -79,7 +79,7 @@ fn sol_skills_uses_relocated_installed_payload_root() {
     fs::create_dir_all(site_packages.join("solstone")).expect("create staged package dir");
     fs::write(site_packages.join("solstone").join("__init__.py"), "").expect("write init");
     copy_tree(
-        &source_checkout_root().join("solstone/talent"),
+        &source_checkout_root().join("core/payload/solstone/talent"),
         &site_packages.join("solstone/talent"),
     );
 

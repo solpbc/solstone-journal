@@ -1176,7 +1176,7 @@ mod tests {
             .join("site-packages");
         fs::create_dir_all(checkout.join(".git")).expect("create .git");
         fs::write(checkout.join("pyproject.toml"), "[project]\n").expect("write pyproject");
-        fs::create_dir_all(checkout.join("solstone")).expect("create checkout package dir");
+        write_layout_share(&checkout.join(solstone_core_journal::CHECKOUT_PAYLOAD_ROOT));
         fs::create_dir_all(site_packages.join("solstone")).expect("create installed package");
         fs::write(site_packages.join("solstone").join("__init__.py"), "").expect("write init");
         fs::create_dir_all(&bin).expect("create bin");
@@ -1193,12 +1193,21 @@ mod tests {
         let bin = checkout.join("core").join("target").join("debug");
         fs::create_dir_all(checkout.join(".git")).expect("create .git");
         fs::write(checkout.join("pyproject.toml"), "[project]\n").expect("write pyproject");
+        // A `solstone` package directory alone is no longer a checkout payload:
+        // the payload lives under `core/payload` and is recognised by the same
+        // three anchors the installed layout uses.
         fs::create_dir_all(checkout.join("solstone")).expect("create package dir");
         fs::create_dir_all(&bin).expect("create bin");
+        assert!(
+            resolve_project_root_from_executable(&bin.join("sol")).is_err(),
+            "a package directory without the payload must not resolve"
+        );
 
+        let payload = checkout.join(solstone_core_journal::CHECKOUT_PAYLOAD_ROOT);
+        write_layout_share(&payload);
         let resolved = resolve_project_root_from_executable(&bin.join("sol"))
             .expect("checkout should resolve");
-        assert_eq!(resolved, checkout);
+        assert_eq!(resolved, payload);
     }
 
     #[test]

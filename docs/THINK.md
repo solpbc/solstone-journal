@@ -204,7 +204,7 @@ they route through the active brain.
 
 ## Generator map keys
 
-`think.talent.get_talent_configs(has_tools=False)` reads the `.md` prompt files under `solstone/talent/` and
+`think.talent.get_talent_configs(has_tools=False)` reads the `.md` prompt files under `core/payload/solstone/talent/` and
 returns a dictionary keyed by generator name. Each entry contains:
 
 - `path` – the prompt file path
@@ -284,7 +284,7 @@ for implementation details.
 
 ## Agent Personas
 
-System prompts in `solstone/talent/*.md` (markdown with JSON frontmatter). Apps can add custom agents in `solstone/apps/{app}/talent/`.
+System prompts in `core/payload/solstone/talent/*.md` (markdown with JSON frontmatter). Apps can add custom agents in `core/payload/solstone/apps/{app}/talent/`.
 
 JSON metadata supports `title`, `provider`, `model`, `tools`, `schedule`, `priority`, `multi_facet`, and `load` keys. Cogitate prompts may set `cwd: "journal"`; when omitted they default to `journal`, and `repo` is rejected. Generators reject `cwd`.
 

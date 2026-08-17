@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use tempfile::TempDir;
@@ -23,21 +23,32 @@ fn copy_tree(source: &Path, destination: &Path) {
     }
 }
 
+/// Where the shipped payload sits relative to a repository root. The staged
+/// root mirrors the repository, so it carries the same two trees: the schema
+/// sources under `solstone/` and the generated payload under `core/payload/`.
+const PAYLOAD: &str = "core/payload";
+
+fn repository() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("repository root")
+}
+
 fn staged_root() -> TempDir {
     let temp = TempDir::new().unwrap();
-    copy_tree(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../solstone")
-            .as_path(),
-        &temp.path().join("solstone"),
-    );
-    copy_tree(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../tests/fixtures/journal")
-            .as_path(),
-        &temp.path().join("tests/fixtures/journal"),
-    );
+    for relative in ["solstone", PAYLOAD, "tests/fixtures/journal"] {
+        copy_tree(
+            repository().join(relative).as_path(),
+            &temp.path().join(relative),
+        );
+    }
     temp
+}
+
+fn staged_bundle(root: &Path) -> PathBuf {
+    root.join(PAYLOAD)
+        .join("solstone/talent/journal/contract/bundle.json")
 }
 
 fn command(binary: &Path, cwd: &Path, root: Option<&Path>) -> Command {
@@ -84,16 +95,8 @@ fn contract_build_and_check_against_a_staged_root() {
         "{}",
         String::from_utf8_lossy(&build.stderr)
     );
-    let actual = fs::read(
-        root.path()
-            .join("solstone/talent/journal/contract/bundle.json"),
-    )
-    .unwrap();
-    let expected = fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../solstone/talent/journal/contract/bundle.json"),
-    )
-    .unwrap();
+    let actual = fs::read(staged_bundle(root.path())).unwrap();
+    let expected = fs::read(staged_bundle(repository())).unwrap();
     assert_eq!(actual, expected);
     let check = Command::new(binary)
         .current_dir(outside.path())
@@ -119,9 +122,7 @@ fn contract_build_and_check_against_a_staged_root() {
         .output()
         .unwrap();
     assert!(current.status.success());
-    let artifact = root
-        .path()
-        .join("solstone/talent/journal/contract/bundle.json");
+    let artifact = staged_bundle(root.path());
     fs::write(
         &artifact,
         [fs::read(&artifact).unwrap(), b" ".to_vec()].concat(),
@@ -150,11 +151,7 @@ fn contract_build_and_check_against_a_staged_root() {
     assert!(String::from_utf8_lossy(&empty.stderr).contains("no contract-covered files found"));
     assert!(!marker.exists());
 
-    fs::remove_file(
-        root.path()
-            .join("solstone/talent/journal/contract/bundle.json"),
-    )
-    .unwrap();
+    fs::remove_file(staged_bundle(root.path())).unwrap();
     let missing = Command::new(binary)
         .current_dir(outside.path())
         .env_clear()

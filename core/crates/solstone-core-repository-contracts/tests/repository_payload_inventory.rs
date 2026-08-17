@@ -9,8 +9,13 @@ use std::process::Command;
 #[path = "../src/payload_inventory.rs"]
 mod payload_inventory;
 
-use payload_inventory::{declared_paths, inventory_diff, payload_set, tracked_paths};
+use payload_inventory::{
+    declared_paths, inventory_diff, payload_set, payload_src_root, strip_payload_src_root,
+    tracked_paths,
+};
 
+/// The payload families, `payload_src_root`-relative — the same relative shape
+/// `payload.txt` uses, so the root is named in exactly one place.
 const PAYLOAD_GIT_PATHS: &[&str] = &[
     "solstone/talent",
     "solstone/think/templates",
@@ -43,10 +48,19 @@ fn display_path(path: &[u8]) -> String {
 #[test]
 fn payload_txt_matches_git_tracked_inventory() {
     let root = repository_root();
-    let mut arguments = vec!["ls-files", "-z", "--"];
-    arguments.extend(PAYLOAD_GIT_PATHS);
+    let source_root = payload_src_root(
+        &fs::read_to_string(root.join("core/distribution/inventory.toml"))
+            .expect("read distribution inventory"),
+    )
+    .expect("inventory declares payload_src_root");
+    let mut arguments = vec!["ls-files".to_owned(), "-z".to_owned(), "--".to_owned()];
+    arguments.extend(
+        PAYLOAD_GIT_PATHS
+            .iter()
+            .map(|relative| format!("{source_root}/{relative}")),
+    );
     let output = Command::new("git")
-        .args(arguments)
+        .args(&arguments)
         .current_dir(&root)
         .output()
         .expect("run git ls-files payload inventory");
@@ -62,12 +76,24 @@ fn payload_txt_matches_git_tracked_inventory() {
     .into_iter()
     .map(String::into_bytes)
     .collect::<BTreeSet<_>>();
-    let tracked_bytes =
-        payload_set(tracked_paths(&output.stdout).expect("parse NUL-delimited Git paths"));
+    let tracked_bytes = payload_set(
+        tracked_paths(&output.stdout)
+            .expect("parse NUL-delimited Git paths")
+            .into_iter()
+            .filter_map(|path| strip_payload_src_root(&source_root, &path)),
+    );
 
+    // An unreachable payload_src_root makes every set below empty, and an empty
+    // tracked set compared against an empty declaration would agree. This is
+    // the assertion that turns a wrong root into a named failure rather than a
+    // vacuous pass.
+    assert!(
+        !tracked_bytes.is_empty(),
+        "no tracked payload found under payload_src_root '{source_root}'"
+    );
     assert!(
         tracked_bytes.contains(b"solstone/talent/daily_schedule.md".as_slice()),
-        "tracked inventory must see a known talent positive"
+        "tracked inventory must see a known talent positive under '{source_root}'"
     );
     assert!(
         tracked_bytes.contains(b"solstone/think/contract/layout.json".as_slice()),

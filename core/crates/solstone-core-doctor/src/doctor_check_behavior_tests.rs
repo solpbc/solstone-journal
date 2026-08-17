@@ -105,6 +105,7 @@ fn fixture() -> CheckContext {
         hostname: "fixture-host".into(),
         machine_id: Some("fixture-machine".into()),
         checkout_root: None,
+        payload_root: None,
         port: 5015,
         service_status_timeout: Duration::from_millis(1),
         service_status_command_override: None,
@@ -312,8 +313,9 @@ fn stage_router_skills(context: &mut CheckContext, broken: bool) {
     use std::os::unix::fs::symlink;
 
     let root = context.journal_path.parent().unwrap().join("checkout");
+    let payload = root.join(solstone_core_journal::CHECKOUT_PAYLOAD_ROOT);
     for name in ["sol", "journal"] {
-        let source = root.join("solstone/talent").join(name);
+        let source = payload.join("solstone/talent").join(name);
         fs::create_dir_all(&source).unwrap();
         fs::write(source.join("SKILL.md"), "x").unwrap();
     }
@@ -323,7 +325,7 @@ fn stage_router_skills(context: &mut CheckContext, broken: bool) {
     ] {
         fs::create_dir_all(&parent).unwrap();
         for name in ["sol", "journal"] {
-            let source = root.join("solstone/talent").join(name);
+            let source = payload.join("solstone/talent").join(name);
             symlink(
                 solstone_core_skill_state::expected_link_target(&source, &parent),
                 parent.join(name),
@@ -332,6 +334,7 @@ fn stage_router_skills(context: &mut CheckContext, broken: bool) {
         }
     }
     context.checkout_root = Some(root);
+    context.payload_root = Some(payload);
     if broken {
         let parent = context.journal_path.join(".claude/skills");
         fs::remove_file(parent.join("sol")).unwrap();
@@ -1015,7 +1018,7 @@ fn skill_state_fixture_branches() {
 
     let mut installed = fixture();
     stage_router_skills(&mut installed, false);
-    let root = installed.checkout_root.clone().unwrap();
+    let root = installed.payload_root.clone().unwrap();
     let row = result("skill_state", &installed);
     assert_eq!(row.status, Status::Ok);
     assert_eq!(
@@ -1042,7 +1045,7 @@ fn skill_state_fixture_branches() {
     let no_root = fixture();
     assert_eq!(result("skill_state", &no_root).status, Status::Skip);
     let mut no_dirs = fixture();
-    no_dirs.checkout_root = Some(root);
+    no_dirs.payload_root = Some(root);
     let row = result("skill_state", &no_dirs);
     assert_eq!(row.status, Status::Skip);
     assert_eq!(row.detail, "router skill directories are unavailable");

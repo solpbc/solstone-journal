@@ -5,7 +5,9 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
-    let Some(root) = context.checkout_root.as_deref() else {
+    // The router-skill sources are payload, so they are found under the payload
+    // root rather than the repository root.
+    let Some(root) = context.payload_root.as_deref() else {
         return Ok(make_result(
             check,
             Status::Skip,

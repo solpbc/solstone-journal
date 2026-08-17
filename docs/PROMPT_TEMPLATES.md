@@ -66,7 +66,7 @@ The flattening logic converts nested objects using underscore separators. For ex
 
 ### Template Variables
 
-Template variables come from `.md` files in the `solstone/think/templates/` directory. Each file's stem becomes a variable name containing its contents.
+Template variables come from `.md` files in the `core/payload/solstone/think/templates/` directory. Each file's stem becomes a variable name containing its contents.
 
 **Current templates:**
 - `$daily_preamble` - Preamble for full-day output analysis
@@ -75,9 +75,9 @@ Template variables come from `.md` files in the `solstone/think/templates/` dire
 
 Templates can themselves use identity and context variables, enabling composable prompt construction. For example, `daily_preamble.md` uses `$preferred` and `$day`.
 
-**Pattern:** To add a new template variable, create `solstone/think/templates/mytemplate.md` and it becomes available as `$mytemplate` in all prompts.
+**Pattern:** To add a new template variable, create `core/payload/solstone/think/templates/mytemplate.md` and it becomes available as `$mytemplate` in all prompts.
 
-**Reference:** `solstone/think/templates/` directory
+**Reference:** `core/payload/solstone/think/templates/` directory
 
 ### Context Variables
 
@@ -131,7 +131,7 @@ The `$segment_preamble` or `$daily_preamble` template provides standardized cont
 
 **Optional model configuration:** Add `max_output_tokens` (response length limit) and `thinking_budget` (model thinking token budget) to override provider defaults.
 
-**Reference:** `solstone/talent/*.md` for examples (files with `schedule` field but no `tools` field)
+**Reference:** `core/payload/solstone/talent/*.md` for examples (files with `schedule` field but no `tools` field)
 
 ### For Agents
 
@@ -172,7 +172,7 @@ Edit `config/journal.json` to add or modify identity fields. Nested objects are 
 
 ### Template Variables
 
-Create a new `.md` file in `solstone/think/templates/`. The filename stem becomes the variable name.
+Create a new `.md` file in `core/payload/solstone/think/templates/`. The filename stem becomes the variable name.
 
 ### Context Variables
 
@@ -190,7 +190,7 @@ load_prompt("myprompt", context={"custom_var": "value"})
 | Identity flattening | `solstone/think/prompts.py` (`_flatten_identity_to_template_vars`) |
 | Template loading | `solstone/think/prompts.py` (`_load_templates`) |
 | Core load function | `solstone/think/prompts.py` (`load_prompt`) |
-| Template files | `solstone/think/templates/*.md` |
+| Template files | `core/payload/solstone/think/templates/*.md` |
 | Test coverage | `tests/test_template_substitution.py` |
-| Generator prompts | `solstone/talent/*.md` (files with `schedule` field but no `tools`) |
-| Agent prompts | `solstone/talent/*.md` (files with `tools` field) |
+| Generator prompts | `core/payload/solstone/talent/*.md` (files with `schedule` field but no `tools`) |
+| Agent prompts | `core/payload/solstone/talent/*.md` (files with `tools` field) |

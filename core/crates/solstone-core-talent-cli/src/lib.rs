@@ -548,9 +548,10 @@ mod tests {
     fn real_corpus_list_fixtures_and_json_records_match() {
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let repository = manifest.ancestors().nth(3).expect("repository root");
+        let payload = repository.join(solstone_core_journal::CHECKOUT_PAYLOAD_ROOT);
         let journal = tempfile::tempdir().expect("journal");
-        let talent_root = repository.join("solstone/talent");
-        let apps_root = repository.join("solstone/apps");
+        let talent_root = payload.join("solstone/talent");
+        let apps_root = payload.join("solstone/apps");
         let args = |items: &[&str]| items.iter().map(OsString::from).collect::<Vec<_>>();
 
         let discovered = solstone_core_talent_config::discover(&talent_root, &apps_root)
