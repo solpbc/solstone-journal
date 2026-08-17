@@ -40,24 +40,6 @@ id = "solstone-core-chat-append::core/crates/solstone-core-chat-append/src/lib.r
 id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::service_args_foundation_has_no_execution_or_python_bridge::scheduling"
 
 [[findings]]
-id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::ambient_provider_key_does_not_bypass_missing_journal_credential::process"
-
-[[findings]]
-id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::confidential_dispatch_stops_at_attestation_before_endpoint_transport::clock"
-
-[[findings]]
-id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::confidential_dispatch_stops_at_attestation_before_endpoint_transport::network"
-
-[[findings]]
-id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::env_child::process"
-
-[[findings]]
-id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::spawn_stub::network"
-
-[[findings]]
-id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::spawn_stub::scheduling"
-
-[[findings]]
 id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/aggregate.rs::tests::cache_identity_changes_when_database_signature_changes::scheduling"
 
 [[findings]]
@@ -812,27 +794,6 @@ id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_shutdown.rs::
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_shutdown.rs::tests::stops_before_cancelling_and_awaits_the_listen_task::scheduling"
-
-[[findings]]
-id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::closed_loopback_port_is_unreachable_and_evidence_rejection_is_failed::network"
-
-[[findings]]
-id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::establish::clock"
-
-[[findings]]
-id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::json_request_uses_plain_read_write_transport_with_bounded_response_parsing::network"
-
-[[findings]]
-id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::json_request_uses_plain_read_write_transport_with_bounded_response_parsing::scheduling"
-
-[[findings]]
-id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::start_gateway::network"
-
-[[findings]]
-id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::start_gateway::scheduling"
-
-[[findings]]
-id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/channel.rs::tests::test_verdict::clock"
 
 [[findings]]
 id = "solstone-core-spp-ratls::core/crates/solstone-core-spp-ratls/src/ratls/production_verifier.rs::tests::verify::clock"
