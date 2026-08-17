@@ -179,14 +179,11 @@ mod tests {
         let root = root("dangling");
         fs::create_dir_all(root.path().join("allowed")).expect("allowed");
         symlink("missing.txt", root.path().join("allowed/dangling")).expect("link");
-        let paths: Vec<_> = walk_allowed(
-            root.path(),
-            root.path(),
-            &root.path().join("allowed"),
-            false,
-        )
-        .map(|entry| journal_rel(&entry.path, root.path()).expect("relative"))
-        .collect();
+        let root_real = crate::paths::journal_root_real(root.path()).expect("real root");
+        let paths: Vec<_> =
+            walk_allowed(root.path(), &root_real, &root_real.join("allowed"), false)
+                .map(|entry| journal_rel(&entry.path, &root_real).expect("relative"))
+                .collect();
         assert_eq!(paths, ["allowed/missing.txt"]);
     }
 
@@ -200,7 +197,8 @@ mod tests {
                 fs::write(path, "x").expect("file");
             }
         }
-        let mut walk = walk_allowed(root.path(), root.path(), root.path(), false);
+        let root_real = crate::paths::journal_root_real(root.path()).expect("real root");
+        let mut walk = walk_allowed(root.path(), &root_real, &root_real, false);
         assert_eq!(walk.directory_reads, 0);
         assert!(walk.next().is_some());
         assert_eq!(walk.directory_reads, 1);

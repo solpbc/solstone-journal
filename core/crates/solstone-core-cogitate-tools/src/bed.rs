@@ -138,6 +138,7 @@ fn build(root: &Path) {
 }
 
 pub(crate) fn manifest(root: &Path) -> Vec<Value> {
+    let root_real = fs::canonicalize(root).expect("canonical bed root");
     let mut paths = Vec::new();
     collect(root, &mut paths);
     paths.sort_by_key(|path| {
@@ -146,7 +147,10 @@ pub(crate) fn manifest(root: &Path) -> Vec<Value> {
             .to_string_lossy()
             .to_string()
     });
-    paths.into_iter().map(|path| entry(root, &path)).collect()
+    paths
+        .into_iter()
+        .map(|path| entry(root, &root_real, &path))
+        .collect()
 }
 fn collect(current: &Path, paths: &mut Vec<PathBuf>) {
     for item in fs::read_dir(current).expect("read bed") {
@@ -157,7 +161,7 @@ fn collect(current: &Path, paths: &mut Vec<PathBuf>) {
         }
     }
 }
-fn entry(root: &Path, path: &Path) -> Value {
+fn entry(root: &Path, root_real: &Path, path: &Path) -> Value {
     let rel = path
         .strip_prefix(root)
         .expect("relative")
@@ -168,7 +172,7 @@ fn entry(root: &Path, path: &Path) -> Value {
     if kind.is_symlink() {
         let target = fs::read_link(path).expect("readlink");
         let resolved = fs::canonicalize(path).expect("bed links resolve");
-        return json!({"path":rel,"type":"symlink","target":normalize_target(&target),"escapes_root":!resolved.starts_with(root)});
+        return json!({"path":rel,"type":"symlink","target":normalize_target(&target),"escapes_root":!resolved.starts_with(root_real)});
     }
     if kind.is_fifo() {
         return json!({"path":rel,"type":"fifo"});

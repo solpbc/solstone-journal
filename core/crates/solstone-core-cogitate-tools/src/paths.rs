@@ -151,14 +151,15 @@ mod tests {
         std::fs::write(outside.join("leak.txt"), "leak").expect("leak");
         symlink(root.join("facets/work.md"), root.join("inside_link")).expect("inside link");
         symlink(outside.join("leak.txt"), root.join("escape")).expect("escape link");
+        let root_real = journal_root_real(&root).expect("real root");
 
         assert_eq!(
             contained_path(&root, "inside_link").expect("inside"),
-            root.join("facets/work.md")
+            root_real.join("facets/work.md")
         );
         assert_eq!(
             contained_path(&root, "missing.md").expect("missing"),
-            root.join("missing.md")
+            root_real.join("missing.md")
         );
         assert!(matches!(
             contained_path(&root, "escape"),
