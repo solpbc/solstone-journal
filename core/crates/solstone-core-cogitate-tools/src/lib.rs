@@ -36,6 +36,9 @@ pub use read_file::read_file;
 pub use refusals::*;
 pub use slot_lease::{NoopSlotLease, SlotLease, SlotReacquireError};
 pub use sol_budget::{BudgetExhaustedEvent, SolCallBudget};
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use sol_execution::test_hooks as sol_execution_test_hooks;
 pub use sol_execution::{
     SHELL_STDERR_CAP, SHELL_STDOUT_CAP, SHELL_TIMEOUT_SECONDS, SolObservation, SolToolResult,
     format_shell_output, run_command, run_sol_command, truncate_output,

@@ -3087,6 +3087,7 @@ version = "1.0.22"
 dependencies = [
  "nix",
  "regex",
+ "rustix",
  "serde",
  "serde_json",
  "solstone-core-cogitate",

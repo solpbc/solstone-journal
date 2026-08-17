@@ -9,16 +9,25 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+test-hooks = []
+
 [dependencies]
 regex.workspace = true
+rustix = { workspace = true, features = ["process"] }
 solstone-core-cogitate = { workspace = true }
 solstone-core-format.workspace = true
 
 [dev-dependencies]
-nix.workspace = true
+nix = { workspace = true, features = ["signal"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = "3.24.0"
+
+[[test]]
+name = "sol_execution_process"
+path = "tests/sol_execution_process.rs"
+required-features = ["test-hooks"]
 
 [lints]
 workspace = true

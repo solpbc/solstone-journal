@@ -3,8 +3,9 @@
 
 use std::env;
 use std::io::Read;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -123,12 +124,9 @@ fn run_command_with_timeout(
             is_error: true,
         });
     };
-    let child = Command::new(executable)
-        .args(&argv[1..])
-        .current_dir(journal_root)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
+    let mut command = Command::new(executable);
+    command.args(&argv[1..]).current_dir(journal_root);
+    let child = ProcessGroupChild::spawn(&mut command);
     let mut child = match child {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -151,31 +149,114 @@ fn run_command_with_timeout(
         }
     };
 
-    let stdout = child.stdout.take().expect("stdout was piped");
-    let stderr = child.stderr.take().expect("stderr was piped");
+    let stdout = child.take_stdout().expect("stdout was piped");
+    let stderr = child.take_stderr().expect("stderr was piped");
     let stdout_reader = thread::spawn(move || read_all(stdout));
     let stderr_reader = thread::spawn(move || read_all(stderr));
     let deadline = Instant::now() + timeout;
-    let (status, timed_out) = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break (status, false),
-            Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                break (child.wait().map_err(|error| error.to_string())?, true);
+    let outcome = loop {
+        match child.exited_without_reaping() {
+            Ok(true) => break child.finish().map(|status| (status, false)),
+            Ok(false) if Instant::now() >= deadline => {
+                break child.finish().map(|status| (status, true));
             }
-            Ok(None) => thread::sleep(Duration::from_millis(5)),
-            Err(error) => return Err(error.to_string()),
+            Ok(false) => thread::sleep(Duration::from_millis(5)),
+            Err(error) => {
+                let cleanup = child.finish();
+                let cleanup = cleanup.err().map(|cleanup| cleanup.to_string());
+                break Err(std::io::Error::other(match cleanup {
+                    Some(cleanup) => format!("{error}; cleanup failed: {cleanup}"),
+                    None => error.to_string(),
+                }));
+            }
         }
     };
     let stdout = String::from_utf8_lossy(&stdout_reader.join().expect("stdout reader panicked"))
         .into_owned();
     let stderr = String::from_utf8_lossy(&stderr_reader.join().expect("stderr reader panicked"))
         .into_owned();
+    let (status, timed_out) = outcome.map_err(|error| error.to_string())?;
     let text = format_shell_output(&stdout, &stderr, status.code(), timed_out);
     Ok(SolObservation {
         is_error: timed_out || !status.success(),
         text,
     })
+}
+
+struct ProcessGroupChild {
+    child: Option<Child>,
+    group: rustix::process::Pid,
+}
+
+impl ProcessGroupChild {
+    fn spawn(command: &mut Command) -> std::io::Result<Self> {
+        command
+            .process_group(0)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = command.spawn()?;
+        let group = match i32::try_from(child.id())
+            .ok()
+            .and_then(rustix::process::Pid::from_raw)
+        {
+            Some(group) => group,
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "command child PID does not fit a process-group ID",
+                ));
+            }
+        };
+        Ok(Self {
+            child: Some(child),
+            group,
+        })
+    }
+
+    fn take_stdout(&mut self) -> Option<std::process::ChildStdout> {
+        self.child.as_mut()?.stdout.take()
+    }
+
+    fn take_stderr(&mut self) -> Option<std::process::ChildStderr> {
+        self.child.as_mut()?.stderr.take()
+    }
+
+    fn exited_without_reaping(&self) -> std::io::Result<bool> {
+        rustix::process::waitid(
+            rustix::process::WaitId::Pid(self.group),
+            rustix::process::WaitIdOptions::EXITED
+                | rustix::process::WaitIdOptions::NOHANG
+                | rustix::process::WaitIdOptions::NOWAIT,
+        )
+        .map(|status| status.is_some())
+        .map_err(std::io::Error::from)
+    }
+
+    fn terminate_group(&self) -> std::io::Result<()> {
+        match rustix::process::kill_process_group(self.group, rustix::process::Signal::KILL) {
+            Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
+            Err(error) => Err(std::io::Error::from(error)),
+        }
+    }
+
+    fn finish(mut self) -> std::io::Result<ExitStatus> {
+        let cleanup = self.terminate_group();
+        let status = self.child.take().expect("owned command child").wait();
+        cleanup.and(status)
+    }
+}
+
+impl Drop for ProcessGroupChild {
+    fn drop(&mut self) {
+        if self.child.is_some() {
+            let _ = self.terminate_group();
+        }
+        if let Some(mut child) = self.child.take() {
+            let _ = child.wait();
+        }
+    }
 }
 
 fn read_all(mut stream: impl Read) -> Vec<u8> {
@@ -260,6 +341,23 @@ pub fn truncate_output(text: &str, cap: usize) -> String {
     )
 }
 
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod test_hooks {
+    use std::path::Path;
+    use std::time::Duration;
+
+    use super::{SolObservation, run_command_with_timeout};
+
+    pub fn run_with_timeout(
+        argv: &[String],
+        journal_root: &Path,
+        timeout: Duration,
+    ) -> Result<SolObservation, String> {
+        run_command_with_timeout(argv, journal_root, timeout)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -282,18 +380,17 @@ mod tests {
     }
 
     #[test]
-    fn timeout_preserves_partial_output() {
-        let argv = vec![
-            "/bin/sh".to_owned(),
-            "-c".to_owned(),
-            "printf partial; printf error >&2; sleep 1".to_owned(),
-        ];
-        let actual = run_command_with_timeout(&argv, Path::new("."), Duration::from_millis(50))
-            .expect("command handling");
-        assert!(actual.is_error);
+    fn shell_output_truncates_each_stream_independently_at_rust_chars() {
+        let stdout = "x".repeat(SHELL_STDOUT_CAP + 1);
+        let stderr = "é".repeat(SHELL_STDERR_CAP + 1);
+        let actual = format_shell_output(&stdout, &stderr, Some(7), false);
         assert_eq!(
-            actual.text,
-            "stdout:\npartial\n\nstderr:\nerror\n\ntimeout: command exceeded 30s"
+            actual,
+            format!(
+                "stdout:\n{}\n... [truncated]\n\nstderr:\n{}\n... [truncated]\n\nexit_code: 7",
+                "x".repeat(SHELL_STDOUT_CAP),
+                "é".repeat(SHELL_STDERR_CAP)
+            )
         );
     }
 
