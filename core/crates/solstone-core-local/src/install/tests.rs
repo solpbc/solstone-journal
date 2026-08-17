@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use super::test_hooks::{inspect_parakeet, stage_ready_parakeet};
 use super::{
     InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, download_artifact, fingerprint,
     flatten_binary_bundle, lease, local_backend_choice, manifest, metal_candidate,
@@ -710,107 +711,6 @@ fn origin_url_for_arch_key_is_host_independent_and_catalog_derived() {
     );
 }
 
-struct ParakeetFixture {
-    cpu_path: PathBuf,
-    vulkan_path: PathBuf,
-    model_path: PathBuf,
-}
-
-fn write_parakeet_binary(path: &std::path::Path, executable: bool) {
-    fs::write(path, b"#!/bin/sh\nexit 0\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mode = if executable { 0o755 } else { 0o644 };
-        fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
-    }
-}
-
-fn write_parakeet_manifest(
-    root: &std::path::Path,
-    unit: &str,
-    identity: Value,
-    inventory: Vec<Value>,
-) {
-    let built = manifest::build_manifest(
-        "parakeet",
-        unit,
-        "target",
-        json!({"pin_identity":identity}),
-        inventory,
-        None,
-        None,
-    )
-    .unwrap();
-    manifest::write_manifest(&manifest::artifact_manifest_path(root), &built).unwrap();
-}
-
-fn stage_ready_parakeet(journal: &std::path::Path, cpu_executable: bool) -> ParakeetFixture {
-    let cache_root = pins::parakeet_cache_root(journal);
-    let (cpu_release, _, _, binary_name) =
-        pins::parakeet_backend_pin(PARAKEET_TEST_KEY, "cpu").unwrap();
-    let (vulkan_release, _, _, _) =
-        pins::parakeet_backend_pin(PARAKEET_TEST_KEY, "vulkan").unwrap();
-    let cpu_root = cache_root
-        .join("bin")
-        .join(PARAKEET_TEST_KEY)
-        .join("cpu")
-        .join(cpu_release);
-    let vulkan_root = cache_root
-        .join("bin")
-        .join(PARAKEET_TEST_KEY)
-        .join("vulkan")
-        .join(vulkan_release);
-    let (repo, filename, revision, ..) = pins::PARAKEET_MODEL;
-    let model_root = cache_root
-        .join("models")
-        .join(repo.replace('/', "__"))
-        .join(revision);
-    fs::create_dir_all(&cpu_root).unwrap();
-    fs::create_dir_all(&vulkan_root).unwrap();
-    fs::create_dir_all(&model_root).unwrap();
-    let cpu_path = cpu_root.join(binary_name);
-    let vulkan_path = vulkan_root.join(binary_name);
-    let model_path = model_root.join(filename);
-    write_parakeet_binary(&cpu_path, cpu_executable);
-    write_parakeet_binary(&vulkan_path, true);
-    fs::write(&model_path, b"parakeet model").unwrap();
-    write_parakeet_manifest(
-        &cpu_root,
-        "parakeet-server",
-        pins::parakeet_backend_identity(PARAKEET_TEST_KEY, "cpu").unwrap(),
-        manifest::runtime_inventory(&cpu_root, &[]).unwrap(),
-    );
-    write_parakeet_manifest(
-        &vulkan_root,
-        "parakeet-server",
-        pins::parakeet_backend_identity(PARAKEET_TEST_KEY, "vulkan").unwrap(),
-        manifest::runtime_inventory(&vulkan_root, &[]).unwrap(),
-    );
-    write_parakeet_manifest(
-        &model_root,
-        "parakeet-model",
-        pins::parakeet_model_identity(),
-        manifest::inventory_for_tree(&model_root, "model").unwrap(),
-    );
-    ParakeetFixture {
-        cpu_path,
-        vulkan_path,
-        model_path,
-    }
-}
-
-fn inspect_parakeet(journal: &std::path::Path) -> Value {
-    dispatch(
-        InstallVerb::InspectParakeet,
-        json!({"journal":journal,"artifact_key":PARAKEET_TEST_KEY}),
-    )
-    .unwrap()
-    .result
-    .unwrap()
-}
-
 #[test]
 fn status_corpus_has_exact_case_count() {
     let fixture: Value =
@@ -1469,32 +1369,10 @@ fn inspect_local_resolves_backend_and_exposes_supervisor_host_fields() {
 }
 
 #[test]
-fn inspect_parakeet_reports_ready_per_artifact_proofs() {
-    let root = temp("inspect-parakeet-ready");
-    let _fixture = stage_ready_parakeet(&root, true);
-    let result = inspect_parakeet(&root);
-
-    assert_eq!(result["provider"], "parakeet");
-    assert_eq!(result["target"]["artifact_key"], PARAKEET_TEST_KEY);
-    assert_eq!(result["status"], "ready");
-    assert_eq!(result["reason_code"], "ready");
-    assert_eq!(result["ready"], true);
-    assert_eq!(result["in_flight"], false);
-    assert_eq!(result["artifacts"]["binary_installed"], true);
-    assert_eq!(result["artifacts"]["binary_runnable"], true);
-    for name in ["binary", "binary_cpu", "binary_vulkan", "model"] {
-        assert_eq!(result["proof"][name]["status"], "ready", "{name}");
-        assert!(result["proof"][name].get("cache_hit").is_none(), "{name}");
-    }
-    assert!(result["install"].is_object());
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
 fn inspect_parakeet_isolates_each_corrupt_artifact_proof() {
     for name in ["binary_cpu", "binary_vulkan", "model"] {
         let root = temp(&format!("inspect-parakeet-isolation-{name}"));
-        let fixture = stage_ready_parakeet(&root, true);
+        let fixture = stage_ready_parakeet(&root, PARAKEET_TEST_KEY, true);
         let corrupt = match name {
             "binary_cpu" => fixture.cpu_path,
             "binary_vulkan" => fixture.vulkan_path,
@@ -1503,7 +1381,7 @@ fn inspect_parakeet_isolates_each_corrupt_artifact_proof() {
         };
         fs::write(corrupt, b"corrupt").unwrap();
 
-        let result = inspect_parakeet(&root);
+        let result = inspect_parakeet(&root, PARAKEET_TEST_KEY);
         assert_eq!(result["status"], "missing-or-mismatched", "{name}");
         assert_eq!(
             result["proof"][name]["reason_code"], "sha256_mismatch",
@@ -1521,63 +1399,25 @@ fn inspect_parakeet_isolates_each_corrupt_artifact_proof() {
 #[test]
 fn inspect_parakeet_distinguishes_missing_manifest_from_corrupt_artifact() {
     let missing_root = temp("inspect-parakeet-missing-manifest");
-    let fixture = stage_ready_parakeet(&missing_root, true);
+    let fixture = stage_ready_parakeet(&missing_root, PARAKEET_TEST_KEY, true);
     fs::remove_file(manifest::artifact_manifest_path(
         fixture.cpu_path.parent().unwrap(),
     ))
     .unwrap();
-    let missing = inspect_parakeet(&missing_root);
+    let missing = inspect_parakeet(&missing_root, PARAKEET_TEST_KEY);
     assert_eq!(
         missing["proof"]["binary_cpu"]["reason_code"],
         "manifest_missing"
     );
 
     let corrupt_root = temp("inspect-parakeet-corrupt-artifact");
-    let fixture = stage_ready_parakeet(&corrupt_root, true);
+    let fixture = stage_ready_parakeet(&corrupt_root, PARAKEET_TEST_KEY, true);
     fs::write(fixture.model_path, b"corrupt").unwrap();
-    let corrupt = inspect_parakeet(&corrupt_root);
+    let corrupt = inspect_parakeet(&corrupt_root, PARAKEET_TEST_KEY);
     assert_eq!(corrupt["proof"]["model"]["reason_code"], "sha256_mismatch");
 
     let _ = fs::remove_dir_all(missing_root);
     let _ = fs::remove_dir_all(corrupt_root);
-}
-
-#[test]
-fn inspect_parakeet_reports_held_lease_without_creating_a_lease() {
-    let root = temp("inspect-parakeet-lease");
-    let _fixture = stage_ready_parakeet(&root, true);
-    let lease_path = lease::lease_path(&root, "parakeet");
-    assert!(!lease_path.exists());
-    let unlocked = inspect_parakeet(&root);
-    assert_eq!(unlocked["in_flight"], false);
-    assert!(!lease_path.exists());
-
-    let held = lease::acquire(&root, "parakeet").unwrap().unwrap();
-    let locked = inspect_parakeet(&root);
-    assert_eq!(locked["in_flight"], true);
-    assert_eq!(locked["ready"], true);
-    assert_eq!(locked["status"], "ready");
-    drop(held);
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
-fn inspect_parakeet_reports_unrunnable_cpu_binary() {
-    let root = temp("inspect-parakeet-unrunnable");
-    let _fixture = stage_ready_parakeet(&root, false);
-    let result = inspect_parakeet(&root);
-
-    assert_eq!(result["status"], "host-ineligible");
-    assert_eq!(result["reason_code"], "binary_unavailable");
-    assert_eq!(result["artifacts"]["binary_runnable"], false);
-    assert_eq!(
-        result["host"]["binary_runtime"]["reason_code"],
-        "binary_unavailable"
-    );
-    for name in ["binary", "binary_cpu", "binary_vulkan", "model"] {
-        assert_eq!(result["proof"][name]["status"], "ready", "{name}");
-    }
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]

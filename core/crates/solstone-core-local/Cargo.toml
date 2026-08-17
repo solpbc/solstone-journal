@@ -57,3 +57,4 @@ required-features = ["test-hooks"]
 [[test]]
 name = "local_installer_process"
 path = "tests/local_installer_process.rs"
+required-features = ["test-hooks"]

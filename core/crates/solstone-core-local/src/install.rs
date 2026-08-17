@@ -26,28 +26,139 @@ pub mod rerank_install;
 pub mod rfdetr_install;
 pub mod status;
 
-/// Fixture-only driver for the registered loopback installer transport test.
+/// Fixture-only driver for the registered installer integration targets.
 ///
 /// Keeping this behind a non-default feature prevents fixture artifacts and
 /// injected filesystem seams from becoming an ordinary public API.
-#[cfg(feature = "test-hooks")]
+#[cfg(any(test, feature = "test-hooks"))]
 #[doc(hidden)]
 pub mod test_hooks {
+    use std::fs;
     use std::path::{Path, PathBuf};
 
+    use serde_json::{Value, json};
+    #[cfg(feature = "test-hooks")]
     use solstone_core_assets::Artifact;
+    #[cfg(feature = "test-hooks")]
     use solstone_core_journal_config::{
         JournalConfigRead, parakeet_coreml::ParakeetCoremlSentinel,
     };
 
+    #[cfg(feature = "test-hooks")]
     use super::archive::DownloadHostPolicy;
+    #[cfg(feature = "test-hooks")]
     use super::coreml_install::{
         CoremlInstallError, install_with_rows_and_seams, install_with_rows_for_test,
     };
+    #[cfg(feature = "test-hooks")]
     use super::rfdetr_install::{
         RfdetrInstallError, RfdetrInstallRecord, install_rfdetr_with_artifacts,
     };
+    use super::{InstallVerb, dispatch, manifest, pins};
 
+    pub struct ParakeetFixture {
+        pub cpu_path: PathBuf,
+        pub vulkan_path: PathBuf,
+        pub model_path: PathBuf,
+    }
+
+    fn write_parakeet_binary(path: &Path, executable: bool) {
+        fs::write(path, b"#!/bin/sh\nexit 0\n").expect("write Parakeet binary fixture");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mode = if executable { 0o755 } else { 0o644 };
+            fs::set_permissions(path, fs::Permissions::from_mode(mode))
+                .expect("set Parakeet binary fixture mode");
+        }
+    }
+
+    fn write_parakeet_manifest(root: &Path, unit: &str, identity: Value, inventory: Vec<Value>) {
+        let built = manifest::build_manifest(
+            "parakeet",
+            unit,
+            "target",
+            json!({"pin_identity":identity}),
+            inventory,
+            None,
+            None,
+        )
+        .expect("build Parakeet fixture manifest");
+        manifest::write_manifest(&manifest::artifact_manifest_path(root), &built)
+            .expect("write Parakeet fixture manifest");
+    }
+
+    pub fn stage_ready_parakeet(
+        journal: &Path,
+        artifact_key: &str,
+        cpu_executable: bool,
+    ) -> ParakeetFixture {
+        let cache_root = pins::parakeet_cache_root(journal);
+        let (cpu_release, _, _, binary_name) =
+            pins::parakeet_backend_pin(artifact_key, "cpu").expect("CPU Parakeet pin");
+        let (vulkan_release, _, _, _) =
+            pins::parakeet_backend_pin(artifact_key, "vulkan").expect("Vulkan Parakeet pin");
+        let cpu_root = cache_root
+            .join("bin")
+            .join(artifact_key)
+            .join("cpu")
+            .join(cpu_release);
+        let vulkan_root = cache_root
+            .join("bin")
+            .join(artifact_key)
+            .join("vulkan")
+            .join(vulkan_release);
+        let (repo, filename, revision, ..) = pins::PARAKEET_MODEL;
+        let model_root = cache_root
+            .join("models")
+            .join(repo.replace('/', "__"))
+            .join(revision);
+        fs::create_dir_all(&cpu_root).expect("create CPU fixture root");
+        fs::create_dir_all(&vulkan_root).expect("create Vulkan fixture root");
+        fs::create_dir_all(&model_root).expect("create model fixture root");
+        let cpu_path = cpu_root.join(binary_name);
+        let vulkan_path = vulkan_root.join(binary_name);
+        let model_path = model_root.join(filename);
+        write_parakeet_binary(&cpu_path, cpu_executable);
+        write_parakeet_binary(&vulkan_path, true);
+        fs::write(&model_path, b"parakeet model").expect("write model fixture");
+        write_parakeet_manifest(
+            &cpu_root,
+            "parakeet-server",
+            pins::parakeet_backend_identity(artifact_key, "cpu").expect("CPU identity"),
+            manifest::runtime_inventory(&cpu_root, &[]).expect("CPU inventory"),
+        );
+        write_parakeet_manifest(
+            &vulkan_root,
+            "parakeet-server",
+            pins::parakeet_backend_identity(artifact_key, "vulkan").expect("Vulkan identity"),
+            manifest::runtime_inventory(&vulkan_root, &[]).expect("Vulkan inventory"),
+        );
+        write_parakeet_manifest(
+            &model_root,
+            "parakeet-model",
+            pins::parakeet_model_identity(),
+            manifest::inventory_for_tree(&model_root, "model").expect("model inventory"),
+        );
+        ParakeetFixture {
+            cpu_path,
+            vulkan_path,
+            model_path,
+        }
+    }
+
+    pub fn inspect_parakeet(journal: &Path, artifact_key: &str) -> Value {
+        dispatch(
+            InstallVerb::InspectParakeet,
+            json!({"journal":journal,"artifact_key":artifact_key}),
+        )
+        .expect("inspect Parakeet fixture")
+        .result
+        .expect("inspection result")
+    }
+
+    #[cfg(feature = "test-hooks")]
     pub fn install_coreml_with_rows(
         home_dir: &Path,
         config: &JournalConfigRead,
@@ -59,6 +170,7 @@ pub mod test_hooks {
     }
 
     #[allow(clippy::too_many_arguments)] // Fixture-only write seams prove atomic ordering.
+    #[cfg(feature = "test-hooks")]
     pub fn install_coreml_with_seams(
         home_dir: &Path,
         config: &JournalConfigRead,
@@ -75,6 +187,7 @@ pub mod test_hooks {
     }
 
     #[allow(clippy::too_many_arguments)] // Fixture rows exercise installer cleanup through its production path.
+    #[cfg(feature = "test-hooks")]
     pub fn install_rfdetr_with_fixture_artifacts(
         journal: &Path,
         os_name: &str,

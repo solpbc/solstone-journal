@@ -7,9 +7,10 @@ use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::Duration;
 
-use solstone_core_local::install::lease;
+use solstone_core_local::install::{lease, test_hooks};
 
 const RECEIVE_TIMEOUT: Duration = Duration::from_secs(2);
+const PARAKEET_TEST_KEY: &str = "x86_64-unknown-linux-gnu";
 
 struct LeaseCase {
     socket: UnixDatagram,
@@ -126,6 +127,74 @@ fn two_real_processes_cannot_hold_the_same_lease() {
         "acquired-and-released child must exit cleanly"
     );
     case.assert_no_extra_message();
+}
+
+#[test]
+fn inspect_parakeet_reports_ready_per_artifact_proofs() {
+    let root = tempfile::Builder::new()
+        .prefix("solstone-local-parakeet-ready-")
+        .tempdir()
+        .expect("create ready Parakeet journal");
+    let _fixture = test_hooks::stage_ready_parakeet(root.path(), PARAKEET_TEST_KEY, true);
+    let result = test_hooks::inspect_parakeet(root.path(), PARAKEET_TEST_KEY);
+
+    assert_eq!(result["provider"], "parakeet");
+    assert_eq!(result["target"]["artifact_key"], PARAKEET_TEST_KEY);
+    assert_eq!(result["status"], "ready");
+    assert_eq!(result["reason_code"], "ready");
+    assert_eq!(result["ready"], true);
+    assert_eq!(result["in_flight"], false);
+    assert_eq!(result["artifacts"]["binary_installed"], true);
+    assert_eq!(result["artifacts"]["binary_runnable"], true);
+    for name in ["binary", "binary_cpu", "binary_vulkan", "model"] {
+        assert_eq!(result["proof"][name]["status"], "ready", "{name}");
+        assert!(result["proof"][name].get("cache_hit").is_none(), "{name}");
+    }
+    assert!(result["install"].is_object());
+}
+
+#[test]
+fn inspect_parakeet_reports_held_lease_without_creating_a_lease() {
+    let root = tempfile::Builder::new()
+        .prefix("solstone-local-parakeet-lease-")
+        .tempdir()
+        .expect("create lease Parakeet journal");
+    let _fixture = test_hooks::stage_ready_parakeet(root.path(), PARAKEET_TEST_KEY, true);
+    let lease_path = lease::lease_path(root.path(), "parakeet");
+    assert!(!lease_path.exists());
+    let unlocked = test_hooks::inspect_parakeet(root.path(), PARAKEET_TEST_KEY);
+    assert_eq!(unlocked["in_flight"], false);
+    assert!(!lease_path.exists());
+
+    let held = lease::acquire(root.path(), "parakeet")
+        .expect("acquire Parakeet lease")
+        .expect("lease is available");
+    let locked = test_hooks::inspect_parakeet(root.path(), PARAKEET_TEST_KEY);
+    assert_eq!(locked["in_flight"], true);
+    assert_eq!(locked["ready"], true);
+    assert_eq!(locked["status"], "ready");
+    drop(held);
+}
+
+#[test]
+fn inspect_parakeet_reports_unrunnable_cpu_binary() {
+    let root = tempfile::Builder::new()
+        .prefix("solstone-local-parakeet-unrunnable-")
+        .tempdir()
+        .expect("create unrunnable Parakeet journal");
+    let _fixture = test_hooks::stage_ready_parakeet(root.path(), PARAKEET_TEST_KEY, false);
+    let result = test_hooks::inspect_parakeet(root.path(), PARAKEET_TEST_KEY);
+
+    assert_eq!(result["status"], "host-ineligible");
+    assert_eq!(result["reason_code"], "binary_unavailable");
+    assert_eq!(result["artifacts"]["binary_runnable"], false);
+    assert_eq!(
+        result["host"]["binary_runtime"]["reason_code"],
+        "binary_unavailable"
+    );
+    for name in ["binary", "binary_cpu", "binary_vulkan", "model"] {
+        assert_eq!(result["proof"][name]["status"], "ready", "{name}");
+    }
 }
 
 #[test]
