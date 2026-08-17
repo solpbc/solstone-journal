@@ -844,7 +844,7 @@ fn explicit_workspace_binary_artifact_names_are_unique() {
 
 /// A test kept out of `make ci` because it executes the Python implementation
 /// must still be run by something. `check-differentials` is that something, and
-/// this pins the two halves together: gating a test off the native gate without
+/// this pins the two together: gating a test off the native gate without
 /// naming it in the differential gate fails here rather than silently retiring
 /// its coverage.
 #[test]

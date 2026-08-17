@@ -11,11 +11,6 @@ autotests = false
 workspace = true
 
 [features]
-# Cross-language differentials — tests that execute the Python implementation as
-# their oracle. They need a populated `.venv` (`make install`), so they are off
-# by default; that is what lets the frozen native `make ci` run on a bare
-# checkout. They run from `make check-differentials`.
-differential = []
 test-hooks = []
 
 [[test]]
@@ -29,11 +24,6 @@ path = "tests/core_cli_contracts.rs"
 [[test]]
 name = "core_convey_contracts"
 path = "tests/core_convey_contracts.rs"
-
-[[test]]
-name = "core_differentials"
-path = "tests/core_differentials.rs"
-required-features = ["differential"]
 
 [[test]]
 name = "core_journal_contracts"

@@ -1595,19 +1595,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core::core_differentials"
-package = "solstone-core"
-target = "core_differentials"
-set = "differential"
-areas = ["core"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
 id = "solstone-core::core_journal_contracts"
 package = "solstone-core"
 target = "core_journal_contracts"

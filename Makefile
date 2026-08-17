@@ -944,14 +944,10 @@ check-rust-deny:
 # --no-fail-fast, every leg runs regardless of its predecessors, and the target
 # exits non-zero if any of them did. A gate that could not judge must never
 # read as a gate that said yes.
-# The recipe is a clippy of core_differentials, then a two-item cargo-test
-# loop: solstone-core::core_differentials and
-# solstone-core-observe-audio::audio_differential. Neither leg links ONNX
+# The recipe is a one-item cargo-test loop:
+# solstone-core-observe-audio::audio_differential. That leg does not link ONNX
 # Runtime. The check-rust-onnx-stage prerequisite remains so the purity
 # assertion that this target cannot bypass validated staging stays intact.
-# The Vulkan differential fails without a loader unless the operator explicitly
-# sets SOLSTONE_VULKAN_DIFFERENTIAL_NO_LOADER=1; its --nocapture mode makes the
-# resulting RUN or SKIP report visible in this gate's output.
 .PHONY: check-service-legacy-evidence service-legacy-evidence-capture
 # Hand-run immutable-evidence regeneration. This deliberately has no `install`
 # prerequisite: every leg is either stdlib Python, its own pinned interpreter
@@ -971,11 +967,7 @@ check-differentials: check-rust-onnx-stage build
 	@$(REQUIRE_CARGO)
 	$(MAKE) install
 	@status=0; \
-	echo "==> cargo clippy --features differential -p solstone-core --test core_differentials"; \
-	cargo clippy --manifest-path $(RUST_MANIFEST) --features differential --locked --no-deps \
-		-p solstone-core --test core_differentials -- -D warnings || status=$$?; \
 	for leg in \
-		"-p solstone-core --test core_differentials" \
 		"-p solstone-core-observe-audio --test audio_differential" ; do \
 		echo "==> cargo test --features differential --no-fail-fast $$leg"; \
 		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$leg \

@@ -22,10 +22,11 @@ Rust owns every production mutation in this lane:
 
 Python remains in two non-writing roles: `body_native.py` selects and validates
 the version-matched native process, while `apple_health.py` and `oura.py` keep
-the independent parse/normalization reader used by differential tests. There is
-no Python Apple/Oura writer, network client, OAuth/token owner, cursor writer,
-or dedupe writer. The static production-surface assertion lives in
-`core/crates/solstone-core/tests/body_restore_client.rs`.
+read-only detect/preview parsers. There is no Python Apple/Oura writer,
+network client, OAuth/token owner, cursor writer, or dedupe writer. Native
+coverage for Apple save/preview, bounded ZIP/symlink detect refusals, and
+Oura missing-token refusal lives in
+`core/crates/solstone-core/tests/body_cli.rs`.
 
 ## owner commands
 
@@ -81,15 +82,16 @@ validates.
 excluded by the existing `*.sqlite*` backup rule and rebuilt atomically from
 the immutable bundles. Restore runs this rebuild before saving recovery state
 or reporting success; a torn or invalid native bundle fails the restore rather
-than returning an empty body history. The shipping-adapter and restore-failure
-cases are exercised in `core/crates/solstone-core/tests/body_restore_client.rs`.
-
-A Rust-hosted real-restic test creates synthetic Apple and Oura bundles,
-backs them up with the shipping exclusion list, restores through the shipping
-restore engine, and compares every dedupe field before and after. The database
-is absent from the snapshot and is recreated with identical body history. The
-test is
-`apple_and_oura_body_history_survives_real_backup_restore_and_native_rebuild`.
+than returning an empty body history. The `*.sqlite*` exclude list is pinned
+by `solstone-core-backup-runtime`'s `excludes_are_exact_and_keep_durable_health`.
+Restore-does-not-publish-after-rebuild-fail is
+`rebuild_failure_short_circuits_before_any_publication` in
+`solstone-core-backup-runtime/src/restore.rs`. Torn native history is refused
+by `body_rebuild_command_emits_machine_result_and_refuses_torn_native_history`
+in `core/crates/solstone-core/tests/body_rebuild.rs`. Rebuild reconstructs
+Apple and Oura rows in
+`solstone-core-body-rebuild/tests/rebuild.rs`. There is no live restic
+backup/restore/rebuild end-to-end in `core/`.
 
 ## source behavior
 
@@ -161,7 +163,7 @@ lock, network, token refresh, cursor, bundle, or database mutation.
 
 - Oura webhooks.
 - A general owner-facing Oura file-import save path; the retained Python file
-  reader remains preview/differential-only.
+  reader remains preview-only.
 - Health Auto Export or a custom HealthKit ingest service.
 - Any LAN, public, or phone-to-Mac body ingest service.
 - Medical advice, recommendations, or anomaly interpretation.
@@ -172,14 +174,13 @@ Focused gates:
 
 ```text
 cargo test -p solstone-core-body-ingest
-cargo test --manifest-path core/Cargo.toml -p solstone-core --features differential --test core_differentials
-cargo test --manifest-path core/Cargo.toml -p solstone-core --features differential --test core_differentials body_restore_client::apple_and_oura_body_history_survives_real_backup_restore_and_native_rebuild -- --ignored --exact
+cargo test --manifest-path core/Cargo.toml -p solstone-core --test core_journal_contracts
 cargo clippy -p solstone-core-body-ingest --all-targets -- -D warnings
 cargo clippy -p solstone-core --all-targets -- -D warnings
 ```
 
-The retained Python reader-oracle tests remain useful, but no new Python test
-may be used to prove a writer or process boundary in this lane.
-`rust_and_python_body_readers_match_the_complete_synthetic_corpora` compares
-every synthetic Apple and Oura normalized row, identity, dedupe key, and value
-hash across the native reader and the retained Python oracle.
+No new Python test may be used to prove a writer or process boundary in this
+lane. `rust_body_readers_match_the_frozen_synthetic_corpora` in
+`core/crates/solstone-core/tests/body_reader_corpus.rs` compares every
+synthetic Apple and Oura normalized row, identity, dedupe key, and value hash
+against the frozen native fixture.
