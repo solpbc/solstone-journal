@@ -1,28 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Cross-language differential for composite CPU/GPU attestation orchestration.
+//! Native composite CPU/GPU attestation corpus.
 
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     sync::atomic::{AtomicBool, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use solstone_core_spp_attest::{
-    CpuBundle, GpuAppraiser, PcrMode, Policy,
     binding::BINDING_DOMAIN,
     error::GpuAppraisalReason,
     nvgpu::{
-        GpuAppraisal, NvattestVerdict, build_gpu_appraisal, classify_nvattest_result,
-        parse_nvattest_stdout,
+        build_gpu_appraisal, classify_nvattest_result, parse_nvattest_stdout, GpuAppraisal,
+        NvattestVerdict,
     },
     tlv::GpuEnvelope,
+    CpuBundle, GpuAppraiser, PcrMode, Policy,
 };
-use solstone_core_spp_ratls::{CompositeVerificationInput, verify_composite_with_gpu_appraiser};
+use solstone_core_spp_ratls::{verify_composite_with_gpu_appraiser, CompositeVerificationInput};
 
 const CASES: [&str; 5] = [
     "composite_positive",
@@ -31,93 +30,6 @@ const CASES: [&str; 5] = [
     "composite_pin_mismatch",
     "composite_gpu_prerequisite_reject",
 ];
-
-const PYTHON_ORACLE: &str = r#"
-import json
-import os
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-
-sys.path.insert(0, os.environ["SOLSTONE_REPO_ROOT"])
-
-from solstone.think.models import AttestationFailedError
-from solstone.think.services.spp_attest.composite import verify_composite
-from solstone.think.services.spp_attest.nvgpu.claims import (
-    NvattestAcceptance,
-    NvattestRejection,
-    build_gpu_appraisal,
-    classify_nvattest_result,
-    parse_nvattest_stdout,
-)
-from solstone.think.services.spp_attest.nvgpu.errors import GpuAppraisalError
-from solstone.think.services.spp_attest.snp import Policy, load_cpu_bundle
-
-
-def owner_nonce(root):
-    return bytes.fromhex("".join((root / "nonce.hex").read_text(encoding="utf-8").split()))
-
-
-def failure_reason(exc):
-    detail = exc.detail
-    return detail.rsplit("(", 1)[1][:-1]
-
-
-def evaluate(case):
-    kind = case["kind"]
-    root = Path(case["root"])
-    gpu_calls = []
-
-    def gpu_appraiser(envelope, nonce, *, nvattest_dir):
-        gpu_calls.append(True)
-        assert nonce == owner_nonce(root)
-        assert nvattest_dir == root
-        if kind == "composite_gpu_prerequisite_reject":
-            raise GpuAppraisalError("nvattest_unavailable")
-        stdout_name = "negA.stdout" if kind == "composite_gpu_reject" else "positive.stdout"
-        stdout = parse_nvattest_stdout(
-            (root / "nvattest" / stdout_name).read_text(encoding="utf-8")
-        )
-        verdict = classify_nvattest_result(0, stdout, owner_nonce=nonce)
-        if isinstance(verdict, NvattestRejection):
-            raise GpuAppraisalError(verdict.reason)
-        assert isinstance(verdict, NvattestAcceptance)
-        return build_gpu_appraisal(claim=verdict.claim, envelope=envelope, steps=[])
-
-    policy = None
-    if kind == "composite_pin_mismatch":
-        policy = Policy(pcr_mode="pin", pcr_pins={"00" * 32})
-
-    try:
-        verdict = verify_composite(
-            load_cpu_bundle(root),
-            envelope_tlv=(root / "gpu-envelope.tlv").read_bytes(),
-            channel_binding=(root / "guest_x25519.pub.der").read_bytes(),
-            owner_nonce=owner_nonce(root),
-            now=datetime.now(timezone.utc),
-            nvattest_dir=root,
-            policy=policy,
-            gpu_appraiser=gpu_appraiser,
-        )
-        return {
-            "case": kind,
-            "status": "accepted",
-            "verified": verdict.verified,
-            "legs": list(verdict.legs),
-            "substrate": verdict.substrate,
-            "gpu_called": bool(gpu_calls),
-        }
-    except AttestationFailedError as exc:
-        return {
-            "case": kind,
-            "status": "rejected",
-            "reason": failure_reason(exc),
-            "gpu_called": bool(gpu_calls),
-        }
-
-
-print(json.dumps(evaluate(json.loads(sys.argv[1])), sort_keys=True))
-"#;
 
 struct TempFixture {
     path: PathBuf,
@@ -243,28 +155,6 @@ fn fixture_root() -> PathBuf {
     repository_root().join("tests/fixtures/spp_attest")
 }
 
-fn python() -> PathBuf {
-    let python = repository_root().join(".venv/bin/python3");
-    assert!(python.is_file(), "differential requires make install");
-    python
-}
-
-fn python_verdict(kind: &str, root: &Path) -> Value {
-    let output = Command::new(python())
-        .arg("-c")
-        .arg(PYTHON_ORACLE)
-        .arg(json!({"kind": kind, "root": root}).to_string())
-        .env("SOLSTONE_REPO_ROOT", repository_root())
-        .output()
-        .expect("run Python composite oracle");
-    assert!(
-        output.status.success(),
-        "Python stderr: {:?}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    serde_json::from_slice(&output.stdout).expect("Python verdict JSON")
-}
-
 fn rust_verdict(kind: &str, root: &Path) -> Value {
     let inputs = FixtureInputs::load(root);
     let certificates = [&inputs.ark[..], &inputs.ask[..], &inputs.vcek[..]];
@@ -357,13 +247,57 @@ fn nonce(root: &Path) -> [u8; 32] {
         .expect("32-byte nonce")
 }
 
+fn expected_status(kind: &str) -> &'static str {
+    match kind {
+        "composite_positive" => "accepted",
+        _ => "rejected",
+    }
+}
+
+fn expected_reason(kind: &str) -> Option<&'static str> {
+    match kind {
+        "composite_gpu_reject" => Some("gpu_nonce_mismatch"),
+        "composite_cpu_reject_tampered_binding" => Some("cpu_verification_failed"),
+        "composite_pin_mismatch" => Some("pcr_pin_mismatch"),
+        "composite_gpu_prerequisite_reject" => Some("nvattest_unavailable"),
+        _ => None,
+    }
+}
+
+fn expected_gpu_called(kind: &str) -> bool {
+    matches!(
+        kind,
+        "composite_positive" | "composite_gpu_reject" | "composite_gpu_prerequisite_reject"
+    )
+}
+
 #[test]
-fn composite_matches_python_oracle() {
+fn composite_fixture_corpus_matches_the_accept_reject_table() {
+    assert_eq!(CASES.len(), 5, "the composite corpus lost a case");
     for case in CASES {
         let fixture = TempFixture::copy_from(&fixture_root(), case);
         mutate_fixture(case, &fixture.path);
         let rust = rust_verdict(case, &fixture.path);
-        let python = python_verdict(case, &fixture.path);
-        assert_eq!(rust, python, "composite differential case {case}");
+        assert_eq!(
+            rust.get("status").and_then(Value::as_str),
+            Some(expected_status(case)),
+            "case={case} verdict={rust}"
+        );
+        if let Some(reason) = expected_reason(case) {
+            assert_eq!(
+                rust.get("reason").and_then(Value::as_str),
+                Some(reason),
+                "case={case} verdict={rust}"
+            );
+        }
+        assert_eq!(
+            rust.get("gpu_called").and_then(Value::as_bool),
+            Some(expected_gpu_called(case)),
+            "case={case} verdict={rust}"
+        );
+        if expected_status(case) == "accepted" {
+            assert_eq!(rust.get("verified").and_then(Value::as_bool), Some(true));
+            assert_eq!(rust.get("legs"), Some(&json!(["cpu", "gpu"])));
+        }
     }
 }

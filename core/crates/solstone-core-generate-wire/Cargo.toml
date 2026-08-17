@@ -32,16 +32,6 @@ name = "endpoint_transport"
 path = "tests/endpoint_transport.rs"
 
 [[test]]
-name = "responsiveness_differential"
-path = "tests/responsiveness_differential.rs"
-required-features = ["differential"]
-
-[[test]]
-name = "token_log_differential"
-path = "tests/token_log_differential.rs"
-required-features = ["differential"]
-
-[[test]]
 name = "confidential_transport"
 path = "tests/confidential_transport.rs"
 required-features = ["test-hooks"]

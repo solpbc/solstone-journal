@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use solstone_core_ced_sys::CedLibrary;
 
 pub const SCORE_FLOOR: f64 = 0.1;
@@ -235,7 +235,7 @@ struct AssetPaths {
 
 #[cfg(test)]
 mod tests {
-    use super::{MIN_TAIL_S, SCORE_FLOOR, WINDOW_S, aggregate, window_spans};
+    use super::{aggregate, window_spans, MIN_TAIL_S, SCORE_FLOOR, WINDOW_S};
     use std::collections::BTreeMap;
 
     #[test]
@@ -249,6 +249,16 @@ mod tests {
             window_spans(WINDOW_S * sample_rate + MIN_TAIL_S * sample_rate - 1),
             vec![(0, WINDOW_S * sample_rate)]
         );
+        // WINDOW_S=10, MIN_TAIL_S=1, 16 kHz → window=160_000, min_tail=16_000.
+        // 8_000: 0 full windows, 8_000-sample tail < 16_000 → no spans.
+        // 176_000: 1 full window + 16_000-sample tail == min_tail → two spans.
+        // 168_000: 1 full window + 8_000-sample tail < min_tail → one span.
+        assert_eq!(window_spans(8_000), vec![]);
+        assert_eq!(
+            window_spans(176_000),
+            vec![(0, 160_000), (160_000, 176_000)]
+        );
+        assert_eq!(window_spans(168_000), vec![(0, 160_000)]);
     }
 
     #[test]

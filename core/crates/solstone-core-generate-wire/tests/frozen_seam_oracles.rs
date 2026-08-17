@@ -15,9 +15,10 @@
 //! It executes no interpreter, so it belongs in `make ci` -- which is the point
 //! of freezing the answers in the first place.
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use solstone_core_generate_wire::{
-    OverflowDecision, endpoint_overflow_decision, validate_schema_with_annotations,
+    classify_output_responsiveness, endpoint_overflow_decision, usage_for_log,
+    validate_schema_with_annotations, OverflowDecision,
 };
 
 const OVERFLOW_ORACLE: &str = include_str!("../../../fixtures/endpoint_overflow_oracle.json");
@@ -149,5 +150,175 @@ fn the_frozen_corpus_still_carries_its_boundaries() {
         "pattern-context-size-exceeded",
     ] {
         assert_eq!(named(name)["kind"], "context", "case={name}");
+    }
+}
+
+/// Responsiveness table read from `NEGATION_HEADS` / `CONTINUATION_MARKERS`
+/// / `classify_output_responsiveness` on 2026-08-16.
+#[test]
+fn responsiveness_matches_the_negation_head_table() {
+    let cases: &[(&str, bool, Option<&str>, bool)] = &[
+        (
+            "I cannot complete that request.",
+            true,
+            Some("i cannot"),
+            false,
+        ),
+        (
+            "I can't complete that request.",
+            true,
+            Some("i can't"),
+            false,
+        ),
+        (
+            "I am not able to complete that request.",
+            true,
+            Some("i am not able to"),
+            false,
+        ),
+        (
+            "I'm not able to complete that request.",
+            true,
+            Some("i'm not able to"),
+            false,
+        ),
+        (
+            "I am unable to complete that request.",
+            true,
+            Some("i am unable to"),
+            false,
+        ),
+        (
+            "I'm unable to complete that request.",
+            true,
+            Some("i'm unable to"),
+            false,
+        ),
+        (
+            "I do not have access to that resource.",
+            true,
+            Some("i do not have access"),
+            false,
+        ),
+        (
+            "I don't have access to that resource.",
+            true,
+            Some("i don't have access"),
+            false,
+        ),
+        (
+            "I do not have the ability to complete that request.",
+            true,
+            Some("i do not have the ability"),
+            false,
+        ),
+        (
+            "I don't have the ability to complete that request.",
+            true,
+            Some("i don't have the ability"),
+            false,
+        ),
+        (
+            "As an AI, I cannot complete that request.",
+            true,
+            Some("as an ai"),
+            false,
+        ),
+        (
+            "Sorry, I cannot complete that request.",
+            true,
+            Some("i cannot"),
+            false,
+        ),
+        (
+            "I cannot inspect the original file, so here is a description of the image.",
+            false,
+            None,
+            false,
+        ),
+        (
+            "I can't access the source, but the screenshot shows a blue menu.",
+            false,
+            None,
+            false,
+        ),
+        (
+            "I cannot browse, though the supplied text says the answer is seven.",
+            false,
+            None,
+            false,
+        ),
+        (
+            "A useful answer that directly addresses the request.",
+            false,
+            None,
+            false,
+        ),
+        (
+            r#"{"answer":"Useful answer.","note":"I cannot complete that request."}"#,
+            true,
+            Some("i cannot"),
+            false,
+        ),
+        (r#"{"at":"12:30"}"#, false, None, true),
+    ];
+    assert!(
+        cases.len() >= 18,
+        "the responsiveness corpus shrank to {} cases",
+        cases.len()
+    );
+    for (output, non_responsive, signal, empty_corpus) in cases {
+        let verdict = classify_output_responsiveness(output);
+        assert_eq!(verdict.non_responsive, *non_responsive, "{output:?}");
+        assert_eq!(
+            verdict.matched_signal.map(|value| value.as_log_value()),
+            *signal,
+            "{output:?}"
+        );
+        assert_eq!(verdict.empty_corpus, *empty_corpus, "{output:?}");
+    }
+}
+
+/// Token-log normalization read from `usage_for_log` on 2026-08-16.
+#[test]
+fn token_log_normalization_matches_the_usage_for_log_table() {
+    let cases = [
+        (
+            json!({
+                "input_tokens": 2,
+                "output_tokens": 3,
+                "total_tokens": 5,
+                "cached_tokens": 1,
+                "reasoning_tokens": 4,
+                "cache_creation_tokens": 6,
+                "requests": 1,
+            }),
+            json!({
+                "input_tokens": 2,
+                "output_tokens": 3,
+                "total_tokens": 5,
+                "cached_tokens": 1,
+                "reasoning_tokens": 4,
+                "cache_creation_tokens": 6,
+                "requests": 1,
+            }),
+        ),
+        (
+            json!({"input_tokens": 2, "output_tokens": 3}),
+            json!({"input_tokens": 2, "output_tokens": 3, "total_tokens": 5}),
+        ),
+        (json!({}), json!({})),
+        (
+            json!({"reasoning_tokens": 4}),
+            json!({"reasoning_tokens": 4}),
+        ),
+        (
+            json!({"input_tokens": 2, "cached_input_tokens": 1}),
+            json!({"input_tokens": 2, "cached_tokens": 1, "total_tokens": 2}),
+        ),
+    ];
+    assert_eq!(cases.len(), 5);
+    for (input, expected) in cases {
+        assert_eq!(usage_for_log(&input), expected, "usage={input}");
     }
 }

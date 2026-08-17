@@ -303,10 +303,9 @@ fn install_provider_unsupported_name_reaches_the_body() {
         .expect("run solstone-core");
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(output.stdout, b"");
-    assert!(
-        String::from_utf8(output.stderr)
-            .expect("UTF-8 stderr")
-            .contains("unsupported provider 'bogus'; supported: local, parakeet")
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+        "unsupported provider 'bogus'; supported: local, parakeet\n"
     );
 }
 
@@ -333,6 +332,7 @@ fn install_provider_gates_on_the_supervisor_before_the_name() {
 
     let interactive = run(false);
     assert_eq!(interactive.status.code(), Some(1));
+    assert!(interactive.stdout.is_empty(), "{:?}", interactive.stdout);
     assert_eq!(
         String::from_utf8(interactive.stderr).expect("UTF-8 stderr"),
         "sol: solstone isn't running. Start it with 'journal up' and retry.\n"
@@ -340,6 +340,7 @@ fn install_provider_gates_on_the_supervisor_before_the_name() {
 
     let spawned = run(true);
     assert_eq!(spawned.status.code(), Some(75));
+    assert!(spawned.stdout.is_empty(), "{:?}", spawned.stdout);
     assert_eq!(spawned.stderr, b"");
 }
 

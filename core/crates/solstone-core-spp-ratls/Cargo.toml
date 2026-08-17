@@ -25,10 +25,5 @@ socket2.workspace = true
 name = "attested_channels"
 path = "tests/attested_channels.rs"
 
-[[test]]
-name = "composite_differential"
-path = "tests/composite_differential.rs"
-required-features = ["differential"]
-
 [lints]
 workspace = true

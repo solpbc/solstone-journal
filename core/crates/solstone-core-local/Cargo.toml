@@ -57,28 +57,3 @@ required-features = ["test-hooks"]
 [[test]]
 name = "local_installer_process"
 path = "tests/local_installer_process.rs"
-
-[[test]]
-name = "admission_cross_process"
-path = "tests/admission_cross_process.rs"
-required-features = ["differential"]
-
-[[test]]
-name = "vulkan_differential"
-path = "tests/vulkan_differential.rs"
-required-features = ["differential"]
-
-[[test]]
-name = "local_fit_report_differential"
-path = "tests/local_fit_report_differential.rs"
-required-features = ["differential"]
-
-[[test]]
-name = "install_provider_differential"
-path = "tests/install_provider_differential.rs"
-required-features = ["differential"]
-
-[[test]]
-name = "downloading_installers_differential"
-path = "tests/downloading_installers_differential.rs"
-required-features = ["differential"]

@@ -60,16 +60,28 @@ struct ReapChild(Option<std::process::Child>);
 
 impl ReapChild {
     fn spawn(root: &Path, ready_socket: &Path) -> Self {
-        let child = Command::new(std::env::current_exe().expect("test executable"))
+        Self::spawn_holder(root, ready_socket, false)
+    }
+
+    /// Spawns a holder that releases its slot on its own after `TIMED_HOLD`
+    /// instead of parking until it is killed.
+    fn spawn_timed(root: &Path, ready_socket: &Path) -> Self {
+        Self::spawn_holder(root, ready_socket, true)
+    }
+
+    fn spawn_holder(root: &Path, ready_socket: &Path, timed_hold: bool) -> Self {
+        let mut command = Command::new(std::env::current_exe().expect("test executable"));
+        command
             .args(["--exact", "child_holds_slot_until_killed", "--nocapture"])
             .env("SOLSTONE_ADMISSION_HOLDER", "1")
             .env("SOLSTONE_ADMISSION_ROOT", root)
             .env("SOLSTONE_ADMISSION_READY_SOCKET", ready_socket)
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn holder");
-        Self(Some(child))
+            .stderr(Stdio::null());
+        if timed_hold {
+            command.env("SOLSTONE_ADMISSION_TIMED_HOLD", "1");
+        }
+        Self(Some(command.spawn().expect("spawn holder")))
     }
 
     fn kill_wait(&mut self) {
@@ -77,6 +89,12 @@ impl ReapChild {
             let _ = child.kill();
             child.wait().expect("reap holder");
         }
+    }
+
+    fn wait_success(&mut self) {
+        let mut child = self.0.take().expect("holder already reaped");
+        let status = child.wait().expect("reap timed holder");
+        assert!(status.success(), "{status:?}");
     }
 }
 
@@ -153,6 +171,8 @@ fn health_response_timeout_is_bounded() {
     ));
 }
 
+const TIMED_HOLD: std::time::Duration = std::time::Duration::from_millis(400);
+
 #[test]
 fn child_holds_slot_until_killed() {
     if std::env::var_os("SOLSTONE_ADMISSION_HOLDER").is_none() {
@@ -168,6 +188,10 @@ fn child_holds_slot_until_killed() {
         .connect(ready_socket)
         .expect("connect readiness socket");
     ready.send(b"ready").expect("signal ready");
+    if std::env::var_os("SOLSTONE_ADMISSION_TIMED_HOLD").is_some() {
+        std::thread::sleep(TIMED_HOLD);
+        return;
+    }
     std::thread::park();
 }
 
@@ -196,4 +220,29 @@ fn killed_holder_releases_slot_without_repair() {
     )
     .expect("kernel releases flock on process death");
     drop(reclaimed);
+}
+
+#[test]
+fn rust_waits_for_a_released_child_slot() {
+    let root = tempfile::tempdir().expect("admission root");
+    let ready_path = root.path().join("timed-holder-ready.sock");
+    let ready = UnixDatagram::bind(&ready_path).expect("bind readiness socket");
+    ready
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("bound readiness timeout");
+    let mut child = ReapChild::spawn_timed(root.path(), &ready_path);
+    let mut message = [0_u8; 16];
+    let length = ready.recv(&mut message).expect("receive child readiness");
+    assert_eq!(&message[..length], b"ready");
+
+    let started = std::time::Instant::now();
+    let permit = acquire_local_slot(root.path(), 1, Some(Duration::from_secs(2)), false)
+        .expect("waiter acquires after the child releases");
+    assert!(
+        started.elapsed() >= TIMED_HOLD / 2,
+        "waiter acquired before the child released its flock: {:?}",
+        started.elapsed()
+    );
+    drop(permit);
+    child.wait_success();
 }

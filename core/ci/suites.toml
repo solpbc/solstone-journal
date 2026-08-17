@@ -2322,32 +2322,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-generate-wire::responsiveness_differential"
-package = "solstone-core-generate-wire"
-target = "responsiveness_differential"
-set = "differential"
-areas = ["cognition"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-generate-wire::token_log_differential"
-package = "solstone-core-generate-wire"
-target = "token_log_differential"
-set = "differential"
-areas = ["cognition"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-home-web::removals"
 package = "solstone-core-home-web"
 target = "removals"
@@ -2818,55 +2792,29 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-local::admission_cross_process"
+id = "solstone-core-local::frozen_local_oracles"
 package = "solstone-core-local"
-target = "admission_cross_process"
-set = "differential"
-areas = ["system"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "slow"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-local::downloading_installers_differential"
-package = "solstone-core-local"
-target = "downloading_installers_differential"
-set = "differential"
+target = "frozen_local_oracles"
+set = "component"
 areas = ["system"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
-required_features = ["differential"]
+default_full = true
+required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-local::install_provider_differential"
+id = "solstone-core-local::install_provider_cli"
 package = "solstone-core-local"
-target = "install_provider_differential"
-set = "differential"
+target = "install_provider_cli"
+set = "component"
 areas = ["system"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-local::local_fit_report_differential"
-package = "solstone-core-local"
-target = "local_fit_report_differential"
-set = "differential"
-areas = ["system"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
+default_full = true
+required_features = []
 runtime = "none"
 
 [[suites]]
@@ -2880,19 +2828,6 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-local::vulkan_differential"
-package = "solstone-core-local"
-target = "vulkan_differential"
-set = "differential"
-areas = ["system"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
 runtime = "none"
 
 [[suites]]
@@ -3470,29 +3405,29 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-spp-attest::spp_attest_differential"
+id = "solstone-core-spp-attest::spp_attest_oracles"
 package = "solstone-core-spp-attest"
-target = "spp_attest_differential"
-set = "differential"
+target = "spp_attest_oracles"
+set = "component"
 areas = ["trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
-required_features = ["differential"]
+default_full = true
+required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-spp-ratls::composite_differential"
+id = "solstone-core-spp-ratls::composite_oracles"
 package = "solstone-core-spp-ratls"
-target = "composite_differential"
-set = "differential"
+target = "composite_oracles"
+set = "component"
 areas = ["trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
-required_features = ["differential"]
+default_full = true
+required_features = []
 runtime = "none"
 
 [[suites]]
@@ -3704,45 +3639,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-transcribe::transcribe_differential"
-package = "solstone-core-transcribe"
-target = "transcribe_differential"
-set = "differential"
-areas = ["audio"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-transcribe::transcribe_sound_tags_differential"
-package = "solstone-core-transcribe"
-target = "transcribe_sound_tags_differential"
-set = "differential"
-areas = ["audio"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-transcribe::transcribe_vad_differential"
-package = "solstone-core-transcribe"
-target = "transcribe_vad_differential"
-set = "differential"
-areas = ["audio"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-transcribe-cli::reachability"
 package = "solstone-core-transcribe-cli"
 target = "reachability"
@@ -3780,6 +3676,19 @@ timeout = "standard"
 default_full = false
 required_features = ["differential"]
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-vad-analyze::vad_oracles"
+package = "solstone-core-vad-analyze"
+target = "vad_oracles"
+set = "native"
+areas = ["audio"]
+platforms = ["linux"]
+prerequisites = ["cargo-cache", "onnx-runtime"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "onnx"
 
 [[suites]]
 id = "solstone-core-vad-analyze::vad_differential"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Cross-language evidence-layer differential against the running Python implementation.
+//! Native evidence-layer corpus for SPP attestation fixtures.
 //!
 //! The broken-root-pairing and foreign-root-selection cases are intentionally excluded. Python
 //! exposes a test-only root-directory override for those cases, while the Rust production API
@@ -12,19 +12,18 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 use solstone_core_spp_attest::{
-    binding::{BINDING_DOMAIN, check_envelope_nonce, composite_binding_hash},
+    binding::{check_envelope_nonce, composite_binding_hash, BINDING_DOMAIN},
     nvgpu::{
-        NvattestVerdict, build_gpu_appraisal, classify_nvattest_result, parse_nvattest_stdout,
+        build_gpu_appraisal, classify_nvattest_result, parse_nvattest_stdout, NvattestVerdict,
     },
-    snp::{CpuEvidence, SnpReport, appraise_cpu_evidence},
+    snp::{appraise_cpu_evidence, CpuEvidence, SnpReport},
     tlv::decode_gpu_envelope,
-    tpm_quote::{TpmQuoteInput, verify_quote},
+    tpm_quote::{verify_quote, TpmQuoteInput},
 };
 
 const CASES: [&str; 16] = [
@@ -45,142 +44,6 @@ const CASES: [&str; 16] = [
     "envelope_nonce_mismatch",
     "gpu_unknown_result_code",
 ];
-
-const PYTHON_ORACLE: &str = r#"
-import json
-import os
-import sys
-from pathlib import Path
-
-sys.path.insert(0, os.environ["SOLSTONE_REPO_ROOT"])
-
-from solstone.think.services.spp_attest import (
-    BINDING_DOMAIN,
-    composite_binding_hash,
-)
-from solstone.think.services.spp_attest.binding import check_envelope_nonce
-from solstone.think.services.spp_attest.nvgpu.claims import (
-    NvattestAcceptance,
-    NvattestRejection,
-    build_gpu_appraisal,
-    classify_nvattest_result,
-    parse_nvattest_stdout,
-)
-from solstone.think.services.spp_attest.tpm_quote import verify_quote
-from solstone.think.services.spp_attest.snp import SnpReport, appraise_cpu_leg, load_cpu_bundle
-from solstone.think.services.spp_attest.tlv import decode_gpu_envelope
-
-
-def owner_nonce(root):
-    return bytes.fromhex("".join((root / "nonce.hex").read_text(encoding="utf-8").split()))
-
-
-def binding(root):
-    return composite_binding_hash(
-        nonce=owner_nonce(root),
-        channel_binding=(root / "guest_x25519.pub.der").read_bytes(),
-        envelope_tlv=(root / "gpu-envelope.tlv").read_bytes(),
-        domain=BINDING_DOMAIN,
-    )
-
-
-def accepted(kind, **fields):
-    return {"case": kind, "status": "accepted", **fields}
-
-
-def rejected(kind, **fields):
-    return {"case": kind, "status": "rejected", **fields}
-
-
-def gpu_verdict(kind, root, stdout_name, unknown_result_code=False):
-    stdout = parse_nvattest_stdout((root / "nvattest" / stdout_name).read_text(encoding="utf-8"))
-    if unknown_result_code:
-        stdout["result_code"] = 999
-    verdict = classify_nvattest_result(0, stdout, owner_nonce=owner_nonce(root))
-    if isinstance(verdict, NvattestRejection):
-        return rejected(kind, reason=verdict.reason)
-    assert isinstance(verdict, NvattestAcceptance)
-    appraisal = build_gpu_appraisal(
-        claim=verdict.claim,
-        envelope=decode_gpu_envelope((root / "gpu-envelope.tlv").read_bytes()),
-        steps=[],
-    )
-    return accepted(
-        kind,
-        driver_version=appraisal.driver_version,
-        vbios_version=appraisal.vbios_version,
-        hwmodel=appraisal.hwmodel,
-        arch=appraisal.arch,
-        envelope_gpu_uuid=appraisal.envelope_gpu_uuid,
-    )
-
-
-class UnknownCase(Exception):
-    pass
-
-
-def evaluate(case):
-    kind = case["kind"]
-    root = Path(case["root"])
-    try:
-        if kind == "snp_report_parse" or kind == "snp_report_truncated":
-            report = SnpReport.parse((root / "report.bin").read_bytes())
-            return accepted(
-                kind,
-                report_version=report.version,
-                cpuid=[report.cpuid_family, report.cpuid_model, report.cpuid_step],
-            )
-        if kind == "cpu_leg_positive" or kind == "snp_signature_bit_flip":
-            result = appraise_cpu_leg(
-                load_cpu_bundle(root),
-                envelope_tlv=(root / "gpu-envelope.tlv").read_bytes(),
-                channel_binding=(root / "guest_x25519.pub.der").read_bytes(),
-            )
-            return accepted(kind, steps=[step.name for step in result.steps])
-        if kind == "tlv_decode_positive" or kind == "tlv_envelope_truncated":
-            decode_gpu_envelope((root / "gpu-envelope.tlv").read_bytes())
-            return accepted(kind)
-        if kind == "binding_hash_positive":
-            return accepted(kind, digest=binding(root).hex())
-        if kind == "tpm_quote_positive" or kind == "tpm_signature_bit_flip" or kind == "tpm_quote_truncated":
-            verify_quote(
-                ak_pub_pem=(root / "akpub.pem").read_bytes(),
-                quote_msg=(root / "quote.msg").read_bytes(),
-                quote_sig=(root / "quote.sig").read_bytes(),
-                quote_pcrs=(root / "quote.pcrs").read_bytes(),
-                expected_binding=binding(root),
-            )
-            return accepted(kind)
-        if kind == "envelope_nonce_mismatch":
-            check_envelope_nonce(
-                decode_gpu_envelope((root / "gpu-envelope.tlv").read_bytes()),
-                owner_nonce(root),
-            )
-            return accepted(kind)
-        if kind == "gpu_positive":
-            return gpu_verdict(kind, root, "positive.stdout")
-        if kind == "gpu_neg_a":
-            return gpu_verdict(kind, root, "negA.stdout")
-        if kind == "gpu_neg_b":
-            return gpu_verdict(kind, root, "negB.stdout")
-        if kind == "gpu_neg_c":
-            return gpu_verdict(kind, root, "negC.stdout")
-        if kind == "gpu_unknown_result_code":
-            return gpu_verdict(kind, root, "positive.stdout", unknown_result_code=True)
-        raise UnknownCase(kind)
-    except UnknownCase:
-        # Never convert this into a verdict. It is not a rejection the
-        # reference computed -- it is the oracle admitting it does not implement
-        # the case, and `comparable` strips `exception_type`, so a swallowed
-        # UnknownCase is indistinguishable from a real rejection and the
-        # differential passes while testing nothing.
-        raise
-    except Exception as exc:
-        return rejected(kind, exception_type=type(exc).__name__)
-
-
-print(json.dumps(evaluate(json.loads(sys.argv[1])), sort_keys=True))
-"#;
 
 const VALID_NOW_UNIX_SECONDS: i64 = 1_800_000_000;
 
@@ -219,29 +82,6 @@ fn repository_root() -> PathBuf {
 
 fn fixture_root() -> PathBuf {
     repository_root().join("tests/fixtures/spp_attest")
-}
-
-fn python() -> PathBuf {
-    let venv = repository_root().join(".venv/bin/python3");
-    assert!(venv.is_file(), "differential requires make install");
-    venv
-}
-
-fn python_verdict(kind: &str, root: &Path) -> Value {
-    let case = json!({"kind": kind, "root": root});
-    let output = Command::new(python())
-        .arg("-c")
-        .arg(PYTHON_ORACLE)
-        .arg(case.to_string())
-        .env("SOLSTONE_REPO_ROOT", repository_root())
-        .output()
-        .expect("run Python SPP attestation oracle");
-    assert!(
-        output.status.success(),
-        "Python stderr: {:?}",
-        String::from_utf8_lossy(&output.stderr),
-    );
-    serde_json::from_slice(&output.stdout).expect("Python verdict JSON")
 }
 
 fn copy_tree(source: &Path, destination: &Path) {
@@ -535,14 +375,6 @@ fn expected_reason(kind: &str) -> Option<&'static str> {
     }
 }
 
-fn comparable(mut verdict: Value) -> Value {
-    verdict
-        .as_object_mut()
-        .expect("verdict is an object")
-        .remove("exception_type");
-    verdict
-}
-
 fn hex_lower(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut result = String::with_capacity(bytes.len() * 2);
@@ -554,8 +386,8 @@ fn hex_lower(bytes: &[u8]) -> String {
 }
 
 #[test]
-fn spp_attest_matches_python_oracle() {
-    assert!(!CASES.is_empty(), "differential corpus must not be empty");
+fn spp_attest_fixture_corpus_matches_the_accept_reject_table() {
+    assert_eq!(CASES.len(), 16, "the SPP attestation corpus lost a case");
     let mut executed = 0;
     for kind in CASES {
         let temporary = mutation_case(kind).then(|| {
@@ -567,30 +399,18 @@ fn spp_attest_matches_python_oracle() {
             .as_ref()
             .map_or_else(fixture_root, |temporary| temporary.path.clone());
         let rust = rust_verdict(kind, &root);
-        let python = python_verdict(kind, &root);
         assert_eq!(
             rust.get("status").and_then(Value::as_str),
             Some(expected_status(kind)),
-            "Rust case={kind}"
-        );
-        assert_eq!(
-            python.get("status").and_then(Value::as_str),
-            Some(expected_status(kind)),
-            "Python case={kind}"
+            "case={kind} verdict={rust}"
         );
         if let Some(expected_reason) = expected_reason(kind) {
             assert_eq!(
                 rust.get("reason").and_then(Value::as_str),
                 Some(expected_reason),
-                "Rust case={kind}"
-            );
-            assert_eq!(
-                python.get("reason").and_then(Value::as_str),
-                Some(expected_reason),
-                "Python case={kind}"
+                "case={kind} verdict={rust}"
             );
         }
-        assert_eq!(comparable(rust), comparable(python), "case={kind}");
         executed += 1;
     }
     assert_eq!(executed, CASES.len(), "every corpus case must execute");
