@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use solstone_core_local::install::{lease, manifest, pins, status};
 
 fn repository_root() -> PathBuf {

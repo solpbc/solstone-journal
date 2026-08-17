@@ -10,18 +10,18 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use solstone_core_spp_attest::{
+    CpuBundle, GpuAppraiser, PcrMode, Policy,
     binding::BINDING_DOMAIN,
     error::GpuAppraisalReason,
     nvgpu::{
-        build_gpu_appraisal, classify_nvattest_result, parse_nvattest_stdout, GpuAppraisal,
-        NvattestVerdict,
+        GpuAppraisal, NvattestVerdict, build_gpu_appraisal, classify_nvattest_result,
+        parse_nvattest_stdout,
     },
     tlv::GpuEnvelope,
-    CpuBundle, GpuAppraiser, PcrMode, Policy,
 };
-use solstone_core_spp_ratls::{verify_composite_with_gpu_appraiser, CompositeVerificationInput};
+use solstone_core_spp_ratls::{CompositeVerificationInput, verify_composite_with_gpu_appraiser};
 
 // Case names from the committed tests/fixtures/spp_attest corpus, recorded
 // against native_verdict on 2026-08-16.

@@ -15,10 +15,10 @@
 //! It executes no interpreter, so it belongs in `make ci` -- which is the point
 //! of freezing the answers in the first place.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use solstone_core_generate_wire::{
-    classify_output_responsiveness, endpoint_overflow_decision, usage_for_log,
-    validate_schema_with_annotations, OverflowDecision,
+    OverflowDecision, classify_output_responsiveness, endpoint_overflow_decision, usage_for_log,
+    validate_schema_with_annotations,
 };
 
 const OVERFLOW_ORACLE: &str = include_str!("../../../fixtures/endpoint_overflow_oracle.json");

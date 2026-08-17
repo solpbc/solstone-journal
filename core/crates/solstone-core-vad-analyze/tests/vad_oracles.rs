@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use solstone_core_vad_analyze::{REQUEST_SCHEMA, RESPONSE_SCHEMA};
 
 const THRESHOLD: f64 = 0.3;

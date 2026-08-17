@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use solstone_core_ced_sys::CedLibrary;
 
 pub const SCORE_FLOOR: f64 = 0.1;
@@ -235,7 +235,7 @@ struct AssetPaths {
 
 #[cfg(test)]
 mod tests {
-    use super::{aggregate, window_spans, MIN_TAIL_S, SCORE_FLOOR, WINDOW_S};
+    use super::{MIN_TAIL_S, SCORE_FLOOR, WINDOW_S, aggregate, window_spans};
     use std::collections::BTreeMap;
 
     #[test]

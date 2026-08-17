@@ -7,12 +7,12 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use solstone_core_assets::{catalog, resolve, Artifact, Backend, Platform};
-use solstone_core_local::install::ced_install::{ced_artifact_key, ced_model_path, ENGINE_VERSION};
+use solstone_core_assets::{Artifact, Backend, Platform, catalog, resolve};
+use solstone_core_local::install::ced_install::{ENGINE_VERSION, ced_artifact_key, ced_model_path};
 use solstone_core_local::install::rfdetr_install::{
     binary_path, model_path, rfdetr_platform_supported,
 };
-use solstone_core_local::{enumerate_gpus, VulkanDevice, VulkanProbeConfig, VulkanProbeProgram};
+use solstone_core_local::{VulkanDevice, VulkanProbeConfig, VulkanProbeProgram, enumerate_gpus};
 
 // Pin table read from solstone_core_assets::{catalog, resolve} and the public
 // install path helpers (ced_model_path, ced_artifact_key, rfdetr

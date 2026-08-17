@@ -15,15 +15,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use solstone_core_spp_attest::{
-    binding::{check_envelope_nonce, composite_binding_hash, BINDING_DOMAIN},
+    binding::{BINDING_DOMAIN, check_envelope_nonce, composite_binding_hash},
     nvgpu::{
-        build_gpu_appraisal, classify_nvattest_result, parse_nvattest_stdout, NvattestVerdict,
+        NvattestVerdict, build_gpu_appraisal, classify_nvattest_result, parse_nvattest_stdout,
     },
-    snp::{appraise_cpu_evidence, CpuEvidence, SnpReport},
+    snp::{CpuEvidence, SnpReport, appraise_cpu_evidence},
     tlv::decode_gpu_envelope,
-    tpm_quote::{verify_quote, TpmQuoteInput},
+    tpm_quote::{TpmQuoteInput, verify_quote},
 };
 
 // Case names from the committed tests/fixtures/spp_attest corpus, recorded
@@ -491,9 +491,11 @@ fn assert_recorded_fields_match_fixtures() {
     );
     assert_eq!(
         recorded_gpu["arch"],
-        json!(std::str::from_utf8(envelope.field(7).expect("arch field"))
-            .expect("arch utf-8")
-            .to_uppercase())
+        json!(
+            std::str::from_utf8(envelope.field(7).expect("arch field"))
+                .expect("arch utf-8")
+                .to_uppercase()
+        )
     );
     let stdout =
         fs::read_to_string(root.join("nvattest/positive.stdout")).expect("positive GPU stdout");
