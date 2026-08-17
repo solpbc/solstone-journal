@@ -181,9 +181,22 @@ mod tests {
             .install_bin_dir
             .parent()
             .expect("staged install bin has a prefix");
-        fs::create_dir_all(checkout.join("solstone")).unwrap();
         fs::create_dir_all(checkout.join(".git")).unwrap();
         fs::write(checkout.join("pyproject.toml"), "").unwrap();
+        // A checkout is recognised by its payload root, not by a `solstone`
+        // directory. Staging the three layout anchors is what makes this a
+        // checkout the resolver resolves -- and the root it returns is still
+        // not a layout install tree, which is the skip under test.
+        let payload = checkout.join(solstone_core_journal::CHECKOUT_PAYLOAD_ROOT);
+        for anchor in [
+            solstone_core_journal::LAYOUT_BUNDLE_ANCHOR,
+            solstone_core_journal::LAYOUT_LAYOUT_ANCHOR,
+            solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            let path = payload.join(anchor);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, anchor).unwrap();
+        }
         let check = check("disk_space", Severity::Advisory);
         let result = run(&staged, check).unwrap();
         assert_eq!(result.status, Status::Skip);

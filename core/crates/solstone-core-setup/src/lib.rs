@@ -26,7 +26,9 @@ use clean_uninstall::{
 };
 use events::{EventSink, JsonlEmitter};
 use manifest::manifest_path;
-use solstone_core_journal::{detect_checkout_root, resolve_installation_root_from_executable_dir};
+use solstone_core_journal::{
+    resolve_checkout_root_from_executable_dir, resolve_installation_root_from_executable_dir,
+};
 use steps::{
     CheckReportBuilder, CommandRunner, ExistingJournalPrompt, NativeCheckReportBuilder,
     NativeServiceOps, ProcessCommandRunner, ServiceOps, SetupContext,
@@ -109,9 +111,18 @@ fn run_owner_setup_with_io<W: Write, E: Write>(
     stdout: &mut W,
     stderr: &mut E,
 ) -> ExitCode {
-    let project_root = resolve_installation_root_from_executable_dir(&executable_dir)
+    // Setup's `project_root` is a REPOSITORY root wherever there is one: the
+    // wrapper step joins `.venv/bin` onto it and reads `.git` beside it to
+    // recognise a worktree, and neither is true of the payload root the
+    // installation resolver returns inside a checkout. Asking for the checkout
+    // first restores the value this had when the two roots were the same
+    // directory, in all three layouts.
+    let project_root = resolve_checkout_root_from_executable_dir(&executable_dir)
+        .or_else(|| resolve_installation_root_from_executable_dir(&executable_dir))
         .unwrap_or_else(|| executable_dir.clone());
-    let is_source_checkout = detect_checkout_root(&project_root).is_some();
+    // Asked by name rather than derived from `project_root`, so this keeps
+    // answering the right question if that fallback chain ever changes.
+    let is_source_checkout = resolve_checkout_root_from_executable_dir(&executable_dir).is_some();
     let resolution = ResolutionContext {
         home_dir: home_dir.clone(),
         current_dir: current_dir.clone(),
@@ -522,13 +533,25 @@ mod tests {
         let caller_dir = root.join("unrelated-caller");
         fs::create_dir_all(&executable_dir).unwrap();
         fs::create_dir_all(&caller_dir).unwrap();
-        fs::create_dir_all(root.join("solstone")).unwrap();
         fs::write(
             root.join("pyproject.toml"),
             "[project]\nname = \"fixture\"\n",
         )
         .unwrap();
         fs::write(root.join(".git"), "gitdir: elsewhere\n").unwrap();
+        // A checkout is recognised by its payload root carrying the three
+        // layout anchors, not by a `solstone` package directory.
+        for anchor in [
+            solstone_core_journal::LAYOUT_BUNDLE_ANCHOR,
+            solstone_core_journal::LAYOUT_LAYOUT_ANCHOR,
+            solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            let path = root
+                .join(solstone_core_journal::CHECKOUT_PAYLOAD_ROOT)
+                .join(anchor);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, anchor).unwrap();
+        }
         let args = parsed(
             &[
                 "--yes".into(),
