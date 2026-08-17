@@ -5,5 +5,7 @@
 mod architecture;
 #[path = "operational_log_parse.rs"]
 mod operational_log_parse;
+#[path = "partition_table.rs"]
+mod partition_table;
 #[path = "request_contract.rs"]
 mod request_contract;

@@ -7,10 +7,7 @@
 //! (Python). Two in-scope supervisor call sites -- the admission latch and
 //! `linux_stt_uses_parakeet_cpp` -- depend on this decision at runtime, so a
 //! Rust supervisor that re-derives it independently would silently fork an
-//! already-shared decision a fourth way. This is the Rust side of that
-//! decision; [`tests/stt_backend_choice_differential.rs`] (gated behind the
-//! `differential` feature) proves it agrees with the Python original across
-//! the same decision table exercised here.
+//! already-shared decision a fourth way.
 
 pub const STT_SURFACE: &str = "surface";
 
@@ -60,14 +57,10 @@ fn local_backend_or_surface(local_backend: Option<&str>) -> String {
         .unwrap_or_else(|| STT_SURFACE.to_owned())
 }
 
-/// One row per Python branch, named for the branch it exercises so a
-/// failure points straight at the divergence. `decision_table_matches_expected_choice`
-/// below and `tests/stt_backend_choice_differential.rs` (gated behind
-/// `differential`) both replay this exact table -- against this Rust
-/// function and the real Python one, respectively -- so the two vector sets
-/// can never drift apart from each other.
+/// One row per backend-selection branch, named for the branch it exercises.
+#[cfg(test)]
 #[allow(clippy::type_complexity)]
-pub fn decision_table() -> Vec<(
+fn decision_table() -> Vec<(
     &'static str,
     Option<&'static str>,
     Option<u64>,

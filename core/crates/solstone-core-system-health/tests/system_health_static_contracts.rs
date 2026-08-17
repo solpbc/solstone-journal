@@ -5,6 +5,8 @@
 mod fixtures;
 #[path = "grep_compile_contract.rs"]
 mod grep_compile_contract;
+#[path = "pipeline_health_vocabulary.rs"]
+mod pipeline_health_vocabulary;
 #[path = "public_api.rs"]
 mod public_api;
 #[path = "safe_text_contract.rs"]

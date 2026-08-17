@@ -962,3 +962,87 @@ fn import_restores_tar_mtime_to_integer_seconds() {
     .as_secs();
     assert_eq!(modified, 1_700_000_000);
 }
+
+const PYTHON_V1_ARCHIVE: &[u8] = include_bytes!("fixtures/v1-minimal-20260203.tgz");
+
+fn first_manifest_without_volatile(path: &Path) -> serde_json::Value {
+    let file = fs::File::open(path).expect("archive");
+    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(file));
+    let mut entries = archive.entries().expect("entries");
+    let mut entry = entries.next().expect("manifest entry").expect("entry");
+    let mut value: serde_json::Value = serde_json::from_reader(&mut entry).expect("manifest JSON");
+    let object = value.as_object_mut().expect("manifest object");
+    object.remove("created_at");
+    object.remove("host");
+    value
+}
+
+#[test]
+fn export_manifest_matches_v1_literal() {
+    let source = tempfile::tempdir().expect("source");
+    let segment = source.path().join("chronicle/20260203/audio/120000_30");
+    write_file(&segment.join("stream.json"), b"stream");
+    write_file(&segment.join("device.json"), b"device");
+    let output = source.path().join("native.tgz");
+    export(
+        source.path(),
+        ExportRequest {
+            day: "20260203".to_owned(),
+            output: output.clone(),
+        },
+    )
+    .expect("native export");
+    assert_eq!(
+        first_manifest_without_volatile(&output),
+        json!({
+            "version": 1,
+            "day": "20260203",
+            "segments": {
+                "audio/120000_30": {
+                    "files": [
+                        {
+                            "name": "device.json",
+                            "sha256": "263a4dbe41488fb87214b0032339dbb9f0c8da14c16dfcf13084bf3c2552eca5",
+                            "size": 6
+                        },
+                        {
+                            "name": "stream.json",
+                            "sha256": "dca83e717b1f64eb141057a7415a330ad1361f51703efa2e4776f40047898a04",
+                            "size": 6
+                        }
+                    ]
+                }
+            }
+        }),
+        "export manifest minus created_at/host"
+    );
+}
+
+#[test]
+fn import_reads_committed_python_v1_archive() {
+    let temporary = tempfile::tempdir().expect("temporary");
+    let archive = temporary.path().join("python-v1.tgz");
+    fs::write(&archive, PYTHON_V1_ARCHIVE).expect("write committed archive");
+    let destination = tempfile::tempdir().expect("destination");
+    import(
+        destination.path(),
+        ImportRequest {
+            archive,
+            dry_run: false,
+        },
+    )
+    .expect("import python v1 archive");
+    let segment = destination
+        .path()
+        .join("chronicle/20260203/audio/120000_30");
+    assert_eq!(
+        fs::read(segment.join("stream.json")).expect("stream"),
+        b"stream",
+        "imported stream.json"
+    );
+    assert_eq!(
+        fs::read(segment.join("device.json")).expect("device"),
+        b"device",
+        "imported device.json"
+    );
+}
