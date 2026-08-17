@@ -1249,15 +1249,6 @@ id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtim
 id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet.rs::tests::already_gone_ready_cleanup_removes_parakeet_observation_residue::clock"
 
 [[findings]]
-id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet.rs::tests::stopping_the_same_managed_process_twice_is_idempotent::process"
-
-[[findings]]
-id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/parakeet.rs::tests::stopping_the_same_managed_process_twice_is_idempotent::scheduling"
-
-[[findings]]
-id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/readiness.rs::tests::binary_probe_reaps_a_timed_out_child::process"
-
-[[findings]]
 id = "solstone-core-system::core/crates/solstone-core-system/src/provider_runtime/store.rs::tests::current_process_resolution_classifies_absent_and_residual_states::clock"
 
 [[findings]]

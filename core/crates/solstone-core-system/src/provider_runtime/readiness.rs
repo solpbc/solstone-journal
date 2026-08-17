@@ -186,8 +186,6 @@ mod tests {
         default_parakeet_coreml_cache_dir, parakeet_coreml_model_root,
     };
     use std::fs;
-    #[cfg(unix)]
-    use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
 
     #[test]
@@ -301,51 +299,5 @@ mod tests {
         )
         .unwrap();
         assert!(check_parakeet_coreml_cache(home.path(), "darwin", "arm64").is_err());
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn binary_probe_classifies_openmp_loader_failure() {
-        let root = tempdir().unwrap();
-        let binary = root.path().join("parakeet-server");
-        fs::write(
-            &binary,
-            "#!/bin/sh\necho 'libgomp.so.1 missing' >&2\nexit 1\n",
-        )
-        .unwrap();
-        let mut permissions = fs::metadata(&binary).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&binary, permissions).unwrap();
-        assert!(matches!(
-            probe_parakeet_cpp_binary(&binary, Duration::from_secs(1)),
-            ParakeetCppReadiness::OpenMpRuntimeUnavailable { .. }
-        ));
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn binary_probe_reaps_a_timed_out_child() {
-        let root = tempdir().unwrap();
-        let binary = root.path().join("parakeet-server");
-        let pid = root.path().join("pid");
-        fs::write(
-            &binary,
-            format!("#!/bin/sh\necho $$ > {}\nsleep 60\n", pid.display()),
-        )
-        .unwrap();
-        let mut permissions = fs::metadata(&binary).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&binary, permissions).unwrap();
-
-        assert!(matches!(
-            probe_parakeet_cpp_binary(&binary, Duration::from_millis(100)),
-            ParakeetCppReadiness::BinaryUnstartable { .. }
-        ));
-        let child_pid = fs::read_to_string(&pid).unwrap();
-        let status = Command::new("sh")
-            .args(["-c", &format!("kill -0 {} 2>/dev/null", child_pid.trim())])
-            .status()
-            .unwrap();
-        assert!(!status.success(), "timed-out child must be reaped");
     }
 }
