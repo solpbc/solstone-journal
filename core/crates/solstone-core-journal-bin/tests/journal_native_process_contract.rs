@@ -3036,7 +3036,7 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
 /// a file's first `#[cfg(test)]` is test scaffolding, and several crates
 /// legitimately write interpreter stubs there.
 #[test]
-fn only_the_dispatcher_crate_resolves_an_interpreter() {
+fn no_crate_resolves_an_interpreter() {
     let crates = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("crates directory")
