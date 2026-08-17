@@ -4,7 +4,6 @@
 use std::ffi::{OsStr, OsString};
 use std::process::ExitCode;
 
-mod coherence;
 pub mod help;
 mod host;
 mod layout;
@@ -203,16 +202,6 @@ fn dispatch_process(
     _verbose: bool,
     spawner: &dyn ProcessSpawner,
 ) -> Outcome {
-    let spec = processes::process_spec_for(token)
-        .expect("journal manifest process token must have a ProcessSpec");
-    if spec.kind.requires_coherence()
-        && let Err(error) = coherence::guard_current_installation()
-    {
-        return Outcome::ProcessFailure {
-            stderr: format!("{error}\n"),
-            exit: 1,
-        };
-    }
     let Some(native) = processes::native_process_spec_for(token) else {
         return Outcome::ProcessFailure {
             stderr: format!("native journal process launch failed: no native body for {token}\n"),
@@ -256,8 +245,7 @@ fn dispatch_native_process(
 mod tests {
     use super::*;
     use crate::manifest::{
-        JOURNAL_COMMAND_COUNT, JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS, all_leaf_paths,
-        process_command_tokens,
+        JOURNAL_COMMAND_COUNT, JOURNAL_HOST_COMMAND_COUNT, all_leaf_paths, process_command_tokens,
     };
     use crate::processes::{NATIVE_PROCESS_SPECS, PROCESS_SPECS, native_process_spec_for};
     use std::cell::RefCell;
@@ -403,15 +391,6 @@ mod tests {
         assert_eq!(paths.len(), JOURNAL_COMMAND_COUNT);
         assert_eq!(unique.len(), JOURNAL_COMMAND_COUNT);
         assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 41);
-        let coherence_tokens = PROCESS_SPECS
-            .iter()
-            .filter(|spec| spec.kind.requires_coherence())
-            .map(|spec| spec.token)
-            .collect::<BTreeSet<_>>();
-        assert_eq!(
-            coherence_tokens,
-            JOURNAL_HOST_COMMANDS.iter().copied().collect()
-        );
     }
 
     #[test]

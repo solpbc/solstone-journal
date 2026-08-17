@@ -199,13 +199,6 @@ fn production_process_table_matches_the_hash_bound_census() {
             Some(spec)
         );
     }
-    assert_eq!(
-        production_processes::PROCESS_SPECS
-            .iter()
-            .filter(|spec| spec.kind.requires_coherence())
-            .count(),
-        41
-    );
     assert_eq!(production_digest(), EXPECTED_CENSUS_SHA256);
 }
 

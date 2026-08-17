@@ -8,7 +8,6 @@ use std::fs;
 use std::io::{ErrorKind, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
-use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::thread::{self, sleep};
@@ -226,47 +225,20 @@ fn journal_indexer_writes_real_index_with_interpreters_poisoned() {
 struct InstalledLayout {
     binary: PathBuf,
     bin: PathBuf,
-    site_packages: PathBuf,
 }
 
 fn installed_layout(temp: &TempDir) -> InstalledLayout {
     let prefix = temp.path.join("prefix");
     let bin_dir = prefix.join("bin");
-    let site_packages = prefix.join("lib/python3.95/site-packages");
-    fs::create_dir_all(site_packages.join("solstone")).expect("create installed package fixture");
-    fs::write(site_packages.join("solstone/__init__.py"), "").expect("write package marker");
     fs::create_dir_all(&bin_dir).expect("create installed binary directory");
     let binary = bin_dir.join("solstone-core-journal");
     fs::copy(bin(), &binary).expect("copy solstone-core-journal binary");
     fs::set_permissions(&binary, fs::Permissions::from_mode(0o755))
         .expect("make copied binary executable");
-    for (directory, name) in [
-        ("solstone-1.2.3.dist-info", "solstone"),
-        ("solstone_journal-1.2.3.dist-info", "solstone-journal"),
-    ] {
-        let dist_info = site_packages.join(directory);
-        fs::create_dir(&dist_info).expect("create installed metadata fixture");
-        fs::write(
-            dist_info.join("METADATA"),
-            format!("Name: {name}\nVersion: 1.2.3\n\n"),
-        )
-        .expect("write installed metadata fixture");
-    }
     InstalledLayout {
         binary,
         bin: bin_dir,
-        site_packages,
     }
-}
-
-fn write_recording_interpreter(path: &Path) {
-    fs::write(
-        path,
-        "#!/bin/sh\nprintf '%s\\0' \"$@\" > \"$RECORD_FILE\"\nif [ -n \"${VERBOSE_RECORD_FILE:-}\" ]; then\n  printf '%s' \"$5\" > \"$VERBOSE_RECORD_FILE\"\nfi\nexec /bin/sleep 60\n",
-    )
-    .expect("write recording interpreter");
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
-        .expect("make recording interpreter executable");
 }
 
 fn installed_output(layout: &InstalledLayout, args: &[&str]) -> Output {
@@ -282,20 +254,6 @@ fn installed_output(layout: &InstalledLayout, args: &[&str]) -> Output {
         }
     }
     panic!("installed solstone-core stayed busy after retries")
-}
-
-fn wait_for_record(path: &Path) -> Vec<Vec<u8>> {
-    for _ in 0..100 {
-        if let Ok(bytes) = fs::read(path) {
-            return bytes
-                .split(|byte| *byte == 0)
-                .filter(|part| !part.is_empty())
-                .map(Vec::from)
-                .collect();
-        }
-        sleep(Duration::from_millis(20));
-    }
-    panic!("recording interpreter did not write argv")
 }
 
 #[test]
@@ -767,76 +725,6 @@ fn journal_identity_requires_an_executable_sibling_for_native_think() {
         String::from_utf8(non_executable.stderr)
             .expect("non-executable native sibling stderr should be utf-8")
             .contains("native-helper-not-executable:")
-    );
-}
-
-#[test]
-fn journal_identity_coherence_mismatch_blocks_the_interpreter() {
-    let temp = TempDir::new("journal-coherence-mismatch");
-    let layout = installed_layout(&temp);
-    let sentinel = temp.path.join("interpreter.log");
-    write_forbidden_shim(&layout.bin.join("python3"), &sentinel);
-    fs::write(
-        layout
-            .site_packages
-            .join("solstone_journal-1.2.3.dist-info/METADATA"),
-        "Name: solstone-journal\nVersion: 1.2.2\n\n",
-    )
-    .expect("write mismatched metadata");
-
-    let output = installed_output(&layout, &["think"]);
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(output.stdout, b"");
-    assert!(
-        String::from_utf8(output.stderr)
-            .expect("mismatch stderr should be utf-8")
-            .contains("Journal package versions are out of sync.")
-    );
-    assert_sentinel_untouched(&sentinel);
-}
-
-#[test]
-fn journal_identity_universal_command_bypasses_coherence_mismatch() {
-    use nix::sys::signal::{Signal, kill};
-    use nix::unistd::Pid;
-
-    let temp = TempDir::new("journal-universal-coherence");
-    let layout = installed_layout(&temp);
-    let record = temp.path.join("argv.nul");
-    // Every ProcessKind::Universal token -- and there are exactly three, doctor,
-    // check and contract -- now carries a NativeProcessSpec row, so a universal
-    // command no longer reaches the interpreter at all. The assertion this test
-    // exists for is unchanged: a universal token proceeds despite incoherent
-    // package metadata, where a Service token is refused
-    // (journal_identity_coherence_mismatch_blocks_the_interpreter covers that
-    // direction). Only the path it is observed on moved, from the interpreter to
-    // the native sibling.
-    //
-    // Both recorders stay staged and share one RECORD_FILE on purpose: the argv
-    // shape is what discriminates them. Native dispatch records ["doctor"];
-    // interpreter dispatch would record the -c bootstrap vector. So a regression
-    // that sent a universal token back through Python fails here on a readable
-    // argv mismatch rather than on a missing file.
-    write_recording_interpreter(&layout.bin.join("python3"));
-    write_recording_interpreter(&layout.bin.join("solstone-core"));
-    fs::write(
-        layout
-            .site_packages
-            .join("solstone_journal-1.2.3.dist-info/METADATA"),
-        "Name: solstone-journal\nVersion: 1.2.2\n\n",
-    )
-    .expect("write mismatched metadata");
-
-    let mut command = Command::new(&layout.binary);
-    command.arg("doctor").env("RECORD_FILE", &record);
-    let mut child = command.spawn().expect("universal command should start");
-    let pid = child.id();
-    let recorded = wait_for_record(&record);
-    assert_eq!(recorded, vec![b"doctor".to_vec()]);
-    kill(Pid::from_raw(pid as i32), Signal::SIGTERM).expect("terminate replaced process");
-    assert_eq!(
-        child.wait().expect("wait for replaced process").signal(),
-        Some(Signal::SIGTERM as i32)
     );
 }
 

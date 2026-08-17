@@ -342,8 +342,7 @@ const PROBES: &[Probe] = &[
         token: "depict",
         argv: &[],
         expected_exit: 1,
-        // Exit 1 also covers a pre-spawn coherence failure; this schema/reason
-        // prefix proves depict reached its malformed-request path.
+        // This schema/reason prefix proves depict reached its malformed-request path.
         stderr_anchor: Some(
             b"{\"schema\":\"solstone-depict-error-v1\",\"reason\":\"malformed-request\"",
         ),
@@ -492,10 +491,6 @@ const PROBES: &[Probe] = &[
     // to identify itself as `usage: journal supervisor`; the sibling cannot recover the
     // original `start` spelling. The dedicated help assertion records that prog ceiling.
     //
-    // Both historical census rows are Service rows, so `dispatch_process` applies the
-    // installation coherence guard before selecting the native sibling. This contract
-    // assumes Harness::new provides a coherent installation; a guard failure is a launch
-    // failure and is not evidence about supervisor/start argument parsing.
     Probe {
         token: "supervisor",
         argv: &["--nonsense"],

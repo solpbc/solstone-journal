@@ -24,10 +24,6 @@ impl ProcessKind {
             Self::Service | Self::Universal => "command",
         }
     }
-
-    pub(crate) const fn requires_coherence(self) -> bool {
-        matches!(self, Self::Service | Self::Alias)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
