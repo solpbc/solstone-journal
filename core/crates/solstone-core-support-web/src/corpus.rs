@@ -11,16 +11,11 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use solstone_core_support_portal::test_support::{RoutePortal, RouteReply};
 use solstone_core_support_portal::{Ledger, PortalClient};
-use std::collections::{BTreeMap, VecDeque};
-use std::io::{Read, Write};
-use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -637,129 +632,25 @@ fn normalize_bare_parts(actual: &mut Value, expected: &mut Value, parts: &[&str]
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct PortalRequest {
-    method: String,
-    path: String,
-    query: Option<String>,
-    had_idempotency_key: bool,
-    had_authorization: bool,
-    had_dpop: bool,
+const STUB_PORTAL_URL: &str = "https://portal.example";
+
+fn corpus_route_portal() -> RoutePortal {
+    let pinned = &serde_json::from_str::<Value>(CORPUS).expect("corpus parses")["pinned"];
+    let tos = pinned["stub_tos"].as_str().expect("pinned tos").to_owned();
+    let token = pinned["stub_access_token"]
+        .as_str()
+        .expect("pinned token")
+        .to_owned();
+    let handle = pinned["handle"].as_str().expect("pinned handle").to_owned();
+    let ticket = pinned["seeded_ticket_id"].as_i64().expect("pinned ticket");
+    RoutePortal::new(fixed_routes(tos, token, handle, ticket))
 }
 
-#[derive(Clone)]
-struct HttpReply {
-    status: u16,
-    body: String,
-    content_type: String,
-}
-
-type RouteReplyOverrides = BTreeMap<(String, String), VecDeque<HttpReply>>;
-
-/// Test-only route-table fake. The portal crate's fake is a sequential transport;
-/// this one is a loopback HTTP portal for corpus route replay.
-struct FakePortal {
-    base_url: String,
-    log: Arc<Mutex<Vec<PortalRequest>>>,
-    bodies: Arc<Mutex<Vec<Vec<u8>>>>,
-    overrides: Arc<Mutex<RouteReplyOverrides>>,
-    stop: Arc<AtomicBool>,
-    wake: SocketAddr,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl FakePortal {
-    fn new() -> Self {
-        let pinned = &serde_json::from_str::<Value>(CORPUS).expect("corpus parses")["pinned"];
-        let tos = pinned["stub_tos"].as_str().expect("pinned tos").to_owned();
-        let token = pinned["stub_access_token"]
-            .as_str()
-            .expect("pinned token")
-            .to_owned();
-        let handle = pinned["handle"].as_str().expect("pinned handle").to_owned();
-        let ticket = pinned["seeded_ticket_id"].as_i64().expect("pinned ticket");
-        let routes = fixed_routes(tos, token, handle, ticket);
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback fake");
-        listener.set_nonblocking(true).expect("nonblocking fake");
-        let wake = listener.local_addr().expect("fake address");
-        let log = Arc::new(Mutex::new(Vec::new()));
-        let bodies = Arc::new(Mutex::new(Vec::new()));
-        let overrides = Arc::new(Mutex::new(BTreeMap::new()));
-        let stop = Arc::new(AtomicBool::new(false));
-        let thread_log = log.clone();
-        let thread_bodies = bodies.clone();
-        let thread_overrides = overrides.clone();
-        let thread_stop = stop.clone();
-        let thread = thread::spawn(move || {
-            while !thread_stop.load(Ordering::Acquire) {
-                match listener.accept() {
-                    Ok((mut stream, _)) => {
-                        if thread_stop.load(Ordering::Acquire) {
-                            break;
-                        }
-                        let request = read_portal_request(&mut stream);
-                        thread_bodies.lock().expect("body lock").push(request.1);
-                        let key = (request.0.method.clone(), request.0.path.clone());
-                        thread_log.lock().expect("log lock").push(request.0);
-                        let reply = thread_overrides
-                            .lock()
-                            .expect("override lock")
-                            .get_mut(&key)
-                            .and_then(VecDeque::pop_front)
-                            .or_else(|| routes.get(&key).cloned())
-                            .unwrap_or_else(not_found_reply);
-                        write_portal_reply(&mut stream, reply);
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(2))
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-        Self {
-            base_url: format!("http://{wake}"),
-            log,
-            bodies,
-            overrides,
-            stop,
-            wake,
-            thread: Some(thread),
-        }
-    }
-    fn url(&self) -> &str {
-        &self.base_url
-    }
-    fn log(&self) -> Vec<PortalRequest> {
-        self.log.lock().expect("log lock").clone()
-    }
-    fn clear_log(&self) {
-        self.log.lock().expect("log lock").clear();
-    }
-    fn bodies(&self) -> Vec<Vec<u8>> {
-        self.bodies.lock().expect("body lock").clone()
-    }
-    fn clear_bodies(&self) {
-        self.bodies.lock().expect("body lock").clear();
-    }
-    fn override_route(&self, method: &str, path: &str, replies: Vec<HttpReply>) {
-        self.overrides
-            .lock()
-            .expect("override lock")
-            .insert((method.to_owned(), path.to_owned()), replies.into());
-    }
-}
-
-impl Drop for FakePortal {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Release);
-        if let Ok(stream) = TcpStream::connect(self.wake) {
-            let _ = stream.shutdown(Shutdown::Both);
-        }
-        if let Some(thread) = self.thread.take() {
-            thread.join().expect("fake thread joins");
-        }
-    }
+fn install_route_portal(portal: &RoutePortal) -> super::TestClientGuard {
+    let shared = portal.share();
+    super::install_test_client_factory(move |root, anonymous| {
+        shared.client(root.join("apps/support/portal"), None, anonymous)
+    })
 }
 
 fn fixed_routes(
@@ -767,8 +658,8 @@ fn fixed_routes(
     token: String,
     handle: String,
     ticket: i64,
-) -> BTreeMap<(String, String), HttpReply> {
-    let json_reply = |value: Value| HttpReply {
+) -> BTreeMap<(String, String), RouteReply> {
+    let json_reply = |value: Value| RouteReply {
         status: 200,
         body: value.to_string(),
         content_type: "application/json".to_owned(),
@@ -778,7 +669,7 @@ fn fixed_routes(
     let mut routes = BTreeMap::new();
     routes.insert(
         ("GET".into(), "/tos".into()),
-        HttpReply {
+        RouteReply {
             status: 200,
             body: tos,
             content_type: "text/plain; charset=utf-8".into(),
@@ -850,146 +741,8 @@ fn fixed_routes(
     );
     routes
 }
-fn not_found_reply() -> HttpReply {
-    HttpReply {
-        status: 404,
-        body: r#"{"error":"not_found"}"#.into(),
-        content_type: "application/json".into(),
-    }
-}
-fn read_portal_request(stream: &mut TcpStream) -> (PortalRequest, Vec<u8>) {
-    let mut raw = Vec::new();
-    let mut buffer = [0; 1024];
-    while !raw.windows(4).any(|window| window == b"\r\n\r\n") {
-        let read = stream.read(&mut buffer).expect("read request");
-        if read == 0 {
-            break;
-        }
-        raw.extend_from_slice(&buffer[..read]);
-    }
-    let header_end = raw
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .map(|index| index + 4)
-        .unwrap_or(raw.len());
-    let header = String::from_utf8_lossy(&raw[..header_end]);
-    let mut lines = header.split("\r\n");
-    let start = lines.next().unwrap_or_default();
-    let mut words = start.split_whitespace();
-    let method = words.next().unwrap_or_default().to_owned();
-    let target = words.next().unwrap_or_default();
-    let (path, query) = target
-        .split_once('?')
-        .map_or((target, None), |(path, query)| {
-            (path, Some(query.to_owned()))
-        });
-    let path = path.to_owned();
-    let headers = lines
-        .filter_map(|line| line.split_once(':'))
-        .map(|(name, value)| (name.trim().to_owned(), value.trim().to_owned()))
-        .collect::<Vec<_>>();
-    let length = headers
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-        .and_then(|(_, value)| value.parse::<usize>().ok())
-        .unwrap_or(0);
-    let chunked = headers.iter().any(|(name, value)| {
-        name.eq_ignore_ascii_case("transfer-encoding") && value.eq_ignore_ascii_case("chunked")
-    });
-    let body = if chunked {
-        let mut encoded = raw[header_end..].to_vec();
-        loop {
-            if let Some(decoded) = decode_chunked_body(&encoded) {
-                break decoded;
-            }
-            let read = stream.read(&mut buffer).expect("read chunked request body");
-            if read == 0 {
-                break encoded;
-            }
-            encoded.extend_from_slice(&buffer[..read]);
-        }
-    } else {
-        while raw.len().saturating_sub(header_end) < length {
-            let read = stream.read(&mut buffer).expect("read request body");
-            if read == 0 {
-                break;
-            }
-            raw.extend_from_slice(&buffer[..read]);
-        }
-        raw[header_end..].to_vec()
-    };
-    (
-        PortalRequest {
-            method,
-            path,
-            query,
-            had_idempotency_key: headers
-                .iter()
-                .any(|(name, _)| name.eq_ignore_ascii_case("idempotency-key")),
-            had_authorization: headers
-                .iter()
-                .any(|(name, _)| name.eq_ignore_ascii_case("authorization")),
-            had_dpop: headers
-                .iter()
-                .any(|(name, _)| name.eq_ignore_ascii_case("dpop")),
-        },
-        body,
-    )
-}
 
-fn decode_chunked_body(encoded: &[u8]) -> Option<Vec<u8>> {
-    let mut cursor = 0;
-    let mut body = Vec::new();
-    loop {
-        let line_end = encoded[cursor..]
-            .windows(2)
-            .position(|window| window == b"\r\n")?;
-        let line_end = cursor + line_end;
-        let length = std::str::from_utf8(&encoded[cursor..line_end])
-            .ok()?
-            .split(';')
-            .next()?
-            .trim();
-        let length = usize::from_str_radix(length, 16).ok()?;
-        cursor = line_end + 2;
-        if length == 0 {
-            return (encoded.len() >= cursor + 2).then_some(body);
-        }
-        if encoded.len() < cursor + length + 2 {
-            return None;
-        }
-        body.extend_from_slice(&encoded[cursor..cursor + length]);
-        cursor += length;
-        (encoded.get(cursor..cursor + 2)? == b"\r\n").then_some(())?;
-        cursor += 2;
-    }
-}
-
-fn multipart_file_bytes(body: &[u8]) -> Vec<u8> {
-    let headers_end = body
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .expect("multipart part headers")
-        + 4;
-    let body_end = body[headers_end..]
-        .windows(4)
-        .position(|window| window == b"\r\n--")
-        .expect("multipart closing boundary")
-        + headers_end;
-    body[headers_end..body_end].to_vec()
-}
-fn write_portal_reply(stream: &mut TcpStream, reply: HttpReply) {
-    let response = format!(
-        "HTTP/1.1 {} Response\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        reply.status,
-        reply.content_type,
-        reply.body.len(),
-        reply.body
-    );
-    stream.write_all(response.as_bytes()).expect("write reply");
-}
-
-fn phase_root(phase: &str, portal_url: &str) -> TempDir {
+fn phase_root(phase: &str, portal: Option<&RoutePortal>) -> TempDir {
     let root = TempDir::new().expect("phase root");
     let config = root.path().join("config");
     std::fs::create_dir_all(&config).expect("config directory");
@@ -1013,7 +766,7 @@ fn phase_root(phase: &str, portal_url: &str) -> TempDir {
             std::fs::write(
                 config.join("config.json"),
                 serde_json::to_vec(&serde_json::json!({
-                    "support":{"enabled":phase != "disabled","portal_url":portal_url},
+                    "support":{"enabled":phase != "disabled","portal_url":STUB_PORTAL_URL},
                     "provider":{"api_key":"corpus-not-a-real-key-authored-for-this-fixture"},
                     "observe":{"enabled":true},
                 }))
@@ -1039,8 +792,10 @@ fn phase_root(phase: &str, portal_url: &str) -> TempDir {
             )
             .expect("supervisor log");
             if phase != "unregistered" {
-                let mut client =
-                    PortalClient::from_journal_settings(root.path(), None, false).expect("client");
+                let mut client = portal
+                    .expect("established and disabled phases need a RoutePortal")
+                    .client(root.path().join("apps/support/portal"), None, false)
+                    .expect("client");
                 client.register().expect("registered fixture identity");
                 let snapshot = root.path().join(".registered-support-state");
                 std::fs::create_dir(&snapshot).expect("snapshot directory");
@@ -1206,7 +961,7 @@ fn keyed_json_request(path: &str, body: Value) -> Request<Body> {
 }
 
 async fn shell_response(root: &Path, request: Request<Body>) -> (u16, Value) {
-    let response = solstone_core_convey_shell::router(root.to_path_buf())
+    let response = super::routes(root.to_path_buf())
         .oneshot(request)
         .await
         .expect("shell response");
@@ -1351,17 +1106,18 @@ async fn replay_case(
     phase: &str,
     case: &Value,
     probe: &CorpusProbe,
-    fake: &FakePortal,
+    portal: &RoutePortal,
     root: &Path,
 ) {
     reset_portal_storage(root, phase);
-    fake.clear_log();
+    portal.clear_log();
+    let _guard = install_route_portal(portal);
     if probe.kind == "drain" {
         seed_pending_acknowledgement(root, "corpus-drain");
     }
     let name = case["name"].as_str().expect("case name");
     let normalized = case["normalized"].as_array().expect("normalized pointers");
-    let response = solstone_core_convey_shell::router(root.to_path_buf())
+    let response = super::routes(root.to_path_buf())
         .oneshot(corpus_request(probe))
         .await
         .expect("router response");
@@ -1375,7 +1131,7 @@ async fn replay_case(
     )
     .await;
     if let Some(repeat) = case.get("repeat_response") {
-        let response = solstone_core_convey_shell::router(root.to_path_buf())
+        let response = super::routes(root.to_path_buf())
             .oneshot(corpus_request(probe))
             .await
             .expect("repeat router response");
@@ -1389,7 +1145,7 @@ async fn replay_case(
         )
         .await;
     }
-    let actual_requests = fake
+    let actual_requests = portal
         .log()
         .into_iter()
         .map(|request| {
@@ -1407,7 +1163,7 @@ async fn replay_case(
         .iter()
         .any(|request| request["method"] == "GET" && request["path"] == "/api/tickets");
     if name == "api_tickets_list_status" && records_ticket_list {
-        let ticket_list = fake
+        let ticket_list = portal
             .log()
             .into_iter()
             .find(|request| request.method == "GET" && request.path == "/api/tickets")
@@ -1415,7 +1171,7 @@ async fn replay_case(
         assert_eq!(ticket_list.query.as_deref(), Some("status=open"));
     }
     if name == "api_tickets_list" && records_ticket_list {
-        let ticket_list = fake
+        let ticket_list = portal
             .log()
             .into_iter()
             .find(|request| request.method == "GET" && request.path == "/api/tickets")
@@ -1568,99 +1324,19 @@ fn comparator_rejects_changed_repeat_response() {
     );
 }
 
-fn fake_request(fake: &FakePortal, method: &str, path: &str, headers: &[(&str, &str)]) -> String {
-    let mut stream =
-        TcpStream::connect(fake.url().trim_start_matches("http://")).expect("connect fake");
-    let mut request =
-        format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n");
-    for (name, value) in headers {
-        request.push_str(&format!("{name}: {value}\r\n"));
-    }
-    request.push_str("\r\n");
-    stream.write_all(request.as_bytes()).expect("write request");
-    let mut response = String::new();
-    stream.read_to_string(&mut response).expect("read response");
-    response
-}
-
-#[test]
-fn fake_serves_pinned_registration_values_and_logs_request_flags() {
-    let fake = FakePortal::new();
-    let tos = fake_request(&fake, "GET", "/tos", &[]);
-    assert!(
-        tos.ends_with(
-            serde_json::from_str::<Value>(CORPUS).unwrap()["pinned"]["stub_tos"]
-                .as_str()
-                .unwrap()
-        )
-    );
-    let signup = fake_request(&fake, "POST", "/api/signup", &[]);
-    assert!(signup.contains("corpus.stub.access.token"));
-    assert!(signup.contains("solstone-corpus-host"));
-    let _ = fake_request(
-        &fake,
-        "GET",
-        "/api/tickets",
-        &[("Authorization", "DPoP ignored"), ("DPoP", "ignored")],
-    );
-    assert_eq!(
-        fake.log(),
-        vec![
-            PortalRequest {
-                method: "GET".into(),
-                path: "/tos".into(),
-                query: None,
-                had_idempotency_key: false,
-                had_authorization: false,
-                had_dpop: false
-            },
-            PortalRequest {
-                method: "POST".into(),
-                path: "/api/signup".into(),
-                query: None,
-                had_idempotency_key: false,
-                had_authorization: false,
-                had_dpop: false
-            },
-            PortalRequest {
-                method: "GET".into(),
-                path: "/api/tickets".into(),
-                query: None,
-                had_idempotency_key: false,
-                had_authorization: true,
-                had_dpop: true
-            },
-        ]
-    );
-    assert_eq!(fake.bodies().len(), 3);
-}
-
-#[test]
-fn fake_route_override_is_consumed_then_fixed_response_resumes() {
-    let fake = FakePortal::new();
-    fake.override_route(
-        "POST",
-        "/api/idempotency/ack",
-        vec![HttpReply {
-            status: 500,
-            body: "temporary".into(),
-            content_type: "text/plain".into(),
-        }],
-    );
-    assert!(fake_request(&fake, "POST", "/api/idempotency/ack", &[]).starts_with("HTTP/1.1 500"));
-    assert!(fake_request(&fake, "POST", "/api/idempotency/ack", &[]).starts_with("HTTP/1.1 200"));
-}
-
 #[test]
 fn established_phase_starts_registered_and_reads_without_signup() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
-    fake.clear_log();
-    let mut client = PortalClient::from_journal_settings(root.path(), None, false).expect("client");
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    portal.clear_log();
+    let mut client = portal
+        .client(root.path().join("apps/support/portal"), None, false)
+        .expect("client");
     assert!(client.is_registered());
     client.list_tickets(None, None, None).expect("ticket read");
     assert_eq!(
-        fake.log()
+        portal
+            .log()
             .iter()
             .map(|request| request.path.as_str())
             .collect::<Vec<_>>(),
@@ -1670,17 +1346,19 @@ fn established_phase_starts_registered_and_reads_without_signup() {
 
 #[test]
 fn unregistered_phase_reregisters_after_each_storage_reset() {
-    let fake = FakePortal::new();
-    let root = phase_root("unregistered", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("unregistered", Some(&portal));
     for _ in 0..2 {
         reset_portal_storage(root.path(), "unregistered");
-        PortalClient::from_journal_settings(root.path(), None, false)
+        portal
+            .client(root.path().join("apps/support/portal"), None, false)
             .expect("client")
             .list_tickets(None, None, None)
             .expect("ticket read");
     }
     assert_eq!(
-        fake.log()
+        portal
+            .log()
             .iter()
             .map(|request| request.path.as_str())
             .collect::<Vec<_>>(),
@@ -1697,8 +1375,8 @@ fn unregistered_phase_reregisters_after_each_storage_reset() {
 
 #[test]
 fn established_reset_clears_ledger_and_restores_private_identity() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
     let storage = root.path().join("apps/support/portal");
     let fields = serde_json::Map::from_iter([("ticket_id".to_owned(), serde_json::json!(7))]);
     Ledger::new(&storage)
@@ -1730,8 +1408,9 @@ fn established_reset_clears_ledger_and_restores_private_identity() {
 
 #[tokio::test]
 async fn established_read_and_page_cases_drive_all_fourteen_named_probes() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
     let corpus: Value = serde_json::from_str(CORPUS).unwrap();
     let names = [
         "page_index",
@@ -1762,7 +1441,7 @@ async fn established_read_and_page_cases_drive_all_fourteen_named_probes() {
             .iter()
             .find(|probe| probe.name == name)
             .unwrap_or_else(|| panic!("no typed probe for {name}"));
-        replay_case("established", case, &probe.probe, &fake, root.path()).await;
+        replay_case("established", case, &probe.probe, &portal, root.path()).await;
     }
     assert_eq!(
         corpus["phases"]["established"]
@@ -1778,8 +1457,9 @@ async fn established_read_and_page_cases_drive_all_fourteen_named_probes() {
 
 #[tokio::test]
 async fn established_write_cases_match_both_recorded_drives() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
     let corpus: Value = serde_json::from_str(CORPUS).expect("support corpus parses");
     let names = [
         "api_draft",
@@ -1840,14 +1520,15 @@ async fn established_write_cases_match_both_recorded_drives() {
             .iter()
             .find(|probe| probe.name == name)
             .unwrap_or_else(|| panic!("no typed probe for {name}"));
-        replay_case("established", case, &probe.probe, &fake, root.path()).await;
+        replay_case("established", case, &probe.probe, &portal, root.path()).await;
     }
 }
 
 #[tokio::test]
 async fn drain_runs_after_a_create_and_acknowledges_the_completed_operation() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
     let corpus: Value = serde_json::from_str(CORPUS).expect("support corpus parses");
     let case = corpus["phases"]["established"]
         .as_array()
@@ -1860,8 +1541,8 @@ async fn drain_runs_after_a_create_and_acknowledges_the_completed_operation() {
         .find(|probe| probe.name == "api_ticket_create")
         .expect("create probe");
     reset_portal_storage(root.path(), "established");
-    fake.clear_log();
-    let response = solstone_core_convey_shell::router(root.path().to_path_buf())
+    portal.clear_log();
+    let response = super::routes(root.path().to_path_buf())
         .oneshot(corpus_request(&probe.probe))
         .await
         .expect("create response");
@@ -1875,7 +1556,8 @@ async fn drain_runs_after_a_create_and_acknowledges_the_completed_operation() {
     )
     .await;
     assert_eq!(
-        fake.log()
+        portal
+            .log()
             .iter()
             .map(|request| (request.method.as_str(), request.path.as_str()))
             .collect::<Vec<_>>(),
@@ -1891,8 +1573,9 @@ async fn drain_runs_after_a_create_and_acknowledges_the_completed_operation() {
 
 #[tokio::test]
 async fn established_key_refusals_precede_ledger_and_portal_work() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
     let corpus: Value = serde_json::from_str(CORPUS).expect("support corpus parses");
     let cases = corpus["phases"]["established"]
         .as_array()
@@ -1917,13 +1600,16 @@ async fn established_key_refusals_precede_ledger_and_portal_work() {
             .iter()
             .find(|probe| probe.name == name)
             .unwrap_or_else(|| panic!("no typed probe for {name}"));
-        replay_case("established", case, &probe.probe, &fake, root.path()).await;
+        replay_case("established", case, &probe.probe, &portal, root.path()).await;
         assert_eq!(
             ledger_contents(root.path()),
             before,
             "{name} ledger contents"
         );
-        assert!(fake.log().is_empty(), "{name} must not contact the portal");
+        assert!(
+            portal.log().is_empty(),
+            "{name} must not contact the portal"
+        );
     }
 
     for name in ["api_draft", "api_register"] {
@@ -1936,7 +1622,7 @@ async fn established_key_refusals_precede_ledger_and_portal_work() {
             .find(|probe| probe.name == name)
             .unwrap_or_else(|| panic!("no typed probe for {name}"));
         assert_eq!(probe.probe.key, None, "{name} does not require a key");
-        replay_case("established", case, &probe.probe, &fake, root.path()).await;
+        replay_case("established", case, &probe.probe, &portal, root.path()).await;
     }
 
     let name = "api_ticket_create_malformed_key";
@@ -1948,9 +1634,10 @@ async fn established_key_refusals_precede_ledger_and_portal_work() {
         .iter()
         .find(|probe| probe.name == name)
         .expect("malformed key probe");
-    replay_case("established", case, &probe.probe, &fake, root.path()).await;
+    replay_case("established", case, &probe.probe, &portal, root.path()).await;
     assert!(
-        fake.log()
+        portal
+            .log()
             .iter()
             .any(|request| request.method == "POST" && request.path == "/api/tickets"),
         "a malformed non-empty key still reaches the mutation"
@@ -1959,10 +1646,11 @@ async fn established_key_refusals_precede_ledger_and_portal_work() {
 
 #[tokio::test]
 async fn draft_json_attach_is_rejected_and_json_capture_stays_local() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
 
-    fake.clear_log();
+    portal.clear_log();
     let (status, body) = shell_response(
         root.path(),
         json_request(
@@ -1973,9 +1661,9 @@ async fn draft_json_attach_is_rejected_and_json_capture_stays_local() {
     .await;
     assert_eq!(status, 400);
     assert_eq!(body["reason_code"], "invalid_request_value");
-    assert!(fake.log().is_empty(), "a draft never contacts the portal");
+    assert!(portal.log().is_empty(), "a draft never contacts the portal");
 
-    fake.clear_log();
+    portal.clear_log();
     let (status, body) = shell_response(
         root.path(),
         json_request(
@@ -2004,13 +1692,14 @@ async fn draft_json_attach_is_rejected_and_json_capture_stays_local() {
         event["diagnostics_snapshot"],
         serde_json::json!({"source":"derivation-test"})
     );
-    assert!(fake.log().is_empty(), "a successful draft stays local");
+    assert!(portal.log().is_empty(), "a successful draft stays local");
 }
 
 #[tokio::test]
 async fn multipart_draft_refusals_happy_path_and_json_fallthrough() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
 
     let oversized = vec![b'x'; PortalClient::MAX_ATTACHMENT_SIZE as usize + 1];
     let refusals = vec![
@@ -2066,14 +1755,14 @@ async fn multipart_draft_refusals_happy_path_and_json_fallthrough() {
         ),
     ];
     for (name, request, reason) in refusals {
-        fake.clear_log();
+        portal.clear_log();
         let (status, body) = shell_response(root.path(), request).await;
         assert_eq!(status, 400, "{name}");
         assert_eq!(body["reason_code"], reason, "{name}");
-        assert!(fake.log().is_empty(), "{name} must stay local");
+        assert!(portal.log().is_empty(), "{name} must stay local");
     }
 
-    fake.clear_log();
+    portal.clear_log();
     let (status, body) = shell_response(
         root.path(),
         multipart_request(
@@ -2087,11 +1776,11 @@ async fn multipart_draft_refusals_happy_path_and_json_fallthrough() {
     assert_eq!(status, 400);
     assert_eq!(body["reason_code"], "invalid_request_value");
     assert!(
-        fake.log().is_empty(),
+        portal.log().is_empty(),
         "a no-file multipart body falls through locally"
     );
 
-    fake.clear_log();
+    portal.clear_log();
     let bytes = b"draft attachment bytes";
     let (status, body) = shell_response(
         root.path(),
@@ -2117,13 +1806,14 @@ async fn multipart_draft_refusals_happy_path_and_json_fallthrough() {
             .expect("draft base64"),
         bytes
     );
-    assert!(fake.log().is_empty(), "a multipart draft stays local");
+    assert!(portal.log().is_empty(), "a multipart draft stays local");
 }
 
 #[tokio::test]
 async fn attachment_refusals_precede_suffix_and_retry_resends_identical_bytes() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
     for (name, request, reason, detail) in [
         (
             "no file",
@@ -2170,16 +1860,16 @@ async fn attachment_refusals_precede_suffix_and_retry_resends_identical_bytes() 
             "index must be non-negative",
         ),
     ] {
-        fake.clear_log();
+        portal.clear_log();
         let (status, body) = shell_response(root.path(), request).await;
         assert_eq!(status, 400, "{name}");
         assert_eq!(body["reason_code"], reason, "{name}");
         assert_eq!(body["detail"], detail, "{name}");
-        assert!(fake.log().is_empty(), "{name} must precede portal work");
+        assert!(portal.log().is_empty(), "{name} must precede portal work");
     }
 
-    fake.clear_log();
-    fake.clear_bodies();
+    portal.clear_log();
+    portal.clear_bodies();
     let (status, _) = shell_response(
         root.path(),
         multipart_request(
@@ -2195,27 +1885,34 @@ async fn attachment_refusals_precede_suffix_and_retry_resends_identical_bytes() 
     )
     .await;
     assert_eq!(status, 201, "the spooled suffix reaches attach_file");
-    let bodies = fake.bodies();
-    let wire_body = String::from_utf8_lossy(&bodies[0]);
-    assert!(
-        wire_body.contains("suffix-proves-spool.txt"),
-        "the attachment upload preserves the original filename: {wire_body}"
+    let filename = portal
+        .log()
+        .into_iter()
+        .find(|request| request.method == "POST" && request.path == "/api/tickets/7/attachments")
+        .and_then(|request| request.multipart)
+        .and_then(|parts| parts.into_iter().next())
+        .map(|part| part.filename)
+        .expect("attachment part");
+    assert_eq!(
+        filename, "suffix-proves-spool.txt",
+        "the attachment upload preserves the original filename"
     );
 
-    let retry_fake = FakePortal::new();
-    let retry_root = phase_root("established", retry_fake.url());
-    retry_fake.clear_log();
-    retry_fake.clear_bodies();
-    retry_fake.override_route(
+    let retry_portal = corpus_route_portal();
+    let retry_root = phase_root("established", Some(&retry_portal));
+    let _retry_guard = install_route_portal(&retry_portal);
+    retry_portal.clear_log();
+    retry_portal.clear_bodies();
+    retry_portal.override_route(
         "POST",
         "/api/tickets/7/attachments",
         vec![
-            HttpReply {
+            RouteReply {
                 status: 401,
                 body: r#"{"error":"tos_changed"}"#.into(),
                 content_type: "application/json".into(),
             },
-            HttpReply {
+            RouteReply {
                 status: 200,
                 body: r#"{"attachment_id":303,"status":"open","filename":"retry.txt"}"#.into(),
                 content_type: "application/json".into(),
@@ -2233,26 +1930,21 @@ async fn attachment_refusals_precede_suffix_and_retry_resends_identical_bytes() 
     )
     .await;
     assert_eq!(status, 201);
-    let attachment_bodies = retry_fake
+    let attachment_parts = retry_portal
         .log()
-        .iter()
-        .enumerate()
-        .filter(|(_, request)| {
-            request.method == "POST" && request.path == "/api/tickets/7/attachments"
-        })
-        .map(|(index, _)| retry_fake.bodies()[index].clone())
+        .into_iter()
+        .filter(|request| request.method == "POST" && request.path == "/api/tickets/7/attachments")
+        .map(|request| request.multipart.expect("multipart capture"))
         .collect::<Vec<_>>();
-    assert_eq!(attachment_bodies.len(), 2);
-    assert_eq!(
-        multipart_file_bytes(&attachment_bodies[0]),
-        multipart_file_bytes(&attachment_bodies[1])
-    );
+    assert_eq!(attachment_parts.len(), 2);
+    assert_eq!(attachment_parts[0], attachment_parts[1]);
 }
 
 #[tokio::test]
 async fn write_mutations_project_tombstones_and_preserve_active_ticket_bodies() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
     let closed = serde_json::json!({
         "ticket_id": 7,
         "status": "closed",
@@ -2262,10 +1954,10 @@ async fn write_mutations_project_tombstones_and_preserve_active_ticket_bodies() 
         "subject": "a tombstone must omit this",
         "messages": [{"body": "and this"}],
     });
-    fake.override_route(
+    portal.override_route(
         "POST",
         "/api/tickets/7/close",
-        vec![HttpReply {
+        vec![RouteReply {
             status: 200,
             body: closed.to_string(),
             content_type: "application/json".to_owned(),
@@ -2299,10 +1991,10 @@ async fn write_mutations_project_tombstones_and_preserve_active_ticket_bodies() 
         "created_at": "2026-03-02T00:00:00Z",
         "internal": {"kept": true},
     });
-    fake.override_route(
+    portal.override_route(
         "POST",
         "/api/tickets",
-        vec![HttpReply {
+        vec![RouteReply {
             status: 200,
             body: active.to_string(),
             content_type: "application/json".to_owned(),
@@ -2326,14 +2018,15 @@ async fn write_mutations_project_tombstones_and_preserve_active_ticket_bodies() 
 
 #[tokio::test]
 async fn ticket_creation_auto_context_prefers_caller_context() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
-    fake.clear_log();
-    fake.clear_bodies();
-    fake.override_route(
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
+    portal.clear_log();
+    portal.clear_bodies();
+    portal.override_route(
         "POST",
         "/api/tickets",
-        vec![HttpReply {
+        vec![RouteReply {
             status: 200,
             body: r#"{"ticket_id":101,"status":"open"}"#.to_owned(),
             content_type: "application/json".to_owned(),
@@ -2353,7 +2046,7 @@ async fn ticket_creation_auto_context_prefers_caller_context() {
     )
     .await;
     assert_eq!(status, 201);
-    let request_index = fake
+    let request_index = portal
         .log()
         .iter()
         .enumerate()
@@ -2361,7 +2054,7 @@ async fn ticket_creation_auto_context_prefers_caller_context() {
             (request.method == "POST" && request.path == "/api/tickets").then_some(index)
         })
         .expect("ticket creation reached portal");
-    let sent: Value = serde_json::from_slice(&fake.bodies()[request_index])
+    let sent: Value = serde_json::from_slice(&portal.bodies()[request_index])
         .expect("portal ticket creation body is JSON");
     assert_eq!(
         sent["user_context"]["platform"], "caller-supplied platform",
@@ -2371,9 +2064,10 @@ async fn ticket_creation_auto_context_prefers_caller_context() {
 
 #[tokio::test]
 async fn write_path_non_integer_ticket_id_returns_http_not_found() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
-    fake.clear_log();
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
+    portal.clear_log();
     let (status, body) = shell_response(
         root.path(),
         json_request(
@@ -2385,15 +2079,16 @@ async fn write_path_non_integer_ticket_id_returns_http_not_found() {
     assert_eq!(status, 404);
     assert_eq!(body["reason_code"], "http_error");
     assert!(
-        fake.log().is_empty(),
+        portal.log().is_empty(),
         "an invalid path id must not reach the portal"
     );
 }
 
 #[tokio::test]
 async fn established_validation_refusals_and_drain_cases_match_the_corpus() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
     let corpus: Value = serde_json::from_str(CORPUS).expect("support corpus parses");
     let cases = corpus["phases"]["established"]
         .as_array()
@@ -2417,11 +2112,11 @@ async fn established_validation_refusals_and_drain_cases_match_the_corpus() {
             .iter()
             .find(|probe| probe.name == name)
             .unwrap_or_else(|| panic!("no typed probe for {name}"));
-        replay_case("established", case, &probe.probe, &fake, root.path()).await;
+        replay_case("established", case, &probe.probe, &portal, root.path()).await;
     }
 
     reset_portal_storage(root.path(), "established");
-    fake.clear_log();
+    portal.clear_log();
     let attach_json = CorpusProbe {
         name: "draft_json_attach",
         method: "POST",
@@ -2431,7 +2126,7 @@ async fn established_validation_refusals_and_drain_cases_match_the_corpus() {
         key: None,
         file: None,
     };
-    let response = solstone_core_convey_shell::router(root.path().to_path_buf())
+    let response = super::routes(root.path().to_path_buf())
         .oneshot(corpus_request(&attach_json))
         .await
         .expect("draft response");
@@ -2447,7 +2142,7 @@ async fn established_validation_refusals_and_drain_cases_match_the_corpus() {
         body["detail"],
         "verb must be create|feedback|reply|close|resolved|still_need_help and payload must be an object"
     );
-    assert!(fake.log().is_empty());
+    assert!(portal.log().is_empty());
 
     let all_established = [
         "page_index",
@@ -2501,8 +2196,7 @@ async fn established_validation_refusals_and_drain_cases_match_the_corpus() {
 
 #[tokio::test]
 async fn unestablished_write_cases_are_session_gated_before_their_handlers() {
-    let fake = FakePortal::new();
-    let root = phase_root("unestablished", fake.url());
+    let root = phase_root("unestablished", None);
     let corpus: Value = serde_json::from_str(CORPUS).expect("support corpus parses");
     let names = [
         "api_draft",
@@ -2532,14 +2226,32 @@ async fn unestablished_write_cases_are_session_gated_before_their_handlers() {
             .iter()
             .find(|probe| probe.name == name)
             .unwrap_or_else(|| panic!("no typed probe for {name}"));
-        replay_case("unestablished", case, &probe.probe, &fake, root.path()).await;
+        reset_portal_storage(root.path(), "unestablished");
+        let response = solstone_core_convey_shell::router(root.path().to_path_buf())
+            .oneshot(corpus_request(&probe.probe))
+            .await
+            .expect("router response");
+        assert_recorded_response(
+            response,
+            &case["response"],
+            case["normalized"].as_array().expect("normalized pointers"),
+            "response.",
+            "unestablished",
+            name,
+        )
+        .await;
+        assert_eq!(
+            case["portal_requests"].as_array().unwrap().len(),
+            0,
+            "{name} must not contact the portal"
+        );
     }
 }
 
 #[tokio::test]
 async fn disabled_read_and_page_cases_match_the_corpus() {
-    let fake = FakePortal::new();
-    let root = phase_root("disabled", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("disabled", Some(&portal));
     let corpus: Value = serde_json::from_str(CORPUS).expect("support corpus parses");
     let names = [
         "page_index",
@@ -2614,14 +2326,14 @@ async fn disabled_read_and_page_cases_match_the_corpus() {
             .iter()
             .find(|probe| probe.name == name)
             .unwrap_or_else(|| panic!("no typed probe for {name}"));
-        replay_case("disabled", case, &probe.probe, &fake, root.path()).await;
+        replay_case("disabled", case, &probe.probe, &portal, root.path()).await;
     }
 }
 
 #[tokio::test]
 async fn unregistered_read_and_page_cases_register_for_every_portal_read() {
-    let fake = FakePortal::new();
-    let root = phase_root("unregistered", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("unregistered", Some(&portal));
     let corpus: Value = serde_json::from_str(CORPUS).expect("support corpus parses");
     let names = [
         "page_index",
@@ -2680,9 +2392,9 @@ async fn unregistered_read_and_page_cases_register_for_every_portal_read() {
             .iter()
             .find(|probe| probe.name == name)
             .unwrap_or_else(|| panic!("no typed probe for {name}"));
-        replay_case("unregistered", case, &probe.probe, &fake, root.path()).await;
+        replay_case("unregistered", case, &probe.probe, &portal, root.path()).await;
 
-        let actual = fake
+        let actual = portal
             .log()
             .into_iter()
             .map(|request| {
@@ -2783,15 +2495,17 @@ fn run_config_environment_child(mode: &str, support_url: Option<&str>) {
 
 #[tokio::test]
 async fn drain_acknowledges_before_a_portal_backed_handler() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
     reset_portal_storage(root.path(), "established");
     seed_pending_acknowledgement(root.path(), "drain-before");
-    fake.clear_log();
+    portal.clear_log();
 
     let _ = support_route_response(root.path(), "/app/support/api/tickets").await;
     assert_eq!(
-        fake.log()
+        portal
+            .log()
             .iter()
             .map(|request| (request.method.as_str(), request.path.as_str()))
             .collect::<Vec<_>>(),
@@ -2801,13 +2515,14 @@ async fn drain_acknowledges_before_a_portal_backed_handler() {
 
 #[tokio::test]
 async fn empty_drain_makes_no_portal_request_or_keypair() {
-    let fake = FakePortal::new();
-    let root = phase_root("unregistered", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("unregistered", Some(&portal));
+    let _guard = install_route_portal(&portal);
     reset_portal_storage(root.path(), "unregistered");
-    fake.clear_log();
+    portal.clear_log();
 
     let _ = support_route_response(root.path(), "/app/support/api/config").await;
-    assert!(fake.log().is_empty());
+    assert!(portal.log().is_empty());
     assert!(
         !root.path().join("apps/support/portal/keypair.pem").exists(),
         "an empty drain must not generate an identity"
@@ -2816,8 +2531,9 @@ async fn empty_drain_makes_no_portal_request_or_keypair() {
 
 #[tokio::test]
 async fn drain_failure_does_not_change_any_registered_route_response() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
     let paths = [
         "/app/support/",
         "/app/support/workspace",
@@ -2837,21 +2553,21 @@ async fn drain_failure_does_not_change_any_registered_route_response() {
 
     for (index, path) in paths.into_iter().enumerate() {
         reset_portal_storage(root.path(), "established");
-        fake.clear_log();
+        portal.clear_log();
         let baseline = support_route_response(root.path(), path).await;
 
         reset_portal_storage(root.path(), "established");
-        fake.clear_log();
-        fake.override_route(
+        portal.clear_log();
+        portal.override_route(
             "POST",
             "/api/idempotency/ack",
             vec![
-                HttpReply {
+                RouteReply {
                     status: 500,
                     body: "drain failed".into(),
                     content_type: "text/plain; charset=utf-8".into(),
                 },
-                HttpReply {
+                RouteReply {
                     status: 500,
                     body: "drain failed".into(),
                     content_type: "text/plain; charset=utf-8".into(),
@@ -2866,8 +2582,7 @@ async fn drain_failure_does_not_change_any_registered_route_response() {
 
 #[tokio::test]
 async fn shell_router_applies_the_session_gate_to_support_config() {
-    let fake = FakePortal::new();
-    let root = phase_root("unestablished", fake.url());
+    let root = phase_root("unestablished", None);
     let corpus: Value = serde_json::from_str(CORPUS).expect("support corpus parses");
     let case = corpus["phases"]["unestablished"]
         .as_array()
@@ -2915,6 +2630,8 @@ async fn config_fails_open_and_prefers_the_support_url_environment_override() {
             run_config_environment_child("environment", Some("https://environment.example///"));
         }
         Some("defaults") => {
+            let portal = corpus_route_portal();
+            let _guard = install_route_portal(&portal);
             for (name, setup) in [
                 ("absent", None),
                 ("unreadable", Some("directory")),
@@ -2940,6 +2657,8 @@ async fn config_fails_open_and_prefers_the_support_url_environment_override() {
             }
         }
         Some("environment") => {
+            let portal = corpus_route_portal();
+            let _guard = install_route_portal(&portal);
             let root = TempDir::new().expect("configured root");
             let config = root.path().join("config");
             std::fs::create_dir_all(&config).expect("config directory");
@@ -2959,16 +2678,18 @@ async fn config_fails_open_and_prefers_the_support_url_environment_override() {
 
 #[tokio::test]
 async fn support_static_and_closed_routes_take_precedence() {
-    let fake = FakePortal::new();
-    let root = phase_root("established", fake.url());
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
 
-    fake.clear_log();
+    portal.clear_log();
     let (status, content_type, body) =
         support_route_response(root.path(), "/app/support/api/tickets/closed").await;
     assert_eq!(status, 200);
     assert_eq!(content_type, "application/json");
     assert_eq!(
-        fake.log()
+        portal
+            .log()
             .iter()
             .map(|request| (request.method.as_str(), request.path.as_str()))
             .collect::<Vec<_>>(),
@@ -2981,7 +2702,7 @@ async fn support_static_and_closed_routes_take_precedence() {
             .is_some()
     );
 
-    let response = solstone_core_convey_shell::router(root.path().to_path_buf())
+    let response = super::routes(root.path().to_path_buf())
         .oneshot(
             Request::get("/app/support/static/support.js")
                 .header("Host", "127.0.0.1")
@@ -3006,6 +2727,8 @@ async fn support_static_and_closed_routes_take_precedence() {
 
 #[tokio::test]
 async fn support_bare_path_permanently_redirects_to_the_trailing_slash() {
+    let portal = corpus_route_portal();
+    let _guard = install_route_portal(&portal);
     let root = TempDir::new().expect("redirect root");
     let response = super::routes(root.path().to_path_buf())
         .oneshot(
@@ -3022,7 +2745,6 @@ async fn support_bare_path_permanently_redirects_to_the_trailing_slash() {
 
 #[tokio::test]
 async fn gate_phase_ticket_id_divergences_are_named_and_recorded() {
-    let fake = FakePortal::new();
     let corpus: Value = serde_json::from_str(CORPUS).expect("support corpus parses");
     for (phase, case_name, fixture_status, native_status) in NATIVE_GATE_PHASE_ROUTING_DIVERGENCES {
         let case = corpus["phases"][phase]
@@ -3037,7 +2759,7 @@ async fn gate_phase_ticket_id_divergences_are_named_and_recorded() {
             "fixture {phase} {case_name}"
         );
 
-        let root = phase_root(phase, fake.url());
+        let root = phase_root(phase, None);
         let response = solstone_core_convey_shell::router(root.path().to_path_buf())
             .oneshot(
                 Request::get("/app/support/api/tickets/notanint")

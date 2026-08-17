@@ -4424,6 +4424,7 @@ dependencies = [
  "sha2",
  "solstone-core-brain",
  "solstone-core-journal-io",
+ "solstone-core-support-portal",
  "solstone-core-thinking",
  "tempfile",
  "thiserror 2.0.20",

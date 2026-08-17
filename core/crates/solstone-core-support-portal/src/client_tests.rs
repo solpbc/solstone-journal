@@ -11,17 +11,20 @@ use rsa::pkcs1::EncodeRsaPublicKey;
 use tempfile::TempDir;
 
 use crate::client::{
-    MultipartInput, PortalClient, PortalResponse, PortalRuntime, is_enabled,
-    portal_url_from_settings, portal_url_from_settings_with_env,
+    MultipartInput, PortalClient, PortalRuntime, is_enabled, portal_url_from_settings,
+    portal_url_from_settings_with_env,
 };
 use crate::errors::PortalClientError;
-use crate::fake_portal::{HttpReply, LoopbackPortal, StubTransport};
+use crate::test_support::{MultipartCapture, PortalResponse, RequestLog, StubTransport};
 use crate::{
     dpop::create_dpop_proof,
     jwk::thumbprint,
     keypair::Keypair,
     token::{create_access_token, sign_tos},
 };
+
+const FIXED_TEST_KEYPAIR_PEM: &[u8] =
+    include_bytes!("../../../fixtures/support_portal_golden_nonproduction/keypair.pem");
 
 struct FixedRuntime {
     now: i64,
@@ -51,6 +54,9 @@ impl PortalRuntime for FixedRuntime {
         bytes.copy_from_slice(&self.bytes.pop_front().unwrap_or([0, 1, 2, 3]));
         Ok(())
     }
+    fn keypair_pem(&mut self) -> Option<Vec<u8>> {
+        Some(FIXED_TEST_KEYPAIR_PEM.to_vec())
+    }
 }
 
 fn response(status: u16, body: &str) -> PortalResponse {
@@ -64,7 +70,7 @@ fn client(
     replies: Vec<PortalResponse>,
 ) -> (
     PortalClient,
-    std::sync::Arc<std::sync::Mutex<Vec<crate::fake_portal::RequestLog>>>,
+    std::sync::Arc<std::sync::Mutex<Vec<RequestLog>>>,
 ) {
     let (transport, log) = StubTransport::new("https://portal.example", replies);
     (
@@ -171,10 +177,20 @@ fn tos_changed_retries_once_and_rewinds_multipart() {
             .body,
         "done"
     );
-    assert_eq!(
-        *multipart_bodies.lock().unwrap(),
-        vec![b"payload".to_vec(), b"payload".to_vec()]
-    );
+    let captured = multipart_bodies.lock().unwrap();
+    assert_eq!(captured.len(), 2);
+    for parts in captured.iter() {
+        assert_eq!(parts.len(), 1);
+        assert_eq!(
+            parts[0],
+            MultipartCapture {
+                name: "file".to_owned(),
+                filename: "file.txt".to_owned(),
+                content_type: None,
+                bytes: b"payload".to_vec(),
+            }
+        );
+    }
     assert_eq!(
         log.lock()
             .unwrap()
@@ -771,7 +787,10 @@ fn status_error_includes_only_the_first_500_characters() {
         .raise_for_status(
             "GET",
             "https://portal.example/too-long",
-            &response(500, &body),
+            &crate::client::PortalResponse {
+                status: 500,
+                body: body.clone(),
+            },
         )
         .unwrap_err();
     let PortalClientError::HttpStatus { message } = error else {
@@ -779,55 +798,6 @@ fn status_error_includes_only_the_first_500_characters() {
     };
     assert_eq!(message.rsplit_once(": ").unwrap().1, "x".repeat(500));
     assert!(message.starts_with("GET https://portal.example/too-long — 500: "));
-}
-
-#[test]
-fn real_transport_does_not_follow_redirects_and_sends_dpop_headers() {
-    let target = LoopbackPortal::new(vec![]);
-    let redirect = LoopbackPortal::new(vec![HttpReply {
-        status: 302,
-        headers: vec![("Location".to_owned(), format!("{}/reached", target.url()))],
-        body: String::new(),
-    }]);
-    let dir = TempDir::new().unwrap();
-    std::fs::write(
-        dir.path().join("keypair.pem"),
-        include_bytes!("../../../fixtures/support_portal_golden_nonproduction/keypair.pem"),
-    )
-    .unwrap();
-    std::fs::write(
-        dir.path().join("token.json"),
-        r#"{"access_token":"loop-token"}"#,
-    )
-    .unwrap();
-    let mut client =
-        PortalClient::new(redirect.url(), dir.path(), Some("loop".to_owned()), false).unwrap();
-    let response = client
-        .authed_request("GET", "/read", None, None, None, None)
-        .unwrap();
-    assert_eq!(response.status, 302);
-    let requests = redirect.log();
-    let request = requests.lock().unwrap().pop().unwrap();
-    assert_eq!(request.path, "/read");
-    assert_eq!(
-        request
-            .headers
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
-            .map(|(_, value)| value.as_str()),
-        Some("DPoP loop-token")
-    );
-    let proof = request
-        .headers
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("dpop"))
-        .map(|(_, value)| value)
-        .unwrap();
-    assert_eq!(
-        proof_payload(proof)["htu"],
-        format!("{}/read", redirect.url())
-    );
-    assert!(target.log().lock().unwrap().is_empty());
 }
 
 #[cfg(unix)]

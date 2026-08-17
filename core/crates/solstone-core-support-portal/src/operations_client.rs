@@ -699,8 +699,13 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::client::{PortalResponse, PortalRuntime, PortalTransport, RequestBody};
-    use crate::fake_portal::StubTransport;
+    use crate::client::{
+        PortalResponse as CratePortalResponse, PortalRuntime, PortalTransport, RequestBody,
+    };
+    use crate::test_support::{PortalResponse, StubTransport};
+
+    const FIXED_TEST_KEYPAIR_PEM: &[u8] =
+        include_bytes!("../../../fixtures/support_portal_golden_nonproduction/keypair.pem");
 
     struct TestRuntime;
     impl PortalRuntime for TestRuntime {
@@ -713,6 +718,9 @@ mod tests {
         fn random_bytes(&mut self, bytes: &mut [u8]) -> Result<(), PortalClientError> {
             bytes.copy_from_slice(&[0, 1, 2, 3]);
             Ok(())
+        }
+        fn keypair_pem(&mut self) -> Option<Vec<u8>> {
+            Some(FIXED_TEST_KEYPAIR_PEM.to_vec())
         }
     }
 
@@ -760,7 +768,7 @@ mod tests {
     }
 
     struct SnapshotTransport {
-        replies: VecDeque<PortalResponse>,
+        replies: VecDeque<CratePortalResponse>,
         storage_dir: std::path::PathBuf,
         snapshot: Arc<Mutex<Option<Vec<u8>>>>,
     }
@@ -772,7 +780,7 @@ mod tests {
             _url: &str,
             _headers: &[(String, String)],
             _body: RequestBody,
-        ) -> Result<PortalResponse, PortalClientError> {
+        ) -> Result<CratePortalResponse, PortalClientError> {
             if self.replies.len() == 1 {
                 *self.snapshot.lock().expect("snapshot lock") = Some(
                     fs::read(operation_record_path(&self.storage_dir))
@@ -970,9 +978,18 @@ mod tests {
         let snapshot = Arc::new(Mutex::new(None));
         let transport = SnapshotTransport {
             replies: VecDeque::from([
-                reply(200, "terms"),
-                reply(200, r#"{"access_token":"token"}"#),
-                reply(409, r#"{"error":"operation_in_progress"}"#),
+                CratePortalResponse {
+                    status: 200,
+                    body: "terms".to_owned(),
+                },
+                CratePortalResponse {
+                    status: 200,
+                    body: r#"{"access_token":"token"}"#.to_owned(),
+                },
+                CratePortalResponse {
+                    status: 409,
+                    body: r#"{"error":"operation_in_progress"}"#.to_owned(),
+                },
             ]),
             storage_dir: dir.path().to_owned(),
             snapshot: snapshot.clone(),

@@ -4048,3 +4048,29 @@ timeout = "standard"
 default_full = true
 required_features = []
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-support-portal::support_portal_transport"
+package = "solstone-core-support-portal"
+target = "support_portal_transport"
+set = "component"
+areas = ["support"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-support-web::support_web_transport"
+package = "solstone-core-support-web"
+target = "support_web_transport"
+set = "component"
+areas = ["support"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"

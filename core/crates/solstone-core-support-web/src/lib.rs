@@ -21,8 +21,8 @@ use serde_json::{Map, Value, json};
 use solstone_core_chat_append::{append_support_draft, record_draft_captured};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_support_portal::{
-    OperationError, PortalClient, PortalOperationError, collect_all, is_enabled, native_platform,
-    portal_url_from_settings,
+    OperationError, PortalClient, PortalClientError, PortalOperationError, collect_all, is_enabled,
+    native_platform, portal_url_from_settings,
 };
 use tempfile::Builder;
 use uuid::Uuid;
@@ -173,9 +173,79 @@ async fn drain_before_and_after(
 }
 
 fn drain(root: &std::path::Path) {
-    if let Ok(mut client) = PortalClient::from_journal_settings(root, None, false) {
+    if let Ok(mut client) = build_client(root, false) {
         let _ = client.drain_pending_acknowledgements();
     }
+}
+
+fn build_client(
+    root: &std::path::Path,
+    anonymous: bool,
+) -> Result<PortalClient, PortalClientError> {
+    #[cfg(test)]
+    if let Some(client) = try_test_client(root, anonymous) {
+        return client;
+    }
+    PortalClient::from_journal_settings(root, None, anonymous)
+}
+
+#[cfg(test)]
+type TestClientFactory = std::sync::Arc<
+    dyn Fn(&std::path::Path, bool) -> Result<PortalClient, PortalClientError> + Send + Sync,
+>;
+
+#[cfg(test)]
+thread_local! {
+    static TEST_CLIENT_FACTORY: std::cell::RefCell<Option<TestClientFactory>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Installs an OS-thread-local `PortalClient` factory for `--lib` tests.
+///
+/// This hook is thread-local. Corpus oneshot tests must stay on
+/// `#[tokio::test]`'s default `current_thread` flavor. Do not add
+/// `rt-multi-thread` or `flavor = "multi_thread"` without replacing this
+/// with a task-local scope around each `oneshot()`.
+#[cfg(test)]
+pub(crate) fn install_test_client_factory(
+    factory: impl Fn(&std::path::Path, bool) -> Result<PortalClient, PortalClientError>
+    + Send
+    + Sync
+    + 'static,
+) -> TestClientGuard {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        debug_assert_eq!(
+            handle.runtime_flavor(),
+            tokio::runtime::RuntimeFlavor::CurrentThread,
+            "install_test_client_factory is thread-local; oneshot must run on current_thread"
+        );
+    }
+    TEST_CLIENT_FACTORY.with(|cell| {
+        *cell.borrow_mut() = Some(std::sync::Arc::new(factory));
+    });
+    TestClientGuard
+}
+
+#[cfg(test)]
+pub(crate) struct TestClientGuard;
+
+#[cfg(test)]
+impl Drop for TestClientGuard {
+    fn drop(&mut self) {
+        TEST_CLIENT_FACTORY.with(|cell| *cell.borrow_mut() = None);
+    }
+}
+
+#[cfg(test)]
+fn try_test_client(
+    root: &std::path::Path,
+    anonymous: bool,
+) -> Option<Result<PortalClient, PortalClientError>> {
+    TEST_CLIENT_FACTORY.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .map(|factory| factory(root, anonymous))
+    })
 }
 
 async fn config(root: PathBuf) -> Response {
@@ -267,8 +337,7 @@ fn with_client<T>(
     root: &std::path::Path,
     operation: impl FnOnce(&mut PortalClient) -> Result<T, PortalOperationError>,
 ) -> Result<T, PortalOperationError> {
-    let mut client = PortalClient::from_journal_settings(root, None, false)
-        .map_err(PortalOperationError::Portal)?;
+    let mut client = build_client(root, false).map_err(PortalOperationError::Portal)?;
     operation(&mut client)
 }
 
@@ -356,8 +425,7 @@ fn with_mutation_client<T>(
     anonymous: bool,
     operation: impl FnOnce(&mut PortalClient) -> Result<T, PortalOperationError>,
 ) -> Result<T, PortalOperationError> {
-    let mut client = PortalClient::from_journal_settings(root, None, anonymous)
-        .map_err(PortalOperationError::Portal)?;
+    let mut client = build_client(root, anonymous).map_err(PortalOperationError::Portal)?;
     operation(&mut client)
 }
 
@@ -550,7 +618,7 @@ async fn register(root: PathBuf) -> Response {
     if let Some(response) = disabled(&root, false) {
         return response;
     }
-    let mut client = match PortalClient::from_journal_settings(&root, None, false) {
+    let mut client = match build_client(&root, false) {
         Ok(client) => client,
         Err(_) => return portal_failed("Registration with the support portal failed."),
     };

@@ -25,10 +25,6 @@ pub(crate) struct PortalResponse {
     pub(crate) body: String,
 }
 
-#[allow(
-    dead_code,
-    reason = "W1c dispatches mutations through this private seam."
-)]
 pub(crate) trait PortalTransport {
     fn request(
         &mut self,
@@ -56,9 +52,14 @@ pub(crate) trait PortalRuntime {
     fn now(&mut self) -> i64;
     fn uuid(&mut self) -> String;
     fn random_bytes(&mut self, bytes: &mut [u8]) -> Result<(), PortalClientError>;
+    /// Override point for fixed test key material. Returning `Some` skips real
+    /// RSA generation in `ensure_keypair`. Production runtime always returns `None`.
+    fn keypair_pem(&mut self) -> Option<Vec<u8>> {
+        None
+    }
 }
 
-struct ProductionRuntime;
+pub(crate) struct ProductionRuntime;
 
 impl PortalRuntime for ProductionRuntime {
     fn now(&mut self) -> i64 {
@@ -353,7 +354,10 @@ impl PortalClient {
         if self.keypair.is_some() {
             return Ok(());
         }
-        let (keypair, pem) = Keypair::generate()?;
+        let (keypair, pem) = match self.runtime.keypair_pem() {
+            Some(pem) => (Keypair::from_pem(&pem)?, pem),
+            None => Keypair::generate()?,
+        };
         if !self.anonymous {
             save_keypair(&self.keypair_path(), &pem)?;
         }

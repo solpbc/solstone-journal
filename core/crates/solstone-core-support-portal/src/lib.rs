@@ -15,8 +15,10 @@ mod token;
 
 #[cfg(test)]
 mod client_tests;
-#[cfg(test)]
-mod fake_portal;
+
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support;
 
 pub use canonical::{
     CANONICAL_NAMESPACE, canonical_fingerprint, canonicalize_operation, derive_child_action_id,
