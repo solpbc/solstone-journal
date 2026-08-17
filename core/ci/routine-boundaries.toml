@@ -430,57 +430,6 @@ id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/b
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::success::scheduling"
 
 [[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::attested_transport_applies_the_endpoint_request_timeout::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::attested_transport_applies_the_endpoint_request_timeout::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::attested_transport_applies_the_endpoint_request_timeout::scheduling"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::channel_failure_refuses_without_an_endpoint_request::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::confidential_converse_without_a_served_window_posts_nothing_after_attestation::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::converse_channel_failure_refuses_without_an_endpoint_request::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::converse_readiness_failure_refuses_without_attempting_a_channel::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::converse_stale_session_refuses_before_readiness_or_channel_establishment::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::endpoint_and_confidential_converse_parse_the_same_tool_turn::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::endpoint_and_confidential_converse_parse_the_same_tool_turn::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::endpoint_and_confidential_converse_parse_the_same_tool_turn::scheduling"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::fresh_attestation_uses_one_channel_converse_request_with_qwen_controls::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::fresh_attestation_uses_one_channel_converse_request_with_qwen_controls::scheduling"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::fresh_attestation_uses_one_channel_request_with_confidential_qwen_controls::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::fresh_attestation_uses_one_channel_request_with_confidential_qwen_controls::scheduling"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::readiness_failure_refuses_without_attempting_a_channel::network"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/confidential.rs::tests::stale_session_refuses_before_readiness_or_channel_establishment::network"
-
-[[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::admission_limits_concurrency_and_spends_queued_timeout::clock"
 
 [[findings]]

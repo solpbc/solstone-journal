@@ -386,16 +386,120 @@ impl EndpointTransport for AttestedEndpointTransport {
     }
 }
 
+#[allow(dead_code)]
+fn endpoint_converse_now<T: EndpointTransport>(
+    call: EndpointConverseCall<'_>,
+    transport: &mut T,
+) -> EndpointConverseResult {
+    endpoint_converse_with(call, transport, Instant::now())
+}
+
+#[allow(dead_code)]
+fn confidential_transport_generate(
+    request: &GenerateRequest,
+    journal_path: &Path,
+    endpoint: &ByoEndpoint,
+    config: &Map<String, Value>,
+    runtime: &EndpointRuntime,
+    stream: Box<dyn AttestedIo>,
+) -> EndpointResult {
+    let target = ratls_target(&endpoint.base_url).expect("test endpoint parses");
+    let mut transport = AttestedEndpointTransport {
+        stream,
+        host: target.host,
+    };
+    endpoint_generate_with(
+        request,
+        journal_path,
+        endpoint,
+        config,
+        runtime,
+        &mut transport,
+        Instant::now(),
+    )
+}
+
+#[allow(dead_code, clippy::too_many_arguments)]
+fn confidential_transport_converse(
+    request: &GenerateRequest,
+    messages: &[ConverseMessage],
+    tools: &[ConverseToolSpec],
+    journal_path: &Path,
+    endpoint: &ByoEndpoint,
+    config: &Map<String, Value>,
+    runtime: &EndpointRuntime,
+    stream: Box<dyn AttestedIo>,
+) -> EndpointConverseResult {
+    let target = ratls_target(&endpoint.base_url).expect("test endpoint parses");
+    let mut transport = AttestedEndpointTransport {
+        stream,
+        host: target.host,
+    };
+    endpoint_converse_now(
+        EndpointConverseCall {
+            request,
+            messages,
+            tools,
+            journal_path,
+            endpoint,
+            config,
+            runtime,
+        },
+        &mut transport,
+    )
+}
+
+/// Drives the confidential transport adapter directly over a caller-supplied channel,
+/// bypassing readiness/establish so integration tests can exercise a real socket without
+/// real attestation. Exposes only the post-establishment adapter call — no `ConfidentialCall`,
+/// `EstablishedChannel`, or attestation-state bookkeeping.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod test_support {
+    use super::*;
+
+    pub fn confidential_generate_over_channel(
+        request: &GenerateRequest,
+        journal_path: &Path,
+        endpoint: &ByoEndpoint,
+        config: &Map<String, Value>,
+        runtime: &EndpointRuntime,
+        stream: Box<dyn AttestedIo>,
+    ) -> EndpointResult {
+        confidential_transport_generate(request, journal_path, endpoint, config, runtime, stream)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn confidential_converse_over_channel(
+        request: &GenerateRequest,
+        messages: &[ConverseMessage],
+        tools: &[ConverseToolSpec],
+        journal_path: &Path,
+        endpoint: &ByoEndpoint,
+        config: &Map<String, Value>,
+        runtime: &EndpointRuntime,
+        stream: Box<dyn AttestedIo>,
+    ) -> EndpointConverseResult {
+        confidential_transport_converse(
+            request,
+            messages,
+            tools,
+            journal_path,
+            endpoint,
+            config,
+            runtime,
+            stream,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
+        cell::RefCell,
         io::{self, Read, Write},
-        net::{TcpListener, TcpStream},
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
-        thread,
+        rc::Rc,
+        sync::atomic::{AtomicUsize, Ordering},
         time::{Duration, UNIX_EPOCH},
     };
 
@@ -496,14 +600,6 @@ mod tests {
         path
     }
 
-    fn assert_no_endpoint_request(listener: &TcpListener) {
-        listener.set_nonblocking(true).expect("set nonblocking");
-        assert!(matches!(
-            listener.accept(),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock
-        ));
-    }
-
     fn converse_messages() -> Vec<ConverseMessage> {
         vec![ConverseMessage::User { text: "ask".into() }]
     }
@@ -541,43 +637,14 @@ mod tests {
         .to_string()
     }
 
-    fn read_request_body(stream: &mut TcpStream) -> Value {
-        let mut bytes = Vec::new();
-        let mut content_length = None;
-        loop {
-            let mut buffer = [0_u8; 4096];
-            let read = stream.read(&mut buffer).expect("read");
-            bytes.extend_from_slice(&buffer[..read]);
-            if content_length.is_none()
-                && let Some(head_end) = bytes.windows(4).position(|part| part == b"\r\n\r\n")
-            {
-                let head = std::str::from_utf8(&bytes[..head_end]).expect("headers UTF-8");
-                content_length = Some(
-                    head.lines()
-                        .find_map(|line| line.strip_prefix("Content-Length: "))
-                        .expect("content length")
-                        .parse::<usize>()
-                        .expect("numeric content length"),
-                );
-            }
-            if let Some(length) = content_length
-                && let Some(head_end) = bytes.windows(4).position(|part| part == b"\r\n\r\n")
-                && bytes.len() >= head_end + 4 + length
-            {
-                let body = &bytes[head_end + 4..head_end + 4 + length];
-                return serde_json::from_slice(body).expect("JSON body");
-            }
-        }
-    }
-
-    fn write_json_response(stream: &mut TcpStream, response_body: &str) {
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{response_body}",
-            response_body.len()
-        );
-        stream
-            .write_all(response.as_bytes())
-            .expect("write response");
+    fn parsed_request(written: &Rc<RefCell<Vec<u8>>>) -> (String, Value) {
+        let bytes = written.borrow();
+        let text = std::str::from_utf8(&bytes).expect("request UTF-8");
+        let (head, body) = text.split_once("\r\n\r\n").expect("header/body split");
+        (
+            head.to_owned(),
+            serde_json::from_str(body).expect("JSON body"),
+        )
     }
 
     struct ResponseTransport {
@@ -607,20 +674,34 @@ mod tests {
         }
     }
 
-    struct NoRequestStream {
-        writes: Arc<AtomicUsize>,
+    struct RecordingChannel {
+        written: Rc<RefCell<Vec<u8>>>,
+        response: io::Cursor<Vec<u8>>,
     }
 
-    impl Read for NoRequestStream {
-        fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
-            Err(io::Error::new(io::ErrorKind::WouldBlock, "no request"))
+    impl RecordingChannel {
+        fn new(written: Rc<RefCell<Vec<u8>>>, response_body: &str) -> Self {
+            let framed = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{response_body}",
+                response_body.len()
+            );
+            Self {
+                written,
+                response: io::Cursor::new(framed.into_bytes()),
+            }
         }
     }
 
-    impl Write for NoRequestStream {
-        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-            self.writes.fetch_add(1, Ordering::SeqCst);
-            Ok(buffer.len())
+    impl Read for RecordingChannel {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.response.read(buf)
+        }
+    }
+
+    impl Write for RecordingChannel {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.written.borrow_mut().extend_from_slice(buf);
+            Ok(buf.len())
         }
 
         fn flush(&mut self) -> io::Result<()> {
@@ -628,7 +709,7 @@ mod tests {
         }
     }
 
-    impl AttestedIo for NoRequestStream {
+    impl AttestedIo for RecordingChannel {
         fn set_io_timeout(&mut self, _timeout: Option<Duration>) -> io::Result<()> {
             Ok(())
         }
@@ -636,60 +717,17 @@ mod tests {
 
     #[test]
     fn fresh_attestation_uses_one_channel_request_with_confidential_qwen_controls() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let port = listener.local_addr().expect("address").port();
-        let requests = Arc::new(AtomicUsize::new(0));
-        let recorded = Arc::new(std::sync::Mutex::new(None));
-        let recorded_for_server = recorded.clone();
-        let requests_for_server = requests.clone();
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept");
-            let mut bytes = Vec::new();
-            let mut content_length = None;
-            loop {
-                let mut buffer = [0_u8; 4096];
-                let read = stream.read(&mut buffer).expect("read");
-                bytes.extend_from_slice(&buffer[..read]);
-                if content_length.is_none()
-                    && let Some(head_end) = bytes.windows(4).position(|part| part == b"\r\n\r\n")
-                {
-                    let head = std::str::from_utf8(&bytes[..head_end]).expect("headers UTF-8");
-                    content_length = Some(
-                        head.lines()
-                            .find_map(|line| line.strip_prefix("Content-Length: "))
-                            .expect("content length")
-                            .parse::<usize>()
-                            .expect("numeric content length"),
-                    );
-                }
-                if let Some(length) = content_length
-                    && let Some(head_end) = bytes.windows(4).position(|part| part == b"\r\n\r\n")
-                    && bytes.len() >= head_end + 4 + length
-                {
-                    break;
-                }
-            }
-            requests_for_server.fetch_add(1, Ordering::SeqCst);
-            let text = String::from_utf8(bytes).expect("request UTF-8");
-            let body = text.split("\r\n\r\n").nth(1).expect("body");
-            *recorded_for_server.lock().expect("record") =
-                Some(serde_json::from_str::<Value>(body).expect("JSON body"));
-            let response_body = r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#;
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{response_body}",
-                response_body.len()
-            );
-            stream
-                .write_all(response.as_bytes())
-                .expect("write response");
-        });
+        let written = Rc::new(RefCell::new(Vec::new()));
+        let written_for_channel = written.clone();
         let runtime = EndpointRuntime::default();
         let path = journal("success");
+        let endpoint = endpoint(1);
+        let response_body = r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#;
         let result = confidential_generate_with(
             ConfidentialCall {
                 request: &request(),
                 journal_path: &path,
-                endpoint: &endpoint(port),
+                endpoint: &endpoint,
                 config: &Map::new(),
                 runtime: &runtime,
                 now: UNIX_EPOCH,
@@ -698,14 +736,12 @@ mod tests {
             |_, _| {
                 Ok(EstablishedChannel {
                     verdict: verdict(),
-                    stream: Box::new(TcpStream::connect(("127.0.0.1", port)).expect("connect")),
+                    stream: Box::new(RecordingChannel::new(written_for_channel, response_body)),
                 })
             },
         );
         assert!(matches!(result, ConfidentialResult::Generated(_)));
-        server.join().expect("join");
-        assert_eq!(requests.load(Ordering::SeqCst), 1);
-        let body = recorded.lock().expect("record").take().expect("one body");
+        let (head, body) = parsed_request(&written);
         for field in [
             "chat_template_kwargs",
             "top_p",
@@ -715,34 +751,85 @@ mod tests {
         ] {
             assert!(body.get(field).is_some(), "missing {field}");
         }
+        assert!(
+            head.lines()
+                .any(|line| line == "Authorization: Bearer token"),
+            "missing bearer: {head}"
+        );
+        assert!(
+            head.lines().any(|line| line == "Host: 127.0.0.1:1"),
+            "missing host: {head}"
+        );
+        assert!(
+            head.lines()
+                .any(|line| line == "Content-Type: application/json"),
+            "missing content-type: {head}"
+        );
+        let raw = written.borrow();
+        let text = std::str::from_utf8(&raw).expect("request UTF-8");
+        let (_, raw_body) = text.split_once("\r\n\r\n").expect("header/body split");
+        let declared = head
+            .lines()
+            .find_map(|line| line.strip_prefix("Content-Length: "))
+            .expect("content length")
+            .parse::<usize>()
+            .expect("numeric content length");
+        assert_eq!(declared, raw_body.len());
+        drop(raw);
+
+        let unauthed_written = Rc::new(RefCell::new(Vec::new()));
+        let unauthed_written_for_channel = unauthed_written.clone();
+        let mut unauthed = endpoint.clone();
+        unauthed.credential = None;
+        let unauthed_runtime = EndpointRuntime::default();
+        let unauthed_result = confidential_generate_with(
+            ConfidentialCall {
+                request: &request(),
+                journal_path: &path,
+                endpoint: &unauthed,
+                config: &Map::new(),
+                runtime: &unauthed_runtime,
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _| {
+                Ok(EstablishedChannel {
+                    verdict: verdict(),
+                    stream: Box::new(RecordingChannel::new(
+                        unauthed_written_for_channel,
+                        response_body,
+                    )),
+                })
+            },
+        );
+        assert!(matches!(unauthed_result, ConfidentialResult::Generated(_)));
+        let (unauthed_head, _) = parsed_request(&unauthed_written);
+        assert!(
+            !unauthed_head
+                .lines()
+                .any(|line| line.starts_with("Authorization:")),
+            "unexpected authorization: {unauthed_head}"
+        );
         let _ = std::fs::remove_dir_all(path);
     }
 
     #[test]
     fn endpoint_and_confidential_converse_parse_the_same_tool_turn() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let port = listener.local_addr().expect("address").port();
         let response_body = converse_response_body();
-        let response_for_server = response_body.clone();
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept");
-            let _ = read_request_body(&mut stream);
-            write_json_response(&mut stream, &response_for_server);
-        });
         let path = journal("converse-equivalence");
         let request = request();
         let messages = converse_messages();
         let tools = converse_tools();
         let config = served_window_config();
-        let endpoint = endpoint(port);
+        let endpoint = endpoint(1);
         let endpoint_runtime = EndpointRuntime::default();
         let mut endpoint_transport = ResponseTransport {
             response: HttpResponse {
                 status: 200,
-                body: response_body,
+                body: response_body.clone(),
             },
         };
-        let endpoint_turn = endpoint_converse_with(
+        let endpoint_turn = endpoint_converse_now(
             EndpointConverseCall {
                 request: &request,
                 messages: &messages,
@@ -753,7 +840,6 @@ mod tests {
                 runtime: &endpoint_runtime,
             },
             &mut endpoint_transport,
-            Instant::now(),
         )
         .expect("endpoint converse turn");
 
@@ -773,32 +859,80 @@ mod tests {
             |_, _| {
                 Ok(EstablishedChannel {
                     verdict: verdict(),
-                    stream: Box::new(TcpStream::connect(("127.0.0.1", port)).expect("connect")),
+                    stream: Box::new(RecordingChannel::new(
+                        Rc::new(RefCell::new(Vec::new())),
+                        &response_body,
+                    )),
                 })
             },
         )
         .expect("confidential converse turn");
         assert_eq!(endpoint_turn, confidential_turn);
-        server.join().expect("join");
+
+        let malformed = json!({
+            "choices": [{
+                "message": {
+                    "content": "before",
+                    "tool_calls": [{
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {"name": "weather", "arguments": "{not json"},
+                    }],
+                },
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+        })
+        .to_string();
+        let mut malformed_endpoint_transport = ResponseTransport {
+            response: HttpResponse {
+                status: 200,
+                body: malformed.clone(),
+            },
+        };
+        let malformed_endpoint = endpoint_converse_now(
+            EndpointConverseCall {
+                request: &request,
+                messages: &messages,
+                tools: &tools,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config,
+                runtime: &EndpointRuntime::default(),
+            },
+            &mut malformed_endpoint_transport,
+        );
+        let malformed_confidential = confidential_converse_with(
+            ConfidentialConverseCall {
+                request: &request,
+                messages: &messages,
+                tools: &tools,
+                journal_path: &path,
+                endpoint: &endpoint,
+                config: &config,
+                runtime: &EndpointRuntime::default(),
+                now: UNIX_EPOCH,
+            },
+            |_| NvattestEnsureStatus::AlreadyInstalled,
+            |_, _| {
+                Ok(EstablishedChannel {
+                    verdict: verdict(),
+                    stream: Box::new(RecordingChannel::new(
+                        Rc::new(RefCell::new(Vec::new())),
+                        &malformed,
+                    )),
+                })
+            },
+        );
+        assert!(malformed_endpoint.is_err());
+        assert!(malformed_confidential.is_err());
         let _ = std::fs::remove_dir_all(path);
     }
 
     #[test]
     fn fresh_attestation_uses_one_channel_converse_request_with_qwen_controls() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let port = listener.local_addr().expect("address").port();
-        let requests = Arc::new(AtomicUsize::new(0));
-        let recorded = Arc::new(std::sync::Mutex::new(None));
-        let requests_for_server = requests.clone();
-        let recorded_for_server = recorded.clone();
-        let response_body = converse_response_body();
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept");
-            let body = read_request_body(&mut stream);
-            requests_for_server.fetch_add(1, Ordering::SeqCst);
-            *recorded_for_server.lock().expect("record") = Some(body);
-            write_json_response(&mut stream, &response_body);
-        });
+        let written = Rc::new(RefCell::new(Vec::new()));
+        let written_for_channel = written.clone();
         let runtime = EndpointRuntime::default();
         let path = journal("converse-success");
         let messages = converse_messages();
@@ -809,7 +943,7 @@ mod tests {
                 messages: &messages,
                 tools: &tools,
                 journal_path: &path,
-                endpoint: &endpoint(port),
+                endpoint: &endpoint(1),
                 config: &served_window_config(),
                 runtime: &runtime,
                 now: UNIX_EPOCH,
@@ -818,14 +952,15 @@ mod tests {
             |_, _| {
                 Ok(EstablishedChannel {
                     verdict: verdict(),
-                    stream: Box::new(TcpStream::connect(("127.0.0.1", port)).expect("connect")),
+                    stream: Box::new(RecordingChannel::new(
+                        written_for_channel,
+                        &converse_response_body(),
+                    )),
                 })
             },
         );
         assert!(result.is_ok());
-        server.join().expect("join");
-        assert_eq!(requests.load(Ordering::SeqCst), 1);
-        let body = recorded.lock().expect("record").take().expect("one body");
+        let (_, body) = parsed_request(&written);
         assert!(body.get("tools").is_some());
         for field in [
             "chat_template_kwargs",
@@ -840,44 +975,15 @@ mod tests {
     }
 
     #[test]
-    fn attested_transport_applies_the_endpoint_request_timeout() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let port = listener.local_addr().expect("address").port();
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept");
-            let mut request = [0_u8; 4096];
-            let _ = stream.read(&mut request);
-            thread::sleep(Duration::from_millis(150));
-        });
-        let mut transport = AttestedEndpointTransport {
-            stream: Box::new(TcpStream::connect(("127.0.0.1", port)).expect("connect")),
-            host: format!("127.0.0.1:{port}"),
-        };
-
-        assert!(matches!(
-            transport.post_json(
-                "",
-                "/v1/chat/completions",
-                &json!({}),
-                None,
-                Duration::from_millis(50),
-            ),
-            Err(EndpointTransportError::Capacity)
-        ));
-        server.join().expect("join");
-    }
-
-    #[test]
     fn readiness_failure_refuses_without_attempting_a_channel() {
         let runtime = EndpointRuntime::default();
         let attempts = AtomicUsize::new(0);
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint");
         let path = journal("not-verified");
         let result = confidential_generate_with(
             ConfidentialCall {
                 request: &request(),
                 journal_path: &path,
-                endpoint: &endpoint(listener.local_addr().expect("address").port()),
+                endpoint: &endpoint(1),
                 config: &Map::new(),
                 runtime: &runtime,
                 now: UNIX_EPOCH,
@@ -890,7 +996,6 @@ mod tests {
         );
         assert!(matches!(result, ConfidentialResult::AttestationNotVerified));
         assert_eq!(attempts.load(Ordering::SeqCst), 0);
-        assert_no_endpoint_request(&listener);
         let _ = std::fs::remove_dir_all(path);
     }
 
@@ -898,13 +1003,12 @@ mod tests {
     fn channel_failure_refuses_without_an_endpoint_request() {
         let runtime = EndpointRuntime::default();
         let attempts = AtomicUsize::new(0);
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint");
         let path = journal("failed");
         let result = confidential_generate_with(
             ConfidentialCall {
                 request: &request(),
                 journal_path: &path,
-                endpoint: &endpoint(listener.local_addr().expect("address").port()),
+                endpoint: &endpoint(1),
                 config: &Map::new(),
                 runtime: &runtime,
                 now: UNIX_EPOCH,
@@ -917,7 +1021,6 @@ mod tests {
         );
         assert!(matches!(result, ConfidentialResult::AttestationFailed));
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
-        assert_no_endpoint_request(&listener);
         let _ = std::fs::remove_dir_all(path);
     }
 
@@ -934,13 +1037,12 @@ mod tests {
             });
         let readiness = AtomicUsize::new(0);
         let establish = AtomicUsize::new(0);
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint");
         let path = journal("stale");
         let result = confidential_generate_with(
             ConfidentialCall {
                 request: &request(),
                 journal_path: &path,
-                endpoint: &endpoint(listener.local_addr().expect("address").port()),
+                endpoint: &endpoint(1),
                 config: &Map::new(),
                 runtime: &runtime,
                 now: UNIX_EPOCH + Duration::from_secs(10 * 60),
@@ -957,7 +1059,6 @@ mod tests {
         assert!(matches!(result, ConfidentialResult::AttestationStale));
         assert_eq!(readiness.load(Ordering::SeqCst), 0);
         assert_eq!(establish.load(Ordering::SeqCst), 0);
-        assert_no_endpoint_request(&listener);
         let _ = std::fs::remove_dir_all(path);
     }
 
@@ -965,7 +1066,6 @@ mod tests {
     fn converse_readiness_failure_refuses_without_attempting_a_channel() {
         let runtime = EndpointRuntime::default();
         let attempts = AtomicUsize::new(0);
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint");
         let path = journal("converse-not-verified");
         let messages = converse_messages();
         let tools = converse_tools();
@@ -975,7 +1075,7 @@ mod tests {
                 messages: &messages,
                 tools: &tools,
                 journal_path: &path,
-                endpoint: &endpoint(listener.local_addr().expect("address").port()),
+                endpoint: &endpoint(1),
                 config: &Map::new(),
                 runtime: &runtime,
                 now: UNIX_EPOCH,
@@ -989,7 +1089,6 @@ mod tests {
         .expect_err("attestation prerequisite failure");
         assert_eq!(failure.reason_code, "attestation_not_yet_verified");
         assert_eq!(attempts.load(Ordering::SeqCst), 0);
-        assert_no_endpoint_request(&listener);
         let _ = std::fs::remove_dir_all(path);
     }
 
@@ -997,7 +1096,6 @@ mod tests {
     fn converse_channel_failure_refuses_without_an_endpoint_request() {
         let runtime = EndpointRuntime::default();
         let attempts = AtomicUsize::new(0);
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint");
         let path = journal("converse-failed");
         let messages = converse_messages();
         let tools = converse_tools();
@@ -1007,7 +1105,7 @@ mod tests {
                 messages: &messages,
                 tools: &tools,
                 journal_path: &path,
-                endpoint: &endpoint(listener.local_addr().expect("address").port()),
+                endpoint: &endpoint(1),
                 config: &Map::new(),
                 runtime: &runtime,
                 now: UNIX_EPOCH,
@@ -1021,7 +1119,6 @@ mod tests {
         .expect_err("channel failure");
         assert_eq!(failure.reason_code, "attestation_failed");
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
-        assert_no_endpoint_request(&listener);
         let _ = std::fs::remove_dir_all(path);
     }
 
@@ -1038,7 +1135,6 @@ mod tests {
             });
         let readiness = AtomicUsize::new(0);
         let establish = AtomicUsize::new(0);
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint");
         let path = journal("converse-stale");
         let messages = converse_messages();
         let tools = converse_tools();
@@ -1048,7 +1144,7 @@ mod tests {
                 messages: &messages,
                 tools: &tools,
                 journal_path: &path,
-                endpoint: &endpoint(listener.local_addr().expect("address").port()),
+                endpoint: &endpoint(1),
                 config: &Map::new(),
                 runtime: &runtime,
                 now: UNIX_EPOCH + Duration::from_secs(10 * 60),
@@ -1066,7 +1162,6 @@ mod tests {
         assert_eq!(failure.reason_code, "attestation_stale");
         assert_eq!(readiness.load(Ordering::SeqCst), 0);
         assert_eq!(establish.load(Ordering::SeqCst), 0);
-        assert_no_endpoint_request(&listener);
         let _ = std::fs::remove_dir_all(path);
     }
 
@@ -1074,19 +1169,18 @@ mod tests {
     fn confidential_converse_without_a_served_window_posts_nothing_after_attestation() {
         let runtime = EndpointRuntime::default();
         let establish = AtomicUsize::new(0);
-        let writes = Arc::new(AtomicUsize::new(0));
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind endpoint");
+        let written = Rc::new(RefCell::new(Vec::new()));
+        let written_for_channel = written.clone();
         let path = journal("converse-no-window");
         let messages = converse_messages();
         let tools = converse_tools();
-        let writes_for_channel = writes.clone();
         let failure = confidential_converse_with(
             ConfidentialConverseCall {
                 request: &request(),
                 messages: &messages,
                 tools: &tools,
                 journal_path: &path,
-                endpoint: &endpoint(listener.local_addr().expect("address").port()),
+                endpoint: &endpoint(1),
                 config: &Map::new(),
                 runtime: &runtime,
                 now: UNIX_EPOCH,
@@ -1096,17 +1190,14 @@ mod tests {
                 establish.fetch_add(1, Ordering::SeqCst);
                 Ok(EstablishedChannel {
                     verdict: verdict(),
-                    stream: Box::new(NoRequestStream {
-                        writes: writes_for_channel,
-                    }),
+                    stream: Box::new(RecordingChannel::new(written_for_channel, "")),
                 })
             },
         )
         .expect_err("missing served window");
         assert_eq!(failure.reason_code, "context_budget_exceeded");
         assert_eq!(establish.load(Ordering::SeqCst), 1);
-        assert_eq!(writes.load(Ordering::SeqCst), 0);
-        assert_no_endpoint_request(&listener);
+        assert!(written.borrow().is_empty());
         let _ = std::fs::remove_dir_all(path);
     }
 

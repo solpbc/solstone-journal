@@ -3705,3 +3705,16 @@ serial_group = "local-services"
 default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-generate-wire::confidential_transport"
+package = "solstone-core-generate-wire"
+target = "confidential_transport"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+required_features = ["test-hooks"]
+runtime = "none"
