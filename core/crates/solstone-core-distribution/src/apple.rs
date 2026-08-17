@@ -141,7 +141,12 @@ pub fn require_credentials(apple: &Apple) -> Result<(), AppleError> {
             keychain.display()
         )));
     }
-    let listed = run(
+    // ⚠ Two policies, deliberately. `-p codesigning` is the narrow question —
+    // can this identity sign CODE — and the Developer ID Installer cert is not
+    // a codesigning identity, so it is absent from that list on a perfectly
+    // healthy keychain. Asking one list for both is a refusal that reads as a
+    // missing credential and is not one.
+    let signing = run(
         "security",
         &[
             "find-identity",
@@ -151,11 +156,16 @@ pub fn require_credentials(apple: &Apple) -> Result<(), AppleError> {
             &keychain.to_string_lossy(),
         ],
     )?;
+    let all = run(
+        "security",
+        &["find-identity", "-v", &keychain.to_string_lossy()],
+    )?;
     let mut missing = Vec::new();
-    for identity in [&apple.app_identity, &apple.installer_identity] {
-        if !listed.contains(identity.as_str()) {
-            missing.push(format!("identity {identity}"));
-        }
+    if !signing.contains(apple.app_identity.as_str()) {
+        missing.push(format!("codesigning identity {}", apple.app_identity));
+    }
+    if !all.contains(apple.installer_identity.as_str()) {
+        missing.push(format!("installer identity {}", apple.installer_identity));
     }
     if !missing.is_empty() {
         return Err(AppleError::new(format!(
