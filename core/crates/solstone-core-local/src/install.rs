@@ -309,6 +309,25 @@ pub(crate) fn select_artifact(
     Ok(artifact)
 }
 
+fn download_artifact_reason_code<'a>(
+    error: &archive::ArchiveError,
+    fallback_reason_code: &'a str,
+) -> &'a str {
+    match error {
+        archive::ArchiveError::HostRefused { .. } => "download_host_refused",
+        archive::ArchiveError::InsecureScheme { .. } => "download_insecure_scheme",
+        archive::ArchiveError::UrlUserinfoRefused { .. } => "download_url_userinfo_refused",
+        archive::ArchiveError::SizeMismatch { .. } => "download_size_mismatch",
+        archive::ArchiveError::DigestMismatch => "download_digest_mismatch",
+        archive::ArchiveError::RedirectHopLimitExceeded { .. } => {
+            "download_redirect_hop_limit_exceeded"
+        }
+        archive::ArchiveError::OriginUnavailable { .. } => "download_origin_unreachable",
+        archive::ArchiveError::Io(_) | archive::ArchiveError::Download(_) => fallback_reason_code,
+        archive::ArchiveError::PathEscape(_) => fallback_reason_code,
+    }
+}
+
 pub(crate) fn download_artifact(
     artifact: &Artifact,
     destination: &Path,
@@ -317,22 +336,12 @@ pub(crate) fn download_artifact(
     fallback_reason_code: &str,
 ) -> Result<(), DispatchError> {
     archive::download_verified(artifact, destination, policy, progress).map_err(|error| {
-        let reason_code = match &error {
-            archive::ArchiveError::HostRefused { .. } => "download_host_refused",
-            archive::ArchiveError::InsecureScheme { .. } => "download_insecure_scheme",
-            archive::ArchiveError::UrlUserinfoRefused { .. } => "download_url_userinfo_refused",
-            archive::ArchiveError::SizeMismatch { .. } => "download_size_mismatch",
-            archive::ArchiveError::DigestMismatch => "download_digest_mismatch",
-            archive::ArchiveError::RedirectHopLimitExceeded { .. } => {
-                "download_redirect_hop_limit_exceeded"
-            }
-            archive::ArchiveError::OriginUnavailable { .. } => "download_origin_unreachable",
-            archive::ArchiveError::Io(_) | archive::ArchiveError::Download(_) => {
-                fallback_reason_code
-            }
-            archive::ArchiveError::PathEscape(_) => fallback_reason_code,
-        };
-        failure("download", reason_code, error, 74)
+        failure(
+            "download",
+            download_artifact_reason_code(&error, fallback_reason_code),
+            error,
+            74,
+        )
     })
 }
 

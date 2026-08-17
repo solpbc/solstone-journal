@@ -3813,6 +3813,8 @@ dependencies = [
  "hmac",
  "log",
  "nix",
+ "rcgen",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",

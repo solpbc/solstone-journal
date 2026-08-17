@@ -16,8 +16,6 @@ use solstone_core_journal_config::{
 };
 use thiserror::Error;
 
-#[cfg(test)]
-use super::publish_staged_tree_with;
 use super::{archive, publish_staged_tree};
 
 const UNIT: &str = "parakeet-coreml";
@@ -99,8 +97,8 @@ fn require_coreml_host(os_name: &str, arch: &str) -> Result<(), CoremlInstallErr
     }
 }
 
-fn archive_error(error: archive::ArchiveError) -> CoremlInstallError {
-    let reason_code = match error {
+fn archive_error_reason_code(error: &archive::ArchiveError) -> &'static str {
+    match error {
         archive::ArchiveError::HostRefused { .. } => "download_host_refused",
         archive::ArchiveError::InsecureScheme { .. } => "download_insecure_scheme",
         archive::ArchiveError::UrlUserinfoRefused { .. } => "download_url_userinfo_refused",
@@ -110,8 +108,11 @@ fn archive_error(error: archive::ArchiveError) -> CoremlInstallError {
         archive::ArchiveError::OriginUnavailable { .. } => "download_origin_unreachable",
         archive::ArchiveError::Io(_) | archive::ArchiveError::Download(_) => "download_failed",
         archive::ArchiveError::PathEscape(_) => "download_failed",
-    };
-    CoremlInstallError::new(reason_code, error.to_string(), 74)
+    }
+}
+
+fn archive_error(error: archive::ArchiveError) -> CoremlInstallError {
+    CoremlInstallError::new(archive_error_reason_code(&error), error.to_string(), 74)
 }
 
 fn write_sentinel(path: &Path, sentinel: &ParakeetCoremlSentinel) -> std::io::Result<()> {
@@ -189,8 +190,9 @@ fn install_with_rows(
     )
 }
 
+/// Test door: run the CoreML installer with injected publish and sentinel writers.
 #[allow(clippy::too_many_arguments)] // Test-only publish and sentinel seams exercise ordering.
-fn install_with_rows_and_seams(
+pub fn install_with_rows_and_seams(
     home_dir: &Path,
     config: &JournalConfigRead,
     force: bool,
@@ -285,8 +287,8 @@ fn check_with_rows(
     Ok(())
 }
 
-#[cfg(test)]
-pub(crate) fn install_with_rows_for_test(
+/// Test door: install fixture rows on the darwin/arm64 host the production guard accepts.
+pub fn install_with_rows_for_test(
     home_dir: &Path,
     config: &JournalConfigRead,
     force: bool,
@@ -300,9 +302,80 @@ pub(crate) fn install_with_rows_for_test(
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
-    use std::thread;
+
+    #[test]
+    fn coreml_catalog_rows_match_the_filtered_catalog_set() {
+        let rows = rows().unwrap();
+        let expected = catalog()
+            .iter()
+            .filter(|artifact| artifact.unit == UNIT && artifact.platform == Some(Platform::MacosArm64))
+            .map(|artifact| artifact.filename)
+            .collect::<std::collections::BTreeSet<_>>();
+        let actual = rows
+            .iter()
+            .map(|artifact| artifact.filename)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert!(!actual.is_empty());
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn coreml_archive_error_reason_codes_cover_every_archive_error() {
+        use archive::ArchiveError;
+        assert_eq!(
+            archive_error_reason_code(&ArchiveError::HostRefused {
+                host: "evil.example".to_owned()
+            }),
+            "download_host_refused"
+        );
+        assert_eq!(
+            archive_error_reason_code(&ArchiveError::InsecureScheme {
+                scheme: "http".to_owned(),
+                host: "example.test".to_owned()
+            }),
+            "download_insecure_scheme"
+        );
+        assert_eq!(
+            archive_error_reason_code(&ArchiveError::UrlUserinfoRefused {
+                authority: "user@host".to_owned()
+            }),
+            "download_url_userinfo_refused"
+        );
+        assert_eq!(
+            archive_error_reason_code(&ArchiveError::SizeMismatch {
+                expected: 1,
+                actual: 2
+            }),
+            "download_size_mismatch"
+        );
+        assert_eq!(
+            archive_error_reason_code(&ArchiveError::DigestMismatch),
+            "download_digest_mismatch"
+        );
+        assert_eq!(
+            archive_error_reason_code(&ArchiveError::RedirectHopLimitExceeded { limit: 5 }),
+            "download_redirect_hop_limit"
+        );
+        assert_eq!(
+            archive_error_reason_code(&ArchiveError::OriginUnavailable {
+                host: "origin.invalid".to_owned(),
+                message: "refused".to_owned()
+            }),
+            "download_origin_unreachable"
+        );
+        assert_eq!(
+            archive_error_reason_code(&ArchiveError::Io(std::io::Error::other("io"))),
+            "download_failed"
+        );
+        assert_eq!(
+            archive_error_reason_code(&ArchiveError::Download("failed".to_owned())),
+            "download_failed"
+        );
+        assert_eq!(
+            archive_error_reason_code(&ArchiveError::PathEscape("..".to_owned())),
+            "download_failed"
+        );
+    }
 
     fn config(cache_dir: &Path) -> JournalConfigRead {
         let config = serde_json::json!({"transcribe": {"parakeet": {"cache_dir": cache_dir}}})
@@ -330,149 +403,6 @@ mod tests {
             backend: None,
             extracted_binary_sha256: None,
         }
-    }
-
-    fn server(bytes: Vec<u8>, requests: usize) -> (String, thread::JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let handle = thread::spawn(move || {
-            for _ in 0..requests {
-                let (mut stream, _) = listener.accept().unwrap();
-                let mut request = [0; 1024];
-                let _ = stream.read(&mut request).unwrap();
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                    bytes.len()
-                )
-                .unwrap();
-                stream.write_all(&bytes).unwrap();
-            }
-        });
-        (format!("http://{address}"), handle)
-    }
-
-    fn response_server(responses: Vec<String>) -> (String, thread::JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let handle = thread::spawn(move || {
-            for response in responses {
-                let (mut stream, _) = listener.accept().unwrap();
-                let mut request = [0; 1024];
-                let _ = stream.read(&mut request).unwrap();
-                stream.write_all(response.as_bytes()).unwrap();
-            }
-        });
-        (format!("http://{address}"), handle)
-    }
-
-    fn policy(base: &str) -> archive::DownloadHostPolicy<'_> {
-        archive::DownloadHostPolicy {
-            allowed_hosts: &["127.0.0.1"],
-            allow_http: true,
-            origin_base_url: base,
-        }
-    }
-
-    #[test]
-    fn install_uses_configured_tree_but_default_sentinel_and_writes_atomically() {
-        let temporary = tempfile::tempdir().unwrap();
-        let home = temporary.path().join("home");
-        let configured = temporary.path().join("override/cache");
-        let config = config(&configured);
-        let bytes = b"model";
-        let artifact = row("Encoder.mlmodelc/weights/weight.bin", bytes);
-        let rows = [&artifact];
-        let (base, server) = server(bytes.to_vec(), 1);
-        let policy = archive::DownloadHostPolicy {
-            allowed_hosts: &["127.0.0.1"],
-            allow_http: true,
-            origin_base_url: &base,
-        };
-
-        let target =
-            install_with_rows(&home, &config, false, &policy, ("darwin", "arm64"), &rows).unwrap();
-        server.join().unwrap();
-        assert_eq!(
-            target,
-            configured.parent().unwrap().join("parakeet-tdt-0.6b-v3")
-        );
-        assert!(target.join(artifact.filename).is_file());
-        let sentinel = parakeet_coreml_sentinel_path(&home);
-        assert!(sentinel.is_file());
-        assert!(
-            !configured
-                .parent()
-                .unwrap()
-                .join(".install-complete")
-                .exists()
-        );
-        let record: serde_json::Value =
-            serde_json::from_slice(&fs::read(sentinel).unwrap()).unwrap();
-        assert_eq!(record["cache_dir"], configured.display().to_string());
-        assert!(check_with_rows(&home, "darwin", "arm64", &rows).is_ok());
-    }
-
-    #[test]
-    fn sentinel_write_failure_after_publish_leaves_no_sentinel() {
-        let temporary = tempfile::tempdir().unwrap();
-        let home = temporary.path().join("home");
-        let configured = temporary.path().join("cache");
-        let config = config(&configured);
-        let bytes = b"model";
-        let artifact = row("Encoder.mlmodelc/weights/weight.bin", bytes);
-        let rows = [&artifact];
-        let (base, server) = server(bytes.to_vec(), 1);
-        let policy = archive::DownloadHostPolicy {
-            allowed_hosts: &["127.0.0.1"],
-            allow_http: true,
-            origin_base_url: &base,
-        };
-        let mut publish = |staging: &Path, target: &Path| publish_staged_tree(staging, target);
-        let error = install_with_rows_and_seams(
-            &home,
-            &config,
-            false,
-            &policy,
-            ("darwin", "arm64"),
-            &rows,
-            &mut publish,
-            &mut |_, _| Err(std::io::Error::other("injected sentinel failure")),
-        )
-        .unwrap_err();
-        server.join().unwrap();
-        assert_eq!(error.reason_code, "sentinel_write_failed");
-        assert!(
-            parakeet_coreml_model_root(&configured)
-                .join(artifact.filename)
-                .is_file()
-        );
-        assert!(!parakeet_coreml_sentinel_path(&home).exists());
-    }
-
-    #[test]
-    fn check_complete_install_succeeds_without_requests() {
-        let temporary = tempfile::tempdir().unwrap();
-        let home = temporary.path().join("home");
-        let configured = temporary.path().join("cache");
-        let config = config(&configured);
-        let bytes = b"model";
-        let artifact = row("Encoder.mlmodelc/weights/weight.bin", bytes);
-        let rows = [&artifact];
-        let (base, server) = server(bytes.to_vec(), 1);
-        let download_policy = policy(&base);
-        install_with_rows(
-            &home,
-            &config,
-            false,
-            &download_policy,
-            ("darwin", "arm64"),
-            &rows,
-        )
-        .unwrap();
-        server.join().unwrap();
-
-        check_with_rows(&home, "darwin", "arm64", &rows).unwrap();
     }
 
     #[test]
@@ -510,32 +440,6 @@ mod tests {
     }
 
     #[test]
-    fn install_refuses_a_foreign_redirect_hop_without_writing() {
-        let temporary = tempfile::tempdir().unwrap();
-        let home = temporary.path().join("home");
-        let config = config(&temporary.path().join("cache"));
-        let artifact = row("model.mil", b"model");
-        let rows = [&artifact];
-        let (base, server) = response_server(vec![
-            "HTTP/1.1 302 Found\r\nLocation: http://localhost:9/foreign\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
-        ]);
-        let download_policy = policy(&base);
-        let error = install_with_rows(
-            &home,
-            &config,
-            false,
-            &download_policy,
-            ("darwin", "arm64"),
-            &rows,
-        )
-        .unwrap_err();
-        server.join().unwrap();
-        assert_eq!(error.reason_code, "download_host_refused");
-        assert!(!parakeet_coreml_model_root(&parakeet_coreml_cache_dir(&config, &home)).exists());
-        assert!(!parakeet_coreml_sentinel_path(&home).exists());
-    }
-
-    #[test]
     fn production_policy_is_used_for_the_public_installer_path() {
         // The public entry point passes this exact static policy. Inspecting it
         // avoids a network request while binding the production authority.
@@ -559,110 +463,6 @@ mod tests {
         let error = check_with_rows(&home, "darwin", "arm64", &rows).unwrap_err();
         assert_eq!(error.reason_code, "sentinel_not_ready");
         assert!(error.to_string().contains("journal install-models"));
-    }
-
-    #[test]
-    fn failed_download_preserves_a_preexisting_complete_tree_and_sentinel() {
-        let temporary = tempfile::tempdir().unwrap();
-        let home = temporary.path().join("home");
-        let configured = temporary.path().join("cache");
-        let config = config(&configured);
-        let first = row("one", b"old one");
-        let second = row("two", b"old two");
-        let rows = [&first, &second];
-        let target = parakeet_coreml_model_root(&configured);
-        for row in rows {
-            let path = target.join(row.filename);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(
-                path,
-                if row.filename == "one" {
-                    b"old one"
-                } else {
-                    b"old two"
-                },
-            )
-            .unwrap();
-        }
-        fs::create_dir_all(&configured).unwrap();
-        let record =
-            ParakeetCoremlSentinel::new(configured.clone(), "darwin", "arm64", FLUIDAUDIO_VERSION);
-        write_sentinel(&parakeet_coreml_sentinel_path(&home), &record).unwrap();
-        let (base, server) = response_server(vec![
-            "HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nnew one".to_owned(),
-        ]);
-        let download_policy = policy(&base);
-        let error = install_with_rows(
-            &home,
-            &config,
-            true,
-            &download_policy,
-            ("darwin", "arm64"),
-            &rows,
-        )
-        .unwrap_err();
-        server.join().unwrap();
-        assert_eq!(error.reason_code, "download_digest_mismatch");
-        assert_eq!(fs::read(target.join("one")).unwrap(), b"old one");
-        assert!(parakeet_coreml_sentinel_path(&home).is_file());
-        check_with_rows(&home, "darwin", "arm64", &rows).unwrap();
-    }
-
-    #[test]
-    fn interrupted_publish_leaves_no_partial_tree() {
-        let temporary = tempfile::tempdir().unwrap();
-        let home = temporary.path().join("home");
-        let configured = temporary.path().join("cache");
-        let config = config(&configured);
-        let artifact = row("model.mil", b"model");
-        let rows = [&artifact];
-        let (base, server) = server(b"model".to_vec(), 1);
-        let download_policy = policy(&base);
-        let mut publish = |staging: &Path, target: &Path| {
-            publish_staged_tree_with(staging, target, &mut |_, _| {
-                Err(std::io::Error::other("interrupted publish"))
-            })
-        };
-        let mut write = write_sentinel;
-        let error = install_with_rows_and_seams(
-            &home,
-            &config,
-            false,
-            &download_policy,
-            ("darwin", "arm64"),
-            &rows,
-            &mut publish,
-            &mut write,
-        )
-        .unwrap_err();
-        server.join().unwrap();
-        assert_eq!(error.reason_code, "publish_failed");
-        assert!(!parakeet_coreml_model_root(&configured).exists());
-        assert!(!parakeet_coreml_sentinel_path(&home).exists());
-    }
-
-    #[test]
-    fn force_reinstalls_an_incomplete_tree_and_verifies_it() {
-        let temporary = tempfile::tempdir().unwrap();
-        let home = temporary.path().join("home");
-        let configured = temporary.path().join("cache");
-        let config = config(&configured);
-        let artifact = row("model.mil", b"model");
-        let rows = [&artifact];
-        fs::create_dir_all(parakeet_coreml_model_root(&configured)).unwrap();
-        let (base, server) = server(b"model".to_vec(), 1);
-        let download_policy = policy(&base);
-        install_with_rows(
-            &home,
-            &config,
-            true,
-            &download_policy,
-            ("darwin", "arm64"),
-            &rows,
-        )
-        .unwrap();
-        server.join().unwrap();
-        check_with_rows(&home, "darwin", "arm64", &rows).unwrap();
     }
 
     #[test]
