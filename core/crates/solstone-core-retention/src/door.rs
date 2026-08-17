@@ -874,7 +874,14 @@ mod tests {
         );
         let reason = &outcome.targets[0].not_removed[0].reason;
         assert!(!reason.contains(&bed.root.display().to_string()));
-        assert!(reason.contains("folder"), "got {reason}");
+        assert!(
+            [
+                "there is a folder where a recording was expected",
+                "the file could not be read or removed, which usually means a permission problem",
+            ]
+            .contains(&reason.as_str()),
+            "got {reason}"
+        );
     }
 
     // ---- remove_segments -------------------------------------------------
