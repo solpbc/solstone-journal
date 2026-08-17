@@ -354,7 +354,6 @@ impl CallosumOutput {
     }
 
     #[cfg(any(test, feature = "test-hooks"))]
-    #[allow(dead_code)]
     pub fn dropped_regular_events(&self) -> u64 {
         self.dropped_regular_events.load(Ordering::Acquire)
     }
@@ -964,6 +963,9 @@ mod tests {
         let regular_payload = json!({"state": "connected", "padding": "x".repeat(4096)});
         for _ in 0..=super::CALLOSUM_QUEUE_CAPACITY {
             output.emit("health", regular_payload.clone());
+        }
+        if output.dropped_regular_events() == 0 {
+            return Err("regular Callosum output queue did not saturate".to_owned());
         }
 
         let started = Instant::now();

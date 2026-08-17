@@ -713,7 +713,6 @@ struct FakeListenReader {
 #[cfg(test)]
 struct FakeListenWriter {
     pings: tokio::sync::mpsc::UnboundedSender<Bytes>,
-    writes: tokio::sync::mpsc::UnboundedSender<Bytes>,
     closed: Arc<AtomicBool>,
 }
 
@@ -721,8 +720,6 @@ struct FakeListenWriter {
 struct FakeSocketHandle {
     events: tokio::sync::mpsc::UnboundedSender<Result<ListenEvent, WsClosed>>,
     pings: tokio::sync::mpsc::UnboundedReceiver<Bytes>,
-    #[allow(dead_code)]
-    writes: tokio::sync::mpsc::UnboundedReceiver<Bytes>,
     closed: Arc<AtomicBool>,
 }
 
@@ -771,20 +768,17 @@ impl FakeConnector {
     fn push_socket(self: &Arc<Self>) -> FakeSocketHandle {
         let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
         let (ping_tx, ping_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel();
         let closed = Arc::new(AtomicBool::new(false));
         lock_unpoisoned(&self.sockets).push_back((
             FakeListenReader { events: event_rx },
             FakeListenWriter {
                 pings: ping_tx,
-                writes: write_tx,
                 closed: Arc::clone(&closed),
             },
         ));
         FakeSocketHandle {
             events: event_tx,
             pings: ping_rx,
-            writes: write_rx,
             closed,
         }
     }
@@ -825,10 +819,9 @@ impl ListenWriter for FakeListenWriter {
 
     fn send(
         &mut self,
-        bytes: Bytes,
+        _bytes: Bytes,
     ) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>> {
-        let writes = self.writes.clone();
-        Box::pin(async move { writes.send(bytes).map_err(|_| WsClosed) })
+        Box::pin(async { Ok(()) })
     }
 
     fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>> {
