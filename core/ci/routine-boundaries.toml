@@ -13,9 +13,6 @@ id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_
 id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_sync.rs::tests::new::clock"
 
 [[findings]]
-id = "solstone-core-body-rebuild::core/crates/solstone-core-body-rebuild/src/lib.rs::tests::new::clock"
-
-[[findings]]
 id = "solstone-core-brain::core/crates/solstone-core-brain/src/corpus_tests.rs::new::clock"
 
 [[findings]]
@@ -193,12 +190,6 @@ id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::
 id = "solstone-core-facets::core/crates/solstone-core-facets/src/store/awareness.rs::tests::temporary_journal::clock"
 
 [[findings]]
-id = "solstone-core-format::core/crates/solstone-core-format/src/briefing.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-format::core/crates/solstone-core-format/src/content/talent_projections.rs::tests::new::clock"
-
-[[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::bundled_converse_applies_the_context_floor_and_rejects_unfittable_history::clock"
 
 [[findings]]
@@ -289,52 +280,10 @@ id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/e
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/session.rs::tests::the_session_loop_runs_in_process_and_answers_every_request::scheduling"
 
 [[findings]]
-id = "solstone-core-identity::core/crates/solstone-core-identity/src/store.rs::tests::new::clock"
-
-[[findings]]
 id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/journal_sources.rs::tests::concurrent_received_counters_reload_under_one_source_lock::scheduling"
 
 [[findings]]
 id = "solstone-core-import-web::core/crates/solstone-core-import-web/src/journal_sources.rs::tests::concurrent_revoke_and_counter_update_preserve_both_changes::scheduling"
-
-[[findings]]
-id = "solstone-core-indexer-query::core/crates/solstone-core-indexer-query/src/edges_tests.rs::root::clock"
-
-[[findings]]
-id = "solstone-core-indexer-query::core/crates/solstone-core-indexer-query/src/execute_tests.rs::temp_root::clock"
-
-[[findings]]
-id = "solstone-core-indexer-store::core/crates/solstone-core-indexer-store/src/db.rs::tests::temp_root::clock"
-
-[[findings]]
-id = "solstone-core-indexer-store::core/crates/solstone-core-indexer-store/src/merge.rs::tests::temp_root::clock"
-
-[[findings]]
-id = "solstone-core-indexer-store::core/crates/solstone-core-indexer-store/src/migrations/index_stream.rs::tests::temp_root::clock"
-
-[[findings]]
-id = "solstone-core-indexer-store::core/crates/solstone-core-indexer-store/src/scan.rs::tests::temp_root::clock"
-
-[[findings]]
-id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/discovery.rs::tests::temp_root::clock"
-
-[[findings]]
-id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/edges/candidates.rs::tests::temp_root::clock"
-
-[[findings]]
-id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/edges/discovery.rs::tests::temp_root::clock"
-
-[[findings]]
-id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/edges/mod.rs::tests::temp_root::clock"
-
-[[findings]]
-id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/edges/speaker.rs::tests::temp_root::clock"
-
-[[findings]]
-id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/entity_search.rs::tests::temp_root::clock"
-
-[[findings]]
-id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/stream.rs::tests::temp_root::clock"
 
 [[findings]]
 id = "solstone-core-ingest::core/crates/solstone-core-ingest/src/router.rs::tests::shared_connection_limit_rejects_oversized_declared_body::scheduling"
@@ -343,25 +292,10 @@ id = "solstone-core-ingest::core/crates/solstone-core-ingest/src/router.rs::test
 id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/target.rs::tests::new::clock"
 
 [[findings]]
-id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/coherence.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-journal-cli::core/crates/solstone-core-journal-cli/src/runner.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-journal-config-write::core/crates/solstone-core-journal-config-write/src/config.rs::tests::cas_same_value_returns_without_waiting_for_held_lock::clock"
-
-[[findings]]
-id = "solstone-core-journal-config::core/crates/solstone-core-journal-config/src/tests.rs::new::scheduling"
-
-[[findings]]
 id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/readers.rs::tests::install_logger::scheduling"
 
 [[findings]]
 id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/readers.rs::tests::log::scheduling"
-
-[[findings]]
-id = "solstone-core-journal::core/crates/solstone-core-journal/src/lib.rs::tests::unique_temp::clock"
 
 [[findings]]
 id = "solstone-core-local::core/crates/solstone-core-local/src/install/tests.rs::progress_writes_are_coalesced_until_the_window_elapses::clock"
@@ -374,30 +308,6 @@ id = "solstone-core-maintenance::core/crates/solstone-core-maintenance/src/bodie
 
 [[findings]]
 id = "solstone-core-maintenance::core/crates/solstone-core-maintenance/src/bodies/timeline.rs::tests::error_when::scheduling"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/service.rs::tests::root::clock"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/history.rs::tests::stops_at_first_malformed_line_without_mutating_file::clock"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/prune/attribution.rs::tests::root::clock"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/prune/history.rs::tests::root::clock"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/prune/marker.rs::tests::root::clock"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/reload.rs::tests::root::clock"
-
-[[findings]]
-id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/write.rs::tests::save_is_pretty_has_no_trailing_newline_and_preserves_fields::clock"
-
-[[findings]]
-id = "solstone-core-processing-record::core/crates/solstone-core-processing-record/src/reentry.rs::tests::temporary_path::clock"
 
 [[findings]]
 id = "solstone-core-segment::core/crates/solstone-core-segment/src/stream_record.rs::tests::advance_reallocates_past_a_legacy_record_that_arrives_after_reservation::scheduling"
