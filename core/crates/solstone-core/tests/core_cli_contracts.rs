@@ -11,6 +11,10 @@ mod brain_owner_cli;
 mod check_no_python_spawn;
 #[path = "check_vulkan_absence.rs"]
 mod check_vulkan_absence;
+#[path = "config_journal_cli.rs"]
+mod config_journal_cli;
+#[path = "doctor_cli.rs"]
+mod doctor_cli;
 #[path = "engage_cli.rs"]
 mod engage_cli;
 #[path = "facet_candidates_cli.rs"]
