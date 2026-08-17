@@ -201,7 +201,7 @@ bootstrap_install() {
 	printf '%s\n' "$login_paths"
 	[ "$(printf '%s\n' "$login_paths" | wc -l | tr -d ' ')" -eq 3 ] \
 		|| refuse "fresh login did not resolve all launchers"
-	PATH=$HOME/.local/solstone-journal/bin:/usr/bin:/usr/sbin:/bin:/sbin
+	PATH=$HOME/.local/solstone-journal/current/bin:/usr/bin:/usr/sbin:/bin:/sbin
 	export PATH
 	stop_server
 }
