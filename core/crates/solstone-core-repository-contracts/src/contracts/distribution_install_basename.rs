@@ -57,18 +57,21 @@ fn inventory_basename_template(text: &str) -> Option<&str> {
     None
 }
 
-fn inventory_targets(text: &str) -> Vec<(String, String)> {
+fn inventory_targets(text: &str) -> Vec<(String, String, String)> {
     let mut targets = Vec::new();
     let mut in_target = false;
     let mut id = None;
+    let mut os = None;
     let mut arch = None;
-    let flush = |targets: &mut Vec<(String, String)>,
+    let flush = |targets: &mut Vec<(String, String, String)>,
                  id: &mut Option<String>,
+                 os: &mut Option<String>,
                  arch: &mut Option<String>| {
-        if let (Some(id), Some(arch)) = (id.take(), arch.take()) {
-            targets.push((id, arch));
+        if let (Some(id), Some(os), Some(arch)) = (id.take(), os.take(), arch.take()) {
+            targets.push((id, os, arch));
         } else {
             id.take();
+            os.take();
             arch.take();
         }
     };
@@ -76,7 +79,7 @@ fn inventory_targets(text: &str) -> Vec<(String, String)> {
         let trimmed = line.trim();
         if trimmed.starts_with('[') {
             if in_target {
-                flush(&mut targets, &mut id, &mut arch);
+                flush(&mut targets, &mut id, &mut os, &mut arch);
             }
             in_target = trimmed == "[[target]]";
             continue;
@@ -87,12 +90,15 @@ fn inventory_targets(text: &str) -> Vec<(String, String)> {
         if let Some(value) = trimmed.strip_prefix("id = ") {
             id = Some(value.trim().trim_matches('"').to_owned());
         }
+        if let Some(value) = trimmed.strip_prefix("os = ") {
+            os = Some(value.trim().trim_matches('"').to_owned());
+        }
         if let Some(value) = trimmed.strip_prefix("arch = ") {
             arch = Some(value.trim().trim_matches('"').to_owned());
         }
     }
     if in_target {
-        flush(&mut targets, &mut id, &mut arch);
+        flush(&mut targets, &mut id, &mut os, &mut arch);
     }
     targets
 }
@@ -130,9 +136,10 @@ fn install_targets(text: &str) -> BTreeSet<String> {
     names
 }
 
-fn render_template(template: &str, version: &str, arch: &str) -> String {
+fn render_template(template: &str, version: &str, os: &str, arch: &str) -> String {
     template
         .replace("{version}", version)
+        .replace("{os}", os)
         .replace("{arch}", arch)
 }
 
@@ -162,11 +169,11 @@ fn drift(inventory: &str, install: &str) -> BTreeSet<String> {
     }
     let install_targets = install_targets(install);
     let version = "VERSION";
-    for (id, arch) in inventory_targets(inventory) {
+    for (id, os, arch) in inventory_targets(inventory) {
         if !install_targets.contains(&id) {
             unexpected.insert(format!("install TARGET {id}"));
         }
-        let from_inventory = render_template(template, version, &arch);
+        let from_inventory = render_template(template, version, &os, &arch);
         let from_install = install_basename(install_product, version, &id);
         if from_inventory != from_install {
             unexpected.insert(format!("{from_inventory} {from_install}"));
@@ -190,7 +197,7 @@ fn install_basename_matches_inventory_template() {
 
 #[test]
 fn planted_basename_mismatch_is_detected() {
-    let inventory = "product = \"solstone-journal\"\n[artifact]\nbasename = \"solstone-journal-{version}-linux-{arch}\"\n[[target]]\nid = \"linux-x86_64\"\narch = \"x86_64\"\n";
+    let inventory = "product = \"solstone-journal\"\n[artifact]\nbasename = \"solstone-journal-{version}-{os}-{arch}\"\n[[target]]\nid = \"linux-x86_64\"\nos = \"linux\"\narch = \"x86_64\"\n";
     let matching =
         "PRODUCT=solstone-journal\nTARGET=linux-x86_64\n_base=${PRODUCT}-${VERSION}-${TARGET}\n";
     assert!(drift(inventory, matching).is_empty());
@@ -201,6 +208,19 @@ fn planted_basename_mismatch_is_detected() {
         unexpected
             .iter()
             .any(|item| item.contains("solstone-other")),
+        "{unexpected:?}"
+    );
+}
+
+#[test]
+fn declared_os_is_not_inferred_from_target_id() {
+    let inventory = "product = \"solstone-journal\"\n[artifact]\nbasename = \"solstone-journal-{version}-{os}-{arch}\"\n[[target]]\nid = \"linux-x86_64\"\nos = \"macos\"\narch = \"x86_64\"\n";
+    let install =
+        "PRODUCT=solstone-journal\nTARGET=linux-x86_64\n_base=${PRODUCT}-${VERSION}-${TARGET}\n";
+    let unexpected = drift(inventory, install);
+    assert!(
+        unexpected.iter().any(|item| item
+            == "solstone-journal-VERSION-macos-x86_64 solstone-journal-VERSION-linux-x86_64"),
         "{unexpected:?}"
     );
 }
