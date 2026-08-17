@@ -4,7 +4,6 @@
 //! Narrow `#[doc(hidden)]` driver for transport integration tests.
 
 use std::path::Path;
-use std::process::Child;
 use std::time::Duration;
 
 use solstone_core_spp_ratls::AttestedIo;
@@ -15,7 +14,7 @@ use crate::backend::parakeet_coreml::{get_model_info_with_helper, transcribe_wit
 use crate::backend::parakeet_cpp::{
     HealthState, ParakeetServer, connect, probe_health, transcribe_transport_with_timeout,
 };
-use crate::speakers::{SpeakersAnalyzeBudget, invoke_child};
+use crate::speakers::{SpeakersAnalyzeBudget, invoke_speakers_analyze_helper};
 
 #[doc(hidden)]
 pub fn recorded_convey_is_up(journal_path: &Path) -> bool {
@@ -150,8 +149,8 @@ pub enum SpeakerInvoke {
 
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments)]
-pub fn invoke_speakers_child(
-    child: &mut Child,
+pub fn invoke_speakers_program(
+    program: &Path,
     request: &[u8],
     raw_path: &Path,
     timeout: Duration,
@@ -167,7 +166,7 @@ pub fn invoke_speakers_child(
         terminate_grace,
         kill_grace,
     };
-    match invoke_child(child, request, raw_path, budget) {
+    match invoke_speakers_analyze_helper(program, request, raw_path, budget) {
         Ok(completed) => SpeakerInvoke::Completed {
             returncode: completed.returncode,
             stdout: completed.stdout,

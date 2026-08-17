@@ -8,7 +8,6 @@ use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::Child;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -19,8 +18,8 @@ use solstone_core_spp_ratls::AttestedIo;
 use solstone_core_transcribe::test_hooks::{
     ConfidentialMultipart, CoremlModelInfo, CoremlTranscribe, ParakeetConnect, ParakeetHealth,
     ParakeetTranscribe, SpeakerInvoke, confidential_multipart_exchange, coreml_get_model_info,
-    coreml_transcribe_with_helper, invoke_speakers_child, parakeet_connect, parakeet_probe_health,
-    parakeet_transcribe, recorded_convey_is_up,
+    coreml_transcribe_with_helper, invoke_speakers_program, parakeet_connect,
+    parakeet_probe_health, parakeet_transcribe, recorded_convey_is_up,
 };
 
 const VALID: &str =
@@ -640,63 +639,18 @@ fn health_probe_accepts_only_http_200() {
     stub.finish();
 }
 
-struct SpeakerChildGuard(Option<Child>);
-
-impl SpeakerChildGuard {
-    fn child(&mut self) -> &mut Child {
-        self.0.as_mut().expect("speaker child remains owned")
-    }
+fn write_speaker_helper(directory: &Path, body: &str) -> std::path::PathBuf {
+    let helper = directory.join("speakers-helper");
+    fs::write(&helper, format!("#!/bin/sh\n{body}\n")).unwrap();
+    let mut permissions = fs::metadata(&helper).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&helper, permissions).unwrap();
+    helper
 }
 
-impl Drop for SpeakerChildGuard {
-    fn drop(&mut self) {
-        let Some(child) = self.0.as_mut() else {
-            return;
-        };
-        if !matches!(child.try_wait(), Ok(Some(_))) {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
-}
-
-fn spawn_speaker_child(script: &str, receipt: &Path, siglog: &Path) -> SpeakerChildGuard {
-    fs::write(receipt, []).unwrap();
-    fs::write(siglog, []).unwrap();
-    SpeakerChildGuard(Some(
-        std::process::Command::new("sh")
-            .arg("-c")
-            .arg(script)
-            .env("RECEIPT", receipt)
-            .env("SIGLOG", siglog)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap(),
-    ))
-}
-
-fn wait_for_started(child: &mut SpeakerChildGuard, receipt: &Path) {
-    let deadline = Instant::now() + IO_TIMEOUT;
-    loop {
-        if fs::read_to_string(receipt).unwrap() == "started" {
-            return;
-        }
-        if let Some(status) = child.child().try_wait().unwrap() {
-            panic!("speaker child exited before its ready receipt: {status}");
-        }
-        assert!(
-            Instant::now() < deadline,
-            "speaker child writes its ready receipt before the deadline"
-        );
-        thread::sleep(Duration::from_millis(5));
-    }
-}
-
-fn invoke_timeout(child: &mut std::process::Child) -> SpeakerInvoke {
-    invoke_speakers_child(
-        child,
+fn invoke_timeout(program: &Path) -> SpeakerInvoke {
+    invoke_speakers_program(
+        program,
         b"{}",
         Path::new("input.wav"),
         Duration::from_millis(20),
@@ -713,19 +667,18 @@ fn responsive_speaker_child_observes_term_without_kill() {
     let temporary = tempfile::tempdir().unwrap();
     let receipt = temporary.path().join("started");
     let siglog = temporary.path().join("signals");
-    let mut child = spawn_speaker_child(
-        r#"trap 'printf "%s\n" TERM >> "$SIGLOG"; exit 0' TERM
-printf started > "$RECEIPT"
-while :; do :; done
-"#,
-        &receipt,
-        &siglog,
+    let helper = write_speaker_helper(
+        temporary.path(),
+        &format!(
+            "trap 'printf \"%s\\n\" TERM >> {}; exit 0' TERM\nprintf started > {}\nwhile :; do :; done",
+            quote_path(&siglog),
+            quote_path(&receipt)
+        ),
     );
-    wait_for_started(&mut child, &receipt);
     let SpeakerInvoke::Failed {
         reason,
         native_exit_code,
-    } = invoke_timeout(child.child())
+    } = invoke_timeout(&helper)
     else {
         panic!("expected timeout failure");
     };
@@ -740,25 +693,119 @@ fn ignoring_speaker_child_observes_term_before_kill() {
     let temporary = tempfile::tempdir().unwrap();
     let receipt = temporary.path().join("started");
     let siglog = temporary.path().join("signals");
-    let mut child = spawn_speaker_child(
-        r#"trap 'printf "%s\n" TERM >> "$SIGLOG"' TERM
-printf started > "$RECEIPT"
-while :; do :; done
-"#,
-        &receipt,
-        &siglog,
+    let helper = write_speaker_helper(
+        temporary.path(),
+        &format!(
+            "trap 'printf \"%s\\n\" TERM >> {}' TERM\nprintf started > {}\nwhile :; do :; done",
+            quote_path(&siglog),
+            quote_path(&receipt)
+        ),
     );
-    wait_for_started(&mut child, &receipt);
     let SpeakerInvoke::Failed {
         reason,
         native_exit_code,
-    } = invoke_timeout(child.child())
+    } = invoke_timeout(&helper)
     else {
         panic!("expected timeout failure");
     };
     assert_eq!(reason, "timeout");
     assert_eq!(native_exit_code, Some(-9));
     assert_eq!(fs::read_to_string(&siglog).unwrap(), "TERM\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn speaker_root_exit_kills_descendant_that_holds_pipes() {
+    let temporary = tempfile::tempdir().unwrap();
+    let pid_receipt = temporary.path().join("descendant-pid");
+    let helper = write_speaker_helper(
+        temporary.path(),
+        &format!(
+            "cat >/dev/null\nsleep 5 &\nprintf '%s' \"$!\" > {}\nexit 0",
+            quote_path(&pid_receipt)
+        ),
+    );
+    let outcome = with_deadline(move || {
+        invoke_speakers_program(
+            &helper,
+            b"{}",
+            Path::new("input.wav"),
+            Duration::from_secs(1),
+            1024,
+            1024,
+            Duration::from_millis(20),
+            Duration::from_secs(1),
+        )
+    });
+    assert!(matches!(
+        outcome,
+        SpeakerInvoke::Completed { returncode: 0, .. }
+    ));
+    let raw_pid = fs::read_to_string(&pid_receipt)
+        .unwrap()
+        .trim()
+        .parse::<i32>()
+        .unwrap();
+    let pid = rustix::process::Pid::from_raw(raw_pid).unwrap();
+    let deadline = Instant::now() + IO_TIMEOUT;
+    loop {
+        match rustix::process::test_kill_process(pid) {
+            Err(rustix::io::Errno::SRCH) => break,
+            Ok(()) | Err(rustix::io::Errno::PERM) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(5));
+            }
+            outcome => panic!("speaker descendant survived cleanup: {outcome:?}"),
+        }
+    }
+}
+
+#[test]
+fn speaker_program_receives_request_and_enforces_exact_capture_caps() {
+    let temporary = tempfile::tempdir().unwrap();
+    let request_receipt = temporary.path().join("request");
+    let request_helper = write_speaker_helper(
+        temporary.path(),
+        &format!("cat > {}\nprintf done", quote_path(&request_receipt)),
+    );
+    let completed = invoke_speakers_program(
+        &request_helper,
+        b"request-bytes",
+        Path::new("input.wav"),
+        Duration::from_secs(1),
+        4,
+        4,
+        Duration::from_millis(20),
+        Duration::from_secs(1),
+    );
+    assert!(matches!(
+        completed,
+        SpeakerInvoke::Completed {
+            returncode: 0,
+            ref stdout,
+            ref stderr,
+        } if stdout == "done" && stderr.is_empty()
+    ));
+    assert_eq!(fs::read(&request_receipt).unwrap(), b"request-bytes");
+
+    for (body, reason) in [
+        ("printf 12345", "stdout-too-large"),
+        ("printf 12345 >&2", "stderr-too-large"),
+    ] {
+        let helper = write_speaker_helper(temporary.path(), body);
+        let SpeakerInvoke::Failed { reason: actual, .. } = invoke_speakers_program(
+            &helper,
+            b"",
+            Path::new("input.wav"),
+            Duration::from_secs(1),
+            4,
+            4,
+            Duration::from_millis(20),
+            Duration::from_secs(1),
+        ) else {
+            panic!("expected {reason}");
+        };
+        assert_eq!(actual, reason);
+    }
 }
 
 const COREML_SUCCESS: &str = r#"{"transcript":"hello world!","audio_sec":1.0,"transcribe_ms":2,"rtfx":3.0,"token_timings":[{"token":"▁hel","token_id":1,"start":0.0,"end":0.1,"confidence":0.9},{"token":"lo","token_id":2,"start":0.1,"end":0.2,"confidence":0.6},{"token":"▁world","token_id":3,"start":0.2,"end":0.4,"confidence":0.8},{"token":"!","token_id":4,"start":0.4,"end":0.5,"confidence":0.7}]}"#;
