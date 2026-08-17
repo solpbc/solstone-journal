@@ -3874,3 +3874,16 @@ timeout = "standard"
 default_full = true
 required_features = []
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-origin::origin_mirror_lifecycle"
+package = "solstone-core-origin"
+target = "origin_mirror_lifecycle"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"

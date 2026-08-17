@@ -688,51 +688,6 @@ id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/reloa
 id = "solstone-core-observer::core/crates/solstone-core-observer/src/store/write.rs::tests::save_is_pretty_has_no_trailing_newline_and_preserves_fields::clock"
 
 [[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::gate_never_falls_back_to_the_upstream_listener::clock"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::gate_never_falls_back_to_the_upstream_listener::network"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::gate_never_falls_back_to_the_upstream_listener::scheduling"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_follows_validated_loopback_redirects::scheduling"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_read_back_failure_leaves_no_provenance_row::scheduling"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_read_back_is_shared_after_single_shot_publish::scheduling"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_refuses_huggingface_git_blob_etag_that_does_not_match_the_body::scheduling"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_refuses_redirect_to_a_disallowed_host::scheduling"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_uses_loopback_github_digest_metadata_then_reads_back::scheduling"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_uses_loopback_huggingface_git_blob_metadata::scheduling"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::mirror_uses_loopback_huggingface_sha256_metadata::scheduling"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::server::network"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::server::scheduling"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::status_server::network"
-
-[[findings]]
-id = "solstone-core-origin::core/crates/solstone-core-origin/src/tests.rs::status_server::scheduling"
-
-[[findings]]
 id = "solstone-core-processing-record::core/crates/solstone-core-processing-record/src/reentry.rs::tests::temporary_path::clock"
 
 [[findings]]

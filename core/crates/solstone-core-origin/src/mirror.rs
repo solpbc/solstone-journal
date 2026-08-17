@@ -291,8 +291,15 @@ fn verify_github_metadata(
                 url: url.clone(),
                 message: error.to_string(),
             })?;
+    github_release_digest_verification(target, &body)
+}
+
+fn github_release_digest_verification(
+    target: &MirrorTarget,
+    body: &str,
+) -> Result<UpstreamMetadataVerification, MirrorError> {
     let release: Value =
-        serde_json::from_str(&body).map_err(|_| MirrorError::UnverifiedUpstream {
+        serde_json::from_str(body).map_err(|_| MirrorError::UnverifiedUpstream {
             origin_key: target.origin_key.clone(),
         })?;
     let expected = format!("sha256:{}", target.sha256);
@@ -315,6 +322,14 @@ fn verify_github_metadata(
         })
 }
 
+#[cfg(test)]
+pub(crate) fn github_release_digest_verification_for_test(
+    target: &MirrorTarget,
+    body: &str,
+) -> Result<UpstreamVerification, MirrorError> {
+    Ok(github_release_digest_verification(target, body)?.verification)
+}
+
 fn verify_huggingface_metadata(
     target: &MirrorTarget,
     policy: &UpstreamHostPolicy<'_>,
@@ -324,9 +339,15 @@ fn verify_huggingface_metadata(
         .headers()
         .get("x-linked-etag")
         .and_then(|value| value.to_str().ok())
-        .unwrap_or_default()
-        .trim_matches('"')
-        .trim_start_matches("sha256:");
+        .unwrap_or_default();
+    huggingface_etag_verification(target, etag)
+}
+
+fn huggingface_etag_verification(
+    target: &MirrorTarget,
+    linked_etag: &str,
+) -> Result<UpstreamMetadataVerification, MirrorError> {
+    let etag = linked_etag.trim_matches('"').trim_start_matches("sha256:");
     if etag == target.sha256 {
         return Ok(UpstreamMetadataVerification {
             verification: UpstreamVerification::UpstreamSha256,
@@ -347,11 +368,11 @@ fn verify_huggingface_metadata(
 }
 
 #[cfg(test)]
-pub(crate) fn verify_huggingface_metadata_for_test(
+pub(crate) fn huggingface_etag_verification_for_test(
     target: &MirrorTarget,
-    policy: &UpstreamHostPolicy<'_>,
+    linked_etag: &str,
 ) -> Result<(UpstreamVerification, Option<String>), MirrorError> {
-    let verification = verify_huggingface_metadata(target, policy)?;
+    let verification = huggingface_etag_verification(target, linked_etag)?;
     Ok((verification.verification, verification.expected_blob_oid))
 }
 
@@ -362,7 +383,20 @@ fn download_upstream(
     expected_blob_oid: Option<&str>,
 ) -> Result<(), MirrorError> {
     let response = request(&target.upstream_url, policy)?;
-    let mut body = response.into_body().into_reader();
+    consume_upstream_body(
+        target,
+        destination,
+        response.into_body().into_reader(),
+        expected_blob_oid,
+    )
+}
+
+fn consume_upstream_body(
+    target: &MirrorTarget,
+    destination: &Path,
+    mut body: impl Read,
+    expected_blob_oid: Option<&str>,
+) -> Result<(), MirrorError> {
     let mut file = OpenOptions::new()
         .create(true)
         .truncate(true)
@@ -428,6 +462,21 @@ fn download_upstream(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn consume_upstream_body_for_test(
+    target: &MirrorTarget,
+    destination: &Path,
+    bytes: &[u8],
+    expected_blob_oid: Option<&str>,
+) -> Result<(), MirrorError> {
+    consume_upstream_body(
+        target,
+        destination,
+        std::io::Cursor::new(bytes),
+        expected_blob_oid,
+    )
 }
 
 fn request(
@@ -499,6 +548,27 @@ impl AbsoluteUrl {
             self.scheme, self.authority, self.path_and_query
         )
     }
+}
+
+#[cfg(test)]
+pub(crate) fn parse_absolute_url_for_test(url: &str) -> Result<String, MirrorError> {
+    Ok(parse_absolute_url(url)?.as_str())
+}
+
+#[cfg(test)]
+pub(crate) fn resolve_location_for_test(
+    current: &str,
+    location: &str,
+) -> Result<String, MirrorError> {
+    Ok(resolve_location(&parse_absolute_url(current)?, location)?.as_str())
+}
+
+#[cfg(test)]
+pub(crate) fn validate_url_for_test(
+    url: &str,
+    policy: &UpstreamHostPolicy<'_>,
+) -> Result<String, MirrorError> {
+    Ok(validate_url(url, policy)?.as_str())
 }
 
 fn validate_url(url: &str, policy: &UpstreamHostPolicy<'_>) -> Result<AbsoluteUrl, MirrorError> {
@@ -638,20 +708,17 @@ fn github_release_api_url(upstream_url: &str) -> Result<String, MirrorError> {
     ))
 }
 
-fn append_provenance(
-    path: &Path,
+fn provenance_row(
     target: &MirrorTarget,
     verification: UpstreamVerification,
-) -> Result<(), MirrorError> {
+    timestamp: &str,
+) -> Result<BTreeMap<&'static str, Value>, MirrorError> {
     let mut row = BTreeMap::new();
     row.insert("origin_key", serde_json::json!(target.origin_key));
     row.insert("pin_sha256", serde_json::json!(target.sha256));
     row.insert("read_back", serde_json::json!("sha256"));
     row.insert("size_bytes", serde_json::json!(target.size_bytes));
-    row.insert(
-        "timestamp",
-        serde_json::json!(Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)),
-    );
+    row.insert("timestamp", serde_json::json!(timestamp));
     row.insert("unit", serde_json::json!(target.unit));
     row.insert("upstream_url", serde_json::json!(target.upstream_url));
     row.insert(
@@ -660,6 +727,33 @@ fn append_provenance(
             .map_err(|source| MirrorError::ProvenanceSerialize { source })?,
     );
     row.insert("version", serde_json::json!(target.version));
+    Ok(row)
+}
+
+#[cfg(test)]
+pub(crate) fn provenance_row_for_test(
+    target: &MirrorTarget,
+    verification: UpstreamVerification,
+    timestamp: &str,
+) -> Result<Value, MirrorError> {
+    Ok(Value::Object(
+        provenance_row(target, verification, timestamp)?
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect(),
+    ))
+}
+
+fn append_provenance(
+    path: &Path,
+    target: &MirrorTarget,
+    verification: UpstreamVerification,
+) -> Result<(), MirrorError> {
+    let row = provenance_row(
+        target,
+        verification,
+        &Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
+    )?;
     let serialized = serde_json::to_string(&row)
         .map_err(|source| MirrorError::ProvenanceSerialize { source })?;
     let mut log = OpenOptions::new()

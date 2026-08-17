@@ -2,27 +2,23 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use solstone_core_local::install::archive::DownloadHostPolicy;
 
-use crate::gate::{GateTarget, assert_head_targets_correspond, head_gate_targets, verify_targets};
+use crate::gate::assert_head_targets_correspond;
 use crate::guard::{
     GuardError, PinOwner, PruneAssessment, assess_prune, assess_prune_with_current_support,
     require_prunable,
 };
 use crate::mirror::{
-    MULTIPART_THRESHOLD_BYTES, MirrorError, MirrorTarget, PublishBackend, PublishMode,
-    PublishRequest, UpstreamHostPolicy, UpstreamMetadataKind, UpstreamVerification,
-    current_mirror_targets, mirror_one, select_publish_mode,
+    MULTIPART_THRESHOLD_BYTES, MirrorError, MirrorTarget, PublishMode, UpstreamHostPolicy,
+    UpstreamMetadataKind, UpstreamVerification, consume_upstream_body_for_test,
+    current_mirror_targets, github_release_digest_verification_for_test,
+    huggingface_etag_verification_for_test, parse_absolute_url_for_test, provenance_row_for_test,
+    resolve_location_for_test, select_publish_mode, validate_url_for_test,
 };
 use crate::pins::{
     PinsError, authority_origin_pins_from_test_path, historical_origin_pins, snapshot_versions,
@@ -44,14 +40,6 @@ fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-fn policy(base: &str) -> DownloadHostPolicy<'_> {
-    DownloadHostPolicy {
-        allowed_hosts: &["127.0.0.1"],
-        allow_http: true,
-        origin_base_url: base,
-    }
-}
-
 fn upstream_policy() -> UpstreamHostPolicy<'static> {
     UpstreamHostPolicy {
         allowed_hosts: &["127.0.0.1"],
@@ -59,131 +47,23 @@ fn upstream_policy() -> UpstreamHostPolicy<'static> {
     }
 }
 
-fn read_request(stream: &mut TcpStream) -> String {
-    stream
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .unwrap();
-    let mut request = Vec::new();
-    let mut chunk = [0_u8; 1024];
-    while !request.windows(4).any(|window| window == b"\r\n\r\n") {
-        let read = stream.read(&mut chunk).unwrap();
-        assert_ne!(read, 0, "request ended before headers");
-        request.extend_from_slice(&chunk[..read]);
-    }
-    String::from_utf8(request).unwrap()
-}
-
-fn server<F>(requests: usize, response: F) -> String
-where
-    F: Fn(&str) -> (String, Vec<u8>) + Send + 'static,
-{
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    thread::spawn(move || {
-        for stream in listener.incoming().take(requests) {
-            let mut stream = stream.unwrap();
-            let request = read_request(&mut stream);
-            let (headers, body) = response(&request);
-            if headers.to_ascii_lowercase().contains("content-length:") {
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\n{headers}Connection: close\r\n\r\n"
-                )
-                .unwrap();
-            } else {
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n{}Connection: close\r\n\r\n",
-                    body.len(),
-                    headers
-                )
-                .unwrap();
-            }
-            stream.write_all(&body).unwrap();
-        }
-    });
-    format!("http://{address}")
-}
-
-fn status_server<F>(requests: usize, response: F) -> String
-where
-    F: Fn(&str) -> (u16, String, Vec<u8>) + Send + 'static,
-{
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    thread::spawn(move || {
-        for stream in listener.incoming().take(requests) {
-            let mut stream = stream.unwrap();
-            let request = read_request(&mut stream);
-            let (status, headers, body) = response(&request);
-            write!(
-                stream,
-                "HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\n{headers}Connection: close\r\n\r\n",
-                body.len()
-            )
-            .unwrap();
-            stream.write_all(&body).unwrap();
-        }
-    });
-    format!("http://{address}")
-}
-
-fn target(key: &str, bytes: &[u8]) -> GateTarget {
-    GateTarget {
-        origin_key: key.to_owned(),
+fn mirror_target(base: &str, bytes: &[u8], kind: UpstreamMetadataKind) -> MirrorTarget {
+    MirrorTarget {
+        origin_key: "assets/fixture/file.bin".to_owned(),
         sha256: sha256(bytes),
-        size_bytes: Some(bytes.len() as u64),
+        size_bytes: bytes.len() as u64,
+        upstream_url: format!("{base}/upstream"),
         unit: "fixture".to_owned(),
-        version: Some("fixture".to_owned()),
-        upstream_url: None,
+        version: "fixture".to_owned(),
+        filename: "file.bin".to_owned(),
+        metadata_kind: kind,
+        metadata_url: format!("{base}/metadata"),
     }
-}
-
-#[test]
-fn gate_loopback_verifies_bytes_and_inner_slash_origin_key() {
-    let body = b"fixture-origin".to_vec();
-    let base = server(1, move |_| (String::new(), body.clone()));
-    let target = target(
-        "assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/onnx/model.onnx",
-        b"fixture-origin",
-    );
-    verify_targets(&[target], &temp("gate-inner-slash"), &policy(&base)).unwrap();
-}
-
-#[test]
-fn gate_rejects_wrong_bytes_even_with_matching_content_length() {
-    let base = server(1, |_| (String::new(), b"wrong".to_vec()));
-    let target = target("assets/fixture", b"right");
-    let error = verify_targets(&[target], &temp("gate-wrong"), &policy(&base)).unwrap_err();
-    assert!(error.to_string().contains("origin verification failed"));
-}
-
-#[test]
-fn gate_rejects_short_body_even_when_digest_would_be_checked_later() {
-    let base = server(1, |_| (String::new(), b"short".to_vec()));
-    let mut target = target("assets/fixture", b"shorter");
-    target.sha256 = sha256(b"short");
-    let error = verify_targets(&[target], &temp("gate-short"), &policy(&base)).unwrap_err();
-    assert!(error.to_string().contains("origin verification failed"));
 }
 
 #[test]
 fn head_target_derivation_corresponds_without_a_growing_count() {
     assert_head_targets_correspond().unwrap();
-}
-
-#[test]
-fn full_head_target_set_can_be_verified_when_authority_sizes_are_absent() {
-    let body = b"head-target-fixture";
-    let mut targets = head_gate_targets().unwrap();
-    for target in &mut targets {
-        target.sha256 = sha256(body);
-        if target.size_bytes.is_some() {
-            target.size_bytes = Some(body.len() as u64);
-        }
-    }
-    let base = server(targets.len(), |_| (String::new(), body.to_vec()));
-    verify_targets(&targets, &temp("full-head-target-set"), &policy(&base)).unwrap();
 }
 
 #[test]
@@ -216,318 +96,230 @@ fn head_only_key_names_head_unreleased() {
     );
 }
 
-struct FixtureBackend {
-    modes: Mutex<Vec<PublishMode>>,
-}
-
-impl PublishBackend for FixtureBackend {
-    fn publish(&self, mode: PublishMode, _request: PublishRequest<'_>) -> Result<(), MirrorError> {
-        self.modes.lock().unwrap().push(mode);
-        Ok(())
-    }
-}
-
-fn mirror_target(base: &str, bytes: &[u8], kind: UpstreamMetadataKind) -> MirrorTarget {
-    MirrorTarget {
-        origin_key: "assets/fixture/file.bin".to_owned(),
-        sha256: sha256(bytes),
-        size_bytes: bytes.len() as u64,
-        upstream_url: format!("{base}/upstream"),
-        unit: "fixture".to_owned(),
-        version: "fixture".to_owned(),
-        filename: "file.bin".to_owned(),
-        metadata_kind: kind,
-        metadata_url: format!("{base}/metadata"),
-    }
-}
-
 #[test]
-fn mirror_uses_loopback_github_digest_metadata_then_reads_back() {
-    let body = b"mirror-body".to_vec();
-    let digest = sha256(&body);
-    let base = server(3, move |request| {
-        if request.starts_with("GET /metadata ") {
-            (
-                String::new(),
-                format!(r#"{{"assets":[{{"name":"file.bin","digest":"sha256:{digest}"}}]}}"#)
-                    .into_bytes(),
-            )
-        } else {
-            (String::new(), body.clone())
-        }
-    });
-    let target = mirror_target(&base, b"mirror-body", UpstreamMetadataKind::GithubRelease);
-    let backend = FixtureBackend {
-        modes: Mutex::new(Vec::new()),
-    };
-    let root = temp("mirror-github");
-    let outcome = mirror_one(
-        &target,
-        &backend,
-        &root,
-        &root.join("log.jsonl"),
-        &policy(&base),
-        &upstream_policy(),
-    )
-    .unwrap();
+fn github_release_digest_matches_named_asset() {
+    let target = mirror_target(
+        "http://127.0.0.1:1",
+        b"mirror-body",
+        UpstreamMetadataKind::GithubRelease,
+    );
+    let body = format!(
+        r#"{{"assets":[{{"name":"file.bin","digest":"sha256:{}"}}]}}"#,
+        target.sha256
+    );
     assert_eq!(
-        outcome,
-        crate::mirror::MirrorOutcome::Mirrored {
-            origin_key: target.origin_key,
-            verification: UpstreamVerification::UpstreamSha256,
-        }
+        github_release_digest_verification_for_test(&target, &body).unwrap(),
+        UpstreamVerification::UpstreamSha256
     );
 }
 
 #[test]
-fn mirror_follows_validated_loopback_redirects() {
-    let body = b"redirected-object".to_vec();
-    let digest = sha256(&body);
-    let base = status_server(4, move |request| {
-        if request.starts_with("GET /metadata ") {
-            (
-                200,
-                String::new(),
-                format!(r#"{{"assets":[{{"name":"file.bin","digest":"sha256:{digest}"}}]}}"#)
-                    .into_bytes(),
-            )
-        } else if request.starts_with("GET /upstream ") {
-            (302, "Location: /object\r\n".to_owned(), Vec::new())
-        } else {
-            (200, String::new(), body.clone())
-        }
-    });
+fn github_release_digest_rejects_wrong_digest() {
     let target = mirror_target(
-        &base,
-        b"redirected-object",
+        "http://127.0.0.1:1",
+        b"mirror-body",
         UpstreamMetadataKind::GithubRelease,
     );
-    let backend = FixtureBackend {
-        modes: Mutex::new(Vec::new()),
-    };
-    let root = temp("mirror-redirect");
+    let body = r#"{"assets":[{"name":"file.bin","digest":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}]}"#;
     assert!(matches!(
-        mirror_one(
-            &target,
-            &backend,
-            &root,
-            &root.join("log.jsonl"),
-            &policy(&base),
-            &upstream_policy(),
-        ),
-        Ok(crate::mirror::MirrorOutcome::Mirrored { .. })
+        github_release_digest_verification_for_test(&target, body),
+        Err(MirrorError::UnverifiedUpstream { .. })
     ));
 }
 
 #[test]
-fn mirror_refuses_redirect_to_a_disallowed_host() {
-    let body = b"redirect-refusal".to_vec();
-    let digest = sha256(&body);
-    let base = status_server(2, move |request| {
-        if request.starts_with("GET /metadata ") {
-            (
-                200,
-                String::new(),
-                format!(r#"{{"assets":[{{"name":"file.bin","digest":"sha256:{digest}"}}]}}"#)
-                    .into_bytes(),
-            )
-        } else {
-            (
-                302,
-                "Location: http://127.0.0.2:9/object\r\n".to_owned(),
-                Vec::new(),
-            )
-        }
-    });
+fn github_release_digest_rejects_wrong_filename() {
     let target = mirror_target(
-        &base,
-        b"redirect-refusal",
+        "http://127.0.0.1:1",
+        b"mirror-body",
         UpstreamMetadataKind::GithubRelease,
     );
-    let backend = FixtureBackend {
-        modes: Mutex::new(Vec::new()),
-    };
-    let root = temp("mirror-redirect-refusal");
+    let body = format!(
+        r#"{{"assets":[{{"name":"other.bin","digest":"sha256:{}"}}]}}"#,
+        target.sha256
+    );
     assert!(matches!(
-        mirror_one(
-            &target,
-            &backend,
-            &root,
-            &root.join("log.jsonl"),
-            &policy(&base),
-            &upstream_policy(),
-        ),
-        Err(MirrorError::UpstreamHostRefused { .. })
+        github_release_digest_verification_for_test(&target, &body),
+        Err(MirrorError::UnverifiedUpstream { .. })
     ));
 }
 
 #[test]
-fn mirror_uses_loopback_huggingface_git_blob_metadata() {
-    const CONFIG_JSON_BLOB_OID: &str = "9e26dfeeb6e641a33dae4961196235bdb965b21b";
-    const CONFIG_JSON_SHA256: &str =
-        "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
-
-    let body = b"{}".to_vec();
-    let base = server(3, move |request| {
-        if request.starts_with("GET /metadata ") {
-            (
-                format!("x-linked-etag: {CONFIG_JSON_BLOB_OID}\r\n"),
-                Vec::new(),
-            )
-        } else {
-            (String::new(), body.clone())
-        }
-    });
-    let mut target = mirror_target(&base, b"{}", UpstreamMetadataKind::HuggingFace);
-    target.origin_key =
-        "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/config.json".to_owned();
-    assert_eq!(target.sha256, CONFIG_JSON_SHA256);
-    assert_eq!(target.size_bytes, 2);
-    let backend = FixtureBackend {
-        modes: Mutex::new(Vec::new()),
-    };
-    let root = temp("mirror-hf");
-    let log = root.join("log.jsonl");
-    let outcome = mirror_one(
-        &target,
-        &backend,
-        &root,
-        &log,
-        &policy(&base),
-        &upstream_policy(),
-    )
-    .unwrap();
+fn github_release_digest_rejects_non_json_body() {
+    let target = mirror_target(
+        "http://127.0.0.1:1",
+        b"mirror-body",
+        UpstreamMetadataKind::GithubRelease,
+    );
     assert!(matches!(
-        outcome,
-        crate::mirror::MirrorOutcome::Mirrored {
-            verification: UpstreamVerification::UpstreamGitBlobSha1,
-            ..
-        }
+        github_release_digest_verification_for_test(&target, "not json"),
+        Err(MirrorError::UnverifiedUpstream { .. })
     ));
-    let provenance: Value = serde_json::from_str(fs::read_to_string(log).unwrap().trim()).unwrap();
-    assert_eq!(provenance["verified"], "upstream-git-blob-sha1");
 }
 
 #[test]
-fn mirror_refuses_huggingface_git_blob_etag_that_does_not_match_the_body() {
-    // This did not fail before wave 1: the old allowlist rejected the metadata
-    // before it fetched the body. It now proves the body identity is checked.
-    let body = b"unlisted-hf".to_vec();
-    let base = server(3, move |request| {
-        if request.starts_with("GET /metadata ") {
-            (
-                "x-linked-etag: 688882a700000000000000000000000000000000\r\n".to_owned(),
-                Vec::new(),
-            )
-        } else {
-            (String::new(), body.clone())
-        }
-    });
-    let target = mirror_target(&base, b"unlisted-hf", UpstreamMetadataKind::HuggingFace);
-    let backend = FixtureBackend {
-        modes: Mutex::new(Vec::new()),
-    };
-    let root = temp("mirror-unlisted-size-only");
-    assert!(matches!(
-        mirror_one(
-            &target,
-            &backend,
-            &root,
-            &root.join("log.jsonl"),
-            &policy(&base),
-            &upstream_policy(),
-        ),
-        Err(MirrorError::UpstreamGitBlobDigestMismatch { .. })
-    ));
-    assert!(backend.modes.lock().unwrap().is_empty());
-}
-
-#[test]
-fn mirror_uses_loopback_huggingface_sha256_metadata() {
-    let body = b"lfs-hf".to_vec();
-    let digest = sha256(&body);
-    let base = server(3, move |request| {
-        if request.starts_with("GET /metadata ") {
-            (format!("x-linked-etag: sha256:{digest}\r\n"), Vec::new())
-        } else {
-            (String::new(), body.clone())
-        }
-    });
-    let target = mirror_target(&base, b"lfs-hf", UpstreamMetadataKind::HuggingFace);
-    let backend = FixtureBackend {
-        modes: Mutex::new(Vec::new()),
-    };
-    let root = temp("mirror-hf-sha256");
-    let outcome = mirror_one(
-        &target,
-        &backend,
-        &root,
-        &root.join("log.jsonl"),
-        &policy(&base),
-        &upstream_policy(),
-    )
-    .unwrap();
-    assert!(matches!(
-        outcome,
-        crate::mirror::MirrorOutcome::Mirrored {
-            verification: UpstreamVerification::UpstreamSha256,
-            ..
-        }
-    ));
+fn huggingface_etag_sha256_matches_pin() {
+    let target = mirror_target(
+        "http://127.0.0.1:1",
+        b"lfs-hf",
+        UpstreamMetadataKind::HuggingFace,
+    );
+    let (verification, expected_blob_oid) =
+        huggingface_etag_verification_for_test(&target, &format!("sha256:{}", target.sha256))
+            .unwrap();
+    assert_eq!(verification, UpstreamVerification::UpstreamSha256);
+    assert_eq!(expected_blob_oid, None);
 }
 
 #[test]
 fn huggingface_git_blob_metadata_routes_without_upstream_bytes() {
     const BLOB_OID: &str = "688882a700000000000000000000000000000000";
-    let base = server(1, |_| {
-        (format!("x-linked-etag: {BLOB_OID}\r\n"), Vec::new())
-    });
-    let target = mirror_target(&base, b"synthetic", UpstreamMetadataKind::HuggingFace);
+    let target = mirror_target(
+        "http://127.0.0.1:1",
+        b"synthetic",
+        UpstreamMetadataKind::HuggingFace,
+    );
     let (verification, expected_blob_oid) =
-        crate::mirror::verify_huggingface_metadata_for_test(&target, &upstream_policy()).unwrap();
+        huggingface_etag_verification_for_test(&target, BLOB_OID).unwrap();
     assert_eq!(verification, UpstreamVerification::UpstreamGitBlobSha1);
     assert_eq!(expected_blob_oid.as_deref(), Some(BLOB_OID));
 }
 
 #[test]
-fn mirror_read_back_failure_leaves_no_provenance_row() {
-    let body = b"mirror-failure".to_vec();
-    let digest = sha256(&body);
-    let base = server(3, move |request| {
-        if request.starts_with("GET /metadata ") {
-            (
-                String::new(),
-                format!(r#"{{"assets":[{{"name":"file.bin","digest":"sha256:{digest}"}}]}}"#)
-                    .into_bytes(),
-            )
-        } else if request.starts_with("GET /upstream ") {
-            (String::new(), body.clone())
-        } else {
-            (String::new(), b"wrong-origin".to_vec())
-        }
-    });
+fn huggingface_etag_rejects_neither_form() {
     let target = mirror_target(
-        &base,
-        b"mirror-failure",
+        "http://127.0.0.1:1",
+        b"lfs-hf",
+        UpstreamMetadataKind::HuggingFace,
+    );
+    assert!(matches!(
+        huggingface_etag_verification_for_test(&target, "not-a-digest"),
+        Err(MirrorError::UnverifiedUpstream { .. })
+    ));
+}
+
+#[test]
+fn validate_url_accepts_loopback_when_allowed() {
+    assert_eq!(
+        validate_url_for_test("http://127.0.0.1:9/upstream", &upstream_policy()).unwrap(),
+        "http://127.0.0.1:9/upstream"
+    );
+}
+
+#[test]
+fn validate_url_refuses_disallowed_host() {
+    assert!(matches!(
+        validate_url_for_test("http://127.0.0.2:9/object", &upstream_policy()),
+        Err(MirrorError::UpstreamHostRefused { .. })
+    ));
+}
+
+#[test]
+fn resolve_location_accepts_root_relative_path() {
+    assert_eq!(
+        parse_absolute_url_for_test("http://127.0.0.1:9/upstream").unwrap(),
+        "http://127.0.0.1:9/upstream"
+    );
+    assert_eq!(
+        resolve_location_for_test("http://127.0.0.1:9/upstream", "/object").unwrap(),
+        "http://127.0.0.1:9/object"
+    );
+}
+
+#[test]
+fn provenance_row_fields_are_stable_for_a_fixed_timestamp() {
+    let target = mirror_target(
+        "http://127.0.0.1:1",
+        b"shared-read-back",
         UpstreamMetadataKind::GithubRelease,
     );
-    let backend = FixtureBackend {
-        modes: Mutex::new(Vec::new()),
-    };
-    let root = temp("mirror-readback-failure");
-    let log = root.join("log.jsonl");
-    assert!(
-        mirror_one(
-            &target,
-            &backend,
-            &root,
-            &log,
-            &policy(&base),
-            &upstream_policy()
-        )
-        .is_err()
+    let first = provenance_row_for_test(
+        &target,
+        UpstreamVerification::UpstreamSha256,
+        "2026-01-01T00:00:00Z",
+    )
+    .unwrap();
+    let second = provenance_row_for_test(
+        &target,
+        UpstreamVerification::UpstreamSha256,
+        "2026-01-01T00:00:00Z",
+    )
+    .unwrap();
+    assert_eq!(first, second);
+    assert_eq!(first["origin_key"], target.origin_key);
+    assert_eq!(first["pin_sha256"], target.sha256);
+    assert_eq!(first["read_back"], "sha256");
+    assert_eq!(first["size_bytes"], target.size_bytes);
+    assert_eq!(first["timestamp"], "2026-01-01T00:00:00Z");
+    assert_eq!(first["unit"], target.unit);
+    assert_eq!(first["upstream_url"], target.upstream_url);
+    assert_eq!(first["verified"], "upstream-sha256");
+    assert_eq!(first["version"], target.version);
+}
+
+#[test]
+fn provenance_row_verified_serializes_git_blob_kebab_case() {
+    let target = mirror_target(
+        "http://127.0.0.1:1",
+        b"{}",
+        UpstreamMetadataKind::HuggingFace,
     );
-    assert!(!log.exists());
+    let sha256_row = provenance_row_for_test(
+        &target,
+        UpstreamVerification::UpstreamSha256,
+        "2026-01-01T00:00:00Z",
+    )
+    .unwrap();
+    let git_blob_row = provenance_row_for_test(
+        &target,
+        UpstreamVerification::UpstreamGitBlobSha1,
+        "2026-01-01T00:00:00Z",
+    )
+    .unwrap();
+    assert_eq!(sha256_row["verified"], "upstream-sha256");
+    assert_eq!(git_blob_row["verified"], "upstream-git-blob-sha1");
+}
+
+#[test]
+fn consume_upstream_body_accepts_matching_git_blob() {
+    const CONFIG_JSON_BLOB_OID: &str = "9e26dfeeb6e641a33dae4961196235bdb965b21b";
+    let body = b"{}";
+    let mut target = mirror_target(
+        "http://127.0.0.1:1",
+        body,
+        UpstreamMetadataKind::HuggingFace,
+    );
+    target.origin_key =
+        "assets/parakeet-coreml/aed02740059203c4a87495924f685de3722ae9ce/config.json".to_owned();
+    consume_upstream_body_for_test(
+        &target,
+        &temp("consume-match").join("body"),
+        body,
+        Some(CONFIG_JSON_BLOB_OID),
+    )
+    .unwrap();
+}
+
+#[test]
+fn consume_upstream_body_rejects_git_blob_oid_that_does_not_match_bytes() {
+    // consume_upstream_body is called from download_upstream, which mirror_one
+    // reaches only after backend.publish. An Err here is therefore the same
+    // reject-before-publish point as the real-boundary counterpart.
+    let body = b"unlisted-hf";
+    let target = mirror_target(
+        "http://127.0.0.1:1",
+        body,
+        UpstreamMetadataKind::HuggingFace,
+    );
+    assert!(matches!(
+        consume_upstream_body_for_test(
+            &target,
+            &temp("consume-mismatch").join("body"),
+            body,
+            Some("688882a700000000000000000000000000000000"),
+        ),
+        Err(MirrorError::UpstreamGitBlobDigestMismatch { .. })
+    ));
 }
 
 #[test]
@@ -664,116 +456,6 @@ fn mirror_selects_single_shot_at_threshold_and_multipart_one_byte_above() {
         select_publish_mode(MULTIPART_THRESHOLD_BYTES + 1),
         PublishMode::Multipart
     );
-}
-
-#[test]
-fn mirror_read_back_is_shared_after_single_shot_publish() {
-    let body = b"shared-read-back".to_vec();
-    let digest = sha256(&body);
-    let base = server(6, move |request| {
-        if request.starts_with("GET /metadata ") {
-            (
-                String::new(),
-                format!(r#"{{"assets":[{{"name":"file.bin","digest":"sha256:{digest}"}}]}}"#)
-                    .into_bytes(),
-            )
-        } else {
-            (String::new(), body.clone())
-        }
-    });
-    let target = mirror_target(
-        &base,
-        b"shared-read-back",
-        UpstreamMetadataKind::GithubRelease,
-    );
-    let backend = FixtureBackend {
-        modes: Mutex::new(Vec::new()),
-    };
-    let root = temp("mirror-shared-read-back");
-    let first_log = root.join("single.jsonl");
-    let second_log = root.join("second-single.jsonl");
-    // `PublishMode` is selected solely at the backend call. Both calls below
-    // therefore take the unconditional shared read-back below that call.
-    mirror_one(
-        &target,
-        &backend,
-        &root.join("single"),
-        &first_log,
-        &policy(&base),
-        &upstream_policy(),
-    )
-    .unwrap();
-    mirror_one(
-        &target,
-        &backend,
-        &root.join("multipart"),
-        &second_log,
-        &policy(&base),
-        &upstream_policy(),
-    )
-    .unwrap();
-    let first: Value = serde_json::from_str(fs::read_to_string(first_log).unwrap().trim()).unwrap();
-    let second: Value =
-        serde_json::from_str(fs::read_to_string(second_log).unwrap().trim()).unwrap();
-    for field in [
-        "origin_key",
-        "pin_sha256",
-        "read_back",
-        "size_bytes",
-        "unit",
-        "upstream_url",
-        "verified",
-        "version",
-    ] {
-        assert_eq!(first.get(field), second.get(field));
-    }
-    assert_eq!(
-        backend.modes.lock().unwrap().as_slice(),
-        &[PublishMode::SingleShot, PublishMode::SingleShot]
-    );
-    assert_eq!(
-        [
-            select_publish_mode(MULTIPART_THRESHOLD_BYTES),
-            select_publish_mode(MULTIPART_THRESHOLD_BYTES + 1),
-        ],
-        [PublishMode::SingleShot, PublishMode::Multipart]
-    );
-}
-
-#[test]
-fn gate_never_falls_back_to_the_upstream_listener() {
-    let origin_body = b"origin-only".to_vec();
-    let origin = server(1, move |_| (String::new(), origin_body.clone()));
-    // 127.0.0.1 with its own ephemeral port, not 127.0.0.2: macOS configures
-    // only 127.0.0.1 on lo0, so the second loopback IP is unbindable there and
-    // this test panicked before asserting anything. What it proves is unchanged
-    // -- the gate contacts the origin and no other listening endpoint.
-    let upstream_listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    upstream_listener.set_nonblocking(true).unwrap();
-    let contacts = Arc::new(AtomicU64::new(0));
-    let observed = Arc::clone(&contacts);
-    let upstream = thread::spawn(move || {
-        for _ in 0..30 {
-            match upstream_listener.accept() {
-                Ok((mut stream, _)) => {
-                    observed.fetch_add(1, Ordering::Relaxed);
-                    let _ = read_request(&mut stream);
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(10));
-                }
-                Err(error) => panic!("upstream listener failed: {error}"),
-            }
-        }
-    });
-    verify_targets(
-        &[target("assets/origin-only", b"origin-only")],
-        &temp("origin-no-fallback"),
-        &policy(&origin),
-    )
-    .unwrap();
-    upstream.join().unwrap();
-    assert_eq!(contacts.load(Ordering::Relaxed), 0);
 }
 
 #[test]
