@@ -1524,29 +1524,6 @@ mod tests {
     }
 
     #[test]
-    /// The Python thinking tree stays as a reference; this is the parity gate that keeps the reference honest.
-    fn thinking_embedded_assets_match_the_python_reference() {
-        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let root = manifest.ancestors().nth(3).expect("repository root");
-        for (copied, source) in [
-            (
-                "assets/thinking/workspace.html",
-                "solstone/apps/thinking/workspace.html",
-            ),
-            (
-                "assets/thinking/thinking.js",
-                "solstone/apps/thinking/static/thinking.js",
-            ),
-        ] {
-            assert_eq!(
-                fs::read(manifest.join(copied)).expect("embedded copy reads"),
-                fs::read(root.join(source))
-                    .expect("Python reference asset reads for shipped-copy parity")
-            );
-        }
-    }
-
-    #[test]
     fn thinking_embedded_assets_are_generated_from_crate_copies() {
         let generated = include_str!(concat!(env!("OUT_DIR"), "/embedded_assets.rs"));
         for path in [

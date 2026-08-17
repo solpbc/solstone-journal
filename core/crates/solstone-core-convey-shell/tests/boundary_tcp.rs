@@ -79,12 +79,9 @@ async fn entities_workspace_round_trips_over_loopback() {
         }),
         "{headers}"
     );
-    let expected = fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../..")
-            .join("solstone/apps/entities/workspace.html"),
-    )
-    .expect("reference asset reads");
+    let expected =
+        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/entities/workspace.html"))
+            .expect("crate asset reads");
     assert_eq!(body, expected);
 }
 

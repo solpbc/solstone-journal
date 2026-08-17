@@ -64,19 +64,18 @@ mod tests {
             .collect()
     }
 
+    /// The retired Python workspace differed from this crate's copy by exactly
+    /// one line -- the removal card's script tag -- and the parity test that
+    /// encoded that divergence read the Python file to prove it. With the source
+    /// gone the comparison is unavailable, but the half that mattered is not:
+    /// the shipped asset must still END with the removal card's script tag, or
+    /// the card silently stops loading and `cargo build` stays green.
     #[test]
-    fn embedded_assets_match_python_reference_sources() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let workspace = std::fs::read(root.join("solstone/apps/home/workspace.html"))
-            .expect("python home workspace is readable");
-        let home_js = std::fs::read(root.join("solstone/apps/home/static/home.js"))
-            .expect("python home.js is readable");
-        assert_eq!(
-            include_bytes!("../assets/workspace.html").strip_suffix(WORKSPACE_SUFFIX),
-            Some(workspace.as_slice()),
-            "the native workspace divergence is exactly the removal card script line"
+    fn embedded_workspace_still_ends_with_the_removal_card_script() {
+        assert!(
+            include_bytes!("../assets/workspace.html").ends_with(WORKSPACE_SUFFIX),
+            "the shipped home workspace must end with the removal card script line"
         );
-        assert_eq!(include_bytes!("../assets/home.js"), home_js.as_slice());
     }
 
     #[test]

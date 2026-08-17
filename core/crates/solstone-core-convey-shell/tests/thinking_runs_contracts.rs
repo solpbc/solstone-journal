@@ -4,14 +4,6 @@
 use std::fs;
 use std::path::Path;
 
-fn repository_root() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(3)
-        .expect("repository root")
-        .to_path_buf()
-}
-
 fn native_workspace() -> String {
     fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/thinking/workspace.html"))
         .expect("native workspace reads")
@@ -186,23 +178,6 @@ fn thinking_runs_authored_copy_excludes_prohibited_terms() {
             "prohibited Runs/Identity copy: {prohibited}"
         );
     }
-}
-
-#[test]
-fn thinking_runs_assets_match_python_reference_byte_for_byte() {
-    let root = repository_root();
-    assert_eq!(
-        native_workspace(),
-        fs::read_to_string(root.join("solstone/apps/thinking/workspace.html"))
-            .expect("Python workspace reads"),
-        "Thinking workspace copies stay byte-identical"
-    );
-    assert_eq!(
-        native_script(),
-        fs::read_to_string(root.join("solstone/apps/thinking/static/thinking.js"))
-            .expect("Python script reads"),
-        "Thinking script copies stay byte-identical"
-    );
 }
 
 #[test]

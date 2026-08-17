@@ -17,7 +17,6 @@ pub async fn workspace() -> Response {
 mod tests {
     use std::collections::BTreeSet;
     use std::fs;
-    use std::path::Path;
 
     use axum::Router;
     use axum::body::{Body, to_bytes};
@@ -91,15 +90,6 @@ mod tests {
         }
     }
 
-    fn reference(relative: &str) -> Vec<u8> {
-        fs::read(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../..")
-                .join(relative),
-        )
-        .expect("reference asset reads")
-    }
-
     fn top_level_keys(value: &Value) -> BTreeSet<String> {
         value
             .as_object()
@@ -165,9 +155,12 @@ mod tests {
             header(&headers, "content-type"),
             Some("text/html; charset=utf-8")
         );
-        // This test protects the copied native asset until the Python source is retired.
-        // Until then, a Python-only edit must red the native crate that embeds the copied bytes.
-        assert_eq!(body, reference("solstone/apps/entities/workspace.html"));
+        // The Python source is retired, so the surviving assertion is that the
+        // route serves this crate's own asset rather than something generated.
+        assert_eq!(
+            body,
+            include_bytes!("../assets/entities/workspace.html").as_slice()
+        );
 
         let generated = include_str!(concat!(env!("OUT_DIR"), "/embedded_assets.rs"));
         let entry = generated
