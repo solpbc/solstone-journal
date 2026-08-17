@@ -44,7 +44,6 @@ fn day_refusal() -> Response {
 mod tests {
     use super::*;
     use std::fs;
-    use std::path::Path as FsPath;
 
     use axum::body::{Body, to_bytes};
     use axum::http::Request;
@@ -64,15 +63,6 @@ mod tests {
         fn established() -> Self {
             Self::new(br#"{"setup":{"completed_at":1767225600}}"#)
         }
-    }
-
-    fn reference(relative: &str) -> Vec<u8> {
-        fs::read(
-            FsPath::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../..")
-                .join(relative),
-        )
-        .expect("reference asset reads")
     }
 
     async fn get(app: axum::Router, path: &str) -> (StatusCode, String, Vec<u8>) {
@@ -108,7 +98,7 @@ mod tests {
         let app = crate::router(journal.0.path().to_path_buf());
         let root = get(app.clone(), "/app/body/").await;
         assert_eq!(root.0, StatusCode::OK);
-        assert_eq!(root.2, reference("solstone/convey/static/shell.html"));
+        assert_eq!(root.2, include_bytes!("../assets/static/shell.html"));
         let trends = get(app.clone(), "/app/body/trends").await;
         assert_eq!(trends.0, StatusCode::OK);
         assert_eq!(trends.2, root.2);
