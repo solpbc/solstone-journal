@@ -221,6 +221,9 @@ talent_rung() {
 	printf '%s\n' '# Audio Transcript' '' \
 		'No future scheduled activity appears in this synthetic cleanroom segment.' \
 		>"$target_segment/talents/audio.md"
+	printf '%s\n' \
+		'{"start":"00:00:00","source":"mic","speaker":1,"text":"No future scheduled activity appears in this synthetic cleanroom segment."}' \
+		>"$target_segment/capture_audio.jsonl"
 	printf '%s (%s):\n  03:17 - 03:28 (11m)' "$day" "$weekday" >"$journal/expected-fragment"
 	: >"$journal/generation-evidence"
 	: >"$journal/generation.addr"

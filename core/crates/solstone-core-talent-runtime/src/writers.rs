@@ -32,6 +32,7 @@ pub enum WriteIntent {
     },
     DailySchedule {
         output: String,
+        output_path: Option<String>,
     },
     Participation {
         output: String,
@@ -130,7 +131,10 @@ pub fn apply(
                 })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
-        CommitPlan::Write(WriteIntent::DailySchedule { output }) => {
+        CommitPlan::Write(WriteIntent::DailySchedule {
+            output,
+            output_path,
+        }) => {
             crate::daily_schedule::apply_result(&context.journal, &output).map_err(|detail| {
                 StageError {
                     phase: "write-intent",
@@ -139,7 +143,16 @@ pub fn apply(
                     detail,
                 }
             })?;
-            Ok(CommitDisposition::CommittedNoOutput)
+            let Some(output_path) = output_path else {
+                return Ok(CommitDisposition::CommittedNoOutput);
+            };
+            write_output(PathBuf::from(output_path), &output).map_err(|error| StageError {
+                phase: "write-intent",
+                stage: "daily_schedule",
+                talent: "daily_schedule".to_owned(),
+                detail: error.to_string(),
+            })?;
+            Ok(CommitDisposition::Written)
         }
         CommitPlan::Write(WriteIntent::Participation {
             output,
@@ -378,11 +391,45 @@ mod tests {
 
     #[test]
     fn criterion_6_output_guard_is_plain_and_bidirectional() {
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::Builder::new()
+            .prefix("solstone-talent-output-guard-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
         let path = root.path().join("output.md");
         assert!(write_output(path.clone(), "one").unwrap());
         assert!(!write_output(path.clone(), "one").unwrap());
         assert_eq!(fs::read(path).unwrap(), b"one");
+    }
+
+    #[test]
+    fn daily_schedule_writes_day_output_and_only_primary_metadata() {
+        let root = tempfile::Builder::new()
+            .prefix("solstone-daily-schedule-output-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let output_path = root
+            .path()
+            .join("journal/chronicle/20990101/talents/daily_schedule.json");
+        let output = r#"{"primary":"03:00","fallback":"04:00"}"#;
+        let disposition = apply(
+            CommitPlan::Write(WriteIntent::DailySchedule {
+                output: output.to_owned(),
+                output_path: Some(output_path.to_string_lossy().into_owned()),
+            }),
+            &ExecutionContext {
+                journal: root.path().join("journal"),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(disposition, CommitDisposition::Written);
+        assert_eq!(fs::read_to_string(output_path).unwrap(), output);
+        let schedules: Value = serde_json::from_slice(
+            &fs::read(root.path().join("journal/config/schedules.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(schedules["daily_time"], "03:00");
+        assert!(schedules.get("fallback").is_none());
     }
 
     #[test]

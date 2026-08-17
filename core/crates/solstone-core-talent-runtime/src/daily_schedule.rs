@@ -77,7 +77,14 @@ pub fn commit(
             "expected text output",
         ));
     };
-    Ok(CommitPlan::Write(WriteIntent::DailySchedule { output }))
+    Ok(CommitPlan::Write(WriteIntent::DailySchedule {
+        output,
+        output_path: prepared
+            .config
+            .get("output_path")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    }))
 }
 
 pub fn apply_result(journal: &std::path::Path, output: &str) -> Result<(), String> {

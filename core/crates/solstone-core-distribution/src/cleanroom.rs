@@ -330,7 +330,7 @@ fn generation_completion(
             r#"{"primary":"03:00","fallback":"04:00"}"#,
         ));
     }
-    if prompt.contains("Morning Briefing")
+    if prompt.contains("You are generating the morning briefing")
         && prompt.contains("coverage_preamble")
         && prompt.contains("needs_attention")
     {
@@ -584,9 +584,12 @@ mod tests {
             "schedule"
         );
         assert_eq!(
-            generation_completion("Morning Briefing coverage_preamble needs_attention", anchor)
-                .expect("morning response")
-                .0,
+            generation_completion(
+                "You are generating the morning briefing coverage_preamble needs_attention",
+                anchor
+            )
+            .expect("morning response")
+            .0,
             "morning_briefing"
         );
         assert_eq!(
