@@ -266,7 +266,7 @@ and is regenerated into the production native aggregate inventory.
 - Regenerate the inventory with `make build-native-sol-inventory`.
 
 **Reference implementations:**
-- Authority: `solstone/apps/entities/native/authority.toml`
+- Authority: `core/native-sol/apps/entities/native/authority.toml`
 - Handler: `core/crates/solstone-core-sol-client/native/apps/entities/command.rs`
 - Native CLI routing: [SOLCLI.md](SOLCLI.md)'s Call command inventory
 

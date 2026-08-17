@@ -3187,11 +3187,11 @@ fn router_covers_every_entity_route_in_the_oracle() {
 fn router_covers_every_native_entity_and_facet_client_operation() {
     let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let mut inventory = authority_route_pairs(
-        &std::fs::read_to_string(repo.join("solstone/apps/entities/native/authority.toml"))
+        &std::fs::read_to_string(repo.join("core/native-sol/apps/entities/native/authority.toml"))
             .expect("entities authority.toml is readable"),
     );
     inventory.extend(authority_route_pairs(
-        &std::fs::read_to_string(repo.join("solstone/apps/facets/native/authority.toml"))
+        &std::fs::read_to_string(repo.join("core/native-sol/apps/facets/native/authority.toml"))
             .expect("facets authority.toml is readable"),
     ));
     assert_eq!(inventory.len(), 25);

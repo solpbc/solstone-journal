@@ -266,7 +266,7 @@ in `core/crates/solstone-core-sol/tests/resident.rs` using
 Gate check by source shape:
 
 - `check-native-sol-inventory`: clears. Inventory discovery scans
-  `solstone/**/native/authority.toml`, skipping private app authorities
+  `core/native-sol/**/native/authority.toml`, skipping private app authorities
   (`scripts/build_native_sol_inventory.py:257-268`), and top-level counts are
   pinned to known surfaces (`scripts/build_native_sol_inventory.py:485-505`).
   A Cargo bin under `core/crates/solstone-core-sol` is not an authority.

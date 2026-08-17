@@ -13,7 +13,7 @@ updated generators during implementation.
 
 The existing `local` entry type is not the right semantic fit for notify.
 Today it is the `sol-call` placeholder entry
-`solstone/apps/network/native/authority.toml:31-38`, path
+`core/native-sol/apps/network/native/authority.toml:31-38`, path
 `["link", "observer-pause"]`, operation `link.observer-pause`, handler
 `observer_pause`. Its command implementation returns a local "not yet
 available" message and has no top-level routing role.
@@ -31,7 +31,7 @@ consistent and avoids overloading `local` with a second meaning.
 
 Authority sketch:
 
-- File: `solstone/think/native/notify/authority.toml`
+- File: `core/native-sol/think/native/notify/authority.toml`
 - Source: `command.rs`
 - `surface = "sol-notify"`
 - `path = ["notify"]`

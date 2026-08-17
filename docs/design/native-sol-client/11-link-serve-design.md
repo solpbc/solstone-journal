@@ -72,7 +72,7 @@ Constraints:
 Decision: use option (a), a generator-level resident boundary.
 
 Add an authority entry for `link.serve` in
-`solstone/think/native/link/authority.toml` with the normal top-level link
+`core/native-sol/think/native/link/authority.toml` with the normal top-level link
 shape plus one entry-local marker: `resident = true`. Missing or false
 `resident` means the existing buffered boundary. The `link.serve` authority fields
 are:
@@ -722,7 +722,7 @@ Files to create or touch:
 
 - `docs/design/native-sol-client/11-link-serve-design.md`
 - `docs/PORTING.md`
-- `solstone/think/native/link/authority.toml`
+- `core/native-sol/think/native/link/authority.toml`
 - `solstone/think/native/link/command.rs`
 - `scripts/build_native_sol_inventory.py`
 - `core/Cargo.toml`

@@ -75,7 +75,7 @@ Consequences:
 
 Add a top-level native authority beside chat:
 
-- `solstone/think/native/import/authority.toml`
+- `core/native-sol/think/native/import/authority.toml`
 - `solstone/think/native/import/command.rs`
 
 Authority shape:
@@ -232,7 +232,7 @@ Grammar oracle:
 - Retire `scripts/build_native_sol_grammar_oracle.py` as a Python `call_app`
   generator.
 - Replacement: `scripts/build_native_sol_authority_grammar.py`, derived only
-  from `solstone/**/native/**/authority.toml`, emits the native grammar
+  from `core/native-sol/**/native/**/authority.toml`, emits the native grammar
   projection.
 - Non-vacuity: it must fail if zero authorities are discovered, if the generated
   `sol-call` projection is empty, or if it does not reconcile with the frozen
@@ -439,7 +439,7 @@ Modify:
 
 Add:
 
-- `solstone/think/native/import/authority.toml`
+- `core/native-sol/think/native/import/authority.toml`
 - `solstone/think/native/import/command.rs`
 - native import parity vectors under `core/fixtures/native-sol/parity/`
 

@@ -16,7 +16,7 @@ const GRAMMAR: &str = include_str!("../../../fixtures/journal_source_reference_g
 fn authority() -> String {
     std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../solstone/think/native/import/authority.toml"),
+            .join("../../../core/native-sol/think/native/import/authority.toml"),
     )
     .expect("import authority.toml is readable")
 }

@@ -42,7 +42,7 @@ Use code generation, not runtime registration.
 | Decision | Detail |
 |---|---|
 | App-owned authority file | Each real-adjacent native directory contains an `authority.toml` beside its Rust module. It declares command path, kind, help, params, operation id, route method/path, contract operation id, handler symbol, and whether the entry is HTTP, moved-stub, local-only, or top-level chat. |
-| Generated source | `scripts/build_native_sol_inventory.py` scans `solstone/**/native/authority.toml` in lexicographic app/path order and emits `core/crates/solstone-core-sol-client/src/generated/inventory.rs`. |
+| Generated source | `scripts/build_native_sol_inventory.py` scans `core/native-sol/**/native/authority.toml` in lexicographic app/path order and emits `core/crates/solstone-core-sol-client/src/generated/inventory.rs`. |
 | No hand-maintained central list | `lib.rs` includes only shared modules and `generated`; generated source declares path-based app modules and handler bindings. Adding a test app authority requires no shared module edit; stale generated output fails the `--check` target. |
 | Loud failure | Malformed authority, duplicate path, duplicate operation id, missing handler symbol, noncanonical route path, or unsupported param shape fails generation. Missing handler symbols also fail Rust compilation because generated bindings call them directly. |
 | Why not `inventory`/`linkme` | Runtime/life-before-main registration adds dependency and initialization behavior risk, conflicts with `unsafe_code=forbid` expectations, complicates iOS eligibility, and makes staleness checks weaker. Codegen matches the repo's existing build/check generated-artifact idiom. |

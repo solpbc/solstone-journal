@@ -85,7 +85,7 @@ fn registered_routes(source: &str) -> BTreeSet<(String, String)> {
 fn router_covers_every_speakers_cli_operation() {
     let authority = std::fs::read_to_string(
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../solstone/apps/speakers/native/authority.toml"),
+            .join("../../../core/native-sol/apps/speakers/native/authority.toml"),
     )
     .expect("speakers authority.toml is readable");
     let authority = authority.as_str();

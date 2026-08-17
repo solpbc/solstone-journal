@@ -79,7 +79,7 @@ Behavior marker: `expected-differs`.
 ## D2. Authority and Dispatch
 
 Decision: the native authority, if this implementation becomes unblocked, is a second
-top-level link entry in `solstone/think/native/link/authority.toml`.
+top-level link entry in `core/native-sol/think/native/link/authority.toml`.
 
 Authority shape:
 
@@ -479,7 +479,7 @@ Design-stage edits:
 
 Implementation-stage edits if the implementation is later unblocked:
 
-- `solstone/think/native/link/authority.toml`
+- `core/native-sol/think/native/link/authority.toml`
 - `solstone/think/native/link/command.rs`
 - `scripts/build_native_sol_inventory.py`
 - `scripts/check_native_sol_coverage.py`
