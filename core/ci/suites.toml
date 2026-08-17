@@ -1937,6 +1937,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-backup-runtime::backup_runtime_process"
+package = "solstone-core-backup-runtime"
+target = "backup_runtime_process"
+set = "component"
+areas = ["backup"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "host-contention"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-backup-web::backup_web_callosum_transport"
 package = "solstone-core-backup-web"
 target = "backup_web_callosum_transport"

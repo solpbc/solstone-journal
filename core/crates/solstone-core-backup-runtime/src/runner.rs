@@ -5,14 +5,20 @@ use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
 use std::fmt;
+use std::fs::File;
 use std::io::{self, Read};
-use std::os::fd::BorrowedFd;
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
+use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use nix::errno::Errno;
 use nix::fcntl::{FcntlArg, FdFlag, fcntl};
+use nix::sys::signal::{Signal, killpg};
+use nix::sys::wait::WaitPidFlag;
+use nix::unistd::{Pid, pipe};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -83,39 +89,208 @@ impl ToolRunner for SystemToolRunner {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Step {
+    Observe,
+    GroupCleanup,
+    CloseOwned,
+    Reap,
+}
+
+trait SessionIo {
+    fn observe_exit_without_reap(&mut self) -> io::Result<bool>;
+    fn group_cleanup(&mut self) -> io::Result<()>;
+    fn close_owned_endpoints(&mut self);
+    fn reap_root(&mut self) -> io::Result<ExitStatus>;
+}
+
+fn push_step(trace: &mut Option<&mut Vec<Step>>, step: Step) {
+    if let Some(trace) = trace {
+        trace.push(step);
+    }
+}
+
+fn complete_session<S: SessionIo>(
+    session: &mut S,
+    mut trace: Option<&mut Vec<Step>>,
+) -> io::Result<ExitStatus> {
+    push_step(&mut trace, Step::Observe);
+    session.observe_exit_without_reap()?;
+    push_step(&mut trace, Step::GroupCleanup);
+    let cleanup_err = session.group_cleanup().err();
+    push_step(&mut trace, Step::CloseOwned);
+    session.close_owned_endpoints();
+    push_step(&mut trace, Step::Reap);
+    let reaped = session.reap_root();
+    match cleanup_err {
+        Some(err) => Err(err),
+        None => reaped,
+    }
+}
+
+struct GroupGuard {
+    pgid: Pid,
+    armed: bool,
+    reaped: bool,
+}
+
+impl Drop for GroupGuard {
+    fn drop(&mut self) {
+        if self.armed && !self.reaped {
+            // Drop cannot return an error. This is the only path that
+            // best-effort swallows killpg failure; returning paths never do.
+            let _ = kill_group(self.pgid);
+        }
+    }
+}
+
+type OutputReader = thread::JoinHandle<io::Result<Vec<u8>>>;
+
+struct SpawnedChild {
+    // Drop order is declaration order and is load-bearing: GroupGuard
+    // (kill group), parent write ends (EOF), Child, then detached readers.
+    guard: GroupGuard,
+    stdout_w: Option<OwnedFd>,
+    stderr_w: Option<OwnedFd>,
+    child: Child,
+    readers: Option<(OutputReader, OutputReader)>,
+}
+
+impl SessionIo for SpawnedChild {
+    fn observe_exit_without_reap(&mut self) -> io::Result<bool> {
+        observe_exit_without_reap(self.guard.pgid)
+    }
+
+    fn group_cleanup(&mut self) -> io::Result<()> {
+        kill_group(self.guard.pgid)
+    }
+
+    fn close_owned_endpoints(&mut self) {
+        drop(self.stdout_w.take());
+        drop(self.stderr_w.take());
+    }
+
+    fn reap_root(&mut self) -> io::Result<ExitStatus> {
+        self.guard.reaped = true;
+        self.child.wait()
+    }
+}
+
+fn kill_group(pgid: Pid) -> io::Result<()> {
+    match killpg(pgid, Signal::SIGKILL) {
+        Ok(()) | Err(Errno::ESRCH) => Ok(()),
+        Err(err) => Err(io::Error::from(err)),
+    }
+}
+
+fn observe_exit_without_reap(pid: Pid) -> io::Result<bool> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        use nix::sys::wait::{Id, WaitStatus, waitid};
+        match waitid(
+            Id::Pid(pid),
+            WaitPidFlag::WNOHANG | WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT,
+        ) {
+            Ok(WaitStatus::StillAlive) => Ok(false),
+            Ok(_) => Ok(true),
+            Err(err) => Err(io::Error::from(err)),
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        observe_exit_without_reap_macos(pid)
+    }
+}
+
+// nix 0.30.1 exports waitid on Linux but not macOS. Same flags, does not reap.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn observe_exit_without_reap_macos(pid: Pid) -> io::Result<bool> {
+    let mut info: nix::libc::siginfo_t = unsafe { std::mem::zeroed() };
+    let flags = (WaitPidFlag::WNOHANG | WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT).bits();
+    let rc = unsafe {
+        nix::libc::waitid(
+            nix::libc::P_PID,
+            pid.as_raw() as nix::libc::id_t,
+            &mut info,
+            flags,
+        )
+    };
+    if rc < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // macOS libc exposes si_pid as a public field; Linux uses si_pid().
+    Ok(info.si_pid != 0)
+}
+
+fn set_cloexec(fd: BorrowedFd<'_>) -> io::Result<()> {
+    let flags = fcntl(fd, FcntlArg::F_GETFD).map_err(io::Error::from)?;
+    let flags = FdFlag::from_bits_truncate(flags);
+    fcntl(fd, FcntlArg::F_SETFD(flags | FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
+    Ok(())
+}
+
+fn pipe_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
+    let (read, write) = pipe().map_err(io::Error::from)?;
+    set_cloexec(read.as_fd())?;
+    set_cloexec(write.as_fd())?;
+    Ok((read, write))
+}
+
 impl SystemToolRunner {
     fn run_child(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        let (stdout_r, stdout_w) = pipe_cloexec()?;
+        let (stderr_r, stderr_w) = pipe_cloexec()?;
         let mut command = Command::new(&request.program);
         command.args(&request.argv).env_clear().envs(&request.env);
         command
             .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let mut child = command.spawn()?;
-        let mut stdout = child.stdout.take().expect("piped stdout");
-        let mut stderr = child.stderr.take().expect("piped stderr");
+            .stdout(Stdio::from(stdout_w.try_clone()?))
+            .stderr(Stdio::from(stderr_w.try_clone()?));
+        command.process_group(0);
+        let child = command.spawn()?;
+        // spawn takes &mut self; drop the Command so its Stdio write-end
+        // clones close. Otherwise read_to_end never sees EOF.
+        drop(command);
+        let pid = i32::try_from(child.id()).map_err(io::Error::other)?;
+        let pgid = Pid::from_raw(pid);
         let stdout_reader = thread::spawn(move || {
+            let mut stdout = File::from(stdout_r);
             let mut bytes = Vec::new();
             stdout.read_to_end(&mut bytes).map(|_| bytes)
         });
         let stderr_reader = thread::spawn(move || {
+            let mut stderr = File::from(stderr_r);
             let mut bytes = Vec::new();
             stderr.read_to_end(&mut bytes).map(|_| bytes)
         });
+        let mut session = SpawnedChild {
+            guard: GroupGuard {
+                pgid,
+                armed: true,
+                reaped: false,
+            },
+            stdout_w: Some(stdout_w),
+            stderr_w: Some(stderr_w),
+            child,
+            readers: Some((stdout_reader, stderr_reader)),
+        };
         let start = Instant::now();
-        let status = loop {
-            if let Some(status) = child.try_wait()? {
-                break (status, false);
+        let timed_out = loop {
+            if session.observe_exit_without_reap()? {
+                break false;
             }
             if request
                 .timeout
                 .is_some_and(|timeout| start.elapsed() >= timeout)
             {
-                child.kill()?;
-                break (child.wait()?, true);
+                break true;
             }
             thread::sleep(Duration::from_millis(5));
         };
+        let status = complete_session(&mut session, None)?;
+        let (stdout_reader, stderr_reader) = session.readers.take().expect("readers");
+        session.guard.armed = false;
         let stdout = stdout_reader
             .join()
             .map_err(|_| io::Error::other("stdout reader panicked"))??;
@@ -123,10 +298,10 @@ impl SystemToolRunner {
             .join()
             .map_err(|_| io::Error::other("stderr reader panicked"))??;
         Ok(ToolOutput {
-            returncode: if status.1 {
+            returncode: if timed_out {
                 124
             } else {
-                status.0.code().unwrap_or(1)
+                status.code().unwrap_or(1)
             },
             stdout,
             stderr,
@@ -299,8 +474,6 @@ fn parse_json(text: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
 
     struct Fixture;
     impl ToolRunner for Fixture {
@@ -393,67 +566,34 @@ mod tests {
             assert!(!rendered.contains(secret));
         }
     }
-    #[cfg(unix)]
-    #[test]
-    fn real_fixture_process_observes_whitelisted_environment() {
-        let directory = tempfile::tempdir().unwrap();
-        let fixture = directory.path().join("fixture");
-        fs::write(
-            &fixture,
-            "#!/bin/sh\nprintf '%s' \"$RESTIC_REPOSITORY:$RESTIC_PASSWORD:$LEAK\"\n",
-        )
-        .unwrap();
-        fs::set_permissions(&fixture, fs::Permissions::from_mode(0o755)).unwrap();
-        let result = run_restic(
-            &SystemToolRunner,
-            &[],
-            "repo",
-            "password",
-            &fixture,
-            None,
-            false,
-            None,
-            Some(Duration::from_secs(1)),
-            &[],
-        )
-        .unwrap();
-        assert_eq!(result.stdout, "repo:[redacted]:");
-    }
 
-    #[cfg(unix)]
     #[test]
-    fn timeout_scrubs_partial_output_and_passes_live_key_fd() {
-        use std::io::Write;
-        use std::os::fd::{AsFd, AsRawFd};
-        let directory = tempfile::tempdir().unwrap();
-        let fixture = directory.path().join("fixture");
-        fs::write(
-            &fixture,
-            "#!/bin/sh\ncat /dev/fd/$1\nprintf ' PASSWORD' >&2\nsleep 1\n",
-        )
-        .unwrap();
-        fs::set_permissions(&fixture, fs::Permissions::from_mode(0o755)).unwrap();
-        let (reader, writer) = nix::unistd::pipe().unwrap();
-        let mut writer = std::fs::File::from(writer);
-        writer.write_all(b"PIPE_KEY").unwrap();
-        drop(writer);
-        let fd = reader.as_raw_fd();
-        let result = run_restic(
-            &SystemToolRunner,
-            &[fd.to_string()],
-            "repo",
-            "PASSWORD",
-            &fixture,
-            None,
-            true,
-            None,
-            Some(Duration::from_millis(200)),
-            &[reader.as_fd()],
-        )
-        .unwrap();
-        assert_eq!(result.returncode, 124);
-        assert!(result.stdout.contains("PIPE_KEY"));
-        assert_eq!(result.stderr, " [redacted]");
-        assert_eq!(result.json, None);
+    fn complete_session_records_observe_cleanup_close_reap_order() {
+        use std::os::unix::process::ExitStatusExt;
+
+        struct Fake;
+        impl SessionIo for Fake {
+            fn observe_exit_without_reap(&mut self) -> io::Result<bool> {
+                Ok(true)
+            }
+            fn group_cleanup(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+            fn close_owned_endpoints(&mut self) {}
+            fn reap_root(&mut self) -> io::Result<ExitStatus> {
+                Ok(ExitStatus::from_raw(0))
+            }
+        }
+        let mut log = Vec::new();
+        complete_session(&mut Fake, Some(&mut log)).unwrap();
+        assert_eq!(
+            log,
+            [
+                Step::Observe,
+                Step::GroupCleanup,
+                Step::CloseOwned,
+                Step::Reap
+            ]
+        );
     }
 }

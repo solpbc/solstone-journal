@@ -9,15 +9,21 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[lints]
-workspace = true
+# Workspace forbids unsafe_code and rejects in-table overrides. nix 0.30.1
+# does not wrap waitid on macOS, so that path needs one libc call.
+[lints.rust]
+unsafe_code = "deny"
+
+[features]
+default = []
+test-hooks = []
 
 [dependencies]
 bzip2-rs.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
 md5.workspace = true
-nix = { workspace = true, features = ["fs"] }
+nix = { workspace = true, features = ["fs", "process", "signal"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -31,4 +37,10 @@ solstone-core-indexer-store.workspace = true
 solstone-core-journal-io.workspace = true
 
 [dev-dependencies]
+nix = { workspace = true, features = ["fs"] }
 tempfile = "3.24.0"
+
+[[test]]
+name = "backup_runtime_process"
+path = "tests/backup_runtime_process.rs"
+required-features = ["test-hooks"]
