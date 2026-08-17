@@ -250,7 +250,7 @@ mod tests {
         runner: &'a Script,
         http: &'a Http,
         clock: &'a TestClock,
-        maintenance: &'a Maintenance,
+        maintenance: &'a dyn JournalMaintenance,
     ) -> BackupServices<'a> {
         BackupServices {
             runner,
@@ -324,5 +324,52 @@ mod tests {
         assert_eq!(config["destination"]["repository"], "repo");
         assert_eq!(config["confirmed_recovery_key"], true);
         assert_eq!(config["last_restore"], prior_last_restore);
+    }
+
+    struct FailingRebuild(RefCell<Vec<&'static str>>);
+    impl JournalMaintenance for FailingRebuild {
+        fn rebuild_body_history(
+            &self,
+            _: &Path,
+        ) -> Result<(), crate::engine::JournalMaintenanceError> {
+            self.0.borrow_mut().push("rebuild");
+            Err(crate::engine::JournalMaintenanceError)
+        }
+        fn full_scan(&self, _: &Path) -> Result<(), crate::engine::JournalMaintenanceError> {
+            self.0.borrow_mut().push("scan");
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn rebuild_failure_short_circuits_before_any_publication() {
+        let journal = tempfile::tempdir().unwrap();
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).unwrap();
+        let before = solstone_core_backup::get_backup_config(journal.path()).unwrap();
+        let runner = Script(RefCell::new(VecDeque::from([
+            output(0, "[{\"paths\":[\"/original\"]}]"),
+            output(0, "[{\"message_type\":\"summary\",\"bytes_restored\":12}]"),
+            output(0, ""),
+        ])));
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = FailingRebuild(RefCell::new(vec![]));
+        let result = restore_journal(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            destination(),
+            &stored.recovery_key,
+        );
+        assert_eq!(result.status, "error");
+        assert_eq!(result.reason_code, Some("body_rebuild_failed".into()));
+        assert_eq!(result.integrity_ok, false);
+        assert_eq!(result.bytes_restored, None);
+        assert_eq!(*maintenance.0.borrow(), vec!["rebuild"]);
+        let after = solstone_core_backup::get_backup_config(journal.path()).unwrap();
+        assert_eq!(after.get("destination"), before.get("destination"));
+        assert_eq!(
+            after.get("confirmed_recovery_key"),
+            before.get("confirmed_recovery_key")
+        );
     }
 }
