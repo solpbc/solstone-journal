@@ -4023,3 +4023,17 @@ timeout = "quick"
 default_full = true
 required_features = []
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-entities::entities_trust_lock_routes"
+package = "solstone-core-entities"
+target = "entities_trust_lock_routes"
+set = "component"
+areas = ["entities", "trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "host-contention"
+default_full = true
+required_features = []
+runtime = "none"

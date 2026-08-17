@@ -266,60 +266,76 @@ fn forced_lock_timeout() -> solstone_core_entity::LockError {
     })
 }
 
-fn apply_forced_facet_entity_write<T>(
-    result: Result<T, solstone_core_facets::FacetEntityWriteError>,
-) -> Result<T, solstone_core_facets::FacetEntityWriteError> {
+async fn run_facet_entity_write<T, F>(
+    operation: F,
+) -> Result<Result<T, solstone_core_facets::FacetEntityWriteError>, tokio::task::JoinError>
+where
+    F: FnOnce() -> Result<T, solstone_core_facets::FacetEntityWriteError> + Send + 'static,
+    T: Send + 'static,
+{
     #[cfg(test)]
     {
         if let Some(ForcedWriteOutcome::Contended) = FORCED_WRITE_OUTCOME.with(|cell| cell.get()) {
-            return Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
+            return Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
                 solstone_core_facets::FacetTrustLockError::Lock(forced_lock_timeout()),
-            ));
+            )));
         }
     }
-    result
+    solstone_core_serving::seam::run_blocking(operation).await
 }
 
-fn apply_forced_entity_write<T>(
-    result: Result<T, solstone_core_entity::EntityWriteError>,
-) -> Result<T, solstone_core_entity::EntityWriteError> {
+async fn run_entity_write<T, F>(
+    operation: F,
+) -> Result<Result<T, solstone_core_entity::EntityWriteError>, tokio::task::JoinError>
+where
+    F: FnOnce() -> Result<T, solstone_core_entity::EntityWriteError> + Send + 'static,
+    T: Send + 'static,
+{
     #[cfg(test)]
     {
         if let Some(ForcedWriteOutcome::Contended) = FORCED_WRITE_OUTCOME.with(|cell| cell.get()) {
-            return Err(solstone_core_entity::EntityWriteError::TrustLock(
+            return Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(
                 solstone_core_entity::EntityTrustLockError::Lock(forced_lock_timeout()),
-            ));
+            )));
         }
     }
-    result
+    solstone_core_serving::seam::run_blocking(operation).await
 }
 
-fn apply_forced_entity_lifecycle<T>(
-    result: Result<T, solstone_core_entity::EntityLifecycleError>,
-) -> Result<T, solstone_core_entity::EntityLifecycleError> {
+async fn run_entity_lifecycle<T, F>(
+    operation: F,
+) -> Result<Result<T, solstone_core_entity::EntityLifecycleError>, tokio::task::JoinError>
+where
+    F: FnOnce() -> Result<T, solstone_core_entity::EntityLifecycleError> + Send + 'static,
+    T: Send + 'static,
+{
     #[cfg(test)]
     {
         if let Some(ForcedWriteOutcome::Contended) = FORCED_WRITE_OUTCOME.with(|cell| cell.get()) {
-            return Err(solstone_core_entity::EntityLifecycleError::TrustLock(
+            return Ok(Err(solstone_core_entity::EntityLifecycleError::TrustLock(
                 solstone_core_entity::EntityTrustLockError::Lock(forced_lock_timeout()),
-            ));
+            )));
         }
     }
-    result
+    solstone_core_serving::seam::run_blocking(operation).await
 }
 
-fn apply_forced_observation_write<T>(
-    result: Result<T, solstone_core_facets::ObservationWriteError>,
-) -> Result<T, solstone_core_facets::ObservationWriteError> {
+async fn run_observation_write<T, F>(
+    operation: F,
+) -> Result<Result<T, solstone_core_facets::ObservationWriteError>, tokio::task::JoinError>
+where
+    F: FnOnce() -> Result<T, solstone_core_facets::ObservationWriteError> + Send + 'static,
+    T: Send + 'static,
+{
     #[cfg(test)]
     {
         if let Some(ForcedWriteOutcome::Contended) = FORCED_WRITE_OUTCOME.with(|cell| cell.get()) {
-            return Err(solstone_core_facets::ObservationWriteError::TrustLock(
+            return Ok(Err(solstone_core_facets::ObservationWriteError::TrustLock(
                 solstone_core_facets::FacetTrustLockError::Lock(forced_lock_timeout()),
-            ));
+            )));
         }
     }
-    result
+    solstone_core_serving::seam::run_blocking(operation).await
 }
 
 #[derive(Deserialize)]
@@ -766,7 +782,7 @@ async fn detect_entity_route(
         entity_query.clone()
     };
     let response_name = name.clone();
-    match solstone_core_serving::seam::run_blocking(move || {
+    match run_facet_entity_write(move || {
         solstone_core_facets::save_detected_entity(
             &root,
             &facet_name,
@@ -777,7 +793,6 @@ async fn detect_entity_route(
         )
     })
     .await
-    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(_)) => Json(json!({"name":response_name})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. }))
@@ -2308,7 +2323,7 @@ async fn restore_journal_entity_version_route(
     if !present {
         return refusal(ReasonCode::EntityNotFound, entity_id);
     }
-    match solstone_core_serving::seam::run_blocking(move || {
+    match run_entity_lifecycle(move || {
         let event = solstone_core_entity::restore_journal_entity_version(
             &root,
             &entity_id,
@@ -2324,7 +2339,6 @@ async fn restore_journal_entity_version_route(
         Ok::<_, solstone_core_entity::EntityLifecycleError>((event, entity.value().clone()))
     })
     .await
-    .map(apply_forced_entity_lifecycle)
     {
         Ok(Ok((event, entity))) => {
             Json(json!({"restored":true,"entity":entity,"event":event})).into_response()
@@ -2581,11 +2595,10 @@ async fn resolve_ambiguity_route(
             "field": "entity_id",
         })),
     };
-    match solstone_core_serving::seam::run_blocking(move || {
+    match run_entity_write(move || {
         solstone_core_entity::record_ambiguity_choice(&root, &request, &eligible)
     })
     .await
-    .map(apply_forced_entity_write)
     {
         Ok(Ok(ambiguity)) => Json(json!({"ambiguity":ambiguity,"entity":chosen})).into_response(),
         Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(
@@ -2861,7 +2874,7 @@ async fn update_description_route(
     };
     let entity_id = entity_id.to_owned();
     let description = description.to_owned();
-    match solstone_core_serving::seam::run_blocking(move || {
+    match run_facet_entity_write(move || {
         solstone_core_facets::update_facet_entity_description(
             &root,
             &facet,
@@ -2870,7 +2883,6 @@ async fn update_description_route(
         )
     })
     .await
-    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(entity)) => Json(json!({"entity":entity})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
@@ -2922,11 +2934,10 @@ async fn update_detected_route(
     let day = day.to_owned();
     let entity = entity.to_owned();
     let description = description.to_owned();
-    match solstone_core_serving::seam::run_blocking(move || {
+    match run_facet_entity_write(move || {
         solstone_core_facets::update_detected_entity(&root, &facet, &day, &entity, &description)
     })
     .await
-    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(entity)) => Json(json!({"entity":entity})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
@@ -3015,11 +3026,10 @@ async fn detach_route(
     if let Some(r) = admitted(&b) {
         return r;
     }
-    match solstone_core_serving::seam::run_blocking(move || {
+    match run_facet_entity_write(move || {
         solstone_core_facets::detach_facet_entity(&root, &facet, &entity_id)
     })
     .await
-    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(_)) => Json(json!({"success":true})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
@@ -3057,7 +3067,7 @@ async fn update_path_description_route(
         .unwrap_or_default()
         .trim()
         .to_owned();
-    match solstone_core_serving::seam::run_blocking(move || {
+    match run_facet_entity_write(move || {
         solstone_core_facets::update_facet_entity_description(
             &root,
             &facet,
@@ -3066,7 +3076,6 @@ async fn update_path_description_route(
         )
     })
     .await
-    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(_)) => Json(json!({"success":true})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
@@ -3132,7 +3141,7 @@ async fn observe_route(
         .get("source_day")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned);
-    match solstone_core_serving::seam::run_blocking(move || {
+    match run_observation_write(move || {
         solstone_core_facets::add_observation(
             &root,
             &facet,
@@ -3143,7 +3152,6 @@ async fn observe_route(
         )
     })
     .await
-    .map(apply_forced_observation_write)
     {
         Ok(Ok((observations, count))) => Json(json!({
             "result":{"observations":observations,"count":count}
@@ -3219,7 +3227,7 @@ async fn delete_detected_route(
     };
     days.sort();
     let name = name.to_owned();
-    match solstone_core_serving::seam::run_blocking(move || {
+    match run_facet_entity_write(move || {
         let mut days_modified = Vec::new();
         for day in days {
             let entities = solstone_core_facets::read_detected_entities(&root, &facet, &day)?;
@@ -3234,7 +3242,6 @@ async fn delete_detected_route(
         Ok::<_, solstone_core_facets::FacetEntityWriteError>(days_modified)
     })
     .await
-    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(days_modified)) => Json(json!({"days_modified":days_modified})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
@@ -3361,7 +3368,7 @@ async fn update_entity_route(
     let old_name = old_name.to_owned();
     let new_name = new_name.to_owned();
     let new_name_for_detail = new_name.clone();
-    match solstone_core_serving::seam::run_blocking(move || {
+    match run_facet_entity_write(move || {
         solstone_core_facets::update_facet_entity_identity(
             &root,
             &facet,
@@ -3372,7 +3379,6 @@ async fn update_entity_route(
         )
     })
     .await
-    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(entity)) => Json(json!({"entity":entity})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
