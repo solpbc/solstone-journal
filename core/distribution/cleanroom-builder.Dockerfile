@@ -14,6 +14,7 @@ ADD rust-std-1.97.1-x86_64-unknown-linux-musl.tar.xz /opt/
 
 ENV PATH=/opt/zig-x86_64-linux-0.16.0:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     RUSTUP_HOME=/usr/local/rustup \
+    RUSTUP_TOOLCHAIN=1.97.1-x86_64-unknown-linux-gnu \
     CARGO_HOME=/usr/local/cargo \
     RUST_VERSION=1.97.1 \
     SOLSTONE_ZIG=/opt/zig-x86_64-linux-0.16.0/zig
