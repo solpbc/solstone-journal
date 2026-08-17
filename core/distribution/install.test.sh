@@ -299,10 +299,16 @@ _status=0
 TMPDIR="$REFUSAL_TMPDIR_PROBE" SOLSTONE_PROFILE="$HOME/.profile" \
 	"$INSTALL" --prefix "$BASE/refusal-tmp-prefix" --archive "$ARCHIVE" --sha256 "$BASE/bad.sha256" --release "$REL" \
 	>"$BASE/tmpdir-refusal.out" 2>&1 || _status=$?
-if [ "$_status" -ne 0 ] && [ -z "$(ls "$REFUSAL_TMPDIR_PROBE")" ]; then
-	pass "refusal cleans TMPDIR probe"
+_text=$(cat "$BASE/tmpdir-refusal.out")
+if [ "$_status" -eq 0 ]; then
+	fail "refusal cleanup TMPDIR probe: expected digest-mismatch, succeeded"
+elif [ -n "$(ls "$REFUSAL_TMPDIR_PROBE")" ]; then
+	fail "refusal cleanup TMPDIR probe: probe not empty"
 else
-	fail "refusal cleanup TMPDIR probe"
+	case $_text in
+	*digest-mismatch*) pass "refusal cleans TMPDIR probe" ;;
+	*) fail "refusal cleanup TMPDIR probe: wanted digest-mismatch in: $_text" ;;
+	esac
 fi
 
 # release-invalid
