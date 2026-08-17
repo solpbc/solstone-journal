@@ -75,7 +75,7 @@ fn voiceprint_journal() -> PathBuf {
         NEXT_VOICEPRINT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&path).unwrap();
-    path
+    fs::canonicalize(path).unwrap()
 }
 fn row(value: f32) -> Vec<f32> {
     vec![value; 256]

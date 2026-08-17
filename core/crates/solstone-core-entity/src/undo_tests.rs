@@ -58,7 +58,7 @@ fn undo_journal() -> PathBuf {
         NEXT_UNDO_DIRECTORY.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&path).unwrap();
-    path
+    fs::canonicalize(path).unwrap()
 }
 
 fn journal_tree(journal: &std::path::Path) -> Vec<(String, Vec<u8>)> {
