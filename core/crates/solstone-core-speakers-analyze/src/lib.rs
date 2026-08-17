@@ -1808,11 +1808,11 @@ mod tests {
         write_f32le(&audio_path, &vec![0.0_f32; 8_000]);
         let root = repo_root();
         let pyannote_model = root
-            .join("packages/solstone-journal-models/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx")
+            .join("core/models/assets/pyannote-segmentation-3.0.onnx")
             .to_string_lossy()
             .into_owned();
         let wespeaker_model = root
-            .join("packages/solstone-journal-models/solstone_journal_models/assets/wespeaker-resnet34-256.onnx")
+            .join("core/models/assets/wespeaker-resnet34-256.onnx")
             .to_string_lossy()
             .into_owned();
         let request = json!({

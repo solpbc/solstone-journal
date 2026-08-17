@@ -130,7 +130,7 @@ mod tests {
         let features =
             compute_wespeaker_filterbank_cmn(&audio, WESPEAKER_SAMPLE_RATE_HZ).expect("features");
         let model_path = repo_root().join(
-            "packages/solstone-journal-models/solstone_journal_models/assets/wespeaker-resnet34-256.onnx",
+            "core/models/assets/wespeaker-resnet34-256.onnx",
         );
         let mut embedder = WespeakerEmbedder::open(&model_path, &[SpeakerExecutionProvider::Cpu])
             .expect("embedder");

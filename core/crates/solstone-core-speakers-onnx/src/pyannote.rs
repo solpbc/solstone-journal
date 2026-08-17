@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn committed_pyannote_model_accepts_zero_window_and_returns_589x7_finite_values() {
         let model_path = repo_root().join(
-            "packages/solstone-journal-models/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx",
+            "core/models/assets/pyannote-segmentation-3.0.onnx",
         );
         let mut segmenter = PyannoteSegmenter::open(&model_path, &[SpeakerExecutionProvider::Cpu])
             .expect("segmenter");

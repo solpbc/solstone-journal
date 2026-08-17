@@ -86,7 +86,7 @@ fn fixture_audio() -> PathBuf {
 
 fn model_asset(name: &str) -> PathBuf {
     repository_root()
-        .join("packages/solstone-journal-models/solstone_journal_models/assets")
+        .join("core/models/assets")
         .join(name)
 }
 

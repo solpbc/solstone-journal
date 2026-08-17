@@ -45,7 +45,7 @@ SCHEMA = "service-legacy-packaging-provenance"
 SCHEMA_VERSION = 1
 JOURNAL_PACKAGE = "solstone-journal"
 CORE_JOURNAL_PACKAGE = "solstone-core-journal"
-LAUNCHER = ROOT / "packages/solstone-journal/scripts/journal"
+LAUNCHER = ROOT / "scripts/root-launchers/journal"
 DISPATCH_SOURCES = (
     ROOT / "core/crates/solstone-core-journal-cli/src/processes.rs",
     ROOT / "core/crates/solstone-core-journal-cli/src/runner.rs",

@@ -205,7 +205,7 @@
   "launcher_chain": {
     "journal_launcher": {
       "mechanism": "script-files",
-      "source_path": "packages/solstone-journal/scripts/journal",
+      "source_path": "scripts/root-launchers/journal",
       "source_sha256": "c3de2fe58414924d3bbf5e3cfb20625c6f6645cdb381e48979e1cc934cb39df5",
       "wheel": {
         "content_sha256": "c3de2fe58414924d3bbf5e3cfb20625c6f6645cdb381e48979e1cc934cb39df5",

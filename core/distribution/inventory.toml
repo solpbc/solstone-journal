@@ -152,14 +152,14 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "launcher"
-source = "packages/solstone-journal/scripts/journal"
+source = "scripts/root-launchers/journal"
 dest = "bin/journal"
 mode = 0o755
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "model-asset"
-source = "packages/solstone-journal-models/solstone_journal_models/assets/wespeaker-resnet34-256.onnx"
+source = "core/models/assets/wespeaker-resnet34-256.onnx"
 dest = "lib/solstone_journal_models/assets/wespeaker-resnet34-256.onnx"
 mode = 0o644
 digest_const = "WESPEAKER_RESNET34_SHA256"
@@ -167,7 +167,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "model-asset"
-source = "packages/solstone-journal-models/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx"
+source = "core/models/assets/pyannote-segmentation-3.0.onnx"
 dest = "lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx"
 mode = 0o644
 digest_const = "PYANNOTE_SEGMENTATION_SHA256"
@@ -175,7 +175,7 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "model-asset"
-source = "packages/solstone-journal-models/solstone_journal_models/assets/silero_vad_v6.onnx"
+source = "core/models/assets/silero_vad_v6.onnx"
 dest = "lib/solstone_journal_models/assets/silero_vad_v6.onnx"
 mode = 0o644
 digest_const = "SILERO_VAD_V6_SHA256"

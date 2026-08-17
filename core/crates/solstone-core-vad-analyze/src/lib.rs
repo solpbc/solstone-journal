@@ -977,7 +977,7 @@ mod tests {
 
     fn committed_model_path() -> PathBuf {
         repo_root().join(
-            "packages/solstone-journal-models/solstone_journal_models/assets/silero_vad_v6.onnx",
+            "core/models/assets/silero_vad_v6.onnx",
         )
     }
 

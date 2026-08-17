@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 
 const MODEL_ASSETS_ENV: &str = "SOLSTONE_TRANSCRIBE_MODEL_ASSETS_DIR";
 const SOURCE_ASSETS_RELATIVE: &str =
-    "packages/solstone-journal-models/solstone_journal_models/assets";
+    "core/models/assets";
 const DATA_LIB_ASSETS_RELATIVE: &str = "lib/solstone_journal_models/assets";
 const PACKAGE_ASSETS_RELATIVE: &str = "site-packages/solstone_journal_models/assets";
 
@@ -288,7 +288,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let root = temporary.path();
         let asset_directory =
-            root.join("packages/solstone-journal-models/solstone_journal_models/assets");
+            root.join("core/models/assets");
         write_real_asset(&asset_directory, ASSET);
         let manifest_directory = root.join("core/crates/solstone-core-transcribe");
 
@@ -389,7 +389,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let root = temporary.path();
         let source_directory =
-            root.join("packages/solstone-journal-models/solstone_journal_models/assets");
+            root.join("core/models/assets");
         fs::create_dir_all(&source_directory).unwrap();
         let installed_directory =
             root.join("lib/python3.13/site-packages/solstone_journal_models/assets");
@@ -419,7 +419,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let root = temporary.path();
         let source_directory =
-            root.join("packages/solstone-journal-models/solstone_journal_models/assets");
+            root.join("core/models/assets");
         write_real_asset(&source_directory, ASSET);
         let override_directory = root.join("override");
 
@@ -470,7 +470,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let root = temporary.path();
         let corrupt_directory =
-            root.join("packages/solstone-journal-models/solstone_journal_models/assets");
+            root.join("core/models/assets");
         let corrupt_path = write_corrupted_real_asset(&corrupt_directory, ASSET);
         let later_directory = root.join(DATA_LIB_ASSETS_RELATIVE);
         write_real_asset(&later_directory, ASSET);
@@ -505,7 +505,7 @@ mod tests {
         let override_directory = root.join("override");
         let corrupt_path = write_corrupted_real_asset(&override_directory, ASSET);
         let source_directory =
-            root.join("packages/solstone-journal-models/solstone_journal_models/assets");
+            root.join("core/models/assets");
         write_real_asset(&source_directory, ASSET);
 
         let error = resolve_model_asset_from(
@@ -544,7 +544,7 @@ mod tests {
     fn committed_asset_path(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../..")
-            .join("packages/solstone-journal-models/solstone_journal_models/assets")
+            .join("core/models/assets")
             .join(name)
     }
 

@@ -6103,7 +6103,7 @@
       },
       {
         "path": "scripts/build_service_legacy_packaging_provenance.py",
-        "sha256": "5a8243fe94753d0e9805e373779ceb5e04b27dd495842f3d8b0d35ab42a482af"
+        "sha256": "c7b230c0665c241597956f0decb583d45967a81cd8b588a6afa1f8679c1e5156"
       },
       {
         "path": "scripts/service_legacy_capture.py",
@@ -6115,7 +6115,7 @@
       },
       {
         "path": "scripts/service_legacy_integrity.py",
-        "sha256": "abfe96504743a0ac57204f6e9dccb333190a45fb393b06658b68c8e39a9796af"
+        "sha256": "7d6e4e250ee6f482897e77bedc246faf6517b79b9f074c62a8f902aaa8cd77b3"
       },
       {
         "path": "scripts/service_legacy_paths.py",

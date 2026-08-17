@@ -30,7 +30,7 @@ from typing import Any, Iterable, Iterator
 CANONICAL_REPOSITORY = "https://github.com/solpbc/solstone-journal.git"
 SEMANTIC_BASE_COMMIT = "f3d90d1c83ab3b31587b4e7cf5f3019b403db3e7"
 NON_OWNED_SOURCE_PATHS = (
-    "packages/solstone-journal/scripts/journal",
+    "scripts/root-launchers/journal",
     "core/crates/solstone-core-journal-cli/src/processes.rs",
     "core/crates/solstone-core-journal-cli/src/runner.rs",
     "core/crates/solstone-core-journal-cli/src/lib.rs",

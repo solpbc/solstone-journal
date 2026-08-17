@@ -149,7 +149,7 @@ Resolution order is fixed:
    typed error and does not fall through to a different location.
 2. Source checkout: for every ancestor of compile-time
    `CARGO_MANIFEST_DIR`, test
-   `packages/solstone-journal-models/solstone_journal_models/assets`. This is
+   `core/models/assets`. This is
    the cargo-test/source-build route only.
 3. Installed journal environment: obtain `current_exe()`, iterate it and its
    ancestors, and for each candidate environment root test

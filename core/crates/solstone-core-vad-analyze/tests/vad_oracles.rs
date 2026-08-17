@@ -36,7 +36,7 @@ fn fixtures() -> PathBuf {
 
 fn model_path() -> PathBuf {
     repository_root()
-        .join("packages/solstone-journal-models/solstone_journal_models/assets/silero_vad_v6.onnx")
+        .join("core/models/assets/silero_vad_v6.onnx")
 }
 
 fn helper_binary() -> &'static str {
