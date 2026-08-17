@@ -939,3 +939,71 @@ async fn ac18_invalid_utf8_frame_is_dropped_but_peer_stays_usable() {
     assert_eq!(server.malformed_frame_drops(), 1);
     server.stop().await;
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn escaped_large_unicode_frames_keep_peer_connected() {
+    let socket = TempSocket::new("large-unicode");
+    let server = CallosumSocketServer::bind(&socket.path).await.unwrap();
+    let mut first = connection(&socket.path, Map::new());
+    let mut second = connection(&socket.path, Map::new());
+    wait_for_clients(&server, 2).await;
+
+    let text = "日本語🦀".repeat(1_000);
+    assert!(
+        text.chars().count() * 6 > 4_096,
+        "payload must exceed the 4096-byte read buffer after ASCII escaping"
+    );
+    assert!(first.emit("unicode", "large", fields([("text", json!(text))])));
+    for peer in [&mut first, &mut second] {
+        let message = next(peer).await;
+        assert_eq!(message.tract, "unicode");
+        assert_eq!(message.event, "large");
+        assert_eq!(message.extra["text"], json!(text));
+    }
+
+    assert!(first.emit("unicode", "after", fields([("extension", json!(true))])));
+    for peer in [&mut first, &mut second] {
+        let message = next(peer).await;
+        assert_eq!(message.event, "after");
+        assert_eq!(message.extra["extension"], json!(true));
+    }
+
+    first.stop().await;
+    second.stop().await;
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn encode_envelope_is_compact_and_ascii_escapes_non_ascii() {
+    let socket = TempSocket::new("encode-envelope");
+    let server = CallosumSocketServer::bind(&socket.path).await.unwrap();
+    let mut sender = connection(&socket.path, Map::new());
+    let receiver = raw(&socket.path).await;
+    wait_for_clients(&server, 2).await;
+    let (receiver_read, receiver_write) = receiver.into_split();
+    let mut receiver = reader(receiver_read);
+
+    assert!(sender.emit(
+        "unicode",
+        "nested",
+        fields([
+            ("text", json!("日本語🦀")),
+            ("payload", json!({"items": [1, {"state": "kept"}]})),
+        ])
+    ));
+    let echoed = next(&mut sender).await;
+    assert_eq!(echoed.event, "nested");
+    let line = raw_line(&mut receiver).await;
+    drop(receiver_write);
+    assert!(
+        !line.contains(", ") && !line.contains(": "),
+        "encode_envelope must emit compact separators: {line}"
+    );
+    assert!(
+        line.contains("\\u"),
+        "encode_envelope must ASCII-escape non-ASCII: {line}"
+    );
+
+    sender.stop().await;
+    server.stop().await;
+}
