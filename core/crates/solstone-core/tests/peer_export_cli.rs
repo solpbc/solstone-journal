@@ -68,6 +68,106 @@ fn config_export_strips_secrets_on_the_wire() {
     assert!(body.pointer("/config/convey/secret").is_none());
 }
 
+fn all_areas_plan() -> PeerPlan {
+    PeerPlan::new(
+        ["segments", "imports", "entities", "facets", "config"]
+            .into_iter()
+            .flat_map(|area| {
+                [
+                    (
+                        RequestRoute::get(format!("/app/import/journal/remote-i/manifest/{area}")),
+                        vec![ResponseAction::manifest_empty()],
+                    ),
+                    (
+                        RequestRoute::post(format!("/app/import/journal/remote-i/ingest/{area}")),
+                        vec![ResponseAction::status(
+                            200,
+                            json!({"staged": true}).to_string(),
+                        )],
+                    ),
+                ]
+            }),
+    )
+}
+
+#[test]
+fn export_all_five_areas_in_one_run() {
+    let peer = StubPeer::new(all_areas_plan());
+    let fixture = peer.fixture();
+    fixture.add_segment("audio", "120000_30", &[("stream.json", b"segment")]);
+    fixture.add_entity("alice", json!({"id": "alice", "name": "Alice"}));
+    fixture.add_facet("work", &[("facet.json", b"{\"name\":\"work\"}")]);
+    fixture.add_import(
+        "20260203_120000",
+        json!({"source": "calendar"}),
+        json!({"status": "imported"}),
+        None,
+    );
+    fixture.set_config(json!({
+        "convey": {
+            "password_hash": "do-not-send",
+            "secret": "also-do-not-send",
+            "other_field": "send-this"
+        }
+    }));
+
+    let output = run(&fixture, &[]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "\n--- Export Summary ---\n  segments: 1 skipped\n  imports: nothing to send\n  entities: nothing to send\n  facets: 1 sent\n  config: 1 staged\n"
+    );
+
+    let requests = peer.requests();
+    assert_eq!(
+        requests
+            .iter()
+            .map(|request| (
+                request.method.as_str(),
+                request.path.as_str(),
+                request.body.is_empty()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "GET",
+                "/app/import/journal/remote-i/manifest/segments",
+                true
+            ),
+            ("GET", "/app/import/journal/remote-i/manifest/imports", true),
+            ("POST", "/app/import/journal/remote-i/ingest/imports", false),
+            (
+                "GET",
+                "/app/import/journal/remote-i/manifest/entities",
+                true
+            ),
+            (
+                "POST",
+                "/app/import/journal/remote-i/ingest/entities",
+                false
+            ),
+            ("GET", "/app/import/journal/remote-i/manifest/facets", true),
+            ("POST", "/app/import/journal/remote-i/ingest/facets", false),
+            ("GET", "/app/import/journal/remote-i/manifest/config", true),
+            ("POST", "/app/import/journal/remote-i/ingest/config", false),
+        ]
+    );
+
+    let config = requests
+        .iter()
+        .find(|request| request.path.ends_with("/ingest/config"))
+        .expect("config upload");
+    let body: Value = serde_json::from_slice(&config.body).expect("config JSON");
+    assert_eq!(body["config"]["convey"]["other_field"], "send-this");
+    assert!(body.pointer("/config/convey/password_hash").is_none());
+    assert!(body.pointer("/config/convey/secret").is_none());
+}
+
 #[test]
 fn only_and_dry_run_limit_requests_and_never_prompt_on_non_tty() {
     let peer = StubPeer::new(PeerPlan::new([(

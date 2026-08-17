@@ -19,6 +19,8 @@ mod doctor_cli;
 mod engage_cli;
 #[path = "facet_candidates_cli.rs"]
 mod facet_candidates_cli;
+#[path = "grab_cli.rs"]
+mod grab_cli;
 #[path = "health_logs_cli.rs"]
 mod health_logs_cli;
 #[path = "heartbeat_cli.rs"]
