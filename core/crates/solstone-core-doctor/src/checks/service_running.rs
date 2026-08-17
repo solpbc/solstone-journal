@@ -6,10 +6,84 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 use std::{
-    process::{Command, Output, Stdio},
+    io,
+    os::unix::process::CommandExt,
+    process::{Child, Command, Output, Stdio},
     thread,
     time::{Duration, Instant},
 };
+
+struct ProcessGroupChild {
+    child: Option<Child>,
+    group: rustix::process::Pid,
+}
+
+impl ProcessGroupChild {
+    fn spawn(command: &mut Command) -> io::Result<Self> {
+        command.process_group(0);
+        let mut child = command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let group = match i32::try_from(child.id())
+            .ok()
+            .and_then(rustix::process::Pid::from_raw)
+        {
+            Some(pid) => pid,
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "probe child PID does not fit a process-group ID",
+                ));
+            }
+        };
+        Ok(Self {
+            child: Some(child),
+            group,
+        })
+    }
+
+    fn exited_without_reaping(&self) -> io::Result<bool> {
+        rustix::process::waitid(
+            rustix::process::WaitId::Pid(self.group),
+            rustix::process::WaitIdOptions::EXITED
+                | rustix::process::WaitIdOptions::NOHANG
+                | rustix::process::WaitIdOptions::NOWAIT,
+        )
+        .map(|status| status.is_some())
+        .map_err(io::Error::from)
+    }
+
+    fn terminate_with_output(mut self) -> io::Result<Output> {
+        self.terminate_group();
+        self.child
+            .take()
+            .expect("owned probe child")
+            .wait_with_output()
+    }
+
+    fn terminate_group(&mut self) {
+        if rustix::process::kill_process_group(self.group, rustix::process::Signal::KILL).is_err()
+            && let Some(child) = self.child.as_mut()
+        {
+            let _ = child.kill();
+        }
+    }
+}
+
+impl Drop for ProcessGroupChild {
+    fn drop(&mut self) {
+        if self.child.is_some() {
+            self.terminate_group();
+        }
+        if let Some(mut child) = self.child.take() {
+            let _ = child.wait();
+        }
+    }
+}
+
 fn installed(context: &CheckContext) -> bool {
     match context.platform {
         crate::vocabulary::Platform::Darwin => context
@@ -121,20 +195,12 @@ fn service_is_failed(context: &CheckContext) -> bool {
 }
 
 fn run_with_timeout(command: &mut Command, timeout: Duration) -> Option<Output> {
-    let mut child = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .ok()?;
+    let child = ProcessGroupChild::spawn(command).ok()?;
     let deadline = Instant::now() + timeout;
     loop {
-        match child.try_wait().ok()? {
-            Some(_) => return child.wait_with_output().ok(),
-            None if Instant::now() >= deadline => {
-                let _ = child.kill();
-                return child.wait_with_output().ok();
-            }
-            None => thread::sleep(Duration::from_millis(10)),
+        if child.exited_without_reaping().ok()? || Instant::now() >= deadline {
+            return child.terminate_with_output().ok();
         }
+        thread::sleep(Duration::from_millis(10));
     }
 }

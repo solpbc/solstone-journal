@@ -15,7 +15,7 @@ use std::{
     io::Write,
     os::unix::{
         fs::{PermissionsExt, symlink},
-        net::{UnixListener, UnixStream},
+        net::{UnixDatagram, UnixListener, UnixStream},
     },
     path::{Path, PathBuf},
     process::Command,
@@ -137,6 +137,44 @@ fn install_linux_unit(context: &CheckContext) {
 fn write_script(path: &Path, body: &str) {
     fs::write(path, body).expect("write override script");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod override script");
+}
+
+fn shell_quote(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
+}
+
+struct DescendantRelease {
+    release_socket: PathBuf,
+}
+
+impl DescendantRelease {
+    fn release(&self) {
+        let Ok(socket) = UnixDatagram::unbound() else {
+            return;
+        };
+        if socket.connect(&self.release_socket).is_ok() {
+            let _ = socket.send(b"release");
+        }
+    }
+}
+
+impl Drop for DescendantRelease {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+fn descendant_survives_cleanup_bound(lifetime_socket: &Path) -> bool {
+    let deadline = Instant::now() + Duration::from_millis(300);
+    loop {
+        if UnixStream::connect(lifetime_socket).is_err() {
+            return false;
+        }
+        if Instant::now() >= deadline {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
 }
 
 fn site_packages(context: &CheckContext, python: &str) -> PathBuf {
@@ -406,6 +444,171 @@ fn service_running_failed_service_command_fails() {
         row.fix.as_deref(),
         Some("run journal service restart; if it persists, run journal service logs")
     );
+    assert!(row.execution_error.is_none());
+}
+
+#[test]
+fn service_timeout_descendant() {
+    if std::env::var_os("SOLSTONE_DOCTOR_TIMEOUT_DESCENDANT").is_none() {
+        return;
+    }
+    let lifetime_socket = PathBuf::from(
+        std::env::var_os("SOLSTONE_DOCTOR_TIMEOUT_LIFETIME_SOCKET")
+            .expect("descendant lifetime socket"),
+    );
+    let release_socket = PathBuf::from(
+        std::env::var_os("SOLSTONE_DOCTOR_TIMEOUT_RELEASE_SOCKET")
+            .expect("descendant release socket"),
+    );
+    let ready_socket = PathBuf::from(
+        std::env::var_os("SOLSTONE_DOCTOR_TIMEOUT_READY_SOCKET")
+            .expect("descendant readiness socket"),
+    );
+    let lifetime = UnixListener::bind(lifetime_socket).expect("bind descendant lifetime socket");
+    thread::spawn(move || while lifetime.accept().is_ok() {});
+    let release = UnixDatagram::bind(release_socket).expect("bind descendant release socket");
+    release
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("bound descendant cleanup watchdog");
+    let ready = UnixDatagram::unbound().expect("create descendant readiness sender");
+    ready
+        .connect(ready_socket)
+        .expect("connect descendant readiness sender");
+    ready.send(b"ready").expect("signal descendant readiness");
+    if let Some(ready_fifo) = std::env::var_os("SOLSTONE_DOCTOR_TIMEOUT_READY_FIFO") {
+        let mut ready_fifo = fs::OpenOptions::new()
+            .write(true)
+            .open(ready_fifo)
+            .expect("open descendant readiness FIFO");
+        ready_fifo
+            .write_all(b"ready\n")
+            .expect("signal shell readiness");
+    }
+    let mut message = [0_u8; 16];
+    let _ = release.recv(&mut message);
+}
+
+#[test]
+fn service_command_exit_still_terminates_descendants_holding_output_pipes() {
+    let mut context = context();
+    install_linux_unit(&context);
+    context.service_status_timeout = WIRE_STATUS_TIMEOUT;
+
+    let ready_path = context.home_dir.join("exit-descendant-ready.sock");
+    let ready_fifo = context.home_dir.join("exit-descendant-ready.fifo");
+    let lifetime_path = context.home_dir.join("exit-descendant-lifetime.sock");
+    let release_path = context.home_dir.join("exit-descendant-release.sock");
+    nix::unistd::mkfifo(
+        &ready_fifo,
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .expect("create descendant readiness FIFO");
+    let ready = UnixDatagram::bind(&ready_path).expect("bind descendant readiness socket");
+    ready
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("bound readiness watchdog");
+    let cleanup = DescendantRelease {
+        release_socket: release_path.clone(),
+    };
+
+    let script = context.home_dir.join("exit-with-descendant.sh");
+    let executable = std::env::current_exe().expect("test executable");
+    write_script(
+        &script,
+        &format!(
+            "#!/bin/sh\nSOLSTONE_DOCTOR_TIMEOUT_DESCENDANT=1 \\\nSOLSTONE_DOCTOR_TIMEOUT_LIFETIME_SOCKET={} \\\nSOLSTONE_DOCTOR_TIMEOUT_RELEASE_SOCKET={} \\\nSOLSTONE_DOCTOR_TIMEOUT_READY_SOCKET={} \\\nSOLSTONE_DOCTOR_TIMEOUT_READY_FIFO={} \\\n{} --exact service_timeout_descendant --nocapture &\nIFS= read -r descendant_ready < {}\n",
+            shell_quote(&lifetime_path),
+            shell_quote(&release_path),
+            shell_quote(&ready_path),
+            shell_quote(&ready_fifo),
+            shell_quote(&executable),
+            shell_quote(&ready_fifo),
+        ),
+    );
+    context.service_status_command_override = Some((script, Vec::new()));
+
+    let listener = bind_listener(&context.callosum_socket_path);
+    let result_rx =
+        spawn_result(move || service_running::run(&context, service_running_check()).unwrap());
+    let stream = accept_stream(listener);
+    let mut message = [0_u8; 16];
+    let length = ready
+        .recv(&mut message)
+        .expect("descendant signaled readiness");
+    assert_eq!(&message[..length], b"ready");
+
+    let row = result_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("exited service command completed without pipe hang");
+    drop(stream);
+    let survived = descendant_survives_cleanup_bound(&lifetime_path);
+    cleanup.release();
+    assert!(
+        !survived,
+        "service command descendant held output pipes after its parent exited"
+    );
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(row.detail, "service installed but not running");
+    assert!(row.execution_error.is_none());
+}
+
+#[test]
+fn service_timeout_terminates_the_owned_descendant_group() {
+    let mut context = context();
+    install_linux_unit(&context);
+    context.service_status_timeout = WIRE_STATUS_TIMEOUT;
+
+    let ready_path = context.home_dir.join("timeout-descendant-ready.sock");
+    let lifetime_path = context.home_dir.join("timeout-descendant-lifetime.sock");
+    let release_path = context.home_dir.join("timeout-descendant-release.sock");
+    let ready = UnixDatagram::bind(&ready_path).expect("bind descendant readiness socket");
+    ready
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("bound readiness watchdog");
+    let cleanup = DescendantRelease {
+        release_socket: release_path.clone(),
+    };
+
+    let script = context.home_dir.join("timeout-with-descendant.sh");
+    let executable = std::env::current_exe().expect("test executable");
+    write_script(
+        &script,
+        &format!(
+            "#!/bin/sh\nSOLSTONE_DOCTOR_TIMEOUT_DESCENDANT=1 \\\nSOLSTONE_DOCTOR_TIMEOUT_LIFETIME_SOCKET={} \\\nSOLSTONE_DOCTOR_TIMEOUT_RELEASE_SOCKET={} \\\nSOLSTONE_DOCTOR_TIMEOUT_READY_SOCKET={} \\\n{} --exact service_timeout_descendant --nocapture >/dev/null 2>&1 &\nwait \"$!\"\n",
+            shell_quote(&lifetime_path),
+            shell_quote(&release_path),
+            shell_quote(&ready_path),
+            shell_quote(&executable),
+        ),
+    );
+    context.service_status_command_override = Some((script, Vec::new()));
+
+    let listener = bind_listener(&context.callosum_socket_path);
+    let result_rx =
+        spawn_result(move || service_running::run(&context, service_running_check()).unwrap());
+    let stream = accept_stream(listener);
+    let mut message = [0_u8; 16];
+    let length = ready
+        .recv(&mut message)
+        .expect("descendant signaled readiness");
+    assert_eq!(&message[..length], b"ready");
+    assert!(
+        UnixStream::connect(&lifetime_path).is_ok(),
+        "positive control must observe the live descendant"
+    );
+
+    let row = result_rx
+        .recv_timeout(Duration::from_secs(3))
+        .expect("timed-out service probe completed");
+    drop(stream);
+    let survived = descendant_survives_cleanup_bound(&lifetime_path);
+    cleanup.release();
+    assert!(
+        !survived,
+        "service probe descendant survived its owned process-group timeout"
+    );
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(row.detail, "service installed but not running");
     assert!(row.execution_error.is_none());
 }
 

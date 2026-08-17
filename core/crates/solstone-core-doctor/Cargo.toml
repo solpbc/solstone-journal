@@ -25,6 +25,7 @@ solstone-core-transcribe.workspace = true
 solstone-core-skill-state.workspace = true
 nix.workspace = true
 plist.workspace = true
+rustix = { workspace = true, features = ["process"] }
 tokio = { workspace = true, features = ["net", "rt", "sync", "time"] }
 
 [dev-dependencies]
