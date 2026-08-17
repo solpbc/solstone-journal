@@ -110,7 +110,6 @@ solstone-core-brain.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-cli.workspace = true
 solstone-core-maintenance.workspace = true
-solstone-core-maint.workspace = true
 solstone-core-doctor.workspace = true
 solstone-core-setup.workspace = true
 solstone-core-indexer-query.workspace = true

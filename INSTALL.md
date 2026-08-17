@@ -158,9 +158,7 @@ reconciles the systemd/launchd unit if anything has changed.
 
 ## upgrading an existing journal
 
-The steps above cover the package upgrade. If you already have a journal with history in it, three more things happen (or need to happen) on top of that:
-
-**one-time maintenance tasks.** Some upgrades ship a one-time migration that runs automatically the next time the service starts — you don't need to do anything. `journal maint --list` shows what ran and what's pending; `journal maint <task>` shows details and log output for one.
+The steps above cover the package upgrade. If you already have a journal with history in it, two more things happen (or need to happen) on top of that:
 
 **search index rebuild, if you're coming from before 0.7.0.** A pre-0.7.0 search index is dropped and rebuilt on first open after upgrade. The rebuild usually queues itself automatically, but if the service was still starting up when that happened, it can miss the window and print a message asking you to run it yourself. If search feels empty (or noticeably thinner than your journal's actual history) right after upgrading from a pre-0.7.0 install, run:
 

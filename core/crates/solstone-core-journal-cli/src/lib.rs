@@ -393,16 +393,16 @@ mod tests {
     }
 
     #[test]
-    fn manifest_has_fifty_six_unique_leaf_paths() {
+    fn manifest_has_fifty_five_unique_leaf_paths() {
         let paths = all_leaf_paths();
         let unique = paths
             .iter()
             .map(|path| path.join("\u{0}"))
             .collect::<BTreeSet<_>>();
-        assert_eq!(JOURNAL_COMMAND_COUNT, 56);
+        assert_eq!(JOURNAL_COMMAND_COUNT, 55);
         assert_eq!(paths.len(), JOURNAL_COMMAND_COUNT);
         assert_eq!(unique.len(), JOURNAL_COMMAND_COUNT);
-        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 42);
+        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 41);
         let coherence_tokens = PROCESS_SPECS
             .iter()
             .filter(|spec| spec.kind.requires_coherence())

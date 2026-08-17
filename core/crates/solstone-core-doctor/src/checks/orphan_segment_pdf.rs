@@ -49,7 +49,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 truncate(&orphans.join(", "), 360)
             ),
             Some(
-                "journal maint --force settings:007_migrate_pdf_extractions, then re-run journal doctor",
+                "add a readable *_transcript.md beside the PDF original, then re-run journal doctor",
             ),
         ))
     }

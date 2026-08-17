@@ -43,7 +43,7 @@ const DESCRIBE_USAGE_ANCHOR: &[u8] = DESCRIBE_USAGE.as_bytes();
 const CHECK_JSON_TOP_LEVEL_KEYS: &[&str] =
     &["platform", "checks", "overall", "feedback_url", "version"];
 const OWNER_VERB_REQUIRED_NATIVE_TOKENS: &[&str] =
-    &["engage", "maintenance", "heartbeat", "maint", "backup"];
+    &["engage", "maintenance", "heartbeat", "backup"];
 const REQUIRED_NATIVE_TOKENS: &[&str] = &["brain"];
 const THINK_AND_SETUP_REQUIRED_NATIVE_TOKENS: &[&str] = &["think", "setup"];
 const TALENT_LIFECYCLE_NATIVE_TOKENS: &[&str] = &["cortex", "talent"];
@@ -312,15 +312,8 @@ const SUPERVISOR_USAGE_ANCHOR: &[u8] =
 const SERVICE_UNKNOWN_ANCHOR: &[u8] = b"Unknown subcommand: --nonsense; Available: install, uninstall, start, stop, restart, status, logs\n";
 const BACKUP_USAGE_ANCHOR: &[u8] = b"usage: journal backup <command> [options]\n";
 const MAINTENANCE_USAGE_ANCHOR: &[u8] = b"usage: journal maintenance <command> [options]\n";
-const MAINT_USAGE_ANCHOR: &[u8] = b"usage: journal maint";
 
 const PROBES: &[Probe] = &[
-    Probe {
-        token: "maint",
-        argv: &["--nonsense"],
-        expected_exit: 2,
-        stderr_anchor: Some(MAINT_USAGE_ANCHOR),
-    },
     Probe {
         token: "backup",
         argv: &["--nonsense"],
@@ -1300,61 +1293,6 @@ fn native_process_dispatch_and_poison_liveness_contract() {
     assert_eq!(
         process_tokens, native_tokens,
         "every PROCESS_SPECS token must have a NATIVE_PROCESS_SPECS row"
-    );
-}
-
-#[test]
-fn native_maint_release_route_runs_all_bodies_and_modes_under_poison() {
-    let harness = Harness::new();
-    let context = harness.context();
-    prove_poison_interpreters_live(&context);
-
-    let list = run_dispatcher_with_bounded_output(&context, "maint", &["--list"], PROBE_TIMEOUT)
-        .expect("dispatch native maint list")
-        .expect("native maint list completes");
-    assert!(
-        list.status.success(),
-        "list stderr: {}",
-        String::from_utf8_lossy(&list.stderr)
-    );
-    assert!(String::from_utf8_lossy(&list.stdout).starts_with("Pending (27):"));
-
-    let bare = run_dispatcher_with_bounded_output(&context, "maint", &[], Duration::from_secs(120))
-        .expect("dispatch all native maint bodies")
-        .expect("all native maint bodies complete");
-    assert!(
-        bare.status.success(),
-        "bare stderr: {}",
-        String::from_utf8_lossy(&bare.stderr)
-    );
-    assert!(String::from_utf8_lossy(&bare.stdout).contains("Completed 27/27 task(s)"));
-
-    let details = run_dispatcher_with_bounded_output(
-        &context,
-        "maint",
-        &["timeline:002_register_segment_summary_model"],
-        PROBE_TIMEOUT,
-    )
-    .expect("dispatch native maint details")
-    .expect("native maint details complete");
-    assert!(details.status.success());
-    assert!(
-        String::from_utf8_lossy(&details.stdout)
-            .starts_with("timeline:002_register_segment_summary_model")
-    );
-
-    let forced = run_dispatcher_with_bounded_output(
-        &context,
-        "maint",
-        &["--force", "timeline:002_register_segment_summary_model"],
-        PROBE_TIMEOUT,
-    )
-    .expect("dispatch native maint force")
-    .expect("native maint force completes");
-    assert!(forced.status.success());
-    assert!(
-        !context.poison_marker.exists(),
-        "maint reached a poisoned interpreter"
     );
 }
 

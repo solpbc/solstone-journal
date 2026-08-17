@@ -95,9 +95,6 @@ fn journal_sync(c: &CheckContext) -> RunnerResult {
 fn caught_up(c: &CheckContext) -> RunnerResult {
     checks::journal_caught_up::run(c, CHECK_CAUGHT_UP)
 }
-fn maint(c: &CheckContext) -> RunnerResult {
-    checks::journal_maint_tasks::run(c, CHECK_MAINT)
-}
 fn task_pace(c: &CheckContext) -> RunnerResult {
     checks::task_pace::run(c, CHECK_TASK_PACE)
 }
@@ -220,11 +217,6 @@ const CHECK_SYNC: Check = Check {
 const CHECK_CAUGHT_UP: Check = Check {
     name: "journal_caught_up",
     severity: Severity::Advisory,
-    platforms: BOTH,
-};
-const CHECK_MAINT: Check = Check {
-    name: "journal_maint_tasks",
-    severity: Severity::Blocker,
     platforms: BOTH,
 };
 const CHECK_TASK_PACE: Check = Check {
@@ -362,12 +354,6 @@ pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_CAUGHT_UP,
         runner: caught_up,
-        deferred: None,
-        feature: None,
-    },
-    RegistryEntry {
-        check: CHECK_MAINT,
-        runner: maint,
         deferred: None,
         feature: None,
     },

@@ -61,7 +61,6 @@ static NEXT: AtomicUsize = AtomicUsize::new(0);
 const W3C_CHECK_NAMES: &[&str] = &[
     "journal_sync",
     "journal_caught_up",
-    "journal_maint_tasks",
     "task_pace",
     "brain",
     "capture_health",
@@ -281,21 +280,6 @@ fn args() -> DoctorArgs {
     }
 }
 
-fn stage_maint(context: &CheckContext, exit_code: Option<i64>) {
-    let state = context.journal_path.join("maint/settings/reindex.jsonl");
-    fs::create_dir_all(state.parent().unwrap()).unwrap();
-    let contents = match exit_code {
-        Some(code) => format!(
-            "{{\"event\":\"exec\",\"ts\":1}}\n{{\"event\":\"exit\",\"exit_code\":{code},\"ts\":2}}\n"
-        ),
-        None => format!(
-            "{{\"event\":\"exec\",\"ts\":{}}}\n",
-            context.now.timestamp_millis() - 300_001
-        ),
-    };
-    fs::write(state, contents).unwrap();
-}
-
 fn stage_backlog_pending(context: &CheckContext) {
     screen_segment(context, "20251231");
     health(
@@ -448,7 +432,6 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 stage_backlog_pending(&context);
             }
         }
-        "journal_maint_tasks" => stage_maint(&context, Some(if ok { 0 } else { 3 })),
         "task_pace" => {
             return if ok {
                 task_pace_with(serde_json::json!([{ "name":"index", "slow":false }]))
@@ -550,7 +533,6 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                 e.check.name,
                 "journal_sync"
                     | "journal_caught_up"
-                    | "journal_maint_tasks"
                     | "task_pace"
                     | "brain"
                     | "capture_health"
@@ -571,7 +553,6 @@ fn check_severity_table_matches_reference() {
     for (name, severity) in [
         ("journal_sync", Severity::Blocker),
         ("journal_caught_up", Severity::Advisory),
-        ("journal_maint_tasks", Severity::Blocker),
         ("task_pace", Severity::Advisory),
         ("brain", Severity::Advisory),
         ("capture_health", Severity::Advisory),
@@ -600,7 +581,6 @@ fn fixture_covers_ok_and_non_ok_paths() {
     let coverage = [
         ("journal_sync", SecondBranch::DifferentStatus),
         ("journal_caught_up", SecondBranch::DifferentStatus),
-        ("journal_maint_tasks", SecondBranch::DifferentStatus),
         ("task_pace", SecondBranch::DifferentStatus),
         ("brain", SecondBranch::DifferentStatus),
         ("capture_health", SecondBranch::DifferentStatus),
@@ -765,73 +745,6 @@ fn observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
     assert_eq!(
         row.detail,
         "observer unknown (v1.2) failing ingest: bad payload, 2x since unknown"
-    );
-}
-
-#[test]
-fn maint_unreadable_state_uses_reference_detail() {
-    let unreadable = fixture();
-    let state = unreadable.journal_path.join("maint/settings/reindex.jsonl");
-    fs::create_dir_all(state.parent().unwrap()).unwrap();
-    fs::write(&state, "not json\n").unwrap();
-    let row = result("journal_maint_tasks", &unreadable);
-    assert_eq!(row.status, Status::Warn);
-    assert_eq!(
-        row.detail,
-        "couldn't fully determine — maint state unreadable: settings.reindex"
-    );
-
-    let missing_timestamp = fixture();
-    let state = missing_timestamp
-        .journal_path
-        .join("maint/settings/reindex.jsonl");
-    fs::create_dir_all(state.parent().unwrap()).unwrap();
-    fs::write(&state, "{\"event\":\"exec\"}\n").unwrap();
-    let row = result("journal_maint_tasks", &missing_timestamp);
-    assert_eq!(row.status, Status::Warn);
-    assert_eq!(
-        row.detail,
-        "couldn't fully determine — maint state unreadable: settings.reindex"
-    );
-}
-
-#[test]
-fn maint_static_task_preserves_failed_and_stale_classification() {
-    let failed = fixture();
-    let state = failed
-        .journal_path
-        .join("maint/settings/003_seed_default_app_navigation.jsonl");
-    fs::create_dir_all(state.parent().unwrap()).unwrap();
-    fs::write(
-        &state,
-        "{\"event\":\"exec\",\"ts\":1}\n{\"event\":\"exit\",\"exit_code\":7,\"ts\":2}\n",
-    )
-    .unwrap();
-    let row = result("journal_maint_tasks", &failed);
-    assert_eq!(row.status, Status::Fail);
-    assert_eq!(
-        row.detail,
-        "failed maint task(s): settings.003_seed_default_app_navigation (exit 7)"
-    );
-
-    let stale = fixture();
-    let state = stale
-        .journal_path
-        .join("maint/settings/003_seed_default_app_navigation.jsonl");
-    fs::create_dir_all(state.parent().unwrap()).unwrap();
-    fs::write(
-        &state,
-        format!(
-            "{{\"event\":\"exec\",\"ts\":{}}}\n",
-            stale.now.timestamp_millis() - 300_001
-        ),
-    )
-    .unwrap();
-    let row = result("journal_maint_tasks", &stale);
-    assert_eq!(row.status, Status::Warn);
-    assert_eq!(
-        row.detail,
-        "started, no exit: settings.003_seed_default_app_navigation"
     );
 }
 
@@ -1308,7 +1221,6 @@ fn owner_boundary_guard_is_nonvacuous() {
     let owners = [
         ("journal_sync", "solstone_core_system"),
         ("journal_caught_up", "solstone_core_system_health"),
-        ("journal_maint_tasks", "solstone_core_system_health"),
         ("brain", "solstone_core_brain"),
         ("capture_health", "solstone_core_observer"),
         ("observer_binding", "solstone_core_observer"),
@@ -1431,7 +1343,6 @@ fn poisoned_interpreters_positive_control_and_battery() {
             ("service_running", Status::Skip),
             ("journal_sync", Status::Ok),
             ("journal_caught_up", Status::Ok),
-            ("journal_maint_tasks", Status::Ok),
             ("task_pace", Status::Skip),
             ("brain", Status::Warn),
             ("capture_health", Status::Skip),

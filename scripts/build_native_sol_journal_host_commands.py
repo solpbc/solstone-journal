@@ -26,7 +26,7 @@ SERVICE_SENTINELS = frozenset({"think", "setup"})
 NATIVE_ROOT_COMMANDS = frozenset({"indexer"})
 # Commands that remain in the pinned Python oracle but have been retired from
 # the live journal host grammar.
-RETIRED_HOST_COMMANDS = frozenset({"warm"})
+RETIRED_HOST_COMMANDS = frozenset({"warm", "maint"})
 # Declaration order is the duplicate-diagnostic section order.
 REGISTRY_SURFACE_POSITIONS = {"COMMANDS": 1, "ALIASES": 2}
 UNAVAILABLE_SURFACE = "<unavailable>"

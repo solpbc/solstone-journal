@@ -58,11 +58,6 @@ const DESCRIBE_MODE: &[&str] = &["--describe"];
 /// proof that the owner-facing grammar is ready to cut over.
 pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
     NativeProcessSpec {
-        token: "maint",
-        binary: "solstone-core",
-        preset_argv: &["maint"],
-    },
-    NativeProcessSpec {
         token: "backup",
         binary: "solstone-core",
         preset_argv: &["backup"],
@@ -522,12 +517,6 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
     ProcessSpec {
         token: "restart-convey",
         module: "solstone.convey.restart",
-        preset_argv: EMPTY,
-        kind: ProcessKind::Service,
-    },
-    ProcessSpec {
-        token: "maint",
-        module: "solstone.convey.maint_cli",
         preset_argv: EMPTY,
         kind: ProcessKind::Service,
     },
