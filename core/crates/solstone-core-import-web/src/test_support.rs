@@ -12,7 +12,8 @@ pub(crate) const PENDING: &str = "20260803_140000";
 pub(crate) const CONTENT: &str = "20260804_150000";
 
 pub(crate) fn phase_root(phase: &str) -> TempDir {
-    let root = TempDir::new().expect("temporary journal");
+    let temporary_parent = fs::canonicalize(std::env::temp_dir()).expect("temporary directory");
+    let root = TempDir::new_in(temporary_parent).expect("temporary journal");
     match phase {
         "unestablished" => seed_source(root.path()),
         "corrupt" => {
