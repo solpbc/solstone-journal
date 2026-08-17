@@ -84,42 +84,19 @@ pub(crate) trait ListenWriter: Send + 'static {
     fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>>;
 }
 
+type RelaySocket = (Box<dyn ListenReader>, Box<dyn ListenWriter>);
+type RelayConnect = Pin<Box<dyn Future<Output = Result<RelaySocket, RelayWebSocketError>> + Send>>;
+
 /// The swappable seam for opening a relay listen or tunnel WebSocket.
 pub(crate) trait RelayConnector: Send + Sync {
     /// Connects one authenticated relay WebSocket and splits it.
-    fn connect(
-        &self,
-        url: &str,
-        token: &ServiceToken,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = Result<
-                        (Box<dyn ListenReader>, Box<dyn ListenWriter>),
-                        RelayWebSocketError,
-                    >,
-                > + Send,
-        >,
-    >;
+    fn connect(&self, url: &str, token: &ServiceToken) -> RelayConnect;
 }
 
 struct DefaultRelayConnector;
 
 impl RelayConnector for DefaultRelayConnector {
-    fn connect(
-        &self,
-        url: &str,
-        token: &ServiceToken,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = Result<
-                        (Box<dyn ListenReader>, Box<dyn ListenWriter>),
-                        RelayWebSocketError,
-                    >,
-                > + Send,
-        >,
-    > {
+    fn connect(&self, url: &str, token: &ServiceToken) -> RelayConnect {
         let url = url.to_owned();
         let token = token.clone();
         Box::pin(async move {
@@ -832,20 +809,7 @@ impl ListenWriter for FakeListenWriter {
 
 #[cfg(test)]
 impl RelayConnector for FakeConnector {
-    fn connect(
-        &self,
-        _url: &str,
-        _token: &ServiceToken,
-    ) -> Pin<
-        Box<
-            dyn Future<
-                    Output = Result<
-                        (Box<dyn ListenReader>, Box<dyn ListenWriter>),
-                        RelayWebSocketError,
-                    >,
-                > + Send,
-        >,
-    > {
+    fn connect(&self, _url: &str, _token: &ServiceToken) -> RelayConnect {
         let pair = lock_unpoisoned(&self.sockets).pop_front();
         Box::pin(async move {
             pair.ok_or(RelayWebSocketError::Connection)

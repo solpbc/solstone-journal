@@ -66,13 +66,13 @@ pub use relay_control::{
 pub use relay_health::{RelayHealth, RelayHealthState, RelayTunnelFailure};
 pub use relay_status_failure::{RelayTunnelFailureSignal, classify_relay_tunnel_failure};
 pub use relay_websocket::{
-    ListenEvent, RelayWebSocket, RelayWebSocketError, RelayWebSocketReader, RelayWebSocketWriter,
+    RelayWebSocket, RelayWebSocketError, RelayWebSocketReader, RelayWebSocketWriter,
 };
 
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub mod test_hooks {
-    pub use crate::service_process::{CALLOSUM_QUEUE_CAPACITY, CallosumOutput};
+    pub use crate::service_process::CallosumTestDriver;
 }
 pub use service::{
     POSTURE_POLL_INTERVAL, RelayRunTask, RelayServiceToken, ServiceDeps, ServiceError, ServicePoll,

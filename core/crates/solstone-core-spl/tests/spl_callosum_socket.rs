@@ -12,7 +12,7 @@ use std::{
 
 use serde_json::json;
 use solstone_core_spl::CallosumEmit;
-use solstone_core_spl::test_hooks::{CALLOSUM_QUEUE_CAPACITY, CallosumOutput};
+use solstone_core_spl::test_hooks::CallosumTestDriver;
 use tokio::{io::AsyncBufReadExt, net::UnixListener, time::timeout};
 
 struct TempJournal {
@@ -53,12 +53,9 @@ async fn saturated_regular_output_still_delivers_the_final_lifecycle_tail() -> R
         .map_err(|_| "could not create Callosum test directory".to_owned())?;
     let listener = UnixListener::bind(&socket_path)
         .map_err(|_| "could not bind Callosum test socket".to_owned())?;
-    let (output, start_gate) = CallosumOutput::paused(socket_path);
-    let regular_payload = json!({"state": "connected", "padding": "x".repeat(4096)});
-    for _ in 0..=CALLOSUM_QUEUE_CAPACITY {
-        output.emit("health", regular_payload.clone());
-    }
-    if output.dropped_regular_events() == 0 {
+    let output = CallosumTestDriver::paused(socket_path);
+    let expected_frame_count = output.saturate_regular_output();
+    if !output.regular_output_saturated() {
         return Err("regular Callosum output queue did not saturate".to_owned());
     }
     output.emit("disconnect", json!({}));
@@ -80,10 +77,21 @@ async fn saturated_regular_output_still_delivers_the_final_lifecycle_tail() -> R
             .await
             .map_err(|_| "could not read second lifecycle line".to_owned())?
             .ok_or_else(|| "Callosum closed before second lifecycle line".to_owned())?;
-        Ok::<[String; 2], String>([first, second])
+        let mut received = vec![first, second];
+        while let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|_| "could not read lifecycle output through EOF".to_owned())?
+        {
+            received.push(line);
+        }
+        Ok::<Vec<String>, String>(received)
     });
-    start_gate.notify_one();
+    output.start();
 
+    timeout(Duration::from_secs(3), output.stop())
+        .await
+        .map_err(|_| "Callosum output did not stop".to_owned())?;
     let lines = timeout(Duration::from_secs(3), reader)
         .await
         .map_err(|_| "lifecycle tail was not delivered under saturation".to_owned())?
@@ -93,10 +101,26 @@ async fn saturated_regular_output_still_delivers_the_final_lifecycle_tail() -> R
         lines[1],
         "{\"tract\":\"link\",\"event\":\"health\",\"state\":\"reconnecting\"}"
     );
+    if lines.len() != expected_frame_count {
+        return Err(format!("Callosum frame count differed: {}", lines.len()));
+    }
+    let expected_regular = json!({
+        "tract": "link",
+        "event": "health",
+        "state": "connected",
+        "padding": "x".repeat(4096),
+    });
+    if lines[2..].iter().any(|line| {
+        serde_json::from_str::<serde_json::Value>(line)
+            .map_or(true, |frame| frame != expected_regular)
+    }) {
+        return Err(
+            "Callosum emitted an unexpected regular frame after the lifecycle tail".to_owned(),
+        );
+    }
     if lines.iter().any(|line| line.contains("process-test-token")) {
         return Err("lifecycle tail leaked a service token".to_owned());
     }
-    output.stop().await;
     Ok(())
 }
 
@@ -112,12 +136,9 @@ async fn saturated_regular_output_preserves_each_tunnel_close_id_and_health() ->
         .map_err(|_| "could not create Callosum test directory".to_owned())?;
     let listener = UnixListener::bind(&socket_path)
         .map_err(|_| "could not bind Callosum test socket".to_owned())?;
-    let (output, start_gate) = CallosumOutput::paused(socket_path);
-    let regular_payload = json!({"state": "connected", "padding": "x".repeat(4096)});
-    for _ in 0..=CALLOSUM_QUEUE_CAPACITY {
-        output.emit("health", regular_payload.clone());
-    }
-    if output.dropped_regular_events() == 0 {
+    let output = CallosumTestDriver::paused(socket_path);
+    let expected_frame_count = output.saturate_regular_output();
+    if !output.regular_output_saturated() {
         return Err("regular Callosum output queue did not saturate".to_owned());
     }
     output.emit("tunnel_close", json!({"tunnel_id": "terminal-tunnel-7"}));
@@ -151,10 +172,21 @@ async fn saturated_regular_output_preserves_each_tunnel_close_id_and_health() ->
             .await
             .map_err(|_| "could not read fourth lifecycle line".to_owned())?
             .ok_or_else(|| "Callosum closed before fourth lifecycle line".to_owned())?;
-        Ok::<[String; 4], String>([first, second, third, fourth])
+        let mut received = vec![first, second, third, fourth];
+        while let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|_| "could not read tunnel-close output through EOF".to_owned())?
+        {
+            received.push(line);
+        }
+        Ok::<Vec<String>, String>(received)
     });
-    start_gate.notify_one();
+    output.start();
 
+    timeout(Duration::from_secs(3), output.stop())
+        .await
+        .map_err(|_| "Callosum output did not stop".to_owned())?;
     let lines = timeout(Duration::from_secs(3), reader)
         .await
         .map_err(|_| "tunnel-close tail was not delivered under saturation".to_owned())?
@@ -175,9 +207,25 @@ async fn saturated_regular_output_preserves_each_tunnel_close_id_and_health() ->
         lines[3],
         "{\"tract\":\"link\",\"event\":\"health\",\"state\":\"reconnecting\"}"
     );
+    if lines.len() != expected_frame_count {
+        return Err(format!("Callosum frame count differed: {}", lines.len()));
+    }
+    let expected_regular = json!({
+        "tract": "link",
+        "event": "health",
+        "state": "connected",
+        "padding": "x".repeat(4096),
+    });
+    if lines[4..].iter().any(|line| {
+        serde_json::from_str::<serde_json::Value>(line)
+            .map_or(true, |frame| frame != expected_regular)
+    }) {
+        return Err(
+            "Callosum emitted an unexpected regular frame after the tunnel-close tail".to_owned(),
+        );
+    }
     if lines.iter().any(|line| line.contains("process-test-token")) {
         return Err("tunnel-close tail leaked a service token".to_owned());
     }
-    output.stop().await;
     Ok(())
 }

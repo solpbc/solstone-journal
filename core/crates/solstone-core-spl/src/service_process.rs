@@ -40,8 +40,8 @@ use crate::{
 const DEFAULT_RELAY_ENDPOINT: &str = "https://link.solstone.app";
 const DISPATCH_READ_DEADLINE: Duration = Duration::from_secs(10);
 const GLOBAL_ADMISSION_CEILING: usize = 32;
-/// Bounded regular Callosum output capacity. Exposed for test-hooks saturation tests.
-pub const CALLOSUM_QUEUE_CAPACITY: usize = 1_000;
+/// Bounded regular Callosum output capacity.
+const CALLOSUM_QUEUE_CAPACITY: usize = 1_000;
 const CALLOSUM_IO_TIMEOUT: Duration = Duration::from_secs(2);
 const CALLOSUM_STOP_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 
@@ -302,8 +302,8 @@ fn read_journal_config_map(journal_root: &Path) -> Result<Map<String, Value>, Co
     Ok(read.config.unwrap_or_else(plain_defaults))
 }
 
-/// Nonblocking Callosum output task. Reachable outside the crate only via `test_hooks`.
-pub struct CallosumOutput {
+/// Nonblocking Callosum output task.
+struct CallosumOutput {
     queue: Arc<Mutex<CallosumQueue>>,
     lifecycle_notify: Arc<Notify>,
     dropped_regular_events: AtomicU64,
@@ -347,19 +347,19 @@ impl CallosumOutput {
     }
 
     #[cfg(any(test, feature = "test-hooks"))]
-    pub fn paused(socket_path: PathBuf) -> (Arc<Self>, Arc<Notify>) {
+    fn paused(socket_path: PathBuf) -> (Arc<Self>, Arc<Notify>) {
         let gate = Arc::new(Notify::new());
         let output = Self::start_with_gate(socket_path, Some(Arc::clone(&gate)));
         (output, gate)
     }
 
     #[cfg(any(test, feature = "test-hooks"))]
-    pub fn dropped_regular_events(&self) -> u64 {
+    fn dropped_regular_events(&self) -> u64 {
         self.dropped_regular_events.load(Ordering::Acquire)
     }
 
     /// Stops the output task after draining or aborting the writer.
-    pub async fn stop(&self) {
+    async fn stop(&self) {
         match self.queue.lock() {
             Ok(mut queue) => queue.close(),
             Err(poisoned) => poisoned.into_inner().close(),
@@ -378,6 +378,54 @@ impl CallosumOutput {
             task.abort();
             let _ = task.await;
         }
+    }
+}
+
+/// Feature-gated driver for exercising the real Callosum output lifecycle.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub struct CallosumTestDriver {
+    output: Arc<CallosumOutput>,
+    start_gate: Arc<Notify>,
+}
+
+#[cfg(feature = "test-hooks")]
+impl CallosumTestDriver {
+    /// Creates a real output task held immediately before its Unix-socket connect.
+    pub fn paused(socket_path: PathBuf) -> Self {
+        let (output, start_gate) = CallosumOutput::paused(socket_path);
+        Self { output, start_gate }
+    }
+
+    /// Fills the ordinary lane and returns its fixed total-frame capacity.
+    pub fn saturate_regular_output(&self) -> usize {
+        let payload = serde_json::json!({"state": "connected", "padding": "x".repeat(4096)});
+        for _ in 0..=CALLOSUM_QUEUE_CAPACITY {
+            self.output.emit("health", payload.clone());
+        }
+        CALLOSUM_QUEUE_CAPACITY
+    }
+
+    /// Reports whether saturation dropped at least one ordinary frame.
+    pub fn regular_output_saturated(&self) -> bool {
+        self.output.dropped_regular_events() > 0
+    }
+
+    /// Releases the held output task to connect and drain.
+    pub fn start(&self) {
+        self.start_gate.notify_one();
+    }
+
+    /// Stops the real output task after its bounded drain.
+    pub async fn stop(&self) {
+        self.output.stop().await;
+    }
+}
+
+#[cfg(feature = "test-hooks")]
+impl CallosumEmit for CallosumTestDriver {
+    fn emit(&self, event: &'static str, payload: Value) {
+        self.output.emit(event, payload);
     }
 }
 
