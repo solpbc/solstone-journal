@@ -86,10 +86,39 @@ reset_work() {
 #
 # ✅ Shims are printed rather than dropped: an unreported exclusion is how a
 # criterion quietly stops covering the thing it names.
+# Every location an interpreter could actually be installed. A walk that did
+# not reach ALL of these cannot certify an absence, whatever else it reached.
+#
+# ⚠ Some incompleteness is unavoidable on a real Mac — system caches and
+# DirectoryServices are unreadable even to an admin — so a blanket refusal on
+# any unreached path would make the zero unachievable and the criterion
+# decorative. The rule is therefore specific: disclose everything unreached, and
+# REFUSE if an unreached path is an ancestor of somewhere an interpreter lives.
+CRITICAL_ROOTS='/usr/bin /usr/local /opt /Library/Frameworks /Library/Developer /Applications /Users /System/Library/Frameworks'
+
 scan_zero() {
 	matches=$(sh "$SCAN_SH" / || true)
+	incomplete=$(printf '%s\n' "$matches" | grep '^scan-incomplete ' || true)
+	blind=
+	if [ -n "$incomplete" ]; then
+		printf 'disclosed unreached paths:\n%s\n' "$incomplete"
+		for critical in $CRITICAL_ROOTS; do
+			printf '%s\n' "$incomplete" | while IFS= read -r line; do
+				path=${line#scan-incomplete }
+				[ -n "$path" ] || continue
+				case "$critical/" in
+				"$path"/*) printf '%s covers %s\n' "$path" "$critical" ;;
+				esac
+			done
+		done >"$WORK/blind.out"
+		blind=$(cat "$WORK/blind.out" 2>/dev/null || true)
+	fi
+	[ -z "$blind" ] || {
+		printf '%s\n' "$blind" >&2
+		refuse "the census never reached a location an interpreter lives in; its zero is a claim about the walk, not about the host"
+	}
 	shims=$(printf '%s\n' "$matches" | grep '^shim ' || true)
-	real=$(printf '%s\n' "$matches" | grep -v '^shim ' | grep . || true)
+	real=$(printf '%s\n' "$matches" | grep -vE '^(shim|scan-incomplete) ' | grep . || true)
 	[ -z "$shims" ] || {
 		printf 'disclosed non-findings (present, not an interpreter):\n%s\n' "$shims"
 	}
@@ -106,8 +135,11 @@ scan_control() {
 	printf '%s\n' "$matches"
 	[ -n "$matches" ] || refuse "Python control produced no findings: the census cannot see a positive, so its zero elsewhere means nothing"
 	printf '%s\n' "$matches" | grep -E '^executable ' >/dev/null \
-		|| refuse "Python control found no executable interpreter"
-	printf 'scan=control ok\n'
+		|| refuse "Python control found no RUNNING interpreter; a census that only sees shims cannot certify an absence"
+	printf 'scan=control ok (%s interpreter(s), %s shim(s), %s unwalked root(s))\n' \
+		"$(printf '%s\n' "$matches" | grep -c '^executable ' || true)" \
+		"$(printf '%s\n' "$matches" | grep -c '^shim ' || true)" \
+		"$(printf '%s\n' "$matches" | grep -c '^scan-incomplete ' || true)"
 }
 
 # --- installation -----------------------------------------------------------
@@ -190,6 +222,25 @@ assert_signed_by_us() {
 # primary-signature context is the assessment that applies to a plain file.
 # `codesign -R="notarized"` is the second, and it names the property directly
 # rather than inferring it from an assessment verdict.
+# 🔴 The instrument self-check, and it is not optional.
+#
+# `spctl` returns "accepted" for EVERYTHING when assessments are turned off, so
+# every Gatekeeper verdict on such a host is vacuous — including the ad-hoc
+# control, which is the only thing making the rung falsifiable. Measured
+# 2026-08-17: a stock CI macOS VM image ships `assessments disabled`, and on it
+# the ad-hoc control passed while the build host rejected the identical file.
+# ⛔ Never read an `spctl` green without having read this first.
+assert_gatekeeper_enabled() {
+	status=$(spctl --status 2>&1 || true)
+	case $status in
+	*enabled*) printf 'gatekeeper assessments: enabled\n' ;;
+	*)
+		printf '%s\n' "$status" >&2
+		refuse "Gatekeeper assessments are not enabled on this host; every spctl verdict here is vacuous and the ad-hoc control cannot fail"
+		;;
+	esac
+}
+
 assert_notarized() {
 	path=$1
 	out=$(spctl -a -vvv -t open --context context:primary-signature "$path" 2>&1) || {
@@ -290,6 +341,7 @@ assert_tar_sets_no_quarantine() {
 }
 
 gatekeeper_rung() {
+	assert_gatekeeper_enabled
 	install_tar
 	assert_tar_sets_no_quarantine
 
@@ -361,14 +413,39 @@ gatekeeper_negatives() {
 		fi
 	done
 	[ "$stripped" -ge 1 ] || refuse "CONTROL FAILED: no payload was stripped, so control 2 changed nothing"
+	for path in $(macho_members_in "$broken"); do
+		if [ "$(macho_filetype "$path")" = "6" ]; then
+			/usr/bin/codesign -dv --verbose=2 "$path" 2>&1 | grep -Fq 'not signed at all' \
+				|| refuse "CONTROL FAILED: $path still carries a signature after --remove-signature"
+		fi
+	done
 	saved_tree=$TREE
 	TREE=$broken
 	if speakers_probe "$WORK/broken-response.json" 2>"$WORK/broken.err"; then
-		TREE=$saved_tree
-		refuse "CONTROL FAILED: the helper ran with an unsigned payload, so half 2 proves nothing"
+		lv=unenforced
+	else
+		lv=enforced
 	fi
 	TREE=$saved_tree
-	printf 'control 2 ok: %s payload(s) stripped, and a hardened-runtime binary refused to start\n' "$stripped"
+
+	# 🔴 REPORT THE HOST'S VERDICT; do not assume it.
+	#
+	# Whether a hardened-runtime process refuses an UNSIGNED dylib is a property
+	# of the macOS version, not of our artifact. Measured 2026-08-17 with the
+	# same tarball, the same stripped payloads and the same helper:
+	#   macOS 26.5  -> the helper REFUSED to start   (library validation enforced)
+	#   macOS 15.7.7 -> the helper RAN and answered  (not enforced)
+	# ⛔ So a rung that hard-fails when the control does not fire calls a correct
+	# artifact broken on the older OS, and a rung that silently passes claims a
+	# proof it did not get. It records which, and the artifact names the host
+	# that enforced it.
+	if [ "$lv" = enforced ]; then
+		printf 'control 2 ok: %s payload(s) stripped, and a hardened-runtime binary refused to start (library validation ENFORCED on %s)\n' \
+			"$stripped" "$(sw_vers -productVersion)"
+	else
+		printf 'control 2 NOT AVAILABLE: %s payload(s) stripped and the helper still ran (library validation NOT enforced on %s). Half 2 stands on the signed-and-notarized census here; its NECESSITY is proven only on a host that enforces.\n' \
+			"$stripped" "$(sw_vers -productVersion)"
+	fi
 	rm -rf "$broken"
 }
 
@@ -533,12 +610,22 @@ talent_rung() {
 # --- pkg + bootstrap --------------------------------------------------------
 
 pkg_rung() {
+	assert_gatekeeper_enabled
 	package=$(one_artifact .pkg)
-	# A stapled ticket is what makes the package installable with no network.
-	# `staple validate` reads the ticket back off the file, which `staple` on
-	# its own does not prove after a copy.
-	xcrun stapler validate "$package" >"$WORK/staple.out" 2>&1 \
-		|| { cat "$WORK/staple.out" >&2; refuse "package carries no stapled ticket"; }
+	# ⚠ `xcrun stapler` is Command Line Tools, not base macOS — so it is
+	# available on the BUILD host and absent on a genuinely clean Mac, where
+	# `xcrun` answers *"No developer tools were found"*. That is a fact about
+	# the CHECK, not about the package: an owner's Mac validates a stapled
+	# ticket through Gatekeeper without ever running `stapler`. Skip it with a
+	# disclosure rather than failing a clean host, and never let the skip pass
+	# silently.
+	if xcrun --find stapler >/dev/null 2>&1; then
+		xcrun stapler validate "$package" >"$WORK/staple.out" 2>&1 \
+			|| { cat "$WORK/staple.out" >&2; refuse "package carries no stapled ticket"; }
+		printf 'stapled ticket: validated\n'
+	else
+		printf 'stapled ticket: NOT CHECKED HERE (xcrun/stapler needs Command Line Tools; validated on the build host)\n'
+	fi
 	spctl -a -vvv -t install "$package" >"$WORK/spctl-pkg.out" 2>&1 \
 		|| { cat "$WORK/spctl-pkg.out" >&2; refuse "Gatekeeper rejected the package"; }
 	grep -Fq 'accepted' "$WORK/spctl-pkg.out" || refuse "spctl did not accept the package"
@@ -548,6 +635,24 @@ pkg_rung() {
 		|| { cat "$WORK/pkgsig.out" >&2; refuse "pkgutil refused the package signature"; }
 	grep -Fq 'Developer ID Installer: sol pbc' "$WORK/pkgsig.out" \
 		|| refuse "the package is not signed with the Developer ID Installer identity"
+
+	# 🔴 "The tree installs" is a done condition, so install it for real.
+	# Everything above grades the package as a FILE; this is the only step that
+	# grades it as an INSTALL.
+	if [ "${SOLSTONE_MACOS_INSTALL_PKG:-}" = "1" ]; then
+		sudo installer -pkg "$package" -target / >"$WORK/installer.out" 2>&1 \
+			|| { cat "$WORK/installer.out" >&2; refuse "installer refused the package"; }
+		for launcher in journal sol solstone; do
+			[ -x "/usr/local/bin/$launcher" ] \
+				|| refuse "installed package did not place /usr/local/bin/$launcher"
+		done
+		run_bounded /usr/local/bin/solstone-core "$WORK/installed.out" 20 \
+			|| refuse "the installed solstone-core did not return"
+		[ -s "$WORK/installed.out" ] || refuse "the installed solstone-core produced no output"
+		printf 'installed from the package: %s\n' "$(head -1 "$WORK/installed.out")"
+	else
+		printf 'package install: NOT RUN (set SOLSTONE_MACOS_INSTALL_PKG=1 on a disposable host)\n'
+	fi
 	printf 'rung=pkg ok\n'
 }
 

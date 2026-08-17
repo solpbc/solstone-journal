@@ -29,14 +29,92 @@ trap 'rm -f "$candidates" "$matches"' 0 1 2 15
 # way, so traversing it doubles the scan without reaching one new file.
 # /Volumes is deliberately NOT pruned - an interpreter on a mounted image is
 # on the host and must be reported.
-find / \
-	\( -path /proc -o -path /sys -o -path /dev -o -path /run \
-	   -o -path /System/Volumes/Data -o -path /System/Volumes/Preboot \
-	   -o -path /System/Volumes/VM -o -path /System/Volumes/Update \) -prune -o \
-	\( -type f -o -type l -o -type d \) \
-	\( -name 'python*' -o -name 'libpython*' -o -name pyvenv.cfg \
-	   -o -name site-packages -o -name dist-packages \) \
-	-print >"$candidates"
+#
+# 🔴 TRAVERSE PER ROOT, AND REPORT AN INCOMPLETE WALK.
+# A single `find /` is not survivable on macOS: the first TCC-protected
+# directory makes `find` abort the WHOLE traversal with `fts_read: Permission
+# denied`, and everything after it is silently never visited. Measured
+# 2026-08-17 on pro5e — a host running Python 3.14.6 at two paths — where one
+# `find /` produced **zero** classified findings and 281 lines of permission
+# errors, because the walk died before reaching either `/usr/bin` or
+# `/opt/homebrew/bin`. ⛔ That zero is indistinguishable from a clean host.
+# Splitting the walk contains the damage, and `scan-incomplete` makes what was
+# NOT reached part of the output rather than an absence.
+# Does this candidate actually behave as an interpreter?
+#
+# ⚠ BOUNDED, and with stdin closed. A candidate is an arbitrary executable the
+# walk happened to find, and one of them will hang: measured 2026-08-17, an
+# embedded interpreter inside an app sitting in the Trash blocked forever on
+# `-c 'import sys'` and stalled the whole census behind it. ⛔ `timeout` is not
+# available on a base macOS install, so the bound is a watchdog rather than a
+# tool.
+runs_as_interpreter() {
+	"$1" -c 'import sys' </dev/null >/dev/null 2>&1 &
+	probe=$!
+	( sleep 5; kill -9 "$probe" 2>/dev/null ) >/dev/null 2>&1 &
+	watchdog=$!
+	if wait "$probe" 2>/dev/null; then
+		kill "$watchdog" 2>/dev/null
+		return 0
+	fi
+	kill "$watchdog" 2>/dev/null
+	return 1
+}
+
+scan_root() {
+	find "$1" \
+		\( -path /proc -o -path /sys -o -path /dev -o -path /run \
+		   -o -path /System/Volumes/Data -o -path /System/Volumes/Preboot \
+		   -o -path /System/Volumes/VM -o -path /System/Volumes/Update \) -prune -o \
+		\( -type f -o -type l -o -type d \) \
+		\( -name 'python*' -o -name 'libpython*' -o -name pyvenv.cfg \
+		   -o -name site-packages -o -name dist-packages \) \
+		-print 2>/dev/null
+}
+
+# Descend on failure rather than abandoning a whole root.
+#
+# ⛔ Marking `/usr` incomplete because one file under it is unreadable throws
+# away `/usr/bin`, which is where the interpreter this census exists to find
+# would be. Measured 2026-08-17: a per-root split still left `/Library`,
+# `/System`, `/private` and `/usr` unwalked on a real Mac. Recursing narrows an
+# abort to the smallest unreadable subtree, so `scan-incomplete` names a leaf
+# nobody can read rather than a root nobody looked at.
+scan_tree() {
+	tree=$1
+	depth=$2
+	if scan_root "$tree" >>"$candidates"; then
+		return 0
+	fi
+	if [ "$depth" -le 0 ]; then
+		printf 'scan-incomplete %s\n' "$tree" >>"$matches"
+		return 0
+	fi
+	children=$(find "$tree" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+	if [ -z "$children" ]; then
+		printf 'scan-incomplete %s\n' "$tree" >>"$matches"
+		return 0
+	fi
+	# Files directly inside this level are still candidates.
+	find "$tree" -mindepth 1 -maxdepth 1 \( -type f -o -type l \) \
+		\( -name 'python*' -o -name 'libpython*' -o -name pyvenv.cfg \) \
+		-print 2>/dev/null >>"$candidates"
+	printf '%s\n' "$children" | while IFS= read -r child; do
+		[ -n "$child" ] || continue
+		scan_tree "$child" $((depth - 1))
+	done
+}
+
+for root in / /*; do
+	[ "$root" = "/" ] && continue
+	case $root in
+	/proc | /sys | /dev | /run) continue ;;
+	esac
+	scan_tree "$root" 5
+done
+# Files sitting directly in / are not covered by the per-child walk above.
+find / -maxdepth 1 \( -type f -o -type l \) \
+	\( -name 'python*' -o -name 'libpython*' \) -print 2>/dev/null >>"$candidates"
 
 while IFS= read -r path; do
 	base=${path##*/}
@@ -52,7 +130,7 @@ while IFS= read -r path; do
 			# on a host that has none — a false POSITIVE, which on the
 			# zero-Python subject is the one direction that reads as a
 			# correctly-firing instrument rather than as a bug.
-			if "$path" -c 'import sys' >/dev/null 2>&1; then
+			if runs_as_interpreter "$path"; then
 				printf 'executable %s\n' "$path" >>"$matches"
 			else
 				printf 'shim %s\n' "$path" >>"$matches"
