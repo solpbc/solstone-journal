@@ -340,15 +340,6 @@ id = "solstone-core-format::core/crates/solstone-core-format/src/briefing.rs::te
 id = "solstone-core-format::core/crates/solstone-core-format/src/content/talent_projections.rs::tests::new::clock"
 
 [[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/anthropic.rs::tests::override_key_is_transport_only_and_not_emitted::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/anthropic.rs::tests::override_key_is_transport_only_and_not_emitted::process"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/anthropic.rs::tests::process_env_key_is_ignored_when_config_key_is_absent::process"
-
-[[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::bundled_converse_applies_the_context_floor_and_rejects_unfittable_history::clock"
 
 [[findings]]
@@ -368,12 +359,6 @@ id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/b
 
 [[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::bundled_with::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::journal_path::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::post_json::clock"
 
 [[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/bundled.rs::tests::success::scheduling"
@@ -442,34 +427,7 @@ id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/e
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/endpoint.rs::tests::transport_timeout_releases_admission_for_the_next_request::clock"
 
 [[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/google.rs::tests::process_environment_key_is_ignored_when_config_key_is_absent::process"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/google.rs::tests::temp_journal::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/openai.rs::tests::process_environment_key_is_ignored_when_config_key_is_absent::process"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/openai.rs::tests::temp_journal::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/overrides.rs::tests::child::process"
-
-[[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/session.rs::tests::the_session_loop_runs_in_process_and_answers_every_request::scheduling"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/token_log.rs::tests::appends_exactly_one_line_per_completion::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/token_log.rs::tests::generate_wrapper_remains_identical_to_generalized_generate_record::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/token_log.rs::tests::writes_non_responsive_metadata_only_when_present::clock"
-
-[[findings]]
-id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/validation.rs::tests::temp_journal::clock"
 
 [[findings]]
 id = "solstone-core-grab::core/crates/solstone-core-grab/src/extract.rs::tests::ffmpeg::native"

@@ -3809,3 +3809,16 @@ timeout = "standard"
 default_full = true
 required_features = []
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-generate-wire::provider_environment_isolation"
+package = "solstone-core-generate-wire"
+target = "provider_environment_isolation"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"

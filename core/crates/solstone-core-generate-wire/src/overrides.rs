@@ -13,12 +13,27 @@ pub const PROVIDER_OVERRIDE_ENV: &str = "SOLSTONE_GENERATE_PROVIDER_OVERRIDE";
 pub fn configured_api_key(config: &Map<String, Value>, config_key: &str) -> Option<String> {
     // Never consult conventional provider environment variables here: they may be
     // ambient host credentials. Only this dedicated child-only override may beat config.
-    non_blank_process_env(API_KEY_OVERRIDE_ENV)
-        .or_else(|| config_string(config, &["env", config_key]))
+    configured_api_key_with(config, config_key, non_blank_process_env)
+}
+
+pub(crate) fn configured_api_key_with(
+    config: &Map<String, Value>,
+    config_key: &str,
+    env: impl Fn(&str) -> Option<String>,
+) -> Option<String> {
+    take_env(&env, API_KEY_OVERRIDE_ENV).or_else(|| config_string(config, &["env", config_key]))
 }
 
 pub fn configured_model(config: &Map<String, Value>, default: &str) -> String {
-    non_blank_process_env(MODEL_OVERRIDE_ENV)
+    configured_model_with(config, default, non_blank_process_env)
+}
+
+pub(crate) fn configured_model_with(
+    config: &Map<String, Value>,
+    default: &str,
+    env: impl Fn(&str) -> Option<String>,
+) -> String {
+    take_env(&env, MODEL_OVERRIDE_ENV)
         .or_else(|| config_string(config, &["providers", "active", "model"]))
         .unwrap_or_else(|| default.to_owned())
 }
@@ -33,7 +48,15 @@ pub fn configured_model(config: &Map<String, Value>, default: &str) -> String {
 /// refuses to read conventional provider environment variables for the same
 /// reason: ambient process environment is not a trusted input.
 pub fn configured_base_url(_config: &Map<String, Value>, default: &str) -> String {
-    non_blank_process_env(BASE_URL_OVERRIDE_ENV)
+    configured_base_url_with(_config, default, non_blank_process_env)
+}
+
+pub(crate) fn configured_base_url_with(
+    _config: &Map<String, Value>,
+    default: &str,
+    env: impl Fn(&str) -> Option<String>,
+) -> String {
+    take_env(&env, BASE_URL_OVERRIDE_ENV)
         .filter(|url| is_loopback_base_url(url))
         .unwrap_or_else(|| default.to_owned())
 }
@@ -69,16 +92,45 @@ fn is_loopback_base_url(url: &str) -> bool {
 }
 
 pub fn configured_provider(config: &Map<String, Value>) -> String {
-    non_blank_process_env(PROVIDER_OVERRIDE_ENV)
+    configured_provider_with(config, non_blank_process_env)
+}
+
+pub(crate) fn configured_provider_with(
+    config: &Map<String, Value>,
+    env: impl Fn(&str) -> Option<String>,
+) -> String {
+    take_env(&env, PROVIDER_OVERRIDE_ENV)
         .or_else(|| config_string(config, &["providers", "active", "provider"]))
         .unwrap_or_else(|| "none".to_owned())
 }
 
-fn non_blank_process_env(name: &str) -> Option<String> {
+pub(crate) fn non_blank_process_env(name: &str) -> Option<String> {
     std::env::var(name)
         .ok()
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
+}
+
+fn take_env(env: &impl Fn(&str) -> Option<String>, name: &str) -> Option<String> {
+    env(name)
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+#[cfg(test)]
+pub(crate) fn lookup_leaks_conventional_keys(name: &str) -> Option<String> {
+    match name {
+        API_KEY_OVERRIDE_ENV
+        | BASE_URL_OVERRIDE_ENV
+        | MODEL_OVERRIDE_ENV
+        | PROVIDER_OVERRIDE_ENV => None,
+        _ => Some("process-only-secret".to_owned()),
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn lookup_api_key_override(name: &str) -> Option<String> {
+    (name == API_KEY_OVERRIDE_ENV).then(|| "override-secret".to_owned())
 }
 
 fn config_string(config: &Map<String, Value>, path: &[&str]) -> Option<String> {
@@ -107,6 +159,9 @@ mod tests {
             "http://localhost:3000",
             "http://[::1]:9000",
             "https://127.0.0.1:8443",
+            "http://[::1]",
+            "http://[::1]/v1",
+            "http://127.0.0.1",
         ] {
             assert!(is_loopback_base_url(accepted), "should accept {accepted}");
         }
@@ -116,20 +171,24 @@ mod tests {
             // userinfo cannot smuggle a loopback prefix past the host check
             "http://127.0.0.1@evil.example",
             "http://localhost@evil.example:80",
+            "http://[::1]@evil.example",
             // a loopback literal in the path is not a loopback host
             "http://evil.example/127.0.0.1",
             "http://evil.example?h=localhost",
+            "http://evil.example#127.0.0.1",
             // non-http schemes are never honoured
             "ftp://127.0.0.1",
             "file:///etc/passwd",
             "127.0.0.1:8080",
             "",
+            // empty or port-only authority
+            "http://",
+            "http:///",
+            "http://:8080",
         ] {
             assert!(!is_loopback_base_url(rejected), "should reject {rejected}");
         }
     }
-
-    use std::process::Command;
 
     use serde_json::{Map, Value, json};
 
@@ -160,138 +219,112 @@ mod tests {
         ])
     }
 
-    fn child(name: &str, environment: &[(&str, &str)]) -> bool {
-        if std::env::var_os(name).is_some() {
-            return false;
+    fn lookup<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |name| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| (*value).to_owned())
         }
-        let mut command = Command::new(std::env::current_exe().unwrap());
-        command
-            .arg("--exact")
-            .arg(format!("overrides::tests::{name}"));
-        command.env(name, "1");
-        command.env_remove(API_KEY_OVERRIDE_ENV);
-        command.env_remove(PROVIDER_OVERRIDE_ENV);
-        command.env_remove(MODEL_OVERRIDE_ENV);
-        for (key, value) in environment {
-            command.env(key, value);
-        }
-        assert!(command.status().unwrap().success());
-        true
     }
 
     #[test]
     fn api_override_without_config_wins() {
-        if child(
-            "api_override_without_config_wins",
-            &[(API_KEY_OVERRIDE_ENV, "override")],
-        ) {
-            return;
-        }
         assert_eq!(
-            configured_api_key(&config(None, None, None), "OPENAI_API_KEY").as_deref(),
+            configured_api_key_with(
+                &config(None, None, None),
+                "OPENAI_API_KEY",
+                lookup(&[(API_KEY_OVERRIDE_ENV, "override")]),
+            )
+            .as_deref(),
             Some("override")
         );
     }
 
     #[test]
     fn api_override_beats_config() {
-        if child(
-            "api_override_beats_config",
-            &[(API_KEY_OVERRIDE_ENV, "override")],
-        ) {
-            return;
-        }
         assert_eq!(
-            configured_api_key(&config(None, None, Some("stored")), "OPENAI_API_KEY").as_deref(),
+            configured_api_key_with(
+                &config(None, None, Some("stored")),
+                "OPENAI_API_KEY",
+                lookup(&[(API_KEY_OVERRIDE_ENV, "override")]),
+            )
+            .as_deref(),
             Some("override")
         );
     }
 
     #[test]
     fn api_config_ignores_conventional_process_env() {
-        if child(
-            "api_config_ignores_conventional_process_env",
-            &[("OPENAI_API_KEY", "ambient")],
-        ) {
-            return;
-        }
         assert_eq!(
-            configured_api_key(&config(None, None, Some("stored")), "OPENAI_API_KEY").as_deref(),
+            configured_api_key_with(
+                &config(None, None, Some("stored")),
+                "OPENAI_API_KEY",
+                lookup(&[("OPENAI_API_KEY", "ambient")]),
+            )
+            .as_deref(),
             Some("stored")
         );
     }
 
     #[test]
     fn provider_override_without_config_wins() {
-        if child(
-            "provider_override_without_config_wins",
-            &[(PROVIDER_OVERRIDE_ENV, "google")],
-        ) {
-            return;
-        }
-        assert_eq!(configured_provider(&config(None, None, None)), "google");
+        assert_eq!(
+            configured_provider_with(
+                &config(None, None, None),
+                lookup(&[(PROVIDER_OVERRIDE_ENV, "google")]),
+            ),
+            "google"
+        );
     }
 
     #[test]
     fn provider_override_beats_config() {
-        if child(
-            "provider_override_beats_config",
-            &[(PROVIDER_OVERRIDE_ENV, "google")],
-        ) {
-            return;
-        }
         assert_eq!(
-            configured_provider(&config(Some("openai"), None, None)),
+            configured_provider_with(
+                &config(Some("openai"), None, None),
+                lookup(&[(PROVIDER_OVERRIDE_ENV, "google")]),
+            ),
             "google"
         );
     }
 
     #[test]
     fn provider_config_is_used_without_override() {
-        if child("provider_config_is_used_without_override", &[]) {
-            return;
-        }
         assert_eq!(
-            configured_provider(&config(Some("openai"), None, None)),
+            configured_provider_with(&config(Some("openai"), None, None), lookup(&[])),
             "openai"
         );
     }
 
     #[test]
     fn model_override_without_config_wins() {
-        if child(
-            "model_override_without_config_wins",
-            &[(MODEL_OVERRIDE_ENV, "candidate")],
-        ) {
-            return;
-        }
         assert_eq!(
-            configured_model(&config(None, None, None), "default"),
+            configured_model_with(
+                &config(None, None, None),
+                "default",
+                lookup(&[(MODEL_OVERRIDE_ENV, "candidate")]),
+            ),
             "candidate"
         );
     }
 
     #[test]
     fn model_override_beats_config() {
-        if child(
-            "model_override_beats_config",
-            &[(MODEL_OVERRIDE_ENV, "candidate")],
-        ) {
-            return;
-        }
         assert_eq!(
-            configured_model(&config(None, Some("stored"), None), "default"),
+            configured_model_with(
+                &config(None, Some("stored"), None),
+                "default",
+                lookup(&[(MODEL_OVERRIDE_ENV, "candidate")]),
+            ),
             "candidate"
         );
     }
 
     #[test]
     fn model_config_is_used_without_override() {
-        if child("model_config_is_used_without_override", &[]) {
-            return;
-        }
         assert_eq!(
-            configured_model(&config(None, Some("stored"), None), "default"),
+            configured_model_with(&config(None, Some("stored"), None), "default", lookup(&[])),
             "stored"
         );
     }

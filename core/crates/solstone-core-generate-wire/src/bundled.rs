@@ -310,6 +310,8 @@ mod tests {
         current: u32,
         peak: u32,
         posts: u32,
+        started: u32,
+        released: bool,
     }
 
     impl EndpointTransport for HoldingTransport {
@@ -331,31 +333,28 @@ mod tests {
             _credential: Option<&str>,
             _timeout: Duration,
         ) -> Result<HttpResponse, crate::EndpointTransportError> {
-            let (state, entered) = &*self.state;
-            {
-                let mut state = state.lock().expect("concurrency state");
-                state.current += 1;
-                state.peak = state.peak.max(state.current);
-                state.posts += 1;
-                entered.notify_all();
+            let (lock, entered) = &*self.state;
+            let mut guard = lock.lock().expect("concurrency state");
+            guard.current += 1;
+            guard.peak = guard.peak.max(guard.current);
+            guard.posts += 1;
+            entered.notify_all();
+            while !guard.released {
+                let (next, wait) = entered
+                    .wait_timeout(guard, Duration::from_secs(5))
+                    .expect("concurrency wait");
+                guard = next;
+                if wait.timed_out() {
+                    panic!("holding transport was not released");
+                }
             }
-            thread::sleep(Duration::from_millis(100));
-            state.lock().expect("concurrency state").current -= 1;
+            guard.current -= 1;
             Ok(self.response.clone())
         }
     }
 
     fn journal_path() -> std::path::PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "solstone-bundled-converse-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos(),
-        ));
-        std::fs::create_dir_all(&root).expect("journal directory");
-        root
+        crate::validation::isolated_journal_dir("bundled")
     }
 
     fn server(parallel_slots: u32) -> ConnectedServer {
@@ -563,13 +562,8 @@ mod tests {
         )
         .expect_err("tool contract failure");
         assert_eq!(error.reason_code, "local_endpoint_contract_failed");
-        let permit = acquire_local_slot(
-            &admission_dir(&journal),
-            1,
-            Some(Duration::from_millis(50)),
-            false,
-        )
-        .expect("failure released admission");
+        let permit = acquire_local_slot(&admission_dir(&journal), 1, Some(Duration::ZERO), false)
+            .expect("failure released admission");
         drop(permit);
         let _ = std::fs::remove_dir_all(journal);
     }
@@ -667,6 +661,12 @@ mod tests {
         };
         let spawn_worker = |transport: HoldingTransport, journal: std::path::PathBuf| {
             thread::spawn(move || {
+                {
+                    let (lock, entered) = &*transport.state;
+                    let mut guard = lock.lock().expect("concurrency state");
+                    guard.started += 1;
+                    entered.notify_all();
+                }
                 let mut transport = transport;
                 bundled_converse_with(
                     BundledConverseCall {
@@ -687,10 +687,31 @@ mod tests {
         let (state_lock, entered) = &*state;
         let mut state_guard = state_lock.lock().expect("concurrency state");
         while state_guard.current != 1 {
-            state_guard = entered.wait(state_guard).expect("concurrency wait");
+            let (next, wait) = entered
+                .wait_timeout(state_guard, Duration::from_secs(5))
+                .expect("concurrency wait");
+            state_guard = next;
+            if wait.timed_out() {
+                panic!("worker 1 never entered transport");
+            }
         }
         drop(state_guard);
         let second = spawn_worker(transport, journal.clone());
+        let mut state_guard = state_lock.lock().expect("concurrency state");
+        while state_guard.started != 2 {
+            let (next, wait) = entered
+                .wait_timeout(state_guard, Duration::from_secs(5))
+                .expect("concurrency wait");
+            state_guard = next;
+            if wait.timed_out() {
+                panic!("worker 2 never started");
+            }
+        }
+        assert_eq!(state_guard.current, 1);
+        assert_eq!(state_guard.peak, 1);
+        state_guard.released = true;
+        entered.notify_all();
+        drop(state_guard);
         for worker in [first, second] {
             worker
                 .join()
@@ -701,13 +722,8 @@ mod tests {
         assert_eq!(state.posts, 2);
         assert_eq!(state.peak, 1);
         drop(state);
-        let permit = acquire_local_slot(
-            &admission_dir(&journal),
-            1,
-            Some(Duration::from_millis(50)),
-            false,
-        )
-        .expect("success released admission");
+        let permit = acquire_local_slot(&admission_dir(&journal), 1, Some(Duration::ZERO), false)
+            .expect("success released admission");
         drop(permit);
         let _ = std::fs::remove_dir_all(journal);
     }

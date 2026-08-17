@@ -174,22 +174,46 @@ pub fn usage_for_log(usage: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
+    use chrono::TimeZone;
     use serde_json::json;
 
     use super::*;
 
+    const REQUIRED_USAGE_KEYS: [&str; 5] = ["timestamp", "model", "context", "usage", "type"];
+    const FORBIDDEN_SECRET_KEYS: [&str; 6] = [
+        "api_key",
+        "authorization",
+        "secret",
+        "credential",
+        "access_token",
+        "api_key_override",
+    ];
+
+    fn fixed_local() -> chrono::DateTime<Local> {
+        Local
+            .with_ymd_and_hms(2020, 1, 2, 3, 4, 5)
+            .single()
+            .expect("fixed local timestamp")
+    }
+
+    fn assert_generate_line(value: &Value) {
+        let object = value.as_object().expect("usage line is an object");
+        for key in REQUIRED_USAGE_KEYS {
+            assert!(object.contains_key(key), "missing required key {key}");
+        }
+        assert_eq!(value["type"], "generate");
+        for key in FORBIDDEN_SECRET_KEYS {
+            assert!(
+                !object.contains_key(key),
+                "usage line must not carry secret field {key}"
+            );
+        }
+    }
+
     #[test]
     fn appends_exactly_one_line_per_completion() {
-        let directory = std::env::temp_dir().join(format!(
-            "solstone-generate-wire-token-log-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let now = Local::now();
+        let directory = crate::validation::isolated_journal_dir("token-log");
+        let now = fixed_local();
         let usage = json!({"input_tokens": 2, "output_tokens": 1, "total_tokens": 3});
         let record = || UsageRecord {
             journal_path: &directory,
@@ -210,22 +234,17 @@ mod tests {
         assert_eq!(lines.len(), 2);
         for line in lines {
             let value: Value = serde_json::from_str(line).unwrap();
-            assert_eq!(value.as_object().unwrap().len(), 5);
-            assert_eq!(value["type"], "generate");
+            assert_generate_line(&value);
+            assert!(value.get("non_responsive_output").is_none());
+            assert!(value.get("non_responsive_matched_signal").is_none());
         }
         fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn writes_non_responsive_metadata_only_when_present() {
-        let directory = std::env::temp_dir().join(format!(
-            "solstone-generate-wire-token-log-metadata-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let now = Local::now();
+        let directory = crate::validation::isolated_journal_dir("token-log-metadata");
+        let now = fixed_local();
         let usage = json!({});
         let metadata = GenerateUsageMetadata {
             non_responsive_output: Some("I cannot do that."),
@@ -248,6 +267,7 @@ mod tests {
             .join("tokens")
             .join(now.format("%Y%m%d").to_string() + ".jsonl");
         let value: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        assert_generate_line(&value);
         assert_eq!(value["non_responsive_output"], "I cannot do that.");
         assert_eq!(value["non_responsive_matched_signal"], "i cannot");
         fs::remove_dir_all(directory).unwrap();
@@ -255,15 +275,9 @@ mod tests {
 
     #[test]
     fn generate_wrapper_remains_identical_to_generalized_generate_record() {
-        let wrapper_directory = std::env::temp_dir().join(format!(
-            "solstone-generate-wire-token-wrapper-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let generic_directory = wrapper_directory.with_extension("generic");
-        let now = Local::now();
+        let wrapper_directory = crate::validation::isolated_journal_dir("token-wrapper");
+        let generic_directory = crate::validation::isolated_journal_dir("token-generic");
+        let now = fixed_local();
         let usage = json!({"input_tokens": 2});
         record_generate_usage_at(&wrapper_directory, "model", "context", &usage, None, now)
             .unwrap();

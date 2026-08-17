@@ -5,6 +5,8 @@
 
 use std::io;
 use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 
 use serde_json::Value;
 
@@ -137,22 +139,31 @@ fn blank_visible_output(text: &str) -> bool {
 }
 
 #[cfg(test)]
+pub(crate) fn isolated_journal_dir(purpose: &str) -> PathBuf {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static SEQ: AtomicUsize = AtomicUsize::new(1);
+    loop {
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("solstone-gw-{purpose}-{}-{n}", std::process::id()));
+        match std::fs::create_dir(&path) {
+            Ok(()) => return path,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => panic!("create isolated journal dir {}: {error}", path.display()),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::{Map, json};
 
     use super::*;
 
     fn temp_journal() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "solstone-generate-validation-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ))
+        isolated_journal_dir("validation")
     }
 
     fn view<'a>(

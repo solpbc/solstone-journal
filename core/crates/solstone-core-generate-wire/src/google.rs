@@ -157,11 +157,27 @@ fn google_generate_with<T: GoogleTransport>(
     config: &Map<String, Value>,
     transport: &mut T,
 ) -> GoogleResult {
-    let Some(api_key) = configured_api_key(config) else {
+    google_generate_with_lookup(
+        request,
+        config,
+        transport,
+        crate::overrides::non_blank_process_env,
+    )
+}
+
+fn google_generate_with_lookup<T: GoogleTransport>(
+    request: &GenerateRequest,
+    config: &Map<String, Value>,
+    transport: &mut T,
+    env: impl Fn(&str) -> Option<String>,
+) -> GoogleResult {
+    let env = &env;
+    let Some(api_key) = crate::overrides::configured_api_key_with(config, GOOGLE_API_KEY_ENV, env)
+    else {
         return failure("provider_key_missing");
     };
-    let model = configured_model(config);
-    let base_url = crate::overrides::configured_base_url(config, GOOGLE_BASE_URL);
+    let model = crate::overrides::configured_model_with(config, DEFAULT_MODEL, env);
+    let base_url = crate::overrides::configured_base_url_with(config, GOOGLE_BASE_URL, env);
     let path = format!("/v1beta/models/{model}:generateContent");
     let body = request_body(request, &model);
     let response = match transport.post_json(
@@ -622,8 +638,6 @@ fn unknown_finish_reason() -> &'static str {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::process::Command;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use solstone_core_generate::{ContentPart, ReasonCodeValue};
 
@@ -728,13 +742,7 @@ mod tests {
     }
 
     fn temp_journal() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "solstone-google-wire-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ))
+        crate::validation::isolated_journal_dir("google")
     }
 
     #[test]
@@ -1055,19 +1063,13 @@ mod tests {
 
     #[test]
     fn process_environment_key_is_ignored_when_config_key_is_absent() {
-        if std::env::var_os("SOLSTONE_GOOGLE_PROCESS_ENV_CHILD").is_none() {
-            let status = Command::new(std::env::current_exe().unwrap())
-                .arg("--exact")
-                .arg("google::tests::process_environment_key_is_ignored_when_config_key_is_absent")
-                .env("SOLSTONE_GOOGLE_PROCESS_ENV_CHILD", "1")
-                .env(GOOGLE_API_KEY_ENV, "process-only-secret")
-                .status()
-                .unwrap();
-            assert!(status.success());
-            return;
-        }
         let mut transport = StubTransport::default();
-        let result = google_generate_with(&request(), &config(None, None), &mut transport);
+        let result = google_generate_with_lookup(
+            &request(),
+            &config(None, None),
+            &mut transport,
+            crate::overrides::lookup_leaks_conventional_keys,
+        );
         assert_eq!(
             result,
             GoogleResult::Failed(GoogleFailure {

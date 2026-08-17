@@ -316,7 +316,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use std::io::Cursor;
+    use std::sync::Condvar;
+    use std::time::Duration;
 
     /// A writer the test can read back.
     #[derive(Clone)]
@@ -355,7 +358,7 @@ mod tests {
                 .as_str()
                 .expect("terminal schema");
         let mut stdin = String::new();
-        for id in ["a", "b"] {
+        for id in ["a", "b", "c"] {
             let request = GenerateRequest {
                 id: Some(id.to_owned()),
                 context: "test.generate".to_owned(),
@@ -381,6 +384,21 @@ mod tests {
         }
         stdin.push_str(&format!("{{\"schema\":\"{terminal}\"}}\n"));
 
+        struct Gate {
+            current: usize,
+            peak: usize,
+            go: bool,
+        }
+        let gate = Arc::new((
+            Mutex::new(Gate {
+                current: 0,
+                peak: 0,
+                go: false,
+            }),
+            Condvar::new(),
+        ));
+        let respond_gate = Arc::clone(&gate);
+
         let captured = Captured(Arc::new(Mutex::new(Vec::new())));
         let sink = captured.clone();
         let outcome = run_session(
@@ -388,8 +406,28 @@ mod tests {
             Box::new(captured),
             config(),
             SessionHost {
-                respond: |request: &GenerateRequest, _: &EndpointRuntime| {
-                    Ok(GenerateResponse::Generated(Box::new(
+                respond: move |request: &GenerateRequest, _: &EndpointRuntime| {
+                    let (lock, entered) = &*respond_gate;
+                    let mut guard = lock.lock().expect("admission gate");
+                    guard.current += 1;
+                    guard.peak = guard.peak.max(guard.current);
+                    entered.notify_all();
+                    while !guard.go {
+                        if guard.current >= 2 {
+                            guard.go = true;
+                            entered.notify_all();
+                            break;
+                        }
+                        let (next, wait) = entered
+                            .wait_timeout(guard, Duration::from_secs(5))
+                            .expect("admission wait");
+                        guard = next;
+                        if wait.timed_out() {
+                            panic!("second worker never admitted");
+                        }
+                    }
+                    drop(guard);
+                    let response = GenerateResponse::Generated(Box::new(
                         solstone_core_generate::GeneratedResponse {
                             id: request.id.clone(),
                             text: "ok".to_owned(),
@@ -403,7 +441,9 @@ mod tests {
                             inference: None,
                             hints_applied: Vec::new(),
                         },
-                    )))
+                    ));
+                    lock.lock().expect("admission gate").current -= 1;
+                    Ok(response)
                 },
                 fail: |_, _, detail: String| panic!("unexpected protocol failure: {detail}"),
                 abort: || panic!("unexpected abort: the terminal record was sent"),
@@ -411,22 +451,58 @@ mod tests {
         );
 
         assert!(matches!(outcome, SessionOutcome::Completed));
+        assert_eq!(gate.0.lock().expect("admission gate").peak, 2);
         let written = String::from_utf8(sink.0.lock().expect("capture lock").clone())
             .expect("session output is UTF-8");
-        let ids = written
-            .lines()
-            .map(|line| {
-                serde_json::from_str::<Value>(line).expect("response line is JSON")["id"]
-                    .as_str()
-                    .expect("response carries its id")
-                    .to_owned()
-            })
-            .collect::<std::collections::BTreeSet<_>>();
+        let mut counts = BTreeMap::<String, usize>::new();
+        for line in written.lines() {
+            let value: Value = serde_json::from_str(line).expect("response line is JSON");
+            assert_ne!(
+                value.get("schema").and_then(Value::as_str),
+                Some(terminal),
+                "terminal must not appear as an output frame"
+            );
+            let id = value["id"]
+                .as_str()
+                .expect("response carries its id")
+                .to_owned();
+            *counts.entry(id).or_default() += 1;
+        }
         assert_eq!(
-            ids,
-            ["a".to_owned(), "b".to_owned()].into_iter().collect(),
+            counts,
+            BTreeMap::from([
+                ("a".to_owned(), 1),
+                ("b".to_owned(), 1),
+                ("c".to_owned(), 1),
+            ]),
             "every submitted request must be answered exactly once"
         );
+    }
+
+    #[test]
+    fn empty_input_writes_no_response_line() {
+        let terminal =
+            solstone_core_generate::contract()["framing"]["session"]["terminal"]["schema"]
+                .as_str()
+                .expect("terminal schema");
+        let stdin = format!("{{\"schema\":\"{terminal}\"}}\n");
+        let directory = crate::validation::isolated_journal_dir("session-empty");
+        let path = directory.join("out");
+        let outcome = run_session(
+            Cursor::new(stdin.into_bytes()),
+            Box::new(std::fs::File::create(&path).expect("session sink")),
+            config(),
+            SessionHost {
+                respond: |_request: &GenerateRequest, _: &EndpointRuntime| {
+                    panic!("no request should be dispatched")
+                },
+                fail: |_, _, detail: String| panic!("unexpected protocol failure: {detail}"),
+                abort: || panic!("unexpected abort: the terminal record was sent"),
+            },
+        );
+        assert!(matches!(outcome, SessionOutcome::Completed));
+        assert_eq!(std::fs::read(&path).expect("session sink bytes"), b"");
+        let _ = std::fs::remove_dir_all(directory);
     }
 
     /// The line bound is the framing's, and it is read from the fixture.

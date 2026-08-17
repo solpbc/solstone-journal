@@ -46,6 +46,10 @@ name = "confidential_transport"
 path = "tests/confidential_transport.rs"
 required-features = ["test-hooks"]
 
+[[test]]
+name = "provider_environment_isolation"
+path = "tests/provider_environment_isolation.rs"
+
 [dev-dependencies]
 socket2.workspace = true
 solstone-core-spp-attest.workspace = true

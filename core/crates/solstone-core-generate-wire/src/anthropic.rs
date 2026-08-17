@@ -160,11 +160,28 @@ fn anthropic_generate_with<T: AnthropicTransport>(
     config: &Map<String, Value>,
     transport: &mut T,
 ) -> AnthropicResult {
-    let Some(api_key) = configured_api_key(config) else {
+    anthropic_generate_with_lookup(
+        request,
+        config,
+        transport,
+        crate::overrides::non_blank_process_env,
+    )
+}
+
+fn anthropic_generate_with_lookup<T: AnthropicTransport>(
+    request: &GenerateRequest,
+    config: &Map<String, Value>,
+    transport: &mut T,
+    env: impl Fn(&str) -> Option<String>,
+) -> AnthropicResult {
+    let env = &env;
+    let Some(api_key) =
+        crate::overrides::configured_api_key_with(config, ANTHROPIC_API_KEY_ENV, env)
+    else {
         return failure("provider_key_missing");
     };
-    let model = configured_model(config);
-    let base_url = crate::overrides::configured_base_url(config, ANTHROPIC_BASE_URL);
+    let model = crate::overrides::configured_model_with(config, DEFAULT_MODEL, env);
+    let base_url = crate::overrides::configured_base_url_with(config, ANTHROPIC_BASE_URL, env);
     let body = request_body(request, &model);
     let response = match transport.post_json(
         &base_url,
@@ -523,11 +540,7 @@ fn classify_ureq_error(error: ureq::Error) -> EndpointTransportError {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        process::Command,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use std::fs;
 
     use solstone_core_generate::{
         ContentPart, GenerateResponse, ReasonCodeValue, encode_one_shot_response,
@@ -625,20 +638,13 @@ mod tests {
 
     #[test]
     fn process_env_key_is_ignored_when_config_key_is_absent() {
-        if std::env::var_os("SOLSTONE_ANTHROPIC_PROCESS_ENV_CHILD").is_none() {
-            let status = Command::new(std::env::current_exe().unwrap())
-                .arg("--exact")
-                .arg("anthropic::tests::process_env_key_is_ignored_when_config_key_is_absent")
-                .env("SOLSTONE_ANTHROPIC_PROCESS_ENV_CHILD", "1")
-                .env(ANTHROPIC_API_KEY_ENV, "process-only-secret")
-                .status()
-                .unwrap();
-            assert!(status.success());
-            return;
-        }
-        // The child process has a real API-key environment value, but the arm resolves only config.
         let mut transport = StubTransport::default();
-        let result = anthropic_generate_with(&request(), &config(None, None), &mut transport);
+        let result = anthropic_generate_with_lookup(
+            &request(),
+            &config(None, None),
+            &mut transport,
+            crate::overrides::lookup_leaks_conventional_keys,
+        );
         assert_eq!(
             result,
             AnthropicResult::Failed(AnthropicFailure {
@@ -665,26 +671,15 @@ mod tests {
 
     #[test]
     fn override_key_is_transport_only_and_not_emitted() {
-        if std::env::var_os("SOLSTONE_ANTHROPIC_OVERRIDE_CHILD").is_none() {
-            let status = Command::new(std::env::current_exe().unwrap())
-                .arg("--exact")
-                .arg("anthropic::tests::override_key_is_transport_only_and_not_emitted")
-                .env("SOLSTONE_ANTHROPIC_OVERRIDE_CHILD", "1")
-                .env(crate::overrides::API_KEY_OVERRIDE_ENV, "override-secret")
-                .status()
-                .unwrap();
-            assert!(status.success());
-            return;
-        }
-
         let mut transport = StubTransport {
             responses: vec![Ok(success_response())],
             ..Default::default()
         };
-        let generated = generated(anthropic_generate_with(
+        let generated = generated(anthropic_generate_with_lookup(
             &request(),
             &config(None, None),
             &mut transport,
+            crate::overrides::lookup_api_key_override,
         ));
         assert_eq!(transport.api_keys, ["override-secret"]);
         assert!(
@@ -694,13 +689,7 @@ mod tests {
                 .any(|window| window == b"override-secret")
         );
 
-        let journal = std::env::temp_dir().join(format!(
-            "solstone-anthropic-override-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let journal = crate::validation::isolated_journal_dir("anthropic-override");
         let assessment = assess_provider_result(ProviderResultView {
             journal_path: &journal,
             context: "test.generate",
