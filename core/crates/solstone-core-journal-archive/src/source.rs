@@ -31,7 +31,7 @@ const REQUESTED_ROOT_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_CLOEXEC);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AcquisitionPrimitive {
+pub enum AcquisitionPrimitive {
     RequestedRootOpen,
     AuthoritativeFstat,
     Canonicalize,
@@ -47,7 +47,7 @@ enum AcquisitionPrimitive {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum DescendantPrimitive {
+pub enum DescendantPrimitive {
     ListDirectoryOpen,
     Metadata,
     DirectoryOpen,
@@ -55,42 +55,50 @@ enum DescendantPrimitive {
     Fstat,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Clone, Copy)]
-struct InjectedFault {
-    primitive: AcquisitionPrimitive,
-    ordinal: usize,
-    error: Errno,
+pub(crate) struct InjectedFault {
+    pub(crate) primitive: AcquisitionPrimitive,
+    pub(crate) ordinal: usize,
+    pub(crate) error: Errno,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 struct TraceState {
     successful: Vec<AcquisitionPrimitive>,
     attempted: Vec<AcquisitionPrimitive>,
     barrier: Option<(usize, Box<dyn FnOnce()>)>,
+    #[cfg(test)]
     barrier_fired: bool,
     fault: Option<InjectedFault>,
     fault_consumed: bool,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Debug)]
-struct TraceOutcome {
-    successful: Vec<AcquisitionPrimitive>,
-    attempted: Vec<AcquisitionPrimitive>,
-    barrier_fired: bool,
-    fault_consumed: bool,
+pub(crate) struct TraceOutcome {
+    #[cfg(test)]
+    pub(crate) successful: Vec<AcquisitionPrimitive>,
+    #[cfg(test)]
+    pub(crate) attempted: Vec<AcquisitionPrimitive>,
+    #[cfg(test)]
+    pub(crate) barrier_fired: bool,
+    pub(crate) fault_consumed: bool,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
     static ACQUISITION_TRACE: std::cell::RefCell<Option<TraceState>> = const {
         std::cell::RefCell::new(None)
     };
-    static ROOT_STAT_SUBSTITUTION: std::cell::RefCell<Option<RootStatSubstitution>> = const {
+    static DESCENDANT_TRACE: std::cell::RefCell<Option<DescendantTraceState>> = const {
         std::cell::RefCell::new(None)
     };
-    static DESCENDANT_TRACE: std::cell::RefCell<Option<DescendantTraceState>> = const {
+}
+
+#[cfg(test)]
+thread_local! {
+    static ROOT_STAT_SUBSTITUTION: std::cell::RefCell<Option<RootStatSubstitution>> = const {
         std::cell::RefCell::new(None)
     };
     static DESCENDANT_STAT_SUBSTITUTION: std::cell::RefCell<Option<DescendantStatSubstitution>> = const {
@@ -105,46 +113,50 @@ struct RootStatSubstitution {
     consumed: bool,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct DescendantEvent {
+pub(crate) struct DescendantEvent {
     primitive: DescendantPrimitive,
     member: Option<String>,
 }
 
-#[cfg(test)]
-struct DescendantFault {
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) struct DescendantFault {
     primitive: DescendantPrimitive,
     member: Option<String>,
     ordinal: usize,
     error: Errno,
 }
 
-#[cfg(test)]
-struct DescendantBarrier {
-    primitive: DescendantPrimitive,
-    member: Option<String>,
-    ordinal: usize,
-    callback: Box<dyn FnOnce()>,
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) struct DescendantBarrier {
+    pub(crate) primitive: DescendantPrimitive,
+    pub(crate) member: Option<String>,
+    pub(crate) ordinal: usize,
+    pub(crate) callback: Box<dyn FnOnce()>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 struct DescendantTraceState {
     attempted: Vec<DescendantEvent>,
     successful: Vec<DescendantEvent>,
     fault: Option<DescendantFault>,
+    #[cfg(test)]
     fault_consumed: bool,
     barrier: Option<DescendantBarrier>,
     barrier_fired: bool,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Debug)]
-struct DescendantTraceOutcome {
-    attempted: Vec<DescendantEvent>,
-    successful: Vec<DescendantEvent>,
-    fault_consumed: bool,
-    barrier_fired: bool,
+pub(crate) struct DescendantTraceOutcome {
+    #[cfg(test)]
+    pub(crate) attempted: Vec<DescendantEvent>,
+    #[cfg(test)]
+    pub(crate) successful: Vec<DescendantEvent>,
+    #[cfg(test)]
+    pub(crate) fault_consumed: bool,
+    pub(crate) barrier_fired: bool,
 }
 
 #[cfg(test)]
@@ -155,10 +167,10 @@ struct DescendantStatSubstitution {
     consumed: bool,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 struct TraceGuard;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 impl Drop for TraceGuard {
     fn drop(&mut self) {
         ACQUISITION_TRACE.with(|trace| {
@@ -181,8 +193,8 @@ fn trace_acquisition<T>(
     (result, outcome.successful)
 }
 
-#[cfg(test)]
-fn trace_scenario<T>(
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) fn trace_scenario<T>(
     barrier: Option<(usize, Box<dyn FnOnce()>)>,
     fault: Option<InjectedFault>,
     operation: impl FnOnce() -> T,
@@ -196,6 +208,7 @@ fn trace_scenario<T>(
             successful: Vec::new(),
             attempted: Vec::new(),
             barrier,
+            #[cfg(test)]
             barrier_fired: false,
             fault,
             fault_consumed: false,
@@ -213,15 +226,18 @@ fn trace_scenario<T>(
     (
         result,
         TraceOutcome {
+            #[cfg(test)]
             successful: state.successful,
+            #[cfg(test)]
             attempted: state.attempted,
+            #[cfg(test)]
             barrier_fired: state.barrier_fired,
             fault_consumed: state.fault_consumed,
         },
     )
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn attempt_acquisition(primitive: AcquisitionPrimitive) -> Result<(), Errno> {
     ACQUISITION_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
@@ -246,7 +262,7 @@ fn attempt_acquisition(primitive: AcquisitionPrimitive) -> Result<(), Errno> {
     })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn record_success(primitive: AcquisitionPrimitive) {
     let callback = ACQUISITION_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
@@ -254,7 +270,10 @@ fn record_success(primitive: AcquisitionPrimitive) {
         state.successful.push(primitive);
         (state.barrier.as_ref().map(|(position, _)| *position) == Some(state.successful.len()))
             .then(|| {
-                state.barrier_fired = true;
+                #[cfg(test)]
+                {
+                    state.barrier_fired = true;
+                }
                 state.barrier.take().expect("pending acquisition barrier").1
             })
     });
@@ -263,10 +282,10 @@ fn record_success(primitive: AcquisitionPrimitive) {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 struct DescendantTraceGuard;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 impl Drop for DescendantTraceGuard {
     fn drop(&mut self) {
         DESCENDANT_TRACE.with(|trace| {
@@ -275,8 +294,8 @@ impl Drop for DescendantTraceGuard {
     }
 }
 
-#[cfg(test)]
-fn trace_descendants<T>(
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) fn trace_descendants<T>(
     fault: Option<DescendantFault>,
     barrier: Option<DescendantBarrier>,
     operation: impl FnOnce() -> T,
@@ -290,6 +309,7 @@ fn trace_descendants<T>(
             attempted: Vec::new(),
             successful: Vec::new(),
             fault,
+            #[cfg(test)]
             fault_consumed: false,
             barrier,
             barrier_fired: false,
@@ -307,15 +327,18 @@ fn trace_descendants<T>(
     (
         result,
         DescendantTraceOutcome {
+            #[cfg(test)]
             attempted: state.attempted,
+            #[cfg(test)]
             successful: state.successful,
+            #[cfg(test)]
             fault_consumed: state.fault_consumed,
             barrier_fired: state.barrier_fired,
         },
     )
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn descendant_event(
     primitive: DescendantPrimitive,
     member: Option<&ArchiveMemberName>,
@@ -326,12 +349,12 @@ fn descendant_event(
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn matching_ordinal(events: &[DescendantEvent], candidate: &DescendantEvent) -> usize {
     events.iter().filter(|event| *event == candidate).count()
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn attempt_descendant(event: &DescendantEvent) -> Result<(), Errno> {
     DESCENDANT_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
@@ -346,14 +369,17 @@ fn attempt_descendant(event: &DescendantEvent) -> Result<(), Errno> {
                 && fault.ordinal == ordinal
         }) {
             let fault = state.fault.take().expect("matching descendant fault");
-            state.fault_consumed = true;
+            #[cfg(test)]
+            {
+                state.fault_consumed = true;
+            }
             return Err(fault.error);
         }
         Ok(())
     })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn record_descendant_success(event: DescendantEvent) {
     let callback = DESCENDANT_TRACE.with(|trace| {
         let mut trace = trace.borrow_mut();
@@ -384,14 +410,14 @@ fn traced_descendant_nix<T>(
     member: Option<&ArchiveMemberName>,
     operation: impl FnOnce() -> Result<T, Errno>,
 ) -> Result<T, Errno> {
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "test-hooks")))]
     let _ = (primitive, member);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     let event = descendant_event(primitive, member);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     attempt_descendant(&event)?;
     let result = operation();
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     if result.is_ok() {
         record_descendant_success(event);
     }
@@ -465,12 +491,12 @@ fn traced_nix<T>(
     primitive: AcquisitionPrimitive,
     operation: impl FnOnce() -> Result<T, Errno>,
 ) -> Result<T, Errno> {
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "test-hooks")))]
     let _ = primitive;
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     attempt_acquisition(primitive)?;
     let result = operation();
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     if result.is_ok() {
         record_success(primitive);
     }
@@ -478,14 +504,14 @@ fn traced_nix<T>(
 }
 
 fn traced_canonicalize(root: &Path) -> io::Result<PathBuf> {
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "test-hooks")))]
     let _ = AcquisitionPrimitive::Canonicalize;
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     if let Err(error) = attempt_acquisition(AcquisitionPrimitive::Canonicalize) {
         return Err(io::Error::from_raw_os_error(error as i32));
     }
     let result = fs::canonicalize(root);
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-hooks"))]
     if result.is_ok() {
         record_success(AcquisitionPrimitive::Canonicalize);
     }
@@ -1174,12 +1200,7 @@ fn revalidation_error(error: ArchiveError, member: &ArchiveMemberName) -> Archiv
 mod tests {
     use std::fs;
     use std::io::Read;
-    use std::os::unix::net::UnixListener;
-    use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{Duration, Instant};
-
-    use nix::unistd::mkfifo;
 
     use super::*;
 
@@ -1218,134 +1239,7 @@ mod tests {
         root
     }
 
-    fn short_temp_dir() -> TempDir {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let path = PathBuf::from("/tmp").join(format!(
-            "sja-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&path).expect("create short temporary directory");
-        TempDir { path }
-    }
-
-    const DESCENDANT_BARRIER_ROOT: &str = "SOLSTONE_ARCHIVE_DESCENDANT_BARRIER_ROOT";
-    const DESCENDANT_BARRIER_MODE: &str = "SOLSTONE_ARCHIVE_DESCENDANT_BARRIER_MODE";
-    const DESCENDANT_BARRIER_KIND: &str = "SOLSTONE_ARCHIVE_DESCENDANT_BARRIER_KIND";
     const DESCENDANT_MEMBER: &str = "imports/import-1/source.bin";
-
-    fn replacement_barrier(root: &Path, kind: &str) -> DescendantBarrier {
-        let target = root.join(DESCENDANT_MEMBER);
-        let kind = kind.to_owned();
-        DescendantBarrier {
-            primitive: DescendantPrimitive::Metadata,
-            member: Some(DESCENDANT_MEMBER.to_owned()),
-            ordinal: 1,
-            callback: Box::new(move || {
-                fs::remove_file(&target).expect("remove inventoried file at stat/open barrier");
-                match kind.as_str() {
-                    "fifo" => {
-                        mkfifo(&target, Mode::S_IRUSR | Mode::S_IWUSR).expect("create barrier fifo")
-                    }
-                    "socket" => {
-                        let listener = UnixListener::bind(&target).expect("create barrier socket");
-                        drop(listener);
-                    }
-                    _ => panic!("unknown barrier replacement kind"),
-                }
-            }),
-        }
-    }
-
-    #[test]
-    fn descendant_barrier_child() {
-        let Some(root) = std::env::var_os(DESCENDANT_BARRIER_ROOT).map(PathBuf::from) else {
-            return;
-        };
-        let mode = std::env::var(DESCENDANT_BARRIER_MODE).expect("barrier child mode");
-        let kind = std::env::var(DESCENDANT_BARRIER_KIND).expect("barrier child kind");
-
-        let (result, trace) =
-            if mode == "initial" {
-                trace_descendants(None, Some(replacement_barrier(&root, &kind)), || {
-                    ArchiveSource::open(&root).map(|_| ())
-                })
-            } else {
-                let source = ArchiveSource::open(&root).expect("open source before barrier");
-                let entry = source
-                    .inventory()
-                    .entries()
-                    .iter()
-                    .find(|entry| entry.member_name().as_str() == DESCENDANT_MEMBER)
-                    .expect("barrier inventory entry");
-                trace_descendants(None, Some(replacement_barrier(&root, &kind)), || match mode
-                    .as_str()
-                {
-                    "open-file" => source.open_file(entry).map(|_| ()),
-                    "revalidate" => source.revalidate(),
-                    _ => panic!("unknown barrier child mode"),
-                })
-            };
-
-        assert!(trace.barrier_fired, "stat/open barrier did not fire");
-        assert!(
-            matches!(
-                result,
-                Err(ArchiveError::SourceChanged { member: Some(ref member) })
-                    if member.as_str() == DESCENDANT_MEMBER
-            ),
-            "unexpected stat/open replacement result: {result:?}"
-        );
-    }
-
-    #[test]
-    fn descendant_stat_to_open_swaps_are_bounded_and_changed() {
-        for mode in ["initial", "open-file", "revalidate"] {
-            for kind in ["fifo", "socket"] {
-                let temporary = short_temp_dir();
-                let root = nested_journal(&temporary, b"source");
-                let mut child = Command::new(std::env::current_exe().expect("current test binary"))
-                    .args(["--exact", "source::tests::descendant_barrier_child"])
-                    .env(DESCENDANT_BARRIER_ROOT, &root)
-                    .env(DESCENDANT_BARRIER_MODE, mode)
-                    .env(DESCENDANT_BARRIER_KIND, kind)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                    .expect("spawn bounded barrier child");
-                let deadline = Instant::now() + Duration::from_secs(3);
-                let status = loop {
-                    if let Some(status) = child.try_wait().expect("wait for barrier child") {
-                        break status;
-                    }
-                    if Instant::now() >= deadline {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        panic!("{mode}/{kind} barrier child exceeded bounded deadline");
-                    }
-                    std::thread::sleep(Duration::from_millis(10));
-                };
-                let mut stdout = String::new();
-                let mut stderr = String::new();
-                child
-                    .stdout
-                    .take()
-                    .expect("barrier child stdout")
-                    .read_to_string(&mut stdout)
-                    .expect("read barrier child stdout");
-                child
-                    .stderr
-                    .take()
-                    .expect("barrier child stderr")
-                    .read_to_string(&mut stderr)
-                    .expect("read barrier child stderr");
-                assert!(
-                    status.success(),
-                    "{mode}/{kind} barrier child failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
-                );
-            }
-        }
-    }
 
     #[test]
     fn descendant_fault_matrix_preserves_phase_member_and_errno() {
@@ -2034,68 +1928,6 @@ mod tests {
                 .count(),
             1
         );
-    }
-
-    #[test]
-    fn acquisition_faults_are_thread_local() {
-        let rendezvous = std::sync::Arc::new(std::sync::Barrier::new(3));
-        std::thread::scope(|scope| {
-            let first_rendezvous = std::sync::Arc::clone(&rendezvous);
-            scope.spawn(move || {
-                let (result, trace) = trace_scenario(
-                    None,
-                    Some(InjectedFault {
-                        primitive: AcquisitionPrimitive::RequestedRootOpen,
-                        ordinal: 1,
-                        error: Errno::EACCES,
-                    }),
-                    || {
-                        first_rendezvous.wait();
-                        ArchiveSource::open(Path::new("/"))
-                    },
-                );
-                assert!(trace.fault_consumed);
-                let actual = match result {
-                    Ok(_) => panic!("thread-local requested-root fault must fail"),
-                    Err(actual) => actual,
-                };
-                assert_fault(
-                    actual,
-                    ExpectedFault::SourceIo("open journal root"),
-                    Path::new("/"),
-                    Errno::EACCES,
-                );
-            });
-
-            let second_rendezvous = std::sync::Arc::clone(&rendezvous);
-            scope.spawn(move || {
-                let (result, trace) = trace_scenario(
-                    None,
-                    Some(InjectedFault {
-                        primitive: AcquisitionPrimitive::Canonicalize,
-                        ordinal: 1,
-                        error: Errno::EIO,
-                    }),
-                    || {
-                        second_rendezvous.wait();
-                        ArchiveSource::open(Path::new("/"))
-                    },
-                );
-                assert!(trace.fault_consumed);
-                let actual = match result {
-                    Ok(_) => panic!("thread-local canonicalize fault must fail"),
-                    Err(actual) => actual,
-                };
-                assert_fault(
-                    actual,
-                    ExpectedFault::SourceIo("canonicalize journal root"),
-                    Path::new("/"),
-                    Errno::EIO,
-                );
-            });
-
-            rendezvous.wait();
-        });
     }
 
     #[test]

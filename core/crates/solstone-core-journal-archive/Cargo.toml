@@ -15,3 +15,15 @@ zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true
+
+[features]
+test-hooks = []
+
+[[test]]
+name = "archive_fault_boundaries"
+path = "tests/archive_fault_boundaries.rs"
+required-features = ["test-hooks"]
+
+[dev-dependencies]
+nix = { workspace = true, features = ["fs"] }
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }

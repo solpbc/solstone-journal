@@ -9,7 +9,8 @@ use std::sync::{Arc, Barrier};
 use rusqlite::Connection;
 use serde_json::json;
 use solstone_core_body_ingest::{
-    AppleImportOptions, BodyIngestErrorKind, detect_apple_source, preview_apple, save_apple,
+    AppleImportOptions, BodyIngestErrorKind, detect_apple_source, hold_apple_ingest_lock,
+    preview_apple, save_apple,
 };
 use solstone_core_body_rebuild::{BodyRebuildErrorKind, rebuild_body_store};
 
@@ -372,6 +373,61 @@ fn concurrent_non_force_saves_publish_one_immutable_bundle() {
         .filter(|entry| entry.file_name().to_string_lossy().starts_with("body-"))
         .count();
     assert_eq!(bundle_count, 1);
+}
+
+#[test]
+fn contended_save_does_not_mutate_until_the_ingest_lock_is_released() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let temporary = TempDir::new();
+    let journal = temporary.path().join("journal");
+    fs::create_dir(&journal).unwrap();
+    write_approval(&journal, "retain_complete");
+    let source = fixture("tests/fixtures/importers/health/apple_health_synthetic");
+    let held = hold_apple_ingest_lock(&journal).expect("hold Apple ingest lock");
+    let thread_journal = journal.clone();
+    let (done_tx, done_rx) = mpsc::channel();
+    let waiter = std::thread::spawn(move || {
+        let result = save_apple(
+            &source,
+            &thread_journal,
+            &AppleImportOptions {
+                confirm_body_save: true,
+                ..AppleImportOptions::default()
+            },
+        );
+        done_tx.send(result).unwrap();
+    });
+    // Negative bound: the save must not finish while the lock is held.
+    assert_eq!(
+        done_rx.recv_timeout(Duration::from_secs(2)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    );
+    assert!(
+        fs::read_dir(journal.join("imports"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .all(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                !name.starts_with("body-")
+                    && !entry.path().join("raw").exists()
+                    && !entry.path().join("body-raw-inventory.jsonl").exists()
+            })
+    );
+    write_approval(&journal, "discard");
+    drop(held);
+    let report = done_rx.recv().unwrap().expect("save succeeds after unlock");
+    waiter.join().unwrap();
+    let bundle = journal
+        .join("imports")
+        .join(report.bundle_id().expect("published bundle"));
+    assert!(!bundle.join("raw").exists());
+    assert!(!bundle.join("body-raw-inventory.jsonl").exists());
+    let envelope: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("body-bundle.json")).unwrap()).unwrap();
+    assert_eq!(envelope["raw_retention"], "discard");
 }
 
 #[test]

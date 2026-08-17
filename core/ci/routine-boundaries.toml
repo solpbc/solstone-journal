@@ -16,25 +16,10 @@ id = "solstone-core-backup::core/crates/solstone-core-backup/src/state.rs::tests
 id = "solstone-core-backup::core/crates/solstone-core-backup/src/state.rs::tests::disjoint_mutations_survive_deterministic_contention::scheduling"
 
 [[findings]]
-id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/apple.rs::tests::waiting_save_rechecks_retention_after_acquiring_the_lock::scheduling"
-
-[[findings]]
-id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::browser_opener_cannot_hold_or_contaminate_the_helper_protocol::clock"
-
-[[findings]]
-id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::browser_opener_cannot_hold_or_contaminate_the_helper_protocol::process"
-
-[[findings]]
-id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::browser_stdio_child::process"
-
-[[findings]]
 id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_connect.rs::tests::new::clock"
 
 [[findings]]
 id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_sync.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-body-ingest::core/crates/solstone-core-body-ingest/src/oura_sync.rs::tests::waiting_save_reads_tokens_only_after_acquiring_the_shared_lock::scheduling"
 
 [[findings]]
 id = "solstone-core-body-rebuild::core/crates/solstone-core-body-rebuild/src/lib.rs::tests::new::clock"
@@ -49,46 +34,7 @@ id = "solstone-core-brain::core/crates/solstone-core-brain/src/inspect.rs::tests
 id = "solstone-core-brain::core/crates/solstone-core-brain/src/runtime_health.rs::tests::new::clock"
 
 [[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::begin_pause_command::process"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::begin_pause_helper::clock"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::crash_after_begin_keeps_checking_record_and_kernel_releases_lease::scheduling"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::helper::process"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::key_generation_race_keeps_one_key::scheduling"
-
-[[findings]]
 id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_lock_pause_command::process"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_lock_pause_helper::clock"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_writes_serialize_behind_a_real_process_lock::clock"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::record_writes_serialize_behind_a_real_process_lock::scheduling"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::refresh_contention_returns_no_permit_while_renewal_returns_busy::scheduling"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::renewal_pause_command::process"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::renewal_pause_helper::clock"
-
-[[findings]]
-id = "solstone-core-brain::core/crates/solstone-core-brain/src/writer.rs::tests::wait_for_file::clock"
 
 [[findings]]
 id = "solstone-core-callosum::core/crates/solstone-core-callosum/src/wire/tests.rs::decode_fragmented::scheduling"
@@ -713,30 +659,6 @@ id = "solstone-core-indexer::core/crates/solstone-core-indexer/src/stream.rs::te
 
 [[findings]]
 id = "solstone-core-ingest::core/crates/solstone-core-ingest/src/router.rs::tests::shared_connection_limit_rejects_oversized_declared_body::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/encode.rs::tests::run_stderr_child::clock"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/encode.rs::tests::run_stderr_child::process"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/encode.rs::tests::run_stderr_child::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::acquisition_faults_are_thread_local::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::descendant_stat_to_open_swaps_are_bounded_and_changed::clock"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::descendant_stat_to_open_swaps_are_bounded_and_changed::process"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::descendant_stat_to_open_swaps_are_bounded_and_changed::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/source.rs::tests::replacement_barrier::scheduling"
 
 [[findings]]
 id = "solstone-core-journal-archive::core/crates/solstone-core-journal-archive/src/target.rs::tests::new::clock"

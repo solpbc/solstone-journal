@@ -1885,6 +1885,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-brain::brain_writer_component"
+package = "solstone-core-brain"
+target = "brain_writer_component"
+set = "component"
+areas = ["cognition"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-brain-cli::inspect"
 package = "solstone-core-brain-cli"
 target = "inspect"
@@ -2439,6 +2452,19 @@ timeout = "slow"
 serial_group = "local-services"
 default_full = true
 required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-archive::archive_fault_boundaries"
+package = "solstone-core-journal-archive"
+target = "archive_fault_boundaries"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]

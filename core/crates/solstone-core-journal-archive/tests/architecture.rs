@@ -13,6 +13,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("publish", include_str!("../src/publish.rs")),
     ("source", include_str!("../src/source.rs")),
     ("target", include_str!("../src/target.rs")),
+    ("test_hooks", include_str!("../src/test_hooks.rs")),
     ("writer", include_str!("../src/writer.rs")),
 ];
 const LIB: &str = include_str!("../src/lib.rs");

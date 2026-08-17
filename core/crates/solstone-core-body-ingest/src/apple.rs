@@ -20,8 +20,8 @@ use quick_xml::events::{BytesStart, Event};
 use serde_json::{Map, Value};
 use solstone_core_body_source::{BodyRawRetention, BodySourceFamily};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, LockOptions, StagedDirOptions, create_directory_with_mode, hold_lock,
-    publish_staged_dir, remove_dir_all, write_reader_exclusive,
+    AtomicWriteOptions, FileLock, LockOptions, StagedDirOptions, create_directory_with_mode,
+    hold_lock, publish_staged_dir, remove_dir_all, write_reader_exclusive,
 };
 
 use crate::approval::{apple_approval, pin_journal_target};
@@ -195,14 +195,7 @@ fn save_apple_before_lock(
     create_directory_with_mode(&imports, 0o700)
         .map_err(|_| BodyIngestError::new(BodyIngestErrorKind::Publication, "imports_directory"))?;
     before_lock();
-    let _lock = hold_lock(
-        imports.join("apple-body-ingest"),
-        LockOptions {
-            mode: Some(0o600),
-            ..LockOptions::default()
-        },
-    )
-    .map_err(|_| BodyIngestError::new(BodyIngestErrorKind::Publication, "apple_lock"))?;
+    let _lock = hold_apple_ingest_lock(journal)?;
     let retention = apple_approval(journal, options.confirm_body_save)?;
     clean_stale_snapshots(journal)?;
     let window = Window::new(options.date_from.as_deref(), options.date_to.as_deref())?;
@@ -223,6 +216,20 @@ fn save_apple_before_lock(
         raw_assets,
         options.force,
     )
+}
+
+/// Exclusive flock on the Apple ingest sidecar. Hidden so ingest tests contend
+/// on the same path and mode as production.
+#[doc(hidden)]
+pub fn hold_apple_ingest_lock(journal: &Path) -> Result<FileLock, BodyIngestError> {
+    hold_lock(
+        journal.join("imports/apple-body-ingest"),
+        LockOptions {
+            mode: Some(0o600),
+            ..LockOptions::default()
+        },
+    )
+    .map_err(|_| BodyIngestError::new(BodyIngestErrorKind::Publication, "apple_lock"))
 }
 
 fn clean_stale_snapshots(journal: &Path) -> Result<(), BodyIngestError> {
@@ -1461,47 +1468,24 @@ mod tests {
     }
 
     #[test]
-    fn waiting_save_rechecks_retention_after_acquiring_the_lock() {
-        use std::sync::mpsc;
-
+    fn save_rechecks_retention_after_the_lock_boundary() {
         let temporary = TestDir::new();
         let journal = temporary.0.join("journal");
         fs::create_dir(&journal).expect("create journal");
         write_test_approval(&journal, "retain_complete");
-        let held = hold_lock(
-            journal.join("imports/apple-body-ingest"),
-            LockOptions {
-                mode: Some(0o600),
-                ..LockOptions::default()
-            },
-        )
-        .expect("hold Apple ingest lock");
         let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../..")
             .join("tests/fixtures/importers/health/apple_health_synthetic");
-        let thread_journal = journal.clone();
-        let (ready_tx, ready_rx) = mpsc::channel();
-        let waiter = std::thread::spawn(move || {
-            save_apple_before_lock(
-                &source,
-                &thread_journal,
-                &AppleImportOptions {
-                    confirm_body_save: true,
-                    ..AppleImportOptions::default()
-                },
-                &mut || ready_tx.send(()).expect("signal lock wait"),
-            )
-        });
-        ready_rx
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .expect("save reaches lock boundary");
-        write_test_approval(&journal, "discard");
-        drop(held);
-
-        let report = waiter
-            .join()
-            .expect("join waiting save")
-            .expect("waiting save succeeds");
+        let report = save_apple_before_lock(
+            &source,
+            &journal,
+            &AppleImportOptions {
+                confirm_body_save: true,
+                ..AppleImportOptions::default()
+            },
+            &mut || write_test_approval(&journal, "discard"),
+        )
+        .expect("save succeeds");
         let bundle = journal
             .join("imports")
             .join(report.bundle_id().expect("published bundle"));
