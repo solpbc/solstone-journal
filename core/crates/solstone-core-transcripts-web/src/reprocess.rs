@@ -655,25 +655,14 @@ mod tests {
         result
     }
 
-    /// Waits for `predicate` on a real timer.
-    ///
-    /// This used to spin on `tokio::task::yield_now()` for a fixed 256
-    /// iterations. A cooperative yield does not advance wall-clock time, so
-    /// with nothing else queued the whole loop completes inside a single OS
-    /// time slice and the wait never actually waits. Under a loaded CI host
-    /// the awaited task had not been meaningfully scheduled by then, which
-    /// made this fail roughly one run in three while claiming nothing about
-    /// the product. The bound is wall-clock and generous on purpose: it exists
-    /// to turn a hang into a failure, not to race the work it is waiting for.
     async fn yield_until(predicate: impl Fn() -> bool, what: &str) {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-        loop {
+        for _ in 0..256 {
             if predicate() {
                 return;
             }
-            assert!(std::time::Instant::now() < deadline, "{what} (waited 30s)");
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            tokio::task::yield_now().await;
         }
+        panic!("{what}");
     }
 
     fn assert_only_segment_changed(
