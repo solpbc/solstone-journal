@@ -26,7 +26,9 @@ use solstone_core_spp_attest::{
     tpm_quote::{verify_quote, TpmQuoteInput},
 };
 
-const CASES: [&str; 16] = [
+// Case names from the committed tests/fixtures/spp_attest corpus, recorded
+// against native_verdict on 2026-08-16.
+const CASES: &[&str] = &[
     "snp_report_parse",
     "cpu_leg_positive",
     "tlv_decode_positive",
@@ -58,7 +60,7 @@ impl TempFixture {
             .expect("time is available")
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "solstone-spp-attest-differential-{case}-{}-{stamp}",
+            "solstone-spp-attest-oracles-{case}-{}-{stamp}",
             std::process::id()
         ));
         copy_tree(source, &path);
@@ -237,7 +239,7 @@ fn rejected(kind: &str, reason: Option<&str>) -> Value {
     Value::Object(verdict)
 }
 
-fn rust_verdict(kind: &str, root: &Path) -> Value {
+fn native_verdict(kind: &str, root: &Path) -> Value {
     match kind {
         "snp_report_parse" | "snp_report_truncated" => {
             match SnpReport::parse(&fs::read(root.join("report.bin")).expect("report")) {
@@ -351,27 +353,100 @@ fn rust_verdict(kind: &str, root: &Path) -> Value {
                 }
             }
         }
-        _ => panic!("unknown differential case: {kind}"),
+        _ => panic!("unknown case: {kind}"),
     }
 }
 
-fn expected_status(kind: &str) -> &'static str {
+// comparable()-shaped verdicts recorded from native_verdict on 2026-08-16.
+fn expected_verdict(kind: &str) -> Value {
     match kind {
-        "snp_report_parse"
-        | "cpu_leg_positive"
-        | "tlv_decode_positive"
-        | "binding_hash_positive"
-        | "tpm_quote_positive"
-        | "gpu_positive" => "accepted",
-        _ => "rejected",
-    }
-}
-
-fn expected_reason(kind: &str) -> Option<&'static str> {
-    match kind {
-        "gpu_neg_a" | "gpu_neg_b" | "gpu_neg_c" => Some("gpu_nonce_mismatch"),
-        "gpu_unknown_result_code" => Some("gpu_appraisal_failed"),
-        _ => None,
+        "snp_report_parse" => json!({
+            "case": "snp_report_parse",
+            "status": "accepted",
+            "report_version": 5,
+            "cpuid": [25, 17, 1],
+        }),
+        "cpu_leg_positive" => json!({
+            "case": "cpu_leg_positive",
+            "status": "accepted",
+            "steps": [
+                "hcla",
+                "runtime-binding",
+                "amd-chain",
+                "amd-report-signature",
+                "snp-policy",
+                "ak-binding",
+                "quote",
+                "pcr-policy",
+            ],
+        }),
+        "tlv_decode_positive" => json!({
+            "case": "tlv_decode_positive",
+            "status": "accepted",
+        }),
+        "binding_hash_positive" => json!({
+            "case": "binding_hash_positive",
+            "status": "accepted",
+            "digest": "268901922d7b8444139f3d3e3edfcc3dd860491e313b243d94fb97ba5b312ea2",
+        }),
+        "tpm_quote_positive" => json!({
+            "case": "tpm_quote_positive",
+            "status": "accepted",
+        }),
+        "gpu_positive" => json!({
+            "case": "gpu_positive",
+            "status": "accepted",
+            "driver_version": "595.71.05",
+            "vbios_version": "96.00.88.00.11",
+            "hwmodel": "GH100 A01 GSP BROM",
+            "arch": "HOPPER",
+            "envelope_gpu_uuid": "GPU-256cc88f-e93b-9396-b581-274543ea3235",
+        }),
+        "gpu_neg_a" => json!({
+            "case": "gpu_neg_a",
+            "status": "rejected",
+            "reason": "gpu_nonce_mismatch",
+        }),
+        "gpu_neg_b" => json!({
+            "case": "gpu_neg_b",
+            "status": "rejected",
+            "reason": "gpu_nonce_mismatch",
+        }),
+        "gpu_neg_c" => json!({
+            "case": "gpu_neg_c",
+            "status": "rejected",
+            "reason": "gpu_nonce_mismatch",
+        }),
+        "snp_signature_bit_flip" => json!({
+            "case": "snp_signature_bit_flip",
+            "status": "rejected",
+        }),
+        "tpm_signature_bit_flip" => json!({
+            "case": "tpm_signature_bit_flip",
+            "status": "rejected",
+        }),
+        "snp_report_truncated" => json!({
+            "case": "snp_report_truncated",
+            "status": "rejected",
+        }),
+        "tlv_envelope_truncated" => json!({
+            "case": "tlv_envelope_truncated",
+            "status": "rejected",
+        }),
+        "tpm_quote_truncated" => json!({
+            "case": "tpm_quote_truncated",
+            "status": "rejected",
+        }),
+        "envelope_nonce_mismatch" => json!({
+            "case": "envelope_nonce_mismatch",
+            "status": "rejected",
+        }),
+        "gpu_unknown_result_code" => json!({
+            "case": "gpu_unknown_result_code",
+            "status": "rejected",
+            "reason": "gpu_appraisal_failed",
+        }),
+        _ => panic!("unknown case: {kind}"),
     }
 }
 
@@ -385,9 +460,56 @@ fn hex_lower(bytes: &[u8]) -> String {
     result
 }
 
+fn assert_recorded_fields_match_fixtures() {
+    let root = fixture_root();
+    let report = SnpReport::parse(&fs::read(root.join("report.bin")).expect("report.bin"))
+        .expect("SNP fixture parses");
+    let recorded = expected_verdict("snp_report_parse");
+    assert_eq!(recorded["report_version"], json!(report.version));
+    assert_eq!(
+        recorded["cpuid"],
+        json!([report.cpuid_family, report.cpuid_model, report.cpuid_step])
+    );
+
+    let recorded_binding = expected_verdict("binding_hash_positive");
+    let digest = recorded_binding["digest"]
+        .as_str()
+        .expect("recorded digest");
+    assert_eq!(digest.len(), 64, "binding digest must be 64 hex chars");
+    assert!(
+        digest.chars().all(|ch| ch.is_ascii_hexdigit()),
+        "binding digest must be hex: {digest}"
+    );
+
+    let envelope =
+        decode_gpu_envelope(&fs::read(root.join("gpu-envelope.tlv")).expect("envelope fixture"))
+            .expect("GPU envelope fixture decodes");
+    let recorded_gpu = expected_verdict("gpu_positive");
+    assert_eq!(
+        recorded_gpu["envelope_gpu_uuid"],
+        json!(std::str::from_utf8(envelope.field(6).expect("uuid field")).expect("uuid utf-8"))
+    );
+    assert_eq!(
+        recorded_gpu["arch"],
+        json!(std::str::from_utf8(envelope.field(7).expect("arch field"))
+            .expect("arch utf-8")
+            .to_uppercase())
+    );
+    let stdout =
+        fs::read_to_string(root.join("nvattest/positive.stdout")).expect("positive GPU stdout");
+    for field in ["driver_version", "vbios_version", "hwmodel"] {
+        let value = recorded_gpu[field].as_str().expect("recorded GPU field");
+        assert!(
+            stdout.contains(value),
+            "recorded {field}={value} is not in the nvattest fixture"
+        );
+    }
+}
+
 #[test]
 fn spp_attest_fixture_corpus_matches_the_accept_reject_table() {
     assert_eq!(CASES.len(), 16, "the SPP attestation corpus lost a case");
+    assert_recorded_fields_match_fixtures();
     let mut executed = 0;
     for kind in CASES {
         let temporary = mutation_case(kind).then(|| {
@@ -398,19 +520,12 @@ fn spp_attest_fixture_corpus_matches_the_accept_reject_table() {
         let root = temporary
             .as_ref()
             .map_or_else(fixture_root, |temporary| temporary.path.clone());
-        let rust = rust_verdict(kind, &root);
+        let native = native_verdict(kind, &root);
         assert_eq!(
-            rust.get("status").and_then(Value::as_str),
-            Some(expected_status(kind)),
-            "case={kind} verdict={rust}"
+            native,
+            expected_verdict(kind),
+            "case={kind} verdict={native}"
         );
-        if let Some(expected_reason) = expected_reason(kind) {
-            assert_eq!(
-                rust.get("reason").and_then(Value::as_str),
-                Some(expected_reason),
-                "case={kind} verdict={rust}"
-            );
-        }
         executed += 1;
     }
     assert_eq!(executed, CASES.len(), "every corpus case must execute");

@@ -142,7 +142,30 @@ fn ready_provider_prints_status_without_a_fetch() {
     assert!(stderr.contains(PARAKEET_DOWNLOAD_DISCLOSURE), "{stderr}");
     assert!(stderr.contains("parakeet already installed"), "{stderr}");
     let status: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(status["provider"], "parakeet");
+    // Recorded from install_provider.rs::render_status of status::idle_status
+    // on 2026-08-16. The ready arm reads on-disk status; this staged journal
+    // has none, so every field is the idle default. No field is host-dependent.
+    assert_eq!(
+        status,
+        json!({
+            "schema_version": 1,
+            "provider": "parakeet",
+            "revision": 0,
+            "install_state": "idle",
+            "attempt_id": null,
+            "target_fingerprint_json": null,
+            "target_fingerprint_sha256": null,
+            "started_at": null,
+            "last_transition_at": null,
+            "last_progress_at": null,
+            "completed_at": null,
+            "progress_bytes_received": null,
+            "progress_bytes_total": null,
+            "install_error": null,
+            "error_code": null,
+            "owner": null,
+        })
+    );
 }
 
 #[test]

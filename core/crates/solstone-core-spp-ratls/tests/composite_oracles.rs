@@ -23,7 +23,9 @@ use solstone_core_spp_attest::{
 };
 use solstone_core_spp_ratls::{verify_composite_with_gpu_appraiser, CompositeVerificationInput};
 
-const CASES: [&str; 5] = [
+// Case names from the committed tests/fixtures/spp_attest corpus, recorded
+// against native_verdict on 2026-08-16.
+const CASES: &[&str] = &[
     "composite_positive",
     "composite_gpu_reject",
     "composite_cpu_reject_tampered_binding",
@@ -42,7 +44,7 @@ impl TempFixture {
             .expect("time is available")
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "solstone-composite-differential-{case}-{}-{stamp}",
+            "solstone-composite-oracles-{case}-{}-{stamp}",
             std::process::id()
         ));
         copy_tree(source, &path);
@@ -155,7 +157,7 @@ fn fixture_root() -> PathBuf {
     repository_root().join("tests/fixtures/spp_attest")
 }
 
-fn rust_verdict(kind: &str, root: &Path) -> Value {
+fn native_verdict(kind: &str, root: &Path) -> Value {
     let inputs = FixtureInputs::load(root);
     let certificates = [&inputs.ark[..], &inputs.ask[..], &inputs.vcek[..]];
     let policy = (kind == "composite_pin_mismatch").then(|| Policy {
@@ -247,28 +249,44 @@ fn nonce(root: &Path) -> [u8; 32] {
         .expect("32-byte nonce")
 }
 
-fn expected_status(kind: &str) -> &'static str {
+// Verdict table recorded from native_verdict on 2026-08-16. Substrate is
+// "AMD SEV-SNP + NVIDIA " plus the envelope/claim hwmodel.
+fn expected_verdict(kind: &str) -> Value {
     match kind {
-        "composite_positive" => "accepted",
-        _ => "rejected",
+        "composite_positive" => json!({
+            "case": "composite_positive",
+            "status": "accepted",
+            "verified": true,
+            "legs": ["cpu", "gpu"],
+            "substrate": "AMD SEV-SNP + NVIDIA GH100 A01 GSP BROM",
+            "gpu_called": true,
+        }),
+        "composite_gpu_reject" => json!({
+            "case": "composite_gpu_reject",
+            "status": "rejected",
+            "reason": "gpu_nonce_mismatch",
+            "gpu_called": true,
+        }),
+        "composite_cpu_reject_tampered_binding" => json!({
+            "case": "composite_cpu_reject_tampered_binding",
+            "status": "rejected",
+            "reason": "cpu_verification_failed",
+            "gpu_called": false,
+        }),
+        "composite_pin_mismatch" => json!({
+            "case": "composite_pin_mismatch",
+            "status": "rejected",
+            "reason": "pcr_pin_mismatch",
+            "gpu_called": false,
+        }),
+        "composite_gpu_prerequisite_reject" => json!({
+            "case": "composite_gpu_prerequisite_reject",
+            "status": "rejected",
+            "reason": "nvattest_unavailable",
+            "gpu_called": true,
+        }),
+        _ => panic!("unknown case: {kind}"),
     }
-}
-
-fn expected_reason(kind: &str) -> Option<&'static str> {
-    match kind {
-        "composite_gpu_reject" => Some("gpu_nonce_mismatch"),
-        "composite_cpu_reject_tampered_binding" => Some("cpu_verification_failed"),
-        "composite_pin_mismatch" => Some("pcr_pin_mismatch"),
-        "composite_gpu_prerequisite_reject" => Some("nvattest_unavailable"),
-        _ => None,
-    }
-}
-
-fn expected_gpu_called(kind: &str) -> bool {
-    matches!(
-        kind,
-        "composite_positive" | "composite_gpu_reject" | "composite_gpu_prerequisite_reject"
-    )
 }
 
 #[test]
@@ -277,27 +295,11 @@ fn composite_fixture_corpus_matches_the_accept_reject_table() {
     for case in CASES {
         let fixture = TempFixture::copy_from(&fixture_root(), case);
         mutate_fixture(case, &fixture.path);
-        let rust = rust_verdict(case, &fixture.path);
+        let native = native_verdict(case, &fixture.path);
         assert_eq!(
-            rust.get("status").and_then(Value::as_str),
-            Some(expected_status(case)),
-            "case={case} verdict={rust}"
+            native,
+            expected_verdict(case),
+            "case={case} verdict={native}"
         );
-        if let Some(reason) = expected_reason(case) {
-            assert_eq!(
-                rust.get("reason").and_then(Value::as_str),
-                Some(reason),
-                "case={case} verdict={rust}"
-            );
-        }
-        assert_eq!(
-            rust.get("gpu_called").and_then(Value::as_bool),
-            Some(expected_gpu_called(case)),
-            "case={case} verdict={rust}"
-        );
-        if expected_status(case) == "accepted" {
-            assert_eq!(rust.get("verified").and_then(Value::as_bool), Some(true));
-            assert_eq!(rust.get("legs"), Some(&json!(["cpu", "gpu"])));
-        }
     }
 }

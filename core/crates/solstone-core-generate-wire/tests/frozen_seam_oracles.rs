@@ -262,11 +262,9 @@ fn responsiveness_matches_the_negation_head_table() {
         ),
         (r#"{"at":"12:30"}"#, false, None, true),
     ];
-    assert!(
-        cases.len() >= 18,
-        "the responsiveness corpus shrank to {} cases",
-        cases.len()
-    );
+    // Frozen port of exactly 18 inputs; == not >= because this table cannot
+    // grow the way the overflow/schema fixtures can.
+    assert_eq!(cases.len(), 18);
     for (output, non_responsive, signal, empty_corpus) in cases {
         let verdict = classify_output_responsiveness(output);
         assert_eq!(verdict.non_responsive, *non_responsive, "{output:?}");
