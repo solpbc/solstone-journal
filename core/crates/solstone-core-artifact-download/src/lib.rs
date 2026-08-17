@@ -100,6 +100,18 @@ pub fn verify_sha256_bytes(bytes: &[u8], expected: &str) -> Result<(), ByteDownl
     }
 }
 
+trait Backoff {
+    fn back_off(&self, duration: Duration);
+}
+
+struct ThreadBackoff;
+
+impl Backoff for ThreadBackoff {
+    fn back_off(&self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
+}
+
 /// Download and verify a pinned in-memory archive.
 ///
 /// HTTP status responses fail immediately. Transport and timeout failures use
@@ -110,6 +122,24 @@ pub fn download_verified_bytes(
     expected_sha256: &str,
     attempts: u8,
     timeout: Duration,
+) -> Result<Vec<u8>, ByteDownloadError> {
+    download_verified_bytes_with(
+        downloader,
+        url,
+        expected_sha256,
+        attempts,
+        timeout,
+        &ThreadBackoff,
+    )
+}
+
+pub(crate) fn download_verified_bytes_with(
+    downloader: &dyn ByteDownload,
+    url: &str,
+    expected_sha256: &str,
+    attempts: u8,
+    timeout: Duration,
+    backoff: &dyn Backoff,
 ) -> Result<Vec<u8>, ByteDownloadError> {
     if !url.starts_with("https://") {
         return Err(ByteDownloadError::InsecureUrl);
@@ -126,7 +156,7 @@ pub fn download_verified_bytes(
             Err(error) => {
                 last = error;
                 if attempt + 1 < attempts {
-                    std::thread::sleep(Duration::from_millis(250 * u64::from(attempt + 1)));
+                    backoff.back_off(Duration::from_millis(250 * u64::from(attempt + 1)));
                 }
             }
         }
@@ -493,17 +523,27 @@ pub fn clear_macos_quarantine(path: &Path) -> Result<(), ArchiveError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
     use std::io::Write;
-    use std::sync::Mutex;
 
     struct ScriptedDownload {
-        responses: Mutex<Vec<Result<Vec<u8>, ByteDownloadError>>>,
-        calls: Mutex<u8>,
+        responses: RefCell<Vec<Result<Vec<u8>, ByteDownloadError>>>,
+        calls: Cell<u8>,
     }
     impl ByteDownload for ScriptedDownload {
         fn fetch(&self, _: &str, _: Duration) -> Result<Vec<u8>, ByteDownloadError> {
-            *self.calls.lock().unwrap() += 1;
-            self.responses.lock().unwrap().remove(0)
+            self.calls.set(self.calls.get() + 1);
+            self.responses.borrow_mut().remove(0)
+        }
+    }
+
+    struct RecordingBackoff {
+        delays: RefCell<Vec<Duration>>,
+    }
+
+    impl Backoff for RecordingBackoff {
+        fn back_off(&self, duration: Duration) {
+            self.delays.borrow_mut().push(duration);
         }
     }
 
@@ -518,43 +558,6 @@ mod tests {
         ));
     }
 
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn clearing_quarantine_is_recursive_and_idempotent() {
-        let directory = tempfile::tempdir().unwrap();
-        let nested = directory.path().join("nested");
-        fs::create_dir(&nested).unwrap();
-        let asset = nested.join("asset");
-        File::create(&asset).unwrap();
-        let written = std::process::Command::new("xattr")
-            .args(["-w", "com.apple.quarantine", "0083;test"])
-            .arg(&asset)
-            .status()
-            .unwrap();
-        assert!(written.success());
-        assert!(
-            std::process::Command::new("xattr")
-                .args(["-p", "com.apple.quarantine"])
-                .arg(&asset)
-                .output()
-                .unwrap()
-                .status
-                .success()
-        );
-
-        clear_macos_quarantine(directory.path()).unwrap();
-        assert!(
-            !std::process::Command::new("xattr")
-                .args(["-p", "com.apple.quarantine"])
-                .arg(&asset)
-                .output()
-                .unwrap()
-                .status
-                .success()
-        );
-        clear_macos_quarantine(directory.path()).unwrap();
-    }
-
     #[test]
     fn origin_url_joins_the_authoritative_key() {
         assert_eq!(
@@ -566,8 +569,8 @@ mod tests {
     #[test]
     fn byte_download_http_status_is_not_retried() {
         let download = ScriptedDownload {
-            responses: Mutex::new(vec![Err(ByteDownloadError::HttpStatus(404))]),
-            calls: Mutex::new(0),
+            responses: RefCell::new(vec![Err(ByteDownloadError::HttpStatus(404))]),
+            calls: Cell::new(0),
         };
         assert_eq!(
             download_verified_bytes(
@@ -579,7 +582,7 @@ mod tests {
             ),
             Err(ByteDownloadError::HttpStatus(404))
         );
-        assert_eq!(*download.calls.lock().unwrap(), 1);
+        assert_eq!(download.calls.get(), 1);
     }
 
     #[test]
@@ -590,24 +593,32 @@ mod tests {
             .map(|byte| format!("{byte:02x}"))
             .collect();
         let download = ScriptedDownload {
-            responses: Mutex::new(vec![
+            responses: RefCell::new(vec![
                 Err(ByteDownloadError::Transport),
                 Err(ByteDownloadError::Transport),
                 Ok(bytes.clone()),
             ]),
-            calls: Mutex::new(0),
+            calls: Cell::new(0),
+        };
+        let backoff = RecordingBackoff {
+            delays: RefCell::new(Vec::new()),
         };
         assert_eq!(
-            download_verified_bytes(
+            download_verified_bytes_with(
                 &download,
                 "https://example.invalid/asset",
                 &digest,
                 3,
                 Duration::ZERO,
+                &backoff,
             )
             .unwrap(),
             bytes
         );
-        assert_eq!(*download.calls.lock().unwrap(), 3);
+        assert_eq!(download.calls.get(), 3);
+        assert_eq!(
+            *backoff.delays.borrow(),
+            [Duration::from_millis(250), Duration::from_millis(500)]
+        );
     }
 }

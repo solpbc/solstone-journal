@@ -47,7 +47,41 @@ pub enum ConnectOutcome {
     Failed { reason: String },
 }
 
+pub(crate) trait ConnectTransport {
+    fn get(&self, base_url: &str, path: &str) -> Result<(u16, String), String>;
+}
+
+struct UreqConnectTransport;
+
+impl ConnectTransport for UreqConnectTransport {
+    fn get(&self, base_url: &str, path: &str) -> Result<(u16, String), String> {
+        let config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(Some(TIMEOUT))
+            .timeout_recv_response(Some(TIMEOUT))
+            .timeout_recv_body(Some(TIMEOUT))
+            .timeout_global(Some(TIMEOUT * 2))
+            .build();
+        let response = ureq::Agent::new_with_config(config)
+            .get(&format!("{base_url}{path}"))
+            .call()
+            .map_err(|error| error.to_string())?;
+        let status = response.status().as_u16();
+        let mut body = response.into_body();
+        body.read_to_string()
+            .map(|text| (status, text))
+            .map_err(|error| error.to_string())
+    }
+}
+
 pub fn connect(input: ConnectInput) -> ConnectOutcome {
+    connect_with(input, &UreqConnectTransport)
+}
+
+pub(crate) fn connect_with(
+    input: ConnectInput,
+    transport: &dyn ConnectTransport,
+) -> ConnectOutcome {
     if input.schema != INPUT_SCHEMA {
         return ConnectOutcome::Failed {
             reason: "unsupported connect input schema".into(),
@@ -66,7 +100,7 @@ pub fn connect(input: ConnectInput) -> ConnectOutcome {
         }
     };
     let base_url = format!("http://{}:{port}", input.bind_address);
-    let health = get(&base_url, "/health");
+    let health = transport.get(&base_url, "/health");
     let served_model_id = match health {
         Ok((200, text)) => match serde_json::from_str::<Value>(&text).ok() {
             Some(Value::Object(body)) => match body.get("loaded_model") {
@@ -92,7 +126,7 @@ pub fn connect(input: ConnectInput) -> ConnectOutcome {
         }
         Err(reason) => return ConnectOutcome::Failed { reason },
     };
-    let capacity = discover_capacity(&base_url, &health_dir, input.platform);
+    let capacity = discover_capacity(transport, &base_url, &health_dir, input.platform);
     ConnectOutcome::Ready {
         server: ConnectedServer {
             model_id: input.default_model_id,
@@ -106,31 +140,13 @@ pub fn connect(input: ConnectInput) -> ConnectOutcome {
     }
 }
 
-fn get(base_url: &str, path: &str) -> Result<(u16, String), String> {
-    let config = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .timeout_connect(Some(TIMEOUT))
-        .timeout_recv_response(Some(TIMEOUT))
-        .timeout_recv_body(Some(TIMEOUT))
-        .timeout_global(Some(TIMEOUT * 2))
-        .build();
-    let response = ureq::Agent::new_with_config(config)
-        .get(&format!("{base_url}{path}"))
-        .call()
-        .map_err(|error| error.to_string())?;
-    let status = response.status().as_u16();
-    let mut body = response.into_body();
-    body.read_to_string()
-        .map(|text| (status, text))
-        .map_err(|error| error.to_string())
-}
-
 fn discover_capacity(
+    transport: &dyn ConnectTransport,
     base_url: &str,
     health_dir: &std::path::Path,
     _platform: Platform,
 ) -> (u32, String) {
-    if let Ok((200, text)) = get(base_url, "/props")
+    if let Ok((200, text)) = transport.get(base_url, "/props")
         && let Some(slots) = total_slots(&text)
     {
         return (slots, "props".into());
@@ -180,81 +196,33 @@ fn truncate(text: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use std::net::TcpListener;
-    use std::path::{Path, PathBuf};
-    use std::thread;
-    use std::time::Instant;
+    use std::cell::RefCell;
+    use std::path::Path;
 
-    #[test]
-    fn slots_and_profiles_match_python_precedence_rules() {
-        assert_eq!(total_slots(r#"{"total_slots": 3}"#), Some(3));
-        assert_eq!(
-            slots_from_launched_tier(Some(FLOOR_CONTEXT_TOKENS)),
-            Some(FLOOR_PARALLEL_SLOTS)
-        );
-        assert_eq!(
-            slots_from_launched_tier(Some(CAPABLE_CONTEXT_TOKENS)),
-            Some(CAPABLE_PARALLEL_SLOTS)
-        );
-        assert_eq!(slots_from_launched_tier(None), None);
-        assert_eq!(UNKNOWN_SLOTS, 1);
-        assert_eq!(profile_for_slots(Platform::Darwin, 99), "apple");
-        assert_eq!(profile_for_slots(Platform::Linux, 2), "capable");
-        assert_eq!(profile_for_slots(Platform::Linux, 1), "floor");
-        assert_eq!(profile_for_slots(Platform::Linux, 3), "advertised");
-    }
-    #[test]
-    fn health_response_timeout_is_bounded() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let address = listener.local_addr().expect("address");
-        let thread = thread::spawn(move || {
-            let _ = listener.accept();
-            thread::sleep(Duration::from_secs(2));
-        });
-        let started = Instant::now();
-        assert!(get(&format!("http://{address}"), "/health").is_err());
-        assert!(started.elapsed() < Duration::from_secs(5));
-        thread.join().expect("join");
-    }
-    #[test]
-    fn context_is_unmultiplied_tier_value() {
-        let context = CAPABLE_CONTEXT_TOKENS;
-        let launched = context * slots_from_launched_tier(Some(context)).expect("capable slots");
-        assert_eq!(launched, context * 2);
+    struct ScriptedConnect {
+        responses: RefCell<Vec<Result<(u16, String), String>>>,
+        calls: RefCell<Vec<String>>,
     }
 
-    fn serve(responses: Vec<&'static str>) -> (u16, thread::JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let port = listener.local_addr().expect("address").port();
-        let handle = thread::spawn(move || {
-            for response in responses {
-                let (mut stream, _) = listener.accept().expect("accept");
-                stream.write_all(response.as_bytes()).expect("response");
-            }
-        });
-        (port, handle)
+    impl ConnectTransport for ScriptedConnect {
+        fn get(&self, _: &str, path: &str) -> Result<(u16, String), String> {
+            self.calls.borrow_mut().push(path.to_owned());
+            self.responses.borrow_mut().remove(0)
+        }
     }
 
-    fn journal(port: u16, context: Option<&str>) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("solstone-local-connect-{port}"));
-        let _ = std::fs::remove_dir_all(&root);
-        let health = root.join("health");
+    // Port is written only so connect_with's file parse succeeds. The scripted
+    // transport never opens a socket, so any parseable u16 is fine.
+    fn journal(port: Option<u16>, context: Option<&str>) -> tempfile::TempDir {
+        let root = tempfile::tempdir().expect("temp journal");
+        let health = root.path().join("health");
         std::fs::create_dir_all(&health).expect("health directory");
-        std::fs::write(health.join("local.port"), port.to_string()).expect("port");
+        if let Some(port) = port {
+            std::fs::write(health.join("local.port"), port.to_string()).expect("port");
+        }
         if let Some(context) = context {
             std::fs::write(health.join("local.ctx"), context).expect("context");
         }
-        root
-    }
-
-    fn journal_without_port() -> PathBuf {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let port = listener.local_addr().expect("address").port();
-        drop(listener);
-        let root = std::env::temp_dir().join(format!("solstone-local-connect-{port}"));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("health")).expect("health directory");
         root
     }
 
@@ -275,136 +243,134 @@ mod tests {
         }
     }
 
+    fn scripted(responses: Vec<Result<(u16, String), String>>) -> ScriptedConnect {
+        ScriptedConnect {
+            responses: RefCell::new(responses),
+            calls: RefCell::new(Vec::new()),
+        }
+    }
+
+    #[test]
+    fn slots_and_profiles_match_python_precedence_rules() {
+        assert_eq!(total_slots(r#"{"total_slots": 3}"#), Some(3));
+        assert_eq!(
+            slots_from_launched_tier(Some(FLOOR_CONTEXT_TOKENS)),
+            Some(FLOOR_PARALLEL_SLOTS)
+        );
+        assert_eq!(
+            slots_from_launched_tier(Some(CAPABLE_CONTEXT_TOKENS)),
+            Some(CAPABLE_PARALLEL_SLOTS)
+        );
+        assert_eq!(slots_from_launched_tier(None), None);
+        assert_eq!(UNKNOWN_SLOTS, 1);
+        assert_eq!(profile_for_slots(Platform::Darwin, 99), "apple");
+        assert_eq!(profile_for_slots(Platform::Linux, 2), "capable");
+        assert_eq!(profile_for_slots(Platform::Linux, 1), "floor");
+        assert_eq!(profile_for_slots(Platform::Linux, 3), "advertised");
+    }
+
+    #[test]
+    fn context_is_unmultiplied_tier_value() {
+        let context = CAPABLE_CONTEXT_TOKENS;
+        let launched = context * slots_from_launched_tier(Some(context)).expect("capable slots");
+        assert_eq!(launched, context * 2);
+    }
+
     #[test]
     fn connect_defaults_served_model_and_prefers_props_capacity() {
-        let (port, handle) = serve(vec![
-            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}",
-            "HTTP/1.1 200 OK\r\nContent-Length: 17\r\n\r\n{\"total_slots\":3}",
+        let transport = scripted(vec![
+            Ok((200, "{}".into())),
+            Ok((200, r#"{"total_slots":3}"#.into())),
         ]);
-        let root = journal(port, Some("32768"));
-        let server = ready(connect(input(&root)));
+        let root = journal(Some(1), Some("32768"));
+        let server = ready(connect_with(input(root.path()), &transport));
         assert_eq!(server.served_model_id, "default");
         assert_eq!(
             (server.parallel_slots, server.capacity_source.as_str()),
             (3, "props")
         );
-        handle.join().expect("server");
-        let _ = std::fs::remove_dir_all(root);
+        assert_eq!(*transport.calls.borrow(), ["/health", "/props"]);
     }
 
     #[test]
     fn connect_uses_served_model_and_context_capacity_fallback() {
-        let (port, handle) = serve(vec![
-            "HTTP/1.1 200 OK\r\nContent-Length: 25\r\n\r\n{\"loaded_model\":\"served\"}",
-            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}",
+        let transport = scripted(vec![
+            Ok((200, r#"{"loaded_model":"served"}"#.into())),
+            Ok((200, "{}".into())),
         ]);
-        let root = journal(port, Some("32768"));
-        let server = ready(connect(input(&root)));
+        let root = journal(Some(1), Some("32768"));
+        let server = ready(connect_with(input(root.path()), &transport));
         assert_eq!(server.served_model_id, "served");
         assert_eq!(
             (server.parallel_slots, server.capacity_source.as_str()),
             (2, "local_ctx")
         );
-        handle.join().expect("server");
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn connect_rejects_blank_served_model() {
-        let (port, handle) = serve(vec![
-            "HTTP/1.1 200 OK\r\nContent-Length: 19\r\n\r\n{\"loaded_model\":\"\"}",
-        ]);
-        let root = journal(port, None);
+        let transport = scripted(vec![Ok((200, r#"{"loaded_model":""}"#.into()))]);
+        let root = journal(Some(1), None);
         assert!(matches!(
-            connect(input(&root)),
+            connect_with(input(root.path()), &transport),
             ConnectOutcome::NotReady { .. }
         ));
-        handle.join().expect("server");
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn connect_rejects_non_string_served_model() {
-        let (port, handle) = serve(vec![
-            "HTTP/1.1 200 OK\r\nContent-Length: 18\r\n\r\n{\"loaded_model\":1}",
-        ]);
-        let root = journal(port, None);
+        let transport = scripted(vec![Ok((200, r#"{"loaded_model":1}"#.into()))]);
+        let root = journal(Some(1), None);
         assert!(matches!(
-            connect(input(&root)),
+            connect_with(input(root.path()), &transport),
             ConnectOutcome::NotReady { .. }
         ));
-        handle.join().expect("server");
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn connect_rejects_unsupported_schema_and_missing_port() {
+        let transport = scripted(vec![]);
         let mut invalid_schema = input(Path::new("/unused"));
         invalid_schema.schema = "unsupported".into();
         assert!(matches!(
-            connect(invalid_schema),
+            connect_with(invalid_schema, &transport),
             ConnectOutcome::Failed { ref reason } if reason == "unsupported connect input schema"
         ));
+        assert!(transport.calls.borrow().is_empty());
 
-        let root = journal_without_port();
+        let root = journal(None, None);
         assert!(matches!(
-            connect(input(&root)),
+            connect_with(input(root.path()), &transport),
             ConnectOutcome::NotReady { ref reason } if reason == "no local service port"
         ));
-        let _ = std::fs::remove_dir_all(root);
+        assert!(transport.calls.borrow().is_empty());
     }
 
     #[test]
     fn connect_reports_loading_and_unexpected_http_status() {
-        let (loading_port, loading_handle) = serve(vec![
-            "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 13\r\n\r\nloading model",
-        ]);
-        let loading_root = journal(loading_port, None);
+        let loading = scripted(vec![Ok((503, "loading model".into()))]);
+        let loading_root = journal(Some(1), None);
         assert!(matches!(
-            connect(input(&loading_root)),
+            connect_with(input(loading_root.path()), &loading),
             ConnectOutcome::Loading { ref reason } if reason == "loading model"
         ));
-        loading_handle.join().expect("loading server");
-        let _ = std::fs::remove_dir_all(loading_root);
 
-        let (failed_port, failed_handle) = serve(vec![
-            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n",
-        ]);
-        let failed_root = journal(failed_port, None);
+        let failed = scripted(vec![Ok((500, String::new()))]);
+        let failed_root = journal(Some(1), None);
         assert!(matches!(
-            connect(input(&failed_root)),
+            connect_with(input(failed_root.path()), &failed),
             ConnectOutcome::Failed { ref reason } if reason.starts_with("HTTP 500:")
         ));
-        failed_handle.join().expect("failed server");
-        let _ = std::fs::remove_dir_all(failed_root);
-    }
-
-    #[test]
-    fn connect_reports_transport_failure() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let port = listener.local_addr().expect("address").port();
-        drop(listener);
-        let root = journal(port, None);
-        assert!(matches!(
-            connect(input(&root)),
-            ConnectOutcome::Failed { .. }
-        ));
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn connect_uses_default_capacity_when_props_and_context_are_unavailable() {
-        let (port, handle) = serve(vec![
-            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}",
-            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n",
-        ]);
-        let root = journal(port, None);
-        let server = ready(connect(input(&root)));
+        let transport = scripted(vec![Ok((200, "{}".into())), Ok((500, String::new()))]);
+        let root = journal(Some(1), None);
+        let server = ready(connect_with(input(root.path()), &transport));
         assert_eq!(
             (server.parallel_slots, server.capacity_source.as_str()),
             (UNKNOWN_SLOTS, "default")
         );
-        handle.join().expect("server");
-        let _ = std::fs::remove_dir_all(root);
     }
 }

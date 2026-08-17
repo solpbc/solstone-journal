@@ -45,70 +45,33 @@ impl LoopbackListeners {
 mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    use super::bind_loopback;
     use crate::envelope::probe_router;
     use crate::identity::{AccessBasis, Carrier, LinkedDeviceDid};
+    use crate::serve::{mux_builder, serve_connection};
 
     const VALID_DID: &str =
         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    use crate::serve::{mux_builder, serve_connection, tcp_builder};
-
-    #[tokio::test]
-    async fn listeners_bind_only_exact_loopback_addresses() {
-        let listeners = bind_loopback(0).await.unwrap();
-
-        assert_eq!(
-            listeners.ipv4_addr().unwrap().ip(),
-            std::net::Ipv4Addr::LOCALHOST
-        );
-        assert_eq!(
-            listeners.ipv6_addr().unwrap().ip(),
-            std::net::Ipv6Addr::LOCALHOST
-        );
-    }
 
     async fn duplex_probe(identity: AccessBasis) -> String {
         let (server, mut client) = tokio::io::duplex(8192);
-        let task = tokio::spawn(async move {
-            let builder = mux_builder();
-            serve_connection(server, probe_router(), identity, &builder)
+        let builder = mux_builder();
+        let serve = serve_connection(server, probe_router(), identity, &builder);
+        let exchange = async {
+            client
+                .write_all(b"GET /missing HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
                 .await
                 .unwrap();
-        });
-
-        client
-            .write_all(b"GET /missing HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-            .await
-            .unwrap();
-        let mut bytes = Vec::new();
-        client.read_to_end(&mut bytes).await.unwrap();
-        task.await.unwrap();
-
-        String::from_utf8(bytes).unwrap()
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).await.unwrap();
+            String::from_utf8(bytes).unwrap()
+        };
+        let (served, body) = tokio::join!(serve, exchange);
+        served.unwrap();
+        body
     }
 
     #[tokio::test]
     async fn loopback_and_supplied_identities_round_trip() {
-        let listeners = bind_loopback(0).await.unwrap();
-        let address = listeners.ipv4_addr().unwrap();
-        let task = tokio::spawn(async move {
-            let (stream, identity) = listeners.accept().await.unwrap();
-            let builder = tcp_builder();
-            serve_connection(stream, probe_router(), identity, &builder)
-                .await
-                .unwrap();
-        });
-
-        let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
-        client
-            .write_all(b"GET /missing HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-            .await
-            .unwrap();
-        let mut bytes = Vec::new();
-        client.read_to_end(&mut bytes).await.unwrap();
-        task.await.unwrap();
-        assert!(String::from_utf8(bytes).unwrap().contains("Localhost"));
-
         let direct = duplex_probe(AccessBasis::LinkedDevice {
             carrier: Carrier::Direct,
             did: LinkedDeviceDid::try_from(VALID_DID).unwrap(),

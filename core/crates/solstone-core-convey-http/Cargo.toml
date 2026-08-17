@@ -9,6 +9,10 @@ publish = false
 [lints]
 workspace = true
 
+[[test]]
+name = "convey_http_loopback"
+path = "tests/convey_http_loopback.rs"
+
 [dependencies]
 axum.workspace = true
 hyper.workspace = true

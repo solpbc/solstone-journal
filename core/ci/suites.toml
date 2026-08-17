@@ -1703,6 +1703,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-artifact-download::artifact_download_native"
+package = "solstone-core-artifact-download"
+target = "artifact_download_native"
+set = "component"
+areas = ["transfer"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core::wrapper_write_lock_component"
 package = "solstone-core"
 target = "wrapper_write_lock_component"
@@ -1981,6 +1994,19 @@ package = "solstone-core-check"
 target = "check_corpus"
 set = "component"
 areas = ["health"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-convey-http::convey_http_loopback"
+package = "solstone-core-convey-http"
+target = "convey_http_loopback"
+set = "component"
+areas = ["services"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
@@ -2807,6 +2833,19 @@ required_features = ["differential"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-local::local_runtime_transport"
+package = "solstone-core-local"
+target = "local_runtime_transport"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-local::vulkan_differential"
 package = "solstone-core-local"
 target = "vulkan_differential"
@@ -3022,6 +3061,19 @@ package = "solstone-core-retention-cli"
 target = "verbs"
 set = "component"
 areas = ["retention"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-segment::segment_supervisor_loopback"
+package = "solstone-core-segment"
+target = "segment_supervisor_loopback"
+set = "component"
+areas = ["services"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"

@@ -75,11 +75,6 @@ pub fn read_convey_port(journal: &Path) -> Option<u16> {
 #[cfg(test)]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
-    use std::fs;
-    use std::net::TcpListener;
-
-    use crate::test_support::TempDir;
-
     use super::*;
 
     fn empty_env(_: &str) -> Option<String> {
@@ -95,20 +90,6 @@ mod tests {
             )
             .is_ok()
         );
-    }
-
-    #[test]
-    fn recorded_convey_listener_marks_solstone_up() {
-        let temporary = TempDir::new();
-        let health = temporary.path().join("health");
-        fs::create_dir(&health).unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        fs::write(
-            health.join("convey.port"),
-            listener.local_addr().unwrap().port().to_string(),
-        )
-        .unwrap();
-        assert!(is_solstone_up(temporary.path()));
     }
 
     #[test]

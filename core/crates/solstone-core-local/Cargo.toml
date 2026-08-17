@@ -39,6 +39,10 @@ log.workspace = true
 tempfile = "3.24.0"
 
 [[test]]
+name = "local_runtime_transport"
+path = "tests/local_runtime_transport.rs"
+
+[[test]]
 name = "admission_cross_process"
 path = "tests/admission_cross_process.rs"
 required-features = ["differential"]

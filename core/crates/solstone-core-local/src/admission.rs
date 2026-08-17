@@ -262,7 +262,6 @@ fn elapsed_ms(started: Instant) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
@@ -352,53 +351,6 @@ mod tests {
             Err(AdmissionError::Timeout)
         ));
         drop(held);
-        cleanup(&root);
-    }
-
-    #[test]
-    fn child_holds_slot_until_killed() {
-        if std::env::var_os("SOLSTONE_ADMISSION_HOLDER").is_none() {
-            return;
-        }
-        let root = PathBuf::from(std::env::var("SOLSTONE_ADMISSION_ROOT").expect("child root"));
-        let _permit = acquire_local_slot(&root, 1, Some(Duration::from_secs(2)), false)
-            .expect("child permit");
-        fs::write(
-            std::env::var("SOLSTONE_ADMISSION_READY").expect("child ready path"),
-            b"ready",
-        )
-        .expect("signal child readiness");
-        thread::sleep(Duration::from_secs(30));
-    }
-
-    #[test]
-    fn killed_holder_releases_slot_without_repair() {
-        let root = root();
-        let ready = root.join("holder.ready");
-        let mut child = Command::new(std::env::current_exe().expect("test executable"))
-            .args([
-                "--exact",
-                "admission::tests::child_holds_slot_until_killed",
-                "--nocapture",
-            ])
-            .env("SOLSTONE_ADMISSION_HOLDER", "1")
-            .env("SOLSTONE_ADMISSION_ROOT", &root)
-            .env("SOLSTONE_ADMISSION_READY", &ready)
-            .stdout(Stdio::null())
-            .spawn()
-            .expect("spawn holder");
-        for _ in 0..100 {
-            if ready.exists() {
-                break;
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
-        assert!(ready.exists(), "child should acquire before being killed");
-        child.kill().expect("kill holder");
-        child.wait().expect("reap holder");
-        let reclaimed = acquire_local_slot(&root, 1, Some(Duration::from_millis(200)), false)
-            .expect("kernel releases flock on process death");
-        drop(reclaimed);
         cleanup(&root);
     }
 }

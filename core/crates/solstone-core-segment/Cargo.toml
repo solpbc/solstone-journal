@@ -19,3 +19,7 @@ unicode-normalization.workspace = true
 
 [lints]
 workspace = true
+
+[[test]]
+name = "segment_supervisor_loopback"
+path = "tests/segment_supervisor_loopback.rs"

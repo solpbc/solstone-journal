@@ -112,15 +112,16 @@
 //!    exercises both I/O kinds through `serve::serve_connection`, including
 //!    the fallback and gate path with their distinct keep-alive builders.
 //! 2. `listener.rs::tests::loopback_and_supplied_identities_round_trip`
-//!    drives a real loopback connection and duplex connections to prove the
-//!    observed `Localhost`, `Direct`, and `ViaSpl` values are exact.
+//!    proves the observed `Direct` and `ViaSpl` values over duplex I/O.
+//!    `tests/convey_http_loopback.rs` proves `Localhost` on a real loopback
+//!    accept for each stack.
 //! 3. `serve.rs::tests::request_data_cannot_replace_accept_time_access_basis`
 //!    exercises `serve::serve_connection` plus `identity::AccessBasis`; request
 //!    headers, path, query, and body must not alter the injected basis.
-//! 4. `listener.rs::tests::listeners_bind_only_exact_loopback_addresses`
-//!    exercises `listener::bind_loopback`; the paired-device wildcard door is
-//!    owned separately by `solstone-core-convey-shell::door` via
-//!    `convey_shell::serve`.
+//! 4. `tests/convey_http_loopback.rs` exercises `listener::bind_loopback`
+//!    on the exact IPv4 and IPv6 loopback addresses; the paired-device
+//!    wildcard door is owned separately by `solstone-core-convey-shell::door`
+//!    via `convey_shell::serve`.
 //! 5. `serve.rs::tests::configured_body_header_and_buffer_bounds_are_enforced`
 //!    exercises `serve::tcp_builder`, `serve::mux_builder`, and the
 //!    `RequestBodyLimitLayer` path for 128 MiB bodies, 32 headers, and the

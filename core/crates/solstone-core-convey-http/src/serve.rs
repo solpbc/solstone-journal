@@ -81,23 +81,21 @@ mod tests {
         request: &str,
     ) -> String
     where
-        B: FnOnce() -> hyper::server::conn::http1::Builder + Send + 'static,
+        B: FnOnce() -> hyper::server::conn::http1::Builder,
     {
         let (server, mut client) = tokio::io::duplex(128 * 1024);
-        let task = tokio::spawn(async move {
-            let builder = make_builder();
-            serve_connection(server, probe_router(), identity, &builder)
-                .await
-                .unwrap();
-        });
-
-        client.write_all(request.as_bytes()).await.unwrap();
-        let mut bytes = [0_u8; 8192];
-        let read = client.read(&mut bytes).await.unwrap();
-        client.shutdown().await.unwrap();
-        task.await.unwrap();
-
-        String::from_utf8(bytes[..read].to_vec()).unwrap()
+        let builder = make_builder();
+        let serve = serve_connection(server, probe_router(), identity, &builder);
+        let exchange = async {
+            client.write_all(request.as_bytes()).await.unwrap();
+            let mut bytes = [0_u8; 8192];
+            let read = client.read(&mut bytes).await.unwrap();
+            client.shutdown().await.unwrap();
+            String::from_utf8(bytes[..read].to_vec()).unwrap()
+        };
+        let (served, body) = tokio::join!(serve, exchange);
+        served.unwrap();
+        body
     }
 
     async fn response_until_closed<B>(
@@ -107,23 +105,22 @@ mod tests {
         close_write_after_request: bool,
     ) -> String
     where
-        B: FnOnce() -> hyper::server::conn::http1::Builder + Send + 'static,
+        B: FnOnce() -> hyper::server::conn::http1::Builder,
     {
         let (server, mut client) = tokio::io::duplex(128 * 1024);
-        let task = tokio::spawn(async move {
-            let builder = make_builder();
-            let _ = serve_connection(server, probe_router(), identity, &builder).await;
-        });
-
-        client.write_all(request.as_bytes()).await.unwrap();
-        if close_write_after_request {
-            client.shutdown().await.unwrap();
-        }
-        let mut bytes = Vec::new();
-        client.read_to_end(&mut bytes).await.unwrap();
-        task.await.unwrap();
-
-        String::from_utf8(bytes).unwrap()
+        let builder = make_builder();
+        let serve = serve_connection(server, probe_router(), identity, &builder);
+        let exchange = async {
+            client.write_all(request.as_bytes()).await.unwrap();
+            if close_write_after_request {
+                client.shutdown().await.unwrap();
+            }
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).await.unwrap();
+            String::from_utf8(bytes).unwrap()
+        };
+        let (_, body) = tokio::join!(serve, exchange);
+        body
     }
 
     #[tokio::test]

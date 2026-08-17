@@ -639,7 +639,6 @@ mod tests {
     use std::collections::BTreeSet;
     use std::fs;
     use std::thread;
-    use std::time::Duration;
 
     use serde_json::Value;
     use solstone_core_journal_io::{hold_lock, write_json};
@@ -1040,18 +1039,60 @@ mod tests {
     fn advance_reallocates_past_a_legacy_record_that_arrives_after_reservation() {
         let temporary = TempDir::new();
         let state = stream_record_path(temporary.path(), "iphone");
-        let held = hold_lock(&state, LockOptions::default()).unwrap();
+        let start = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let committed = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let worker_start = start.clone();
+        let worker_committed = committed.clone();
         let root = temporary.path().to_path_buf();
         let worker = thread::spawn(move || {
-            resolve_stream(&root, "20260804", "120000_60", "iPhone", DID_A, "", hints()).unwrap()
-        });
-        for _ in 0..100 {
-            if state.exists() {
-                break;
+            let bound = bind_stream(
+                &root,
+                "20260804",
+                "120000_60",
+                "iPhone",
+                DID_A,
+                "",
+                &hints(),
+            )
+            .unwrap();
+            worker_start.wait();
+            worker_committed.wait();
+            match advance_bound_stream(
+                &bound.stream,
+                "20260804",
+                "120000_60",
+                &bound.segment,
+                hints(),
+                DID_A,
+                "",
+            ) {
+                Err(crate::SegmentError::StreamBindingConflict { .. }) => {}
+                other => panic!("expected binding conflict, got {other:?}"),
             }
-            thread::sleep(Duration::from_millis(5));
-        }
-        assert!(state.exists(), "resolver did not create its reservation");
+            let rebound = bind_stream(
+                &root,
+                "20260804",
+                "120000_60",
+                "iPhone",
+                DID_A,
+                "",
+                &hints(),
+            )
+            .unwrap();
+            advance_bound_stream(
+                &rebound.stream,
+                "20260804",
+                "120000_60",
+                &rebound.segment,
+                hints(),
+                DID_A,
+                "",
+            )
+            .unwrap();
+            rebound.stream
+        });
+        start.wait();
+        let held = hold_lock(&state, LockOptions::default()).unwrap();
         write_json(
             &state,
             &record("iphone", None, None, 9, 11),
@@ -1059,7 +1100,21 @@ mod tests {
         )
         .unwrap();
         drop(held);
-        assert_eq!(worker.join().unwrap().stream, "iphone_2");
+        committed.wait();
+        assert_eq!(worker.join().unwrap(), "iphone_2");
+
+        let control = TempDir::new();
+        let unhijacked = resolve_stream(
+            control.path(),
+            "20260804",
+            "120000_60",
+            "iPhone",
+            DID_A,
+            "",
+            hints(),
+        )
+        .unwrap();
+        assert_eq!(unhijacked.stream, "iphone");
     }
 
     #[test]
