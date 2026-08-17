@@ -91,61 +91,19 @@ id = "solstone-core-convey-shell::core/crates/solstone-core-convey-shell/src/thi
 id = "solstone-core-cortex-client::core/crates/solstone-core-cortex-client/src/lib.rs::tests::concurrent_allocator_bumps_same_millisecond_ids::scheduling"
 
 [[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::captured_process_group_survives_direct_child_reap::clock"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::captured_process_group_survives_direct_child_reap::process"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::captured_process_group_survives_direct_child_reap::scheduling"
-
-[[findings]]
 id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::cogitate_terminal_usage_writes_record::scheduling"
 
 [[findings]]
 id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::generate_terminal_usage_does_not_write_record::scheduling"
 
 [[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::native_sibling_avoids_path_poison_and_lands_output::clock"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::native_sibling_avoids_path_poison_and_lands_output::scheduling"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::native_sibling_is_reached_only_by_deliberate_spawn::clock"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::native_sibling_is_reached_only_by_deliberate_spawn::scheduling"
-
-[[findings]]
 id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::non_json_stdout_is_log_only_info_and_error_defaults_terminal::scheduling"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::renewal_cycle_never_reaches_injected_interpreters_but_deliberate_spawn_does::clock"
 
 [[findings]]
 id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::renewal_cycle_never_reaches_injected_interpreters_but_deliberate_spawn_does::scheduling"
 
 [[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::spawn_and_read_child_cwd::clock"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::spawn_and_read_child_cwd::scheduling"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::stdin_write_failure_terminates_and_reaps_spawned_child::scheduling"
-
-[[findings]]
 id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::stdout_augmentation_fills_only_absent_values::scheduling"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::stop_group_waits_for_a_graceful_exit_within_ten_seconds::clock"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::stop_group_waits_for_a_graceful_exit_within_ten_seconds::process"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/process.rs::tests::stop_group_waits_for_a_graceful_exit_within_ten_seconds::scheduling"
 
 [[findings]]
 id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/renewal.rs::tests::brain_state_read_failure_does_not_stop_renewal_worker::scheduling"
@@ -185,9 +143,6 @@ id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tes
 
 [[findings]]
 id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tests::renewal_handle::scheduling"
-
-[[findings]]
-id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tests::running_state::process"
 
 [[findings]]
 id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/service.rs::tests::running_state::scheduling"

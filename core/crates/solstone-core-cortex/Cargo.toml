@@ -12,6 +12,9 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+test-hooks = []
+
 [dependencies]
 chrono.workspace = true
 nix = { workspace = true, features = ["process", "signal"] }
@@ -30,3 +33,21 @@ uuid = { version = "1", features = ["v4"] }
 [dev-dependencies]
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[[bin]]
+name = "solstone-cortex-controller"
+path = "tests/bin/controller.rs"
+test = false
+required-features = ["test-hooks"]
+
+[[bin]]
+name = "solstone-cortex-worker"
+path = "tests/bin/worker.rs"
+test = false
+required-features = ["test-hooks"]
+
+[[test]]
+name = "cortex_child_supervisor"
+path = "tests/cortex_child_supervisor.rs"
+required-features = ["test-hooks"]
+

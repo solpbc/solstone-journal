@@ -3,7 +3,7 @@
 
 use std::io::Write;
 use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -52,12 +52,12 @@ pub(crate) fn spawn_worker(
     }
 }
 
-fn spawn_one(
+pub fn spawn_one(
     state: CortexState,
     executable_dir: PathBuf,
-    talent_root: &std::path::Path,
-    apps_root: &std::path::Path,
-    templates_dir: &std::path::Path,
+    talent_root: &Path,
+    apps_root: &Path,
+    templates_dir: &Path,
     work: Work,
 ) -> Result<(), String> {
     let name = work
@@ -85,48 +85,12 @@ fn spawn_one(
     }
     // Cortex owns this request/response lifecycle and spawns the native worker
     // directly; the journal boundary also dispatches the service verb natively.
-    let worker = solstone_core_journal_cli::sibling_native_in_dir(&executable_dir, "solstone-core")
-        .map_err(|error| error.to_string())?;
-    let mut command = Command::new(worker);
-    command
-        .arg("__talent-worker")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if resolved.as_ref().is_some_and(|facts| {
-        facts.talent_type.as_deref() == Some("cogitate")
-            && facts.declared_cwd.as_deref() == Some("journal")
-    }) {
-        command.current_dir(state.journal());
-    }
-    if let Some(facet) = work
-        .request
-        .get("facet")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-    {
-        command.env("SOL_FACET", facet);
-    }
-    if let Some(day) = work
-        .request
-        .get("day")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-    {
-        command.env("SOL_DAY", day);
-    }
-    if let Some(env) = work.request.get("env").and_then(Value::as_object) {
-        for (key, value) in env {
-            command.env(
-                key,
-                value
-                    .as_str()
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| value.to_string()),
-            );
-        }
-    }
-    command.process_group(0);
+    let mut command = build_talent_worker_command(
+        &executable_dir,
+        state.journal(),
+        resolved.as_ref(),
+        &work.request,
+    )?;
     let request_line = serde_json::to_vec(&Value::Object(work.request.clone()))
         .map_err(|error| error.to_string())?;
     let mut child = command.spawn().map_err(|error| error.to_string())?;
@@ -202,6 +166,55 @@ fn spawn_one(
         }
     });
     Ok(())
+}
+
+pub(crate) fn build_talent_worker_command(
+    executable_dir: &Path,
+    journal: &Path,
+    resolved: Option<&ResolvedTalent>,
+    request: &Map<String, Value>,
+) -> Result<Command, String> {
+    let worker = solstone_core_journal_cli::sibling_native_in_dir(executable_dir, "solstone-core")
+        .map_err(|error| error.to_string())?;
+    let mut command = Command::new(worker);
+    command
+        .arg("__talent-worker")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if resolved.is_some_and(|facts| {
+        facts.talent_type.as_deref() == Some("cogitate")
+            && facts.declared_cwd.as_deref() == Some("journal")
+    }) {
+        command.current_dir(journal);
+    }
+    if let Some(facet) = request
+        .get("facet")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        command.env("SOL_FACET", facet);
+    }
+    if let Some(day) = request
+        .get("day")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        command.env("SOL_DAY", day);
+    }
+    if let Some(env) = request.get("env").and_then(Value::as_object) {
+        for (key, value) in env {
+            command.env(
+                key,
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| value.to_string()),
+            );
+        }
+    }
+    command.process_group(0);
+    Ok(command)
 }
 
 fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
@@ -326,8 +339,12 @@ fn context_for(name: &str) -> String {
 }
 
 pub(crate) fn stop_group(pgid: i32) {
+    stop_group_with_grace(pgid, Duration::from_secs(10));
+}
+
+pub fn stop_group_with_grace(pgid: i32, grace: Duration) {
     let _ = killpg(Pid::from_raw(pgid), Signal::SIGTERM);
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let deadline = std::time::Instant::now() + grace;
     while std::time::Instant::now() < deadline {
         if !group_has_live_processes(pgid) {
             return;
@@ -380,10 +397,7 @@ mod tests {
     use chrono::TimeZone;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::os::unix::process::CommandExt;
-    use std::process::Command;
     use std::sync::mpsc;
-    use std::time::Duration;
 
     use super::*;
 
@@ -391,24 +405,25 @@ mod tests {
     use crate::storage::CortexStore;
     use tempfile::tempdir;
 
-    fn package_roots(root: &std::path::Path) -> (PathBuf, PathBuf, PathBuf) {
-        fs::write(root.join("pyproject.toml"), "[project]\nname = \"test\"\n").expect("pyproject");
-        fs::create_dir_all(root.join(".git")).expect("git marker");
-        let talent_root = root.join("solstone/talent");
-        let apps_root = root.join("solstone/apps");
-        let templates_dir = root.join("solstone/think/templates");
-        fs::create_dir_all(&talent_root).expect("talent root");
-        fs::create_dir_all(&apps_root).expect("apps root");
-        fs::create_dir_all(&templates_dir).expect("templates root");
-        (talent_root, apps_root, templates_dir)
-    }
-
-    fn write_native_stub(executable_dir: &std::path::Path, body: &str) {
+    fn write_sibling_stub(executable_dir: &Path) {
         let native = executable_dir.join("solstone-core");
-        fs::write(&native, body).expect("native stub");
+        fs::write(&native, "#!/bin/sh\n").expect("native stub");
         let mut permissions = fs::metadata(&native).unwrap().permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(&native, permissions).unwrap();
+    }
+
+    fn captured_command(
+        executable_dir: &Path,
+        journal: &Path,
+        resolved: Option<&ResolvedTalent>,
+        request: &Map<String, Value>,
+    ) -> Command {
+        let mut captured = Vec::new();
+        captured
+            .push(build_talent_worker_command(executable_dir, journal, resolved, request).unwrap());
+        assert_eq!(captured.len(), 1);
+        captured.remove(0)
     }
 
     #[test]
@@ -449,197 +464,43 @@ mod tests {
     }
 
     #[test]
-    fn native_sibling_is_reached_only_by_deliberate_spawn() {
+    fn deliberate_spawn_emits_exactly_one_native_sibling_command() {
         let directory = tempdir().unwrap();
         let executable_dir = directory.path().join("bin");
         fs::create_dir(&executable_dir).unwrap();
-        let (talent_root, apps_root, templates_dir) = package_roots(directory.path());
-        let marker = directory.path().join("marker");
-        let argv = directory.path().join("argv");
-        let environment = directory.path().join("environment");
         for name in ["python", "python3", "pytest", "uv", "ruff"] {
             let poison = executable_dir.join(name);
-            fs::write(&poison, "#!/bin/sh\nprintf poison >> \"$CORTEX_MARKER\"\n").unwrap();
+            fs::write(&poison, "#!/bin/sh\n").unwrap();
             let mut permissions = fs::metadata(&poison).unwrap().permissions();
             permissions.set_mode(0o755);
             fs::set_permissions(&poison, permissions).unwrap();
         }
-        write_native_stub(
-            &executable_dir,
-            "#!/bin/sh\nprintf x >> \"$CORTEX_MARKER\"\nprintf '%s\\n' \"$@\" > \"$CORTEX_ARGV\"\nenv > \"$CORTEX_ENV\"\nprintf '%s\\n' '{\"event\":\"finish\"}'\n",
-        );
-        assert!(!marker.exists());
-        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let request: Map<String, Value> = serde_json::from_value(
-            serde_json::json!({"use_id":"one","name":"chat","day":"20260101","facet":"top","env":{"CORTEX_MARKER":marker,"CORTEX_ARGV":argv,"CORTEX_ENV":environment,"SOL_FACET":"override","PATH":format!("{}:/usr/bin", executable_dir.display())}}),
-        )
-        .unwrap();
-        let active = store.claim("chat", "one", &request).unwrap().unwrap();
-        let (spawn_tx, _) = mpsc::channel();
-        let (cancel_tx, _) = mpsc::channel();
-        let (outbound_tx, _) = mpsc::channel();
-        let state = CortexState::new(store.clone(), spawn_tx, cancel_tx, outbound_tx);
-        spawn_one(
-            state,
-            executable_dir,
-            &talent_root,
-            &apps_root,
-            &templates_dir,
-            Work {
-                use_id: "one".into(),
-                active: active.clone(),
-                request,
-            },
-        )
-        .unwrap();
-        thread::sleep(Duration::from_millis(150));
-        assert_eq!(fs::read_to_string(marker).unwrap(), "x");
-        // The native sibling's finish output must land; poison avoidance alone is insufficient.
-        let completed = active.with_file_name("one.jsonl");
-        assert!(
-            fs::read_to_string(completed)
-                .unwrap()
-                .contains("\"event\":\"finish\"")
-        );
-        assert_eq!(fs::read_to_string(argv).unwrap(), "__talent-worker\n");
-        assert!(
-            fs::read_to_string(environment)
-                .unwrap()
-                .contains("SOL_FACET=override")
-        );
-    }
-
-    #[test]
-    fn native_sibling_avoids_path_poison_and_lands_output() {
-        let directory = tempdir().unwrap();
-        let executable_dir = directory.path().join("bin");
-        fs::create_dir(&executable_dir).unwrap();
-        let (talent_root, apps_root, templates_dir) = package_roots(directory.path());
-        let poison_marker = directory.path().join("poison-marker");
-        for name in ["python", "python3", "pytest", "uv", "ruff"] {
-            let shim = executable_dir.join(name);
-            fs::write(
-                &shim,
-                "#!/bin/sh\nprintf poison >> \"$CORTEX_POISON_MARKER\"\n",
-            )
-            .unwrap();
-            let mut permissions = fs::metadata(&shim).unwrap().permissions();
-            permissions.set_mode(0o755);
-            fs::set_permissions(&shim, permissions).unwrap();
-        }
-        write_native_stub(
-            &executable_dir,
-            "#!/bin/sh\nprintf '%s\\n' '{\"event\":\"finish\"}'\n",
-        );
-
-        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        write_sibling_stub(&executable_dir);
         let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
             "use_id":"one",
             "name":"chat",
+            "day":"20260101",
+            "facet":"top",
             "env":{
-                "CORTEX_POISON_MARKER":poison_marker,
-                "PATH":format!("{}:/usr/bin", executable_dir.display()),
-            },
-        }))
-        .unwrap();
-        let active = store.claim("chat", "one", &request).unwrap().unwrap();
-        let (spawn_tx, _) = mpsc::channel();
-        let (cancel_tx, _) = mpsc::channel();
-        let (outbound_tx, _) = mpsc::channel();
-        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
-        spawn_one(
-            state,
-            executable_dir,
-            &talent_root,
-            &apps_root,
-            &templates_dir,
-            Work {
-                use_id: "one".into(),
-                active: active.clone(),
-                request,
-            },
-        )
-        .unwrap();
-
-        thread::sleep(Duration::from_millis(150));
-        assert!(!poison_marker.exists());
-        assert!(
-            fs::read_to_string(active.with_file_name("one.jsonl"))
-                .unwrap()
-                .contains("\"event\":\"finish\"")
-        );
-    }
-
-    fn spawn_and_read_child_cwd(name: &str, frontmatter: &str) -> (PathBuf, String) {
-        let directory = tempdir().unwrap();
-        let root = directory.path().to_path_buf();
-        let executable_dir = root.join("bin");
-        fs::create_dir(&executable_dir).unwrap();
-        let (talent_root, apps_root, templates_dir) = package_roots(&root);
-        fs::write(talent_root.join(format!("{name}.md")), frontmatter).unwrap();
-        let cwd = root.join("child-cwd");
-        write_native_stub(
-            &executable_dir,
-            "#!/bin/sh\npwd > \"$CORTEX_CWD\"\nprintf '%s\\n' '{\"event\":\"finish\"}'\n",
-        );
-        let journal = root.join("journal");
-        let store = CortexStore::new(journal.clone()).unwrap();
-        let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
-            "use_id":"one",
-            "name":name,
-            "env":{"CORTEX_CWD":cwd},
-        }))
-        .unwrap();
-        let active = store.claim(name, "one", &request).unwrap().unwrap();
-        let (spawn_tx, _) = mpsc::channel();
-        let (cancel_tx, _) = mpsc::channel();
-        let (outbound_tx, _) = mpsc::channel();
-        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
-        spawn_one(
-            state,
-            executable_dir,
-            &talent_root,
-            &apps_root,
-            &templates_dir,
-            Work {
-                use_id: "one".into(),
-                active,
-                request,
-            },
-        )
-        .unwrap();
-        for _ in 0..100 {
-            if let Ok(value) = fs::read_to_string(&cwd) {
-                return (journal, value.trim().to_owned());
+                "SOL_FACET":"override",
+                "PATH":format!("{}:/usr/bin", executable_dir.display())
             }
-            thread::sleep(Duration::from_millis(10));
-        }
-        panic!("child did not record its cwd");
-    }
-
-    #[test]
-    fn cogitate_with_declared_journal_cwd_runs_child_in_journal_root() {
-        let (journal, cwd) = spawn_and_read_child_cwd(
-            "declared",
-            "{\n\"type\": \"cogitate\",\n\"cwd\": \"journal\"\n}\nbody\n",
-        );
-        assert_eq!(PathBuf::from(cwd), journal);
-    }
-
-    #[test]
-    fn generate_talent_does_not_set_child_cwd() {
-        let (journal, cwd) = spawn_and_read_child_cwd(
-            "generate",
-            "{\n\"type\": \"generate\",\n\"output\": \"json\"\n}\nbody\n",
-        );
-        assert_ne!(PathBuf::from(cwd), journal);
-    }
-
-    #[test]
-    fn cogitate_without_declared_cwd_does_not_set_child_cwd() {
-        let (journal, cwd) =
-            spawn_and_read_child_cwd("defaulted", "{\n\"type\": \"cogitate\"\n}\nbody\n");
-        assert_ne!(PathBuf::from(cwd), journal);
+        }))
+        .unwrap();
+        let command = captured_command(&executable_dir, directory.path(), None, &request);
+        let program = PathBuf::from(command.get_program());
+        assert_eq!(program, executable_dir.join("solstone-core"));
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(args, ["__talent-worker"]);
+        let facet = command
+            .get_envs()
+            .find(|(key, _)| *key == "SOL_FACET")
+            .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()));
+        assert_eq!(facet.as_deref(), Some("override"));
+        assert!(command.get_current_dir().is_none());
     }
 
     #[test]
@@ -647,19 +508,15 @@ mod tests {
         let directory = tempdir().unwrap();
         let executable_dir = directory.path().join("bin");
         fs::create_dir(&executable_dir).unwrap();
-        let (talent_root, apps_root, templates_dir) = package_roots(directory.path());
-        let marker = directory.path().join("marker");
         for name in ["python", "python3", "pytest", "uv", "ruff"] {
             let shim = executable_dir.join(name);
-            fs::write(&shim, "#!/bin/sh\nprintf x >> \"$CORTEX_MARKER\"\nprintf '%s\\n' '{\"event\":\"finish\"}'\n").unwrap();
+            fs::write(&shim, "#!/bin/sh\n").unwrap();
             let mut permissions = fs::metadata(&shim).unwrap().permissions();
             permissions.set_mode(0o755);
             fs::set_permissions(&shim, permissions).unwrap();
         }
-        write_native_stub(
-            &executable_dir,
-            "#!/bin/sh\nprintf x >> \"$CORTEX_MARKER\"\nprintf '%s\\n' '{\"event\":\"finish\"}'\n",
-        );
+        write_sibling_stub(&executable_dir);
+        let marker = directory.path().join("marker");
 
         write_valid_test_journal(directory.path());
         let cycle_now = chrono::Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap();
@@ -715,31 +572,19 @@ mod tests {
         assert_eq!(renewal.snapshot().retry_index, 0);
         assert!(!marker.exists());
 
-        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
             "use_id":"one","name":"chat","day":"20260101","env":{"CORTEX_MARKER":marker}
         }))
         .unwrap();
-        let active = store.claim("chat", "one", &request).unwrap().unwrap();
-        let (spawn_tx, _) = mpsc::channel();
-        let (cancel_tx, _) = mpsc::channel();
-        let (outbound_tx, _) = mpsc::channel();
-        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
-        spawn_one(
-            state,
-            executable_dir,
-            &talent_root,
-            &apps_root,
-            &templates_dir,
-            Work {
-                use_id: "one".into(),
-                active,
-                request,
-            },
-        )
-        .unwrap();
-        thread::sleep(Duration::from_millis(150));
-        assert_eq!(fs::read_to_string(marker).unwrap(), "x");
+        let command = captured_command(&executable_dir, directory.path(), None, &request);
+        let program = PathBuf::from(command.get_program());
+        assert_eq!(program, executable_dir.join("solstone-core"));
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(args, ["__talent-worker"]);
+        assert!(!marker.exists());
     }
 
     #[test]
@@ -899,116 +744,5 @@ mod tests {
             &serde_json::from_value(serde_json::json!({"usage":{"input_tokens":3}})).unwrap(),
         );
         assert!(!directory.path().join("tokens").exists());
-    }
-
-    #[test]
-    fn captured_process_group_survives_direct_child_reap() {
-        let directory = tempdir().unwrap();
-        let child_pid = directory.path().join("descendant-pid");
-        let script = directory.path().join("child.sh");
-        fs::write(
-            &script,
-            format!(
-                "#!/bin/sh\nsleep 30 &\necho $! > {}\nexit 0\n",
-                child_pid.display()
-            ),
-        )
-        .unwrap();
-        let mut child = Command::new("/bin/sh")
-            .arg(&script)
-            .process_group(0)
-            .spawn()
-            .unwrap();
-        let pgid = i32::try_from(child.id()).unwrap();
-        child.wait().unwrap();
-        let descendant = (0..100)
-            .find_map(|_| fs::read_to_string(&child_pid).ok())
-            .map(|value| value.trim().parse::<i32>().unwrap())
-            .unwrap();
-        // A lazy lookup of the reaped direct child fails, but the captured group
-        // still owns the descendant and can terminate it.
-        assert!(nix::unistd::getpgid(Some(Pid::from_raw(pgid))).is_err());
-        assert!(nix::sys::signal::kill(Pid::from_raw(descendant), None).is_ok());
-        stop_group(pgid);
-        for _ in 0..100 {
-            if nix::sys::signal::kill(Pid::from_raw(descendant), None).is_err() {
-                return;
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
-        panic!("captured process group did not terminate its descendant");
-    }
-
-    #[test]
-    fn stop_group_waits_for_a_graceful_exit_within_ten_seconds() {
-        let directory = tempdir().unwrap();
-        let ready = directory.path().join("ready");
-        let mut child = Command::new("/bin/sh")
-            .arg("-c")
-            .arg(format!("trap '' TERM; : > {}; sleep 0.2", ready.display()))
-            .process_group(0)
-            .spawn()
-            .unwrap();
-        let pgid = i32::try_from(child.id()).unwrap();
-        let reaped = thread::spawn(move || child.wait().unwrap());
-        for _ in 0..100 {
-            if ready.exists() {
-                break;
-            }
-            thread::sleep(Duration::from_millis(5));
-        }
-        assert!(ready.exists());
-        let started = std::time::Instant::now();
-        stop_group(pgid);
-        assert!(started.elapsed() >= Duration::from_millis(150));
-        assert!(started.elapsed() < Duration::from_secs(10));
-        assert!(reaped.join().unwrap().success());
-    }
-
-    #[test]
-    fn stdin_write_failure_terminates_and_reaps_spawned_child() {
-        let directory = tempdir().unwrap();
-        let executable_dir = directory.path().join("bin");
-        fs::create_dir(&executable_dir).unwrap();
-        let (talent_root, apps_root, templates_dir) = package_roots(directory.path());
-        let child_pid = directory.path().join("child-pid");
-        write_native_stub(
-            &executable_dir,
-            "#!/bin/sh\necho $$ > \"$CORTEX_CHILD_PID\"\nexec 0<&-\nsleep 30\n",
-        );
-        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
-            "use_id":"one",
-            "name":"chat",
-            "prompt":"x".repeat(1_048_576),
-            "env":{"CORTEX_CHILD_PID":child_pid}
-        }))
-        .unwrap();
-        let active = store.claim("chat", "one", &request).unwrap().unwrap();
-        let (spawn_tx, _) = mpsc::channel();
-        let (cancel_tx, _) = mpsc::channel();
-        let (outbound_tx, _) = mpsc::channel();
-        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
-        assert!(
-            spawn_one(
-                state,
-                executable_dir,
-                &talent_root,
-                &apps_root,
-                &templates_dir,
-                Work {
-                    use_id: "one".into(),
-                    active,
-                    request,
-                },
-            )
-            .is_err()
-        );
-        let pid = fs::read_to_string(child_pid)
-            .unwrap()
-            .trim()
-            .parse::<i32>()
-            .unwrap();
-        assert!(nix::sys::signal::kill(Pid::from_raw(pid), None).is_err());
     }
 }

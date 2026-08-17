@@ -10,13 +10,13 @@ use chrono::{Local, TimeZone};
 use serde_json::{Map, Value, json};
 
 #[derive(Clone, Debug)]
-pub(crate) struct CortexStore {
+pub struct CortexStore {
     journal: PathBuf,
     talents: PathBuf,
 }
 
 impl CortexStore {
-    pub(crate) fn new(journal: PathBuf) -> io::Result<Self> {
+    pub fn new(journal: PathBuf) -> io::Result<Self> {
         let talents = journal.join("talents");
         fs::create_dir_all(&talents)?;
         Ok(Self { journal, talents })
@@ -28,7 +28,7 @@ impl CortexStore {
             .join(format!("{use_id}_active.jsonl"))
     }
 
-    pub(crate) fn claim(
+    pub fn claim(
         &self,
         name: &str,
         use_id: &str,

@@ -277,8 +277,6 @@ async fn shutdown_signal() -> ShutdownMode {
 #[cfg(test)]
 mod tests {
     use chrono::DateTime;
-    use std::os::unix::process::CommandExt;
-    use std::process::Command;
     use std::sync::{Arc, Mutex, mpsc};
 
     use super::*;
@@ -335,7 +333,7 @@ mod tests {
             ))
     }
 
-    fn running_state() -> (tempfile::TempDir, CortexState, std::process::Child) {
+    fn running_state() -> (tempfile::TempDir, CortexState) {
         let directory = tempfile::tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let (spawn_tx, spawn_rx) = mpsc::channel();
@@ -346,19 +344,9 @@ mod tests {
             serde_json::from_value(serde_json::json!({"use_id":"one","name":"chat"})).unwrap(),
         );
         let work = spawn_rx.recv().unwrap();
-        let child = Command::new("/bin/sh")
-            .arg("-c")
-            .arg("sleep 1")
-            .process_group(0)
-            .spawn()
-            .unwrap();
         state.spawn_begin("one");
-        state.spawn_started(
-            &work,
-            i32::try_from(child.id()).unwrap(),
-            Arc::new(Mutex::new(Vec::new())),
-        );
-        (directory, state, child)
+        state.spawn_started(&work, 0, Arc::new(Mutex::new(Vec::new())));
+        (directory, state)
     }
 
     #[test]
@@ -426,24 +414,21 @@ mod tests {
     }
 
     #[test]
-    fn drain_keeps_running_use_alive_until_its_own_exit_then_becomes_idle() {
-        let (_directory, state, mut child) = running_state();
+    fn drain_becomes_idle_after_finish() {
+        let (_directory, state) = running_state();
         state.stop_accepting();
-        assert!(child.try_wait().unwrap().is_none());
-        let status = child.wait().unwrap();
-        assert!(status.success());
+        assert!(!state.is_idle());
         state.finish("one", 0);
         state.spawn_finished();
         assert!(state.is_idle());
     }
 
     #[test]
-    fn immediate_stop_terminalizes_queue_and_signals_running_group() {
-        let (_directory, state, mut child) = running_state();
-        for running in state.stop_immediately() {
-            stop_group(running.pgid);
-        }
-        let status = child.wait().unwrap();
-        assert!(!status.success());
+    fn immediate_stop_returns_running_uses_without_signaling() {
+        let (_directory, state) = running_state();
+        let running = state.stop_immediately();
+        assert_eq!(running.len(), 1);
+        assert_eq!(running[0].pgid, 0);
+        assert_eq!(state.running().len(), 1);
     }
 }

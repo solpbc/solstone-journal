@@ -10,3 +10,11 @@ mod state;
 mod storage;
 
 pub use service::{CortexOptions, CortexServiceError, ShutdownMode, run_native_service, run_until};
+
+// Gated on `test-hooks` as well as `test` so `tests/cortex_child_supervisor.rs`
+// and `tests/bin/controller.rs` can drive crate-private spawn/stop surfaces.
+// `cfg(test)`-only would leave those items unreachable outside this crate even
+// for a harness that asked for them by name.
+#[cfg(any(test, feature = "test-hooks"))]
+#[doc(hidden)]
+pub mod test_hooks;

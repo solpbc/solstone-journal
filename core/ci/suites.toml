@@ -4074,3 +4074,17 @@ timeout = "standard"
 default_full = true
 required_features = []
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-cortex::cortex_child_supervisor"
+package = "solstone-core-cortex"
+target = "cortex_child_supervisor"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "host-contention"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"

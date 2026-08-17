@@ -18,10 +18,10 @@ pub(crate) struct Outbound {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Work {
-    pub(crate) use_id: String,
-    pub(crate) active: PathBuf,
-    pub(crate) request: Map<String, Value>,
+pub struct Work {
+    pub use_id: String,
+    pub active: PathBuf,
+    pub request: Map<String, Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,9 +32,9 @@ pub(crate) struct ResolvedTalent {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct RunningUse {
+pub struct RunningUse {
     pub(crate) active: PathBuf,
-    pub(crate) pgid: i32,
+    pub pgid: i32,
     pub(crate) started: Instant,
     pub(crate) stderr: Arc<Mutex<Vec<String>>>,
 }
@@ -56,7 +56,7 @@ struct FinalizedUse {
 }
 
 #[derive(Clone)]
-pub(crate) struct CortexState {
+pub struct CortexState {
     store: CortexStore,
     inner: Arc<Mutex<Inner>>,
     spawn: mpsc::Sender<Work>,
@@ -83,7 +83,7 @@ impl CortexState {
         }
     }
 
-    pub(crate) fn request(&self, request: Map<String, Value>) {
+    pub fn request(&self, request: Map<String, Value>) {
         let Some(use_id) = request
             .get("use_id")
             .and_then(Value::as_str)
@@ -148,7 +148,7 @@ impl CortexState {
         let _ = self.cancel.send((use_id.to_owned(), reason.to_owned()));
     }
 
-    pub(crate) fn spawn_started(&self, work: &Work, pgid: i32, stderr: Arc<Mutex<Vec<String>>>) {
+    pub fn spawn_started(&self, work: &Work, pgid: i32, stderr: Arc<Mutex<Vec<String>>>) {
         let mut inner = self.inner.lock().expect("cortex state lock poisoned");
         inner.finalizers.insert(work.use_id.clone());
         inner.running.insert(
@@ -162,7 +162,7 @@ impl CortexState {
         );
     }
 
-    pub(crate) fn spawn_begin(&self, use_id: &str) {
+    pub fn spawn_begin(&self, use_id: &str) {
         self.inner
             .lock()
             .expect("cortex state lock poisoned")
@@ -170,7 +170,7 @@ impl CortexState {
             .remove(use_id);
     }
 
-    pub(crate) fn spawn_finished(&self) {
+    pub fn spawn_finished(&self) {
         let mut inner = self.inner.lock().expect("cortex state lock poisoned");
         inner.pending_spawns = inner.pending_spawns.saturating_sub(1);
     }
@@ -271,7 +271,7 @@ impl CortexState {
             .complete(&work.use_id, &work.active, Some(&work.request));
     }
 
-    pub(crate) fn finish(&self, use_id: &str, exit_code: i32) {
+    pub fn finish(&self, use_id: &str, exit_code: i32) {
         let Some(finalized) = self.claim_finalize(use_id) else {
             return;
         };
@@ -350,19 +350,19 @@ impl CortexState {
             .len()
     }
 
-    pub(crate) fn is_idle(&self) -> bool {
+    pub fn is_idle(&self) -> bool {
         let inner = self.inner.lock().expect("cortex state lock poisoned");
         inner.running.is_empty() && inner.pending_spawns == 0
     }
 
-    pub(crate) fn stop_accepting(&self) {
+    pub fn stop_accepting(&self) {
         self.inner
             .lock()
             .expect("cortex state lock poisoned")
             .accepting = false;
     }
 
-    pub(crate) fn stop_immediately(&self) -> Vec<RunningUse> {
+    pub fn stop_immediately(&self) -> Vec<RunningUse> {
         let queued = {
             let mut inner = self.inner.lock().expect("cortex state lock poisoned");
             inner.accepting = false;
@@ -381,7 +381,7 @@ impl CortexState {
             .accepting
     }
 
-    pub(crate) fn running(&self) -> Vec<RunningUse> {
+    pub fn running(&self) -> Vec<RunningUse> {
         self.inner
             .lock()
             .expect("cortex state lock poisoned")
