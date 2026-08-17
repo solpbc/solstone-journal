@@ -644,21 +644,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn gathered_host_inputs_use_the_actual_platform_identity() {
-        let inputs = gather_host_inputs(Path::new("."), "test-version");
-        #[cfg(target_os = "linux")]
-        assert_eq!(inputs.platform.os, "Linux");
-        #[cfg(target_os = "macos")]
-        assert_eq!(inputs.platform.os, "Darwin");
-        let expected_arch = if cfg!(target_os = "macos") && std::env::consts::ARCH == "aarch64" {
-            "arm64"
-        } else {
-            std::env::consts::ARCH
-        };
-        assert_eq!(inputs.platform.arch, expected_arch);
-        assert_eq!(inputs.version, "test-version");
-    }
-    #[test]
     fn json_platform_python_is_null() {
         let inputs = CheckInputs {
             platform: PlatformInput {

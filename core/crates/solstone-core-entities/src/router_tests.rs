@@ -404,14 +404,6 @@ fn synthetic_lock_timeout() -> solstone_core_entity::LockError {
     })
 }
 
-fn hold_trust_lock(root: &Path, domain: &str) -> solstone_core_entity::FileLock {
-    match domain {
-        "facet" => solstone_core_facets::hold_facet_trust_lock_raw_for_test(root).unwrap(),
-        "entity" => solstone_core_entity::hold_entity_trust_lock_raw_for_test(root).unwrap(),
-        other => panic!("unknown trust-lock domain: {other}"),
-    }
-}
-
 #[tokio::test]
 async fn state_has_copy_and_attendance() {
     let j = Journal::new();
@@ -3537,26 +3529,6 @@ async fn refusal_sites_batch_1_unexpected_store_failures_are_exact() {
 }
 
 #[tokio::test]
-async fn refusal_sites_batch_1_alias_lock_timeout_is_end_to_end_busy() {
-    let journal = Journal::new();
-    seed_entity(journal.path(), "a", "Alice");
-    seed_facet_entity(journal.path(), "work", "a");
-    let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal(
-        "add_aka_for_call:825",
-        post(
-            journal.path(),
-            "/app/entities/api/work/aka",
-            json!({"entity_id":"a","aka":"Al","exclude_name":"Alice"}),
-        )
-        .await,
-        "entity_busy",
-        503,
-    );
-    drop(held);
-}
-
-#[tokio::test]
 async fn refusal_sites_batch_1_direct_write_error_classifiers_are_exact() {
     assert_oracle_refusal(
         "add_entity:1386",
@@ -4146,187 +4118,6 @@ async fn refusal_sites_batch_4_update_identity_conflicts_are_exact() {
 }
 
 #[tokio::test]
-async fn refusal_sites_batch_6_busy_routes_contend_on_their_real_trust_locks() {
-    fn attached(root: &Path) {
-        seed_entity(root, "a", "Alice");
-        seed_facet_entity(root, "work", "a");
-    }
-    fn detected(root: &Path) {
-        fs::create_dir_all(root.join("facets/work/entities")).unwrap();
-        fs::write(
-            root.join("facets/work/entities/20260101.jsonl"),
-            "{\"name\":\"Alice\",\"type\":\"Person\"}\n",
-        )
-        .unwrap();
-    }
-
-    let journal = Journal::new();
-    detected(journal.path());
-    let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal(
-        "delete_detected:1703",
-        delete_json(
-            journal.path(),
-            "/app/entities/api/work/detected",
-            json!({"name":"Alice"}),
-        )
-        .await,
-        "entity_busy",
-        503,
-    );
-    drop(held);
-    let journal = Journal::new();
-    attached(journal.path());
-    let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal(
-        "detach_entity:1423",
-        delete(journal.path(), "/app/entities/api/work/entity/a").await,
-        "entity_busy",
-        503,
-    );
-    drop(held);
-
-    let journal = Journal::new();
-    attached(journal.path());
-    let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal(
-        "detect_entity_route:586",
-        post(
-            journal.path(),
-            "/app/entities/api/work/detected",
-            json!({"day":"20260101","type":"Person","entity":"Alice","description":"seen"}),
-        )
-        .await,
-        "entity_busy",
-        503,
-    );
-    drop(held);
-    let journal = Journal::new();
-    attached(journal.path());
-    let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal(
-        "observe_entity_for_call:1197",
-        post(
-            journal.path(),
-            "/app/entities/api/work/observe",
-            json!({"name":"Alice","content":"seen"}),
-        )
-        .await,
-        "entity_busy",
-        503,
-    );
-    drop(held);
-
-    let journal = Journal::new();
-    attached(journal.path());
-    let row = seed_facet_ambiguity(journal.path(), "Alice");
-    let held = hold_trust_lock(journal.path(), "entity");
-    assert_oracle_refusal(
-        "resolve_entity_ambiguity:1152",
-        post(
-            journal.path(),
-            &format!(
-                "/app/entities/api/ambiguities/{}/resolve",
-                row["ambiguity_id"].as_str().unwrap()
-            ),
-            json!({"entity_id":"a"}),
-        )
-        .await,
-        "entity_busy",
-        503,
-    );
-    drop(held);
-
-    let journal = Journal::new();
-    let version = solstone_core_entity::save_entity_identity(
-        journal.path(),
-        "a",
-        &json!({"id":"a","name":"Alice","type":"Person"}),
-        None,
-    )
-    .unwrap()
-    .event
-    .unwrap()["version_id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let held = hold_trust_lock(journal.path(), "entity");
-    assert_oracle_refusal(
-        "restore_journal_entity_version_for_call:1077",
-        post(
-            journal.path(),
-            "/app/entities/api/journal/entity/a/restore",
-            json!({"version_id":version}),
-        )
-        .await,
-        "entity_busy",
-        503,
-    );
-    drop(held);
-
-    let journal = Journal::new();
-    attached(journal.path());
-    let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal(
-        "update_description:1536",
-        put(
-            journal.path(),
-            "/app/entities/api/work/entity/a/description",
-            json!({"description":"new"}),
-        )
-        .await,
-        "entity_busy",
-        503,
-    );
-    drop(held);
-    let journal = Journal::new();
-    attached(journal.path());
-    let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal(
-        "update_description_for_call:689",
-        post(
-            journal.path(),
-            "/app/entities/api/work/update-description",
-            json!({"entity_id":"a","description":"new"}),
-        )
-        .await,
-        "entity_busy",
-        503,
-    );
-    drop(held);
-    let journal = Journal::new();
-    detected(journal.path());
-    let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal(
-        "update_detected_for_call:725",
-        post(
-            journal.path(),
-            "/app/entities/api/work/update-detected",
-            json!({"day":"20260101","entity":"Alice","description":"new"}),
-        )
-        .await,
-        "entity_busy",
-        503,
-    );
-    drop(held);
-    let journal = Journal::new();
-    attached(journal.path());
-    let held = hold_trust_lock(journal.path(), "facet");
-    assert_oracle_refusal(
-        "update_entity:1494",
-        put(
-            journal.path(),
-            "/app/entities/api/work/update",
-            json!({"old_name":"Alice","new_name":"Alicia"}),
-        )
-        .await,
-        "entity_busy",
-        503,
-    );
-    drop(held);
-}
-
-#[tokio::test]
 async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
     use crate::router::{ForcedWriteOutcome, force_write_outcome};
 
@@ -4343,7 +4134,64 @@ async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
         .unwrap();
     }
 
-    async fn drive(root: &Path, kind: &str) -> (u16, Value) {
+    fn prepare(root: &Path, kind: &str) -> String {
+        match kind {
+            "delete_detected" | "update_detected" => {
+                detected(root);
+                String::new()
+            }
+            "resolve_ambiguity" => {
+                attached(root);
+                seed_facet_ambiguity(root, "Alice")["ambiguity_id"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            }
+            "restore_version" => solstone_core_entity::save_entity_identity(
+                root,
+                "a",
+                &json!({"id":"a","name":"Alice","type":"Person"}),
+                None,
+            )
+            .unwrap()
+            .event
+            .unwrap()["version_id"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+            _ => {
+                attached(root);
+                String::new()
+            }
+        }
+    }
+
+    fn snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        fn visit(
+            root: &Path,
+            path: &Path,
+            files: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>,
+        ) {
+            for entry in fs::read_dir(path).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                if path.is_dir() {
+                    visit(root, &path, files);
+                } else {
+                    let relative = path.strip_prefix(root).unwrap();
+                    if !relative.starts_with("health/locks") {
+                        files.insert(relative.to_path_buf(), fs::read(path).unwrap());
+                    }
+                }
+            }
+        }
+
+        let mut files = std::collections::BTreeMap::new();
+        visit(root, root, &mut files);
+        files
+    }
+
+    async fn drive(root: &Path, kind: &str, prepared: &str) -> (u16, Value) {
         match kind {
             "delete_detected" => {
                 delete_json(
@@ -4371,34 +4219,18 @@ async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
                 .await
             }
             "resolve_ambiguity" => {
-                let row = seed_facet_ambiguity(root, "Alice");
                 post(
                     root,
-                    &format!(
-                        "/app/entities/api/ambiguities/{}/resolve",
-                        row["ambiguity_id"].as_str().unwrap()
-                    ),
+                    &format!("/app/entities/api/ambiguities/{prepared}/resolve"),
                     json!({"entity_id":"a"}),
                 )
                 .await
             }
             "restore_version" => {
-                let version = solstone_core_entity::save_entity_identity(
-                    root,
-                    "a",
-                    &json!({"id":"a","name":"Alice","type":"Person"}),
-                    None,
-                )
-                .unwrap()
-                .event
-                .unwrap()["version_id"]
-                    .as_str()
-                    .unwrap()
-                    .to_owned();
                 post(
                     root,
                     "/app/entities/api/journal/entity/a/restore",
-                    json!({"version_id":version}),
+                    json!({"version_id":prepared}),
                 )
                 .await
             }
@@ -4451,26 +4283,105 @@ async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
         "update_entity",
     ] {
         let journal = Journal::new();
-        match kind {
-            "delete_detected" | "update_detected" => detected(journal.path()),
-            "restore_version" => {}
-            _ => attached(journal.path()),
-        }
+        let prepared = prepare(journal.path(), kind);
+        let before = snapshot(journal.path());
         let _guard = force_write_outcome(ForcedWriteOutcome::Contended);
-        let (status, body) = drive(journal.path(), kind).await;
+        let (status, body) = drive(journal.path(), kind, &prepared).await;
         assert_eq!(status, 503, "{kind} contended status");
         assert_eq!(body["reason_code"], "entity_busy", "{kind} contended code");
         drop(_guard);
+        assert_eq!(
+            snapshot(journal.path()),
+            before,
+            "{kind} contended mutation"
+        );
 
         let journal = Journal::new();
-        match kind {
-            "delete_detected" | "update_detected" => detected(journal.path()),
-            "restore_version" => {}
-            _ => attached(journal.path()),
-        }
+        let prepared = prepare(journal.path(), kind);
         let _guard = force_write_outcome(ForcedWriteOutcome::Acquired);
-        let (status, _) = drive(journal.path(), kind).await;
-        assert_ne!(status, 503, "{kind} acquired must not report entity_busy");
+        let (status, body) = drive(journal.path(), kind, &prepared).await;
+        assert_eq!(status, 200, "{kind} acquired status: {body}");
+        match kind {
+            "delete_detected" => {
+                assert_eq!(body, json!({"days_modified":["20260101"]}));
+                assert!(
+                    !fs::read_to_string(journal.path().join("facets/work/entities/20260101.jsonl"))
+                        .unwrap()
+                        .contains("Alice")
+                );
+            }
+            "detach_entity" => {
+                assert_eq!(body, json!({"success":true}));
+                let relationship: Value = serde_json::from_slice(
+                    &fs::read(journal.path().join("facets/work/entities/a/entity.json")).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(relationship["detached"], true);
+            }
+            "detect_entity_route" => {
+                assert_eq!(body, json!({"name":"Alice"}));
+                assert!(
+                    fs::read_to_string(journal.path().join("facets/work/entities/20260101.jsonl"))
+                        .unwrap()
+                        .contains("seen")
+                );
+            }
+            "observe_entity" => {
+                assert_eq!(body["result"]["count"], 1);
+                assert_eq!(body["result"]["observations"][0]["content"], "seen");
+                assert!(
+                    journal
+                        .path()
+                        .join("facets/work/entities/a/observations.jsonl")
+                        .is_file()
+                );
+            }
+            "resolve_ambiguity" => {
+                assert_eq!(body["ambiguity"]["status"], "resolved");
+                assert_eq!(body["ambiguity"]["resolved_entity_id"], "a");
+                assert_eq!(body["entity"]["id"], "a");
+            }
+            "restore_version" => {
+                assert_eq!(body["restored"], true);
+                assert_eq!(body["entity"]["name"], "Alice");
+                assert!(body["event"].is_object());
+            }
+            "update_description_path" => {
+                assert_eq!(body, json!({"success":true}));
+                assert!(
+                    fs::read_to_string(journal.path().join("facets/work/entities/a/entity.json"))
+                        .unwrap()
+                        .contains("new")
+                );
+            }
+            "update_description_call" => {
+                assert_eq!(body["entity"]["description"], "new");
+                assert!(
+                    fs::read_to_string(journal.path().join("facets/work/entities/a/entity.json"))
+                        .unwrap()
+                        .contains("new")
+                );
+            }
+            "update_detected" => {
+                assert_eq!(body["entity"]["description"], "new");
+                assert!(
+                    fs::read_to_string(journal.path().join("facets/work/entities/20260101.jsonl"))
+                        .unwrap()
+                        .contains("new")
+                );
+            }
+            "update_entity" => {
+                assert_eq!(body["entity"]["name"], "Alicia");
+                assert_eq!(
+                    solstone_core_entity::read_entity_identity(journal.path(), "a")
+                        .unwrap()
+                        .unwrap()
+                        .value()["name"],
+                    "Alicia"
+                );
+            }
+            _ => unreachable!(),
+        }
     }
 }
 

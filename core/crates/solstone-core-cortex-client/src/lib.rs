@@ -575,7 +575,6 @@ fn finish_fields(event: &Map<String, Value>, end_state: UseEndState) -> FinishFi
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::net::UnixListener;
     use std::sync::Arc;
 
     fn active_use(journal: &Path, use_id: &str, body: &str) {
@@ -584,13 +583,6 @@ mod tests {
             .join(format!("{use_id}_active.jsonl"));
         fs::create_dir_all(path.parent().expect("parent")).expect("create talent dir");
         fs::write(path, body).expect("write use log");
-    }
-
-    fn immediate_policy() -> CortexRequestPolicy {
-        CortexRequestPolicy {
-            claim_windows: vec![Duration::ZERO],
-            outcome_deadline: Some(Duration::ZERO),
-        }
     }
 
     #[test]
@@ -795,39 +787,6 @@ mod tests {
             vec![TimedOutUse::GenuineTimeout {
                 use_id: "running".to_owned()
             }]
-        );
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn unavailable_bus_is_reported_as_unavailable() {
-        let journal = tempfile::tempdir().unwrap();
-        let client = CortexRequestClient::with_allocator(
-            journal.path(),
-            immediate_policy(),
-            UseIdAllocator::new(|| Some(42)),
-        );
-        assert_eq!(
-            client.dispatch(&CortexRequest::new("", "steward")).await,
-            Err(DispatchError::Unavailable)
-        );
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn claimed_bus_without_a_use_file_is_reported_as_not_claimed() {
-        let journal = tempfile::tempdir().unwrap();
-        let socket_path = journal.path().join("health/callosum.sock");
-        fs::create_dir_all(socket_path.parent().unwrap()).unwrap();
-        let _socket = UnixListener::bind(socket_path).unwrap();
-        let client = CortexRequestClient::with_allocator(
-            journal.path(),
-            immediate_policy(),
-            UseIdAllocator::new(|| Some(43)),
-        );
-        assert_eq!(
-            client.dispatch(&CortexRequest::new("", "steward")).await,
-            Err(DispatchError::NotClaimed {
-                use_id: "43".to_owned()
-            })
         );
     }
 

@@ -1937,6 +1937,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-backup-web::backup_web_callosum_transport"
+package = "solstone-core-backup-web"
+target = "backup_web_callosum_transport"
+set = "component"
+areas = ["backup", "services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-callosum::callosum_cross_process"
 package = "solstone-core-callosum"
 target = "callosum_cross_process"
@@ -1997,6 +2010,19 @@ areas = ["health"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-check::check_host_probe"
+package = "solstone-core-check"
+target = "check_host_probe"
+set = "component"
+areas = ["health", "platform"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "quick"
 default_full = true
 required_features = []
 runtime = "none"
@@ -2141,6 +2167,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-cortex-client::cortex_client_claim_transport"
+package = "solstone-core-cortex-client"
+target = "cortex_client_claim_transport"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-describe::cli"
 package = "solstone-core-describe"
 target = "cli"
@@ -2151,6 +2190,19 @@ prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
 timeout = "standard"
 default_full = true
 required_features = ["test-stubs"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-distribution::distribution_cleanroom_loopback"
+package = "solstone-core-distribution"
+target = "distribution_cleanroom_loopback"
+set = "component"
+areas = ["repository"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
 runtime = "none"
 
 [[suites]]
@@ -3563,6 +3615,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-think-cli::think_cli_callosum_transport"
+package = "solstone-core-think-cli"
+target = "think_cli_callosum_transport"
+set = "component"
+areas = ["commands", "services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-top::render_reference"
 package = "solstone-core-top"
 target = "render_reference"
@@ -4007,6 +4072,33 @@ areas = ["repository"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "quick"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-repository-contracts::repository_payload_inventory"
+package = "solstone-core-repository-contracts"
+target = "repository_payload_inventory"
+set = "policy"
+areas = ["repository"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "quick"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-entities::entities_trust_lock_routes"
+package = "solstone-core-entities"
+target = "entities_trust_lock_routes"
+set = "component"
+areas = ["entities", "trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "host-contention"
 default_full = true
 required_features = []
 runtime = "none"

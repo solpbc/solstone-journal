@@ -175,18 +175,6 @@ id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/storage.rs::tes
 id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::incomplete::clock"
 
 [[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::task_pace_with::clock"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::task_pace_with::scheduling"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac15_service_running_receives_ok_and_crash_status_over_callosum::clock"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac15_service_running_receives_ok_and_crash_status_over_callosum::scheduling"
-
-[[findings]]
 id = "solstone-core-facets::core/crates/solstone-core-facets/src/store/awareness.rs::tests::temporary_journal::clock"
 
 [[findings]]
@@ -587,9 +575,6 @@ id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs
 
 [[findings]]
 id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::capture_logs::scheduling"
-
-[[findings]]
-id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::helpers_emit_status_and_day_log_match_the_reference_shapes::scheduling"
 
 [[findings]]
 id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::log::scheduling"

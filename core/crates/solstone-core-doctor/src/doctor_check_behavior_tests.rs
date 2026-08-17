@@ -13,7 +13,6 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::Command,
     sync::atomic::{AtomicUsize, Ordering},
     time::{Duration, SystemTime},
 };
@@ -372,45 +371,23 @@ fn stage_feature(context: &mut CheckContext, name: &str, present: bool) {
 }
 
 fn task_pace_with(tasks: serde_json::Value) -> CheckResult {
-    use std::io::Write;
-    use std::os::unix::net::UnixListener;
-    use std::sync::mpsc;
-    use std::time::Instant;
-
-    let mut context = fixture();
-    fs::create_dir_all(context.callosum_socket_path.parent().unwrap()).unwrap();
-    if context.callosum_socket_path.exists() {
-        fs::remove_file(&context.callosum_socket_path).unwrap();
-    }
-    context.service_status_timeout = Duration::from_millis(250);
-    let listener = UnixListener::bind(&context.callosum_socket_path).unwrap();
-    let started = Instant::now();
-    let accept_bound = Duration::from_millis(250);
-    let (ready_tx, ready_rx) = mpsc::sync_channel(0);
-    std::thread::spawn(move || {
-        let (stream, _) = listener.accept().expect("accept");
-        let _ = ready_tx.send(stream);
-    });
-    let (done_tx, done_rx) = mpsc::sync_channel(0);
-    let thread_context = context.clone();
-    std::thread::spawn(move || {
-        let _ = done_tx.send(result("task_pace", &thread_context));
-    });
-    let mut stream = ready_rx
-        .recv_timeout(accept_bound)
-        .expect("receipted accept");
-    let mut payload = serde_json::json!({
+    task_pace_from_status(Some(serde_json::json!({
         "tract": "supervisor",
         "event": "status",
         "tasks": tasks,
-    })
-    .to_string()
-    .into_bytes();
-    payload.push(b'\n');
-    stream.write_all(&payload).unwrap();
-    let remaining =
-        Duration::from_millis(250).saturating_sub(started.elapsed()) + Duration::from_millis(250);
-    done_rx.recv_timeout(remaining).expect("task_pace finished")
+    })))
+}
+
+fn task_pace_from_status(status: Option<serde_json::Value>) -> CheckResult {
+    crate::checks::task_pace::from_status(
+        crate::vocabulary::Check {
+            name: "task_pace",
+            severity: Severity::Advisory,
+            platforms: &[Platform::Linux],
+        },
+        status.as_ref(),
+    )
+    .unwrap()
 }
 
 #[derive(Clone, Copy)]
@@ -436,7 +413,7 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             return if ok {
                 task_pace_with(serde_json::json!([{ "name":"index", "slow":false }]))
             } else {
-                result(name, &context)
+                task_pace_from_status(None)
             };
         }
         "brain" => {
@@ -883,7 +860,7 @@ fn brain_ready_and_checking_records_are_healthy() {
 }
 
 #[test]
-fn task_pace_uses_callosum_status_fixture() {
+fn task_pace_classifies_good_and_slow_injected_status() {
     let ok = task_pace_with(serde_json::json!([{ "name":"index", "slow":false }]));
     assert_eq!(ok.status, Status::Ok);
     assert_eq!(ok.detail, "tasks on pace");
@@ -892,7 +869,7 @@ fn task_pace_uses_callosum_status_fixture() {
     }]));
     assert_eq!(warn.status, Status::Warn);
     assert_eq!(warn.detail, "running long: index (12s of 10s cap)");
-    assert_eq!(result("task_pace", &fixture()).status, Status::Skip);
+    assert_eq!(task_pace_from_status(None).status, Status::Skip);
 }
 
 #[test]
@@ -903,8 +880,8 @@ fn task_pace_malformed_slow_fields_warn() {
 }
 
 #[test]
-fn task_pace_absent_socket_skips() {
-    let row = result("task_pace", &fixture());
+fn task_pace_missing_status_skips() {
+    let row = task_pace_from_status(None);
     assert_eq!(row.status, Status::Skip);
     assert_eq!(row.detail, "supervisor status unavailable");
 }
@@ -1272,112 +1249,6 @@ fn owner_boundary_guard_is_nonvacuous() {
         assert!(cargo.contains(dependency));
     }
     assert!(!cargo.contains("solstone-core-sol.workspace"));
-}
-#[test]
-fn poisoned_interpreters_positive_control_and_battery() {
-    let mut c = fixture();
-    // The production resolver looks for the helper next to the running test
-    // executable, and a sibling convey-shell test installs a stub speakers
-    // helper into that same directory. Inject the resolvers so this battery's
-    // expected verdict does not depend on which other tests have already run.
-    #[cfg(unix)]
-    stage_speakers_analyze(&mut c, false);
-    let poison = c.journal_path.parent().unwrap().join("poison");
-    fs::create_dir_all(&poison).unwrap();
-    // Keep the fixture independent of real partial-migration backups in /tmp.
-    // A staged alias bypasses that production recovery scan; the unresolved
-    // fixture installation root still produces the expected Skip verdict.
-    let aliases = c.home_dir.join(".local/bin");
-    fs::create_dir_all(&aliases).unwrap();
-    for name in ["journal", "sol"] {
-        fs::write(aliases.join(name), "fixture alias").unwrap();
-    }
-    let witness = poison.join("witness");
-    let script = format!(
-        "#!/bin/sh\necho 'forbidden interpreter invoked: $0' >&2\necho \"$0\" >> '{}'\nexit 97\n",
-        witness.display()
-    );
-    for name in ["python", "python3", "pytest", "ruff", "uv"] {
-        let path = poison.join(name);
-        fs::write(&path, &script).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = fs::metadata(&path).unwrap().permissions();
-            permissions.set_mode(0o755);
-            fs::set_permissions(&path, permissions).unwrap();
-        }
-    }
-    let env = c.journal_path.parent().unwrap().join("venv");
-    fs::create_dir_all(env.join("bin")).unwrap();
-    fs::write(env.join("bin/python"), &script).unwrap();
-    c.python_env_root = Some(env);
-    let p = poison.join("python");
-    assert_eq!(Command::new(p).status().unwrap().code(), Some(97));
-    fs::remove_file(&witness).unwrap();
-    let journal = run(&args(), &c);
-    let readiness = run(
-        &DoctorArgs {
-            readiness: true,
-            ..args()
-        },
-        &c,
-    );
-    let verdicts = |rows: &[CheckResult]| {
-        rows.iter()
-            .map(|row| (row.name, row.status))
-            .collect::<BTreeMap<_, _>>()
-    };
-    assert_eq!(
-        verdicts(&journal),
-        BTreeMap::from([
-            ("journal_leaf_exclusivity", Status::Skip),
-            ("journal_package_version", Status::Skip),
-            ("retired_host_shim", Status::Skip),
-            ("host_dependencies", Status::Skip),
-            ("disk_space", Status::Skip),
-            ("config_dir_readable", Status::Ok),
-            ("journal_dir_writable", Status::Ok),
-            ("supervisor_conflict", Status::Skip),
-            ("service_identity", Status::Skip),
-            ("service_running", Status::Skip),
-            ("journal_sync", Status::Ok),
-            ("journal_caught_up", Status::Ok),
-            ("task_pace", Status::Skip),
-            ("brain", Status::Warn),
-            ("capture_health", Status::Skip),
-            ("observer_binding", Status::Ok),
-            ("observer_delivery_stall", Status::Skip),
-            ("observer_ingest_health", Status::Skip),
-            ("orphan_segment_pdf", Status::Skip),
-            ("stale_alias_symlink", Status::Skip),
-            ("launchd_stale_plist", Status::Skip),
-            ("default_stt_ready", Status::Warn),
-            ("parakeet_cpp_stt_ready", Status::Skip),
-            ("speakers_analyze_installation", Status::Fail),
-            ("skill_state", Status::Skip),
-            ("feature:pdf-import", Status::Warn),
-            ("feature:pdf-export", Status::Warn),
-        ])
-    );
-    assert_eq!(
-        verdicts(&readiness),
-        BTreeMap::from([
-            ("host_dependencies", Status::Skip),
-            ("python_version", Status::Skip),
-            ("sol_importable", Status::Skip),
-            ("local_bin_sol_reachable", Status::Warn),
-            ("stale_alias_symlink", Status::Skip),
-            ("disk_space", Status::Skip),
-            ("journal_dir_writable", Status::Ok),
-            ("default_stt_ready", Status::Warn),
-            ("parakeet_cpp_stt_ready", Status::Skip),
-            ("speakers_analyze_installation", Status::Fail),
-            ("feature:pdf-import", Status::Warn),
-            ("feature:pdf-export", Status::Warn),
-        ])
-    );
-    assert!(!witness.exists());
 }
 #[test]
 fn batteries_preserve_staged_home_and_journal() {

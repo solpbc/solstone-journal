@@ -14,7 +14,7 @@ pub struct TempDir {
 impl TempDir {
     pub fn new(name: &str) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        let path = PathBuf::from("/tmp").join(format!(
+        let path = PathBuf::from("/var/tmp").join(format!(
             "sja-{name}-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)

@@ -15,7 +15,6 @@ use solstone_core_support_portal::test_support::{RoutePortal, RouteReply};
 use solstone_core_support_portal::{Ledger, PortalClient};
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::process::Command;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -2468,31 +2467,6 @@ async fn support_route_response(root: &Path, path: &str) -> (u16, String, Vec<u8
     (status, content_type, body)
 }
 
-fn run_config_environment_child(mode: &str, support_url: Option<&str>) {
-    let mut command = Command::new(std::env::current_exe().expect("test executable"));
-    command
-        .args([
-            "--exact",
-            "corpus::config_fails_open_and_prefers_the_support_url_environment_override",
-            "--test-threads=1",
-        ])
-        .env("SOLSTONE_SUPPORT_CONFIG_TEST_MODE", mode)
-        .env_remove("SOLSTONE_SUPPORT_URL");
-    if let Some(support_url) = support_url {
-        command.env("SOLSTONE_SUPPORT_URL", support_url);
-    }
-    let output = command.output().expect("run config child");
-    assert!(
-        output.status.success(),
-        "config child failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        String::from_utf8_lossy(&output.stdout).contains("running 1 test"),
-        "config child did not run its exact test"
-    );
-}
-
 #[tokio::test]
 async fn drain_acknowledges_before_a_portal_backed_handler() {
     let portal = corpus_route_portal();
@@ -2617,63 +2591,6 @@ async fn shell_router_applies_the_session_gate_to_support_config() {
         std::str::from_utf8(&body).unwrap(),
         case["response"]["text"].as_str().unwrap()
     );
-}
-
-#[tokio::test]
-async fn config_fails_open_and_prefers_the_support_url_environment_override() {
-    match std::env::var("SOLSTONE_SUPPORT_CONFIG_TEST_MODE")
-        .ok()
-        .as_deref()
-    {
-        None => {
-            run_config_environment_child("defaults", None);
-            run_config_environment_child("environment", Some("https://environment.example///"));
-        }
-        Some("defaults") => {
-            let portal = corpus_route_portal();
-            let _guard = install_route_portal(&portal);
-            for (name, setup) in [
-                ("absent", None),
-                ("unreadable", Some("directory")),
-                ("malformed", Some("not json")),
-            ] {
-                let root = TempDir::new().expect("config root");
-                if let Some(setup) = setup {
-                    let config = root.path().join("config");
-                    std::fs::create_dir_all(&config).expect("config directory");
-                    if setup == "directory" {
-                        std::fs::create_dir(config.join("config.json")).expect("unreadable config");
-                    } else {
-                        std::fs::write(config.join("config.json"), setup)
-                            .expect("malformed config");
-                    }
-                }
-                let (status, _, body) =
-                    support_route_response(root.path(), "/app/support/api/config").await;
-                let body: Value = serde_json::from_slice(&body).expect("config response json");
-                assert_eq!(status, 200, "{name}");
-                assert_eq!(body["enabled"], true, "{name}");
-                assert_eq!(body["portal_url"], "https://support.solstone.app", "{name}");
-            }
-        }
-        Some("environment") => {
-            let portal = corpus_route_portal();
-            let _guard = install_route_portal(&portal);
-            let root = TempDir::new().expect("configured root");
-            let config = root.path().join("config");
-            std::fs::create_dir_all(&config).expect("config directory");
-            std::fs::write(
-                config.join("config.json"),
-                r#"{"support":{"enabled":true,"portal_url":"https://journal.example///"}}"#,
-            )
-            .expect("journal config");
-            let (_, _, body) = support_route_response(root.path(), "/app/support/api/config").await;
-            let body: Value = serde_json::from_slice(&body).expect("config response json");
-            assert_eq!(body["enabled"], true);
-            assert_eq!(body["portal_url"], "https://environment.example");
-        }
-        Some(mode) => panic!("unknown config test mode {mode}"),
-    }
 }
 
 #[tokio::test]

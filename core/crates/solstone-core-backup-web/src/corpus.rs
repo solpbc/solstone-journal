@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::{fs, io::Read, os::unix::net::UnixListener, path::Path, thread};
-
 use axum::{
     body::{Body, to_bytes},
     http::{HeaderMap, Method, Request},
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::fs;
 use tower::ServiceExt;
 
 struct Captured {
@@ -340,93 +339,6 @@ async fn unreadable_and_zero_geometry_return_non_panicking_shapes() {
         assert_eq!(status, 200);
         assert_eq!(body["suggested_defaults"], Value::Null);
     }
-}
-
-fn listen(root: &Path) -> thread::JoinHandle<String> {
-    let health = root.join("health");
-    fs::create_dir_all(&health).expect("health");
-    let socket = health.join("callosum.sock");
-    // The production client looks for the socket at exactly this path, so the
-    // test cannot relocate it. But a Unix socket path is capped at SUN_LEN
-    // (108 bytes on Linux) and this one is rooted in TMPDIR, so a long TMPDIR
-    // makes `bind` fail with a message that names neither TMPDIR nor the cap.
-    // Fail with the cause instead: a cryptic red gets attributed to the code
-    // under test, which is exactly the wrong conclusion.
-    assert!(
-        socket.as_os_str().len() < 100,
-        "callosum socket path is {} bytes, which will exceed SUN_LEN (108) once bound: {}\n\
-         This is the harness, not the code under test. Re-run with a shorter TMPDIR.",
-        socket.as_os_str().len(),
-        socket.display(),
-    );
-    let listener = UnixListener::bind(&socket).expect("listener");
-    thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("connection");
-        let mut line = String::new();
-        stream.read_to_string(&mut line).expect("line");
-        line
-    })
-}
-
-#[tokio::test]
-async fn callosum_requests_are_newline_framed_and_verify_is_conditional() {
-    let root = crate::test_support::root("fresh");
-    let receive = listen(root.path());
-    let (status, _) = response_json(
-        crate::routes(root.path().to_path_buf()),
-        Request::post("/app/backup/backup-now")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(status, 200);
-    let line = receive.join().expect("listener");
-    assert!(line.ends_with('\n'));
-    assert_eq!(
-        serde_json::from_str::<Value>(line.trim()).unwrap(),
-        json!({"tract":"supervisor","event":"request","cmd":["journal","maintenance","run","backup:run"]})
-    );
-
-    let verify_root = crate::test_support::root("enabled_never_run");
-    let receive = listen(verify_root.path());
-    let (status, _) = response_json(
-        crate::routes_with_cache(verify_root.path().to_path_buf(), corpus_cache()),
-        Request::post("/app/backup/offload/enable")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(status, 200);
-    let line = receive.join().expect("listener");
-    assert!(line.ends_with('\n'));
-    assert_eq!(
-        serde_json::from_str::<Value>(line.trim()).unwrap(),
-        json!({"tract":"supervisor","event":"request","cmd":["journal","maintenance","run","backup:verify"]})
-    );
-
-    let discarded_verify = crate::test_support::root("enabled_never_run");
-    let (status, _) = response_json(
-        crate::routes_with_cache(discarded_verify.path().to_path_buf(), corpus_cache()),
-        Request::post("/app/backup/offload/enable")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(
-        status, 200,
-        "a missing verify socket is deliberately non-fatal"
-    );
-
-    let unavailable = crate::test_support::root("fresh");
-    let (status, body) = response_json(
-        crate::routes(unavailable.path().to_path_buf()),
-        Request::post("/app/backup/backup-now")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(status, 503);
-    assert_eq!(body["reason_code"], "backup_unavailable");
 }
 
 #[tokio::test]

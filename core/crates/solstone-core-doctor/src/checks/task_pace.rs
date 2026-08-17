@@ -6,7 +6,12 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
-    let Some(status) = service_status::fetch(context) else {
+    let status = service_status::fetch(context);
+    from_status(check, status.as_ref())
+}
+
+pub(crate) fn from_status(check: Check, status: Option<&serde_json::Value>) -> RunnerResult {
+    let Some(status) = status else {
         return Ok(make_result(
             check,
             Status::Skip,
