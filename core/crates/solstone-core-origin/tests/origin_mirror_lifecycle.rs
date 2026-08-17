@@ -22,6 +22,7 @@ use solstone_core_origin::mirror::{
 struct LoopbackServer {
     base: String,
     accepted: Arc<AtomicU64>,
+    request_lines: Arc<Mutex<Vec<String>>>,
     stop: Arc<AtomicBool>,
     addr: SocketAddr,
     handle: Option<JoinHandle<()>>,
@@ -30,6 +31,10 @@ struct LoopbackServer {
 impl LoopbackServer {
     fn accepted(&self) -> u64 {
         self.accepted.load(Ordering::Relaxed)
+    }
+
+    fn request_lines(&self) -> Vec<String> {
+        self.request_lines.lock().unwrap().clone()
     }
 
     fn shutdown(&mut self) {
@@ -101,8 +106,10 @@ where
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let accepted = Arc::new(AtomicU64::new(0));
+    let request_lines = Arc::new(Mutex::new(Vec::new()));
     let stop = Arc::new(AtomicBool::new(false));
     let thread_accepted = Arc::clone(&accepted);
+    let thread_request_lines = Arc::clone(&request_lines);
     let thread_stop = Arc::clone(&stop);
     let handle = thread::spawn(move || {
         loop {
@@ -112,12 +119,17 @@ where
             }
             thread_accepted.fetch_add(1, Ordering::Relaxed);
             let request = read_request(&mut stream);
+            thread_request_lines
+                .lock()
+                .unwrap()
+                .push(request.lines().next().unwrap_or_default().to_owned());
             write_response(&request, &mut stream);
         }
     });
     LoopbackServer {
         base: format!("http://{addr}"),
         accepted,
+        request_lines,
         stop,
         addr,
         handle: Some(handle),
@@ -204,12 +216,20 @@ fn mirror_target(base: &str, bytes: &[u8], kind: UpstreamMetadataKind) -> Mirror
 #[test]
 fn gate_loopback_verifies_bytes_and_inner_slash_origin_key() {
     let body = b"fixture-origin".to_vec();
-    let origin = server(move |_| (String::new(), body.clone()));
+    let mut origin = server(move |_| (String::new(), body.clone()));
     let target = target(
         "assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/onnx/model.onnx",
         b"fixture-origin",
     );
     verify_targets(&[target], &temp("gate-inner-slash"), &policy(&origin.base)).unwrap();
+    origin.shutdown();
+    assert_eq!(
+        origin.request_lines(),
+        vec![
+            "GET /assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/onnx/model.onnx HTTP/1.1"
+                .to_owned()
+        ]
+    );
 }
 
 #[test]
@@ -330,6 +350,15 @@ fn mirror_follows_validated_loopback_redirects() {
     ));
     origin.shutdown();
     assert_eq!(origin.accepted(), 4);
+    assert_eq!(
+        origin.request_lines(),
+        vec![
+            "GET /metadata HTTP/1.1".to_owned(),
+            "GET /upstream HTTP/1.1".to_owned(),
+            "GET /object HTTP/1.1".to_owned(),
+            "GET /assets/fixture/file.bin HTTP/1.1".to_owned(),
+        ]
+    );
 }
 
 #[test]
@@ -374,6 +403,13 @@ fn mirror_refuses_redirect_to_a_disallowed_host() {
     ));
     origin.shutdown();
     assert_eq!(origin.accepted(), 2);
+    assert_eq!(
+        origin.request_lines(),
+        vec![
+            "GET /metadata HTTP/1.1".to_owned(),
+            "GET /upstream HTTP/1.1".to_owned(),
+        ]
+    );
 }
 
 #[test]
