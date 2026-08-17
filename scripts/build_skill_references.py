@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import tempfile
 import tomllib
@@ -19,9 +20,85 @@ from pathlib import Path
 
 import frontmatter
 
-from solstone.think.command_polarity import classify_verb
-
 ROOT = Path(__file__).resolve().parents[1]
+
+# Verb polarity is inlined rather than imported. It arrived from
+# solstone.think.command_polarity, which the Python reference tree took with it,
+# and this script generates two checked-in payload files -- so an import that can
+# disappear is a producer that can disappear, and the outputs become frozen bytes
+# nothing can regenerate or verify. This is naming convention, not logic shared
+# with anything that still exists.
+READ_VERBS: frozenset[str] = frozenset(
+    {
+        "load",
+        "get",
+        "read",
+        "scan",
+        "list",
+        "show",
+        "find",
+        "match",
+        "resolve",
+        "query",
+        "lookup",
+        "status",
+        "check",
+        "validate",
+        "discover",
+        "format",
+        "render",
+        "extract",
+        "parse",
+        "view",
+        "inspect",
+        "info",
+        "describe",
+        "search",
+    }
+)
+
+WRITE_VERBS: frozenset[str] = frozenset(
+    {
+        "save",
+        "create",
+        "add",
+        "insert",
+        "append",
+        "attach",
+        "delete",
+        "remove",
+        "update",
+        "rename",
+        "move",
+        "promote",
+        "merge",
+        "seed",
+        "consolidate",
+        "bootstrap",
+        "backfill",
+        "dispatch",
+        "record",
+        "ingest",
+        "import",
+        "rebuild",
+    }
+)
+
+
+def _verb_segments(verb: str) -> list[str]:
+    base = verb.lstrip("_")
+    return [part for part in re.split(r"[-_]+", base) if part]
+
+
+def classify_verb(verb: str) -> str:
+    """Classify a CLI verb as read, write, or other by naming convention."""
+    segments = _verb_segments(verb)
+    if any(part in READ_VERBS for part in segments):
+        return "read"
+    if any(part in WRITE_VERBS for part in segments):
+        return "write"
+    return "other"
+
 
 # Test hook: leave as None in production so new app fragments are discovered at
 # build/check time instead of being registered in a second source list.
@@ -141,7 +218,9 @@ def _load_fragments() -> dict[str, Fragment]:
     seen_names: dict[str, Path] = {}
     source_paths = _fragment_sources()
     if not source_paths:
-        raise ValueError(f"{ROOT / 'solstone' / 'apps'}: no app skill fragments found")
+        raise ValueError(
+            f"{ROOT / PAYLOAD_SRC_ROOT / 'solstone' / 'apps'}: no app skill fragments found"
+        )
     for rel_path in source_paths:
         fragment = _load_fragment(rel_path)
         previous = seen_names.get(fragment.app)
