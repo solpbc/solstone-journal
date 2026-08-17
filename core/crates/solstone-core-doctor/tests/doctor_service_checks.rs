@@ -6,19 +6,20 @@ use solstone_core_doctor::{
     args::DoctorArgs,
     checks::{service_running, task_pace},
     context::CheckContext,
-    registry::{self, Battery},
     run,
-    vocabulary::{Check, Platform, Severity, Status, results_failed},
+    vocabulary::{Check, CheckResult, Platform, Severity, Status, results_failed},
 };
 use std::{
+    collections::BTreeMap,
     fs,
     io::Write,
     os::unix::{
-        fs::{PermissionsExt, symlink},
+        fs::PermissionsExt,
         net::{UnixDatagram, UnixListener, UnixStream},
+        process::CommandExt,
     },
     path::{Path, PathBuf},
-    process::Command,
+    process::{Child, Command, ExitStatus, Stdio},
     sync::{
         atomic::{AtomicUsize, Ordering},
         mpsc,
@@ -29,43 +30,50 @@ use std::{
 
 static NEXT_CONTEXT: AtomicUsize = AtomicUsize::new(0);
 
-const POISON_INTERPRETER: &str = r#"#!/bin/sh
-printf '%s\n' "$0" > "$POISON_MARKER"
-exit 97
-"#;
-
 const ACCEPT_BOUND: Duration = Duration::from_millis(250);
 const COMPLETE_STATUS_TIMEOUT: Duration = Duration::from_millis(250);
 const WIRE_STATUS_TIMEOUT: Duration = Duration::from_millis(50);
+const ISOLATED_BATTERY_BOUND: Duration = Duration::from_secs(10);
 const HEALTHY_TASK_PACE_FRAME: &[u8] =
     br#"{"event":"status","tasks":[{"name":"index","slow":false}],"tract":"supervisor"}
 "#;
 
-fn context() -> CheckContext {
+struct TestRoot(PathBuf);
+
+impl Drop for TestRoot {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn context() -> (CheckContext, TestRoot) {
     let root = std::env::temp_dir().join(format!(
         "solstone-doctor-service-check-{}-{}",
         std::process::id(),
         NEXT_CONTEXT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&root).expect("create staged test root");
-    CheckContext {
-        home_dir: root.join("home"),
-        install_bin_dir: root.join("install/bin"),
-        journal_path: root.join("journal"),
-        callosum_socket_path: root.join("journal/health/callosum.sock"),
-        platform: Platform::Linux,
-        now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
-        host_arch: "x86_64".into(),
-        hostname: "test-host".into(),
-        machine_id: Some("test-machine".into()),
-        checkout_root: None,
-        python_env_root: None,
-        port: 5015,
-        service_status_timeout: Duration::from_millis(10),
-        service_status_command_override: None,
-        parakeet_server_probe_override: None,
-        speakers_analyze_resolvers: None,
-    }
+    (
+        CheckContext {
+            home_dir: root.join("home"),
+            install_bin_dir: root.join("install/bin"),
+            journal_path: root.join("journal"),
+            callosum_socket_path: root.join("journal/health/callosum.sock"),
+            platform: Platform::Linux,
+            now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            host_arch: "x86_64".into(),
+            hostname: "test-host".into(),
+            machine_id: Some("test-machine".into()),
+            checkout_root: None,
+            python_env_root: None,
+            port: 5015,
+            service_status_timeout: Duration::from_millis(10),
+            service_status_command_override: None,
+            parakeet_server_probe_override: None,
+            speakers_analyze_resolvers: None,
+        },
+        TestRoot(root),
+    )
 }
 
 fn task_pace_check() -> Check {
@@ -139,6 +147,84 @@ fn write_script(path: &Path, body: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod override script");
 }
 
+struct BoundedProcessGroup {
+    child: Option<Child>,
+    group: nix::unistd::Pid,
+}
+
+impl BoundedProcessGroup {
+    fn spawn(mut command: Command) -> Self {
+        command.process_group(0);
+        let child = command.spawn().expect("spawn isolated doctor battery");
+        let group = nix::unistd::Pid::from_raw(
+            i32::try_from(child.id()).expect("doctor battery PID fits process-group ID"),
+        );
+        Self {
+            child: Some(child),
+            group,
+        }
+    }
+
+    fn wait_bounded(&mut self, timeout: Duration) -> ExitStatus {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(status) = self
+                .child
+                .as_mut()
+                .expect("owned doctor battery")
+                .try_wait()
+                .expect("poll isolated doctor battery")
+            {
+                self.terminate_group();
+                self.child.take();
+                self.assert_group_gone();
+                return status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "isolated doctor battery exceeded {timeout:?}"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    fn terminate_group(&self) {
+        match nix::sys::signal::killpg(self.group, nix::sys::signal::Signal::SIGKILL) {
+            Ok(()) | Err(nix::errno::Errno::ESRCH) => {}
+            Err(error) => panic!("terminate isolated doctor battery group: {error}"),
+        }
+    }
+
+    fn assert_group_gone(&self) {
+        let deadline = Instant::now() + Duration::from_millis(500);
+        loop {
+            match nix::sys::signal::killpg(self.group, None::<nix::sys::signal::Signal>) {
+                Err(nix::errno::Errno::ESRCH) => return,
+                Ok(()) | Err(nix::errno::Errno::EPERM) if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Ok(()) | Err(nix::errno::Errno::EPERM) => {
+                    panic!("isolated doctor battery group survived cleanup")
+                }
+                Err(error) => panic!("inspect isolated doctor battery group: {error}"),
+            }
+        }
+    }
+}
+
+impl Drop for BoundedProcessGroup {
+    fn drop(&mut self) {
+        if self.child.is_some() {
+            self.terminate_group();
+        }
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        self.assert_group_gone();
+    }
+}
+
 fn shell_quote(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
 }
@@ -177,97 +263,21 @@ fn descendant_survives_cleanup_bound(lifetime_socket: &Path) -> bool {
     }
 }
 
-fn site_packages(context: &CheckContext, python: &str) -> PathBuf {
-    let prefix = context
-        .install_bin_dir
-        .parent()
-        .expect("staged install bin has a prefix");
-    let site_packages = prefix.join("lib").join(python).join("site-packages");
-    fs::create_dir_all(site_packages.join("solstone")).expect("create staged solstone package");
-    fs::write(site_packages.join("solstone/__init__.py"), "").expect("write package marker");
-    site_packages
+fn parakeet_unreachable_probe(_: &Path, _: Duration) -> Result<(), String> {
+    Err("fixture unreachable".into())
 }
 
-fn metadata(
-    site_packages: &Path,
-    directory: &str,
-    name: &str,
-    version: &str,
-    requires_python: Option<&str>,
-) {
-    let dist_info = site_packages.join(directory);
-    fs::create_dir_all(&dist_info).expect("create staged dist-info");
-    let requires_python = requires_python
-        .map(|value| format!("Requires-Python: {value}\n"))
-        .unwrap_or_default();
-    fs::write(
-        dist_info.join("METADATA"),
-        format!("Name: {name}\nVersion: {version}\n{requires_python}\n"),
-    )
-    .expect("write staged metadata");
+fn speakers_binary_missing() -> Result<PathBuf, String> {
+    Err("fixture helper missing".into())
 }
 
-fn stage_ac9_batteries(context: &CheckContext) {
-    fs::create_dir_all(&context.home_dir).expect("create staged home");
-    fs::create_dir_all(&context.journal_path).expect("create staged journal");
-    fs::create_dir_all(&context.install_bin_dir).expect("create staged install bin");
-    let site_packages = site_packages(context, "python3.12");
-    metadata(
-        &site_packages,
-        "solstone-1.2.3.dist-info",
-        "solstone",
-        "1.2.3",
-        Some(">=3.12"),
-    );
-    metadata(
-        &site_packages,
-        "solstone_journal-1.2.3.dist-info",
-        "solstone-journal",
-        "1.2.3",
-        None,
-    );
-    for module in ["frontmatter", "flask", "onnxruntime"] {
-        fs::create_dir(site_packages.join(module)).expect("create host dependency module");
-    }
-    fs::write(
-        context
-            .install_bin_dir
-            .parent()
-            .expect("install prefix")
-            .join("pyvenv.cfg"),
-        "version = 3.12.0\n",
-    )
-    .expect("write staged pyvenv config");
-    for binary in ["sol", "journal", "python"] {
-        let path = context.install_bin_dir.join(binary);
-        fs::write(&path, POISON_INTERPRETER).expect("write staged executable");
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
-            .expect("make staged executable");
-    }
-    let aliases = context.home_dir.join(".local/bin");
-    fs::create_dir_all(&aliases).expect("create staged aliases");
-    symlink(context.install_bin_dir.join("sol"), aliases.join("sol")).expect("link staged sol");
-    symlink(
-        context.install_bin_dir.join("journal"),
-        aliases.join("journal"),
-    )
-    .expect("link staged journal");
-    let unit = context
-        .home_dir
-        .join(".config/systemd/user/solstone.service");
-    fs::create_dir_all(unit.parent().expect("unit parent")).expect("create unit parent");
-    fs::write(
-        unit,
-        format!(
-            "ExecStart={} start 5015\n",
-            context.install_bin_dir.join("journal").display()
-        ),
-    )
-    .expect("write staged service unit");
+fn speakers_model_ready(_: &str) -> Result<PathBuf, solstone_core_transcribe::TranscribeError> {
+    Ok("/fixture/model.onnx".into())
 }
 
-fn run_ac9_child(root: PathBuf) {
-    let context = CheckContext {
+fn poison_battery_context(root: &Path) -> CheckContext {
+    fs::create_dir_all(root.join("journal")).expect("create poison-battery journal");
+    CheckContext {
         home_dir: root.join("home"),
         install_bin_dir: root.join("install/bin"),
         journal_path: root.join("journal"),
@@ -275,50 +285,154 @@ fn run_ac9_child(root: PathBuf) {
         platform: Platform::Linux,
         now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
         host_arch: "x86_64".into(),
-        hostname: "test-host".into(),
-        machine_id: Some("test-machine".into()),
+        hostname: "fixture-host".into(),
+        machine_id: Some("fixture-machine".into()),
         checkout_root: None,
-        python_env_root: None,
+        python_env_root: Some(root.join("venv")),
         port: 5015,
-        service_status_timeout: Duration::from_millis(10),
+        service_status_timeout: Duration::from_millis(1),
         service_status_command_override: None,
-        parakeet_server_probe_override: None,
-        speakers_analyze_resolvers: None,
-    };
-    for readiness in [false, true] {
-        let results = run(
-            &DoctorArgs {
+        parakeet_server_probe_override: Some(parakeet_unreachable_probe),
+        speakers_analyze_resolvers: Some((speakers_binary_missing, speakers_model_ready)),
+    }
+}
+
+fn verdicts(rows: &[CheckResult]) -> BTreeMap<&str, Status> {
+    rows.iter().map(|row| (row.name, row.status)).collect()
+}
+
+fn run_poison_battery_child(root: &Path) {
+    let context = poison_battery_context(root);
+    let journal = run(
+        &DoctorArgs {
+            verbose: false,
+            json: false,
+            jsonl: false,
+            port: 5015,
+            feature: None,
+            readiness: false,
+        },
+        &context,
+    );
+    let readiness = run(
+        &DoctorArgs {
+            readiness: true,
+            ..DoctorArgs {
                 verbose: false,
                 json: false,
                 jsonl: false,
                 port: 5015,
                 feature: None,
-                readiness,
-            },
-            &context,
-        );
-        assert_eq!(
-            results.len(),
-            registry::entries(if readiness {
-                Battery::JournalReadiness
-            } else {
-                Battery::Journal
-            })
-            .len(),
-            "entire battery must run"
-        );
-        assert!(
-            results
-                .iter()
-                .all(|result| result.execution_error.is_none()),
-            "a check failed before the battery completed: {results:?}"
-        );
-    }
+                readiness: false,
+            }
+        },
+        &context,
+    );
+    assert!(
+        journal
+            .iter()
+            .chain(&readiness)
+            .all(|row| row.execution_error.is_none()),
+        "poison battery must complete every native check without an execution error"
+    );
+    assert_eq!(
+        verdicts(&journal),
+        BTreeMap::from([
+            ("journal_leaf_exclusivity", Status::Skip),
+            ("journal_package_version", Status::Skip),
+            ("retired_host_shim", Status::Skip),
+            ("host_dependencies", Status::Skip),
+            ("disk_space", Status::Skip),
+            ("config_dir_readable", Status::Ok),
+            ("journal_dir_writable", Status::Ok),
+            ("supervisor_conflict", Status::Skip),
+            ("service_identity", Status::Skip),
+            ("service_running", Status::Skip),
+            ("journal_sync", Status::Ok),
+            ("journal_caught_up", Status::Ok),
+            ("task_pace", Status::Skip),
+            ("brain", Status::Warn),
+            ("capture_health", Status::Skip),
+            ("observer_binding", Status::Ok),
+            ("observer_delivery_stall", Status::Skip),
+            ("observer_ingest_health", Status::Skip),
+            ("orphan_segment_pdf", Status::Skip),
+            ("stale_alias_symlink", Status::Skip),
+            ("launchd_stale_plist", Status::Skip),
+            ("default_stt_ready", Status::Warn),
+            ("parakeet_cpp_stt_ready", Status::Skip),
+            ("speakers_analyze_installation", Status::Fail),
+            ("skill_state", Status::Skip),
+            ("feature:pdf-import", Status::Warn),
+            ("feature:pdf-export", Status::Warn),
+        ])
+    );
+    assert_eq!(
+        verdicts(&readiness),
+        BTreeMap::from([
+            ("host_dependencies", Status::Skip),
+            ("python_version", Status::Skip),
+            ("sol_importable", Status::Skip),
+            ("local_bin_sol_reachable", Status::Warn),
+            ("stale_alias_symlink", Status::Skip),
+            ("disk_space", Status::Skip),
+            ("journal_dir_writable", Status::Ok),
+            ("default_stt_ready", Status::Warn),
+            ("parakeet_cpp_stt_ready", Status::Skip),
+            ("speakers_analyze_installation", Status::Fail),
+            ("feature:pdf-import", Status::Warn),
+            ("feature:pdf-export", Status::Warn),
+        ])
+    );
+}
+
+fn service_running_from_status(crashed: serde_json::Value) -> CheckResult {
+    let (mut context, _root) = context();
+    install_linux_unit(&context);
+    context.service_status_timeout = COMPLETE_STATUS_TIMEOUT;
+    let listener = bind_listener(&context.callosum_socket_path);
+    let socket_path = context.callosum_socket_path.clone();
+    let result_rx = spawn_result(move || {
+        service_running::run(&context, service_running_check()).expect("service check")
+    });
+    let mut stream = accept_stream(listener);
+    let mut frame = serde_json::json!({
+        "tract": "supervisor",
+        "event": "status",
+        "crashed": crashed,
+    })
+    .to_string()
+    .into_bytes();
+    frame.push(b'\n');
+    write_exact(&mut stream, &frame);
+    let row = recv_result(result_rx, COMPLETE_STATUS_TIMEOUT + ACCEPT_BOUND);
+    drop(stream);
+    fs::remove_file(socket_path).expect("remove callosum fixture socket");
+    row
+}
+
+#[test]
+fn ac15_service_running_receives_ok_and_crash_status_over_callosum() {
+    let ok = service_running_from_status(serde_json::json!([]));
+    assert_eq!(ok.status, Status::Ok);
+    assert_eq!(ok.detail, "journal service is running");
+
+    let crash = service_running_from_status(serde_json::json!([{
+        "name": "foo",
+        "restart_attempts": 3,
+    }]));
+    assert_eq!(crash.status, Status::Fail);
+    assert!(
+        crash
+            .detail
+            .contains("crash-loop: foo (3 restart attempts)")
+    );
+    assert_eq!(crash.fix.as_deref(), Some("run journal service logs"));
 }
 
 #[test]
 fn callosum_complete_frame_status_consumed() {
-    let mut context = context();
+    let (mut context, _root) = context();
     context.service_status_timeout = COMPLETE_STATUS_TIMEOUT;
     let listener = bind_listener(&context.callosum_socket_path);
     let started = Instant::now();
@@ -335,7 +449,7 @@ fn callosum_complete_frame_status_consumed() {
 #[test]
 fn callosum_malformed_frame_does_not_count_as_status() {
     let payload = b"not-json\n";
-    let mut context = context();
+    let (mut context, _root) = context();
     context.service_status_timeout = WIRE_STATUS_TIMEOUT;
     let listener = bind_listener(&context.callosum_socket_path);
     let result_rx = spawn_result(move || task_pace::run(&context, task_pace_check()).unwrap());
@@ -350,7 +464,7 @@ fn callosum_malformed_frame_does_not_count_as_status() {
 #[test]
 fn callosum_partial_frame_does_not_count_as_status() {
     let payload = br#"{"tract":"supervisor","event":"status""#;
-    let mut context = context();
+    let (mut context, _root) = context();
     context.service_status_timeout = WIRE_STATUS_TIMEOUT;
     let listener = bind_listener(&context.callosum_socket_path);
     let result_rx = spawn_result(move || task_pace::run(&context, task_pace_check()).unwrap());
@@ -364,7 +478,7 @@ fn callosum_partial_frame_does_not_count_as_status() {
 
 #[test]
 fn callosum_accepted_silent_times_out() {
-    let mut context = context();
+    let (mut context, _root) = context();
     context.service_status_timeout = WIRE_STATUS_TIMEOUT;
     let listener = bind_listener(&context.callosum_socket_path);
     let waited_from = Instant::now();
@@ -387,7 +501,7 @@ fn callosum_accepted_then_eof_without_status() {
     // still ends on service_status_timeout. Distinguishability is the close: this
     // test drops the peer immediately. The silent case must hold the stream open
     // for the whole wait — an immediate close cannot satisfy that case.
-    let mut context = context();
+    let (mut context, _root) = context();
     context.service_status_timeout = WIRE_STATUS_TIMEOUT;
     let listener = bind_listener(&context.callosum_socket_path);
     let result_rx = spawn_result(move || task_pace::run(&context, task_pace_check()).unwrap());
@@ -400,7 +514,7 @@ fn callosum_accepted_then_eof_without_status() {
 
 #[test]
 fn service_running_accepted_silent_warns() {
-    let mut context = context();
+    let (mut context, _root) = context();
     install_linux_unit(&context);
     let script = context.home_dir.join("not-failed.sh");
     write_script(&script, "#!/bin/sh\necho active\nexit 1\n");
@@ -426,7 +540,7 @@ fn service_running_accepted_silent_warns() {
 
 #[test]
 fn service_running_failed_service_command_fails() {
-    let mut context = context();
+    let (mut context, _root) = context();
     install_linux_unit(&context);
     let script = context.home_dir.join("failed-service.sh");
     write_script(&script, "#!/bin/sh\necho failed\nexit 0\n");
@@ -490,14 +604,15 @@ fn service_timeout_descendant() {
 
 #[test]
 fn service_command_exit_still_terminates_descendants_holding_output_pipes() {
-    let mut context = context();
+    let (mut context, _root) = context();
     install_linux_unit(&context);
     context.service_status_timeout = WIRE_STATUS_TIMEOUT;
 
-    let ready_path = context.home_dir.join("exit-descendant-ready.sock");
-    let ready_fifo = context.home_dir.join("exit-descendant-ready.fifo");
-    let lifetime_path = context.home_dir.join("exit-descendant-lifetime.sock");
-    let release_path = context.home_dir.join("exit-descendant-release.sock");
+    // Keep Unix-domain paths short even when the checkout or TMPDIR is deeply nested.
+    let ready_path = context.home_dir.join("er");
+    let ready_fifo = context.home_dir.join("ef");
+    let lifetime_path = context.home_dir.join("el");
+    let release_path = context.home_dir.join("ex");
     nix::unistd::mkfifo(
         &ready_fifo,
         nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
@@ -554,13 +669,14 @@ fn service_command_exit_still_terminates_descendants_holding_output_pipes() {
 
 #[test]
 fn service_timeout_terminates_the_owned_descendant_group() {
-    let mut context = context();
+    let (mut context, _root) = context();
     install_linux_unit(&context);
     context.service_status_timeout = WIRE_STATUS_TIMEOUT;
 
-    let ready_path = context.home_dir.join("timeout-descendant-ready.sock");
-    let lifetime_path = context.home_dir.join("timeout-descendant-lifetime.sock");
-    let release_path = context.home_dir.join("timeout-descendant-release.sock");
+    // Keep Unix-domain paths short even when the checkout or TMPDIR is deeply nested.
+    let ready_path = context.home_dir.join("tr");
+    let lifetime_path = context.home_dir.join("tl");
+    let release_path = context.home_dir.join("tx");
     let ready = UnixDatagram::bind(&ready_path).expect("bind descendant readiness socket");
     ready
         .set_read_timeout(Some(Duration::from_secs(1)))
@@ -615,30 +731,33 @@ fn service_timeout_terminates_the_owned_descendant_group() {
 #[test]
 fn ac9_full_batteries_never_invoke_poisoned_interpreters() {
     if let Some(root) = std::env::var_os("SOLSTONE_DOCTOR_AC9_ROOT") {
-        run_ac9_child(PathBuf::from(root));
+        run_poison_battery_child(&PathBuf::from(root));
         return;
     }
 
-    let staged = context();
-    fs::create_dir_all(&staged.home_dir).expect("create staged home");
+    let (staged, _root) = context();
+    let root = staged.home_dir.parent().expect("staged root").to_path_buf();
     fs::create_dir_all(&staged.journal_path).expect("create staged journal");
-    fs::create_dir_all(&staged.install_bin_dir).expect("create staged install bin");
-    let root = staged
-        .install_bin_dir
-        .parent()
-        .and_then(Path::parent)
-        .expect("staged root")
-        .to_path_buf();
     let poison_dir = root.join("poison");
     let marker = root.join("poison-marker");
     fs::create_dir_all(&poison_dir).expect("create poison directory");
-    for name in ["python", "python3", "pip", "uv"] {
+    let poison_script = "#!/bin/sh\nprintf '%s\\n' \"$0\" > \"$POISON_MARKER\"\nexit 97\n";
+    for name in ["python", "python3", "pytest", "ruff", "uv", "pip"] {
         let shim = poison_dir.join(name);
-        fs::write(&shim, POISON_INTERPRETER).expect("write poison PATH shim");
+        fs::write(&shim, poison_script).expect("write poison PATH shim");
         fs::set_permissions(&shim, fs::Permissions::from_mode(0o755))
             .expect("make poison PATH shim executable");
     }
-    stage_ac9_batteries(&staged);
+    let aliases = staged.home_dir.join(".local/bin");
+    fs::create_dir_all(&aliases).expect("create staged aliases");
+    for name in ["journal", "sol"] {
+        fs::write(aliases.join(name), "fixture alias").expect("write staged alias");
+    }
+    let python_env = root.join("venv/bin");
+    fs::create_dir_all(&python_env).expect("create staged Python environment");
+    fs::write(python_env.join("python"), poison_script).expect("write staged Python poison");
+    fs::set_permissions(python_env.join("python"), fs::Permissions::from_mode(0o755))
+        .expect("make staged Python poison executable");
 
     let positive = Command::new(poison_dir.join("python"))
         .env("POISON_MARKER", &marker)
@@ -651,21 +770,32 @@ fn ac9_full_batteries_never_invoke_poisoned_interpreters() {
     );
     fs::remove_file(&marker).expect("clear positive-control marker");
 
-    let output = Command::new(std::env::current_exe().expect("test executable"))
+    let stdout_path = root.join("doctor-battery.stdout");
+    let stderr_path = root.join("doctor-battery.stderr");
+    let stdout = fs::File::create(&stdout_path).expect("create doctor battery stdout");
+    let stderr = fs::File::create(&stderr_path).expect("create doctor battery stderr");
+    let mut command = Command::new(std::env::current_exe().expect("test executable"));
+    command
         .args([
             "--exact",
             "ac9_full_batteries_never_invoke_poisoned_interpreters",
         ])
+        .env_clear()
         .env("SOLSTONE_DOCTOR_AC9_ROOT", &root)
         .env("POISON_MARKER", &marker)
         .env("PATH", &poison_dir)
-        .output()
-        .expect("run isolated poison-interpreter child");
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr));
+    let mut child = BoundedProcessGroup::spawn(command);
+    let status = child.wait_bounded(ISOLATED_BATTERY_BOUND);
+    let stdout = fs::read(&stdout_path).expect("read doctor battery stdout");
+    let stderr = fs::read(&stderr_path).expect("read doctor battery stderr");
     assert!(
-        output.status.success(),
+        status.success(),
         "child test failed:\n{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        String::from_utf8_lossy(&stdout),
+        String::from_utf8_lossy(&stderr)
     );
     assert!(
         !marker.exists(),

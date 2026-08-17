@@ -27,6 +27,7 @@ tower.workspace = true
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
+nix.workspace = true
 sha2.workspace = true
 solstone-core-convey-shell.workspace = true
 solstone-core-support-portal = { workspace = true, features = ["test-support"] }

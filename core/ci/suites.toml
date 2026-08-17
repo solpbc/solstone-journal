@@ -2002,6 +2002,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-check::check_host_probe"
+package = "solstone-core-check"
+target = "check_host_probe"
+set = "component"
+areas = ["health", "platform"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "quick"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-convey-http::convey_http_loopback"
 package = "solstone-core-convey-http"
 target = "convey_http_loopback"
