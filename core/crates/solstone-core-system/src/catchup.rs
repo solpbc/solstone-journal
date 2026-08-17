@@ -976,7 +976,7 @@ mod tests {
         }
         let force = ["20260101".to_owned()];
         let exclude = BTreeSet::new();
-        let uncapped = [
+        let capped_with_forced = [
             "20260101".to_owned(),
             "20260103".to_owned(),
             "20260104".to_owned(),
@@ -985,7 +985,7 @@ mod tests {
         ];
         assert_eq!(
             eligible_catchup_days(&bed.root, &force, &exclude, UNIX_EPOCH).expect("eligible days"),
-            uncapped
+            capped_with_forced
         );
 
         let fingerprint = empty_fingerprint();
@@ -1021,7 +1021,7 @@ mod tests {
                 UNIX_EPOCH + Duration::from_secs(10)
             )
             .expect("at retry"),
-            uncapped
+            capped_with_forced
         );
         assert_eq!(
             eligible_catchup_days(
@@ -1031,7 +1031,7 @@ mod tests {
                 UNIX_EPOCH + Duration::from_secs(11)
             )
             .expect("after retry"),
-            uncapped
+            capped_with_forced
         );
     }
 

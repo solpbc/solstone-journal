@@ -139,6 +139,11 @@ fn wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes() {
 
     assert_written_once(&sol, b"old sol bytes", &target, "/new/sol");
     assert_written_once(&journal, b"old journal bytes", &target, "/new/journal");
-    assert!(!bin.join(".sol.tmp-0").exists());
-    assert!(!bin.join(".journal.tmp-1").exists());
+    let residue = fs::read_dir(&bin)
+        .expect("bin directory")
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name())
+        .filter(|name| name.to_string_lossy().contains(".tmp-"))
+        .collect::<Vec<_>>();
+    assert!(residue.is_empty(), "staging residue remains: {residue:?}");
 }

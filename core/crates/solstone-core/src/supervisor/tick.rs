@@ -1612,8 +1612,9 @@ mod tests {
     fn check_segment_flush_is_a_remote_mode_noop() {
         let bed = Bed::new("flush-remote");
         let queue = queue(&bed.root);
+        let origin = Instant::now();
         let mut flush = FlushState {
-            last_segment_ts: Some(Instant::now() - Duration::from_secs(3600)),
+            last_segment_ts: Some(origin),
             day: Some("20260101".to_owned()),
             segment: Some("120000_1".to_owned()),
             stream: None,
@@ -1626,7 +1627,7 @@ mod tests {
             true,
             &mut flush,
             true,
-            Instant::now() - Duration::from_secs(3600),
+            origin + FLUSH_TIMEOUT + Duration::from_secs(1),
         );
 
         assert!(!flush.flushed);
