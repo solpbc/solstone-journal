@@ -492,7 +492,7 @@ fn http_header_lines(head: &[u8]) -> Option<Vec<&[u8]>> {
 mod tests {
     use std::io::{Cursor, Read, Write};
 
-    use super::{AttestedIo, send_json_request};
+    use super::{AttestedHttpError, AttestedIo, MAX_PROOF_RESPONSE_BYTES, send_json_request};
 
     struct ScriptedIo {
         written: Vec<u8>,
@@ -523,7 +523,7 @@ mod tests {
     }
 
     #[test]
-    fn json_request_uses_plain_read_write_transport_with_bounded_response_parsing() {
+    fn json_request_has_exact_authorized_content_length_and_body_framing() {
         let mut stream = ScriptedIo {
             written: Vec::new(),
             unread: Cursor::new(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\n{}".to_vec()),
@@ -541,11 +541,50 @@ mod tests {
 
         assert_eq!(response.status, 201);
         assert_eq!(response.body, br"{}");
-        assert!(request.starts_with(b"POST /v1/chat/completions HTTP/1.1\r\n"));
-        assert!(
-            request
-                .windows(b"Authorization: Bearer secret".len())
-                .any(|window| window == b"Authorization: Bearer secret")
+        assert_eq!(
+            request,
+            b"POST /v1/chat/completions HTTP/1.1\r\nHost: example.test\r\nContent-Type: application/json\r\nContent-Length: 16\r\nAuthorization: Bearer secret\r\n\r\n{\"model\":\"test\"}"
         );
+    }
+
+    #[test]
+    fn json_request_without_bearer_has_no_authorization_line() {
+        let mut stream = ScriptedIo {
+            written: Vec::new(),
+            unread: Cursor::new(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}".to_vec()),
+        };
+        send_json_request(
+            &mut stream,
+            "spp-engine",
+            "/v1/chat/completions",
+            None,
+            br#"{}"#,
+        )
+        .expect("application response");
+        assert_eq!(
+            stream.written,
+            b"POST /v1/chat/completions HTTP/1.1\r\nHost: spp-engine\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}"
+        );
+    }
+
+    #[test]
+    fn json_response_parser_rejects_truncated_and_oversized_bodies() {
+        for response in [
+            b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\n{}".to_vec(),
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+                MAX_PROOF_RESPONSE_BYTES + 1
+            )
+            .into_bytes(),
+        ] {
+            let mut stream = ScriptedIo {
+                written: Vec::new(),
+                unread: Cursor::new(response),
+            };
+            assert!(matches!(
+                send_json_request(&mut stream, "host", "/path", None, br#"{}"#),
+                Err(AttestedHttpError::Protocol("response_invalid"))
+            ));
+        }
     }
 }

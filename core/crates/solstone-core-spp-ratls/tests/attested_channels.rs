@@ -4,8 +4,8 @@
 //! Real-boundary RA-TLS channel tests that bind loopback sockets.
 
 use std::{
-    io::{Read, Write},
-    net::TcpListener,
+    io::{self, Read, Write},
+    net::{Ipv4Addr, SocketAddrV4, TcpListener},
     path::Path,
     sync::{Arc, mpsc},
     thread,
@@ -23,6 +23,7 @@ use rustls::{
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
 };
+use socket2::{Domain, Protocol, Socket, Type};
 use solstone_core_spp_attest::{
     CpuBundle,
     nvgpu::claims::GpuAppraisal,
@@ -34,13 +35,16 @@ use solstone_core_spp_ratls::{
     RatlsEndpoint, classify_channel_failure, establish_attested_channel,
     ratls::contract::{
         COMPOSITE_EVIDENCE_OID, CompositeEvidence, EXPORTER_BYTES, EXPORTER_LABEL,
-        EXPORTER_PROOF_MEDIA_TYPE, ExporterProof, PREFACE_MAGIC, exporter_binding,
-        exporter_context,
+        EXPORTER_PROOF_MEDIA_TYPE, ExporterProof, exporter_binding, exporter_context,
     },
+    send_json_request,
 };
 use x509_parser::{pem::parse_x509_pem, prelude::FromDer};
 
 const MAX_PROOF_RESPONSE_HEADERS: usize = 16 * 1024;
+const MAX_PROOF_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const IO_TIMEOUT: Duration = Duration::from_secs(2);
+const THREAD_TIMEOUT: Duration = Duration::from_secs(3);
 
 struct AcceptingCompositeVerifier;
 struct RejectingCompositeVerifier;
@@ -211,13 +215,17 @@ fn proof_response(proof: ExporterProof) -> Vec<u8> {
     .collect()
 }
 
-fn certificate_with_evidence(owner_nonce: &[u8]) -> (ServerConfig, CompositeEvidence) {
+fn certificate_with_evidence(
+    owner_nonce: &[u8],
+    critical: bool,
+    wrong_spki: bool,
+) -> (ServerConfig, CompositeEvidence) {
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test key");
     let params = CertificateParams::new(vec!["spp-engine".to_owned()]).expect("params");
     let base_certificate = params.self_signed(&key).expect("base certificate");
     let (_, parsed) = x509_parser::prelude::X509Certificate::from_der(base_certificate.der())
         .expect("parse base certificate");
-    let evidence = CompositeEvidence {
+    let mut evidence = CompositeEvidence {
         owner_nonce: owner_nonce.to_vec(),
         tls_spki_der: parsed.public_key().raw.to_vec(),
         amd_report: Vec::new(),
@@ -231,6 +239,9 @@ fn certificate_with_evidence(owner_nonce: &[u8]) -> (ServerConfig, CompositeEvid
         amd_vcek_pem: Vec::new(),
         gpu_envelope: b"test GPU envelope".to_vec(),
     };
+    if wrong_spki {
+        evidence.tls_spki_der[0] ^= 0x01;
+    }
     let mut params = CertificateParams::new(vec!["spp-engine".to_owned()]).expect("params");
     let mut extension = CustomExtension::from_oid_content(
         &[
@@ -243,7 +254,7 @@ fn certificate_with_evidence(owner_nonce: &[u8]) -> (ServerConfig, CompositeEvid
         ],
         evidence.to_der(),
     );
-    extension.set_criticality(true);
+    extension.set_criticality(critical);
     params.custom_extensions.push(extension);
     let certificate = params.self_signed(&key).expect("evidence certificate");
     let config = server_config(
@@ -271,34 +282,141 @@ enum GatewayResponse {
     ValidProof(Box<CompositeEvidence>),
 }
 
-fn start_gateway(
-    config: ServerConfig,
-    response: GatewayResponse,
-) -> (u16, mpsc::Receiver<Vec<u8>>, thread::JoinHandle<()>) {
+struct GatewayPlan {
+    proof: GatewayResponse,
+    application_response: Option<Vec<u8>>,
+}
+
+#[derive(Default)]
+struct GatewayObservation {
+    preface: Vec<u8>,
+    exporter_request: Vec<u8>,
+    application_request: Vec<u8>,
+}
+
+struct Gateway {
+    port: u16,
+    observed: mpsc::Receiver<GatewayObservation>,
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+impl Gateway {
+    fn finish(mut self) -> GatewayObservation {
+        let observation = self.observed.recv_timeout(THREAD_TIMEOUT);
+        let joined = join_bounded(&mut self.handle);
+        assert!(
+            joined.is_ok(),
+            "{}",
+            joined.expect_err("failed join has detail")
+        );
+        observation.expect("gateway observation arrives within bound")
+    }
+}
+
+impl Drop for Gateway {
+    fn drop(&mut self) {
+        let _ = join_bounded(&mut self.handle);
+    }
+}
+
+fn join_bounded(handle: &mut Option<thread::JoinHandle<()>>) -> Result<(), String> {
+    let Some(handle_ref) = handle.as_ref() else {
+        return Ok(());
+    };
+    let deadline = std::time::Instant::now() + THREAD_TIMEOUT;
+    while !handle_ref.is_finished() && std::time::Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(5));
+    }
+    if !handle_ref.is_finished() {
+        handle.take();
+        return Err("gateway thread exceeded join bound".to_owned());
+    }
+    handle
+        .take()
+        .expect("gateway handle remains owned")
+        .join()
+        .map_err(|_| "gateway thread panicked".to_owned())
+}
+
+fn read_http_request(reader: &mut impl Read) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    let mut byte = [0_u8; 1];
+    while !bytes.ends_with(b"\r\n\r\n") {
+        if bytes.len() == MAX_PROOF_RESPONSE_HEADERS {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "request headers exceed fixture cap",
+            ));
+        }
+        reader.read_exact(&mut byte)?;
+        bytes.push(byte[0]);
+    }
+    let header = std::str::from_utf8(&bytes)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "request header UTF-8"))?;
+    let content_length = header
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .unwrap_or(0);
+    if content_length > 1024 * 1024 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "request body exceeds fixture cap",
+        ));
+    }
+    let header_len = bytes.len();
+    bytes.resize(header_len + content_length, 0);
+    reader.read_exact(&mut bytes[header_len..])?;
+    Ok(bytes)
+}
+
+fn start_gateway(config: ServerConfig, plan: GatewayPlan) -> Gateway {
     let listener = TcpListener::bind("127.0.0.1:0").expect("loopback listener");
     let port = listener.local_addr().expect("listener address").port();
+    listener.set_nonblocking(true).expect("nonblocking accept");
     let (observed_sender, observed_receiver) = mpsc::channel();
     let handle = thread::spawn(move || {
-        let (mut socket, _) = listener.accept().expect("client connects");
+        let accept_deadline = std::time::Instant::now() + IO_TIMEOUT;
+        let mut socket = loop {
+            match listener.accept() {
+                Ok((socket, _)) => break socket,
+                Err(error)
+                    if error.kind() == io::ErrorKind::WouldBlock
+                        && std::time::Instant::now() < accept_deadline =>
+                {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("bounded gateway accept failed: {error}"),
+            }
+        };
         socket
-            .set_read_timeout(Some(Duration::from_secs(2)))
-            .expect("timeout");
-        let mut preface = vec![0; PREFACE_MAGIC.len() + 32];
-        socket.read_exact(&mut preface).expect("preface and nonce");
+            .set_read_timeout(Some(IO_TIMEOUT))
+            .expect("read timeout");
+        socket
+            .set_write_timeout(Some(IO_TIMEOUT))
+            .expect("write timeout");
+        let mut observation = GatewayObservation::default();
+        observation.preface.resize(b"SPPRAT1\0".len() + 32, 0);
+        if socket.read_exact(&mut observation.preface).is_err() {
+            observed_sender.send(observation).expect("observation send");
+            return;
+        }
         let mut stream = StreamOwned::new(
             ServerConnection::new(Arc::new(config)).expect("server connection"),
             socket,
         );
         while stream.conn.is_handshaking() {
             if stream.conn.complete_io(&mut stream.sock).is_err() {
-                let _ = observed_sender.send(Vec::new());
+                observed_sender.send(observation).expect("observation send");
                 return;
             }
         }
-        let mut received = vec![0; 1024];
-        let count = stream.read(&mut received).unwrap_or(0);
-        received.truncate(count);
-        let response = match response {
+        observation.exporter_request = read_http_request(&mut stream).unwrap_or_default();
+        let response = match plan.proof {
             GatewayResponse::None => None,
             GatewayResponse::Static(response) => Some(response),
             GatewayResponse::ValidProof(evidence) => {
@@ -334,9 +452,18 @@ fn start_gateway(
         if let Some(response) = response {
             stream.write_all(&response).expect("proof response");
         }
-        observed_sender.send(received).expect("observation");
+        if let Some(response) = plan.application_response {
+            observation.application_request =
+                read_http_request(&mut stream).expect("bounded application request");
+            stream.write_all(&response).expect("application response");
+        }
+        observed_sender.send(observation).expect("observation send");
     });
-    (port, observed_receiver, handle)
+    Gateway {
+        port,
+        observed: observed_receiver,
+        handle: Some(handle),
+    }
 }
 
 fn endpoint(port: u16) -> RatlsEndpoint {
@@ -351,7 +478,7 @@ fn establish(
         &endpoint(port),
         &[7; 32],
         Path::new("."),
-        SystemTime::now(),
+        SystemTime::UNIX_EPOCH,
         None,
         None,
         None,
@@ -359,6 +486,29 @@ fn establish(
         Duration::from_secs(2),
         4,
     )
+}
+
+fn exact_preface() -> Vec<u8> {
+    b"SPPRAT1\0".iter().copied().chain([7_u8; 32]).collect()
+}
+
+fn exact_exporter_request() -> &'static [u8] {
+    b"GET /._sol/spp/exporter-proof HTTP/1.1\r\nHost: spp-engine\r\nContent-Length: 0\r\n\r\n"
+}
+
+fn assert_preface(observation: &GatewayObservation) {
+    assert_eq!(observation.preface, exact_preface());
+}
+
+fn static_response(status: u16, body: &[u8]) -> Vec<u8> {
+    format!(
+        "HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    )
+    .into_bytes()
+    .into_iter()
+    .chain(body.iter().copied())
+    .collect()
 }
 
 fn rejected(result: Result<AttestedChannel, RatlsChannelError>) -> RatlsChannelError {
@@ -382,28 +532,42 @@ fn tls_client_rejects_a_tls12_only_gateway() {
             PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
         )
         .expect("TLS 1.2 server config");
-    let (port, observed, handle) = start_gateway(config, GatewayResponse::None);
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::None,
+            application_response: None,
+        },
+    );
     assert_eq!(
-        rejected(establish(port, &AcceptingCompositeVerifier)).reason_code,
+        rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
         "gateway_unreachable"
     );
-    let _ = observed.recv().expect("gateway observation");
-    handle.join().expect("gateway thread");
+    let observation = gateway.finish();
+    assert_preface(&observation);
+    assert!(observation.exporter_request.is_empty());
 }
 
 #[test]
 fn certificate_rejection_writes_no_exporter_http_payload_and_closes() {
-    let (config, _) = certificate_with_evidence(&[7; 32]);
-    let (port, observed, handle) = start_gateway(config, GatewayResponse::None);
-    let error = rejected(establish(port, &RejectingCompositeVerifier));
-    assert!(observed.recv().expect("gateway observation").is_empty());
+    let (config, _) = certificate_with_evidence(&[7; 32], true, false);
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::None,
+            application_response: None,
+        },
+    );
+    let error = rejected(establish(gateway.port, &RejectingCompositeVerifier));
     assert_eq!(error.reason_code, "composite_appraisal_failed");
-    handle.join().expect("gateway thread");
+    let observation = gateway.finish();
+    assert_preface(&observation);
+    assert!(observation.exporter_request.is_empty());
 }
 
 #[test]
 fn exporter_mismatch_rejects_after_a_verified_certificate() {
-    let (config, evidence) = certificate_with_evidence(&[7; 32]);
+    let (config, evidence) = certificate_with_evidence(&[7; 32], true, false);
     assert_eq!(
         COMPOSITE_EVIDENCE_OID,
         "2.25.3708997813.3535365757.2172800616.1077671698"
@@ -418,23 +582,25 @@ fn exporter_mismatch_rejects_after_a_verified_certificate() {
     }
     .to_der();
     let response = format!("HTTP/1.1 200 OK\r\nContent-Type: {EXPORTER_PROOF_MEDIA_TYPE}\r\nContent-Length: {}\r\n\r\n", proof.len()).into_bytes().into_iter().chain(proof).collect();
-    let (port, observed, handle) = start_gateway(config, GatewayResponse::Static(response));
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::Static(response),
+            application_response: None,
+        },
+    );
     assert_eq!(
-        rejected(establish(port, &AcceptingCompositeVerifier)).reason_code,
+        rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
         "exporter_mismatch"
     );
-    assert!(
-        observed
-            .recv()
-            .expect("gateway observation")
-            .starts_with(b"GET /._sol/spp/exporter-proof HTTP/1.1")
-    );
-    handle.join().expect("gateway thread");
+    let observation = gateway.finish();
+    assert_preface(&observation);
+    assert_eq!(observation.exporter_request, exact_exporter_request());
 }
 
 #[test]
 fn proof_headers_cannot_overshoot_the_cap() {
-    let (config, _) = certificate_with_evidence(&[7; 32]);
+    let (config, _) = certificate_with_evidence(&[7; 32], true, false);
     let prefix = b"HTTP/1.1 200 OK\r\nX: ";
     let suffix = b"\r\nContent-Length: 0\r\n\r\n";
     let padding_len = MAX_PROOF_RESPONSE_HEADERS + 1 - prefix.len() - (suffix.len() - 4);
@@ -451,82 +617,220 @@ fn proof_headers_cannot_overshoot_the_cap() {
             .expect("response marker"),
         MAX_PROOF_RESPONSE_HEADERS + 1
     );
-    let (port, observed, handle) = start_gateway(config, GatewayResponse::Static(response));
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::Static(response),
+            application_response: None,
+        },
+    );
     assert_eq!(
-        rejected(establish(port, &AcceptingCompositeVerifier)).reason_code,
+        rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
         "proof_http_failed"
     );
-    assert!(
-        observed
-            .recv()
-            .expect("gateway observation")
-            .starts_with(b"GET /._sol/spp/exporter-proof HTTP/1.1")
-    );
-    handle.join().expect("gateway thread");
+    let observation = gateway.finish();
+    assert_eq!(observation.exporter_request, exact_exporter_request());
 }
 
 #[test]
-fn proof_headers_require_crlf_line_endings() {
-    let (config, _) = certificate_with_evidence(&[7; 32]);
-    let response = b"HTTP/1.1 200 OK\nContent-Length: 0\r\n\r\n".to_vec();
-    let (port, observed, handle) = start_gateway(config, GatewayResponse::Static(response));
+fn proof_body_length_cannot_exceed_the_cap() {
+    let (config, _) = certificate_with_evidence(&[7; 32], true, false);
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+        MAX_PROOF_RESPONSE_BYTES + 1
+    )
+    .into_bytes();
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::Static(response),
+            application_response: None,
+        },
+    );
     assert_eq!(
-        rejected(establish(port, &AcceptingCompositeVerifier)).reason_code,
+        rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
         "proof_http_failed"
     );
-    assert!(
-        observed
-            .recv()
-            .expect("gateway observation")
-            .starts_with(b"GET /._sol/spp/exporter-proof HTTP/1.1")
-    );
-    handle.join().expect("gateway thread");
+    let observation = gateway.finish();
+    assert_eq!(observation.exporter_request, exact_exporter_request());
 }
 
 #[test]
-fn evidence_bearing_certificate_and_bound_exporter_proof_establish_channel() {
-    let (config, evidence) = certificate_with_evidence(&[7; 32]);
-    let (port, observed, handle) =
-        start_gateway(config, GatewayResponse::ValidProof(Box::new(evidence)));
-    let channel = establish(port, &AcceptingCompositeVerifier).expect("attested channel");
+fn proof_headers_require_crlf_framing() {
+    let (config, _) = certificate_with_evidence(&[7; 32], true, false);
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::Static(b"HTTP/1.1 200 OK\nContent-Length: 0\r\n\r\n".to_vec()),
+            application_response: None,
+        },
+    );
+    assert_eq!(
+        rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
+        "proof_http_failed"
+    );
+    let observation = gateway.finish();
+    assert_eq!(observation.exporter_request, exact_exporter_request());
+}
+
+#[test]
+fn non_200_exporter_proof_is_rejected() {
+    let (config, _) = certificate_with_evidence(&[7; 32], true, false);
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::Static(static_response(503, b"unavailable")),
+            application_response: None,
+        },
+    );
+    assert_eq!(
+        rejected(establish(gateway.port, &AcceptingCompositeVerifier)).reason_code,
+        "proof_http_failed"
+    );
+    let observation = gateway.finish();
+    assert_eq!(observation.exporter_request, exact_exporter_request());
+}
+
+#[test]
+fn exact_spprat1_preface_nonce_and_exporter_request_establish_channel() {
+    let (config, evidence) = certificate_with_evidence(&[7; 32], true, false);
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::ValidProof(Box::new(evidence)),
+            application_response: None,
+        },
+    );
+    let channel = establish(gateway.port, &AcceptingCompositeVerifier).expect("attested channel");
     assert_eq!(channel.verified.verdict, test_verdict());
-    assert!(
-        observed
-            .recv()
-            .expect("gateway observation")
-            .starts_with(b"GET /._sol/spp/exporter-proof HTTP/1.1")
-    );
-    handle.join().expect("gateway thread");
+    let observation = gateway.finish();
+    assert_preface(&observation);
+    assert_eq!(observation.exporter_request, exact_exporter_request());
 }
 
 #[test]
-fn closed_loopback_port_is_unreachable_and_evidence_rejection_is_failed() {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("temporary listener");
-    let closed_port = listener.local_addr().expect("address").port();
-    drop(listener);
+fn held_bound_not_listening_socket_is_unreachable_without_port_race() {
+    let socket =
+        Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).expect("refusal socket");
+    socket
+        .bind(&SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0).into())
+        .expect("bind refusal socket without listen");
+    socket
+        .set_nonblocking(true)
+        .expect("refusal socket can be inspected without blocking");
+    let accept_error = socket
+        .accept()
+        .expect_err("bound-only refusal fixture must not be listening");
+    assert_ne!(
+        accept_error.kind(),
+        io::ErrorKind::WouldBlock,
+        "a listening nonblocking fixture would wait for a connection"
+    );
+    let port = socket
+        .local_addr()
+        .expect("refusal address")
+        .as_socket()
+        .expect("IP address")
+        .port();
     assert_eq!(
-        rejected(establish(closed_port, &AcceptingCompositeVerifier)).reason_code,
+        rejected(establish(port, &AcceptingCompositeVerifier)).reason_code,
         "gateway_unreachable"
     );
-    let (port, observed, handle) =
-        start_gateway(certificate_without_evidence(), GatewayResponse::None);
-    let error = rejected(establish(port, &AcceptingCompositeVerifier));
+}
+
+#[test]
+fn certificate_evidence_nonce_spki_criticality_and_presence_are_enforced() {
+    for (config, expected) in [
+        (
+            certificate_with_evidence(&[8; 32], true, false).0,
+            "nonce_mismatch",
+        ),
+        (
+            certificate_with_evidence(&[7; 32], true, true).0,
+            "spki_mismatch",
+        ),
+        (
+            certificate_with_evidence(&[7; 32], false, false).0,
+            "certificate_extension_not_critical",
+        ),
+        (
+            certificate_without_evidence(),
+            "certificate_extension_missing",
+        ),
+    ] {
+        let gateway = start_gateway(
+            config,
+            GatewayPlan {
+                proof: GatewayResponse::None,
+                application_response: None,
+            },
+        );
+        let error = rejected(establish(gateway.port, &AcceptingCompositeVerifier));
+        assert_eq!(error.reason_code, expected);
+        let observation = gateway.finish();
+        assert_preface(&observation);
+        assert!(observation.exporter_request.is_empty());
+    }
+}
+
+#[test]
+fn live_post_attestation_json_request_has_exact_framing_with_and_without_authorization() {
+    let body = br#"{"model":"fixture","messages":[]}"#;
+    for credential in [None, Some("fixture-token")] {
+        let (config, evidence) = certificate_with_evidence(&[7; 32], true, false);
+        let response_body = br#"{"ok":true}"#;
+        let gateway = start_gateway(
+            config,
+            GatewayPlan {
+                proof: GatewayResponse::ValidProof(Box::new(evidence)),
+                application_response: Some(static_response(200, response_body)),
+            },
+        );
+        let mut channel =
+            establish(gateway.port, &AcceptingCompositeVerifier).expect("attested channel");
+        let response = send_json_request(
+            &mut channel,
+            "spp-engine",
+            "/v1/chat/completions",
+            credential,
+            body,
+        )
+        .expect("application response");
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, response_body);
+        let observation = gateway.finish();
+        assert_preface(&observation);
+        assert_eq!(observation.exporter_request, exact_exporter_request());
+        let authorization = credential
+            .map(|token| format!("Authorization: Bearer {token}\r\n"))
+            .unwrap_or_default();
+        let expected = format!(
+            "POST /v1/chat/completions HTTP/1.1\r\nHost: spp-engine\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{authorization}\r\n{}",
+            body.len(),
+            std::str::from_utf8(body).expect("fixture JSON")
+        );
+        assert_eq!(observation.application_request, expected.as_bytes());
+    }
+}
+
+#[test]
+fn missing_evidence_teardown_precedes_failure_recording() {
+    let gateway = start_gateway(
+        certificate_without_evidence(),
+        GatewayPlan {
+            proof: GatewayResponse::None,
+            application_response: None,
+        },
+    );
+    let error = rejected(establish(gateway.port, &AcceptingCompositeVerifier));
     assert_ne!(error.reason_code, "gateway_unreachable");
     assert_eq!(
         classify_channel_failure(error.reason_code),
         AttestationFailureKind::Failed
     );
-    assert!(observed.recv().expect("gateway observation").is_empty());
-    handle.join().expect("gateway thread");
-}
-
-#[test]
-fn teardown_precedes_failure_recording() {
-    let (port, observed, handle) =
-        start_gateway(certificate_without_evidence(), GatewayResponse::None);
-    let error = rejected(establish(port, &AcceptingCompositeVerifier));
-    assert!(observed.recv().expect("gateway observed EOF").is_empty());
-    handle.join().expect("gateway thread");
+    let observation = gateway.finish();
+    assert_preface(&observation);
+    assert!(observation.exporter_request.is_empty());
     let store = AttestationStateStore::new();
     store.record_attestation_failed(
         classify_channel_failure(error.reason_code),

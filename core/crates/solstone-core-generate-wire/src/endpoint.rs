@@ -438,6 +438,43 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
     }))
 }
 
+/// Deterministic transport injection for downstream library tests.
+///
+/// This surface is absent from normal builds and deliberately exposes only the
+/// existing endpoint call, not endpoint internals.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod test_support {
+    use super::*;
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn endpoint_converse_with_transport<T: EndpointTransport>(
+        request: &GenerateRequest,
+        messages: &[ConverseMessage],
+        tools: &[ConverseToolSpec],
+        journal_path: &Path,
+        endpoint: &ByoEndpoint,
+        config: &Map<String, Value>,
+        runtime: &EndpointRuntime,
+        transport: &mut T,
+        now: Instant,
+    ) -> EndpointConverseResult {
+        endpoint_converse_with(
+            EndpointConverseCall {
+                request,
+                messages,
+                tools,
+                journal_path,
+                endpoint,
+                config,
+                runtime,
+            },
+            transport,
+            now,
+        )
+    }
+}
+
 struct PreparedEndpointRequest {
     body: Value,
     input_budget: Option<InputBudget>,

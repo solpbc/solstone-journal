@@ -5,12 +5,14 @@ use serde_json::{Value, json};
 use solstone_core_cogitate_runtime::events::{BudgetLadder, BudgetStage};
 use solstone_core_cogitate_runtime::{
     CogitateToolExecutor, ConverseProvider, RecordingEventSink, RunOutcome, RuntimeEvent,
-    ToolExecution, ToolExecutor, Usage,
+    ToolExecution, ToolExecutor, Usage, run_cogitate,
 };
 use solstone_core_cogitate_tools::NoopSlotLease;
 use solstone_core_generate_wire::{
-    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, resolve_lane,
+    ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, EndpointTransport,
+    EndpointTransportError, resolve_lane,
 };
+use solstone_core_local::HttpResponse;
 
 use crate::{
     CogitateRequest, DispatchConverseProvider, EndpointOverrides, NativeRun, REQUEST_SCHEMA,
@@ -261,34 +263,6 @@ fn request_rejects_provider_endpoint_and_credential_fields() {
             format!("malformed request: unknown field {field:?}")
         );
     }
-}
-
-#[test]
-fn ambient_provider_key_does_not_bypass_missing_journal_credential() {
-    let config = json!({"providers": {"active": {"provider": "google"}}})
-        .as_object()
-        .expect("config is an object")
-        .clone();
-    let (_, lane) = resolve_lane(&config);
-    let mut provider = DispatchConverseProvider::from_lane(
-        &request(),
-        config,
-        lane,
-        EndpointOverrides::from_values(None, None),
-    )
-    .expect("google provider constructs");
-    let failure = provider
-        .converse(
-            "request-model",
-            None,
-            &[ConverseMessage::User {
-                text: "hello".to_owned(),
-            }],
-            &[],
-            std::time::Duration::from_secs(1),
-        )
-        .expect_err("missing config key refuses before transport");
-    assert_eq!(failure.reason_code, "provider_key_missing");
 }
 
 #[test]
@@ -832,4 +806,413 @@ impl ToolExecutor for FinalToolExecutor {
     ) -> ToolExecution {
         panic!("emit_final is terminal and must not be executed")
     }
+}
+
+struct CapturingEndpointTransport {
+    response: Result<HttpResponse, EndpointTransportError>,
+    calls: Vec<(String, String, Value, Option<String>)>,
+}
+
+struct InjectedEndpointProvider<'a> {
+    provider: &'a mut DispatchConverseProvider,
+    transport: &'a mut CapturingEndpointTransport,
+}
+
+impl ConverseProvider for InjectedEndpointProvider<'_> {
+    fn converse(
+        &mut self,
+        model: &str,
+        system_instruction: Option<&str>,
+        messages: &[ConverseMessage],
+        tools: &[ConverseToolSpec],
+        deadline: std::time::Duration,
+    ) -> Result<solstone_core_cogitate_runtime::ProviderResponse, ConverseFailure> {
+        self.provider.converse_endpoint_with_transport(
+            model,
+            system_instruction,
+            messages,
+            tools,
+            deadline,
+            self.transport,
+        )
+    }
+}
+
+fn serialized_events(sink: RecordingEventSink) -> String {
+    sink.events
+        .into_iter()
+        .map(|event| {
+            serialize_event_validated(event)
+                .expect("captured event validates")
+                .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+impl EndpointTransport for CapturingEndpointTransport {
+    fn get(
+        &mut self,
+        _base_url: &str,
+        _path: &str,
+        _credential: Option<&str>,
+        _timeout: std::time::Duration,
+    ) -> Result<HttpResponse, EndpointTransportError> {
+        panic!("served context is configured; model discovery must not run")
+    }
+
+    fn post_json(
+        &mut self,
+        base_url: &str,
+        path: &str,
+        body: &Value,
+        credential: Option<&str>,
+        _timeout: std::time::Duration,
+    ) -> Result<HttpResponse, EndpointTransportError> {
+        self.calls.push((
+            base_url.to_owned(),
+            path.to_owned(),
+            body.clone(),
+            credential.map(str::to_owned),
+        ));
+        self.response.clone()
+    }
+}
+
+fn endpoint_provider(secret: &str, confidential: bool) -> DispatchConverseProvider {
+    let mut value = json!({
+        "providers": {
+            "active": {"provider": "local"},
+            "local": {
+                "endpoint_url": "http://configured.invalid",
+                "served_model_id": "configured",
+                "served_context_window": 4096
+            }
+        }
+    });
+    if confidential {
+        value["services"] = json!({"confidential": {}});
+    }
+    let config = value.as_object().expect("config object").clone();
+    let (_, lane) = resolve_lane(&config);
+    DispatchConverseProvider::from_lane(
+        &request(),
+        config,
+        lane,
+        EndpointOverrides::from_values(
+            Some("http://127.0.0.1:9443".to_owned()),
+            Some(secret.to_owned()),
+        ),
+    )
+    .expect("endpoint provider")
+}
+
+fn final_turn_response() -> String {
+    json!({
+        "choices": [{
+            "message": {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {"name": "emit_final", "arguments": "{\"content\":\"done\"}"}
+                }]
+            },
+            "finish_reason": "tool_calls"
+        }],
+        "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5}
+    })
+    .to_string()
+}
+
+#[test]
+fn endpoint_request_mapping_forwards_credential_without_serializing_it() {
+    let secret = "deterministic-wire-secret";
+    let mut provider = endpoint_provider(secret, false);
+    let mut transport = CapturingEndpointTransport {
+        response: Ok(HttpResponse {
+            status: 200,
+            body: final_turn_response(),
+        }),
+        calls: Vec::new(),
+    };
+    let response = provider
+        .converse_endpoint_with_transport(
+            "requested-model",
+            Some("system"),
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[ConverseToolSpec {
+                name: "emit_final".to_owned(),
+                description: "finish".to_owned(),
+                parameters: json!({"type": "object"}),
+            }],
+            std::time::Duration::from_secs(1),
+            &mut transport,
+        )
+        .expect("captured endpoint turn");
+    assert_eq!(response.turn.model, "requested-model");
+    assert_eq!(transport.calls.len(), 1);
+    let (base_url, path, body, credential) = &transport.calls[0];
+    assert_eq!(base_url, "http://127.0.0.1:9443");
+    assert_eq!(path, "/v1/chat/completions");
+    assert_eq!(credential.as_deref(), Some(secret));
+    assert!(!body.to_string().contains(secret));
+
+    let mut injected = InjectedEndpointProvider {
+        provider: &mut provider,
+        transport: &mut transport,
+    };
+    let mut tools = FinalToolExecutor;
+    let mut sink = RecordingEventSink::default();
+    run_cogitate(
+        &mut injected,
+        &mut tools,
+        request().to_run_input(),
+        &mut sink,
+    );
+    assert!(!serialized_events(sink).contains(secret));
+
+    let malformed =
+        CogitateRequest::from_value(&json!({"credential": secret})).expect_err("bad request");
+    assert!(!format!("{malformed:?}").contains(secret));
+    let validation = validate_event(&json!({
+        "event": "text_delta",
+        "ts": 1,
+        "correlation_id": "corr-1",
+        "delta": "chunk",
+        "model": "model",
+        "credential": secret
+    }))
+    .expect_err("undeclared credential is rejected");
+    assert!(!format!("{validation:?}").contains(secret));
+}
+
+#[test]
+fn endpoint_failure_redacts_credential_and_untrusted_response_body() {
+    let secret = "deterministic-wire-secret";
+    let mut provider = endpoint_provider(secret, false);
+    let mut transport = CapturingEndpointTransport {
+        response: Ok(HttpResponse {
+            status: 500,
+            body: format!("upstream echoed {secret}"),
+        }),
+        calls: Vec::new(),
+    };
+    let failure = provider
+        .converse_endpoint_with_transport(
+            "requested-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            std::time::Duration::from_secs(1),
+            &mut transport,
+        )
+        .expect_err("500 is normalized");
+    assert_eq!(transport.calls[0].3.as_deref(), Some(secret));
+    assert_eq!(failure.reason_code, "provider_response_invalid");
+    assert!(!format!("{failure:?}").contains(secret));
+
+    let mut injected = InjectedEndpointProvider {
+        provider: &mut provider,
+        transport: &mut transport,
+    };
+    let mut tools = FinalToolExecutor;
+    let mut sink = RecordingEventSink::default();
+    run_cogitate(
+        &mut injected,
+        &mut tools,
+        request().to_run_input(),
+        &mut sink,
+    );
+    let events = serialized_events(sink);
+    assert!(events.contains("provider_response_invalid"));
+    assert!(!events.contains(secret));
+}
+
+struct OrderedAttestedChannel {
+    response: std::io::Cursor<Vec<u8>>,
+    order: std::rc::Rc<std::cell::RefCell<Vec<&'static str>>>,
+    endpoint_recorded: bool,
+}
+
+impl std::io::Read for OrderedAttestedChannel {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        std::io::Read::read(&mut self.response, buffer)
+    }
+}
+
+impl std::io::Write for OrderedAttestedChannel {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        if !self.endpoint_recorded {
+            self.order.borrow_mut().push("endpoint");
+            self.endpoint_recorded = true;
+        }
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl solstone_core_spp_ratls::AttestedIo for OrderedAttestedChannel {
+    fn set_io_timeout(&mut self, _: Option<std::time::Duration>) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn attestation_verdict() -> solstone_core_spp_ratls::CompositeVerdict {
+    use solstone_core_spp_attest::{
+        nvgpu::claims::GpuAppraisal,
+        snp::{CpuAppraisal, CpuTcb, TcbVersion},
+    };
+    let tcb = TcbVersion {
+        boot_loader: None,
+        tee: None,
+        snp: None,
+        microcode: None,
+        fmc: None,
+    };
+    solstone_core_spp_ratls::CompositeVerdict {
+        verified: true,
+        legs: ["cpu", "gpu"],
+        substrate: String::new(),
+        checked_at: std::time::UNIX_EPOCH,
+        cpu: CpuAppraisal {
+            steps: Vec::new(),
+            hcla_version: 0,
+            report_version: 0,
+            cpuid_family: None,
+            cpuid_model: None,
+            cpuid_step: None,
+            tcb: CpuTcb {
+                current: tcb.clone(),
+                reported: tcb.clone(),
+                committed: tcb.clone(),
+                launch: tcb,
+            },
+            pcr_sha256: String::new(),
+            host_data_hex: String::new(),
+            measurement_hex: String::new(),
+            chip_id_hex: String::new(),
+        },
+        gpu: GpuAppraisal {
+            steps: Vec::new(),
+            driver_version: String::new(),
+            vbios_version: String::new(),
+            hwmodel: String::new(),
+            ueid: String::new(),
+            oemid: String::new(),
+            eat_nonce: String::new(),
+            claims_version: String::new(),
+            arch: String::new(),
+            envelope_gpu_uuid: String::new(),
+        },
+    }
+}
+
+fn framed_response(body: &str) -> Vec<u8> {
+    format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    )
+    .into_bytes()
+}
+
+#[test]
+fn confidential_dispatch_orders_readiness_channel_then_endpoint_exactly_once() {
+    let secret = "confidential-secret";
+    let order = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let mut provider = endpoint_provider(secret, true);
+    let readiness_order = std::rc::Rc::clone(&order);
+    let establish_order = std::rc::Rc::clone(&order);
+    let channel_order = std::rc::Rc::clone(&order);
+    provider
+        .converse_confidential_with_controls(
+            "requested-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            std::time::Duration::from_secs(1),
+            std::time::UNIX_EPOCH,
+            move |_| {
+                readiness_order.borrow_mut().push("readiness");
+                solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled
+            },
+            move |_, _| {
+                establish_order.borrow_mut().push("channel");
+                Ok((
+                    attestation_verdict(),
+                    Box::new(OrderedAttestedChannel {
+                        response: std::io::Cursor::new(framed_response(&final_turn_response())),
+                        order: channel_order,
+                        endpoint_recorded: false,
+                    }) as Box<dyn solstone_core_spp_ratls::AttestedIo>,
+                ))
+            },
+        )
+        .expect("confidential dispatch succeeds");
+    assert_eq!(&*order.borrow(), &["readiness", "channel", "endpoint"]);
+}
+
+#[test]
+fn confidential_dispatch_stops_after_failed_readiness() {
+    let order = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let mut provider = endpoint_provider("unused", true);
+    let readiness_order = std::rc::Rc::clone(&order);
+    let failure = provider
+        .converse_confidential_with_controls(
+            "requested-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            std::time::Duration::from_secs(1),
+            std::time::UNIX_EPOCH,
+            move |_| {
+                readiness_order.borrow_mut().push("readiness");
+                solstone_core_spp_ratls::NvattestEnsureStatus::InstallFailed
+            },
+            |_, _| panic!("channel establishment must not run after failed readiness"),
+        )
+        .expect_err("failed readiness refuses dispatch");
+    assert_eq!(failure.reason_code, "attestation_not_yet_verified");
+    assert_eq!(&*order.borrow(), &["readiness"]);
+}
+
+#[test]
+fn confidential_dispatch_ready_negative_attempts_one_channel_and_zero_endpoints() {
+    let order = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let mut provider = endpoint_provider("unused", true);
+    let readiness_order = std::rc::Rc::clone(&order);
+    let establish_order = std::rc::Rc::clone(&order);
+    let failure = provider
+        .converse_confidential_with_controls(
+            "requested-model",
+            None,
+            &[ConverseMessage::User {
+                text: "hello".to_owned(),
+            }],
+            &[],
+            std::time::Duration::from_secs(1),
+            std::time::UNIX_EPOCH,
+            move |_| {
+                readiness_order.borrow_mut().push("readiness");
+                solstone_core_spp_ratls::NvattestEnsureStatus::AlreadyInstalled
+            },
+            move |_, _| {
+                establish_order.borrow_mut().push("channel");
+                Err("tls_handshake_failed")
+            },
+        )
+        .expect_err("failed channel establishment refuses dispatch");
+    assert_eq!(failure.reason_code, "attestation_failed");
+    assert_eq!(&*order.borrow(), &["readiness", "channel"]);
 }

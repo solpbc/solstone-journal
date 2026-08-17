@@ -458,6 +458,45 @@ fn confidential_transport_converse(
 pub mod test_support {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn confidential_converse_with_controls<R, E>(
+        request: &GenerateRequest,
+        messages: &[ConverseMessage],
+        tools: &[ConverseToolSpec],
+        journal_path: &Path,
+        endpoint: &ByoEndpoint,
+        config: &Map<String, Value>,
+        runtime: &EndpointRuntime,
+        now: SystemTime,
+        readiness: R,
+        establish: E,
+    ) -> EndpointConverseResult
+    where
+        R: FnOnce(&Path) -> NvattestEnsureStatus,
+        E: FnOnce(
+            &RatlsEndpoint,
+            &Path,
+        ) -> Result<(CompositeVerdict, Box<dyn AttestedIo>), &'static str>,
+    {
+        confidential_converse_with(
+            ConfidentialConverseCall {
+                request,
+                messages,
+                tools,
+                journal_path,
+                endpoint,
+                config,
+                runtime,
+                now,
+            },
+            readiness,
+            |ratls_endpoint, nvattest_dir| {
+                establish(ratls_endpoint, nvattest_dir)
+                    .map(|(verdict, stream)| EstablishedChannel { verdict, stream })
+            },
+        )
+    }
+
     pub fn confidential_generate_over_channel(
         request: &GenerateRequest,
         journal_path: &Path,

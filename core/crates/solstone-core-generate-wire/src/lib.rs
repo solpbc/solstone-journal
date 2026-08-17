@@ -37,6 +37,9 @@ pub use confidential::{ConfidentialResult, confidential_converse, confidential_g
 pub use converse::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
 };
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use endpoint::test_support as endpoint_test_support;
 pub use endpoint::{
     ENDPOINT_SERVED_WINDOW_CACHE_TTL, EndpointConverseResult, EndpointFailure, EndpointGenerated,
     EndpointResult, EndpointRuntime, EndpointTransport, EndpointTransportError, OverflowDecision,

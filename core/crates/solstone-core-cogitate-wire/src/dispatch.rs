@@ -109,6 +109,85 @@ impl DispatchConverseProvider {
             ConverseArm::OpenAi => "openai",
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn converse_endpoint_with_transport<T>(
+        &mut self,
+        model: &str,
+        system_instruction: Option<&str>,
+        messages: &[ConverseMessage],
+        tools: &[ConverseToolSpec],
+        deadline: Duration,
+        transport: &mut T,
+    ) -> Result<ProviderResponse, ConverseFailure>
+    where
+        T: solstone_core_generate_wire::EndpointTransport,
+    {
+        let request = self.request(system_instruction, deadline);
+        let ConverseArm::Endpoint(endpoint) = &mut self.arm else {
+            panic!("endpoint test driver requires the endpoint arm");
+        };
+        endpoint.served_model_id = model.to_owned();
+        let turn =
+            solstone_core_generate_wire::endpoint_test_support::endpoint_converse_with_transport(
+                &request,
+                messages,
+                tools,
+                &self.journal_root,
+                endpoint,
+                &self.config,
+                &self.endpoint_runtime,
+                transport,
+                dispatch_monotonic_now(),
+            )?;
+        Ok(self.response(turn, "endpoint"))
+    }
+
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn converse_confidential_with_controls<R, E>(
+        &mut self,
+        model: &str,
+        system_instruction: Option<&str>,
+        messages: &[ConverseMessage],
+        tools: &[ConverseToolSpec],
+        deadline: Duration,
+        now: std::time::SystemTime,
+        readiness: R,
+        establish: E,
+    ) -> Result<ProviderResponse, ConverseFailure>
+    where
+        R: FnOnce(&std::path::Path) -> solstone_core_spp_ratls::NvattestEnsureStatus,
+        E: FnOnce(
+            &solstone_core_spp_ratls::RatlsEndpoint,
+            &std::path::Path,
+        ) -> Result<
+            (
+                solstone_core_spp_ratls::CompositeVerdict,
+                Box<dyn solstone_core_spp_ratls::AttestedIo>,
+            ),
+            &'static str,
+        >,
+    {
+        let request = self.request(system_instruction, deadline);
+        let ConverseArm::Confidential(endpoint) = &mut self.arm else {
+            panic!("confidential test driver requires the confidential arm");
+        };
+        endpoint.served_model_id = model.to_owned();
+        let turn = solstone_core_generate_wire::test_support::confidential_converse_with_controls(
+            &request,
+            messages,
+            tools,
+            &self.journal_root,
+            endpoint,
+            &self.config,
+            &self.endpoint_runtime,
+            now,
+            readiness,
+            establish,
+        )?;
+        Ok(self.response(turn, "confidential"))
+    }
 }
 
 impl ConverseProvider for DispatchConverseProvider {
@@ -202,6 +281,11 @@ impl ConverseProvider for DispatchConverseProvider {
         };
         Ok(self.response(turn, arm))
     }
+}
+
+#[allow(dead_code)]
+fn dispatch_monotonic_now() -> std::time::Instant {
+    std::time::Instant::now()
 }
 
 fn set_active_model(config: &mut Map<String, Value>, model: &str) {
