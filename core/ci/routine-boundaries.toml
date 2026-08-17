@@ -238,15 +238,6 @@ id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/state.rs::tests
 id = "solstone-core-cortex::core/crates/solstone-core-cortex/src/storage.rs::tests::temporary_link_names_are_thread_unique::scheduling"
 
 [[findings]]
-id = "solstone-core-depict::core/crates/solstone-core-depict/src/lib.rs::tests::fixture_image::clock"
-
-[[findings]]
-id = "solstone-core-depict::core/crates/solstone-core-depict/src/lib.rs::tests::native_rfdetr_query_requires_the_pinned_sidecar_and_artifacts::clock"
-
-[[findings]]
-id = "solstone-core-describe::core/crates/solstone-core-describe/src/merge.rs::tests::artifact_reader_preserves_raw_lines_and_marks_bad_rows::clock"
-
-[[findings]]
 id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/doctor_check_behavior_tests.rs::incomplete::clock"
 
 [[findings]]
@@ -359,18 +350,6 @@ id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/e
 
 [[findings]]
 id = "solstone-core-generate-wire::core/crates/solstone-core-generate-wire/src/session.rs::tests::the_session_loop_runs_in_process_and_answers_every_request::scheduling"
-
-[[findings]]
-id = "solstone-core-grab::core/crates/solstone-core-grab/src/extract.rs::tests::ffmpeg::native"
-
-[[findings]]
-id = "solstone-core-grab::core/crates/solstone-core-grab/src/extract.rs::tests::ffmpeg::process"
-
-[[findings]]
-id = "solstone-core-grab::core/crates/solstone-core-grab/src/extract.rs::tests::pts_null_and_broken_media_have_the_expected_failure_surface::native"
-
-[[findings]]
-id = "solstone-core-grab::core/crates/solstone-core-grab/src/extract.rs::tests::requested_ids_use_pts_based_linear_identity_and_preserve_order::native"
 
 [[findings]]
 id = "solstone-core-identity::core/crates/solstone-core-identity/src/store.rs::tests::new::clock"
@@ -647,9 +626,6 @@ id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/pairing/non
 
 [[findings]]
 id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::new::scheduling"
-
-[[findings]]
-id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/discovery.rs::tests::benchmark_10_000_by_256_discovery_clustering::clock"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/loopback_pipe.rs::tests::forwards_loopback_responses_to_the_tunnel::scheduling"

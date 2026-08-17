@@ -325,7 +325,6 @@ fn option_labels_from_hdbscan(
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
-    use std::time::Instant;
 
     #[test]
     fn empty_matrix_returns_empty_labels() {
@@ -483,33 +482,6 @@ mod tests {
                 len: 3
             })
         );
-    }
-
-    #[test]
-    #[ignore = "release-mode wall-clock benchmark for the 10_000 x 256 discovery scan"]
-    fn benchmark_10_000_by_256_discovery_clustering() {
-        let rows = 10_000;
-        let cols = 256;
-        let (matrix, _expected_clusters) =
-            seeded_unit_normalized_discovery_matrix(rows, cols, 0x5eed_5eed_cafe_babe);
-
-        let started = Instant::now();
-        let labels = cluster_embeddings(&matrix, rows, cols, 5, 3).expect("benchmark clusters");
-        let elapsed = started.elapsed();
-        let noise_count = labels.iter().filter(|label| label.is_none()).count();
-        let cluster_count: BTreeSet<usize> = labels.iter().filter_map(|label| *label).collect();
-
-        println!(
-            "discovery_hdbscan_benchmark rows={rows} cols={cols} profile={} elapsed_ms={} clusters={} noise={noise_count}",
-            if cfg!(debug_assertions) {
-                "debug"
-            } else {
-                "release"
-            },
-            elapsed.as_millis(),
-            cluster_count.len()
-        );
-        assert_eq!(labels.len(), rows);
     }
 
     fn unit_rows_2d(points: &[(f32, f32)]) -> Vec<f32> {

@@ -3258,6 +3258,7 @@ dependencies = [
  "solstone-core-generate",
  "solstone-core-journal",
  "solstone-core-journal-io",
+ "tempfile",
 ]
 
 [[package]]
@@ -3280,6 +3281,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-local",
  "solstone-core-processing-record",
+ "tempfile",
 ]
 
 [[package]]
@@ -3455,6 +3457,7 @@ dependencies = [
  "image",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-format",
  "solstone-core-journal-io",
  "tempfile",

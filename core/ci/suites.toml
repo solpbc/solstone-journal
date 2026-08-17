@@ -3966,3 +3966,55 @@ timeout = "standard"
 default_full = true
 required_features = []
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-describe::native_media_semantics"
+package = "solstone-core-describe"
+target = "native_media_semantics"
+set = "native"
+areas = ["media"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-grab::native_media_semantics"
+package = "solstone-core-grab"
+target = "native_media_semantics"
+set = "native"
+areas = ["media"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-observe-audio::native_media_semantics"
+package = "solstone-core-observe-audio"
+target = "native_media_semantics"
+set = "native"
+areas = ["observation"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-speakers::discovery_semantics"
+package = "solstone-core-speakers"
+target = "discovery_semantics"
+set = "native"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+default_full = true
+required_features = []
+runtime = "none"

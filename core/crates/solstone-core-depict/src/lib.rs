@@ -723,15 +723,9 @@ mod tests {
         }
     }
 
-    fn fixture_image() -> (PathBuf, PathBuf) {
-        let root = env::temp_dir().join(format!(
-            "depict-test-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let segment = root.join("123456_300");
+    fn fixture_image() -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let segment = root.path().join("123456_300");
         fs::create_dir_all(&segment).unwrap();
         let image = segment.join("photo.png");
         ImageBuffer::<Rgb<u8>, _>::from_pixel(4, 4, Rgb([255, 0, 0]))
@@ -742,13 +736,7 @@ mod tests {
 
     #[test]
     fn native_rfdetr_query_requires_the_pinned_sidecar_and_artifacts() {
-        let root = env::temp_dir().join(format!(
-            "depict-rfdetr-test-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let root = tempfile::tempdir().unwrap();
         let spec = RfdetrInstallSpec {
             engine_ref: "engine-ref",
             engine_sha256: "ed9f6f25068608efd412958da4dfc19328ca3511251fa6d5f9c42baf230e32f8",
@@ -758,7 +746,7 @@ mod tests {
             model_sha256: "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4",
             model_size: 5,
         };
-        let cache = root.join("cache/providers/rfdetr");
+        let cache = root.path().join("cache/providers/rfdetr");
         let binary = cache.join("engine/engine-ref/rfdetr-cli");
         let model = cache.join("model/model-revision/model.gguf");
         fs::create_dir_all(binary.parent().unwrap()).unwrap();
@@ -780,17 +768,16 @@ mod tests {
         )
         .unwrap();
 
-        let installed = query_rfdetr_paths_at(&root, spec);
+        let installed = query_rfdetr_paths_at(root.path(), spec);
         assert_eq!(installed.status, "installed");
         assert_eq!(installed.binary_path.as_deref(), Some(binary.as_path()));
         assert_eq!(installed.model_path.as_deref(), Some(model.as_path()));
 
         fs::write(&model, "wrong").unwrap();
-        let stale = query_rfdetr_paths_at(&root, spec);
+        let stale = query_rfdetr_paths_at(root.path(), spec);
         assert_eq!(stale.status, "not_installed");
         assert_eq!(stale.binary_path, None);
         assert_eq!(stale.model_path, None);
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -968,7 +955,7 @@ mod tests {
 
     #[test]
     fn skip_redo_and_no_engine_preserve_output_rules() {
-        let (root, image) = fixture_image();
+        let (_root, image) = fixture_image();
         let output = image.with_extension("jsonl");
         fs::write(&output, "old\n").unwrap();
         assert_eq!(
@@ -985,12 +972,11 @@ mod tests {
             RunOutcome::NoEngine
         );
         assert!(!output.exists());
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
     fn wire_failures_do_not_write_and_detection_is_fail_open() {
-        let (root, image) = fixture_image();
+        let (_root, image) = fixture_image();
         let output = image.with_extension("jsonl");
         assert!(matches!(
             run_with_clients(&image, false, &FailingWire, &NoDetector),
@@ -1017,23 +1003,21 @@ mod tests {
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
         assert_eq!(rows[1]["detections"]["gate"], "still");
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
     fn wrong_wire_error_schema_is_not_no_engine() {
-        let (root, image) = fixture_image();
+        let (_root, image) = fixture_image();
         assert!(matches!(
             run_with_clients(&image, false, &WrongSchemaNoEngineWire, &NoDetector),
             Err(DepictError::Wire { .. })
         ));
         assert!(!image.with_extension("jsonl").exists());
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
     fn stale_refusal_preserves_metadata_without_writing_output() {
-        let (root, image) = fixture_image();
+        let (_root, image) = fixture_image();
         let error = run_with_clients(&image, false, &StaleWire, &NoDetector)
             .expect_err("attestation refusal must not write");
         assert_eq!(error.exit_code(), 1);
@@ -1041,7 +1025,6 @@ mod tests {
         let record: Value = serde_json::from_str(&error_json_line(&error)).unwrap();
         assert_eq!(record["blocking"], true);
         assert_eq!(record["reason_code"], "attestation_stale");
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

@@ -21,8 +21,17 @@ solstone-core-format.workspace = true
 solstone-core-journal-io.workspace = true
 thiserror.workspace = true
 
+[features]
+test-hooks = []
+
 [dev-dependencies]
+sha2.workspace = true
 tempfile = "3.24.0"
+
+[[test]]
+name = "native_media_semantics"
+path = "tests/native_media_semantics.rs"
+required-features = ["test-hooks"]
 
 [lints]
 workspace = true

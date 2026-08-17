@@ -176,7 +176,6 @@ pub(crate) fn build_incremental_merge_plan(
 mod tests {
     use std::collections::BTreeSet;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::{Value, json};
 
@@ -384,11 +383,8 @@ mod tests {
 
     #[test]
     fn artifact_reader_preserves_raw_lines_and_marks_bad_rows() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("solstone-describe-merge-{nanos}.jsonl"));
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("artifact.jsonl");
         let raw = "{\"_solstone_processing\":{}}\n{\"z\": \"café\", \"frame_id\": 1}\n";
         fs::write(&path, raw).expect("write artifact");
         let artifact = read_existing_describe_artifact(&path).expect("artifact");
@@ -404,7 +400,6 @@ mod tests {
                 .rows
                 .is_none()
         );
-        fs::remove_file(path).expect("remove artifact");
     }
 
     #[test]
