@@ -450,14 +450,7 @@ fn install_wrappers_at(
         .truncate(false)
         .write(true)
         .open(lock_path)?;
-    #[cfg(feature = "test-hooks")]
-    {
-        let mut stdout = io::stdout();
-        writeln!(stdout, "ready")?;
-        stdout.flush()?;
-    }
-    let _lock = nix::fcntl::Flock::lock(lock, nix::fcntl::FlockArg::LockExclusive)
-        .map_err(|(_, error)| io::Error::other(error))?;
+    let _lock = acquire_wrapper_lock(lock)?;
     let items = [
         (sol.to_path_buf(), render_wrapper("sol", journal, &bins.sol)),
         (
@@ -506,6 +499,29 @@ fn install_wrappers_at(
         }
     }
     Ok(())
+}
+
+fn acquire_wrapper_lock(lock: fs::File) -> io::Result<nix::fcntl::Flock<fs::File>> {
+    #[cfg(feature = "test-hooks")]
+    {
+        match nix::fcntl::Flock::lock(lock, nix::fcntl::FlockArg::LockExclusiveNonblock) {
+            Ok(lock) => return Ok(lock),
+            Err((lock, error))
+                if error == nix::errno::Errno::EAGAIN
+                    || error == nix::errno::Errno::EWOULDBLOCK =>
+            {
+                let mut stderr = io::stderr();
+                writeln!(stderr, "contended")?;
+                stderr.flush()?;
+                return nix::fcntl::Flock::lock(lock, nix::fcntl::FlockArg::LockExclusive)
+                    .map_err(|(_, error)| io::Error::other(error));
+            }
+            Err((_, error)) => return Err(io::Error::other(error)),
+        }
+    }
+    #[cfg(not(feature = "test-hooks"))]
+    nix::fcntl::Flock::lock(lock, nix::fcntl::FlockArg::LockExclusive)
+        .map_err(|(_, error)| io::Error::other(error))
 }
 
 #[cfg(feature = "test-hooks")]

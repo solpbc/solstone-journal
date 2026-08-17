@@ -8,6 +8,9 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 struct TestRoot(PathBuf);
 
@@ -52,6 +55,33 @@ impl ReapOnDrop {
 
     fn child(&mut self) -> &mut Child {
         self.0.as_mut().expect("child still held")
+    }
+
+    fn contention_line(&mut self) -> String {
+        let stderr = self.child().stderr.take().expect("piped contention stderr");
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let reader = thread::spawn(move || {
+            let mut line = String::new();
+            let read = BufReader::new(stderr).read_line(&mut line);
+            let _ = sender.send((read, line));
+        });
+        let (read, line) = match receiver.recv_timeout(Duration::from_secs(2)) {
+            Ok(result) => result,
+            Err(error) => {
+                let _ = self.child().kill();
+                let _ = self.child().wait();
+                let _ = reader.join();
+                panic!("helper did not report lock contention before the deadline: {error}");
+            }
+        };
+        reader.join().expect("contention reader joins");
+        if read.expect("read contention line") == 0 {
+            panic!(
+                "helper exited before lock contention: {:?}",
+                self.child().try_wait()
+            );
+        }
+        line
     }
 
     fn wait(mut self) -> std::process::Output {
@@ -109,17 +139,8 @@ fn wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes() {
         .expect("hold exclusive wrapper lock");
 
     let mut child = ReapOnDrop::spawn(&bin, &target);
-    let mut ready = String::new();
-    let read = {
-        let stdout = child.child().stdout.as_mut().expect("piped stdout");
-        BufReader::new(stdout)
-            .read_line(&mut ready)
-            .expect("read ready line")
-    };
-    if read == 0 {
-        panic!("helper exited before ready: {:?}", child.child().try_wait());
-    }
-    assert_eq!(ready.trim_end(), "ready");
+    let contended = child.contention_line();
+    assert_eq!(contended.trim_end(), "contended");
     assert_unwritten_wrapper(&sol, b"old sol bytes");
     assert_unwritten_wrapper(&journal, b"old journal bytes");
 
