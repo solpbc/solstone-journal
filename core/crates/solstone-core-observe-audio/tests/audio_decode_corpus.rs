@@ -124,8 +124,8 @@ fn sample_count_slop(path: &Path) -> usize {
         // Lossless PCM/FLAC only have resampler-edge slop after the 16 kHz
         // downmix; a few frames is enough.
         Some("wav" | "flac") => LOSSLESS_SAMPLE_SLOP,
-        // Lossy encoders add priming/padding, so the decoded length can drift
-        // by tens to hundreds of milliseconds.
+        // Lossy encoders add priming/padding, so the decoded length can drift;
+        // 320 samples (~20 ms) covers what this host's encoders produced.
         Some("opus" | "ogg" | "mp3") => LOSSY_SAMPLE_SLOP,
         // `.m4a` mixes every stream and does not flush the resampler.
         Some("m4a") => M4A_SAMPLE_SLOP,

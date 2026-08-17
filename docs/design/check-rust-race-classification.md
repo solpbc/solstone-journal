@@ -205,8 +205,7 @@ This is purely an informational echo, **not** a $(MAKE) check-rust-race
 invocation. The Cargo-subcommand traversal chain in ci-under-poison remains
 untouched.
 
-Add a ci_gate_purity.rs naming guard following
-every_differential_test_is_named_in_its_own_gate or the simpler
+Add a ci_gate_purity.rs naming guard following the
 target_body(...).contains(...) pattern in
 make_ci_builds_and_exercises_every_host_packaged_binary. The new test asserts
 that target_body(makefile, "ci-under-poison") contains the literal string
