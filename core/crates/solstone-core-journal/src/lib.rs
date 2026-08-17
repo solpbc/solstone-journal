@@ -9,6 +9,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+#[cfg(test)]
+mod test_support;
+
 #[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
@@ -660,8 +663,8 @@ fn normalize_path_string(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::reserve_temp_path;
     use serde_json::Value;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
@@ -669,11 +672,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     fn unique_temp(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be monotonic enough for tests")
-            .as_nanos();
-        PathBuf::from("/tmp").join(format!("solstone-core-journal-{name}-{stamp}"))
+        reserve_temp_path(&format!("solstone-core-journal-{name}"))
     }
 
     #[test]

@@ -51,16 +51,10 @@ pub fn write_segment_marker(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use crate::test_support::reserve_temp_path;
 
     fn root(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "observer-prune-marker-{name}-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time")
-                .as_nanos()
-        ))
+        reserve_temp_path(&format!("observer-prune-marker-{name}"))
     }
 
     #[test]

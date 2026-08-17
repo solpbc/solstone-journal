@@ -678,15 +678,11 @@ fn python_casefold_key(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::reserve_temp_path;
     use serde_json::json;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root(name: &str) -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be available")
-            .as_nanos();
-        std::env::temp_dir().join(format!("solstone-core-speaker-{name}-{stamp}"))
+        reserve_temp_path(&format!("solstone-core-speaker-{name}"))
     }
 
     fn write_entity(root: &Path, entity_id: &str, value: Value) {

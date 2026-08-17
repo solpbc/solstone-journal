@@ -84,21 +84,15 @@ pub fn should_reenter_analysis_output(
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::json;
 
     use super::{read_processing_record_header, should_reenter_analysis_output};
+    use crate::test_support::reserve_temp_path;
     use crate::vocab;
 
     fn temporary_path(name: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "solstone-processing-record-reentry-{name}-{nanos}.jsonl"
-        ))
+        reserve_temp_path(&format!("solstone-processing-record-reentry-{name}.jsonl"))
     }
 
     fn write(path: &Path, contents: &str) {

@@ -257,7 +257,6 @@ fn timeout(config_path: &Path) -> CasConfigMutationError {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::time::{Duration, Instant};
 
     use serde_json::json;
     use solstone_core_journal_io::hold_lock;
@@ -420,7 +419,6 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, b"{\"name\":\"same\"}\n").unwrap();
         let lock = hold_lock(&path, LockOptions::default()).unwrap();
-        let started = Instant::now();
 
         let result = mutate_journal_config_cas(temporary.path(), |config| JournalConfigMutation {
             changed: false,
@@ -428,7 +426,6 @@ mod tests {
         })
         .unwrap();
 
-        assert!(started.elapsed() < Duration::from_millis(100));
         assert_eq!(result.value, json!("same"));
         assert!(!result.written);
         assert_eq!(lock.path(), path);

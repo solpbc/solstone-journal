@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::cell::RefCell;
 use std::error::Error;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -26,14 +27,14 @@ type PasswdResult = Result<Option<PasswdRecord>, Box<dyn Error + Send + Sync>>;
 type LocaltimeResult = Result<PathBuf, Box<dyn Error + Send + Sync>>;
 
 struct ScriptedReadSource {
-    result: Mutex<Option<io::Result<Vec<u8>>>>,
+    result: RefCell<Option<io::Result<Vec<u8>>>>,
     calls: Arc<AtomicUsize>,
 }
 
 impl ScriptedReadSource {
     fn new(result: io::Result<Vec<u8>>) -> Self {
         Self {
-            result: Mutex::new(Some(result)),
+            result: RefCell::new(Some(result)),
             calls: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -43,21 +44,20 @@ impl ReadSource for ScriptedReadSource {
     fn read_bytes(&self, _path: &Path) -> io::Result<Vec<u8>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.result
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .take()
             .expect("read seam must be called once")
     }
 }
 
 struct ScriptedPasswdSource {
-    result: Mutex<Option<PasswdResult>>,
+    result: RefCell<Option<PasswdResult>>,
 }
 
 impl ScriptedPasswdSource {
     fn new(result: PasswdResult) -> Self {
         Self {
-            result: Mutex::new(Some(result)),
+            result: RefCell::new(Some(result)),
         }
     }
 }
@@ -65,21 +65,20 @@ impl ScriptedPasswdSource {
 impl PasswdSource for ScriptedPasswdSource {
     fn current_user(&self) -> PasswdResult {
         self.result
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .take()
             .expect("passwd seam must be called once")
     }
 }
 
 struct ScriptedLocaltimeSource {
-    result: Mutex<Option<LocaltimeResult>>,
+    result: RefCell<Option<LocaltimeResult>>,
 }
 
 impl ScriptedLocaltimeSource {
     fn new(result: LocaltimeResult) -> Self {
         Self {
-            result: Mutex::new(Some(result)),
+            result: RefCell::new(Some(result)),
         }
     }
 }
@@ -87,8 +86,7 @@ impl ScriptedLocaltimeSource {
 impl LocaltimeSource for ScriptedLocaltimeSource {
     fn resolved_localtime(&self) -> LocaltimeResult {
         self.result
-            .lock()
-            .unwrap()
+            .borrow_mut()
             .take()
             .expect("localtime seam must be called once")
     }

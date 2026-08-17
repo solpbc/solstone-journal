@@ -12,6 +12,9 @@ mod predicate;
 mod temporal;
 mod types;
 
+#[cfg(test)]
+mod test_support;
+
 pub use compile::{CompileOutcome, QueryCompilation, compile_query};
 pub use edges::{
     DirectedCounts, EdgeEvidenceRequest, EdgeEvidenceResponse, EdgeFilters, EdgeFiltersPayload,

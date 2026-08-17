@@ -442,15 +442,11 @@ fn sqlite_table_exists(conn: &Connection, table: &str) -> Result<bool, StoreErro
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::reserve_temp_path;
     use serde_json::json;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be available")
-            .as_nanos();
-        std::env::temp_dir().join(format!("solstone-core-indexer-store-{name}-{stamp}"))
+        reserve_temp_path(&format!("solstone-core-indexer-store-{name}"))
     }
 
     #[test]

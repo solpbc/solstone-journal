@@ -14,6 +14,9 @@ mod fixture;
 mod section;
 mod store;
 
+#[cfg(test)]
+mod test_support;
+
 pub use store::{ensure_identity_directory, update_identity_section, write_identity};
 
 /// Identity-store failure.

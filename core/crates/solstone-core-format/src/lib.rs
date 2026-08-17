@@ -9,6 +9,9 @@ pub mod matcher;
 pub mod paths;
 pub mod segment;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 pub use json::{ensure_ascii, json_compact_ascii, json_compact_utf8};
 
 #[cfg(test)]

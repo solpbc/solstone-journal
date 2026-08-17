@@ -169,9 +169,9 @@ fn journal_relative_path(talents_dir_rel: &str, key: &str, suffix: &str) -> Stri
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::test_support::reserve_temp_path;
 
     const EXPECTED_TALENT_PROJECTION_COUNT: usize = 5;
 
@@ -181,14 +181,7 @@ mod tests {
 
     impl TempDir {
         fn new(name: &str) -> Self {
-            let stamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system time")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "solstone-core-format-{name}-{}-{stamp}",
-                std::process::id()
-            ));
+            let path = reserve_temp_path(&format!("solstone-core-format-{name}"));
             fs::create_dir_all(&path).expect("create temporary directory");
             Self { path }
         }

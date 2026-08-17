@@ -197,7 +197,7 @@ fn is_executable(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use crate::test_support::reserve_temp_path;
 
     struct TempDir {
         path: PathBuf,
@@ -205,14 +205,7 @@ mod tests {
 
     impl TempDir {
         fn new() -> Self {
-            let stamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time should be available")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "solstone-core-journal-cli-runner-{}-{stamp}",
-                std::process::id()
-            ));
+            let path = reserve_temp_path("solstone-core-journal-cli-runner");
             fs::create_dir(&path).expect("create temporary test directory");
             Self { path }
         }

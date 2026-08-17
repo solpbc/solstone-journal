@@ -716,17 +716,13 @@ fn timestamp_with_pre_gap_offset(
 mod tests {
     use super::*;
     use crate::edges::candidates::EdgeResolver;
+    use crate::test_support::reserve_temp_path;
     use serde_json::json;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be available")
-            .as_nanos();
-        std::env::temp_dir().join(format!("solstone-core-indexer-edges-{name}-{stamp}"))
+        reserve_temp_path(&format!("solstone-core-indexer-edges-{name}"))
     }
 
     fn write_json(root: &Path, rel: &str, value: Value) {

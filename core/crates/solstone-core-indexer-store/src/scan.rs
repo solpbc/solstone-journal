@@ -1121,16 +1121,12 @@ mod tests {
         read_entity_search_watermark, read_index_build_state, read_segment_aggregate_migration,
         reset_index, write_entity_search_watermark, write_segment_aggregate_migration,
     };
+    use crate::test_support::reserve_temp_path;
     use rusqlite::{Connection, params};
     use solstone_core_format::content::RawPerceptFamily;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be available")
-            .as_nanos();
-        std::env::temp_dir().join(format!("solstone-core-indexer-store-scan-{name}-{stamp}"))
+        reserve_temp_path(&format!("solstone-core-indexer-store-scan-{name}"))
     }
 
     fn write(root: &Path, rel: &str, text: &str) {

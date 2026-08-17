@@ -314,8 +314,7 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::Duration;
 
     use solstone_core_journal_io::{LockError, LockOptions, hold_lock};
 
@@ -326,22 +325,13 @@ mod tests {
     };
     use crate::IdentityError;
     use crate::fixture::{HEALTH_MD, PARTNER_MD};
-
-    static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    use crate::test_support::reserve_temp_path;
 
     struct TestJournal(PathBuf);
 
     impl TestJournal {
         fn new() -> Self {
-            let sequence = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "solstone-core-identity-{}-{}-{sequence}",
-                std::process::id(),
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("time after epoch")
-                    .as_nanos()
-            ));
+            let path = reserve_temp_path("solstone-core-identity");
             fs::create_dir_all(&path).expect("journal directory");
             Self(path)
         }

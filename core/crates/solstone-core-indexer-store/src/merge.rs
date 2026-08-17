@@ -179,22 +179,16 @@ fn append_json_string(output: &mut String, value: &str) {
 mod tests {
     use std::fs;
     use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use rusqlite::{Connection, params};
     use sha2::{Digest, Sha256};
 
     use super::*;
     use crate::db::open_index;
+    use crate::test_support::reserve_temp_path;
 
     fn temp_root(name: &str) -> PathBuf {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be available")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "solstone-core-indexer-store-merge-{name}-{timestamp}"
-        ))
+        reserve_temp_path(&format!("solstone-core-indexer-store-merge-{name}"))
     }
 
     fn insert_edge(

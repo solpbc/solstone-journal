@@ -15,6 +15,9 @@ mod notify_handler;
 mod processes;
 mod runner;
 
+#[cfg(test)]
+mod test_support;
+
 pub use runner::{
     InterpreterError, NativeExecutableError, sibling_native_in_dir, sibling_python_in_dir,
 };

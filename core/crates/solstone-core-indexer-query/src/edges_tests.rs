@@ -4,7 +4,6 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Local;
 use rusqlite::{Connection, params};
@@ -12,6 +11,7 @@ use serde::Serialize;
 use solstone_core_indexer_store::db::{db_path, open_index};
 
 use crate::edges::EVIDENCE_ORDER_SQL;
+use crate::test_support::reserve_temp_path;
 use crate::{
     EdgeEvidenceRequest, EdgeFilters, EdgeQueryError, NetworkOverviewRequest, NetworkRequest,
     load_edge_evidence, load_entity_network, load_network_overview, open_edges_reader,
@@ -53,11 +53,7 @@ impl<'a> SeedEdge<'a> {
 }
 
 fn root(name: &str) -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    std::env::temp_dir().join(format!("solstone-edge-query-{name}-{nanos}"))
+    reserve_temp_path(&format!("solstone-edge-query-{name}"))
 }
 
 fn seed(name: &str, rows: &[SeedEdge<'_>]) -> PathBuf {

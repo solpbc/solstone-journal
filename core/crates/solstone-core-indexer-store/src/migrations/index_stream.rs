@@ -133,20 +133,14 @@ fn relative_label<'a>(journal: &Path, path: &'a Path) -> std::borrow::Cow<'a, st
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::test_support::reserve_temp_path;
 
     /// Match the crate's existing test convention: a stamped temp root, no
     /// added dev-dependency.
     fn temp_root(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be available")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "solstone-core-indexer-store-migrations-{name}-{stamp}"
-        ))
+        reserve_temp_path(&format!("solstone-core-indexer-store-migrations-{name}"))
     }
 
     fn journal_with_index(name: &str, files: &[&str]) -> PathBuf {

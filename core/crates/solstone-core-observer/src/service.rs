@@ -338,17 +338,11 @@ fn format_plan(entry: &ReconcilePlan, dry_run: bool) -> String {
 mod tests {
     use super::*;
     use crate::store::paths::observer_path;
+    use crate::test_support::reserve_temp_path;
     use serde_json::json;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
     fn root(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "observer-service-{name}-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time")
-                .as_nanos()
-        ))
+        reserve_temp_path(&format!("observer-service-{name}"))
     }
     fn seed(root: &Path, key: &str, name: &str, created: i64) {
         let mut record = ObserverRecord::from_value(json!({"key":key,"name":name,"created_at":created,"stats":{"segments_received":1,"bytes_received":2}})).expect("record");

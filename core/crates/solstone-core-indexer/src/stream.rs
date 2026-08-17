@@ -80,16 +80,12 @@ pub fn extract_stream(journal: &Path, rel: &str) -> StreamLookup {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::reserve_temp_path;
     use std::fs;
     use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be available")
-            .as_nanos();
-        std::env::temp_dir().join(format!("solstone-core-indexer-stream-{name}-{stamp}"))
+        reserve_temp_path(&format!("solstone-core-indexer-stream-{name}"))
     }
 
     #[test]

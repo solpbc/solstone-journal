@@ -88,18 +88,12 @@ pub fn history_days(journal_root: &Path, prefix: &str) -> Result<Vec<String>, St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::reserve_temp_path;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn stops_at_first_malformed_line_without_mutating_file() {
-        let path = std::env::temp_dir().join(format!(
-            "observer-history-{}.jsonl",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time")
-                .as_nanos()
-        ));
+        let path = reserve_temp_path("observer-history.jsonl");
         let contents = "{\"segment\":\"one\"}\n{broken}\n{\"segment\":\"three\"}\n";
         fs::write(&path, contents).expect("write");
         let read = load_history(&path);

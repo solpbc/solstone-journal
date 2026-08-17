@@ -89,17 +89,11 @@ pub fn pruned_records_by_stream(journal: &Path, stream: &str) -> BTreeMap<(Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::reserve_temp_path;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn root(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "observer-prune-history-{name}-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time")
-                .as_nanos()
-        ))
+        reserve_temp_path(&format!("observer-prune-history-{name}"))
     }
 
     #[test]

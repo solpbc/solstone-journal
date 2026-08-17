@@ -92,12 +92,12 @@ pub fn most_recent_morning_briefing_day(journal: &Path) -> Option<String> {
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::Value;
 
     use super::*;
     use crate::content::render_morning_briefing_text;
+    use crate::test_support::reserve_temp_path;
 
     const COMPLETE_BRIEFING: &str = r#"{"metadata":{},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[]}"#;
 
@@ -107,14 +107,7 @@ mod tests {
 
     impl TempDir {
         fn new(name: &str) -> Self {
-            let stamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system time")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "solstone-core-format-{name}-{}-{stamp}",
-                std::process::id()
-            ));
+            let path = reserve_temp_path(&format!("solstone-core-format-{name}"));
             fs::create_dir_all(&path).expect("create temporary directory");
             Self { path }
         }

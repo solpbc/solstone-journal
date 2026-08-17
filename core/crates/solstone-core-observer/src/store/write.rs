@@ -23,19 +23,13 @@ pub fn save_observer(journal_root: &Path, record: &ObserverRecord) -> Result<(),
 mod tests {
     use super::*;
     use crate::store::paths::observer_path;
+    use crate::test_support::reserve_temp_path;
     use serde_json::json;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn save_is_pretty_has_no_trailing_newline_and_preserves_fields() {
-        let root = std::env::temp_dir().join(format!(
-            "observer-write-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time")
-                .as_nanos()
-        ));
+        let root = reserve_temp_path("observer-write");
         let record = ObserverRecord::from_value(
             json!({"key":"abcdefgh123", "name":"one", "unknown":{"keep":true}}),
         )

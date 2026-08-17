@@ -4,7 +4,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::NaiveDate;
 use rusqlite::trace::{TraceEvent, TraceEventCodes};
@@ -14,6 +13,7 @@ use solstone_core_indexer_store::db::{db_path, open_index};
 use crate::execute::{
     agents_with_connection_for_test, order_for_plan, search_with_connection_for_test,
 };
+use crate::test_support::reserve_temp_path;
 use crate::{
     CompileOutcome, CoverageState, IndexAccessError, IndexBuildCounts, IndexDegraded, Order,
     SearchRequest, compile_query, coverage, search, search_counts,
@@ -33,11 +33,7 @@ fn reference_date() -> NaiveDate {
 }
 
 fn temp_root(name: &str) -> PathBuf {
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time should be available")
-        .as_nanos();
-    std::env::temp_dir().join(format!("solstone-core-indexer-query-{name}-{stamp}"))
+    reserve_temp_path(&format!("solstone-core-indexer-query-{name}"))
 }
 
 #[allow(clippy::too_many_arguments)]

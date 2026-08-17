@@ -341,18 +341,12 @@ impl TitleCase for str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::reserve_temp_path;
     use chrono::FixedOffset;
     use serde_json::json;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be available")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "solstone-core-indexer-entity-search-{name}-{stamp}"
-        ))
+        reserve_temp_path(&format!("solstone-core-indexer-entity-search-{name}"))
     }
 
     fn write(root: &Path, rel: &str, text: &str) {

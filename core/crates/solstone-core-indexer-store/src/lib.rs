@@ -6,6 +6,9 @@ pub mod merge;
 pub mod migrations;
 pub mod scan;
 
+#[cfg(test)]
+mod test_support;
+
 use std::fmt;
 use std::io;
 use std::path::PathBuf;

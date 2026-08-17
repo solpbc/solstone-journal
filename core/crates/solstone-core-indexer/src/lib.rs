@@ -6,3 +6,6 @@ pub mod edges;
 pub mod entity_search;
 pub mod metadata;
 pub mod stream;
+
+#[cfg(test)]
+pub(crate) mod test_support;

@@ -25,6 +25,9 @@ use solstone_core_journal_io::{
     list_dir_entries_bounded, remove_file, sync_dir, write_bytes_exclusive,
 };
 
+#[cfg(test)]
+mod test_support;
+
 const IMPORTS_DIR: &str = "imports";
 const DATABASE_REL: &str = "imports/health-dedupe.sqlite";
 const TEMP_DATABASE_REL: &str = "imports/.health-dedupe.sqlite.rebuild";
@@ -1050,12 +1053,9 @@ fn error(kind: BodyRebuildErrorKind, stage: &'static str) -> BodyRebuildError {
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
-
-    static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    use crate::test_support::reserve_temp_path;
 
     struct TempDir {
         path: PathBuf,
@@ -1063,15 +1063,7 @@ mod tests {
 
     impl TempDir {
         fn new() -> Self {
-            let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock after epoch")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "solstone-body-publication-{}-{nanos}-{sequence}",
-                std::process::id()
-            ));
+            let path = reserve_temp_path("solstone-body-publication");
             fs::create_dir(&path).expect("temporary directory creates");
             let path = fs::canonicalize(path).expect("temporary directory canonicalizes");
             Self { path }

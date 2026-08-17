@@ -127,18 +127,12 @@ pub fn is_prefix(identifier: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::reserve_temp_path;
     use serde_json::json;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn root(name: &str) -> std::path::PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "observer-reload-{name}-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time")
-                .as_nanos()
-        ));
+        let root = reserve_temp_path(&format!("observer-reload-{name}"));
         fs::create_dir_all(super::super::paths::observers_dir(&root)).expect("directory");
         root
     }
