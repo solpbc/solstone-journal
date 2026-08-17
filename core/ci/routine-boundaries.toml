@@ -262,24 +262,6 @@ id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::
 id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac15_service_running_receives_ok_and_crash_status_over_callosum::scheduling"
 
 [[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac18_silent_present_socket_warns_without_execution_error::clock"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac18_silent_present_socket_warns_without_execution_error::scheduling"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac18_silent_present_socket_with_failed_service_command_fails::clock"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac18_silent_present_socket_with_failed_service_command_fails::scheduling"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac9_full_batteries_never_invoke_poisoned_interpreters::host-tool"
-
-[[findings]]
-id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac9_full_batteries_never_invoke_poisoned_interpreters::process"
-
-[[findings]]
 id = "solstone-core-facets::core/crates/solstone-core-facets/src/store/awareness.rs::tests::temporary_journal::clock"
 
 [[findings]]

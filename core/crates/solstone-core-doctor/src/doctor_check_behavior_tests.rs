@@ -388,46 +388,45 @@ fn stage_feature(context: &mut CheckContext, name: &str, present: bool) {
 }
 
 fn task_pace_with(tasks: serde_json::Value) -> CheckResult {
-    use serde_json::Map;
-    use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
+    use std::io::Write;
+    use std::os::unix::net::UnixListener;
+    use std::sync::mpsc;
+    use std::time::Instant;
 
     let mut context = fixture();
     fs::create_dir_all(context.callosum_socket_path.parent().unwrap()).unwrap();
-    context.service_status_timeout = Duration::from_millis(250);
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let server = runtime
-        .block_on(CallosumSocketServer::bind(&context.callosum_socket_path))
-        .unwrap();
-    let thread_context = context.clone();
-    let handle = std::thread::spawn(move || result("task_pace", &thread_context));
-    runtime.block_on(async {
-        tokio::time::timeout(Duration::from_millis(100), async {
-            while server.client_count() == 0 {
-                tokio::time::sleep(Duration::from_millis(2)).await;
-            }
-        })
-        .await
-        .unwrap();
-    });
-    let envelope = CallosumEnvelope {
-        tract: "supervisor".into(),
-        event: "status".into(),
-        ts: None,
-        extra: Map::from_iter([("tasks".into(), tasks)]),
-    };
-    for _ in 0..20 {
-        assert!(server.broadcast(envelope.clone()));
-        runtime.block_on(async { tokio::time::sleep(Duration::from_millis(5)).await });
-        if handle.is_finished() {
-            break;
-        }
+    if context.callosum_socket_path.exists() {
+        fs::remove_file(&context.callosum_socket_path).unwrap();
     }
-    let output = handle.join().unwrap();
-    runtime.block_on(server.stop());
-    output
+    context.service_status_timeout = Duration::from_millis(250);
+    let listener = UnixListener::bind(&context.callosum_socket_path).unwrap();
+    let started = Instant::now();
+    let accept_bound = Duration::from_millis(250);
+    let (ready_tx, ready_rx) = mpsc::sync_channel(0);
+    std::thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept");
+        let _ = ready_tx.send(stream);
+    });
+    let (done_tx, done_rx) = mpsc::sync_channel(0);
+    let thread_context = context.clone();
+    std::thread::spawn(move || {
+        let _ = done_tx.send(result("task_pace", &thread_context));
+    });
+    let mut stream = ready_rx
+        .recv_timeout(accept_bound)
+        .expect("receipted accept");
+    let mut payload = serde_json::json!({
+        "tract": "supervisor",
+        "event": "status",
+        "tasks": tasks,
+    })
+    .to_string()
+    .into_bytes();
+    payload.push(b'\n');
+    stream.write_all(&payload).unwrap();
+    let remaining =
+        Duration::from_millis(250).saturating_sub(started.elapsed()) + Duration::from_millis(250);
+    done_rx.recv_timeout(remaining).expect("task_pace finished")
 }
 
 #[derive(Clone, Copy)]
@@ -981,6 +980,20 @@ fn task_pace_uses_callosum_status_fixture() {
     assert_eq!(warn.status, Status::Warn);
     assert_eq!(warn.detail, "running long: index (12s of 10s cap)");
     assert_eq!(result("task_pace", &fixture()).status, Status::Skip);
+}
+
+#[test]
+fn task_pace_malformed_slow_fields_warn() {
+    let row = task_pace_with(serde_json::json!([{ "name": "index", "slow": true }]));
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(row.detail, "running long: index (0s of ?s cap)");
+}
+
+#[test]
+fn task_pace_absent_socket_skips() {
+    let row = result("task_pace", &fixture());
+    assert_eq!(row.status, Status::Skip);
+    assert_eq!(row.detail, "supervisor status unavailable");
 }
 
 #[test]

@@ -101,17 +101,11 @@ mod tests {
     use chrono::TimeZone;
     use std::{
         fs,
-        os::unix::fs::{PermissionsExt, symlink},
-        process::Command,
         sync::atomic::{AtomicUsize, Ordering},
         time::Duration,
     };
 
     static NEXT_CONTEXT: AtomicUsize = AtomicUsize::new(0);
-    const POISON_INTERPRETER: &str = r#"#!/bin/sh
-printf '%s\n' "$0" > "$POISON_MARKER"
-exit 97
-"#;
 
     fn context() -> CheckContext {
         let root = std::env::temp_dir().join(format!(
@@ -690,8 +684,11 @@ exit 97
     }
     #[test]
     fn ac15_service_running_receives_ok_and_crash_status_over_callosum() {
-        use serde_json::{Map, Value};
-        use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
+        use std::io::Write;
+        use std::os::unix::net::UnixListener;
+        use std::sync::mpsc;
+        use std::time::Instant;
+
         let mut c = context();
         fs::create_dir_all(c.home_dir.join(".config/systemd/user")).unwrap();
         fs::write(
@@ -700,80 +697,75 @@ exit 97
         )
         .unwrap();
         fs::create_dir_all(c.callosum_socket_path.parent().unwrap()).unwrap();
+        if c.callosum_socket_path.exists() {
+            fs::remove_file(&c.callosum_socket_path).unwrap();
+        }
         c.service_status_timeout = Duration::from_millis(250);
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let server = runtime
-            .block_on(CallosumSocketServer::bind(&c.callosum_socket_path))
-            .unwrap();
+        let listener = UnixListener::bind(&c.callosum_socket_path).unwrap();
         let check = Check {
             name: "service_running",
             severity: Severity::Blocker,
             platforms: &[Platform::Linux],
         };
-        let first = c.clone();
-        let handle =
-            std::thread::spawn(move || checks::service_running::run(&first, check).unwrap());
-        runtime.block_on(async {
-            tokio::time::timeout(Duration::from_millis(100), async {
-                while server.client_count() == 0 {
-                    tokio::time::sleep(Duration::from_millis(2)).await;
-                }
-            })
-            .await
-            .unwrap();
+        let accept_bound = Duration::from_millis(250);
+        let started = Instant::now();
+        let (ready_tx, ready_rx) = mpsc::sync_channel(0);
+        let accept_listener = listener.try_clone().unwrap();
+        std::thread::spawn(move || {
+            let (stream, _) = accept_listener.accept().expect("accept");
+            let _ = ready_tx.send(stream);
         });
-        let envelope = CallosumEnvelope {
-            tract: "supervisor".into(),
-            event: "status".into(),
-            ts: None,
-            extra: Map::from_iter([("crashed".into(), Value::Array(vec![]))]),
-        };
-        for _ in 0..20 {
-            assert!(server.broadcast(envelope.clone()));
-            runtime.block_on(async {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            });
-            if handle.is_finished() {
-                break;
-            }
-        }
-        let ok = handle.join().unwrap();
+        let first = c.clone();
+        let (done_tx, done_rx) = mpsc::sync_channel(0);
+        std::thread::spawn(move || {
+            let _ = done_tx.send(checks::service_running::run(&first, check).unwrap());
+        });
+        let mut stream = ready_rx
+            .recv_timeout(accept_bound)
+            .expect("receipted accept");
+        let mut payload = serde_json::json!({
+            "tract": "supervisor",
+            "event": "status",
+            "crashed": [],
+        })
+        .to_string()
+        .into_bytes();
+        payload.push(b'\n');
+        stream.write_all(&payload).unwrap();
+        let remaining = Duration::from_millis(250).saturating_sub(started.elapsed())
+            + Duration::from_millis(250);
+        let ok = done_rx.recv_timeout(remaining).expect("healthy check");
+        drop(stream);
         assert_eq!(ok.status, Status::Ok);
         assert_eq!(ok.detail, "journal service is running");
-        let second = c.clone();
-        let handle =
-            std::thread::spawn(move || checks::service_running::run(&second, check).unwrap());
-        runtime.block_on(async {
-            tokio::time::timeout(Duration::from_millis(100), async {
-                while server.client_count() == 0 {
-                    tokio::time::sleep(Duration::from_millis(2)).await;
-                }
-            })
-            .await
-            .unwrap();
+        let started = Instant::now();
+        let (ready_tx, ready_rx) = mpsc::sync_channel(0);
+        let accept_listener = listener.try_clone().unwrap();
+        std::thread::spawn(move || {
+            let (stream, _) = accept_listener.accept().expect("accept");
+            let _ = ready_tx.send(stream);
         });
-        let envelope = CallosumEnvelope {
-            tract: "supervisor".into(),
-            event: "status".into(),
-            ts: None,
-            extra: Map::from_iter([(
-                "crashed".into(),
-                Value::Array(vec![serde_json::json!({"name":"foo","restart_attempts":3})]),
-            )]),
-        };
-        for _ in 0..20 {
-            assert!(server.broadcast(envelope.clone()));
-            runtime.block_on(async {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            });
-            if handle.is_finished() {
-                break;
-            }
-        }
-        let crash = handle.join().unwrap();
+        let second = c.clone();
+        let (done_tx, done_rx) = mpsc::sync_channel(0);
+        std::thread::spawn(move || {
+            let _ = done_tx.send(checks::service_running::run(&second, check).unwrap());
+        });
+        let mut stream = ready_rx
+            .recv_timeout(accept_bound)
+            .expect("receipted accept");
+        let mut payload = serde_json::json!({
+            "tract": "supervisor",
+            "event": "status",
+            "crashed": [{"name":"foo","restart_attempts":3}],
+        })
+        .to_string()
+        .into_bytes();
+        payload.push(b'\n');
+        stream.write_all(&payload).unwrap();
+        let remaining = Duration::from_millis(250).saturating_sub(started.elapsed())
+            + Duration::from_millis(250);
+        let crash = done_rx.recv_timeout(remaining).expect("crash check");
+        drop(stream);
         assert_eq!(crash.status, Status::Fail);
         assert!(
             crash
@@ -781,7 +773,6 @@ exit 97
                 .contains("crash-loop: foo (3 restart attempts)")
         );
         assert_eq!(crash.fix.as_deref(), Some("run journal service logs"));
-        runtime.block_on(server.stop());
     }
     #[test]
     fn supervisor_conflict_detects_binary_foreign_launcher_plist() {
@@ -814,233 +805,5 @@ exit 97
         )
         .unwrap();
         assert_eq!(result.status, Status::Fail);
-    }
-    #[test]
-    fn ac18_silent_present_socket_warns_without_execution_error() {
-        use std::os::unix::net::UnixListener;
-        let mut c = context();
-        fs::create_dir_all(c.home_dir.join(".config/systemd/user")).unwrap();
-        fs::write(
-            c.home_dir.join(".config/systemd/user/solstone.service"),
-            b"x",
-        )
-        .unwrap();
-        fs::create_dir_all(c.callosum_socket_path.parent().unwrap()).unwrap();
-        let listener = UnixListener::bind(&c.callosum_socket_path).unwrap();
-        c.service_status_timeout = Duration::from_millis(50);
-        let handle = std::thread::spawn(move || {
-            let _ = listener.accept();
-            std::thread::sleep(Duration::from_millis(100));
-        });
-        let r = checks::service_running::run(
-            &c,
-            Check {
-                name: "service_running",
-                severity: Severity::Blocker,
-                platforms: &[Platform::Linux],
-            },
-        )
-        .unwrap();
-        handle.join().unwrap();
-        assert_eq!(r.status, Status::Warn);
-        assert_eq!(r.detail, "service installed but not running");
-        assert!(r.execution_error.is_none());
-        assert!(!results_failed(&[r]));
-    }
-    #[test]
-    fn ac18_silent_present_socket_with_failed_service_command_fails() {
-        use std::os::unix::{fs::PermissionsExt, net::UnixListener};
-        let mut c = context();
-        fs::create_dir_all(c.home_dir.join(".config/systemd/user")).unwrap();
-        fs::write(
-            c.home_dir.join(".config/systemd/user/solstone.service"),
-            b"x",
-        )
-        .unwrap();
-        fs::create_dir_all(c.callosum_socket_path.parent().unwrap()).unwrap();
-        let script = c.home_dir.parent().unwrap().join("failed-service.sh");
-        fs::write(&script, "#!/bin/sh\necho failed\nexit 0\n").unwrap();
-        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
-        c.service_status_command_override = Some((script, Vec::new()));
-        c.service_status_timeout = Duration::from_millis(50);
-        let listener = UnixListener::bind(&c.callosum_socket_path).unwrap();
-        let handle = std::thread::spawn(move || {
-            let _ = listener.accept();
-            std::thread::sleep(Duration::from_millis(100));
-        });
-        let r = checks::service_running::run(
-            &c,
-            Check {
-                name: "service_running",
-                severity: Severity::Blocker,
-                platforms: &[Platform::Linux],
-            },
-        )
-        .unwrap();
-        handle.join().unwrap();
-        assert_eq!(r.status, Status::Fail);
-        assert_eq!(r.detail, "journal service unit is failed");
-        assert_eq!(
-            r.fix.as_deref(),
-            Some("run journal service restart; if it persists, run journal service logs")
-        );
-        assert!(r.execution_error.is_none());
-    }
-
-    #[test]
-    fn ac9_full_batteries_never_invoke_poisoned_interpreters() {
-        if let Some(root) = std::env::var_os("SOLSTONE_DOCTOR_AC9_ROOT") {
-            run_ac9_child(std::path::PathBuf::from(root));
-            return;
-        }
-
-        let staged = checks::test_support::context();
-        let root = staged
-            .install_bin_dir
-            .parent()
-            .and_then(std::path::Path::parent)
-            .expect("staged root")
-            .to_path_buf();
-        let poison_dir = root.join("poison");
-        let marker = root.join("poison-marker");
-        fs::create_dir_all(&poison_dir).expect("create poison directory");
-        for name in ["python", "python3", "pip", "uv"] {
-            let shim = poison_dir.join(name);
-            fs::write(&shim, POISON_INTERPRETER).expect("write poison PATH shim");
-            fs::set_permissions(&shim, fs::Permissions::from_mode(0o755))
-                .expect("make poison PATH shim executable");
-        }
-        stage_ac9_batteries(&staged.context);
-
-        let output = Command::new(std::env::current_exe().expect("test executable"))
-            .args([
-                "--exact",
-                "tests::ac9_full_batteries_never_invoke_poisoned_interpreters",
-            ])
-            .env("SOLSTONE_DOCTOR_AC9_ROOT", &root)
-            .env("POISON_MARKER", &marker)
-            .env("PATH", &poison_dir)
-            .output()
-            .expect("run isolated poison-interpreter child");
-        assert!(
-            output.status.success(),
-            "child test failed:\n{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(
-            !marker.exists(),
-            "native doctor invoked a poison interpreter: {}",
-            fs::read_to_string(&marker).unwrap_or_default()
-        );
-    }
-
-    fn run_ac9_child(root: std::path::PathBuf) {
-        let context = CheckContext {
-            home_dir: root.join("home"),
-            install_bin_dir: root.join("install/bin"),
-            journal_path: root.join("journal"),
-            callosum_socket_path: root.join("journal/health/callosum.sock"),
-            platform: Platform::Linux,
-            now: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
-            host_arch: "x86_64".into(),
-            hostname: "test-host".into(),
-            machine_id: Some("test-machine".into()),
-            checkout_root: None,
-            python_env_root: None,
-            port: 5015,
-            service_status_timeout: Duration::from_millis(10),
-            service_status_command_override: None,
-            parakeet_server_probe_override: None,
-            speakers_analyze_resolvers: None,
-        };
-        for readiness in [false, true] {
-            let results = run(
-                &args::DoctorArgs {
-                    verbose: false,
-                    json: false,
-                    jsonl: false,
-                    port: 5015,
-                    feature: None,
-                    readiness,
-                },
-                &context,
-            );
-            assert_eq!(
-                results.len(),
-                registry::entries(if readiness {
-                    Battery::JournalReadiness
-                } else {
-                    Battery::Journal
-                })
-                .len(),
-                "entire battery must run"
-            );
-            assert!(
-                results
-                    .iter()
-                    .all(|result| result.execution_error.is_none()),
-                "a check failed before the battery completed: {results:?}"
-            );
-        }
-    }
-
-    fn stage_ac9_batteries(context: &CheckContext) {
-        fs::create_dir_all(&context.home_dir).expect("create staged home");
-        fs::create_dir_all(&context.journal_path).expect("create staged journal");
-        fs::create_dir_all(&context.install_bin_dir).expect("create staged install bin");
-        let site_packages = checks::test_support::site_packages(context, "python3.12");
-        checks::test_support::metadata(
-            &site_packages,
-            "solstone-1.2.3.dist-info",
-            "solstone",
-            "1.2.3",
-            Some(">=3.12"),
-        );
-        checks::test_support::metadata(
-            &site_packages,
-            "solstone_journal-1.2.3.dist-info",
-            "solstone-journal",
-            "1.2.3",
-            None,
-        );
-        for module in ["frontmatter", "flask", "onnxruntime"] {
-            fs::create_dir(site_packages.join(module)).expect("create host dependency module");
-        }
-        fs::write(
-            context
-                .install_bin_dir
-                .parent()
-                .expect("install prefix")
-                .join("pyvenv.cfg"),
-            "version = 3.12.0\n",
-        )
-        .expect("write staged pyvenv config");
-        for binary in ["sol", "journal", "python"] {
-            let path = context.install_bin_dir.join(binary);
-            fs::write(&path, POISON_INTERPRETER).expect("write staged executable");
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
-                .expect("make staged executable");
-        }
-        let aliases = context.home_dir.join(".local/bin");
-        fs::create_dir_all(&aliases).expect("create staged aliases");
-        symlink(context.install_bin_dir.join("sol"), aliases.join("sol")).expect("link staged sol");
-        symlink(
-            context.install_bin_dir.join("journal"),
-            aliases.join("journal"),
-        )
-        .expect("link staged journal");
-        let unit = context
-            .home_dir
-            .join(".config/systemd/user/solstone.service");
-        fs::create_dir_all(unit.parent().expect("unit parent")).expect("create unit parent");
-        fs::write(
-            unit,
-            format!(
-                "ExecStart={} start 5015\n",
-                context.install_bin_dir.join("journal").display()
-            ),
-        )
-        .expect("write staged service unit");
     }
 }

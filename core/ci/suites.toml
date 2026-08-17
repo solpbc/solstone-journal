@@ -3926,3 +3926,17 @@ timeout = "standard"
 default_full = true
 required_features = []
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-doctor::doctor_service_checks"
+package = "solstone-core-doctor"
+target = "doctor_service_checks"
+set = "component"
+areas = ["health"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
