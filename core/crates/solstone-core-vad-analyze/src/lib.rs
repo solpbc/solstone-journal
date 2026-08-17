@@ -3,17 +3,15 @@
 
 //! Native Silero VAD v6 analysis command contract.
 //!
-//! This crate reproduces the vendored Python reference
-//! `solstone/observe/_silero_vad.py` at the production settings used by
-//! `solstone/observe/vad.py::run_vad`: `threshold=0.3`,
+//! Production settings match the retired Python port: `threshold=0.3`,
 //! `min_silence_duration_ms=1000`, and the `VadOptions` defaults for
-//! `min_speech_duration_ms` (0) and `speech_pad_ms` (400).
+//! `min_speech_duration_ms` (0) and `speech_pad_ms` (400). SessionOptions
+//! are pinned as Rust source text only; there is no live Python reference.
 //!
 //! The wire contract is narrower than `VadOptions` on purpose. `neg_threshold`
 //! is always derived (`max(threshold - 0.15, 0.01)`) and `max_speech_duration_s`
-//! is always `inf`, so neither is expressible in a request and the reference
-//! branches they feed are not ported. The sampling rate is fixed at 16 kHz raw
-//! mono `f32le`, matching `solstone/observe/utils.py::SAMPLE_RATE`.
+//! is always `inf`, so neither is expressible in a request and those branches
+//! are not ported. The sampling rate is fixed at 16 kHz raw mono `f32le`.
 
 use std::collections::BTreeSet;
 use std::error::Error;

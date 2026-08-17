@@ -79,7 +79,7 @@ fn mismatch(source: &str, dest: &str, why: &str, detail: &str) -> String {
          Source: {source}\n\
          Crate copy: {dest}\n\n\
          Why: {why} so cargo can compile without reading solstone/. \
-This copy disappears when Python is deleted.\n\n\
+This is a permanent byte-identity copy, not slated for removal.\n\n\
          Repair with:\n  cp {source} {dest}\n"
     )
 }
@@ -110,7 +110,7 @@ fn dir_mismatch(
          Source dir: {source_dir}\n\
          Crate copy dir: {dest_dir}\n\n\
          Why: {why} so cargo can compile without reading solstone/. \
-This copy disappears when Python is deleted.\n\n\
+This is a permanent byte-identity copy, not slated for removal.\n\n\
          Repair with:\n  rm -rf {dest_dir} && cp -aL {source_dir} {dest_dir}\n",
         lines.join("\n")
     )
