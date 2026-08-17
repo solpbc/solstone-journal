@@ -1,0 +1,38 @@
+schema = "solstone-distribution-builder-inputs-v1"
+
+[rust_base]
+reference = "rust@sha256:2775a09d208ff0d7c1f50490c45b62db929e87ba1dcbc3f2132ac71a704bcdd3"
+image_id = "sha256:2775a09d208ff0d7c1f50490c45b62db929e87ba1dcbc3f2132ac71a704bcdd3"
+debian_layer_sha256 = "039e6f9f9752f74a3ff4a6a224f64c7c864da16ed98f882107704328f41b9c42"
+debian_layer_size = 28232590
+rust_layer_sha256 = "167b9fde7ea2106ff0349f834ad13f3d5078836087edf8a9422da759c088f66c"
+rust_layer_size = 288641068
+
+[builder_rootfs]
+filename = "builder-rootfs.tar"
+sha256 = "8e7c13acb4e8a65e17c6db6d8152865ae5b4f1fd252ae455cd967927d42a8de3"
+size = 1493800960
+
+[zig]
+version = "0.16.0"
+filename = "zig-x86_64-linux-0.16.0.tar.xz"
+url = "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
+sha256 = "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
+size = 55478392
+
+[ffmpeg]
+commit = "03d9533176e98bb9fbf569c1f34968e73e948dd9"
+filename = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9.tar.gz"
+url = "https://github.com/FFmpeg/FFmpeg/archive/03d9533176e98bb9fbf569c1f34968e73e948dd9.tar.gz"
+sha256 = "ba7070db2f8a0590e3bbad428c8ffbec33f80b0a430bcad79c2cfb756e84ff8b"
+size = 17322302
+
+[onnx_linux_x86_64]
+filename = "onnxruntime-linux-x86_64.whl"
+sha256 = "be93baa694ef8e5831fcb7b542da21f502b122918b5b9612d9f02972e043ee01"
+size = 17996146
+
+[onnx_linux_aarch64]
+filename = "onnxruntime-linux-aarch64.whl"
+sha256 = "9c99238d20bfa80ac68c7b03c2c936d389189ae40997f78a30d151570d7e18bf"
+size = 15841110

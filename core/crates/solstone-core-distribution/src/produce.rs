@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -19,6 +20,9 @@ use crate::select::{self, ArtifactId};
 use crate::stage;
 
 pub const ZIG_OVERRIDE: &str = "SOLSTONE_ZIG";
+pub const ONNX_ARCHIVE_OVERRIDE: &str = "SOLSTONE_DISTRIBUTION_ONNX_ARCHIVE";
+pub const ONNX_ARCHIVE_DIR: &str = "SOLSTONE_DISTRIBUTION_ONNX_ARCHIVE_DIR";
+pub const OFFLINE: &str = "SOLSTONE_DISTRIBUTION_OFFLINE";
 
 #[derive(Debug)]
 pub struct ProduceError {
@@ -58,7 +62,58 @@ pub struct ProduceReport {
     pub target: String,
     pub commit: String,
     pub lock_sha256: String,
+    pub onnx_source: String,
+    pub onnx_wheel_sha256: String,
     pub artifacts: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OnnxInput {
+    Local(PathBuf),
+    PinnedUrl,
+}
+
+pub fn select_onnx_input(
+    target_id: &str,
+    archive: Option<&OsStr>,
+    archive_dir: Option<&OsStr>,
+    offline: bool,
+) -> Result<OnnxInput, ProduceError> {
+    if let Some(value) = archive {
+        if value.is_empty() {
+            return Err(ProduceError::new(format!(
+                "missing required:\n  {ONNX_ARCHIVE_OVERRIDE} for {target_id}"
+            )));
+        }
+        return Ok(OnnxInput::Local(PathBuf::from(value)));
+    }
+    if let Some(value) = archive_dir {
+        if value.is_empty() {
+            return Err(ProduceError::new(format!(
+                "missing required:\n  {ONNX_ARCHIVE_DIR} for {target_id}"
+            )));
+        }
+        return Ok(OnnxInput::Local(
+            PathBuf::from(value).join(format!("onnxruntime-{target_id}.whl")),
+        ));
+    }
+    if offline {
+        return Err(ProduceError::new(format!(
+            "missing required:\n  {ONNX_ARCHIVE_OVERRIDE} or {ONNX_ARCHIVE_DIR} for {target_id}"
+        )));
+    }
+    Ok(OnnxInput::PinnedUrl)
+}
+
+fn stage_onnx_input(
+    spec: &onnx_runtime::TargetSpec,
+    input: &OnnxInput,
+) -> Result<onnx_runtime::StagedRuntime, ProduceError> {
+    match input {
+        OnnxInput::Local(path) => onnx_runtime::stage_from_path(spec, path),
+        OnnxInput::PinnedUrl => onnx_runtime::stage_from_url(spec),
+    }
+    .map_err(|error| ProduceError::new(error.to_string()))
 }
 
 pub fn resolve_zig_binary(
@@ -241,8 +296,13 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 args.target_id
             ))
         })?;
-        let staged_runtime = onnx_runtime::stage_from_url(spec)
-            .map_err(|error| ProduceError::new(error.to_string()))?;
+        let onnx_input = select_onnx_input(
+            &args.target_id,
+            env::var_os(ONNX_ARCHIVE_OVERRIDE).as_deref(),
+            env::var_os(ONNX_ARCHIVE_DIR).as_deref(),
+            env::var_os(OFFLINE).is_some(),
+        )?;
+        let staged_runtime = stage_onnx_input(spec, &onnx_input)?;
         onnx_runtime::write_staged_runtime(spec, &staged_runtime, &onnx_dir)
             .map_err(|error| ProduceError::new(error.to_string()))?;
 
@@ -432,6 +492,11 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             target: args.target_id.clone(),
             commit,
             lock_sha256: expected_lock,
+            onnx_source: match onnx_input {
+                OnnxInput::Local(path) => path.display().to_string(),
+                OnnxInput::PinnedUrl => spec.wheel_url.to_owned(),
+            },
+            onnx_wheel_sha256: spec.wheel_sha256.to_owned(),
             artifacts,
         })
     })();
@@ -780,6 +845,42 @@ mod tests {
             digest_const_hex(source, "WESPEAKER_RESNET34_SHA256").as_deref(),
             Some("5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94")
         );
+    }
+
+    #[test]
+    fn onnx_input_selection_is_fail_closed_offline() {
+        let direct = select_onnx_input(
+            "linux-x86_64",
+            Some(OsStr::new("/inputs/x86.whl")),
+            Some(OsStr::new("/ignored")),
+            true,
+        )
+        .unwrap();
+        assert_eq!(direct, OnnxInput::Local(PathBuf::from("/inputs/x86.whl")));
+
+        let from_dir =
+            select_onnx_input("linux-aarch64", None, Some(OsStr::new("/inputs")), true).unwrap();
+        assert_eq!(
+            from_dir,
+            OnnxInput::Local(PathBuf::from("/inputs/onnxruntime-linux-aarch64.whl"))
+        );
+
+        let missing = select_onnx_input("linux-x86_64", None, None, true).unwrap_err();
+        assert!(missing.to_string().contains(ONNX_ARCHIVE_OVERRIDE));
+        assert!(missing.to_string().contains(ONNX_ARCHIVE_DIR));
+        assert_eq!(
+            select_onnx_input("linux-x86_64", None, None, false).unwrap(),
+            OnnxInput::PinnedUrl
+        );
+    }
+
+    #[test]
+    fn bad_local_onnx_input_never_falls_back_to_url() {
+        let (spec, _) = onnx_runtime::identity_fixture_wheel();
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing-wheel.whl");
+        let error = stage_onnx_input(&spec, &OnnxInput::Local(missing)).unwrap_err();
+        assert!(error.to_string().contains("No such file"));
     }
 
     #[test]

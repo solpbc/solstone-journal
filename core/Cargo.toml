@@ -350,3 +350,6 @@ debug = "line-tables-only"
 # "*" matches dependencies only, never workspace members.
 [profile.dev.package."*"]
 debug = false
+
+[patch.crates-io]
+ffmpeg-sys-next = { path = "vendor/ffmpeg-sys-next" }

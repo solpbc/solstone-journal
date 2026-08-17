@@ -53,8 +53,12 @@ fn main() -> ExitCode {
                     }) {
                         Ok(report) => {
                             println!(
-                                "produced target={} commit={} lock_sha256={}",
-                                report.target, report.commit, report.lock_sha256
+                                "produced target={} commit={} lock_sha256={} onnx_wheel_sha256={} onnx_source={}",
+                                report.target,
+                                report.commit,
+                                report.lock_sha256,
+                                report.onnx_wheel_sha256,
+                                report.onnx_source
                             );
                             for path in report.artifacts {
                                 println!("{}", path.display());
