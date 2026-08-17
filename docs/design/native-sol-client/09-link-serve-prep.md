@@ -597,7 +597,7 @@ FINAL_STUB_COUNTS = {"moved-stub": 2, "local": 1}
 For a second `top-level-link` entry:
 
 - `FINAL_TOP_LEVEL_LINK_TOTAL` moves from `1` to `2`.
-- The `solstone/think/native/link/authority.toml` table gains a second `surface = "sol-link"` / `entry_type = "top-level-link"` entry. Current entry evidence: `authority.toml:7-14`:
+- The `core/native-sol/think/native/link/authority.toml` table gains a second `surface = "sol-link"` / `entry_type = "top-level-link"` entry. Current entry evidence: `authority.toml:7-14`:
   ```toml
   surface = "sol-link"
   path = ["link", "join"]

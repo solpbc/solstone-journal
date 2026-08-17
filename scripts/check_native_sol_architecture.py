@@ -10,12 +10,14 @@ from pathlib import Path
 
 try:
     from scripts.build_native_sol_inventory import (
+        AUTHORITY_ROOT,
         REPO_ROOT,
         command_source,
         discover,
     )
 except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
     from build_native_sol_inventory import (  # type: ignore[no-redef]
+        AUTHORITY_ROOT,
         REPO_ROOT,
         command_source,
         discover,
@@ -156,10 +158,22 @@ def check_authority_adjacency() -> list[Violation]:
             Violation(
                 rel(path),
                 "authority-outside-real-owner",
-                "native authority files must live under solstone/**/native/",
+                f"native authority files must live under {AUTHORITY_ROOT}/**/native/",
             )
         )
-    for path in sorted((REPO_ROOT / "solstone").glob("**/native/authority.toml")):
+    authorities = sorted((REPO_ROOT / AUTHORITY_ROOT).glob("**/native/authority.toml"))
+    # A re-rooted glob that matches nothing leaves every check below vacuous:
+    # the loop runs zero times and this function reports clean. The declarations
+    # moved out of the Python package tree once already; assert they are here.
+    if not authorities:
+        violations.append(
+            Violation(
+                AUTHORITY_ROOT,
+                "authority-root-empty",
+                "no native authority files found; the glob root is wrong",
+            )
+        )
+    for path in authorities:
         try:
             data = tomllib.loads(path.read_text())
         except tomllib.TOMLDecodeError as error:

@@ -311,7 +311,7 @@ mod tests {
         let artifact: Value = serde_json::from_str(
             &std::fs::read_to_string(
                 std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../../solstone/think/services/spp_attest/ratls/ratls-contract.json"),
+                    .join("../../fixtures/ratls-contract.json"),
             )
             .expect("checked-in contract artifact is readable"),
         )

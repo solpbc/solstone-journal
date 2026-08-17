@@ -26,7 +26,7 @@ New files:
 Existing files updated during implementation:
 
 - `solstone/convey/__init__.py` — register `voice_bp` directly beside `system.bp`, then call `start_voice_runtime(app)` before returning the app (`solstone/convey/__init__.py:134-155`).
-- `solstone/think/journal_default.json` — add default `voice` config block so new journals inherit the documented keys.
+- `core/fixtures/journal_default.json` — add default `voice` config block so new journals inherit the documented keys.
 
 Deliberate non-change:
 

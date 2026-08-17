@@ -104,8 +104,8 @@ fn passwd(gecos: &str, login: &str) -> PasswdRecord {
 }
 
 fn reference_defaults() -> Map<String, Value> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../solstone/think/journal_default.json");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/journal_default.json");
     let contents = fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("read reference defaults at {}: {error}", path.display()));
     serde_json::from_str::<Value>(&contents)

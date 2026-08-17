@@ -16,6 +16,10 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+# The native-sol authority declarations. They used to live under `solstone/`,
+# the Python package tree, and moved out with it; the shape below `AUTHORITY_ROOT`
+# is unchanged, so every prefix rule here is one component shorter than it was.
+AUTHORITY_ROOT = "core/native-sol"
 DEFAULT_OUTPUT = (
     REPO_ROOT / "core/crates/solstone-core-sol-client/src/generated/inventory.rs"
 )
@@ -145,50 +149,47 @@ def module_name(path: Path) -> str:
 
 
 def logical_command_path(authority: Path, root: Path) -> Path:
-    return authority.relative_to(root).parent / "command.rs"
+    return authority.relative_to(root / AUTHORITY_ROOT).parent / "command.rs"
 
 
 def command_source(authority: Path, root: Path) -> Path:
-    rel = authority.relative_to(root).as_posix()
+    rel = authority.relative_to(root / AUTHORITY_ROOT).as_posix()
     parts = rel.split("/")
     if (
-        len(parts) == 5
-        and parts[0] == "solstone"
-        and parts[1] == "apps"
-        and parts[3] == "native"
-        and parts[4] == "authority.toml"
+        len(parts) == 4
+        and parts[0] == "apps"
+        and parts[2] == "native"
+        and parts[3] == "authority.toml"
     ):
         return (
             root
             / "core/crates/solstone-core-sol-client/native/apps"
+            / parts[1]
+            / "command.rs"
+        )
+    if (
+        len(parts) == 4
+        and parts[0] == "think"
+        and parts[1] == "native"
+        and parts[3] == "authority.toml"
+    ):
+        return (
+            root
+            / "core/crates/solstone-core-sol-client/native/think"
             / parts[2]
             / "command.rs"
         )
     if (
         len(parts) == 5
-        and parts[0] == "solstone"
-        and parts[1] == "think"
+        and parts[0] == "think"
+        and parts[1] == "tools"
         and parts[2] == "native"
         and parts[4] == "authority.toml"
     ):
         return (
             root
-            / "core/crates/solstone-core-sol-client/native/think"
-            / parts[3]
-            / "command.rs"
-        )
-    if (
-        len(parts) == 6
-        and parts[0] == "solstone"
-        and parts[1] == "think"
-        and parts[2] == "tools"
-        and parts[3] == "native"
-        and parts[5] == "authority.toml"
-    ):
-        return (
-            root
             / "core/crates/solstone-core-sol-client/native/tools"
-            / parts[4]
+            / parts[3]
             / "command.rs"
         )
     raise ValueError(f"{authority}: native command source prefix is not mapped")
@@ -360,10 +361,16 @@ def require_absent(value: Any, key: str, label: str) -> None:
 
 
 def discover(root: Path) -> list[AuthorityEntry]:
+    base = root / AUTHORITY_ROOT
     authority_paths = sorted(
-        set((root / "solstone").glob("**/native/authority.toml"))
-        | set((root / "solstone").glob("**/native/**/authority.toml"))
+        set(base.glob("**/native/authority.toml"))
+        | set(base.glob("**/native/**/authority.toml"))
     )
+    if not authority_paths:
+        raise ValueError(
+            f"no authority declarations under {base}; a re-rooted glob that "
+            "matches nothing would leave every gate below vacuously green"
+        )
     entries: list[AuthorityEntry] = []
     seen_paths: dict[tuple[str, ...], Path] = {}
     seen_operations: dict[str, Path] = {}
@@ -389,15 +396,10 @@ def discover(root: Path) -> list[AuthorityEntry]:
 
 def is_private_app_authority(authority: Path, root: Path) -> bool:
     try:
-        parts = authority.relative_to(root).parts
+        parts = authority.relative_to(root / AUTHORITY_ROOT).parts
     except ValueError:
         return False
-    return (
-        len(parts) >= 4
-        and parts[0] == "solstone"
-        and parts[1] == "apps"
-        and parts[2].startswith("_")
-    )
+    return len(parts) >= 3 and parts[0] == "apps" and parts[1].startswith("_")
 
 
 def render(entries: list[AuthorityEntry], output: Path) -> str:
@@ -464,7 +466,9 @@ def render(entries: list[AuthorityEntry], output: Path) -> str:
     return "\n".join(lines)
 
 
-def transformed_oracle_entries(oracle_path: Path) -> tuple[list[str], dict[tuple[str, ...], dict[str, Any]]]:
+def transformed_oracle_entries(
+    oracle_path: Path,
+) -> tuple[list[str], dict[tuple[str, ...], dict[str, Any]]]:
     """Return the final native grammar projection of the frozen oracle."""
     if not oracle_path.is_file():
         return [f"{oracle_path} is missing"], {}
@@ -472,7 +476,9 @@ def transformed_oracle_entries(oracle_path: Path) -> tuple[list[str], dict[tuple
     output: dict[tuple[str, ...], dict[str, Any]] = {}
     errors: list[str] = []
     for raw_entry in oracle.get("entries", []):
-        if not isinstance(raw_entry, dict) or not isinstance(raw_entry.get("path"), list):
+        if not isinstance(raw_entry, dict) or not isinstance(
+            raw_entry.get("path"), list
+        ):
             continue
         path = tuple(raw_entry["path"])
         if path in RETIRED_JOURNAL_ORACLE_PATHS:

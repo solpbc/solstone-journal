@@ -73,7 +73,7 @@ random hex ID avoids a new dependency and is sufficient for cross-event joins.
 
 ## Settings
 Store settings in the top-level `sol_voice` block of `journal/config/journal.json`,
-with defaults shipped in `solstone/think/journal_default.json`.
+with defaults shipped in `core/fixtures/journal_default.json`.
 
 Fields:
 

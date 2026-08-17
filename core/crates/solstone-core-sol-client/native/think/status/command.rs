@@ -5,5 +5,5 @@ use crate::command::{CommandContext, CommandOutput};
 
 #[must_use]
 pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
-    super::solstone_apps_network_native_command_rs::status(ctx)
+    super::apps_network_native_command_rs::status(ctx)
 }

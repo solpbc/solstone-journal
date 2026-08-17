@@ -37,7 +37,7 @@ Read, in order, when you enter the repo for a coding task:
 2. **`docs/SOLCLI.md`** — the CLI routing map. `sol` and `journal` are separate native Rust executables with different authority.
 3. **`solstone/think/top.py` (first ~100 lines)** — the interactive TUI. Ties callosum + supervisor + service status together in one vantage point. Good "oh, this is how it connects" moment.
 4. **The area you're about to touch:**
-   - User-visible feature or `sol call <app> <verb>` → `solstone/apps/<name>/native/{authority.toml,command.rs}` + `solstone/apps/<name>/routes.py` + `solstone/apps/<name>/templates/`.
+   - User-visible feature or `sol call <app> <verb>` → `core/native-sol/apps/<name>/native/{authority.toml,command.rs}` + `solstone/apps/<name>/routes.py` + `solstone/apps/<name>/templates/`.
    - Think pipeline → `solstone/think/<module>.py` + its tests.
    - AI talent prompt or behavior → `core/payload/solstone/talent/<name>.md` (+ optional `.py` post-hook at `solstone/talent/<name>.py`).
    - Capture / observe → `solstone/observe/<module>.py`.
@@ -87,13 +87,13 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 
 Two surfaces:
 
-- **`sol <command>`** — native access commands declared under `solstone/think/native/<command>/authority.toml` and implemented by `core/crates/solstone-core-sol-client/native/think/<command>/command.rs` (e.g., `sol import`, `sol chat`).
+- **`sol <command>`** — native access commands declared under `core/native-sol/think/native/<command>/authority.toml` and implemented by `core/crates/solstone-core-sol-client/native/think/<command>/command.rs` (e.g., `sol import`, `sol chat`).
 - **`journal <command>`** — same-device commands owned by `solstone-core-journal`. Local writers execute in Rust; service commands use the native closed process table (e.g., `journal think`, `journal supervisor`, `journal heartbeat`). `journal up/down` are fixed aliases for `journal service up/down`.
 - **`sol call <app> <verb>`** — native app commands declared under `solstone/apps/<app>/native/` or `solstone/think/tools/native/` and implemented under `core/crates/solstone-core-sol-client/native/{apps,tools}/`. `sol call journal` exposes its native 17-leaf journal group through this boundary.
 
-**Adding a top-level `sol` command:** add a native authority under `solstone/think/native/<command>/authority.toml` and implement the handler at `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`. Use `solstone/think/native/chat/authority.toml` with `core/crates/solstone-core-sol-client/native/think/chat/command.rs` as the current pattern.
+**Adding a top-level `sol` command:** add a native authority under `core/native-sol/think/native/<command>/authority.toml` and implement the handler at `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`. Use `core/native-sol/think/native/chat/authority.toml` with `core/crates/solstone-core-sol-client/native/think/chat/command.rs` as the current pattern.
 
-**Adding a `sol call` sub-verb:** update `solstone/apps/<app>/native/authority.toml`, implement the handler in `core/crates/solstone-core-sol-client/native/apps/<app>/command.rs`, and regenerate the native inventory.
+**Adding a `sol call` sub-verb:** update `core/native-sol/apps/<app>/native/authority.toml`, implement the handler in `core/crates/solstone-core-sol-client/native/apps/<app>/command.rs`, and regenerate the native inventory.
 Portable journal archive export is temporarily unavailable while archive support migrates; read-only archive validation lives in `solstone/think/importers/journal_archive.py`.
 
 Run `sol` (no args) for the static grouped command list.

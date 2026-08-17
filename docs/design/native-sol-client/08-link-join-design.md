@@ -32,7 +32,7 @@ user-visible behavior change.
 
 Authority:
 
-- File: `solstone/think/native/link/authority.toml`
+- File: `core/native-sol/think/native/link/authority.toml`
 - Source: `command.rs`
 - `surface = "sol-link"`
 - `path = ["link", "join"]`
@@ -337,7 +337,7 @@ Design-stage edits:
 
 Implementation-stage edits:
 
-- `solstone/think/native/link/authority.toml`
+- `core/native-sol/think/native/link/authority.toml`
 - `solstone/think/native/link/command.rs`
 - `scripts/build_native_sol_inventory.py`
 - `scripts/check_native_sol_conformance.py`

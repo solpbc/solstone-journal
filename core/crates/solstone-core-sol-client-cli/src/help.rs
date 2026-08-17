@@ -368,7 +368,7 @@ mod tests {
         assert!(
             output
                 .stdout
-                .contains("Authority: solstone/think/native/status/authority.toml")
+                .contains("Authority: core/native-sol/think/native/status/authority.toml")
         );
         assert!(output.stdout.contains("Operation: status.top_level"));
     }

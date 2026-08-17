@@ -9,7 +9,7 @@ Reference context loaded first:
 
 - Lead-slice findings and table format: `docs/design/native-sol-client/00-prep-findings.md:72`, `docs/design/native-sol-client/00-prep-findings.md:101`, `docs/design/native-sol-client/00-prep-findings.md:176`.
 - Native authority/conformance design: `docs/design/native-sol-client/02-design.md:44`, `docs/design/native-sol-client/02-design.md:83`, `docs/design/native-sol-client/02-design.md:114`, `docs/design/native-sol-client/02-design.md:190`, `docs/design/native-sol-client/02-design.md:255`.
-- Lead implementation pattern: `solstone/apps/activities/native/authority.toml:1`, `solstone/apps/activities/native/command.rs:1`.
+- Lead implementation pattern: `core/native-sol/apps/activities/native/authority.toml:1`, `solstone/apps/activities/native/command.rs:1`.
 - App discovery and network-to-link CLI name override: `solstone/think/call.py:22`, `solstone/think/call.py:73`, `solstone/think/call.py:120`.
 - Shared Convey client: default `ConveyClient(require_service=True)` at `solstone/think/convey_client.py:87`; `urlencode(..., doseq=True)` repeated-query encoding at `solstone/think/convey_client.py:129`; JSON error decoding at `solstone/think/convey_client.py:194`; `@convey_cli` stderr/exit handling at `solstone/think/convey_client.py:273`.
 
@@ -34,7 +34,7 @@ Routes are owned by `solstone/apps/awareness/routes.py:44`. Commands are in
 ### body
 
 The native body authority and handler declare the retained three-command
-surface in `solstone/apps/body/native/authority.toml` and
+surface in `core/native-sol/apps/body/native/authority.toml` and
 `solstone/apps/body/native/command.rs`.
 
 | Leaf | Argv grammar | Request | Reason-code / stderr / exit | Render / consent-dry-run |

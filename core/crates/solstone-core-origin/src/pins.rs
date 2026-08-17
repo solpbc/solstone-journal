@@ -24,7 +24,7 @@ const SNAPSHOTS: &[(&str, &str)] = &[
     ("1.0.22", include_str!("../pins/v1.0.22.json")),
 ];
 
-const AUTHORITY_PATH: &str = "solstone/think/providers/nvattest_authority_v1.json";
+const AUTHORITY_PATH: &str = "core/fixtures/nvattest_authority_v1.json";
 const TRANSPARENCY_LOG_PATH: &str = "transparency-head-log.jsonl";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
