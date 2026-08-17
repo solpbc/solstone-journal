@@ -303,7 +303,7 @@ fn consume_upstream_body_accepts_matching_git_blob() {
 #[test]
 fn consume_upstream_body_rejects_git_blob_oid_that_does_not_match_bytes() {
     // consume_upstream_body is called from download_upstream, which mirror_one
-    // reaches only after backend.publish. An Err here is therefore the same
+    // reaches before backend.publish. An Err here is therefore the same
     // reject-before-publish point as the real-boundary counterpart.
     let body = b"unlisted-hf";
     let target = mirror_target(
