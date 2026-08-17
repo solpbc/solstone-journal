@@ -9,6 +9,13 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 const KNOWN_LANES: &[&str] = &["musl-static", "zig-gnu-2.27"];
+/// Lanes a target may declare for itself. Linux entries carry a per-binary lane
+/// because the Linux tree is built by two distinct cross toolchains; macOS has
+/// exactly one toolchain, so its lane is a property of the target and the
+/// per-entry `lane` is not consulted for it.
+const KNOWN_TARGET_LANES: &[&str] = &["apple-native"];
+pub const OS_LINUX: &str = "linux";
+pub const OS_MACOS: &str = "macos";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -23,6 +30,63 @@ pub struct Inventory {
     pub deny: Vec<Deny>,
     #[serde(default)]
     pub cleanroom: Cleanroom,
+    #[serde(default)]
+    pub apple: Apple,
+}
+
+/// The macOS signing contract, declared rather than imported.
+///
+/// These values lived in `scripts/release_tool_pins.py` and were read through
+/// an interpreter by the shell signing helper. `P-distribution` puts the
+/// producer and its machinery on the same side of the Python boundary, so they
+/// move to the inventory — the declarative surface the plate already uses for
+/// every other producer fact.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Apple {
+    #[serde(default)]
+    pub team_id: String,
+    #[serde(default)]
+    pub app_identity: String,
+    #[serde(default)]
+    pub installer_identity: String,
+    #[serde(default)]
+    pub notary_profile: String,
+    #[serde(default)]
+    pub keychain: String,
+    #[serde(default)]
+    pub pkg_identifier: String,
+    #[serde(default)]
+    pub install_location: String,
+    #[serde(default)]
+    pub codesign_path: String,
+    #[serde(default)]
+    pub xcode: String,
+    #[serde(default)]
+    pub notarytool: String,
+}
+
+impl Apple {
+    /// `~` is expanded against `HOME` so the inventory can name the keychain
+    /// without pinning one operator's home directory into a public file.
+    #[must_use]
+    pub fn keychain_path(&self) -> PathBuf {
+        match self.keychain.strip_prefix("~/") {
+            Some(rest) => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(rest),
+            None => PathBuf::from(&self.keychain),
+        }
+    }
+
+    #[must_use]
+    pub fn is_declared(&self) -> bool {
+        !self.team_id.is_empty()
+            && !self.app_identity.is_empty()
+            && !self.installer_identity.is_empty()
+            && !self.notary_profile.is_empty()
+            && !self.keychain.is_empty()
+            && !self.pkg_identifier.is_empty()
+            && !self.install_location.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -33,9 +97,10 @@ pub struct Artifact {
 
 impl Artifact {
     #[must_use]
-    pub fn render(&self, version: &str, arch: &str) -> String {
+    pub fn render(&self, version: &str, os: &str, arch: &str) -> String {
         self.basename
             .replace("{version}", version)
+            .replace("{os}", os)
             .replace("{arch}", arch)
     }
 }
@@ -49,17 +114,56 @@ pub fn artifact_archives(basename: &str) -> [String; 3] {
     ]
 }
 
+/// Containers for `os`, in emission order. The `.tar.gz` primitive is shared;
+/// the rest is the platform's own supported wrapper. Linux relocates the tree
+/// through `.deb` and `.rpm`; macOS relocates it through one signed, notarized
+/// and stapled `.pkg`.
 #[must_use]
-pub fn artifact_set(basename: &str) -> [String; 6] {
-    let [tar, deb, rpm] = artifact_archives(basename);
+pub fn artifact_archives_for_os(os: &str, basename: &str) -> Vec<String> {
+    match os {
+        OS_MACOS => vec![format!("{basename}.tar.gz"), format!("{basename}.pkg")],
+        _ => artifact_archives(basename).to_vec(),
+    }
+}
+
+#[must_use]
+pub fn artifact_sidecars(basename: &str) -> [String; 3] {
     [
-        tar,
-        deb,
-        rpm,
         format!("{basename}.sha256"),
         format!("{basename}.manifest.json"),
         format!("{basename}.release"),
     ]
+}
+
+#[must_use]
+pub fn artifact_set(basename: &str) -> [String; 6] {
+    let [tar, deb, rpm] = artifact_archives(basename);
+    let [sha256, manifest, release] = artifact_sidecars(basename);
+    [tar, deb, rpm, sha256, manifest, release]
+}
+
+/// Sidecars for `os`. macOS carries a fourth: the signing receipt, which is
+/// provenance the Linux set does not need and which used to be produced by
+/// `scripts/record_macos_native_wheel.py`.
+#[must_use]
+pub fn artifact_sidecars_for_os(os: &str, basename: &str) -> Vec<String> {
+    let mut names = artifact_sidecars(basename).to_vec();
+    if os == OS_MACOS {
+        names.push(format!("{basename}.signing.json"));
+    }
+    names
+}
+
+/// The complete atomic set for `os`: every container plus every sidecar.
+/// Promotion renames one directory holding exactly this set or nothing at all.
+/// Both platforms land on six files — three containers and three sidecars on
+/// Linux, two containers and four sidecars on macOS — and the invariant that
+/// matters is completeness, not the count.
+#[must_use]
+pub fn artifact_set_for_os(os: &str, basename: &str) -> Vec<String> {
+    let mut names = artifact_archives_for_os(os, basename);
+    names.extend(artifact_sidecars_for_os(os, basename));
+    names
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -68,11 +172,66 @@ pub struct Target {
     pub id: String,
     pub os: String,
     pub arch: String,
+    /// Linux-only cross-toolchain fields. Empty on a macOS target, and
+    /// `validate_inventory` refuses a target that carries the other os's set.
+    #[serde(default)]
     pub deb_arch: String,
+    #[serde(default)]
     pub rpm_arch: String,
+    #[serde(default)]
     pub triple_musl: String,
+    #[serde(default)]
     pub triple_gnu: String,
+    #[serde(default)]
     pub zig_gnu: String,
+    /// macOS-only fields.
+    #[serde(default)]
+    pub lane: String,
+    #[serde(default)]
+    pub triple_apple: String,
+    #[serde(default)]
+    pub min_macos: String,
+}
+
+impl Target {
+    #[must_use]
+    pub fn is_macos(&self) -> bool {
+        self.os == OS_MACOS
+    }
+
+    /// The lane that actually builds `entry_lane` for this target. On macOS the
+    /// target owns the lane; on Linux the entry does. One contract, one end.
+    #[must_use]
+    pub fn lane_for<'a>(&'a self, entry_lane: &'a str) -> &'a str {
+        if self.is_macos() {
+            &self.lane
+        } else {
+            entry_lane
+        }
+    }
+
+    /// The rustc target triple a lane builds into.
+    #[must_use]
+    pub fn triple_for_lane(&self, lane: &str) -> &str {
+        match lane {
+            "apple-native" => &self.triple_apple,
+            "musl-static" => &self.triple_musl,
+            _ => &self.triple_gnu,
+        }
+    }
+
+    /// Every triple this target may legitimately produce artifacts under.
+    #[must_use]
+    pub fn triples(&self) -> Vec<&str> {
+        [
+            self.triple_apple.as_str(),
+            self.triple_musl.as_str(),
+            self.triple_gnu.as_str(),
+        ]
+        .into_iter()
+        .filter(|triple| !triple.is_empty())
+        .collect()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -244,10 +403,11 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
         )));
     }
     if !inventory.artifact.basename.contains("{version}")
+        || !inventory.artifact.basename.contains("{os}")
         || !inventory.artifact.basename.contains("{arch}")
     {
         return Err(InventoryError::new(
-            "missing required:\n  artifact basename {version} {arch}".to_owned(),
+            "missing required:\n  artifact basename {version} {os} {arch}".to_owned(),
         ));
     }
     let target_ids = inventory
@@ -258,6 +418,12 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
     if target_ids.len() != inventory.target.len() {
         return Err(InventoryError::new(
             "duplicate inventory target ids".to_owned(),
+        ));
+    }
+    validate_targets(&inventory.target)?;
+    if inventory.target.iter().any(Target::is_macos) && !inventory.apple.is_declared() {
+        return Err(InventoryError::new(
+            "missing required:\n  [apple] signing contract for a macos target".to_owned(),
         ));
     }
 
@@ -285,6 +451,7 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
         }
         if let Some(lane) = lane
             && !KNOWN_LANES.contains(&lane.as_str())
+            && !KNOWN_TARGET_LANES.contains(&lane.as_str())
         {
             unexpected_lanes.insert(lane.clone());
         }
@@ -348,6 +515,81 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
     Ok(())
 }
 
+/// Every target declares exactly the field set its own os builds through, and
+/// none of the other os's. A macOS target carrying `deb_arch`, or a Linux
+/// target carrying `triple_apple`, is refused rather than silently ignored —
+/// an ignored field is how one os's contract drifts into the other's.
+fn validate_targets(targets: &[Target]) -> Result<(), InventoryError> {
+    let mut missing = BTreeSet::new();
+    let mut unexpected = BTreeSet::new();
+    for target in targets {
+        let linux_fields = [
+            ("deb_arch", target.deb_arch.as_str()),
+            ("rpm_arch", target.rpm_arch.as_str()),
+            ("triple_musl", target.triple_musl.as_str()),
+            ("triple_gnu", target.triple_gnu.as_str()),
+            ("zig_gnu", target.zig_gnu.as_str()),
+        ];
+        let macos_fields = [
+            ("lane", target.lane.as_str()),
+            ("triple_apple", target.triple_apple.as_str()),
+            ("min_macos", target.min_macos.as_str()),
+        ];
+        let (required, forbidden) = match target.os.as_str() {
+            OS_LINUX => (&linux_fields[..], &macos_fields[..]),
+            OS_MACOS => (&macos_fields[..], &linux_fields[..]),
+            other => {
+                unexpected.insert(format!("{} os {other}", target.id));
+                continue;
+            }
+        };
+        for (name, value) in required {
+            if value.is_empty() {
+                missing.insert(format!("{} {name}", target.id));
+            }
+        }
+        for (name, value) in forbidden {
+            if !value.is_empty() {
+                unexpected.insert(format!("{} {name}", target.id));
+            }
+        }
+        if target.is_macos() {
+            if !target.lane.is_empty() && !KNOWN_TARGET_LANES.contains(&target.lane.as_str()) {
+                unexpected.insert(format!("{} lane {}", target.id, target.lane));
+            }
+            if !target.min_macos.is_empty() && parse_min_macos(&target.min_macos).is_none() {
+                unexpected.insert(format!("{} min_macos {}", target.id, target.min_macos));
+            }
+        }
+    }
+    if !missing.is_empty() {
+        return Err(InventoryError::new(format_named_list(
+            "missing required target field",
+            &missing,
+        )));
+    }
+    if !unexpected.is_empty() {
+        return Err(InventoryError::new(format_named_list(
+            "unexpected target field",
+            &unexpected,
+        )));
+    }
+    Ok(())
+}
+
+/// `"14.0"` -> `(14, 0)`. The macOS analogue of the Linux GLIBC ceiling: the
+/// deployment target every shipped Mach-O must declare at or below.
+#[must_use]
+pub fn parse_min_macos(value: &str) -> Option<(u32, u32)> {
+    let mut parts = value.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor))
+}
+
 #[must_use]
 pub fn digest_is_pinned(digest: &str) -> bool {
     let Some(hex) = digest.strip_prefix("sha256:") else {
@@ -389,4 +631,267 @@ pub fn repository_inventory_path(start: &Path) -> Option<PathBuf> {
         let candidate = ancestor.join("core/distribution/inventory.toml");
         candidate.is_file().then_some(candidate)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const COMMITTED: &str = include_str!("../../../distribution/inventory.toml");
+
+    fn parse(text: &str) -> Result<Inventory, InventoryError> {
+        let inventory: Inventory = toml_edit::de::from_str(text)
+            .map_err(|error| InventoryError::new(format!("parse: {error}")))?;
+        validate_targets(&inventory.target)?;
+        Ok(inventory)
+    }
+
+    fn committed() -> Inventory {
+        toml_edit::de::from_str(COMMITTED).expect("committed inventory parses")
+    }
+
+    #[test]
+    fn the_committed_macos_target_declares_its_own_field_set_and_no_linux_one() {
+        let inventory = committed();
+        let target = inventory
+            .target
+            .iter()
+            .find(|target| target.id == "macos-arm64")
+            .expect("macos target");
+        assert!(target.is_macos());
+        assert_eq!(target.lane, "apple-native");
+        assert_eq!(target.triple_apple, "aarch64-apple-darwin");
+        assert_eq!(parse_min_macos(&target.min_macos), Some((14, 0)));
+        assert_eq!(target.deb_arch, "");
+        assert_eq!(target.rpm_arch, "");
+        assert_eq!(target.triple_musl, "");
+        assert_eq!(target.triple_gnu, "");
+        assert_eq!(target.zig_gnu, "");
+        assert_eq!(target.triples(), vec!["aarch64-apple-darwin"]);
+    }
+
+    #[test]
+    fn a_macos_target_resolves_every_entry_lane_to_its_own_lane() {
+        let inventory = committed();
+        let macos = inventory
+            .target
+            .iter()
+            .find(|target| target.id == "macos-arm64")
+            .unwrap();
+        let linux = inventory
+            .target
+            .iter()
+            .find(|target| target.id == "linux-x86_64")
+            .unwrap();
+        // The declared lanes on the shared entries stay the Linux ones. If
+        // `lane_for` ever stopped overriding, the macOS build would look for
+        // `x86_64-unknown-linux-musl` artifacts and quietly select nothing.
+        for entry in &inventory.entry {
+            let Entry::Bin { lane, .. } = entry else {
+                continue;
+            };
+            assert_eq!(macos.lane_for(lane), "apple-native");
+            assert_eq!(linux.lane_for(lane), lane.as_str());
+        }
+        assert_eq!(
+            macos.triple_for_lane("apple-native"),
+            "aarch64-apple-darwin"
+        );
+        assert_eq!(
+            linux.triple_for_lane("musl-static"),
+            "x86_64-unknown-linux-musl"
+        );
+        assert_eq!(
+            linux.triple_for_lane("zig-gnu-2.27"),
+            "x86_64-unknown-linux-gnu"
+        );
+    }
+
+    #[test]
+    fn every_admitted_binary_and_payload_ships_on_macos_too() {
+        // "The same distribution tree" is the contract, so the macOS target's
+        // dest set must equal the Linux one exactly. A drift in either
+        // direction — a binary Linux ships and macOS does not, or the reverse —
+        // is what this asserts against.
+        let inventory = committed();
+        let dests_for = |id: &str| {
+            inventory
+                .entry
+                .iter()
+                .filter(|entry| entry_fields(entry).1.iter().any(|target| target == id))
+                .map(|entry| entry_fields(entry).0[0].to_owned())
+                .collect::<BTreeSet<_>>()
+        };
+        let linux = dests_for("linux-x86_64");
+        let macos = dests_for("macos-arm64");
+        assert!(!linux.is_empty());
+        assert_eq!(linux, macos);
+    }
+
+    #[test]
+    fn both_platforms_promote_a_six_file_set_and_neither_names_the_others_container() {
+        let base = "solstone-journal-1.0.22-linux-x86_64";
+        let linux = artifact_set_for_os(OS_LINUX, base);
+        assert_eq!(linux.len(), 6);
+        assert!(linux.iter().any(|name| name.ends_with(".deb")));
+        assert!(linux.iter().any(|name| name.ends_with(".rpm")));
+        assert!(!linux.iter().any(|name| name.ends_with(".pkg")));
+        assert!(!linux.iter().any(|name| name.ends_with(".signing.json")));
+
+        let base = "solstone-journal-1.0.22-macos-arm64";
+        let macos = artifact_set_for_os(OS_MACOS, base);
+        assert_eq!(macos.len(), 6);
+        assert!(macos.iter().any(|name| name.ends_with(".tar.gz")));
+        assert!(macos.iter().any(|name| name.ends_with(".pkg")));
+        assert!(macos.iter().any(|name| name.ends_with(".signing.json")));
+        assert!(!macos.iter().any(|name| name.ends_with(".deb")));
+        assert!(!macos.iter().any(|name| name.ends_with(".rpm")));
+    }
+
+    #[test]
+    fn the_basename_template_renders_each_platforms_own_name() {
+        let artifact = committed().artifact;
+        assert_eq!(
+            artifact.render("1.0.22", "linux", "x86_64"),
+            "solstone-journal-1.0.22-linux-x86_64"
+        );
+        assert_eq!(
+            artifact.render("1.0.22", "macos", "arm64"),
+            "solstone-journal-1.0.22-macos-arm64"
+        );
+    }
+
+    #[test]
+    fn a_target_carrying_the_other_platforms_fields_is_refused_both_ways() {
+        let macos_with_deb = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "macos-arm64"
+os = "macos"
+arch = "arm64"
+lane = "apple-native"
+triple_apple = "aarch64-apple-darwin"
+min_macos = "14.0"
+deb_arch = "arm64"
+"#;
+        let error = parse(macos_with_deb).unwrap_err().to_string();
+        assert!(error.contains("unexpected target field"), "{error}");
+        assert!(error.contains("macos-arm64 deb_arch"), "{error}");
+
+        let linux_without_zig = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "linux-x86_64"
+os = "linux"
+arch = "x86_64"
+deb_arch = "amd64"
+rpm_arch = "x86_64"
+triple_musl = "x86_64-unknown-linux-musl"
+triple_gnu = "x86_64-unknown-linux-gnu"
+"#;
+        let error = parse(linux_without_zig).unwrap_err().to_string();
+        assert!(error.contains("missing required target field"), "{error}");
+        assert!(error.contains("linux-x86_64 zig_gnu"), "{error}");
+
+        let unknown_lane = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "macos-arm64"
+os = "macos"
+arch = "arm64"
+lane = "xcodebuild"
+triple_apple = "aarch64-apple-darwin"
+min_macos = "14.0"
+"#;
+        let error = parse(unknown_lane).unwrap_err().to_string();
+        assert!(error.contains("macos-arm64 lane xcodebuild"), "{error}");
+
+        // The control: the committed inventory passes the same validator, so a
+        // refusal above is the rule firing rather than the parser being broken.
+        validate_targets(&committed().target).expect("committed targets validate");
+    }
+
+    #[test]
+    fn min_macos_parses_only_a_real_deployment_target() {
+        assert_eq!(parse_min_macos("14.0"), Some((14, 0)));
+        assert_eq!(parse_min_macos("15"), Some((15, 0)));
+        assert_eq!(parse_min_macos("14.0.1"), None);
+        assert_eq!(parse_min_macos("sonoma"), None);
+        assert_eq!(parse_min_macos(""), None);
+    }
+
+    #[test]
+    fn a_macos_target_without_the_apple_contract_is_refused() {
+        let missing_apple = COMMITTED
+            .split("[[target]]")
+            .next()
+            .unwrap()
+            .replace("[apple]", "[apple_disabled]");
+        assert!(missing_apple.contains("[apple_disabled]"));
+        // Rebuild a minimal inventory with a macos target and no [apple].
+        let text = r#"
+version = 1
+product = "p"
+payload = "payload.txt"
+payload_dest_prefix = "share"
+entry = []
+deny = []
+[artifact]
+basename = "p-{version}-{os}-{arch}"
+[[target]]
+id = "macos-arm64"
+os = "macos"
+arch = "arm64"
+lane = "apple-native"
+triple_apple = "aarch64-apple-darwin"
+min_macos = "14.0"
+"#;
+        let inventory: Inventory = toml_edit::de::from_str(text).unwrap();
+        assert!(!inventory.apple.is_declared());
+        assert!(inventory.target.iter().any(Target::is_macos));
+        // And the committed one does declare it.
+        assert!(committed().apple.is_declared());
+    }
+
+    #[test]
+    fn the_apple_keychain_path_expands_the_home_shorthand() {
+        let apple = Apple {
+            keychain: "~/Library/Keychains/sol-signing.keychain-db".to_owned(),
+            ..Apple::default()
+        };
+        let path = apple.keychain_path();
+        assert!(path.is_absolute());
+        assert!(!path.to_string_lossy().starts_with('~'));
+        assert!(path.ends_with("Library/Keychains/sol-signing.keychain-db"));
+
+        let absolute = Apple {
+            keychain: "/opt/keys/sol.keychain-db".to_owned(),
+            ..Apple::default()
+        };
+        assert_eq!(
+            absolute.keychain_path(),
+            PathBuf::from("/opt/keys/sol.keychain-db")
+        );
+    }
 }

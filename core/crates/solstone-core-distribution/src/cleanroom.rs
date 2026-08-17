@@ -59,11 +59,17 @@ pub struct Aggregation {
 
 fn cleanroom_install_commands(inventory: &Inventory) -> Vec<String> {
     let version = env!("CARGO_PKG_VERSION");
+    // The Docker cleanroom is a Linux instrument. A macOS target has no image
+    // to run in, and including it here would emit an install command for an
+    // archive no subject can read.
     let mut commands = inventory
         .target
         .iter()
+        .filter(|target| !target.is_macos())
         .map(|target| {
-            let base = inventory.artifact.render(version, &target.arch);
+            let base = inventory
+                .artifact
+                .render(version, &target.os, &target.arch);
             format!(
                 "sh /opt/solstone/install.sh --archive /opt/solstone/{base}.tar.gz --sha256 /opt/solstone/{base}.sha256 --release /opt/solstone/{base}.release"
             )

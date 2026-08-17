@@ -104,13 +104,23 @@ detect_target() {
 	_os_lc=$(printf '%s' "$_os" | tr '[:upper:]' '[:lower:]')
 	_arch_lc=$(printf '%s' "$_arch" | tr '[:upper:]' '[:lower:]')
 	case ${_os_lc} in
-	linux) ;;
+	linux)
+		case ${_arch_lc} in
+		x86_64 | amd64) TARGET=linux-x86_64 ;;
+		aarch64 | arm64) TARGET=linux-aarch64 ;;
+		*) refuse unsupported-platform "arch=${_arch}" ;;
+		esac
+		;;
+	darwin)
+		# Intel Macs are deliberately not a target: the journal runtime is
+		# Apple Silicon only. Refusing by name beats installing a tree whose
+		# binaries cannot execute.
+		case ${_arch_lc} in
+		arm64 | aarch64) TARGET=macos-arm64 ;;
+		*) refuse unsupported-platform "arch=${_arch}" ;;
+		esac
+		;;
 	*) refuse unsupported-platform "os=${_os}" ;;
-	esac
-	case ${_arch_lc} in
-	x86_64 | amd64) TARGET=linux-x86_64 ;;
-	aarch64 | arm64) TARGET=linux-aarch64 ;;
-	*) refuse unsupported-platform "arch=${_arch}" ;;
 	esac
 }
 
@@ -201,7 +211,7 @@ fetch_url() {
 		if command -v curl >/dev/null 2>&1; then
 			_hdrs=$(mktemp "$WORK/solstone-install-headers-XXXXXX")
 			_code=$(curl -sS --http1.1 -D "$_hdrs" -o "$_dest" -w '%{http_code}' "$_current" || true)
-			_location=$(awk 'BEGIN{IGNORECASE=1} /^Location:/{sub(/\r$/,""); sub(/^Location:[[:space:]]+/,""); print; exit}' "$_hdrs")
+			_location=$(awk '/^[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]:/{sub(/\r$/,""); sub(/^[^:]*:[[:space:]]*/,""); print; exit}' "$_hdrs")
 			rm -f "$_hdrs"
 		elif command -v wget >/dev/null 2>&1; then
 			_hdrs=$(mktemp "$WORK/solstone-install-headers-XXXXXX")
@@ -210,7 +220,7 @@ fetch_url() {
 			else
 				_code=$(awk '/^  HTTP\//{print $2; exit}' "$_hdrs")
 			fi
-			_location=$(awk 'BEGIN{IGNORECASE=1} /^  Location:/{sub(/\r$/,""); sub(/^  Location:[[:space:]]+/,""); print; exit}' "$_hdrs")
+			_location=$(awk '/^[[:space:]]*[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]:/{sub(/\r$/,""); sub(/^[[:space:]]*[^:]*:[[:space:]]*/,""); print; exit}' "$_hdrs")
 			rm -f "$_hdrs"
 		else
 			refuse fetcher-missing
@@ -380,7 +390,24 @@ flip_current() {
 
 write_profile() {
 	_prefix=$1
-	_profile=${SOLSTONE_PROFILE:-$HOME/.profile}
+	if [ -n "${SOLSTONE_PROFILE:-}" ]; then
+		write_one_profile "$_prefix" "$SOLSTONE_PROFILE"
+		return 0
+	fi
+	write_one_profile "$_prefix" "$HOME/.profile"
+	# macOS logs users into zsh, which reads .zprofile and never .profile. A
+	# Linux-derived proof cannot see this: `sh -l` reads .profile on both
+	# platforms and reports success while a real owner's shell has no journal
+	# on PATH. Both files carry the same marked block, so re-running is
+	# idempotent on either.
+	case ${TARGET:-} in
+	macos-*) write_one_profile "$_prefix" "$HOME/.zprofile" ;;
+	esac
+}
+
+write_one_profile() {
+	_prefix=$1
+	_profile=$2
 	_dir=$(dirname "$_profile")
 	mkdir -p "$_dir"
 	_tmp=$(mktemp "$WORK/solstone-install-profile-XXXXXX")

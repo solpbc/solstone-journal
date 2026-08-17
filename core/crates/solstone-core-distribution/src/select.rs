@@ -22,7 +22,11 @@ pub struct SelectedBin {
     pub triple: String,
     pub path: PathBuf,
     pub mode: u32,
+    /// The lane that actually built this binary — the target's lane on macOS,
+    /// the entry's lane on Linux. `produce` keys its binary inspection policy
+    /// off this, so it must be the resolved value and never the declared one.
     pub lane: String,
+    pub os: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,10 +105,8 @@ pub fn select_artifacts(
         if !targets.iter().any(|item| item == target_id) {
             continue;
         }
-        let triple = match lane.as_str() {
-            "musl-static" => target.triple_musl.as_str(),
-            _ => target.triple_gnu.as_str(),
-        };
+        let lane = target.lane_for(lane).to_owned();
+        let triple = target.triple_for_lane(&lane);
         let id = ArtifactId {
             package: package.clone(),
             bin: bin.clone(),
@@ -121,6 +123,7 @@ pub fn select_artifacts(
                     path: path.clone(),
                     mode: *mode,
                     lane: lane.clone(),
+                    os: target.os.clone(),
                 });
             }
             _ => {
@@ -180,7 +183,7 @@ pub fn refuse_wrong_triple(
     let Some(target) = inventory.target.iter().find(|item| item.id == target_id) else {
         return Ok(());
     };
-    let allowed = [target.triple_musl.as_str(), target.triple_gnu.as_str()];
+    let allowed = target.triples();
     let unexpected = artifacts
         .keys()
         .filter(|id| !allowed.contains(&id.triple.as_str()))

@@ -23,8 +23,16 @@ trap 'rm -f "$candidates" "$matches"' 0 1 2 15
 # Pseudo-filesystems are not image contents and may be infinite, volatile, or
 # unreadable. Every other mounted and rootfs path is traversed, including any
 # source, dependency, artifact, and product mounts present for the rung.
+#
+# The macOS entries are firmlink duplicates of the root view rather than
+# separate content: /System/Volumes/Data is the same tree reached a second
+# way, so traversing it doubles the scan without reaching one new file.
+# /Volumes is deliberately NOT pruned - an interpreter on a mounted image is
+# on the host and must be reported.
 find / \
-	\( -path /proc -o -path /sys -o -path /dev -o -path /run \) -prune -o \
+	\( -path /proc -o -path /sys -o -path /dev -o -path /run \
+	   -o -path /System/Volumes/Data -o -path /System/Volumes/Preboot \
+	   -o -path /System/Volumes/VM -o -path /System/Volumes/Update \) -prune -o \
 	\( -type f -o -type l -o -type d \) \
 	\( -name 'python*' -o -name 'libpython*' -o -name pyvenv.cfg \
 	   -o -name site-packages -o -name dist-packages \) \
@@ -40,7 +48,7 @@ while IFS= read -r path; do
 			printf 'stdlib %s\n' "$path" >>"$matches"
 		fi
 		;;
-	libpython*.so | libpython*.so.*)
+	libpython*.so | libpython*.so.* | libpython*.dylib)
 		[ -f "$path" ] && printf 'library %s\n' "$path" >>"$matches"
 		;;
 	pyvenv.cfg)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+pub mod apple;
 pub mod ar;
 pub mod archive;
 pub mod cleanroom;
@@ -10,6 +11,7 @@ pub mod elf;
 pub mod inspect;
 pub mod inventory;
 pub mod lanes;
+pub mod macho;
 pub mod onnx_runtime;
 pub mod produce;
 pub mod promote;
@@ -265,7 +267,9 @@ fn containers_disagree_on_required_entry() {
     )
     .expect("stage contract bundle");
 
-    let basename = committed_inventory().artifact.render("1.0.22", "x86_64");
+    let basename = committed_inventory()
+        .artifact
+        .render("1.0.22", "linux", "x86_64");
     write_containers(
         &root,
         &out,
@@ -329,13 +333,13 @@ fn arch_mapping_modes_and_clean_package_depends() {
         0o644,
     )
     .unwrap();
-    for target in &inventory.target {
+    for target in inventory.target.iter().filter(|target| !target.is_macos()) {
         let out = PathBuf::from(format!(
             "/var/tmp/solstone-distribution-arch-out-{}",
             target.id
         ));
         let _ = fs::remove_dir_all(&out);
-        let basename = inventory.artifact.render(version, &target.arch);
+        let basename = inventory.artifact.render(version, &target.os, &target.arch);
         write_containers(
             &root,
             &out,
@@ -407,7 +411,9 @@ fn two_constructions_are_byte_identical() {
     stage::write_staged_file_mode(&root, "bin/solstone-core", b"core", 0o755).unwrap();
     stage::write_staged_file(&root, "share/LICENSE", b"license").unwrap();
     let version = env!("CARGO_PKG_VERSION");
-    let basename = committed_inventory().artifact.render(version, "x86_64");
+    let basename = committed_inventory()
+        .artifact
+        .render(version, "linux", "x86_64");
     let meta = ContainerMeta {
         version,
         basename: &basename,
@@ -418,6 +424,7 @@ fn two_constructions_are_byte_identical() {
     write_containers(&root, &right, meta).unwrap();
     inspect::write_sidecars(
         &left,
+        "linux",
         &inspect::ReleaseInfo {
             product: "solstone-journal",
             version,
@@ -430,6 +437,7 @@ fn two_constructions_are_byte_identical() {
     .unwrap();
     inspect::write_sidecars(
         &right,
+        "linux",
         &inspect::ReleaseInfo {
             product: "solstone-journal",
             version,
@@ -731,7 +739,7 @@ fn provenance_refuses_dirty_stale_and_wrong_commit() {
 #[test]
 fn promotion_is_atomic_after_each_successive_write() {
     let prior = b"previous-tree";
-    for step in promote::PromoteStep::ALL {
+    for step in promote::PromoteStep::for_os("linux") {
         let dest = PathBuf::from(format!(
             "/var/tmp/solstone-distribution-promote-dest-{}",
             step.as_str()
@@ -750,7 +758,10 @@ fn promotion_is_atomic_after_each_successive_write() {
             work: work.clone(),
             tree: vec![("bin/solstone-core".into(), b"core".to_vec(), 0o755)],
             version: "1.0.22".into(),
-            basename: committed_inventory().artifact.render("1.0.22", "x86_64"),
+            basename: committed_inventory()
+                .artifact
+                .render("1.0.22", "linux", "x86_64"),
+            os: "linux".into(),
             arch: "linux-x86_64".into(),
             deb_arch: "amd64".into(),
             rpm_arch: "x86_64".into(),
@@ -764,6 +775,7 @@ fn promotion_is_atomic_after_each_successive_write() {
                 lock_sha256: "bbb".into(),
             },
             fail_after: Some(step.as_str().to_owned()),
+            apple: None,
         };
         let result = promote::promote(&request);
         assert!(result.is_err(), "{}", step.as_str());
@@ -781,11 +793,20 @@ fn emitted_basenames_follow_inventory_template_for_both_targets() {
     let version = env!("CARGO_PKG_VERSION");
     assert!(
         inventory.artifact.basename.contains("{version}")
+            && inventory.artifact.basename.contains("{os}")
             && inventory.artifact.basename.contains("{arch}"),
         "inventory basename must stay a template"
     );
-    assert_eq!(inventory.target.len(), 2);
-    for target in &inventory.target {
+    assert_eq!(inventory.target.len(), 3);
+    assert_eq!(
+        inventory
+            .target
+            .iter()
+            .filter(|target| target.is_macos())
+            .count(),
+        1
+    );
+    for target in inventory.target.iter().filter(|target| !target.is_macos()) {
         let dest = PathBuf::from(format!(
             "/var/tmp/solstone-distribution-basename-dest-{}",
             target.id
@@ -796,7 +817,7 @@ fn emitted_basenames_follow_inventory_template_for_both_targets() {
         ));
         let _ = fs::remove_dir_all(&dest);
         let _ = fs::remove_dir_all(&work);
-        let basename = inventory.artifact.render(version, &target.arch);
+        let basename = inventory.artifact.render(version, &target.os, &target.arch);
         assert_eq!(
             basename,
             format!("solstone-journal-{version}-linux-{}", target.arch)
@@ -807,6 +828,7 @@ fn emitted_basenames_follow_inventory_template_for_both_targets() {
             tree: vec![("bin/solstone-core".into(), b"core".to_vec(), 0o755)],
             version: version.to_owned(),
             basename: basename.clone(),
+            os: target.os.clone(),
             arch: target.id.clone(),
             deb_arch: target.deb_arch.clone(),
             rpm_arch: target.rpm_arch.clone(),
@@ -820,6 +842,7 @@ fn emitted_basenames_follow_inventory_template_for_both_targets() {
                 lock_sha256: "bbb".into(),
             },
             fail_after: None,
+            apple: None,
         })
         .unwrap();
         let expected = inventory::artifact_set(&basename);

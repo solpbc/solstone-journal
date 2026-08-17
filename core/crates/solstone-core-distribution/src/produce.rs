@@ -11,8 +11,11 @@ use std::process::Command;
 
 use crate::digest::sha256_hex;
 use crate::elf;
-use crate::inventory::{Entry, Inventory, artifact_set, format_named_list, load_payload};
+use crate::inventory::{
+    Entry, Inventory, Target, artifact_set_for_os, format_named_list, load_payload, parse_min_macos,
+};
 use crate::lanes::{self, write_wrappers};
+use crate::macho;
 use crate::onnx_runtime;
 use crate::promote::{PromoteRequest, isolated_target_dir, promote};
 use crate::provenance::{self, Provenance, bind_cargo_json, lock_digest};
@@ -209,6 +212,35 @@ pub fn inspect_bin(bin: &str, lane: &str, bytes: &[u8], machine: u16) -> Result<
     .map_err(|error| ProduceError::new(error.to_string()))
 }
 
+/// The macOS binary policy. Deliberately not a translation of the Linux one:
+/// `crt-static` has no macOS counterpart, so "no dynamic dependency at all"
+/// becomes "only system dylibs", and `$ORIGIN` becomes `@loader_path`.
+pub fn inspect_macho_bin(
+    bin: &str,
+    lane: &str,
+    bytes: &[u8],
+    cputype: u32,
+    ceiling: (u32, u32),
+) -> Result<(), ProduceError> {
+    if lane != "apple-native" {
+        return Err(ProduceError::new(format!("unexpected:\n  lane {lane}")));
+    }
+    let info =
+        macho::parse_macho(bytes).map_err(|error| ProduceError::new(format!("{bin}: {error}")))?;
+    if bin == "solstone-core-speakers-analyze" {
+        macho::inspect_helper(
+            &info,
+            cputype,
+            ceiling,
+            macho::HELPER_RPATH,
+            macho::HELPER_INSTALL_NAME,
+        )
+    } else {
+        macho::inspect_core_family(&info, cputype, ceiling)
+    }
+    .map_err(|error| ProduceError::new(format!("{bin}: {error}")))
+}
+
 pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
     let inventory_path =
         crate::inventory::repository_inventory_path(&args.start).ok_or_else(|| {
@@ -245,17 +277,26 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
     let version = workspace_version(&repo.join("core/Cargo.toml"))?;
     let epoch = git_stdout(repo, &["show", "-s", "--format=%ct", "HEAD"])?;
 
-    let zig = discover_zig()?;
-    let zig_version = command_stdout(&zig, &["version"])?;
-    lanes::check_zig_version(&zig_version).map_err(|error| ProduceError::new(error.to_string()))?;
-    let zig_lib = zig
-        .parent()
-        .map(|parent| parent.join("lib"))
-        .filter(|path| path.is_dir())
-        .ok_or_else(|| ProduceError::new("missing required:\n  zig lib"))?;
-    let zig_dir = zig
-        .parent()
-        .ok_or_else(|| ProduceError::new("missing required:\n  zig"))?;
+    // macOS builds natively with Apple's toolchain and never touches zig, so
+    // discovering it would refuse a Mac that is perfectly able to produce.
+    let zig_paths = if target.is_macos() {
+        None
+    } else {
+        let zig = discover_zig()?;
+        let zig_version = command_stdout(&zig, &["version"])?;
+        lanes::check_zig_version(&zig_version)
+            .map_err(|error| ProduceError::new(error.to_string()))?;
+        let zig_lib = zig
+            .parent()
+            .map(|parent| parent.join("lib"))
+            .filter(|path| path.is_dir())
+            .ok_or_else(|| ProduceError::new("missing required:\n  zig lib"))?;
+        let zig_dir = zig
+            .parent()
+            .ok_or_else(|| ProduceError::new("missing required:\n  zig"))?
+            .to_path_buf();
+        Some((zig_lib, zig_dir))
+    };
 
     let work = env::var_os("SOLSTONE_DISTRIBUTION_WORK")
         .map(PathBuf::from)
@@ -306,6 +347,55 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         onnx_runtime::write_staged_runtime(spec, &staged_runtime, &onnx_dir)
             .map_err(|error| ProduceError::new(error.to_string()))?;
 
+        let remap_for = |sysroot: &str| {
+            [
+                format!("--remap-path-prefix={}=/source", checkout.display()),
+                format!("--remap-path-prefix={}=/target", target_dir.display()),
+                format!("--remap-path-prefix={sysroot}=/rustc"),
+            ]
+        };
+
+        let mut artifacts = BTreeMap::new();
+        if target.is_macos() {
+            let remap = remap_for(&sysroot);
+            let apple_bins = bins_for_resolved_lane(&inventory, target, "apple-native");
+            merge_artifacts(
+                &mut artifacts,
+                build_lane(BuildLane {
+                    checkout: &checkout,
+                    target_dir: &target_dir,
+                    zig_dir: None,
+                    wrapper_dir: &wrappers,
+                    triple: &target.triple_apple,
+                    host: &host,
+                    bins: &apple_bins,
+                    vars: &apple_lane_env(target, &onnx_dir),
+                    rustflags: &remap.join("\x1f"),
+                    epoch: &epoch,
+                })?,
+            );
+            return finish_produce(FinishProduce {
+                args: &args,
+                inventory: &inventory,
+                inventory_path: &inventory_path,
+                target,
+                checkout: &checkout,
+                work: &work,
+                spec,
+                staged_runtime: &staged_runtime,
+                artifacts: &artifacts,
+                version: &version,
+                commit: &commit,
+                expected_lock: &expected_lock,
+                onnx_input: &onnx_input,
+            });
+        }
+
+        let (zig_lib, zig_dir) = zig_paths
+            .as_ref()
+            .ok_or_else(|| ProduceError::new("missing required:\n  zig"))?;
+        let zig_lib = zig_lib.as_path();
+        let zig_dir = zig_dir.as_path();
         let mut musl_env = lanes::musl_lane_env(target, &wrappers, &host)
             .map_err(|error| ProduceError::new(error.to_string()))?;
         let rust_lld = PathBuf::from(&sysroot)
@@ -330,14 +420,14 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 "BINDGEN_EXTRA_CLANG_ARGS_{}",
                 lanes::env_target(&target.triple_musl)
             ),
-            musl_bindgen_args(target, &zig_lib),
+            musl_bindgen_args(target, zig_lib),
         );
         let musl_stubs = work.join("musl-lib-stubs");
         write_musl_lib_stubs(&musl_stubs)?;
         let mut gnu_env = lanes::gnu_lane_env(
             target,
             &wrappers,
-            &zig_lib,
+            zig_lib,
             &checkout,
             Some(&onnx_dir),
             &host,
@@ -353,11 +443,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         write_wrappers(&musl_env).map_err(|error| ProduceError::new(error.to_string()))?;
         write_wrappers(&gnu_env).map_err(|error| ProduceError::new(error.to_string()))?;
 
-        let remap = [
-            format!("--remap-path-prefix={}=/source", checkout.display()),
-            format!("--remap-path-prefix={}=/target", target_dir.display()),
-            format!("--remap-path-prefix={sysroot}=/rustc"),
-        ];
+        let remap = remap_for(&sysroot);
         let musl_rustflags = [
             remap[0].clone(),
             remap[1].clone(),
@@ -377,15 +463,14 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         ]
         .join("\x1f");
 
-        let mut artifacts = BTreeMap::new();
-        let musl_bins = bins_for_lane(&inventory, &args.target_id, "musl-static");
-        let gnu_bins = bins_for_lane(&inventory, &args.target_id, "zig-gnu-2.27");
+        let musl_bins = bins_for_resolved_lane(&inventory, target, "musl-static");
+        let gnu_bins = bins_for_resolved_lane(&inventory, target, "zig-gnu-2.27");
         merge_artifacts(
             &mut artifacts,
             build_lane(BuildLane {
                 checkout: &checkout,
                 target_dir: &target_dir,
-                zig_dir,
+                zig_dir: Some(zig_dir),
                 wrapper_dir: &wrappers,
                 triple: &target.triple_musl,
                 host: &host,
@@ -400,7 +485,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             build_lane(BuildLane {
                 checkout: &checkout,
                 target_dir: &target_dir,
-                zig_dir,
+                zig_dir: Some(zig_dir),
                 wrapper_dir: &wrappers,
                 triple: &target.triple_gnu,
                 host: &host,
@@ -411,93 +496,20 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             })?,
         );
 
-        select::refuse_wrong_triple(&inventory, &args.target_id, &artifacts)
-            .map_err(|error| ProduceError::new(error.to_string()))?;
-        select::refuse_extra(&inventory, &args.target_id, &artifacts)
-            .map_err(|error| ProduceError::new(error.to_string()))?;
-        let selection = select::select_artifacts(&inventory, &args.target_id, &artifacts)
-            .map_err(|error| ProduceError::new(error.to_string()))?;
-
-        let machine = match target.arch.as_str() {
-            "x86_64" => elf::machine_x86_64(),
-            "aarch64" => elf::machine_aarch64(),
-            other => {
-                return Err(ProduceError::new(format!("unexpected:\n  arch {other}")));
-            }
-        };
-        for bin in &selection.bins {
-            let bytes = fs::read(&bin.path)?;
-            inspect_bin(&bin.bin, &bin.lane, &bytes, machine)?;
-        }
-
-        let stage = work.join("stage");
-        let _ = fs::remove_dir_all(&stage);
-        fs::create_dir_all(&stage)?;
-        select::stage_selected(&selection, &stage)?;
-        stage_layout(
-            &checkout,
-            &inventory_path,
-            &inventory,
-            &args.target_id,
+        finish_produce(FinishProduce {
+            args: &args,
+            inventory: &inventory,
+            inventory_path: &inventory_path,
+            target,
+            checkout: &checkout,
+            work: &work,
             spec,
-            &staged_runtime,
-            &stage,
-        )?;
-
-        let tree = tree_from_stage(&stage)?;
-        let observed_lock = lock_digest(&checkout.join("core/Cargo.lock"))
-            .map_err(|error| ProduceError::new(error.to_string()))?;
-        let observed_commit = git_stdout(&checkout, &["rev-parse", "HEAD"])?;
-        if let Some(parent) = args.dest.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let dest = args.dest.clone();
-        let basename = inventory.artifact.render(&version, &target.arch);
-        let produced = promote(&PromoteRequest {
-            dest,
-            work: work.join("promote"),
-            tree,
-            version,
-            basename: basename.clone(),
-            arch: args.target_id.clone(),
-            deb_arch: target.deb_arch.clone(),
-            rpm_arch: target.rpm_arch.clone(),
-            dirty: false,
-            observed: Provenance {
-                commit: observed_commit,
-                lock_sha256: observed_lock,
-            },
-            expected: Provenance {
-                commit: commit.clone(),
-                lock_sha256: expected_lock.clone(),
-            },
-            fail_after: None,
-        })
-        .map_err(|error| ProduceError::new(error.to_string()))?;
-
-        let artifacts = artifact_set(&basename)
-            .into_iter()
-            .map(|name| produced.join(name))
-            .collect::<Vec<_>>();
-        for path in &artifacts {
-            if !path.is_file() {
-                return Err(ProduceError::new(format!(
-                    "missing required:\n  {}",
-                    path.display()
-                )));
-            }
-        }
-        Ok(ProduceReport {
-            dest: produced,
-            target: args.target_id.clone(),
-            commit,
-            lock_sha256: expected_lock,
-            onnx_source: match onnx_input {
-                OnnxInput::Local(path) => path.display().to_string(),
-                OnnxInput::PinnedUrl => spec.wheel_url.to_owned(),
-            },
-            onnx_wheel_sha256: spec.wheel_sha256.to_owned(),
-            artifacts,
+            staged_runtime: &staged_runtime,
+            artifacts: &artifacts,
+            version: &version,
+            commit: &commit,
+            expected_lock: &expected_lock,
+            onnx_input: &onnx_input,
         })
     })();
 
@@ -509,7 +521,15 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
     result
 }
 
-fn bins_for_lane(inventory: &Inventory, target_id: &str, lane: &str) -> Vec<(String, String)> {
+/// Binaries this target builds in `lane`, where `lane` is the RESOLVED lane —
+/// the target's own on macOS, the entry's on Linux. Keying off the declared
+/// entry lane instead would silently build nothing on macOS, because no entry
+/// declares `apple-native`.
+fn bins_for_resolved_lane(
+    inventory: &Inventory,
+    target: &Target,
+    lane: &str,
+) -> Vec<(String, String)> {
     inventory
         .entry
         .iter()
@@ -520,7 +540,7 @@ fn bins_for_lane(inventory: &Inventory, target_id: &str, lane: &str) -> Vec<(Str
                 lane: entry_lane,
                 targets,
                 ..
-            } if entry_lane == lane && targets.iter().any(|item| item == target_id) => {
+            } if target.lane_for(entry_lane) == lane && targets.contains(&target.id) => {
                 Some((package.clone(), bin.clone()))
             }
             _ => None,
@@ -528,10 +548,199 @@ fn bins_for_lane(inventory: &Inventory, target_id: &str, lane: &str) -> Vec<(Str
         .collect()
 }
 
+/// The one macOS build lane. No wrappers, no cross toolchain, no zig: the Mac
+/// builds for itself with Apple's own linker and SDK.
+fn apple_lane_env(target: &Target, onnx_dir: &Path) -> BTreeMap<String, String> {
+    let mut vars = BTreeMap::new();
+    vars.insert(
+        "MACOSX_DEPLOYMENT_TARGET".to_owned(),
+        target.min_macos.clone(),
+    );
+    // The ONNX-linked helper links against the staged runtime, exactly as the
+    // Linux gnu lane does. Its `@loader_path` rpath comes from the crate's own
+    // build.rs, so nothing here has to know the install layout.
+    vars.insert("ORT_PREFER_DYNAMIC_LINK".to_owned(), "true".to_owned());
+    vars.insert("ORT_LIB_PATH".to_owned(), onnx_dir.display().to_string());
+    vars
+}
+
+struct FinishProduce<'a> {
+    args: &'a ProduceArgs,
+    inventory: &'a Inventory,
+    inventory_path: &'a Path,
+    target: &'a Target,
+    checkout: &'a Path,
+    work: &'a Path,
+    spec: &'a onnx_runtime::TargetSpec,
+    staged_runtime: &'a onnx_runtime::StagedRuntime,
+    artifacts: &'a BTreeMap<ArtifactId, PathBuf>,
+    version: &'a str,
+    commit: &'a str,
+    expected_lock: &'a str,
+    onnx_input: &'a OnnxInput,
+}
+
+/// Selection, binary inspection, staging and atomic promotion — identical for
+/// both platforms except for which inspector reads the binaries and which
+/// containers promotion emits.
+fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceError> {
+    let FinishProduce {
+        args,
+        inventory,
+        inventory_path,
+        target,
+        checkout,
+        work,
+        spec,
+        staged_runtime,
+        artifacts,
+        version,
+        commit,
+        expected_lock,
+        onnx_input,
+    } = finish;
+
+    select::refuse_wrong_triple(inventory, &args.target_id, artifacts)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+    select::refuse_extra(inventory, &args.target_id, artifacts)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+    let selection = select::select_artifacts(inventory, &args.target_id, artifacts)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+
+    if target.is_macos() {
+        let cputype = macho::cputype_for_arch(&target.arch)
+            .ok_or_else(|| ProduceError::new(format!("unexpected:\n  arch {}", target.arch)))?;
+        let ceiling = parse_min_macos(&target.min_macos).ok_or_else(|| {
+            ProduceError::new(format!("unexpected:\n  min_macos {}", target.min_macos))
+        })?;
+        for bin in &selection.bins {
+            let bytes = fs::read(&bin.path)?;
+            inspect_macho_bin(&bin.bin, &bin.lane, &bytes, cputype, ceiling)?;
+        }
+    } else {
+        let machine = match target.arch.as_str() {
+            "x86_64" => elf::machine_x86_64(),
+            "aarch64" => elf::machine_aarch64(),
+            other => {
+                return Err(ProduceError::new(format!("unexpected:\n  arch {other}")));
+            }
+        };
+        for bin in &selection.bins {
+            let bytes = fs::read(&bin.path)?;
+            inspect_bin(&bin.bin, &bin.lane, &bytes, machine)?;
+        }
+    }
+
+    let stage = work.join("stage");
+    let _ = fs::remove_dir_all(&stage);
+    fs::create_dir_all(&stage)?;
+    select::stage_selected(&selection, &stage)?;
+    stage_layout(
+        checkout,
+        inventory_path,
+        inventory,
+        &args.target_id,
+        spec,
+        staged_runtime,
+        &stage,
+    )?;
+
+    // The macOS payload dylib is inspected here rather than in the binary loop,
+    // because it is not a binary: it is staged straight out of the pinned wheel
+    // and never passes through `select`. A census that walked only `selection`
+    // would report a clean tree with the loaded half never looked at.
+    if target.is_macos() {
+        inspect_macos_payloads(&stage, target)?;
+    }
+
+    let tree = tree_from_stage(&stage)?;
+    let observed_lock = lock_digest(&checkout.join("core/Cargo.lock"))
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+    let observed_commit = git_stdout(checkout, &["rev-parse", "HEAD"])?;
+    if let Some(parent) = args.dest.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let basename = inventory.artifact.render(version, &target.os, &target.arch);
+    let produced = promote(&PromoteRequest {
+        dest: args.dest.clone(),
+        work: work.join("promote"),
+        tree,
+        version: version.to_owned(),
+        basename: basename.clone(),
+        os: target.os.clone(),
+        arch: args.target_id.clone(),
+        deb_arch: target.deb_arch.clone(),
+        rpm_arch: target.rpm_arch.clone(),
+        dirty: false,
+        observed: Provenance {
+            commit: observed_commit,
+            lock_sha256: observed_lock,
+        },
+        expected: Provenance {
+            commit: commit.to_owned(),
+            lock_sha256: expected_lock.to_owned(),
+        },
+        fail_after: None,
+        apple: target.is_macos().then(|| inventory.apple.clone()),
+    })
+    .map_err(|error| ProduceError::new(error.to_string()))?;
+
+    let produced_artifacts = artifact_set_for_os(&target.os, &basename)
+        .into_iter()
+        .map(|name| produced.join(name))
+        .collect::<Vec<_>>();
+    for path in &produced_artifacts {
+        if !path.is_file() {
+            return Err(ProduceError::new(format!(
+                "missing required:\n  {}",
+                path.display()
+            )));
+        }
+    }
+    Ok(ProduceReport {
+        dest: produced,
+        target: args.target_id.clone(),
+        commit: commit.to_owned(),
+        lock_sha256: expected_lock.to_owned(),
+        onnx_source: match onnx_input {
+            OnnxInput::Local(path) => path.display().to_string(),
+            OnnxInput::PinnedUrl => spec.wheel_url.to_owned(),
+        },
+        onnx_wheel_sha256: spec.wheel_sha256.to_owned(),
+        artifacts: produced_artifacts,
+    })
+}
+
+/// Every Mach-O in the staged tree that is NOT an executable — the loaded half.
+fn inspect_macos_payloads(stage: &Path, target: &Target) -> Result<(), ProduceError> {
+    let cputype = macho::cputype_for_arch(&target.arch)
+        .ok_or_else(|| ProduceError::new(format!("unexpected:\n  arch {}", target.arch)))?;
+    let ceiling = parse_min_macos(&target.min_macos).ok_or_else(|| {
+        ProduceError::new(format!("unexpected:\n  min_macos {}", target.min_macos))
+    })?;
+    let members = crate::apple::discover_macho_members(stage)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+    let payloads = members
+        .iter()
+        .filter(|member| member.payload)
+        .collect::<Vec<_>>();
+    if payloads.is_empty() {
+        return Err(ProduceError::new(
+            "missing required:\n  a loaded mach-o payload in the staged macos tree",
+        ));
+    }
+    for member in payloads {
+        macho::inspect_payload_dylib(&member.info, cputype, ceiling, macho::HELPER_INSTALL_NAME)
+            .map_err(|error| ProduceError::new(format!("{}: {error}", member.relative)))?;
+    }
+    Ok(())
+}
+
 struct BuildLane<'a> {
     checkout: &'a Path,
     target_dir: &'a Path,
-    zig_dir: &'a Path,
+    /// `None` on the Apple lane, which uses the host toolchain directly.
+    zig_dir: Option<&'a Path>,
     wrapper_dir: &'a Path,
     triple: &'a str,
     host: &'a str,
@@ -558,10 +767,13 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
         .env("CARGO_ENCODED_RUSTFLAGS", lane.rustflags)
         .env(
             "PATH",
-            prepend_path(
-                lane.wrapper_dir,
-                &prepend_path(lane.zig_dir, &env::var("PATH").unwrap_or_default()),
-            ),
+            match lane.zig_dir {
+                Some(zig_dir) => prepend_path(
+                    lane.wrapper_dir,
+                    &prepend_path(zig_dir, &env::var("PATH").unwrap_or_default()),
+                ),
+                None => env::var("PATH").unwrap_or_default(),
+            },
         )
         .args([
             "build",
@@ -890,6 +1102,12 @@ mod tests {
         fs::create_dir_all(root.join("bin")).unwrap();
         let file = root.join("bin/zig");
         fs::write(&file, b"zig").unwrap();
+        // `resolve_zig_binary` canonicalizes, and on macOS `/var` is itself a
+        // symlink to `/private/var` — so the expectation has to be the
+        // canonical path, not the path we typed. Comparing against the typed
+        // path asserts a property of the host's filesystem layout rather than
+        // of the resolver.
+        let file = file.canonicalize().unwrap();
         assert_eq!(
             resolve_zig_binary(Some(file.to_str().unwrap()), "").unwrap(),
             file

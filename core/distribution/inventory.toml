@@ -7,7 +7,26 @@ payload = "payload.txt"
 payload_dest_prefix = "share"
 
 [artifact]
-basename = "solstone-journal-{version}-linux-{arch}"
+basename = "solstone-journal-{version}-{os}-{arch}"
+
+# The macOS signing contract. Relocated out of scripts/release_tool_pins.py,
+# which the wheel rail took with it: the producer and the machinery that signs
+# its output are on the same side of this plate's Python boundary, so the pins
+# belong to the inventory rather than to an importable module.
+[apple]
+team_id = "7QCG8V4M6H"
+app_identity = "Developer ID Application: sol pbc (7QCG8V4M6H)"
+installer_identity = "Developer ID Installer: sol pbc (7QCG8V4M6H)"
+notary_profile = "sol-pbc-notary"
+keychain = "~/Library/Keychains/sol-signing.keychain-db"
+pkg_identifier = "app.solstone.journal"
+# /usr is SIP-protected on macOS; /usr/local is the writable system prefix and
+# /usr/local/bin is on the default PATH through /etc/paths, which is what puts
+# `journal` where the sense dispatcher can spawn it by name.
+install_location = "/usr/local"
+codesign_path = "/usr/bin/codesign"
+xcode = "Xcode 26.6"
+notarytool = "1.1.2 (41)"
 
 [[target]]
 id = "linux-x86_64"
@@ -29,6 +48,22 @@ triple_musl = "aarch64-unknown-linux-musl"
 triple_gnu = "aarch64-unknown-linux-gnu"
 zig_gnu = "aarch64-linux-gnu.2.27"
 
+# macOS builds natively on Apple hardware with Apple's own toolchain, so it has
+# exactly one lane and the lane is a property of the target rather than of each
+# binary. The per-entry `lane` below distinguishes the two Linux cross
+# toolchains and has no macOS analogue; `Target::lane_for` reads this field
+# instead for a macos target, so one place owns the answer.
+[[target]]
+id = "macos-arm64"
+os = "macos"
+arch = "arm64"
+lane = "apple-native"
+triple_apple = "aarch64-apple-darwin"
+# The macOS analogue of the Linux GLIBC 2.27 ceiling: every shipped Mach-O must
+# declare a deployment target at or below this or it refuses to launch on the
+# oldest macOS we claim.
+min_macos = "14.0"
+
 [[entry]]
 kind = "bin"
 package = "solstone-core"
@@ -36,7 +71,7 @@ bin = "solstone-core"
 dest = "bin/solstone-core"
 mode = 0o755
 lane = "musl-static"
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
@@ -45,7 +80,7 @@ bin = "solstone-core-journal"
 dest = "bin/solstone-core-journal"
 mode = 0o755
 lane = "musl-static"
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
@@ -54,7 +89,7 @@ bin = "solstone-core-sol"
 dest = "bin/solstone-core-sol"
 mode = 0o755
 lane = "musl-static"
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
@@ -63,7 +98,7 @@ bin = "solstone-core-depict"
 dest = "bin/solstone-core-depict"
 mode = 0o755
 lane = "musl-static"
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
@@ -72,7 +107,7 @@ bin = "solstone-retention"
 dest = "bin/solstone-retention"
 mode = 0o755
 lane = "musl-static"
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
@@ -81,7 +116,7 @@ bin = "solstone-core-describe"
 dest = "bin/solstone-core-describe"
 mode = 0o755
 lane = "zig-gnu-2.27"
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
@@ -90,7 +125,7 @@ bin = "solstone-core-speakers-analyze"
 dest = "bin/solstone-core-speakers-analyze"
 mode = 0o755
 lane = "zig-gnu-2.27"
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
@@ -99,28 +134,28 @@ bin = "solstone-core-vulkan-probe"
 dest = "bin/solstone-core-vulkan-probe"
 mode = 0o755
 lane = "zig-gnu-2.27"
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "launcher"
 source = "scripts/root-launchers/sol"
 dest = "bin/sol"
 mode = 0o755
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "launcher"
 source = "scripts/root-launchers/solstone"
 dest = "bin/solstone"
 mode = 0o755
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "launcher"
 source = "packages/solstone-journal/scripts/journal"
 dest = "bin/journal"
 mode = 0o755
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "model-asset"
@@ -128,7 +163,7 @@ source = "packages/solstone-journal-models/solstone_journal_models/assets/wespea
 dest = "lib/solstone_journal_models/assets/wespeaker-resnet34-256.onnx"
 mode = 0o644
 digest_const = "WESPEAKER_RESNET34_SHA256"
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "model-asset"
@@ -136,7 +171,7 @@ source = "packages/solstone-journal-models/solstone_journal_models/assets/pyanno
 dest = "lib/solstone_journal_models/assets/pyannote-segmentation-3.0.onnx"
 mode = 0o644
 digest_const = "PYANNOTE_SEGMENTATION_SHA256"
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "model-asset"
@@ -144,20 +179,20 @@ source = "packages/solstone-journal-models/solstone_journal_models/assets/silero
 dest = "lib/solstone_journal_models/assets/silero_vad_v6.onnx"
 mode = 0o644
 digest_const = "SILERO_VAD_V6_SHA256"
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "onnx-runtime"
 dest_dir = "lib/solstone-core-speakers-analyze"
 mode = 0o755
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "copy"
 source = "LICENSE"
 dest = "share/LICENSE"
 mode = 0o644
-targets = ["linux-x86_64", "linux-aarch64"]
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[deny]]
 bin = "solstone-transcribe"
