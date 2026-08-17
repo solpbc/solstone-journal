@@ -28,12 +28,13 @@ pub struct CheckContext {
     pub hostname: String,
     pub machine_id: Option<String>,
     pub checkout_root: Option<PathBuf>,
-    pub python_env_root: Option<PathBuf>,
     pub port: u16,
     pub service_status_timeout: Duration,
     pub service_status_command_override: Option<(PathBuf, Vec<String>)>,
     pub parakeet_server_probe_override: Option<ParakeetServerProbe>,
     pub speakers_analyze_resolvers: Option<(SpeakersBinaryResolver, SpeakersModelResolver)>,
+    /// Test seam for available bytes on the installation filesystem.
+    pub free_space_bytes_override: Option<u64>,
 }
 impl CheckContext {
     pub fn production(port: u16) -> Result<Self, String> {
@@ -79,13 +80,13 @@ impl CheckContext {
             host_arch: env::consts::ARCH.to_owned(),
             hostname,
             machine_id: (!machine_id.is_empty()).then_some(machine_id),
-            python_env_root: resolve_python_env(checkout_root.as_deref(), &executable),
             checkout_root,
             port,
             service_status_timeout: Duration::from_secs(10),
             service_status_command_override: None,
             parakeet_server_probe_override: None,
             speakers_analyze_resolvers: None,
+            free_space_bytes_override: None,
         })
     }
 }
@@ -97,27 +98,5 @@ fn checkout_ancestor(path: &Path) -> Option<PathBuf> {
             root.join("solstone/talent/sol/SKILL.md").is_file()
                 && root.join("solstone/talent/journal/SKILL.md").is_file()
         })
-    })
-}
-
-fn resolve_python_env(checkout_root: Option<&Path>, executable: &Path) -> Option<PathBuf> {
-    if let Some(root) = checkout_root {
-        let environment = root.join(".venv");
-        if environment.is_dir() {
-            return Some(environment);
-        }
-    }
-    let prefix = executable.parent()?.parent()?;
-    python_site_packages(prefix).then(|| prefix.to_path_buf())
-}
-
-fn python_site_packages(prefix: &Path) -> bool {
-    let Ok(lib) = std::fs::read_dir(prefix.join("lib")) else {
-        return false;
-    };
-    lib.filter_map(Result::ok).any(|entry| {
-        entry.file_name().to_string_lossy().starts_with("python")
-            && (entry.path().join("site-packages").is_dir()
-                || entry.path().join("dist-packages").is_dir())
     })
 }

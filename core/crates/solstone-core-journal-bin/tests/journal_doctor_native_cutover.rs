@@ -19,7 +19,7 @@ exit 97
 
 const HELP: &str = concat!(
     "usage: journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
-    "                      [--feature FEATURE] [--readiness]\n",
+    "                      [--readiness]\n",
     "\n",
     "Run solstone diagnostics.\n",
     "\n",
@@ -29,7 +29,6 @@ const HELP: &str = concat!(
     "  --json             emit JSON instead of text\n",
     "  --jsonl            emit one-JSON-per-line events instead of text\n",
     "  --port PORT        port to probe (default: 5015)\n",
-    "  --feature FEATURE  Run only the named feature check (pdf-export, pdf-import)\n",
     "  --readiness        run the setup readiness battery\n",
     "\n",
     "If 'journal doctor' is unavailable (e.g. before 'make install' completes), run\n",
@@ -38,7 +37,7 @@ const HELP: &str = concat!(
 
 const USAGE: &str = concat!(
     "usage: journal doctor [-h] [--verbose] [--json] [--jsonl] [--port PORT]\n",
-    "                      [--feature FEATURE] [--readiness]\n",
+    "                      [--readiness]\n",
 );
 
 struct TempDir {

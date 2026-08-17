@@ -71,8 +71,6 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "parakeet_cpp_stt_ready",
     "speakers_analyze_installation",
     "skill_state",
-    "feature:pdf-import",
-    "feature:pdf-export",
 ];
 
 const BASELINE_CHECK_NAMES: &[&str] = &[
@@ -87,18 +85,7 @@ const BASELINE_CHECK_NAMES: &[&str] = &[
 // None` now and so are indistinguishable from the baseline rows in the
 // registry — the classification cannot be derived after the fact and has to be
 // written down to keep the partition assertion below self-policing.
-const EARLIER_CHECK_NAMES: &[&str] = &[
-    "journal_leaf_exclusivity",
-    "journal_package_version",
-    "retired_host_shim",
-    "host_dependencies",
-    "disk_space",
-    "python_version",
-    "service_identity",
-    "stale_alias_symlink",
-    "sol_importable",
-    "local_bin_sol_reachable",
-];
+const EARLIER_CHECK_NAMES: &[&str] = &["disk_space", "service_identity", "local_bin_sol_reachable"];
 
 fn fixture() -> CheckContext {
     let root = std::env::temp_dir().join(format!(
@@ -118,12 +105,12 @@ fn fixture() -> CheckContext {
         hostname: "fixture-host".into(),
         machine_id: Some("fixture-machine".into()),
         checkout_root: None,
-        python_env_root: None,
         port: 5015,
         service_status_timeout: Duration::from_millis(1),
         service_status_command_override: None,
         parakeet_server_probe_override: Some(|_, _| Err("fixture unreachable".into())),
         speakers_analyze_resolvers: None,
+        free_space_bytes_override: None,
     }
 }
 fn status(name: &str, context: &CheckContext) -> Status {
@@ -274,7 +261,6 @@ fn args() -> DoctorArgs {
         json: false,
         jsonl: false,
         port: 5015,
-        feature: None,
         readiness: false,
     }
 }
@@ -349,24 +335,6 @@ fn stage_router_skills(context: &mut CheckContext, broken: bool) {
     if broken {
         let parent = context.journal_path.join(".claude/skills");
         fs::remove_file(parent.join("sol")).unwrap();
-    }
-}
-
-fn stage_feature(context: &mut CheckContext, name: &str, present: bool) {
-    let environment = context.journal_path.parent().unwrap().join("venv");
-    let site = environment.join("lib/python3.13/site-packages");
-    fs::create_dir_all(&site).unwrap();
-    context.python_env_root = Some(environment);
-    if present {
-        for module in match name {
-            "feature:pdf-import" => ["pypdfium2", "PIL"].as_slice(),
-            "feature:pdf-export" => ["weasyprint"].as_slice(),
-            _ => unreachable!(),
-        } {
-            let module = site.join(module);
-            fs::create_dir_all(&module).unwrap();
-            fs::write(module.join("__init__.py"), "").unwrap();
-        }
     }
 }
 
@@ -496,7 +464,6 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             #[cfg(unix)]
             stage_router_skills(&mut context, !ok);
         }
-        "feature:pdf-import" | "feature:pdf-export" => stage_feature(&mut context, name, ok),
         _ => unreachable!("unknown W3C check {name}"),
     }
     result(name, &context)
@@ -521,7 +488,7 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                     | "parakeet_cpp_stt_ready"
                     | "speakers_analyze_installation"
                     | "skill_state"
-            ) || e.check.name.starts_with("feature:"))
+            ))
             .all(|e| e.deferred.is_none())
     );
 }
@@ -541,8 +508,6 @@ fn check_severity_table_matches_reference() {
         ("parakeet_cpp_stt_ready", Severity::Advisory),
         ("speakers_analyze_installation", Severity::Blocker),
         ("skill_state", Severity::Advisory),
-        ("feature:pdf-import", Severity::Advisory),
-        ("feature:pdf-export", Severity::Advisory),
     ] {
         assert_eq!(
             registry::lookup(Battery::Journal, name)
@@ -574,8 +539,6 @@ fn fixture_covers_ok_and_non_ok_paths() {
             SecondBranch::DifferentStatus,
         ),
         ("skill_state", SecondBranch::DifferentStatus),
-        ("feature:pdf-import", SecondBranch::DifferentStatus),
-        ("feature:pdf-export", SecondBranch::DifferentStatus),
     ];
     let coverage_names = coverage
         .iter()
@@ -742,7 +705,7 @@ fn setup_json_and_jsonl_filters_receive_advisory_warning() {
             .any(|row| row["name"] == "default_stt_ready")
     );
     let mut bytes = Vec::new();
-    crate::output::emit_jsonl_to(&mut bytes, &warned, "2026-01-01T00:00:00Z", 0, 5015, None);
+    crate::output::emit_jsonl_to(&mut bytes, &warned, "2026-01-01T00:00:00Z", 0, 5015);
     let jsonl_matches = String::from_utf8(bytes)
         .unwrap()
         .lines()
@@ -778,55 +741,6 @@ fn setup_json_and_jsonl_filters_receive_advisory_warning() {
             .all(|row| !matches!(row["status"].as_str(), Some("warn" | "fail")))
     );
 }
-#[test]
-fn feature_environment_inspection_matrix() {
-    let missing = fixture();
-    let env = missing.journal_path.parent().unwrap().join("venv");
-    fs::create_dir_all(env.join("lib/python3.13/site-packages")).unwrap();
-    let mut missing = missing;
-    missing.python_env_root = Some(env.clone());
-    let absent = result("feature:pdf-import", &missing);
-    assert_eq!(absent.status, Status::Warn);
-    assert_eq!(absent.detail, "PDF document extraction not installed");
-    fs::create_dir_all(env.join("lib/python3.13/site-packages/pypdfium2")).unwrap();
-    fs::write(
-        env.join("lib/python3.13/site-packages/pypdfium2/__init__.py"),
-        "",
-    )
-    .unwrap();
-    fs::create_dir_all(env.join("lib/python3.13/site-packages/PIL")).unwrap();
-    fs::write(env.join("lib/python3.13/site-packages/PIL/__init__.py"), "").unwrap();
-    let present = result("feature:pdf-import", &missing);
-    assert_eq!(present.status, Status::Ok);
-    assert_eq!(present.detail, "PDF document extraction available");
-
-    let export = fixture();
-    let env = export.journal_path.parent().unwrap().join("export-venv");
-    fs::create_dir_all(env.join("lib/python3.13/site-packages")).unwrap();
-    let mut export = export;
-    export.python_env_root = Some(env.clone());
-    let absent = result("feature:pdf-export", &export);
-    assert_eq!(absent.status, Status::Warn);
-    assert_eq!(
-        absent.fix.as_deref(),
-        Some("pip install 'solstone[pdf-export]' and apt install libpango-1.0-0 libpangoft2-1.0-0")
-    );
-    export.platform = Platform::Darwin;
-    assert_eq!(
-        result("feature:pdf-export", &export).fix.as_deref(),
-        Some("pip install 'solstone[pdf-export]' and brew install pango")
-    );
-    fs::create_dir_all(env.join("lib/python3.13/site-packages/weasyprint")).unwrap();
-    fs::write(
-        env.join("lib/python3.13/site-packages/weasyprint/__init__.py"),
-        "",
-    )
-    .unwrap();
-    let present = result("feature:pdf-export", &export);
-    assert_eq!(present.status, Status::Ok);
-    assert_eq!(present.detail, "PDF export rendering available");
-}
-
 #[test]
 fn brain_unconstructible_snapshot_is_an_explicit_warning() {
     let context = fixture();
@@ -1209,7 +1123,7 @@ fn owner_boundary_guard_is_nonvacuous() {
         ("skill_state", "solstone_core_skill_state"),
     ];
     let accepts = |module: &str, source: &str| {
-        ["orphan_segment_pdf", "feature"].contains(&module)
+        module == "orphan_segment_pdf"
             || owners
                 .iter()
                 .find(|(name, _)| *name == module)
@@ -1235,7 +1149,6 @@ fn owner_boundary_guard_is_nonvacuous() {
         assert!(accepts(module, &source), "{module} must consume {owner}");
     }
     assert!(accepts("orphan_segment_pdf", "std::fs::read_dir"));
-    assert!(accepts("feature", "std::fs::read_dir"));
     assert!(!accepts("brain", "fn run() {}"));
     let cargo = include_str!("../Cargo.toml");
     for dependency in [

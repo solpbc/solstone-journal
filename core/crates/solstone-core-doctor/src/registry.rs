@@ -34,7 +34,6 @@ pub struct RegistryEntry {
     pub check: Check,
     pub runner: Runner,
     pub deferred: Option<DeferredCheckSet>,
-    pub feature: Option<&'static str>,
 }
 const BOTH: &[Platform] = &[Platform::Linux, Platform::Darwin];
 const DARWIN: &[Platform] = &[Platform::Darwin];
@@ -56,35 +55,11 @@ fn conflict(c: &CheckContext) -> RunnerResult {
 fn plist(c: &CheckContext) -> RunnerResult {
     checks::launchd_stale_plist::run(c, CHECK_PLIST)
 }
-fn journal_leaf_exclusivity(c: &CheckContext) -> RunnerResult {
-    checks::journal_leaf_exclusivity::run(c, CHECK_JOURNAL_LEAF_EXCLUSIVITY)
-}
-fn journal_package_version(c: &CheckContext) -> RunnerResult {
-    checks::journal_package_version::run(c, CHECK_JOURNAL_PACKAGE_VERSION)
-}
-fn retired_host_shim(c: &CheckContext) -> RunnerResult {
-    checks::retired_host_shim::run(c, CHECK_RETIRED_HOST_SHIM)
-}
-fn host_dependencies(c: &CheckContext) -> RunnerResult {
-    checks::host_dependencies::run(c, CHECK_HOST_DEPENDENCIES)
-}
 fn disk_space(c: &CheckContext) -> RunnerResult {
     checks::disk_space::run(c, CHECK_DISK_SPACE)
 }
-fn python_version(c: &CheckContext) -> RunnerResult {
-    checks::python_version::run(c, CHECK_PYTHON_VERSION)
-}
 fn service_identity(c: &CheckContext) -> RunnerResult {
     checks::service_identity::run(c, CHECK_SERVICE_IDENTITY)
-}
-fn stale_alias_journal(c: &CheckContext) -> RunnerResult {
-    checks::stale_alias_symlink::run(c, CHECK_STALE_ALIAS_SYMLINK, "journal")
-}
-fn stale_alias_sol(c: &CheckContext) -> RunnerResult {
-    checks::stale_alias_symlink::run(c, CHECK_STALE_ALIAS_SYMLINK, "sol")
-}
-fn sol_importable(c: &CheckContext) -> RunnerResult {
-    checks::sol_importable::run(c, CHECK_SOL_IMPORTABLE)
 }
 fn local_bin_sol_reachable(c: &CheckContext) -> RunnerResult {
     checks::local_bin_sol_reachable::run(c, CHECK_LOCAL_BIN_SOL_REACHABLE)
@@ -128,12 +103,6 @@ fn speakers(c: &CheckContext) -> RunnerResult {
 fn skills(c: &CheckContext) -> RunnerResult {
     checks::skill_state::run(c, CHECK_SKILLS)
 }
-fn pdf_import(c: &CheckContext) -> RunnerResult {
-    checks::feature::run("pdf-import", c, CHECK_PDF_IMPORT)
-}
-fn pdf_export(c: &CheckContext) -> RunnerResult {
-    checks::feature::run("pdf-export", c, CHECK_PDF_EXPORT)
-}
 const CHECK_CONFIG: Check = Check {
     name: "config_dir_readable",
     severity: Severity::Blocker,
@@ -159,48 +128,13 @@ const CHECK_PLIST: Check = Check {
     severity: Severity::Advisory,
     platforms: DARWIN,
 };
-const CHECK_JOURNAL_LEAF_EXCLUSIVITY: Check = Check {
-    name: "journal_leaf_exclusivity",
-    severity: Severity::Blocker,
-    platforms: BOTH,
-};
-const CHECK_JOURNAL_PACKAGE_VERSION: Check = Check {
-    name: "journal_package_version",
-    severity: Severity::Blocker,
-    platforms: BOTH,
-};
-const CHECK_RETIRED_HOST_SHIM: Check = Check {
-    name: "retired_host_shim",
-    severity: Severity::Advisory,
-    platforms: BOTH,
-};
-const CHECK_HOST_DEPENDENCIES: Check = Check {
-    name: "host_dependencies",
-    severity: Severity::Blocker,
-    platforms: BOTH,
-};
 const CHECK_DISK_SPACE: Check = Check {
     name: "disk_space",
     severity: Severity::Advisory,
     platforms: BOTH,
 };
-const CHECK_PYTHON_VERSION: Check = Check {
-    name: "python_version",
-    severity: Severity::Blocker,
-    platforms: BOTH,
-};
 const CHECK_SERVICE_IDENTITY: Check = Check {
     name: "service_identity",
-    severity: Severity::Blocker,
-    platforms: BOTH,
-};
-const CHECK_STALE_ALIAS_SYMLINK: Check = Check {
-    name: "stale_alias_symlink",
-    severity: Severity::Blocker,
-    platforms: BOTH,
-};
-const CHECK_SOL_IMPORTABLE: Check = Check {
-    name: "sol_importable",
     severity: Severity::Blocker,
     platforms: BOTH,
 };
@@ -274,252 +208,138 @@ const CHECK_SKILLS: Check = Check {
     severity: Severity::Advisory,
     platforms: BOTH,
 };
-const CHECK_PDF_IMPORT: Check = Check {
-    name: "feature:pdf-import",
-    severity: Severity::Advisory,
-    platforms: BOTH,
-};
-const CHECK_PDF_EXPORT: Check = Check {
-    name: "feature:pdf-export",
-    severity: Severity::Advisory,
-    platforms: BOTH,
-};
 pub static JOURNAL: &[RegistryEntry] = &[
-    RegistryEntry {
-        check: CHECK_JOURNAL_LEAF_EXCLUSIVITY,
-        runner: journal_leaf_exclusivity,
-        deferred: None,
-        feature: None,
-    },
-    RegistryEntry {
-        check: CHECK_JOURNAL_PACKAGE_VERSION,
-        runner: journal_package_version,
-        deferred: None,
-        feature: None,
-    },
-    RegistryEntry {
-        check: CHECK_RETIRED_HOST_SHIM,
-        runner: retired_host_shim,
-        deferred: None,
-        feature: None,
-    },
-    RegistryEntry {
-        check: CHECK_HOST_DEPENDENCIES,
-        runner: host_dependencies,
-        deferred: None,
-        feature: None,
-    },
     RegistryEntry {
         check: CHECK_DISK_SPACE,
         runner: disk_space,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_CONFIG,
         runner: config,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_WRITABLE,
         runner: journal_writable,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_CONFLICT,
         runner: conflict,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_SERVICE_IDENTITY,
         runner: service_identity,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_SERVICE,
         runner: service,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_SYNC,
         runner: journal_sync,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_CAUGHT_UP,
         runner: caught_up,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_TASK_PACE,
         runner: task_pace,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_BRAIN,
         runner: brain,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_CAPTURE,
         runner: capture,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_BINDING,
         runner: binding,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_DELIVERY,
         runner: delivery,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_INGEST,
         runner: ingest,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_ORPHAN,
         runner: orphan,
         deferred: None,
-        feature: None,
-    },
-    RegistryEntry {
-        check: CHECK_STALE_ALIAS_SYMLINK,
-        runner: stale_alias_journal,
-        deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_PLIST,
         runner: plist,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_DEFAULT_STT,
         runner: default_stt,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_CPP_STT,
         runner: cpp_stt,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_SPEAKERS,
         runner: speakers,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_SKILLS,
         runner: skills,
         deferred: None,
-        feature: None,
-    },
-    RegistryEntry {
-        check: CHECK_PDF_IMPORT,
-        runner: pdf_import,
-        deferred: None,
-        feature: Some("pdf-import"),
-    },
-    RegistryEntry {
-        check: CHECK_PDF_EXPORT,
-        runner: pdf_export,
-        deferred: None,
-        feature: Some("pdf-export"),
     },
 ];
 pub static READINESS: &[RegistryEntry] = &[
     RegistryEntry {
-        check: CHECK_HOST_DEPENDENCIES,
-        runner: host_dependencies,
-        deferred: None,
-        feature: None,
-    },
-    RegistryEntry {
-        check: CHECK_PYTHON_VERSION,
-        runner: python_version,
-        deferred: None,
-        feature: None,
-    },
-    RegistryEntry {
-        check: CHECK_SOL_IMPORTABLE,
-        runner: sol_importable,
-        deferred: None,
-        feature: None,
-    },
-    RegistryEntry {
         check: CHECK_LOCAL_BIN_SOL_REACHABLE,
         runner: local_bin_sol_reachable,
         deferred: None,
-        feature: None,
-    },
-    RegistryEntry {
-        check: CHECK_STALE_ALIAS_SYMLINK,
-        runner: stale_alias_sol,
-        deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_DISK_SPACE,
         runner: disk_space,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_WRITABLE,
         runner: readiness_writable,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_DEFAULT_STT,
         runner: default_stt,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_CPP_STT,
         runner: cpp_stt,
         deferred: None,
-        feature: None,
     },
     RegistryEntry {
         check: CHECK_SPEAKERS,
         runner: speakers,
         deferred: None,
-        feature: None,
-    },
-    RegistryEntry {
-        check: CHECK_PDF_IMPORT,
-        runner: pdf_import,
-        deferred: None,
-        feature: Some("pdf-import"),
-    },
-    RegistryEntry {
-        check: CHECK_PDF_EXPORT,
-        runner: pdf_export,
-        deferred: None,
-        feature: Some("pdf-export"),
     },
 ];
 pub fn entries(battery: Battery) -> &'static [RegistryEntry] {
@@ -530,9 +350,6 @@ pub fn entries(battery: Battery) -> &'static [RegistryEntry] {
 }
 pub fn lookup(b: Battery, name: &str) -> Option<&'static RegistryEntry> {
     entries(b).iter().find(|e| e.check.name == name)
-}
-pub fn feature_entries() -> impl Iterator<Item = &'static RegistryEntry> {
-    JOURNAL.iter().filter(|e| e.feature.is_some())
 }
 pub fn union_names() -> BTreeSet<&'static str> {
     JOURNAL

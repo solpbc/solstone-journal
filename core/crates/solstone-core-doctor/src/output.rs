@@ -42,15 +42,9 @@ pub fn summary_status(results: &[CheckResult]) -> &'static str {
         "ok"
     }
 }
-pub fn emit_jsonl(
-    results: &[CheckResult],
-    started_at: &str,
-    duration_ms: u128,
-    port: u16,
-    feature: Option<&str>,
-) {
+pub fn emit_jsonl(results: &[CheckResult], started_at: &str, duration_ms: u128, port: u16) {
     let mut out = std::io::stdout().lock();
-    emit_jsonl_to(&mut out, results, started_at, duration_ms, port, feature);
+    emit_jsonl_to(&mut out, results, started_at, duration_ms, port);
 }
 
 pub fn emit_jsonl_to(
@@ -59,13 +53,12 @@ pub fn emit_jsonl_to(
     started_at: &str,
     duration_ms: u128,
     port: u16,
-    feature: Option<&str>,
 ) {
     let now = || Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
     let _ = writeln!(
         writer,
         "{}",
-        json!({"event":"doctor.started","ts":now(),"started_at":started_at,"version":env!("CARGO_PKG_VERSION"),"port":port,"feature":feature.unwrap_or("")})
+        json!({"event":"doctor.started","ts":now(),"started_at":started_at,"version":env!("CARGO_PKG_VERSION"),"port":port})
     );
     for r in results {
         let status = match r.status {

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use chrono::TimeZone;
+use solstone_core_journal::{LAYOUT_BUNDLE_ANCHOR, LAYOUT_LAYOUT_ANCHOR, LAYOUT_TEMPLATE_ANCHOR};
 use std::{
     fs,
     ops::Deref,
@@ -57,12 +58,12 @@ pub(crate) fn context() -> StagedContext {
             hostname: "test-host".into(),
             machine_id: Some("test-machine".into()),
             checkout_root: None,
-            python_env_root: None,
             port: 5015,
             service_status_timeout: Duration::from_millis(10),
             service_status_command_override: None,
             parakeet_server_probe_override: None,
             speakers_analyze_resolvers: None,
+            free_space_bytes_override: None,
         },
         _root: TempRoot(root),
     }
@@ -76,32 +77,21 @@ pub(crate) fn check(name: &'static str, severity: Severity) -> Check {
     }
 }
 
-pub(crate) fn site_packages(context: &CheckContext, python: &str) -> PathBuf {
+pub(crate) fn layout_install_root(context: &CheckContext) -> PathBuf {
     let prefix = context
         .install_bin_dir
         .parent()
         .expect("staged install bin has a prefix");
-    let site_packages = prefix.join("lib").join(python).join("site-packages");
-    fs::create_dir_all(site_packages.join("solstone")).expect("create staged solstone package");
-    fs::write(site_packages.join("solstone/__init__.py"), "").expect("write package marker");
-    site_packages
-}
-
-pub(crate) fn metadata(
-    site_packages: &std::path::Path,
-    directory: &str,
-    name: &str,
-    version: &str,
-    requires_python: Option<&str>,
-) {
-    let dist_info = site_packages.join(directory);
-    fs::create_dir_all(&dist_info).expect("create staged dist-info");
-    let requires_python = requires_python
-        .map(|value| format!("Requires-Python: {value}\n"))
-        .unwrap_or_default();
-    fs::write(
-        dist_info.join("METADATA"),
-        format!("Name: {name}\nVersion: {version}\n{requires_python}\n"),
-    )
-    .expect("write staged metadata");
+    let share = prefix.join("share");
+    for anchor in [
+        LAYOUT_BUNDLE_ANCHOR,
+        LAYOUT_LAYOUT_ANCHOR,
+        LAYOUT_TEMPLATE_ANCHOR,
+    ] {
+        let path = share.join(anchor);
+        fs::create_dir_all(path.parent().expect("anchor has a parent"))
+            .expect("create staged layout anchor parent");
+        fs::write(path, "").expect("write staged layout anchor");
+    }
+    prefix.to_path_buf()
 }

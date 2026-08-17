@@ -65,12 +65,12 @@ fn context() -> (CheckContext, TestRoot) {
             hostname: "test-host".into(),
             machine_id: Some("test-machine".into()),
             checkout_root: None,
-            python_env_root: None,
             port: 5015,
             service_status_timeout: Duration::from_millis(10),
             service_status_command_override: None,
             parakeet_server_probe_override: None,
             speakers_analyze_resolvers: None,
+            free_space_bytes_override: None,
         },
         TestRoot(root),
     )
@@ -288,12 +288,12 @@ fn poison_battery_context(root: &Path) -> CheckContext {
         hostname: "fixture-host".into(),
         machine_id: Some("fixture-machine".into()),
         checkout_root: None,
-        python_env_root: Some(root.join("venv")),
         port: 5015,
         service_status_timeout: Duration::from_millis(1),
         service_status_command_override: None,
         parakeet_server_probe_override: Some(parakeet_unreachable_probe),
         speakers_analyze_resolvers: Some((speakers_binary_missing, speakers_model_ready)),
+        free_space_bytes_override: None,
     }
 }
 
@@ -309,7 +309,6 @@ fn run_poison_battery_child(root: &Path) {
             json: false,
             jsonl: false,
             port: 5015,
-            feature: None,
             readiness: false,
         },
         &context,
@@ -322,7 +321,6 @@ fn run_poison_battery_child(root: &Path) {
                 json: false,
                 jsonl: false,
                 port: 5015,
-                feature: None,
                 readiness: false,
             }
         },
@@ -338,10 +336,6 @@ fn run_poison_battery_child(root: &Path) {
     assert_eq!(
         verdicts(&journal),
         BTreeMap::from([
-            ("journal_leaf_exclusivity", Status::Skip),
-            ("journal_package_version", Status::Skip),
-            ("retired_host_shim", Status::Skip),
-            ("host_dependencies", Status::Skip),
             ("disk_space", Status::Skip),
             ("config_dir_readable", Status::Ok),
             ("journal_dir_writable", Status::Ok),
@@ -357,31 +351,22 @@ fn run_poison_battery_child(root: &Path) {
             ("observer_delivery_stall", Status::Skip),
             ("observer_ingest_health", Status::Skip),
             ("orphan_segment_pdf", Status::Skip),
-            ("stale_alias_symlink", Status::Skip),
             ("launchd_stale_plist", Status::Skip),
             ("default_stt_ready", Status::Warn),
             ("parakeet_cpp_stt_ready", Status::Skip),
             ("speakers_analyze_installation", Status::Fail),
             ("skill_state", Status::Skip),
-            ("feature:pdf-import", Status::Warn),
-            ("feature:pdf-export", Status::Warn),
         ])
     );
     assert_eq!(
         verdicts(&readiness),
         BTreeMap::from([
-            ("host_dependencies", Status::Skip),
-            ("python_version", Status::Skip),
-            ("sol_importable", Status::Skip),
             ("local_bin_sol_reachable", Status::Warn),
-            ("stale_alias_symlink", Status::Skip),
             ("disk_space", Status::Skip),
             ("journal_dir_writable", Status::Ok),
             ("default_stt_ready", Status::Warn),
             ("parakeet_cpp_stt_ready", Status::Skip),
             ("speakers_analyze_installation", Status::Fail),
-            ("feature:pdf-import", Status::Warn),
-            ("feature:pdf-export", Status::Warn),
         ])
     );
 }

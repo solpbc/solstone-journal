@@ -3568,7 +3568,6 @@ fn run_doctor(args: solstone_core_doctor::args::DoctorArgs) -> ExitCode {
             &started,
             started_at.elapsed().as_millis(),
             args.port,
-            args.feature.as_deref(),
         );
     } else {
         solstone_core_doctor::output::emit_text(&results, args.verbose);

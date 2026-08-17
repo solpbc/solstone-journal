@@ -3,7 +3,6 @@
 pub mod args;
 pub mod checks;
 pub mod context;
-pub mod features;
 pub mod output;
 pub mod registry;
 pub mod vocabulary;
@@ -11,15 +10,6 @@ use context::CheckContext;
 use registry::{Battery, RegistryEntry};
 use vocabulary::*;
 pub fn run(args: &args::DoctorArgs, context: &CheckContext) -> Vec<CheckResult> {
-    if let Some(feature) = &args.feature {
-        return run_entry(
-            registry::lookup(Battery::Journal, &format!("feature:{feature}"))
-                .expect("validated feature"),
-            context,
-        )
-        .into_iter()
-        .collect();
-    }
     let battery = if args.readiness {
         Battery::JournalReadiness
     } else {
@@ -125,17 +115,17 @@ mod tests {
             hostname: "test-host".into(),
             machine_id: Some("test-machine".into()),
             checkout_root: None,
-            python_env_root: None,
             port: 5015,
             service_status_timeout: Duration::from_millis(10),
             service_status_command_override: None,
             parakeet_server_probe_override: None,
             speakers_analyze_resolvers: None,
+            free_space_bytes_override: None,
         }
     }
     #[test]
     fn registry_ground_truth() {
-        assert_eq!(registry::union_names().len(), 30);
+        assert_eq!(registry::union_names().len(), 21);
         assert_eq!(
             registry::union_names()
                 .iter()
@@ -143,7 +133,7 @@ mod tests {
                     .or_else(|| registry::lookup(Battery::JournalReadiness, name))
                     .is_some())
                 .count(),
-            30
+            21
         );
         assert_eq!(
             registry::union_names()
@@ -157,23 +147,6 @@ mod tests {
                 .count(),
             0
         )
-    }
-    #[test]
-    fn ac1_feature_grammar_and_override() {
-        assert!(
-            args::parse_doctor_args(&[
-                "--feature".into(),
-                "pdf-import".into(),
-                "--readiness".into()
-            ])
-            .is_ok()
-        );
-        assert!(
-            args::parse_doctor_args(&["--feature".into(), "nope".into()])
-                .unwrap_err()
-                .0
-                .contains("pdf-export, pdf-import")
-        );
     }
     #[test]
     fn ac2_doctor_usage_parse_error() {
@@ -242,7 +215,7 @@ mod tests {
             make_result(check("skip"), Status::Skip, "skip", None::<String>),
         ];
         let mut bytes = Vec::new();
-        output::emit_jsonl_to(&mut bytes, &results, "2026-01-01T00:00:00Z", 7, 5015, None);
+        output::emit_jsonl_to(&mut bytes, &results, "2026-01-01T00:00:00Z", 7, 5015);
         let lines = String::from_utf8(bytes)
             .unwrap()
             .lines()
@@ -250,7 +223,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(lines.len(), 6);
         assert_eq!(lines[0]["event"], "doctor.started");
-        for key in ["event", "ts", "started_at", "version", "port", "feature"] {
+        for key in ["event", "ts", "started_at", "version", "port"] {
             assert!(lines[0].get(key).is_some());
         }
         assert_eq!(
@@ -365,7 +338,6 @@ mod tests {
                 },
                 runner: |_| panic!("runner"),
                 deferred: None,
-                feature: None,
             },
             &c,
         )
@@ -530,8 +502,8 @@ mod tests {
         assert_ne!(b.detail, "no local journal");
     }
     #[test]
-    fn ac12_union_is_native_only_30_names() {
-        assert_eq!(registry::union_names().len(), 30);
+    fn ac12_union_is_native_only_21_names() {
+        assert_eq!(registry::union_names().len(), 21);
     }
     #[test]
     fn ac13_battery_is_read_only_for_missing_paths() {
@@ -571,7 +543,6 @@ mod tests {
                 json: false,
                 jsonl: false,
                 port: 5015,
-                feature: None,
                 readiness: false,
             },
             &c,
@@ -582,7 +553,6 @@ mod tests {
                 json: false,
                 jsonl: false,
                 port: 5015,
-                feature: None,
                 readiness: true,
             },
             &c,
