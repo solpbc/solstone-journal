@@ -4010,3 +4010,16 @@ timeout = "quick"
 default_full = true
 required_features = []
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-repository-contracts::repository_payload_inventory"
+package = "solstone-core-repository-contracts"
+target = "repository_payload_inventory"
+set = "policy"
+areas = ["repository"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "quick"
+default_full = true
+required_features = []
+runtime = "none"

@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 pub mod ci;
+#[cfg(test)]
+mod payload_inventory;
 
 #[cfg(test)]
 #[path = "contracts/ci_gate_purity.rs"]
