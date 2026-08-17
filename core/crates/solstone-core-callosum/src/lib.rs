@@ -20,13 +20,13 @@ pub use reader::{
     read_durable_events,
 };
 pub use registry::callosum_registry;
+#[cfg(all(feature = "wire", any(test, feature = "test-hooks")))]
+#[doc(hidden)]
+pub use wire::test_support;
 #[cfg(feature = "wire")]
 pub use wire::{
     CallosumConnectionPhase, CallosumGapReason, CallosumReceiveEvent, CallosumRetrySource,
     CallosumSocketConnection, CallosumSocketServer, CallosumSocketServerError,
     CallosumStoppedReason, TokioRetrySource,
 };
-#[cfg(all(feature = "wire", any(test, feature = "test-hooks")))]
-#[doc(hidden)]
-pub use wire::test_support;
 pub use writer::{CallosumWriteError, append_durable_event};

@@ -339,7 +339,8 @@ async fn run_client(
 }
 
 async fn write_client_line(
-    #[cfg_attr(not(any(test, feature = "test-hooks")), allow(unused_variables))] inner: &ServerInner,
+    #[cfg_attr(not(any(test, feature = "test-hooks")), allow(unused_variables))]
+    inner: &ServerInner,
     #[cfg_attr(not(any(test, feature = "test-hooks")), allow(unused_variables))] id: u64,
     write_half: &mut tokio::net::unix::OwnedWriteHalf,
     line: &[u8],
