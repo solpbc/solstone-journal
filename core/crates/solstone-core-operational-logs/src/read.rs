@@ -675,6 +675,9 @@ mod tests {
         {
             match case.id.as_str() {
                 "enumeration-membership-and-order" => {
+                    if cfg!(target_os = "macos") {
+                        continue;
+                    }
                     let temporary = TempDir::new().unwrap();
                     let directory = temporary.path().join("health");
                     std::fs::create_dir(&directory).unwrap();
@@ -737,6 +740,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn surrogateescape_sorting_beats_raw_directory_order() {
         let temporary = TempDir::new().unwrap();
         let directory = temporary.path().join("health");

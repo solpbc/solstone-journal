@@ -972,14 +972,17 @@ mod tests {
         .unwrap();
         std::fs::write(directory.path().join("ignored.txt"), b"").unwrap();
         let valid = OsString::from("a-\u{80}.log");
+        #[cfg(target_os = "linux")]
         let invalid = OsString::from_vec(b"a-\x80.log".to_vec());
         std::fs::write(directory.path().join(&valid), b"").unwrap();
+        #[cfg(target_os = "linux")]
         std::fs::write(directory.path().join(&invalid), b"").unwrap();
 
         let names = StdFollowFs.list_top_level_logs(directory.path()).unwrap();
         assert!(names.contains(&OsString::from("regular.log")));
         assert!(names.contains(&OsString::from("linked.log")));
         assert!(!names.contains(&OsString::from("ignored.txt")));
+        #[cfg(target_os = "linux")]
         assert!(
             names.iter().position(|name| name == &valid).unwrap()
                 < names.iter().position(|name| name == &invalid).unwrap()
