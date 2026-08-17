@@ -169,7 +169,21 @@ digest_file() {
 
 parse_sha256_file() {
 	_path=$1
-	_line=$(awk 'NF {print; exit}' "$_path")
+	_want=$2
+	[ -n "$_want" ] || refuse digest-mismatch "sha256 sidecar"
+	_line=$(awk -v w="$_want" '
+		NF < 2 { next }
+		{
+			name = $2
+			base = name
+			sub(/^.*\//, "", base)
+			if (name == w || base == w) {
+				print
+				exit
+			}
+		}
+	' "$_path")
+	[ -n "$_line" ] || refuse digest-mismatch "sha256 sidecar"
 	_digest=${_line%% *}
 	is_hex "$_digest" 64 || refuse digest-mismatch "sha256 sidecar"
 	printf '%s' "$_digest"
@@ -408,6 +422,7 @@ if [ -n "$ARCHIVE" ]; then
 	cp "$ARCHIVE" "$WORK/tree.tar.gz"
 	cp "$SHA256_FILE" "$WORK/tree.sha256"
 	cp "$RELEASE_FILE" "$WORK/tree.release"
+	_archive_name=${ARCHIVE##*/}
 else
 	[ -n "$VERSION" ] || refuse release-invalid "version required to fetch"
 	_base=${PRODUCT}-${VERSION}-${TARGET}
@@ -419,9 +434,10 @@ else
 	fetch_url "${_origin}/${_base}.tar.gz" "$WORK/tree.tar.gz"
 	fetch_url "${_origin}/${_base}.sha256" "$WORK/tree.sha256"
 	fetch_url "${_origin}/${_base}.release" "$WORK/tree.release"
+	_archive_name=${_base}.tar.gz
 fi
 
-EXPECTED=$(parse_sha256_file "$WORK/tree.sha256")
+EXPECTED=$(parse_sha256_file "$WORK/tree.sha256" "$_archive_name")
 ACTUAL=$(digest_file "$WORK/tree.tar.gz")
 [ "$EXPECTED" = "$ACTUAL" ] || refuse digest-mismatch
 DIGEST12=$(printf '%s' "$ACTUAL" | cut -c1-12)

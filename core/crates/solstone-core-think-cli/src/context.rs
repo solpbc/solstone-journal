@@ -87,10 +87,15 @@ pub(crate) struct ThinkContext {
 }
 
 impl ThinkContext {
-    pub(crate) fn new(journal: &Path, day: String, day_dir: PathBuf, now_ms: i64) -> Self {
-        let (talent_root, apps_root) = package_roots();
+    pub(crate) fn new(
+        journal: &Path,
+        day: String,
+        day_dir: PathBuf,
+        now_ms: i64,
+    ) -> Result<Self, String> {
+        let (talent_root, apps_root) = package_roots()?;
         let allocator_now = now_ms;
-        Self {
+        Ok(Self {
             journal: journal.to_path_buf(),
             day,
             day_dir,
@@ -104,7 +109,7 @@ impl ThinkContext {
             ))),
             index: Arc::new(NativeIndexBoundary),
             status: ThinkStatus::default(),
-        }
+        })
     }
 
     #[cfg(test)]
@@ -127,12 +132,14 @@ impl ThinkContext {
     }
 }
 
-fn package_roots() -> (PathBuf, PathBuf) {
+fn package_roots() -> Result<(PathBuf, PathBuf), String> {
     std::env::current_exe()
         .ok()
         .and_then(|path| path.parent().map(Path::to_path_buf))
         .and_then(|directory| package_roots_from_executable_dir(&directory))
-        .unwrap_or((PathBuf::new(), PathBuf::new()))
+        .ok_or_else(|| {
+            "could not locate packaged talent roots from the current executable".to_owned()
+        })
 }
 
 fn package_roots_from_executable_dir(executable_dir: &Path) -> Option<(PathBuf, PathBuf)> {

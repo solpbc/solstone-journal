@@ -65,13 +65,6 @@ fn data_tar(stage: &Path) -> io::Result<Vec<u8>> {
     builder.into_inner()
 }
 
-pub fn list_deb(path: &Path) -> io::Result<Vec<String>> {
-    Ok(deb_records(path)?
-        .into_iter()
-        .map(|record| record.dest)
-        .collect())
-}
-
 pub fn deb_records(path: &Path) -> io::Result<Vec<FileRecord>> {
     let bytes = fs::read(path)?;
     let members = read_archive(&bytes)?;

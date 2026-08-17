@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 use crate::archive::refuse_escape;
 use crate::inventory::{CleanroomSubject, Inventory, digest_is_pinned, format_named_list};
 
-pub const LOOPBACK_HOST: &str = "127.0.0.1";
 pub const SUBJECT_NETWORK: &str = "none";
 pub const FORBIDDEN_SUBJECT_TOOLS: &[&str] = &["python", "python3", "pip", "pipx", "maturin"];
 

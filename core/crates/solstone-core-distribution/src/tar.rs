@@ -63,20 +63,6 @@ fn append_file<W: io::Write>(
     Ok(())
 }
 
-pub fn list_tar_gz(path: &Path) -> io::Result<Vec<String>> {
-    Ok(tar_records(&fs::read(path)?)?
-        .into_iter()
-        .map(|record| record.dest)
-        .collect())
-}
-
-pub fn list_tar_gz_bytes(bytes: &[u8]) -> io::Result<Vec<String>> {
-    Ok(tar_records(bytes)?
-        .into_iter()
-        .map(|record| record.dest)
-        .collect())
-}
-
 pub fn tar_records(bytes: &[u8]) -> io::Result<Vec<FileRecord>> {
     let decoder = GzDecoder::new(bytes);
     let mut archive = tar::Archive::new(decoder);

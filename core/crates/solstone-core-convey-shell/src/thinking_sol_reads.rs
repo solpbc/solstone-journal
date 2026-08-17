@@ -35,15 +35,13 @@ pub(crate) struct TalentRoots {
 }
 
 impl TalentRoots {
-    pub(crate) fn production() -> Self {
+    pub(crate) fn production() -> Result<Self, String> {
         std::env::current_exe()
             .ok()
             .and_then(|path| path.parent().map(PathBuf::from))
             .and_then(|directory| Self::from_executable_dir(&directory))
-            .unwrap_or_else(|| Self {
-                talent_root: PathBuf::new(),
-                apps_root: PathBuf::new(),
-                templates_dir: PathBuf::new(),
+            .ok_or_else(|| {
+                "could not locate packaged talent roots from the current executable".to_owned()
             })
     }
 

@@ -159,7 +159,8 @@ where
 
         let now_ms = now_ms();
         let context =
-            context::ThinkContext::new(journal, selected_day.clone(), day_dir.clone(), now_ms);
+            context::ThinkContext::new(journal, selected_day.clone(), day_dir.clone(), now_ms)
+                .map_err(|message| CliError::InvalidDay { message })?;
         if parsed.dry_run {
             return Ok(CliRun {
                 stdout: dry_run::run(&context, &parsed, default_segment_workers)
@@ -577,6 +578,7 @@ mod tests {
         let day_dir = day::create_day(journal, day).unwrap();
         (
             context::ThinkContext::new(journal, day.to_owned(), day_dir, now_ms)
+                .expect("think context")
                 .with_boundary(recorder.clone()),
             recorder,
         )
@@ -3416,6 +3418,7 @@ mod tests {
         let day_dir = day::create_day(journal.path(), "20260101").unwrap();
         let context =
             context::ThinkContext::new(journal.path(), "20260101".to_owned(), day_dir.clone(), 1)
+                .expect("think context")
                 .with_talent_roots(talent_root, apps_root);
         let args = args::ThinkArgs {
             dry_run: true,
@@ -3460,6 +3463,7 @@ mod tests {
         let day_dir = day::create_day(journal.path(), "20260101").unwrap();
         let context =
             context::ThinkContext::new(journal.path(), "20260101".to_owned(), day_dir, 10)
+                .expect("think context")
                 .with_talent_roots(talent_root, apps_root);
         let args = args::ThinkArgs {
             cadence: true,
@@ -3487,6 +3491,7 @@ mod tests {
         );
         let day_dir = day::create_day(journal.path(), "20260101").unwrap();
         let context = context::ThinkContext::new(journal.path(), "20260101".to_owned(), day_dir, 1)
+            .expect("think context")
             .with_talent_roots(talent_root, apps_root);
         let args = args::ThinkArgs {
             flush: true,
@@ -3523,6 +3528,7 @@ mod tests {
         fs::write(state, r#"[{"facet":"work"}]"#).unwrap();
         let day_dir = day::create_day(journal.path(), "20260101").unwrap();
         let context = context::ThinkContext::new(journal.path(), "20260101".to_owned(), day_dir, 1)
+            .expect("think context")
             .with_talent_roots(talent_root, apps_root);
         let args = args::ThinkArgs {
             dry_run: true,

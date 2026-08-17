@@ -204,6 +204,10 @@ bin = "solstone-generate-session-stub"
 reason = "test stub; never ship"
 
 [[deny]]
+bin = "solstone-import-web-metadata-stub"
+reason = "test stub; never ship"
+
+[[deny]]
 bin = "solstone-core-generate-session-kill-helper"
 reason = "test helper; never ship"
 
@@ -226,6 +230,18 @@ reason = "test fixture; never ship"
 [[deny]]
 bin = "solstone-core-race-classifier"
 reason = "dev classifier; never ship"
+
+[[deny]]
+bin = "solstone-core-install-lease-holder"
+reason = "test child; never ship"
+
+[[deny]]
+bin = "solstone-cortex-controller"
+reason = "test child; never ship"
+
+[[deny]]
+bin = "solstone-cortex-worker"
+reason = "test child; never ship"
 
 [[deny]]
 bin = "maint-worker-helper"

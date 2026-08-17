@@ -153,6 +153,29 @@ case $_mode in
 *) fail "unrelated mode preserved: $_mode" ;;
 esac
 
+# reordered sidecar: match the archive filename, not the first line
+_digest=$(sha256sum "$ARCHIVE" | awk '{print $1}')
+printf '%s\n' \
+	"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  other.deb" \
+	"${_digest}  good.tar.gz" \
+	"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  other.rpm" \
+	>"$BASE/reordered.sha256"
+REORDER_HOME=$BASE/reorder-home
+mkdir -p "$REORDER_HOME"
+if env HOME="$REORDER_HOME" SOLSTONE_PROFILE="$REORDER_HOME/.profile" \
+	"$INSTALL" --prefix "$BASE/reorder-prefix" --archive "$ARCHIVE" --sha256 "$BASE/reordered.sha256" --release "$REL"; then
+	pass "reordered sidecar"
+else
+	fail "reordered sidecar"
+fi
+printf '%s\n' \
+	"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  other.deb" \
+	"${_digest}  other.tar.gz" \
+	>"$BASE/wrong-name.sha256"
+expect_refuse digest-mismatch sidecar-filename \
+	env HOME="$REORDER_HOME" \
+	"$INSTALL" --prefix "$BASE/wrong-prefix" --archive "$ARCHIVE" --sha256 "$BASE/wrong-name.sha256" --release "$REL"
+
 # profile block
 if grep -q 'BEGIN solstone-journal PATH' "$HOME/.profile"; then
 	pass "profile marked block"

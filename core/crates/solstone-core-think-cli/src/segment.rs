@@ -899,7 +899,7 @@ fn persist_ended_activities(
                 routing_day.to_owned(),
                 context.journal.join("chronicle").join(routing_day),
                 context.now_ms,
-            );
+            )?;
             prompt_context.talent_root = context.talent_root.clone();
             prompt_context.apps_root = context.apps_root.clone();
             prompt_context.cortex = context.cortex.clone();

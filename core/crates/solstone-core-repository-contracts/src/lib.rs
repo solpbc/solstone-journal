@@ -10,6 +10,9 @@ mod ci_gate_purity;
 #[path = "contracts/distribution_install_archive_refusals.rs"]
 mod distribution_install_archive_refusals;
 #[cfg(test)]
+#[path = "contracts/distribution_install_basename.rs"]
+mod distribution_install_basename;
+#[cfg(test)]
 #[path = "contracts/distribution_model_digests.rs"]
 mod distribution_model_digests;
 #[cfg(test)]
