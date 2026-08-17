@@ -825,12 +825,7 @@ mod disclosure_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
     use std::fs;
-    use std::process::Command;
-    use std::thread;
-
-    const ASSET_GATE_JOURNAL_ENV: &str = "SOLSTONE_CORE_ASSET_GATE_JOURNAL";
 
     macro_rules! run_inner_with_test {
         (
@@ -1167,63 +1162,6 @@ mod tests {
     }
 
     #[test]
-    fn real_asset_gate_reports_wespeaker_digest_mismatch_before_installing() {
-        if let Some(journal) = env::var_os(ASSET_GATE_JOURNAL_ENV) {
-            let journal = PathBuf::from(journal);
-            let outcome = run_inner(
-                host("linux", "x86_64", None),
-                || false,
-                options(InstallModelsVariant::Auto),
-                || Ok(journal.clone()),
-                |_, _, _| panic!("installer must not run"),
-                journal.as_path(),
-            );
-            assert_eq!(outcome.exit_code, EXIT_DATAERR);
-            assert!(outcome.stderr[0].contains("wespeaker-resnet34-256.onnx"));
-            assert!(outcome.stderr[0].contains("has sha256"));
-            assert!(outcome.stderr[0].contains(
-                "expected 5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94"
-            ));
-            assert_journal_empty(&journal);
-            return;
-        }
-
-        let journal = tempfile::tempdir().unwrap();
-        let assets = tempfile::tempdir().unwrap();
-        fs::write(
-            assets.path().join("wespeaker-resnet34-256.onnx"),
-            b"wrong digest",
-        )
-        .unwrap();
-        // The resolver reads a process-global environment variable. The workspace
-        // forbids unsafe in-process mutation, so a serial (`--test-threads=1`, as
-        // used by `make check-rust-test`) child test process owns the override.
-        let output = Command::new(env::current_exe().unwrap())
-            .arg(
-                "install_models::tests::real_asset_gate_reports_wespeaker_digest_mismatch_before_installing",
-            )
-            .arg("--exact")
-            .arg("--test-threads=1")
-            .env("SOLSTONE_TRANSCRIBE_MODEL_ASSETS_DIR", assets.path())
-            .env(ASSET_GATE_JOURNAL_ENV, journal.path())
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "child test failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        // A stale libtest filter exits successfully after running zero tests.
-        assert!(
-            stdout.contains("test result: ok. 1 passed;") && !stdout.contains("0 passed;"),
-            "child did not run exactly one test:\n{stdout}",
-        );
-        assert_journal_empty(journal.path());
-    }
-
-    #[test]
     fn blocked_fit_report_does_not_enter_the_installer() {
         let journal = tempfile::tempdir().unwrap();
         let report = fit_report::build_parakeet_fit_report_with_free_bytes(
@@ -1340,69 +1278,6 @@ mod tests {
             },
         );
         assert_eq!(outcome.exit_code, 0, "{outcome:?}");
-    }
-
-    #[test]
-    fn same_target_held_lease_is_observed_to_ready() {
-        let journal = tempfile::tempdir().unwrap();
-        let host = host("linux", "x86_64", None);
-        let key = pins::parakeet_artifact_key(&host.os_name, &host.arch).unwrap();
-        let paths = pins::parakeet_paths(journal.path(), &key);
-        for field in ["binary_path_cpu", "binary_path_vulkan", "model_path"] {
-            let path = PathBuf::from(paths[field].as_str().unwrap());
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, b"ready").unwrap();
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-            }
-        }
-        let sha = parakeet_target_sha(journal.path(), &host).unwrap();
-        let mut attempt = status::idle_status("parakeet");
-        attempt.target_fingerprint_sha256 = Some(sha);
-        let attempt = status::transition(attempt, "resolving", None, None).unwrap();
-        status::write_status(journal.path(), attempt).unwrap();
-        let held = lease::acquire(journal.path(), "parakeet").unwrap().unwrap();
-        let writer_journal = journal.path().to_path_buf();
-        let writer = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(400));
-            let current = status::read_status(&writer_journal, "parakeet").unwrap();
-            let installed = status::transition(current, "installed", None, None).unwrap();
-            status::write_status(&writer_journal, installed).unwrap();
-        });
-        let report = fit_report::build_parakeet_fit_report_with_free_bytes(
-            journal.path(),
-            "linux",
-            "x86_64",
-            Ok(u64::MAX),
-        );
-        let outcome = run_inner_with_test!(
-            host,
-            || false,
-            InstallModelsOptions {
-                check: false,
-                force: true,
-                variant: InstallModelsVariant::Auto,
-            },
-            || Ok(journal.path().to_path_buf()),
-            |_| Ok(()),
-            Some(report),
-            |_, _| Ok(()),
-            |_, _, _, _| Ok(None),
-            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
-            |_, _, _| panic!("coreml installer must not run"),
-            |_, _, _| panic!("installer must not run"),
-        );
-        writer.join().unwrap();
-        drop(held);
-        assert_eq!(outcome.exit_code, 0, "{outcome:?}");
-        assert!(
-            outcome
-                .stdout
-                .iter()
-                .any(|line| line.starts_with("model ready: "))
-        );
     }
 
     fn assert_journal_empty(journal: &Path) {

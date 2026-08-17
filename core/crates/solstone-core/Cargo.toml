@@ -68,6 +68,10 @@ name = "wrapper_write_lock_component"
 path = "tests/wrapper_write_lock_component.rs"
 required-features = ["test-hooks"]
 
+[[test]]
+name = "provider_install_component"
+path = "tests/provider_install_component.rs"
+
 [[bin]]
 name = "solstone-core-generate-session-kill-helper"
 path = "tests/bin/generate_session_kill_helper.rs"
@@ -81,6 +85,11 @@ test = false
 [[bin]]
 name = "solstone-core-race-classifier"
 path = "tests/bin/race_classifier.rs"
+test = false
+
+[[bin]]
+name = "solstone-core-install-lease-holder"
+path = "tests/bin/install_lease_holder.rs"
 test = false
 
 [dependencies]

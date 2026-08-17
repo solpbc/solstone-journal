@@ -1342,18 +1342,6 @@ id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend
 id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::new::scheduling"
 
 [[findings]]
-id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::real_asset_gate_reports_wespeaker_digest_mismatch_before_installing::process"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::same_target_held_lease_is_observed_to_ready::clock"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::same_target_held_lease_is_observed_to_ready::scheduling"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::local_preheld_lease_observes_the_existing_local_attempt::scheduling"
-
-[[findings]]
 id = "solstone-core::core/crates/solstone-core/src/supervisor/tick.rs::tests::app_observation_requires_a_captured_start_and_preserves_poll_outcomes::clock"
 
 [[findings]]

@@ -1412,41 +1412,6 @@ mod tests {
     }
 
     #[test]
-    fn local_preheld_lease_observes_the_existing_local_attempt() {
-        let journal = tempfile::tempdir().unwrap();
-        let target_sha = "local-target";
-        let mut current = status::idle_status("local");
-        current.target_fingerprint_sha256 = Some(target_sha.to_owned());
-        let current = status::transition(current, "resolving", None, None).unwrap();
-        status::write_status(journal.path(), current).unwrap();
-        let status_path = journal.path().to_path_buf();
-        let held = lease::acquire(journal.path(), "local").unwrap().unwrap();
-        let updater = std::thread::spawn(move || {
-            let current = status::read_status(&status_path, "local").unwrap();
-            let installed = status::transition(current, "installed", None, None).unwrap();
-            status::write_status(&status_path, installed).unwrap();
-        });
-
-        let outcome = observe_existing_with(
-            journal.path(),
-            "local",
-            target_sha,
-            Vec::new(),
-            Duration::from_millis(1),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
-            |_, _| {},
-        );
-        updater.join().unwrap();
-        drop(held);
-        assert_eq!(outcome.exit_code, 0);
-        assert_eq!(
-            serde_json::from_str::<Value>(&outcome.stdout[0]).unwrap()["install_state"],
-            "installed"
-        );
-    }
-
-    #[test]
     fn local_override_accepts_python_integer_strings_but_corrupt_config_surfaces() {
         let configured = json!({"providers":{"local":{"vulkan_device_index":" 2 "}}});
         let value = configured["providers"]["local"]["vulkan_device_index"].clone();
