@@ -260,6 +260,25 @@ where
     Fail: Fn(Option<String>, &'static str, String) -> Infallible + Send + Sync + Clone + 'static,
     Abort: Fn() -> Infallible + Send + 'static,
 {
+    run_session_with_observer(reader, out, config, host, |_, _| {})
+}
+
+fn run_session_with_observer<Respond, Fail, Abort, Observe>(
+    reader: impl BufRead + Send + 'static,
+    out: Box<dyn Write + Send>,
+    config: SessionConfig,
+    host: SessionHost<Respond, Fail, Abort>,
+    observe_dispatch: Observe,
+) -> SessionOutcome
+where
+    Respond: Fn(&GenerateRequest, &EndpointRuntime) -> Result<GenerateResponse, String>
+        + Send
+        + Sync
+        + 'static,
+    Fail: Fn(Option<String>, &'static str, String) -> Infallible + Send + Sync + Clone + 'static,
+    Abort: Fn() -> Infallible + Send + 'static,
+    Observe: Fn(usize, usize),
+{
     let aborting = Arc::new(AtomicBool::new(false));
     let endpoint_runtime = Arc::new(EndpointRuntime::default());
     let (input_tx, input_rx) = mpsc::channel();
@@ -295,6 +314,7 @@ where
                 Arc::clone(&fail),
             ));
         }
+        observe_dispatch(workers.len(), pending.len());
         if terminal_received && pending.is_empty() && workers.is_empty() {
             return SessionOutcome::Completed;
         }
@@ -387,12 +407,14 @@ mod tests {
         struct Gate {
             current: usize,
             peak: usize,
+            dispatched_peak: usize,
             go: bool,
         }
         let gate = Arc::new((
             Mutex::new(Gate {
                 current: 0,
                 peak: 0,
+                dispatched_peak: 0,
                 go: false,
             }),
             Condvar::new(),
@@ -401,7 +423,8 @@ mod tests {
 
         let captured = Captured(Arc::new(Mutex::new(Vec::new())));
         let sink = captured.clone();
-        let outcome = run_session(
+        let observe_gate = Arc::clone(&gate);
+        let outcome = run_session_with_observer(
             Cursor::new(stdin.into_bytes()),
             Box::new(captured),
             config(),
@@ -413,11 +436,6 @@ mod tests {
                     guard.peak = guard.peak.max(guard.current);
                     entered.notify_all();
                     while !guard.go {
-                        if guard.current >= 2 {
-                            guard.go = true;
-                            entered.notify_all();
-                            break;
-                        }
                         let (next, wait) = entered
                             .wait_timeout(guard, Duration::from_secs(5))
                             .expect("admission wait");
@@ -448,10 +466,34 @@ mod tests {
                 fail: |_, _, detail: String| panic!("unexpected protocol failure: {detail}"),
                 abort: || panic!("unexpected abort: the terminal record was sent"),
             },
+            move |active, pending| {
+                let (lock, entered) = &*observe_gate;
+                let mut guard = lock.lock().expect("admission gate");
+                guard.dispatched_peak = guard.dispatched_peak.max(active);
+                if active > 2 {
+                    guard.go = true;
+                    entered.notify_all();
+                } else if active == 2 && pending == 1 && !guard.go {
+                    while guard.current < 2 {
+                        let (next, wait) = entered
+                            .wait_timeout(guard, Duration::from_secs(5))
+                            .expect("admission wait");
+                        guard = next;
+                        if wait.timed_out() {
+                            panic!("two dispatched workers did not enter the responder");
+                        }
+                    }
+                    guard.go = true;
+                    entered.notify_all();
+                }
+            },
         );
 
         assert!(matches!(outcome, SessionOutcome::Completed));
-        assert_eq!(gate.0.lock().expect("admission gate").peak, 2);
+        let guard = gate.0.lock().expect("admission gate");
+        assert_eq!(guard.dispatched_peak, 2);
+        assert_eq!(guard.peak, 2);
+        drop(guard);
         let written = String::from_utf8(sink.0.lock().expect("capture lock").clone())
             .expect("session output is UTF-8");
         let mut counts = BTreeMap::<String, usize>::new();

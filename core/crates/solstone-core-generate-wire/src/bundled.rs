@@ -97,6 +97,16 @@ pub(crate) fn bundled_converse_with<T: EndpointTransport>(
     connector: impl FnOnce(ConnectInput) -> ConnectOutcome,
     now: Instant,
 ) -> EndpointConverseResult {
+    bundled_converse_with_observer(call, transport, connector, now, |_| {})
+}
+
+fn bundled_converse_with_observer<T: EndpointTransport>(
+    call: BundledConverseCall<'_>,
+    transport: &mut T,
+    connector: impl FnOnce(ConnectInput) -> ConnectOutcome,
+    now: Instant,
+    observe_endpoint: impl FnOnce(&ByoEndpoint),
+) -> EndpointConverseResult {
     let BundledConverseCall {
         request,
         messages,
@@ -132,6 +142,7 @@ pub(crate) fn bundled_converse_with<T: EndpointTransport>(
         is_confidential: false,
         is_bundled: true,
     };
+    observe_endpoint(&endpoint);
     let mut config = config.clone();
     ensure_served_context_window(&mut config);
     endpoint_converse_with(
@@ -668,7 +679,7 @@ mod tests {
                     entered.notify_all();
                 }
                 let mut transport = transport;
-                bundled_converse_with(
+                bundled_converse_with_observer(
                     BundledConverseCall {
                         request: &converse_request(),
                         messages: &messages(),
@@ -680,6 +691,7 @@ mod tests {
                     &mut transport,
                     |_| ConnectOutcome::Ready { server: server(1) },
                     Instant::now(),
+                    |endpoint| assert_eq!(endpoint.parallel_slots, Some(1)),
                 )
             })
         };
