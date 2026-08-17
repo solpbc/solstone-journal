@@ -6,6 +6,7 @@ use crate::stub_peer;
 
 use std::process::{Command, Output};
 
+use sha2::{Digest, Sha256};
 use stub_peer::{Fixture, PeerPlan, RequestRoute, ResponseAction, StubPeer};
 
 fn plan(manifest: Vec<ResponseAction>, ingest: Vec<ResponseAction>) -> PeerPlan {
@@ -240,4 +241,32 @@ fn dry_run_only_queries_the_manifest() {
     assert!(stdout(&output).contains("Dry run: would send 1, skip 0"));
     assert!(peer.ingest_requests().is_empty());
     assert_eq!(peer.requests().len(), 1);
+}
+
+#[test]
+fn matching_manifest_skips_the_segment_without_uploading() {
+    let hash = format!("{:x}", Sha256::digest(b"payload"));
+    let peer = StubPeer::new(plan(
+        vec![ResponseAction::status(
+            200,
+            format!(
+                r#"{{"20260203":{{"audio/120000_30":{{"files":[{{"name":"payload.json","sha256":"{hash}","size":7}}]}}}}}}"#
+            ),
+        )],
+        vec![ResponseAction::status(200, Vec::new())],
+    ));
+    let fixture = fixture(&peer);
+    let output = run(&fixture, &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout(&output).contains("Transfer complete: 0 sent, 1 skipped, 0 failed"),
+        "stdout: {}\nstderr: {}",
+        stdout(&output),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(peer.ingest_requests().is_empty());
 }
