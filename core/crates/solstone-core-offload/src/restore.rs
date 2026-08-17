@@ -856,11 +856,12 @@ mod tests {
     #[test]
     fn free_space_guard_refuses_before_attempting_restore() {
         let journal = tempfile::tempdir().unwrap();
+        let unavailable_bytes = u64::MAX - RESTORE_RESERVE_BYTES;
         let segment = journal.path().join("chronicle/20260112/120000_012");
         fs::create_dir_all(&segment).unwrap();
         let file = OffloadFile {
             name: "large.webm".into(),
-            bytes: 900_000_000_000,
+            bytes: unavailable_bytes,
             sha256: digest(b"large"),
         };
         append_offload_event(
@@ -881,7 +882,7 @@ mod tests {
                 dir: "120000_012".into(),
             },
             vec!["large.webm".into()],
-            900_000_000_000,
+            unavailable_bytes,
             "restic-snapshot:snapshot".into(),
             "1",
         )
