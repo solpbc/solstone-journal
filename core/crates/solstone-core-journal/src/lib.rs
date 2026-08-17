@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs;
@@ -48,83 +47,6 @@ pub enum ConfigError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HomeError {
     Unavailable,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InstalledDistribution {
-    pub version: String,
-    pub requires_python: Option<String>,
-}
-
-#[derive(Debug)]
-pub enum DistributionMetadataError {
-    ReadSitePackages {
-        path: PathBuf,
-        error: io::Error,
-    },
-    ReadEntry {
-        path: PathBuf,
-        error: io::Error,
-    },
-    InvalidMetadata {
-        path: PathBuf,
-        reason: String,
-    },
-    ConflictingVersions {
-        target: String,
-        existing: String,
-        found: String,
-    },
-}
-
-const KNOWN_SOLSTONE_PACKAGE_NAMES: &[&str] = &[
-    "solstone",
-    "solstone-journal",
-    "solstone-journal-cuda",
-    "solstone-journal-host",
-    "solstone-core",
-    "solstone-core-depict",
-    "solstone-core-describe",
-    "solstone-core-journal",
-    "solstone-core-pdf",
-    "solstone-core-retention",
-    "solstone-core-sol",
-    "solstone-core-speakers-analyze",
-    "solstone-core-vad-analyze",
-    "solstone-core-vulkan-probe",
-    "solstone-journal-models",
-];
-
-impl fmt::Display for DistributionMetadataError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ReadSitePackages { path, error } | Self::ReadEntry { path, error } => {
-                write!(formatter, "could not read {}: {error}", path.display())
-            }
-            Self::InvalidMetadata { path, reason } => write!(
-                formatter,
-                "invalid metadata at {}: {reason}",
-                path.join("METADATA").display()
-            ),
-            Self::ConflictingVersions {
-                target,
-                existing,
-                found,
-            } => write!(
-                formatter,
-                "conflicting installed versions for {target}: {existing} and {found}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for DistributionMetadataError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::ReadSitePackages { error, .. } | Self::ReadEntry { error, .. } => Some(error),
-            Self::InvalidMetadata { .. } | Self::ConflictingVersions { .. } => None,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -230,10 +152,6 @@ pub fn installed_site_packages_from_executable_dir(executable_dir: &Path) -> Opt
     })
 }
 
-pub fn python_site_packages_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
-    site_packages_from_executable_dir(executable_dir, Path::is_dir)
-}
-
 fn site_packages_from_executable_dir(
     executable_dir: &Path,
     include: impl Fn(&Path) -> bool,
@@ -304,116 +222,6 @@ fn is_layout_install_root(prefix: &Path) -> Option<PathBuf> {
         .then_some(share)
 }
 
-pub fn installed_distributions(
-    site_packages: &Path,
-    target_names: &[&str],
-) -> Result<BTreeMap<String, InstalledDistribution>, DistributionMetadataError> {
-    let targets = target_names
-        .iter()
-        .map(|name| normalize_distribution_name(name))
-        .collect::<Vec<_>>();
-    let entries = fs::read_dir(site_packages).map_err(|error| {
-        DistributionMetadataError::ReadSitePackages {
-            path: site_packages.to_path_buf(),
-            error,
-        }
-    })?;
-    let mut distributions: BTreeMap<String, InstalledDistribution> = BTreeMap::new();
-    for entry in entries {
-        let entry = entry.map_err(|error| DistributionMetadataError::ReadEntry {
-            path: site_packages.to_path_buf(),
-            error,
-        })?;
-        let path = entry.path();
-        if !path.is_dir()
-            || !path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(".dist-info"))
-        {
-            continue;
-        }
-        let directory_target = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .and_then(|name| target_from_dist_info_directory(name, &targets));
-        let metadata = match fs::read_to_string(path.join("METADATA")) {
-            Ok(metadata) => metadata,
-            Err(error) => {
-                if directory_target.is_some() {
-                    return Err(metadata_error(&path, error.to_string()));
-                }
-                continue;
-            }
-        };
-        let (name, version, requires_python) = metadata_headers(&metadata);
-        let normalized_name = name.as_deref().map(normalize_distribution_name);
-        let header_target = normalized_name
-            .as_ref()
-            .filter(|name| targets.contains(name))
-            .cloned();
-        let target = match (header_target, directory_target) {
-            (Some(header_target), Some(directory_target)) if header_target != directory_target => {
-                return Err(metadata_error(
-                    &path,
-                    "Name header does not match target package",
-                ));
-            }
-            (Some(header_target), _) => Some(header_target),
-            // A generic target list may contain a prefix of another package
-            // name (for example `solstone` and `solstone-journal`). A present
-            // non-target Name header makes that entry unrelated, not malformed.
-            (None, Some(_)) if name.is_some() => {
-                if normalized_name
-                    .as_deref()
-                    .is_some_and(|name| KNOWN_SOLSTONE_PACKAGE_NAMES.contains(&name))
-                {
-                    None
-                } else {
-                    return Err(metadata_error(
-                        &path,
-                        "Name header does not match target package",
-                    ));
-                }
-            }
-            (None, directory_target) => directory_target,
-        };
-        let Some(target) = target else {
-            continue;
-        };
-        let Some(name) = name else {
-            return Err(metadata_error(&path, "missing Name header"));
-        };
-        let Some(version) = version else {
-            return Err(metadata_error(&path, "missing Version header"));
-        };
-        if normalize_distribution_name(&name) != target {
-            return Err(metadata_error(
-                &path,
-                "Name header does not match target package",
-            ));
-        }
-        let distribution = InstalledDistribution {
-            version,
-            requires_python,
-        };
-        match distributions.get(&target) {
-            Some(existing) if existing.version == distribution.version => {}
-            Some(existing) => {
-                return Err(DistributionMetadataError::ConflictingVersions {
-                    target,
-                    existing: existing.version.clone(),
-                    found: distribution.version,
-                });
-            }
-            None => {
-                distributions.insert(target, distribution);
-            }
-        }
-    }
-    Ok(distributions)
-}
-
 fn resolve_canonical_site_packages(candidates: &[PathBuf]) -> Option<PathBuf> {
     let mut canonical = candidates
         .iter()
@@ -429,77 +237,6 @@ fn is_solstone_checkout_root(candidate: &Path) -> Option<PathBuf> {
         && candidate.join(".git").exists()
         && candidate.join("solstone").is_dir())
     .then(|| candidate.to_path_buf())
-}
-
-fn target_from_dist_info_directory(name: &str, targets: &[String]) -> Option<String> {
-    let stem = name.strip_suffix(".dist-info")?;
-    let normalized = normalize_distribution_name(stem);
-    targets
-        .iter()
-        .filter(|target| {
-            normalized
-                .strip_prefix(target.as_str())
-                .is_some_and(|suffix| suffix.starts_with('-'))
-        })
-        .max_by_key(|target| target.len())
-        .cloned()
-}
-
-fn metadata_headers(metadata: &str) -> (Option<String>, Option<String>, Option<String>) {
-    let mut name = None;
-    let mut version = None;
-    let mut requires_python = None;
-    for line in metadata.lines() {
-        if line.is_empty() {
-            break;
-        }
-        if name.is_none() {
-            name = line.strip_prefix("Name:").map(str::trim).map(str::to_owned);
-        }
-        if version.is_none() {
-            version = line
-                .strip_prefix("Version:")
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned);
-        }
-        if requires_python.is_none() {
-            requires_python = line
-                .strip_prefix("Requires-Python:")
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned);
-        }
-    }
-    (
-        name.filter(|value| !value.is_empty()),
-        version,
-        requires_python,
-    )
-}
-
-fn normalize_distribution_name(value: &str) -> String {
-    let mut normalized = String::with_capacity(value.len());
-    let mut separator = false;
-    for character in value.chars() {
-        if matches!(character, '-' | '_' | '.') {
-            if !separator {
-                normalized.push('-');
-                separator = true;
-            }
-        } else {
-            normalized.extend(character.to_lowercase());
-            separator = false;
-        }
-    }
-    normalized
-}
-
-fn metadata_error(path: &Path, reason: impl fmt::Display) -> DistributionMetadataError {
-    DistributionMetadataError::InvalidMetadata {
-        path: path.to_path_buf(),
-        reason: reason.to_string(),
-    }
 }
 
 pub fn ensure_journal_dir(path: &Path, source: Source) -> Result<(), EnsureJournalDirError> {
@@ -793,10 +530,6 @@ mod tests {
             Some(fs::canonicalize(&site_packages).expect("canonical staged site-packages"))
         );
         assert_eq!(
-            python_site_packages_from_executable_dir(&bin),
-            Some(fs::canonicalize(&site_packages).expect("canonical staged site-packages"))
-        );
-        assert_eq!(
             resolve_installation_root_from_executable_dir(&bin),
             Some(fs::canonicalize(&site_packages).expect("canonical staged site-packages"))
         );
@@ -935,127 +668,6 @@ mod tests {
             Some(checkout.clone())
         );
         fs::remove_dir_all(root).expect("cleanup precedence");
-    }
-
-    #[test]
-    fn installed_distributions_reads_requires_python_from_staged_metadata() {
-        let root = unique_temp("distribution-metadata");
-        let site_packages = root.join("site-packages");
-        let dist_info = site_packages.join("solstone-1.2.3.dist-info");
-        fs::create_dir_all(&dist_info).expect("create dist-info");
-        fs::write(
-            dist_info.join("METADATA"),
-            "Name: solstone\nVersion: 1.2.3\nRequires-Python: >=3.11\n\nignored: body\n",
-        )
-        .expect("write metadata");
-        let journal_dist_info = site_packages.join("solstone_journal-1.2.3.dist-info");
-        fs::create_dir_all(&journal_dist_info).expect("create neighboring dist-info");
-        fs::write(
-            journal_dist_info.join("METADATA"),
-            "Name: solstone-journal\nVersion: 1.2.3\n\n",
-        )
-        .expect("write neighboring metadata");
-
-        let distributions = installed_distributions(&site_packages, &["solstone"])
-            .expect("read staged distribution metadata");
-        assert_eq!(
-            distributions.get("solstone"),
-            Some(&InstalledDistribution {
-                version: "1.2.3".into(),
-                requires_python: Some(">=3.11".into()),
-            })
-        );
-        assert_eq!(distributions.len(), 1);
-        fs::remove_dir_all(root).expect("cleanup distribution metadata");
-    }
-
-    fn write_dist_info(site_packages: &Path, directory: &str, name: &str, version: &str) {
-        let dist_info = site_packages.join(directory);
-        fs::create_dir_all(&dist_info).expect("create dist-info");
-        fs::write(
-            dist_info.join("METADATA"),
-            format!("Name: {name}\nVersion: {version}\n\n"),
-        )
-        .expect("write metadata");
-    }
-
-    #[test]
-    fn installed_distributions_rejects_unrecognized_name_for_a_target_directory() {
-        let root = unique_temp("distribution-name-mismatch");
-        let site_packages = root.join("site-packages");
-        write_dist_info(
-            &site_packages,
-            "solstone-1.2.3.dist-info",
-            "unrelated",
-            "1.2.3",
-        );
-
-        let error = installed_distributions(&site_packages, &["solstone"])
-            .expect_err("mismatched target metadata must fail");
-        assert!(
-            error
-                .to_string()
-                .contains("Name header does not match target package")
-        );
-
-        fs::remove_dir_all(&site_packages).expect("remove unrecognized fixture");
-        fs::create_dir_all(&site_packages).expect("recreate site-packages");
-        write_dist_info(
-            &site_packages,
-            "solstone-1.2.3.dist-info",
-            "solstone",
-            "1.2.3",
-        );
-        write_dist_info(
-            &site_packages,
-            "solstone_core_unknown-1.2.3.dist-info",
-            "solstone-core-unknown",
-            "1.2.3",
-        );
-        let error = installed_distributions(&site_packages, &["solstone"])
-            .expect_err("unknown solstone-core-* neighbor must still fail");
-        assert!(
-            error
-                .to_string()
-                .contains("Name header does not match target package")
-        );
-        fs::remove_dir_all(root).expect("cleanup distribution metadata");
-    }
-
-    #[test]
-    fn installed_distributions_accepts_known_core_and_models_neighbors() {
-        let root = unique_temp("distribution-known-neighbors");
-        let site_packages = root.join("site-packages");
-        write_dist_info(
-            &site_packages,
-            "solstone-1.0.22.dist-info",
-            "solstone",
-            "1.0.22",
-        );
-        write_dist_info(
-            &site_packages,
-            "solstone_core_journal-1.0.22.dist-info",
-            "solstone-core-journal",
-            "1.0.22",
-        );
-        write_dist_info(
-            &site_packages,
-            "solstone_journal_models-1.0.22.dist-info",
-            "solstone-journal-models",
-            "1.0.22",
-        );
-
-        let distributions = installed_distributions(&site_packages, &["solstone"])
-            .expect("known core and models neighbors must not raise InvalidMetadata");
-        assert_eq!(
-            distributions.get("solstone"),
-            Some(&InstalledDistribution {
-                version: "1.0.22".into(),
-                requires_python: None,
-            })
-        );
-        assert_eq!(distributions.len(), 1);
-        fs::remove_dir_all(root).expect("cleanup known neighbors");
     }
 
     #[test]
