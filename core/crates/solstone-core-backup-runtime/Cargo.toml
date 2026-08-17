@@ -9,10 +9,8 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-# Workspace forbids unsafe_code and rejects in-table overrides. nix 0.30.1
-# does not wrap waitid on macOS, so that path needs one libc call.
-[lints.rust]
-unsafe_code = "deny"
+[lints]
+workspace = true
 
 [features]
 default = []
@@ -24,6 +22,7 @@ getrandom.workspace = true
 hmac.workspace = true
 md5.workspace = true
 nix = { workspace = true, features = ["fs", "process", "signal"] }
+rustix = { workspace = true, features = ["process"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

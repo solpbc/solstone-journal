@@ -2881,6 +2881,7 @@ dependencies = [
  "hmac",
  "md5",
  "nix",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",

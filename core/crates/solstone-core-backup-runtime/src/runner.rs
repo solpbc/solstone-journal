@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use nix::errno::Errno;
 use nix::fcntl::{FcntlArg, FdFlag, fcntl};
 use nix::sys::signal::{Signal, killpg};
-use nix::sys::wait::{WaitPidFlag, waitpid};
+use nix::sys::wait::waitpid;
 use nix::unistd::{Pid, pipe};
 use serde_json::Value;
 use thiserror::Error;
@@ -204,43 +204,16 @@ fn kill_group(pgid: Pid) -> io::Result<()> {
 }
 
 fn observe_exit_without_reap(pid: Pid) -> io::Result<bool> {
-    #[cfg(not(target_os = "macos"))]
-    {
-        use nix::sys::wait::{Id, WaitStatus, waitid};
-        match waitid(
-            Id::Pid(pid),
-            WaitPidFlag::WNOHANG | WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT,
-        ) {
-            Ok(WaitStatus::StillAlive) => Ok(false),
-            Ok(_) => Ok(true),
-            Err(err) => Err(io::Error::from(err)),
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        observe_exit_without_reap_macos(pid)
-    }
-}
-
-// nix 0.30.1 exports waitid on Linux but not macOS. Same flags, does not reap.
-#[cfg(target_os = "macos")]
-#[allow(unsafe_code)]
-fn observe_exit_without_reap_macos(pid: Pid) -> io::Result<bool> {
-    let mut info: nix::libc::siginfo_t = unsafe { std::mem::zeroed() };
-    let flags = (WaitPidFlag::WNOHANG | WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT).bits();
-    let rc = unsafe {
-        nix::libc::waitid(
-            nix::libc::P_PID,
-            pid.as_raw() as nix::libc::id_t,
-            &mut info,
-            flags,
-        )
-    };
-    if rc < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // macOS libc exposes si_pid as a public field; Linux uses si_pid().
-    Ok(info.si_pid != 0)
+    let pid = rustix::process::Pid::from_raw(pid.as_raw())
+        .ok_or_else(|| io::Error::other("invalid child pid"))?;
+    rustix::process::waitid(
+        rustix::process::WaitId::Pid(pid),
+        rustix::process::WaitIdOptions::EXITED
+            | rustix::process::WaitIdOptions::NOHANG
+            | rustix::process::WaitIdOptions::NOWAIT,
+    )
+    .map(|status| status.is_some())
+    .map_err(io::Error::from)
 }
 
 fn set_cloexec(fd: BorrowedFd<'_>) -> io::Result<()> {
