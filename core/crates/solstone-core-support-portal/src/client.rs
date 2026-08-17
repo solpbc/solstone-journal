@@ -154,9 +154,18 @@ impl PortalTransport for UreqPortalTransport {
                     }
                     form = form.part(&file.name, part);
                 }
+                // Agent::run consumes AsSendBody directly and, unlike
+                // RequestBuilder::send, does not copy the body's inferred
+                // content type onto the request. Preserve the generated
+                // boundary explicitly for the portal's multipart parser.
+                let content_type = format!("multipart/form-data; boundary={}", form.boundary());
                 Self::response(
                     self.agent
-                        .run(build(None).body(form).map_err(transport_error)?)
+                        .run(
+                            build(Some(&content_type))
+                                .body(form)
+                                .map_err(transport_error)?,
+                        )
                         .map_err(transport_error)?,
                 )
             }

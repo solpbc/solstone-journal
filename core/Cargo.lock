@@ -4422,6 +4422,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "socket2",
  "solstone-core-brain",
  "solstone-core-journal-io",
  "solstone-core-support-portal",

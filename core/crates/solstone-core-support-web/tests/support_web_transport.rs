@@ -9,7 +9,7 @@ use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
@@ -20,6 +20,9 @@ use tempfile::TempDir;
 use tower::ServiceExt;
 
 const CORPUS: &str = include_str!("../../../fixtures/convey_support_corpus.json");
+const IO_TIMEOUT: Duration = Duration::from_secs(2);
+const JOIN_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_WIRE_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PortalRequest {
@@ -126,11 +129,11 @@ impl FakePortal {
 impl Drop for FakePortal {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        if let Ok(stream) = TcpStream::connect(self.wake) {
+        if let Ok(stream) = TcpStream::connect_timeout(&self.wake, IO_TIMEOUT) {
             let _ = stream.shutdown(Shutdown::Both);
         }
         if let Some(thread) = self.thread.take() {
-            thread.join().expect("fake thread joins");
+            join_bounded(thread, "fake thread");
         }
     }
 }
@@ -146,6 +149,12 @@ where
                 if stop.load(Ordering::Acquire) {
                     break;
                 }
+                stream
+                    .set_read_timeout(Some(IO_TIMEOUT))
+                    .expect("bound fake read");
+                stream
+                    .set_write_timeout(Some(IO_TIMEOUT))
+                    .expect("bound fake write");
                 on_accept(stream);
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
@@ -154,6 +163,26 @@ where
             Err(_) => break,
         }
     }
+}
+
+fn join_bounded(thread: JoinHandle<()>, label: &str) {
+    let deadline = Instant::now() + JOIN_TIMEOUT;
+    while !thread.is_finished() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert!(thread.is_finished(), "{label} exceeded shutdown deadline");
+    thread.join().unwrap_or_else(|_| panic!("{label} panicked"));
+}
+
+fn read_more(stream: &mut TcpStream, raw: &mut Vec<u8>, buffer: &mut [u8]) -> usize {
+    let remaining = MAX_WIRE_BYTES.saturating_sub(raw.len());
+    if remaining == 0 {
+        return 0;
+    }
+    let capacity = remaining.min(buffer.len());
+    let read = stream.read(&mut buffer[..capacity]).unwrap_or(0);
+    raw.extend_from_slice(&buffer[..read]);
+    read
 }
 
 fn fixed_routes(
@@ -208,11 +237,9 @@ fn read_portal_request(stream: &mut TcpStream) -> (PortalRequest, Vec<u8>) {
     let mut raw = Vec::new();
     let mut buffer = [0; 1024];
     while !raw.windows(4).any(|window| window == b"\r\n\r\n") {
-        let read = stream.read(&mut buffer).unwrap_or(0);
-        if read == 0 {
+        if read_more(stream, &mut raw, &mut buffer) == 0 {
             break;
         }
-        raw.extend_from_slice(&buffer[..read]);
     }
     let header_end = raw
         .windows(4)
@@ -248,19 +275,15 @@ fn read_portal_request(stream: &mut TcpStream) -> (PortalRequest, Vec<u8>) {
             if let Some(decoded) = decode_chunked_body(&encoded) {
                 break decoded;
             }
-            let read = stream.read(&mut buffer).unwrap_or(0);
-            if read == 0 {
+            if read_more(stream, &mut encoded, &mut buffer) == 0 {
                 break encoded;
             }
-            encoded.extend_from_slice(&buffer[..read]);
         }
     } else {
         while raw.len().saturating_sub(header_end) < length {
-            let read = stream.read(&mut buffer).unwrap_or(0);
-            if read == 0 {
+            if read_more(stream, &mut raw, &mut buffer) == 0 {
                 break;
             }
-            raw.extend_from_slice(&buffer[..read]);
         }
         raw.get(header_end..).unwrap_or_default().to_vec()
     };
@@ -325,6 +348,12 @@ fn write_portal_reply(stream: &mut TcpStream, reply: HttpReply) {
 fn fake_request(fake: &FakePortal, method: &str, path: &str, headers: &[(&str, &str)]) -> String {
     let mut stream =
         TcpStream::connect(fake.url().trim_start_matches("http://")).expect("connect fake");
+    stream
+        .set_read_timeout(Some(IO_TIMEOUT))
+        .expect("bound fake response read");
+    stream
+        .set_write_timeout(Some(IO_TIMEOUT))
+        .expect("bound fake request write");
     let mut request =
         format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n");
     for (name, value) in headers {
@@ -333,7 +362,10 @@ fn fake_request(fake: &FakePortal, method: &str, path: &str, headers: &[(&str, &
     request.push_str("\r\n");
     stream.write_all(request.as_bytes()).expect("write request");
     let mut response = String::new();
-    stream.read_to_string(&mut response).expect("read response");
+    stream
+        .take(MAX_WIRE_BYTES as u64)
+        .read_to_string(&mut response)
+        .expect("read response");
     response
 }
 
@@ -358,6 +390,13 @@ fn established_root(portal_url: &str) -> TempDir {
         .expect("app config"),
     )
     .expect("write app config");
+    let portal = root.path().join("apps/support/portal");
+    std::fs::create_dir_all(&portal).expect("portal state directory");
+    std::fs::write(
+        portal.join("keypair.pem"),
+        include_bytes!("../../../fixtures/support_portal_golden_nonproduction/keypair.pem"),
+    )
+    .expect("seed non-production key fixture");
     root
 }
 
@@ -445,7 +484,7 @@ async fn routes_complete_a_live_loopback_portal_read() {
         .await
         .expect("routes response");
     assert_eq!(response.status().as_u16(), 200);
-    let body = to_bytes(response.into_body(), usize::MAX)
+    let body = to_bytes(response.into_body(), MAX_WIRE_BYTES)
         .await
         .expect("tickets body");
     let tickets: Value = serde_json::from_slice(&body).expect("tickets json");
@@ -468,5 +507,5 @@ fn fake_portal_terminates_on_accept_failure() {
             |_| panic!("accept failure must not yield a stream"),
         );
     });
-    thread.join().expect("accept-failure loop joins");
+    join_bounded(thread, "accept-failure loop");
 }

@@ -220,19 +220,20 @@ pub(crate) fn install_test_client_factory(
             "install_test_client_factory is thread-local; oneshot must run on current_thread"
         );
     }
-    TEST_CLIENT_FACTORY.with(|cell| {
-        *cell.borrow_mut() = Some(std::sync::Arc::new(factory));
-    });
-    TestClientGuard
+    let previous =
+        TEST_CLIENT_FACTORY.with(|cell| cell.replace(Some(std::sync::Arc::new(factory))));
+    TestClientGuard(previous)
 }
 
 #[cfg(test)]
-pub(crate) struct TestClientGuard;
+pub(crate) struct TestClientGuard(Option<TestClientFactory>);
 
 #[cfg(test)]
 impl Drop for TestClientGuard {
     fn drop(&mut self) {
-        TEST_CLIENT_FACTORY.with(|cell| *cell.borrow_mut() = None);
+        TEST_CLIENT_FACTORY.with(|cell| {
+            cell.replace(self.0.take());
+        });
     }
 }
 

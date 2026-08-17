@@ -6,15 +6,20 @@
 
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
-use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
+use socket2::{Domain, Socket, Type};
 use solstone_core_support_portal::{PortalClient, PortalClientError};
 use tempfile::TempDir;
+
+const IO_TIMEOUT: Duration = Duration::from_secs(2);
+const JOIN_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 
 struct CapturedRequest {
     method: String,
@@ -86,11 +91,11 @@ impl LoopbackPortal {
 impl Drop for LoopbackPortal {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        if let Ok(stream) = TcpStream::connect(self.wake) {
+        if let Ok(stream) = TcpStream::connect_timeout(&self.wake, IO_TIMEOUT) {
             let _ = stream.shutdown(Shutdown::Both);
         }
         if let Some(thread) = self.thread.take() {
-            thread.join().expect("loopback fake thread");
+            join_bounded(thread, "loopback fake thread");
         }
     }
 }
@@ -117,6 +122,12 @@ where
                 if stop.load(Ordering::Acquire) {
                     break;
                 }
+                stream
+                    .set_read_timeout(Some(IO_TIMEOUT))
+                    .expect("bound loopback read");
+                stream
+                    .set_write_timeout(Some(IO_TIMEOUT))
+                    .expect("bound loopback write");
                 on_accept(stream);
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
@@ -127,15 +138,33 @@ where
     }
 }
 
+fn join_bounded(thread: JoinHandle<()>, label: &str) {
+    let deadline = Instant::now() + JOIN_TIMEOUT;
+    while !thread.is_finished() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert!(thread.is_finished(), "{label} exceeded shutdown deadline");
+    thread.join().unwrap_or_else(|_| panic!("{label} panicked"));
+}
+
+fn read_more(stream: &mut TcpStream, raw: &mut Vec<u8>, buffer: &mut [u8]) -> usize {
+    let remaining = MAX_REQUEST_BYTES.saturating_sub(raw.len());
+    if remaining == 0 {
+        return 0;
+    }
+    let capacity = remaining.min(buffer.len());
+    let read = stream.read(&mut buffer[..capacity]).unwrap_or(0);
+    raw.extend_from_slice(&buffer[..read]);
+    read
+}
+
 fn read_request(stream: &mut TcpStream) -> CapturedRequest {
     let mut raw = Vec::new();
     let mut buffer = [0; 1024];
     while !raw.windows(4).any(|window| window == b"\r\n\r\n") {
-        let read = stream.read(&mut buffer).unwrap_or(0);
-        if read == 0 {
+        if read_more(stream, &mut raw, &mut buffer) == 0 {
             break;
         }
-        raw.extend_from_slice(&buffer[..read]);
     }
     let header_end = raw
         .windows(4)
@@ -166,19 +195,17 @@ fn read_request(stream: &mut TcpStream) -> CapturedRequest {
             if let Some(decoded) = decode_chunked_body(&encoded) {
                 break decoded;
             }
-            let read = stream.read(&mut buffer).unwrap_or(0);
-            if read == 0 {
+            let before = encoded.len();
+            if read_more(stream, &mut encoded, &mut buffer) == 0 {
                 break encoded;
             }
-            encoded.extend_from_slice(&buffer[..read]);
+            debug_assert!(encoded.len() > before);
         }
     } else {
         while raw.len().saturating_sub(header_end) < length {
-            let read = stream.read(&mut buffer).unwrap_or(0);
-            if read == 0 {
+            if read_more(stream, &mut raw, &mut buffer) == 0 {
                 break;
             }
-            raw.extend_from_slice(&buffer[..read]);
         }
         raw.get(header_end..).unwrap_or_default().to_vec()
     };
@@ -353,9 +380,17 @@ fn real_transport_sends_literal_multipart_form_bytes() {
 
 #[test]
 fn real_transport_maps_connection_refused_to_transport_error() {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind closed-port probe");
-    let address = listener.local_addr().expect("closed-port address");
-    drop(listener);
+    // Hold a bound but non-listening TCP socket so no other process can claim
+    // the ephemeral port between address selection and the client connect.
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, None).expect("closed-port socket");
+    socket
+        .bind(&SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0).into())
+        .expect("bind closed-port probe");
+    let address = socket
+        .local_addr()
+        .expect("closed-port address")
+        .as_socket()
+        .expect("IP closed-port address");
     let dir = TempDir::new().unwrap();
     let mut client =
         PortalClient::new(format!("http://{address}"), dir.path(), None, false).unwrap();
@@ -392,5 +427,5 @@ fn loopback_helper_terminates_on_accept_failure() {
             |_| panic!("accept failure must not yield a stream"),
         );
     });
-    thread.join().expect("accept-failure loop joins");
+    join_bounded(thread, "accept-failure loop");
 }

@@ -634,12 +634,17 @@ fn recorded_dpop_payloads_discriminate_htu_and_ath() {
 }
 
 #[test]
-fn generated_key_round_trips_into_ring() {
-    let (generated, pem) = Keypair::generate().unwrap();
-    let loaded = Keypair::from_pem(&pem).unwrap();
+fn persisted_key_round_trips_into_ring() {
+    let pem = include_bytes!("../../../fixtures/support_portal_golden_nonproduction/keypair.pem");
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("keypair.pem");
+    std::fs::write(&path, pem).unwrap();
+    let persisted = std::fs::read(path).unwrap();
+    let original = Keypair::from_pem(pem).unwrap();
+    let loaded = Keypair::from_pem(&persisted).unwrap();
     assert_eq!(
-        sign_tos(&generated.signer, "generated probe").unwrap(),
-        sign_tos(&loaded.signer, "generated probe").unwrap()
+        sign_tos(&original.signer, "persisted probe").unwrap(),
+        sign_tos(&loaded.signer, "persisted probe").unwrap()
     );
 }
 
