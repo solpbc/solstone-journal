@@ -767,6 +767,12 @@ fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
     assert!(target_body(&makefile, "ci-full-prep-onnx").contains("check-rust-onnx-stage"));
     assert!(target_body(&makefile, "ci-full-prep-pdf").contains("check-rust-pdf-stage"));
     assert!(
+        makefile.contains(
+            "REQUIRE_PDF_HOST_RUNTIME = $(REQUIRE_SUPPORTED_PDF_HOST); $(DEFINE_PDF_RUNTIME_VALIDATOR);"
+        ),
+        "PDF runtime readiness must invoke the validator rather than expand to an empty command"
+    );
+    assert!(
         !makefile.contains("--package-dir packages/")
             && makefile.contains("--package-dir target/runtime-package-staging/"),
         "runtime prep must keep generated package-shaped staging under target/"
@@ -795,12 +801,20 @@ fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
     );
     let cargo_prep = target_body(&makefile, "ci-full-prep-cargo");
     assert!(
-        cargo_prep.contains("cargo check")
+        cargo_prep.contains("builder-inputs.toml")
+            && cargo_prep.contains("FFMPEG_SOURCE_ARCHIVE")
+            && cargo_prep.contains("cargo check")
             && cargo_prep.contains("$(RUST_HOST_EXCLUDES)")
             && cargo_prep.contains("cargo test")
             && cargo_prep.contains("$(RUST_ROUTINE_EXCLUDES)")
             && cargo_prep.contains("--no-run"),
         "full prep must materialize both routine static and unit build graphs"
+    );
+    assert!(
+        makefile.contains(
+            "ci-full ci-full-under-poison ci-full-prep ci-full-prep-cargo: export SOLSTONE_DISTRIBUTION_OFFLINE := 1"
+        ),
+        "full validation and prep must make the pinned FFmpeg archive mandatory"
     );
     assert!(
         !target_body(&makefile, "check-rust-deny").contains("cargo fetch"),

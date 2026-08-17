@@ -34,6 +34,7 @@ RUST_BIN := core/target/debug
 RUST_TARGET_DIR := $(if $(strip $(CARGO_TARGET_DIR)),$(abspath $(CARGO_TARGET_DIR)),$(CURDIR)/core/target)
 CI_CARGO_HOME := $(if $(strip $(CARGO_HOME)),$(abspath $(CARGO_HOME)),$(HOME)/.cargo)
 CI_RUSTUP_HOME := $(if $(strip $(RUSTUP_HOME)),$(abspath $(RUSTUP_HOME)),$(HOME)/.rustup)
+FFMPEG_SOURCE_ARCHIVE := $(CURDIR)/target/ffmpeg-source-cache/ffmpeg.tar.gz
 SERVICE_LEGACY_EVIDENCE_ROOT ?= core/fixtures/service_legacy_evidence
 IOS_TARGET := aarch64-apple-ios
 RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze
@@ -287,6 +288,7 @@ validate_pdf_runtime() { \
 }
 endef
 
+REQUIRE_PDF_HOST_RUNTIME = $(REQUIRE_SUPPORTED_PDF_HOST); $(DEFINE_PDF_RUNTIME_VALIDATOR); if validate_pdf_runtime; then :; else validation_status=$$?; echo "$$validation_error" >&2; exit "$$validation_status"; fi
 
 # Require uv only for goals that actually use it. `preflight` is a pure
 # stdlib readiness battery and `install` runs preflight as its own fail-fast
@@ -448,6 +450,8 @@ check-rust-pdf-stage:
 
 .PHONY: ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
 .NOTPARALLEL: ci-full-prep
+ci-full ci-full-under-poison ci-full-prep ci-full-prep-cargo: export SOLSTONE_FFMPEG_SOURCE_ARCHIVE := $(FFMPEG_SOURCE_ARCHIVE)
+ci-full ci-full-under-poison ci-full-prep ci-full-prep-cargo: export SOLSTONE_DISTRIBUTION_OFFLINE := 1
 
 # Preparation is the only full-CI surface allowed to fetch Cargo inputs or
 # repair native runtime stages. The validation runner itself stays offline.
@@ -455,6 +459,7 @@ ci-full-prep: ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
 
 ci-full-prep-cargo:
 	@$(REQUIRE_CARGO)
+	python3 -c 'import hashlib, pathlib, tempfile, tomllib, urllib.request; root = pathlib.Path.cwd(); pin = tomllib.loads((root / "core/distribution/builder-inputs.toml").read_text(encoding="utf-8"))["ffmpeg"]; dest = pathlib.Path("$(FFMPEG_SOURCE_ARCHIVE)"); dest.parent.mkdir(parents=True, exist_ok=True); cached = dest.read_bytes() if dest.is_file() else b""; data = cached if hashlib.sha256(cached).hexdigest() == pin["sha256"] else urllib.request.urlopen(pin["url"], timeout=60).read(); actual = hashlib.sha256(data).hexdigest(); assert actual == pin["sha256"], f"FFmpeg source digest mismatch: expected {pin['"'"'sha256'"'"']}, actual {actual}"; temporary = tempfile.NamedTemporaryFile(prefix=f"{dest.name}.", suffix=".part", dir=dest.parent, delete=False); temporary.write(data); temporary.close(); pathlib.Path(temporary.name).replace(dest)'
 	cargo fetch --manifest-path $(RUST_MANIFEST) --locked
 	cargo check --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --no-run --locked
