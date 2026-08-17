@@ -1173,7 +1173,7 @@ mod tests {
     }
 
     #[test]
-    fn ac3_delegating_and_preheld_lease_do_not_mint_attempts() {
+    fn ac3_delegating_lease_does_not_mint_a_new_attempt() {
         let journal = tempfile::tempdir().unwrap();
         assert_eq!(
             status::read_status(journal.path(), "parakeet")

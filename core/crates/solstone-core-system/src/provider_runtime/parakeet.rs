@@ -907,11 +907,8 @@ fn stop_parakeet(
     }
 }
 
-// AC11: cleanup on stop is idempotent, mirroring `_cleanup_parakeet_launch` /
-// `_terminate_cleanup_handle` -- a second stop call for the same managed
-// process must not attempt a second kill or otherwise fail, since nothing
-// guarantees a caller sees the reconciler retire the request before a
-// duplicate stop dispatch lands.
+// Stop against an already-gone ready process must drop the leftover
+// observation. Double-stop of a live managed child lives in tests/parakeet_stop.rs.
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests {
     use super::*;
