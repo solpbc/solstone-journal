@@ -10,7 +10,9 @@
 # line as PYTEST_BASETEMP_FLAG (each recipe line is its own shell). Do not
 # re-add --basetemp to pyproject — it would pin all runs to one path and
 # pytest wipes it on startup, destroying concurrent state.
-export TMPDIR := /var/tmp
+# Keep temporary work disk-backed while using one physical spelling on hosts
+# such as macOS where /var/tmp is an alias of /private/var/tmp.
+export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
