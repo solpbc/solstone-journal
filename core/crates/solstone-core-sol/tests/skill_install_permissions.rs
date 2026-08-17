@@ -10,7 +10,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitCode, Stdio};
 
 #[test]
 fn mixed_writability_installs_writable_agent_and_reports_unwritable_agent() {
@@ -49,15 +49,12 @@ fn mixed_writability_child() {
     let before = listing(&claude_target);
 
     fs::set_permissions(&claude_target, fs::Permissions::from_mode(0o500)).expect("chmod 0500");
-    match fs::write(claude_target.join(".write-probe"), "x") {
-        Ok(()) => {
-            let _ = fs::remove_file(claude_target.join(".write-probe"));
-            let _ = fs::set_permissions(&claude_target, fs::Permissions::from_mode(0o700));
-            panic!(
-                "skill_install_permissions: environment does not enforce directory permission bits (running as root or on an unsupported filesystem) — precondition cannot be established, refusing to report success"
-            );
-        }
-        Err(_) => {}
+    if let Ok(()) = fs::write(claude_target.join(".write-probe"), "x") {
+        let _ = fs::remove_file(claude_target.join(".write-probe"));
+        let _ = fs::set_permissions(&claude_target, fs::Permissions::from_mode(0o700));
+        panic!(
+            "skill_install_permissions: environment does not enforce directory permission bits (running as root or on an unsupported filesystem) — precondition cannot be established, refusing to report success"
+        );
     }
 
     let codex_skills = home.join(".codex/skills");
@@ -69,7 +66,7 @@ fn mixed_writability_child() {
     }
     fs::remove_file(&probe).expect("remove codex probe");
 
-    let _ = solstone_core_sol::run(
+    let exit = solstone_core_sol::run(
         "sol",
         vec![OsString::from("skills"), OsString::from("install")],
     );
@@ -77,6 +74,7 @@ fn mixed_writability_child() {
     fs::set_permissions(&claude_target, fs::Permissions::from_mode(0o700))
         .expect("restore before parent TempDir drop");
 
+    assert_eq!(exit, ExitCode::from(1));
     assert_eq!(listing(&claude_target), before);
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../solstone/talent/sol");
     assert_eq!(
