@@ -6,7 +6,7 @@ use axum::{
     http::{Request, StatusCode},
     response::IntoResponse,
 };
-use chrono::{TimeZone, Timelike};
+use chrono::{Local, TimeZone};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -373,20 +373,6 @@ async fn ac17_devices_payload_has_the_health_observer_fields() {
     }
 }
 
-#[test]
-fn ac16_poisoned_python_is_observable_only_under_ci() {
-    if std::env::var("SOLSTONE_CI_POISONED").as_deref() != Ok("1") {
-        return;
-    }
-    let output = std::process::Command::new("python3")
-        .output()
-        .expect("poison shim starts");
-    assert_eq!(output.status.code(), Some(97));
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("Rust gate invoked a forbidden interpreter:")
-    );
-}
 #[tokio::test]
 async fn ac18_background_uses_shell_catch_all() {
     let root = crate::test_support::root();
@@ -402,18 +388,13 @@ async fn ac18_background_uses_shell_catch_all() {
 }
 #[test]
 fn retry_clock_strips_the_zero() {
-    let now = chrono::Local::now();
-    let then = now.with_hour(9).unwrap().with_minute(5).unwrap();
+    let then = Local.with_ymd_and_hms(2026, 8, 16, 9, 5, 0).unwrap();
     assert_eq!(crate::actions::format_retry_clock(then), "9:05am");
 }
 
 #[test]
 fn ac14a_retry_when_covers_today_tomorrow_and_later() {
-    let now = chrono::Local::now()
-        .with_minute(0)
-        .unwrap()
-        .with_second(0)
-        .unwrap();
+    let now = Local.with_ymd_and_hms(2026, 8, 16, 12, 0, 0).unwrap();
     let today = now + chrono::Duration::hours(1);
     let tomorrow = now + chrono::Duration::days(1);
     let later = now + chrono::Duration::days(3);

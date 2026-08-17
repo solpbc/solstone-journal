@@ -15,9 +15,13 @@ use tokio::time::{Instant, timeout};
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
 
+fn deadline_after(limit: Duration) -> Instant {
+    Instant::now() + limit
+}
+
 pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
     let _ = (verbose, debug);
-    let deadline = Instant::now() + STATUS_TIMEOUT;
+    let deadline = deadline_after(STATUS_TIMEOUT);
     let journal = match super::resolve_process_journal_path() {
         Ok(journal) => journal.path,
         Err(error) => return super::print_journal_error(error),
@@ -517,7 +521,7 @@ mod tests {
             .unwrap();
         let result = runtime.block_on(receive_status(
             &mut listener,
-            Instant::now() + Duration::from_secs(1),
+            deadline_after(Duration::from_secs(1)),
         ));
         assert!(result.is_ok());
     }
@@ -536,7 +540,7 @@ mod tests {
             .unwrap();
         let result = runtime.block_on(receive_status(
             &mut listener,
-            Instant::now() + Duration::from_millis(1),
+            deadline_after(Duration::from_millis(1)),
         ));
         assert!(matches!(result, Err(HealthFetchError::MalformedFrames(1))));
     }
@@ -594,7 +598,10 @@ mod tests {
             .enable_time()
             .build()
             .unwrap();
-        let result = runtime.block_on(fetch_status_with_listener(listener, Instant::now()));
+        let result = runtime.block_on(fetch_status_with_listener(
+            listener,
+            deadline_after(Duration::ZERO),
+        ));
         assert!(matches!(result, Err(HealthFetchError::TimedOut)));
     }
 

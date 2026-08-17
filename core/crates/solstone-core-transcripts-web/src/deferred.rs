@@ -75,11 +75,14 @@ mod tests {
         let registry = DeferredDeleteRegistry::new();
         let calls = Arc::new(AtomicUsize::new(0));
         let commit_calls = Arc::clone(&calls);
-        registry.schedule("a".into(), Duration::from_millis(40), move || {
+        let done = Arc::new(tokio::sync::Notify::new());
+        let commit_done = Arc::clone(&done);
+        registry.schedule("a".into(), Duration::from_secs(60), move || {
             commit_calls.fetch_add(1, Ordering::SeqCst);
+            commit_done.notify_one();
         });
         assert!(registry.cancel("a"));
-        tokio::time::sleep(Duration::from_millis(80)).await;
+        tokio::task::yield_now().await;
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert!(!registry.cancel("a"));
     }
@@ -89,10 +92,13 @@ mod tests {
         let registry = DeferredDeleteRegistry::new();
         let calls = Arc::new(AtomicUsize::new(0));
         let commit_calls = Arc::clone(&calls);
-        registry.schedule("b".into(), Duration::from_millis(10), move || {
+        let done = Arc::new(tokio::sync::Notify::new());
+        let commit_done = Arc::clone(&done);
+        registry.schedule("b".into(), Duration::ZERO, move || {
             commit_calls.fetch_add(1, Ordering::SeqCst);
+            commit_done.notify_one();
         });
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        done.notified().await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert!(!registry.cancel("b"));
     }

@@ -3718,3 +3718,29 @@ timeout = "standard"
 default_full = false
 required_features = ["test-hooks"]
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-health-web::health_web_host_component"
+package = "solstone-core-health-web"
+target = "health_web_host_component"
+set = "component"
+areas = ["health"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "host-tools"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-transcripts-web::transcript_deadline_component"
+package = "solstone-core-transcripts-web"
+target = "transcript_deadline_component"
+set = "component"
+areas = ["audio"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "host-tools"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
