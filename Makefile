@@ -25,6 +25,12 @@ VENV_BIN := $(VENV)/bin
 VENV_PY := $(VENV_BIN)/python
 PYTHON := $(VENV_PY)
 RUST_MANIFEST := core/Cargo.toml
+
+# Native binaries for the dev and sandbox targets. The wheel used to install
+# these into the venv; the distribution tree ships them, and a development
+# tree builds them. Run `make build` first if a target here reports one
+# missing.
+RUST_BIN := core/target/debug
 RUST_TARGET_DIR := $(if $(strip $(CARGO_TARGET_DIR)),$(abspath $(CARGO_TARGET_DIR)),$(CURDIR)/core/target)
 CI_CARGO_HOME := $(if $(strip $(CARGO_HOME)),$(abspath $(CARGO_HOME)),$(HOME)/.cargo)
 CI_RUSTUP_HOME := $(if $(strip $(RUSTUP_HOME)),$(abspath $(RUSTUP_HOME)),$(HOME)/.rustup)
@@ -924,11 +930,11 @@ audit:
 # Setup skill symlinks
 skills:
 	@$(VENV_BIN)/python scripts/build_skill_references.py
-	@$(VENV_BIN)/sol skills install --project journal --agent all
+	@$(RUST_BIN)/solstone-core-sol skills install --project journal --agent all
 
 # Start local dev stack against fixture journal (no observers, no daily processing)
 dev: .installed
-	$(TEST_ENV) PATH=$(CURDIR)/$(VENV_BIN):$$PATH $(VENV_BIN)/journal supervisor 0 --no-daily
+	$(TEST_ENV) PATH=$(CURDIR)/$(RUST_BIN):$$PATH $(RUST_BIN)/solstone-core-journal supervisor 0 --no-daily
 
 # Start sandbox stack: fixture copy + background supervisor + readiness wait
 sandbox: .installed
@@ -949,14 +955,14 @@ sandbox: .installed
 	echo "$$SANDBOX_JOURNAL" > .sandbox.journal; \
 	echo "Sandbox journal: $$SANDBOX_JOURNAL"; \
 	: "Boot supervisor in background"; \
-	SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" SANDBOX_PATH="$(CURDIR)/$(VENV_BIN):$$PATH" SANDBOX_LOG="$$SANDBOX_JOURNAL/health/service.log" JOURNAL_BIN="$(CURDIR)/$(VENV_BIN)/journal" \
+	SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" SANDBOX_PATH="$(CURDIR)/$(RUST_BIN):$$PATH" SANDBOX_LOG="$$SANDBOX_JOURNAL/health/service.log" JOURNAL_BIN="$(CURDIR)/$(RUST_BIN)/solstone-core-journal" \
 		$(VENV_PY) scripts/start_sandbox_supervisor.py > .sandbox.pid; \
 	echo "Supervisor PID: $$(cat .sandbox.pid)"; \
 	: "Poll for readiness"; \
 	echo "Waiting for services..."; \
 	READY=false; \
 	for i in $$(seq 1 20); do \
-		if SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(VENV_BIN)/journal health > /dev/null 2>&1; then \
+		if SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(RUST_BIN)/solstone-core-journal health > /dev/null 2>&1; then \
 			READY=true; \
 			break; \
 		fi; \
@@ -1010,7 +1016,7 @@ verify-api: .installed
 	@SANDBOX_JOURNAL=$$(cat .sandbox.journal); \
 	CONVEY_PORT=$$(cat "$$SANDBOX_JOURNAL/health/convey.port"); \
 	RESULT=0; \
-	SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(VENV_BIN)/journal indexer --rescan-full > /dev/null; \
+	SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(RUST_BIN)/solstone-core-journal indexer --rescan-full > /dev/null; \
 	SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(VENV_BIN)/python tests/verify_api.py verify --base-url "http://localhost:$$CONVEY_PORT" || RESULT=$$?; \
 	$(MAKE) sandbox-stop; \
 	exit $$RESULT
@@ -1041,7 +1047,7 @@ update-api-baselines: .installed
 		SANDBOX_JOURNAL=$$(cat .sandbox.journal); \
 		CONVEY_PORT=$$(cat "$$SANDBOX_JOURNAL/health/convey.port"); \
 		RESULT=0; \
-		SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(VENV_BIN)/journal indexer --rescan-full > /dev/null; \
+		SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(RUST_BIN)/solstone-core-journal indexer --rescan-full > /dev/null; \
 		SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(VENV_BIN)/python tests/verify_api.py update --base-url "http://localhost:$$CONVEY_PORT" || RESULT=$$?; \
 		$(MAKE) sandbox-stop; \
 		exit $$RESULT; \
@@ -1053,8 +1059,8 @@ update-api-baselines: .installed
 
 # Install and verify local ML models
 install-models:
-	@test -x "$(VENV_BIN)/sol" || { echo "missing $(VENV_BIN)/sol; run make install first" >&2; exit 1; }
-	$(VENV_BIN)/journal install-models
+	@test -x "$(RUST_BIN)/solstone-core-sol" || { echo "missing $(RUST_BIN)/solstone-core-sol; run make build first" >&2; exit 1; }
+	$(RUST_BIN)/solstone-core-journal install-models
 
 speakers-analyze-helper:
 	@test -x "$(VENV_BIN)/python" || { echo "missing $(VENV_BIN)/python; run make install first" >&2; exit 1; }
@@ -1125,7 +1131,7 @@ clean:
 
 # Follow installed service logs
 service-logs:
-	$(VENV_BIN)/journal service logs -f
+	$(RUST_BIN)/solstone-core-journal service logs -f
 
 uninstall:
 	@echo "Error: 'make uninstall' is disabled. Use 'journal service uninstall', 'sol skills uninstall', and 'python -m solstone.think.install_guard uninstall' to remove installed user artifacts, or 'make clean-install' to rebuild the local dev environment." >&2
