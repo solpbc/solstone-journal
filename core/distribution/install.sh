@@ -16,6 +16,7 @@
 #   unsupported-platform
 #   origin-refused
 #   fetcher-missing
+#   tmpdir-unusable
 #   digest-mismatch
 #   release-invalid
 #   version-mismatch
@@ -198,12 +199,12 @@ fetch_url() {
 	while [ "$_hops" -le "$MAX_HOPS" ]; do
 		check_origin_url "$_current"
 		if command -v curl >/dev/null 2>&1; then
-			_hdrs=$(mktemp)
+			_hdrs=$(mktemp "$WORK/solstone-install-headers-XXXXXX")
 			_code=$(curl -sS --http1.1 -D "$_hdrs" -o "$_dest" -w '%{http_code}' "$_current" || true)
 			_location=$(awk 'BEGIN{IGNORECASE=1} /^Location:/{sub(/\r$/,""); sub(/^Location:[[:space:]]+/,""); print; exit}' "$_hdrs")
 			rm -f "$_hdrs"
 		elif command -v wget >/dev/null 2>&1; then
-			_hdrs=$(mktemp)
+			_hdrs=$(mktemp "$WORK/solstone-install-headers-XXXXXX")
 			if wget -qS -O "$_dest" "$_current" 2>"$_hdrs"; then
 				_code=200
 			else
@@ -382,7 +383,7 @@ write_profile() {
 	_profile=${SOLSTONE_PROFILE:-$HOME/.profile}
 	_dir=$(dirname "$_profile")
 	mkdir -p "$_dir"
-	_tmp=$(mktemp)
+	_tmp=$(mktemp "$WORK/solstone-install-profile-XXXXXX")
 	if [ -f "$_profile" ]; then
 		awk -v begin="$PROFILE_BEGIN" -v end="$PROFILE_END" '
 			$0 == begin {skip=1; next}
@@ -409,7 +410,11 @@ write_profile() {
 
 detect_target
 
-WORK=$(mktemp -d)
+TMP_ROOT=${TMPDIR:-/var/tmp}
+if [ ! -d "$TMP_ROOT" ] || [ ! -w "$TMP_ROOT" ]; then
+	refuse tmpdir-unusable "$TMP_ROOT"
+fi
+WORK=$(mktemp -d "$TMP_ROOT/solstone-install-work-XXXXXX") || refuse tmpdir-unusable "$TMP_ROOT"
 cleanup() {
 	rm -rf "$WORK"
 }

@@ -29,7 +29,7 @@ expect_refuse() {
 	_want=$1
 	_name=$2
 	shift 2
-	_out=$(mktemp)
+	_out=$(mktemp "$BASE/solstone-install-test-output-XXXXXX")
 	_status=0
 	"$@" >"$_out" 2>&1 || _status=$?
 	_text=$(cat "$_out")
@@ -72,7 +72,15 @@ sha_sidecar() {
 	sha256sum "$_archive" >"$_dest"
 }
 
-BASE=$(mktemp -d)
+TMP_ROOT=${TMPDIR:-/var/tmp}
+if [ ! -d "$TMP_ROOT" ] || [ ! -w "$TMP_ROOT" ]; then
+	printf '%s\n' "tmpdir-unusable: $TMP_ROOT" >&2
+	exit 1
+fi
+BASE=$(mktemp -d "$TMP_ROOT/solstone-install-test-XXXXXX") || {
+	printf '%s\n' "tmpdir-unusable: $TMP_ROOT" >&2
+	exit 1
+}
 trap 'rm -rf "$BASE"' 0 1 2 15
 
 HOST_ARCH=$(uname -m)
@@ -135,6 +143,71 @@ if ! env HOME="$HOME" SOLSTONE_PROFILE="$HOME/.profile" \
 else
 	pass "happy-path install"
 fi
+
+# temp-root resolution and cleanup
+REAL_MKTEMP=$(command -v mktemp)
+case $REAL_MKTEMP in
+/*) ;;
+*)
+	fail "mktemp shim requires an absolute mktemp path: $REAL_MKTEMP"
+	exit 1
+	;;
+esac
+MKTEMP_SHIM_DIR=$BASE/mktemp-shim
+mkdir -p "$MKTEMP_SHIM_DIR"
+{
+	printf '%s\n' '#!/bin/sh'
+	printf '%s\n' "[ -z \"\${SOLSTONE_MKTEMP_LOG:-}\" ] || printf '%s\\n' \"\$*\" >>\"\$SOLSTONE_MKTEMP_LOG\""
+	printf 'exec "%s" "$@"\n' "$REAL_MKTEMP"
+} >"$MKTEMP_SHIM_DIR/mktemp"
+chmod 755 "$MKTEMP_SHIM_DIR/mktemp"
+
+DEFAULT_TMP_LOG=$BASE/default-tmp.log
+DEFAULT_TMP_HOME=$BASE/default-tmp-home
+mkdir -p "$DEFAULT_TMP_HOME"
+if (
+	unset TMPDIR
+	SOLSTONE_MKTEMP_LOG="$DEFAULT_TMP_LOG" PATH="$MKTEMP_SHIM_DIR:$PATH" \
+		HOME="$DEFAULT_TMP_HOME" SOLSTONE_PROFILE="$DEFAULT_TMP_HOME/.profile" \
+		"$INSTALL" --prefix "$BASE/default-tmp-prefix" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+); then
+	if awk '$0 ~ /^-d \/var\/tmp\/solstone-install-work-/ { found=1 } END { exit !found }' "$DEFAULT_TMP_LOG"; then
+		pass "default TMPDIR uses var tmp work template"
+	else
+		fail "default TMPDIR uses var tmp work template"
+	fi
+else
+	fail "default TMPDIR install"
+fi
+
+TMPDIR_PROBE=$BASE/tmpdir-probe
+mkdir -p "$TMPDIR_PROBE"
+PROBE_TMP_LOG=$BASE/probe-tmp.log
+PROBE_TMP_HOME=$BASE/probe-tmp-home
+mkdir -p "$PROBE_TMP_HOME"
+if TMPDIR="$TMPDIR_PROBE" SOLSTONE_MKTEMP_LOG="$PROBE_TMP_LOG" PATH="$MKTEMP_SHIM_DIR:$PATH" \
+	HOME="$PROBE_TMP_HOME" SOLSTONE_PROFILE="$PROBE_TMP_HOME/.profile" \
+	"$INSTALL" --prefix "$BASE/probe-tmp-prefix" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"; then
+	if awk -v prefix="-d $TMPDIR_PROBE/solstone-install-work-" 'index($0, prefix) == 1 { found=1 } END { exit !found }' "$PROBE_TMP_LOG"; then
+		pass "explicit TMPDIR uses probe work template"
+	else
+		fail "explicit TMPDIR uses probe work template"
+	fi
+else
+	fail "explicit TMPDIR install"
+fi
+
+if [ -z "$(ls "$TMPDIR_PROBE")" ]; then
+	pass "successful install cleans TMPDIR probe"
+else
+	fail "successful install leaves TMPDIR probe contents"
+fi
+
+UNUSABLE_TMPDIR=$BASE/tmpdir-not-a-directory
+printf 'not a directory\n' >"$UNUSABLE_TMPDIR"
+expect_refuse tmpdir-unusable tmpdir-unusable \
+	env TMPDIR="$UNUSABLE_TMPDIR" HOME="$HOME" \
+	"$INSTALL" --prefix "$BASE/unusable-tmp-prefix" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
 
 if [ -L "$PREFIX/current" ] && [ -x "$PREFIX/current/bin/journal" ]; then
 	pass "current symlink and bin"
@@ -219,6 +292,18 @@ printf '%s\n' "0000000000000000000000000000000000000000000000000000000000000000 
 expect_refuse digest-mismatch digest-bad \
 	env HOME="$HOME" \
 	"$INSTALL" --prefix "$PREFIX" --archive "$ARCHIVE" --sha256 "$BASE/bad.sha256" --release "$REL"
+
+REFUSAL_TMPDIR_PROBE=$BASE/tmpdir-refusal-probe
+mkdir -p "$REFUSAL_TMPDIR_PROBE"
+_status=0
+TMPDIR="$REFUSAL_TMPDIR_PROBE" SOLSTONE_PROFILE="$HOME/.profile" \
+	"$INSTALL" --prefix "$BASE/refusal-tmp-prefix" --archive "$ARCHIVE" --sha256 "$BASE/bad.sha256" --release "$REL" \
+	>"$BASE/tmpdir-refusal.out" 2>&1 || _status=$?
+if [ "$_status" -ne 0 ] && [ -z "$(ls "$REFUSAL_TMPDIR_PROBE")" ]; then
+	pass "refusal cleans TMPDIR probe"
+else
+	fail "refusal cleanup TMPDIR probe"
+fi
 
 # release-invalid
 printf '%s\n' "product=solstone-journal" >"$BASE/short.release"
@@ -326,8 +411,9 @@ expect_refuse archive-symlink-then-child symlink-child \
 
 # loopback serve + fetch (not a second origin; digest still verified)
 BIN=$ROOT/core/target/debug/solstone-distribution
+BUILD_LOG=$BASE/solstone-dist-build.log
 if [ ! -x "$BIN" ]; then
-	cargo build --manifest-path "$ROOT/core/Cargo.toml" -p solstone-core-distribution --bin solstone-distribution --offline >/tmp/solstone-dist-build.log 2>&1 || true
+	cargo build --manifest-path "$ROOT/core/Cargo.toml" -p solstone-core-distribution --bin solstone-distribution --offline >"$BUILD_LOG" 2>&1 || true
 fi
 if [ -x "$BIN" ]; then
 	SERVE=$BASE/origin
@@ -363,6 +449,7 @@ if [ -x "$BIN" ]; then
 	wait "$_srv" 2>/dev/null || true
 else
 	fail "loopback fetch install: distribution binary missing"
+	tail -n 20 "$BUILD_LOG" >&2 || true
 fi
 
 say "passed=$PASSES failed=$FAILS"

@@ -13,6 +13,9 @@ mod distribution_install_archive_refusals;
 #[path = "contracts/distribution_install_basename.rs"]
 mod distribution_install_basename;
 #[cfg(test)]
+#[path = "contracts/distribution_install_tmpdir.rs"]
+mod distribution_install_tmpdir;
+#[cfg(test)]
 #[path = "contracts/distribution_model_digests.rs"]
 mod distribution_model_digests;
 #[cfg(test)]
