@@ -498,7 +498,7 @@ fn day_dir(root: &Path, day: &str) -> PathBuf {
 }
 
 fn all_segments(root: &Path, day: &str) -> Vec<Segment> {
-    iter_segments(root, PathOrDay::Day(day))
+    let mut segments = iter_segments(root, PathOrDay::Day(day))
         .unwrap_or_default()
         .into_iter()
         .map(|segment| Segment {
@@ -506,7 +506,13 @@ fn all_segments(root: &Path, day: &str) -> Vec<Segment> {
             stream_dir: segment.stream,
             key: segment.key,
         })
-        .collect()
+        .collect::<Vec<_>>();
+    segments.sort_by(|left, right| {
+        left.key
+            .cmp(&right.key)
+            .then(left.stream_dir.cmp(&right.stream_dir))
+    });
+    segments
 }
 
 fn find_segment(root: &Path, day: &str, key: &str, stream: Option<&str>) -> Option<Segment> {

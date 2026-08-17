@@ -106,7 +106,12 @@ pub fn scan_day<S: SegmentSource>(
         });
     }
 
-    segments.sort_by_key(|segment| segment.start.clone());
+    segments.sort_by(|left, right| {
+        left.start
+            .cmp(&right.start)
+            .then(left.stream.cmp(&right.stream))
+            .then(left.key.cmp(&right.key))
+    });
     Ok((
         slots_to_ranges(audio_slots.into_iter().collect()),
         slots_to_ranges(screen_slots.into_iter().collect()),

@@ -432,7 +432,7 @@ platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "slow"
 serial_group = "local-services"
-default_full = false
+default_full = true
 runtime = "none"
 
 [[package_suites]]
@@ -512,7 +512,7 @@ areas = ["media"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
 
 [[package_suites]]
@@ -589,7 +589,7 @@ areas = ["facets"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
 
 [[package_suites]]
@@ -1207,7 +1207,7 @@ areas = ["trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "slow"
-default_full = false
+default_full = true
 runtime = "none"
 
 [[package_suites]]

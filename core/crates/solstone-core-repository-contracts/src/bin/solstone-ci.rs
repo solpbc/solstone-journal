@@ -3,8 +3,8 @@
 
 use serde::Serialize;
 use solstone_core_repository_contracts::ci::{
-    Leg, PackageSuite, Registry, Suite, load_boundary, load_registry, scan_routine_boundaries,
-    validate_boundary, validate_registry,
+    Leg, PackageSuite, Registry, Suite, load_registry, scan_routine_boundaries, validate_boundary,
+    validate_registry,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -32,19 +32,18 @@ fn run() -> Result<i32, String> {
     let command = args.next().unwrap_or_else(|| "plan".to_owned());
     let repo = repo_root()?;
     let registry_path = repo.join("core/ci/suites.toml");
-    let boundary_path = repo.join("core/ci/routine-boundaries.toml");
 
     match command.as_str() {
         "validate" => {
             if args.next().is_some() {
                 return Err("validate does not accept arguments".to_owned());
             }
-            validate_all(&repo, &registry_path, &boundary_path)?;
+            validate_all(&repo, &registry_path)?;
             Ok(0)
         }
         "plan" | "run" => {
             let (selectors, receipt) = parse_selectors(args)?;
-            validate_all(&repo, &registry_path, &boundary_path)?;
+            validate_all(&repo, &registry_path)?;
             let registry = load_registry(&registry_path)?;
             let plan = select(&registry, &selectors)?;
             print_plan(&plan, &selectors);
@@ -81,23 +80,23 @@ fn run() -> Result<i32, String> {
     }
 }
 
-fn validate_all(repo: &Path, registry_path: &Path, boundary_path: &Path) -> Result<(), String> {
+fn validate_all(repo: &Path, registry_path: &Path) -> Result<(), String> {
     let registry = load_registry(registry_path)?;
-    let boundary = load_boundary(boundary_path)?;
+    let boundary = scan_routine_boundaries(repo)?;
     let mut errors = Vec::new();
     if let Err(found) = validate_registry(repo, &registry) {
         errors.extend(found);
     }
-    if let Err(found) = validate_boundary(repo, &boundary) {
+    if let Err(found) = validate_boundary(repo) {
         errors.extend(found);
     }
     if errors.is_empty() {
         println!(
-            "CI topology valid: {} Cargo integration targets, {} package scopes, {} named legs, {} routine-boundary findings",
+            "CI topology valid: {} Cargo integration targets, {} package scopes, {} named legs, {} hard-boundary findings",
             registry.suites.len(),
             registry.package_suites.len(),
             registry.legs.len(),
-            boundary.findings.len()
+            boundary.len()
         );
         Ok(())
     } else {

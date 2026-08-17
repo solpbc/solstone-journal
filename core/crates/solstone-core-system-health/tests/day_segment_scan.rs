@@ -187,7 +187,7 @@ impl SegmentSource for FailingSource {
 }
 
 #[test]
-fn stable_start_sort_preserves_source_order_and_enumeration_errors_propagate() {
+fn equal_start_sort_is_stream_deterministic_and_enumeration_errors_propagate() {
     let temporary = TempDir::new().unwrap();
     let root = temporary.path();
     let zeta = segment(root, Some("zeta"), "120000_300");
@@ -213,7 +213,7 @@ fn stable_start_sort_preserves_source_order_and_enumeration_errors_propagate() {
             .iter()
             .map(|segment| &segment.stream)
             .collect::<Vec<_>>(),
-        ["zeta", "alpha"]
+        ["alpha", "zeta"]
     );
     assert!(scan_day(&FailingSource, root, DAY, now()).is_err());
 }

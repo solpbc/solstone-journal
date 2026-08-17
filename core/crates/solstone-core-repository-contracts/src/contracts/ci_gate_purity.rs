@@ -359,10 +359,11 @@ fn make_ci_runs_only_library_and_binary_unit_harnesses() {
     for required in [
         "--manifest-path $(RUST_MANIFEST)",
         "--workspace",
-        "$(RUST_HOST_EXCLUDES)",
+        "$(RUST_ROUTINE_EXCLUDES)",
         "--lib",
         "--bins",
         "--locked",
+        "--offline",
         "-- --test-threads=1",
     ] {
         assert!(
@@ -386,6 +387,46 @@ fn make_ci_runs_only_library_and_binary_unit_harnesses() {
 }
 
 #[test]
+fn routine_slow_exclusions_are_exact_and_default_in_the_full_gate() {
+    let makefile = makefile_text(&repo_root());
+    let routine = makefile
+        .lines()
+        .find_map(|line| line.strip_prefix("RUST_ROUTINE_EXCLUDES := "))
+        .expect("RUST_ROUTINE_EXCLUDES must be defined");
+    assert!(routine.starts_with("$(RUST_HOST_EXCLUDES) "));
+    let excluded = routine
+        .split_whitespace()
+        .skip(1)
+        .collect::<Vec<_>>()
+        .chunks_exact(2)
+        .map(|pair| {
+            assert_eq!(pair[0], "--exclude");
+            pair[1]
+        })
+        .collect::<BTreeSet<_>>();
+    let expected = BTreeSet::from([
+        "solstone-core-convey-body",
+        "solstone-core-describe",
+        "solstone-core-facets",
+        "solstone-core-sol-link",
+    ]);
+    assert_eq!(excluded, expected, "routine-only exclusions drifted");
+
+    let registry = ci_registry(&repo_root());
+    for package in expected {
+        let suite = registry
+            .package_suites
+            .iter()
+            .find(|suite| suite.package == package)
+            .unwrap_or_else(|| panic!("{package} has no full package suite"));
+        assert!(
+            suite.default_full,
+            "{package} is excluded from routine CI but not default full"
+        );
+    }
+}
+
+#[test]
 fn efficient_ci_statically_checks_only_library_and_binary_targets() {
     let makefile = makefile_text(&repo_root());
     let clippy = target_body(&makefile, "check-rust-clippy");
@@ -400,6 +441,7 @@ fn efficient_ci_statically_checks_only_library_and_binary_targets() {
         "--lib",
         "--bins",
         "--locked",
+        "--offline",
         "-- -D warnings",
     ] {
         assert!(
@@ -416,6 +458,41 @@ fn efficient_ci_statically_checks_only_library_and_binary_targets() {
     assert!(
         full.contains("--all-targets") && full.contains("-- -D warnings"),
         "full CI must retain all-target static compilation"
+    );
+}
+
+#[test]
+fn routine_ci_is_fail_closed_and_contained_on_linux() {
+    let makefile = makefile_text(&repo_root());
+    let ci = target_body(&makefile, "ci");
+    for required in [
+        "command -v bwrap",
+        "mktemp -d /var/tmp/solstone-ci-XXXXXX",
+        "trap 'rm -rf -- \"$$sandbox_root\"'",
+        "--unshare-net",
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--bind \"$$sandbox_root/tmp\" /tmp",
+        "--ro-bind \"$$sandbox_root/empty\" /run",
+        "--bind \"$$sandbox_root/var-tmp\" /var/tmp",
+        "--ro-bind \"$(CURDIR)\" \"$(CURDIR)\"",
+        "--bind \"$(RUST_TARGET_DIR)\" \"$(RUST_TARGET_DIR)\"",
+        "--setenv CARGO_NET_OFFLINE true",
+        "$(MAKE) --no-print-directory ci-contained",
+    ] {
+        assert!(
+            ci.contains(required),
+            "make ci lost containment: {required}"
+        );
+    }
+    assert!(
+        !ci.contains("--tmpfs"),
+        "routine CI temporary storage must remain disk-backed under /var/tmp"
+    );
+    assert!(
+        target_body(&makefile, "ci-contained").contains("SOLSTONE_CI_CONTAINED"),
+        "the contained entry point must reject direct use"
     );
 }
 
@@ -764,6 +841,15 @@ fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
         target_body(&makefile, "ci-full-prep-cargo").contains("cargo fetch"),
         "full prep must own Cargo fetching"
     );
+    let cargo_prep = target_body(&makefile, "ci-full-prep-cargo");
+    assert!(
+        cargo_prep.contains("cargo check")
+            && cargo_prep.contains("$(RUST_HOST_EXCLUDES)")
+            && cargo_prep.contains("cargo test")
+            && cargo_prep.contains("$(RUST_ROUTINE_EXCLUDES)")
+            && cargo_prep.contains("--no-run"),
+        "full prep must materialize both routine static and unit build graphs"
+    );
     assert!(
         !target_body(&makefile, "check-rust-deny").contains("cargo fetch"),
         "offline validation must not fetch Cargo inputs"
@@ -1002,7 +1088,6 @@ fn rust_host_excludes_match_the_workspace_onnx_closure() {
         "check-rust-msrv",
         "check-rust-clippy",
         "check-rust-clippy-full",
-        "check-rust-unit",
         "check-rust-doc",
         "check-rust-test",
     ] {
@@ -1011,4 +1096,8 @@ fn rust_host_excludes_match_the_workspace_onnx_closure() {
             "{target} must use RUST_HOST_EXCLUDES"
         );
     }
+    assert!(
+        target_body(&makefile, "check-rust-unit").contains("$(RUST_ROUTINE_EXCLUDES)"),
+        "check-rust-unit must use the routine-only exclusion set"
+    );
 }

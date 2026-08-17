@@ -26,9 +26,15 @@ VENV_PY := $(VENV_BIN)/python
 PYTHON := $(VENV_PY)
 RUST_MANIFEST := core/Cargo.toml
 RUST_TARGET_DIR := $(if $(strip $(CARGO_TARGET_DIR)),$(abspath $(CARGO_TARGET_DIR)),$(CURDIR)/core/target)
+CI_CARGO_HOME := $(if $(strip $(CARGO_HOME)),$(abspath $(CARGO_HOME)),$(HOME)/.cargo)
+CI_RUSTUP_HOME := $(if $(strip $(RUSTUP_HOME)),$(abspath $(RUSTUP_HOME)),$(HOME)/.rustup)
 SERVICE_LEGACY_EVIDENCE_ROOT ?= core/fixtures/service_legacy_evidence
 IOS_TARGET := aarch64-apple-ios
 RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze
+# These four library harnesses are intentionally full-gate suites: each was
+# measured above ten seconds and already has an explicit registry entry. Keep
+# routine Clippy broad, but leave their execution to ci-full.
+RUST_ROUTINE_EXCLUDES := $(RUST_HOST_EXCLUDES) --exclude solstone-core-sol-link --exclude solstone-core-convey-body --exclude solstone-core-facets --exclude solstone-core-describe
 
 # Every crate RUST_HOST_EXCLUDES removes from the workspace test selection is
 # named here, and check-rust-onnx-test runs it. They are excluded because they
@@ -89,7 +95,7 @@ ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # `make install` fail on a clean environment while every Rust gate stayed green,
 # because the gates carry the export and check-differentials inherits it when it
 # shells into install.
-install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries check-differentials: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries check-differentials ci-full-prep-cargo: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
@@ -292,6 +298,7 @@ UV_OPTIONAL_GOALS := \
 	check-rust-pdf-stage check-rust-pdf-ready check-rust-pdf-test $(PDF_RUNTIME_HOST_LINK_DIR) \
 	check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries \
 	check-rust-ci-topology ci ci-under-poison ci-full ci-full-under-poison ci-full-plan \
+	ci-contained \
 	ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf \
 	verify test build format format-check \
 	check-service-legacy-evidence service-legacy-evidence-capture audit \
@@ -444,6 +451,8 @@ ci-full-prep: ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
 ci-full-prep-cargo:
 	@$(REQUIRE_CARGO)
 	cargo fetch --manifest-path $(RUST_MANIFEST) --locked
+	cargo check --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked
+	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --no-run --locked
 
 ci-full-prep-onnx:
 	@$(MAKE) --no-print-directory check-rust-onnx-stage
@@ -502,7 +511,7 @@ check-rust-msrv:
 
 check-rust-clippy:
 	@$(REQUIRE_CARGO)
-	cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked -- -D warnings
+	cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked --offline -- -D warnings
 
 check-rust-clippy-full:
 	@$(REQUIRE_CARGO)
@@ -513,7 +522,7 @@ check-rust-clippy-full:
 # static compilation above and run only in the explicit full gate below.
 check-rust-unit:
 	@$(REQUIRE_CARGO)
-	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked -- --test-threads=1
+	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --locked --offline -- --test-threads=1
 
 check-rust-doc:
 	@$(REQUIRE_CARGO)
@@ -1302,8 +1311,30 @@ define run-rust-gate-under-poison
 	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 SOLSTONE_POISON_LOG="$$shim_dir/poison.log" $(MAKE) $(1)
 endef
 
-.PHONY: ci ci-under-poison ci-full ci-full-under-poison
+.PHONY: ci ci-contained ci-under-poison ci-full ci-full-under-poison
 ci:
+ifeq ($(HOST_SYSTEM),Linux)
+	@set -eu; \
+	command -v bwrap >/dev/null 2>&1 || { echo "bubblewrap is required for contained Linux CI; install bwrap and retry" >&2; exit 1; }; \
+	mkdir -p "$(RUST_TARGET_DIR)"; \
+	sandbox_root=$$(mktemp -d /var/tmp/solstone-ci-XXXXXX); \
+	trap 'rm -rf -- "$$sandbox_root"' 0 1 2 15; \
+	mkdir -p "$$sandbox_root/tmp" "$$sandbox_root/empty" "$$sandbox_root/var-tmp/home"; \
+	bwrap --die-with-parent --new-session --unshare-net --unshare-pid --unshare-ipc --unshare-uts \
+		--ro-bind / / --proc /proc --dev /dev \
+		--bind "$$sandbox_root/tmp" /tmp --ro-bind "$$sandbox_root/empty" /run \
+		--bind "$$sandbox_root/var-tmp" /var/tmp \
+		--ro-bind "$(CURDIR)" "$(CURDIR)" --bind "$(RUST_TARGET_DIR)" "$(RUST_TARGET_DIR)" \
+		--chdir "$(CURDIR)" --setenv HOME /var/tmp/home --setenv TMPDIR /var/tmp \
+		--setenv CARGO_HOME "$(CI_CARGO_HOME)" --setenv RUSTUP_HOME "$(CI_RUSTUP_HOME)" \
+		--setenv CARGO_NET_OFFLINE true --setenv SOLSTONE_CI_CONTAINED 1 \
+		$(MAKE) --no-print-directory ci-contained
+else
+	$(call run-rust-gate-under-poison,ci-under-poison)
+endif
+
+ci-contained:
+	@test "$${SOLSTONE_CI_CONTAINED:-}" = 1 || { echo "ci-contained is internal; run 'make ci'" >&2; exit 2; }
 	$(call run-rust-gate-under-poison,ci-under-poison)
 
 ci-under-poison:

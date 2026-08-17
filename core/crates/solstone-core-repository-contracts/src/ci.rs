@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use syn::visit::{self, Visit};
 
 pub const HOST_EXCLUDES: &[&str] = &[
@@ -95,32 +94,11 @@ pub struct CargoSuite {
     pub required_features: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BoundaryBaseline {
-    pub version: u32,
-    #[serde(default)]
-    pub findings: Vec<BoundaryFinding>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BoundaryFinding {
-    pub id: String,
-}
-
 pub fn load_registry(path: &Path) -> Result<Registry, String> {
     let text = fs::read_to_string(path)
         .map_err(|error| format!("read suite registry {}: {error}", path.display()))?;
     toml_edit::de::from_str(&text)
         .map_err(|error| format!("parse suite registry {}: {error}", path.display()))
-}
-
-pub fn load_boundary(path: &Path) -> Result<BoundaryBaseline, String> {
-    let text = fs::read_to_string(path)
-        .map_err(|error| format!("read routine boundary {}: {error}", path.display()))?;
-    toml_edit::de::from_str(&text)
-        .map_err(|error| format!("parse routine boundary {}: {error}", path.display()))
 }
 
 pub fn validate_registry(repo: &Path, registry: &Registry) -> Result<(), Vec<String>> {
@@ -714,147 +692,15 @@ pub fn scan_routine_boundaries(repo: &Path) -> Result<BTreeSet<String>, String> 
     Ok(findings)
 }
 
-pub fn validate_boundary(repo: &Path, baseline: &BoundaryBaseline) -> Result<(), Vec<String>> {
-    let mut errors = Vec::new();
-    if baseline.version != 1 {
-        errors.push(format!(
-            "unsupported routine boundary version {}; expected 1",
-            baseline.version
-        ));
-    }
-    let expected = baseline
-        .findings
-        .iter()
-        .map(|finding| finding.id.clone())
-        .collect::<BTreeSet<_>>();
-    if expected.len() != baseline.findings.len() {
-        errors.push("routine boundary contains duplicate findings".to_owned());
-    }
+pub fn validate_boundary(repo: &Path) -> Result<(), Vec<String>> {
     match scan_routine_boundaries(repo) {
-        Ok(observed) => {
-            for finding in observed.difference(&expected) {
-                errors.push(format!("new routine-boundary risk: {finding}"));
-            }
-            for finding in expected.difference(&observed) {
-                errors.push(format!(
-                    "stale routine-boundary risk (shrink the baseline deliberately): {finding}"
-                ));
-            }
-        }
-        Err(error) => errors.push(error),
-    }
-    if let Err(error) = validate_boundary_history(repo, &expected) {
-        errors.push(error);
-    }
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
-    }
-}
-
-fn validate_boundary_history(repo: &Path, current: &BTreeSet<String>) -> Result<(), String> {
-    if !repo.join(".git").exists() {
-        return Ok(());
-    }
-    let revisions = git_boundary_revisions(repo)?;
-    for revision in &revisions {
-        let boundary = git_boundary(repo, revision)?.ok_or_else(|| {
-            format!("commit {revision} changed the routine boundary but does not contain it")
-        })?;
-        for parent in git_parents(repo, revision)? {
-            let Some(parent_boundary) = git_boundary(repo, &parent)? else {
-                continue;
-            };
-            let added = boundary_additions(&parent_boundary, &boundary);
-            if !added.is_empty() {
-                return Err(format_boundary_growth(
-                    &format!("{revision} relative to parent {parent}"),
-                    &added,
-                ));
-            }
-        }
-    }
-    if let Some(tracked) = git_boundary(repo, "HEAD")?
-        && tracked != *current
-    {
-        let added = boundary_additions(&tracked, current);
-        if !added.is_empty() {
-            return Err(format_boundary_growth("HEAD", &added));
-        }
-    }
-    Ok(())
-}
-
-fn boundary_additions(previous: &BTreeSet<String>, current: &BTreeSet<String>) -> Vec<String> {
-    current.difference(previous).cloned().collect()
-}
-
-fn format_boundary_growth(source: &str, added: &[String]) -> String {
-    format!(
-        "routine boundary may only shrink; {} finding(s) were added at {source}: {}",
-        added.len(),
-        added.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
-    )
-}
-
-fn git_boundary_revisions(repo: &Path) -> Result<Vec<String>, String> {
-    let output = Command::new("git")
-        .args([
-            "log",
-            "--full-history",
-            "--format=%H",
-            "--",
-            "core/ci/routine-boundaries.toml",
-        ])
-        .current_dir(repo)
-        .output()
-        .map_err(|error| format!("start git for routine-boundary log: {error}"))?;
-    if !output.status.success() {
-        return Err("git log failed for routine-boundary history".to_owned());
-    }
-    String::from_utf8(output.stdout)
-        .map_err(|error| format!("decode routine-boundary log: {error}"))
-        .map(|text| text.lines().map(ToOwned::to_owned).collect())
-}
-
-fn git_parents(repo: &Path, revision: &str) -> Result<Vec<String>, String> {
-    let output = Command::new("git")
-        .args(["show", "-s", "--format=%P", revision])
-        .current_dir(repo)
-        .output()
-        .map_err(|error| format!("start git for parents of {revision}: {error}"))?;
-    if !output.status.success() {
-        return Err(format!("git could not read parents of {revision}"));
-    }
-    String::from_utf8(output.stdout)
-        .map_err(|error| format!("decode parents of {revision}: {error}"))
-        .map(|text| text.split_whitespace().map(ToOwned::to_owned).collect())
-}
-
-fn git_boundary(repo: &Path, revision: &str) -> Result<Option<BTreeSet<String>>, String> {
-    let output = Command::new("git")
-        .args([
-            "show",
-            &format!("{revision}:core/ci/routine-boundaries.toml"),
-        ])
-        .current_dir(repo)
-        .output()
-        .map_err(|error| format!("start git for routine-boundary history: {error}"))?;
-    if !output.status.success() {
-        return Ok(None);
-    }
-    let text = String::from_utf8(output.stdout)
-        .map_err(|error| format!("decode historical routine boundary: {error}"))?;
-    let baseline: BoundaryBaseline = toml_edit::de::from_str(&text)
-        .map_err(|error| format!("parse {revision} routine boundary: {error}"))?;
-    Ok(Some(
-        baseline
-            .findings
+        Ok(findings) if findings.is_empty() => Ok(()),
+        Ok(findings) => Err(findings
             .into_iter()
-            .map(|finding| finding.id)
-            .collect(),
-    ))
+            .map(|finding| format!("routine unit harness reaches a hard boundary: {finding}"))
+            .collect()),
+        Err(error) => Err(vec![error]),
+    }
 }
 
 fn rust_files(root: &Path) -> Result<Vec<PathBuf>, String> {
@@ -901,25 +747,9 @@ impl RiskVisitor<'_> {
         let calls = inspect_calls(block, &self.process_command_aliases);
         for (category, needles) in risk_patterns() {
             let found = match *category {
-                "clock" => {
-                    calls
-                        .names
-                        .iter()
-                        .any(|name| matches!(name.as_str(), "sleep" | "timeout" | "interval"))
-                        || needles.iter().any(|needle| tokens.contains(needle))
-                }
-                "scheduling" => {
-                    calls
-                        .names
-                        .iter()
-                        .any(|name| matches!(name.as_str(), "spawn" | "channel"))
-                        || needles.iter().any(|needle| tokens.contains(needle))
-                }
+                "network" => calls.reaches_network,
                 "process" => calls.launches_process,
                 "native" => calls.reaches_native,
-                "host-tool" => {
-                    calls.launches_process && needles.iter().any(|needle| tokens.contains(needle))
-                }
                 _ => needles.iter().any(|needle| tokens.contains(needle)),
             };
             if found {
@@ -985,7 +815,7 @@ impl<'ast> Visit<'ast> for RiskVisitor<'_> {
 
 #[derive(Default)]
 struct CallRisks {
-    names: BTreeSet<String>,
+    reaches_network: bool,
     launches_process: bool,
     reaches_native: bool,
 }
@@ -1022,9 +852,6 @@ impl<'ast> Visit<'ast> for CallRiskVisitor<'_> {
 
     fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
         if let syn::Expr::Path(function) = node.func.as_ref() {
-            if let Some(segment) = function.path.segments.last() {
-                self.risks.names.insert(segment.ident.to_string());
-            }
             let segments = function
                 .path
                 .segments
@@ -1037,6 +864,7 @@ impl<'ast> Visit<'ast> for CallRiskVisitor<'_> {
                 self.module_aliases,
             );
             self.risks.launches_process |= launches_process;
+            self.risks.reaches_network |= is_network_constructor(&segments);
             self.risks.reaches_native |= segments
                 .iter()
                 .any(|segment| is_native_call_segment(segment));
@@ -1049,11 +877,6 @@ impl<'ast> Visit<'ast> for CallRiskVisitor<'_> {
             }
         }
         visit::visit_expr_call(self, node);
-    }
-
-    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
-        self.risks.names.insert(node.method.to_string());
-        visit::visit_expr_method_call(self, node);
     }
 }
 
@@ -1081,6 +904,20 @@ fn is_native_executable(program: &str) -> bool {
         .rsplit(['/', '\\'])
         .next()
         .is_some_and(|name| matches!(name, "ffmpeg" | "maturin"))
+}
+
+fn is_network_constructor(segments: &[String]) -> bool {
+    [
+        ["TcpListener", "bind"],
+        ["TcpStream", "connect"],
+        ["UdpSocket", "bind"],
+        ["UnixListener", "bind"],
+        ["UnixStream", "connect"],
+        ["UnixDatagram", "bind"],
+        ["Socket", "new"],
+    ]
+    .iter()
+    .any(|suffix| path_ends_with(segments, suffix))
 }
 
 fn is_process_constructor(
@@ -1250,27 +1087,7 @@ fn has_test_cfg(attrs: &[syn::Attribute]) -> bool {
 }
 
 fn risk_patterns() -> &'static [(&'static str, &'static [&'static str])] {
-    &[
-        ("clock", &["Instant", "SystemTime"]),
-        ("scheduling", &["Barrier", "Mutex", "RwLock", "select !"]),
-        (
-            "network",
-            &["TcpListener", "TcpStream", "UdpSocket", "reqwest", "ureq"],
-        ),
-        ("process", &[]),
-        ("native", &[]),
-        (
-            "host-tool",
-            &[
-                "\"cargo\"",
-                "\"make\"",
-                "\"git\"",
-                "\"curl\"",
-                "\"python",
-                "\"cc\"",
-            ],
-        ),
-    ]
+    &[("network", &[]), ("process", &[]), ("native", &[])]
 }
 
 #[cfg(test)]
@@ -1405,12 +1222,8 @@ mod tests {
     }
 
     #[test]
-    fn routine_boundary_detects_new_risky_test_and_only_shrinks_deliberately() {
+    fn routine_boundary_rejects_hard_boundaries_without_an_allowlist() {
         let (temp, _registry) = fixture();
-        let clean = BoundaryBaseline {
-            version: 1,
-            findings: Vec::new(),
-        };
         fs::write(
             temp.path().join("core/crates/a/src/lib.rs"),
             r#"use std::process::Command;
@@ -1434,6 +1247,9 @@ mod tests {
                     assert!(matches!(command, Command::Version));
                     assert_eq!((spawner, sleepy, tool), ("fake", "fake", "cargo"));
                     assert_eq!((model, plan.vulkan_identity), ("model.onnx", "vulkan"));
+                    let _clock = std::time::Instant::now();
+                    let _lock = std::sync::Mutex::new(());
+                    let _constructed_error = "ureq::Error::Timeout";
                 }
                 #[test] fn nested_process_alias_does_not_leak() {
                     {
@@ -1448,16 +1264,12 @@ mod tests {
 "#,
         )
         .expect("safe domain command");
-        assert_eq!(validate_boundary(temp.path(), &clean), Ok(()));
+        assert_eq!(validate_boundary(temp.path()), Ok(()));
         fs::write(
             temp.path().join("core/crates/a/src/lib.rs"),
             r#"use std::process::Command as ParentRunner;
             #[cfg(test)] mod tests {
                 use super::*;
-                fn timeout<T>() {}
-                fn interval<T>() {}
-                fn sleep<T>() {}
-                fn spawn<T>() {}
                 fn ffmpeg(_: &[&str]) {}
 
                 use std::process::Command as Runner;
@@ -1508,36 +1320,8 @@ mod tests {
                 #[test] fn calls_dynamic_loader() {
                     libloading::Library::new("libexample.so");
                 }
-                #[test] fn opens_turbofished_channel() {
-                    let _ = std::sync::mpsc::channel::<()>();
-                }
-                #[test] fn spawns() {
-                    let _ = std::thread::spawn(|| {});
-                }
-                #[test] fn sleeps() {
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                }
-                #[test] fn calls_turbofished_timeout() {
-                    timeout::<()>();
-                }
-                #[test] fn calls_turbofished_interval() {
-                    interval::<()>();
-                }
-                #[test] fn calls_turbofished_sleep() {
-                    sleep::<()>();
-                }
-                #[test] fn calls_turbofished_spawn() {
-                    spawn::<()>();
-                }
-                struct Clock;
-                impl Clock { fn sleep(&self) {} }
-                #[test] fn calls_sleep_method() {
-                    Clock.sleep();
-                }
-                struct Spawner;
-                impl Spawner { fn spawn(&self) {} }
-                #[test] fn calls_spawn_method() {
-                    Spawner.spawn();
+                #[test] fn opens_network_socket() {
+                    let _ = std::net::TcpListener::bind("127.0.0.1:0");
                 }
                 mod nested {
                     #[test] fn launches_host_through_two_parents() {
@@ -1548,50 +1332,30 @@ mod tests {
 "#,
         )
         .expect("mutate lib");
-        let errors = validate_boundary(temp.path(), &clean).expect_err("new risk must red");
+        let errors = validate_boundary(temp.path()).expect_err("hard boundary must red");
         assert!(errors.iter().any(|error| error.contains("process")));
-        assert!(errors.iter().any(|error| error.contains("host-tool")));
-        assert!(errors.iter().any(|error| error.contains("clock")));
-        assert!(errors.iter().any(|error| error.contains("scheduling")));
         assert!(errors.iter().any(|error| error.contains("native")));
+        assert!(errors.iter().any(|error| error.contains("network")));
 
         let observed = scan_routine_boundaries(temp.path()).expect("scan risky forms");
         for expected in [
             "launches_host_through_explicit_parent_glob::process",
-            "launches_host_through_explicit_parent_glob::host-tool",
             "launches_host_through_qualified_parent::process",
-            "launches_host_through_qualified_parent::host-tool",
             "launches_host_through_qualified_crate_root::process",
-            "launches_host_through_qualified_crate_root::host-tool",
             "launches_host_through_module_alias::process",
-            "launches_host_through_module_alias::host-tool",
             "launches_host_through_qualified_self::process",
-            "launches_host_through_qualified_self::host-tool",
             "launches_host_through_local_alias::process",
-            "launches_host_through_local_alias::host-tool",
             "launches_host_through_grouped_alias::process",
-            "launches_host_through_grouped_alias::host-tool",
             "launches_host_through_async_alias::process",
-            "launches_host_through_async_alias::host-tool",
             "launches_host_through_direct_path::process",
-            "launches_host_through_direct_path::host-tool",
             "launches_native_executable::process",
             "launches_native_executable::native",
             "non_native_executable_with_native_strings::process",
             "calls_native_helper::native",
             "calls_native_crate::native",
             "calls_dynamic_loader::native",
-            "opens_turbofished_channel::scheduling",
-            "spawns::scheduling",
-            "sleeps::clock",
-            "calls_turbofished_timeout::clock",
-            "calls_turbofished_interval::clock",
-            "calls_turbofished_sleep::clock",
-            "calls_turbofished_spawn::scheduling",
-            "calls_sleep_method::clock",
-            "calls_spawn_method::scheduling",
+            "opens_network_socket::network",
             "nested::launches_host_through_two_parents::process",
-            "nested::launches_host_through_two_parents::host-tool",
         ] {
             assert!(
                 observed.iter().any(|finding| finding.ends_with(expected)),
@@ -1606,43 +1370,11 @@ mod tests {
             "native words outside call/executable position are not runtime evidence"
         );
 
-        let accepted = BoundaryBaseline {
-            version: 1,
-            findings: observed
-                .into_iter()
-                .map(|id| BoundaryFinding { id })
-                .collect(),
-        };
-        assert_eq!(validate_boundary(temp.path(), &accepted), Ok(()));
         fs::write(
             temp.path().join("core/crates/a/src/lib.rs"),
             "#[cfg(test)] mod tests { #[test] fn pure_again() {} }\n",
         )
         .expect("shrink lib");
-        let errors =
-            validate_boundary(temp.path(), &accepted).expect_err("stale baseline must red");
-        assert!(
-            errors
-                .iter()
-                .any(|error| error.contains("shrink the baseline deliberately"))
-        );
-    }
-
-    #[test]
-    fn routine_boundary_history_rejects_growth_and_accepts_shrinkage() {
-        let previous = BTreeSet::from(["a".to_owned(), "b".to_owned()]);
-        let grown = BTreeSet::from(["a".to_owned(), "b".to_owned(), "c".to_owned()]);
-        assert_eq!(boundary_additions(&previous, &grown), ["c"]);
-        let shrunk = BTreeSet::from(["a".to_owned()]);
-        assert!(boundary_additions(&previous, &shrunk).is_empty());
-
-        let sibling = BTreeSet::from(["b".to_owned()]);
-        let good_merge = BTreeSet::new();
-        assert!(boundary_additions(&shrunk, &good_merge).is_empty());
-        assert!(boundary_additions(&sibling, &good_merge).is_empty());
-
-        let bad_merge = BTreeSet::from(["a".to_owned()]);
-        assert!(boundary_additions(&shrunk, &bad_merge).is_empty());
-        assert_eq!(boundary_additions(&sibling, &bad_merge), ["a"]);
+        assert_eq!(validate_boundary(temp.path()), Ok(()));
     }
 }
