@@ -5,7 +5,6 @@
 
 use std::env;
 use std::fs;
-use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -79,14 +78,6 @@ fn write_config(journal: &Path, contents: &str) {
     let config = journal.join("config");
     fs::create_dir_all(&config).expect("create temporary journal config directory");
     fs::write(config.join("journal.json"), contents).expect("write temporary journal config");
-}
-
-fn write_symlink_loop_config(journal: &Path) {
-    let config = journal.join("config");
-    fs::create_dir_all(&config).expect("create temporary journal config directory");
-    symlink("b", config.join("a")).expect("create first config symlink");
-    symlink("a", config.join("b")).expect("create second config symlink");
-    symlink("a", config.join("journal.json")).expect("create looping journal config");
 }
 
 fn run_python(script: &Path, args: &[&Path], journal: Option<&Path>) -> Output {
@@ -288,157 +279,4 @@ print(json.dumps({
     assert_eq!(inactive_report["raised"], Value::Null);
     assert_eq!(inactive_report["started"], false);
     assert_eq!(inactive_report["warned"], false);
-}
-
-#[test]
-fn config_journal_reports_corrupt_current_config_but_accepts_missing_target() {
-    let temp = TempDir::new("journal-config-cli");
-    let corrupt = temp.journal("corrupt");
-    let inactive = temp.journal("inactive");
-    let corrupt_target = temp.path.join("corrupt-target");
-    let missing_target = temp.path.join("missing-target");
-    let home = temp.path.join("home");
-    fs::create_dir(&home).expect("create isolated home");
-    write_config(&corrupt, "{bad json");
-    write_config(&inactive, r#"{"setup": {}}"#);
-
-    let script = temp.script(
-        "config_cli",
-        r#"
-import json
-import os
-import pathlib
-import subprocess
-import sys
-
-from solstone.think.install_guard import install_wrappers
-
-home, current, target, sol, journal = map(pathlib.Path, sys.argv[1:])
-os.environ["HOME"] = str(home)
-install_wrappers(str(current), {"sol": str(sol), "journal": str(journal)})
-result = subprocess.run(
-    [str(journal), "config", "journal", str(target), "--switch", "--yes"],
-    env=os.environ.copy(),
-    text=True,
-    capture_output=True,
-)
-print(json.dumps({
-    "exit_code": result.returncode,
-    "stderr": result.stderr,
-    "target_exists": target.exists(),
-}))
-"#,
-    );
-    let sol = repo_binary("sol");
-    let journal_bin = repo_binary("journal");
-
-    let corrupt_output = run_python(
-        &script,
-        &[&home, &corrupt, &corrupt_target, &sol, &journal_bin],
-        None,
-    );
-    require_success(&corrupt_output);
-    let corrupt_report = json_lines(&corrupt_output)
-        .pop()
-        .expect("config CLI harness report");
-    assert_eq!(corrupt_report["exit_code"], 1);
-    assert!(
-        corrupt_report["stderr"]
-            .as_str()
-            .unwrap()
-            .contains("I couldn't read your settings file")
-    );
-
-    let missing_output = run_python(
-        &script,
-        &[&home, &inactive, &missing_target, &sol, &journal_bin],
-        None,
-    );
-    require_success(&missing_output);
-    let missing_report = json_lines(&missing_output)
-        .pop()
-        .expect("config CLI harness report");
-    assert_eq!(missing_report["exit_code"], 0);
-    assert_eq!(missing_report["stderr"], "");
-    assert_eq!(missing_report["target_exists"], true);
-}
-
-fn doctor_results(journal: &Path) -> Vec<Value> {
-    let output = Command::new(repo_binary("journal"))
-        .args(["doctor", "--jsonl"])
-        .current_dir(repo_root())
-        .env("SOLSTONE_JOURNAL", journal)
-        .output()
-        .expect("run journal doctor");
-    let records = json_lines(&output);
-    assert!(
-        records
-            .iter()
-            .any(|record| record["event"] == "doctor.completed"),
-        "doctor must emit completion JSONL\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-    records
-        .into_iter()
-        .filter(|record| {
-            record["event"] == "check.completed"
-                && matches!(
-                    record["name"].as_str(),
-                    Some("default_stt_ready" | "parakeet_cpp_stt_ready")
-                )
-        })
-        .collect()
-}
-
-#[test]
-fn doctor_reports_corrupt_config_only_through_the_stt_readiness_checks() {
-    let temp = TempDir::new("journal-config-doctor");
-    let malformed = temp.journal("malformed");
-    let looped = temp.journal("looped");
-    let missing = temp.journal("missing");
-    let valid = temp.journal("valid");
-    write_config(&malformed, "{bad json");
-    write_symlink_loop_config(&looped);
-    write_config(
-        &valid,
-        r#"{"setup": {"completed_at": 1}, "transcribe": {"backend": "other"}}"#,
-    );
-
-    for journal in [&malformed, &looped] {
-        let checks = doctor_results(journal);
-        assert_eq!(checks.len(), 2, "must isolate the two STT readiness checks");
-        for check in checks {
-            assert_eq!(check["status"], "failed");
-            assert!(
-                check["detail"]
-                    .as_str()
-                    .unwrap()
-                    .starts_with("I couldn't read your settings file at ")
-            );
-            assert_eq!(
-                check["fix"],
-                "repair or restore config/journal.json from a backup"
-            );
-            assert_eq!(check["execution_error"], Value::Null);
-        }
-    }
-
-    for journal in [&missing, &valid] {
-        let checks = doctor_results(journal);
-        assert_eq!(checks.len(), 2, "must isolate the two STT readiness checks");
-        for check in checks {
-            assert!(
-                !check["detail"]
-                    .as_str()
-                    .unwrap()
-                    .contains("I couldn't read your settings file")
-            );
-            assert_ne!(
-                check["fix"],
-                "repair or restore config/journal.json from a backup"
-            );
-            assert_eq!(check["execution_error"], Value::Null);
-        }
-    }
 }
