@@ -47,13 +47,6 @@ fn rows() -> Result<Vec<&'static Artifact>, CoremlInstallError> {
         .iter()
         .filter(|artifact| artifact.unit == UNIT && artifact.platform == Some(Platform::MacosArm64))
         .collect::<Vec<_>>();
-    if rows.len() != 23 {
-        return Err(CoremlInstallError::new(
-            "artifact_registry_mismatch",
-            format!("expected 23 {UNIT} catalog rows, found {}", rows.len()),
-            65,
-        ));
-    }
     Ok(rows)
 }
 
@@ -190,9 +183,9 @@ fn install_with_rows(
     )
 }
 
-/// Test door: run the CoreML installer with injected publish and sentinel writers.
+/// Internal fixture seam: run the CoreML installer with injected publish and sentinel writers.
 #[allow(clippy::too_many_arguments)] // Test-only publish and sentinel seams exercise ordering.
-pub fn install_with_rows_and_seams(
+pub(crate) fn install_with_rows_and_seams(
     home_dir: &Path,
     config: &JournalConfigRead,
     force: bool,
@@ -287,8 +280,9 @@ fn check_with_rows(
     Ok(())
 }
 
-/// Test door: install fixture rows on the darwin/arm64 host the production guard accepts.
-pub fn install_with_rows_for_test(
+/// Internal fixture seam: install rows on the darwin/arm64 host the production guard accepts.
+#[cfg(feature = "test-hooks")]
+pub(crate) fn install_with_rows_for_test(
     home_dir: &Path,
     config: &JournalConfigRead,
     force: bool,
@@ -308,14 +302,16 @@ mod tests {
         let rows = rows().unwrap();
         let expected = catalog()
             .iter()
-            .filter(|artifact| artifact.unit == UNIT && artifact.platform == Some(Platform::MacosArm64))
+            .filter(|artifact| {
+                artifact.unit == UNIT && artifact.platform == Some(Platform::MacosArm64)
+            })
             .map(|artifact| artifact.filename)
             .collect::<std::collections::BTreeSet<_>>();
         let actual = rows
             .iter()
             .map(|artifact| artifact.filename)
             .collect::<std::collections::BTreeSet<_>>();
-        assert!(!actual.is_empty());
+        assert!(!expected.is_empty());
         assert_eq!(actual, expected);
     }
 
@@ -324,7 +320,7 @@ mod tests {
         use archive::ArchiveError;
         assert_eq!(
             archive_error_reason_code(&ArchiveError::HostRefused {
-                host: "evil.example".to_owned()
+                host: "blocked.test".to_owned()
             }),
             "download_host_refused"
         );
@@ -358,7 +354,7 @@ mod tests {
         );
         assert_eq!(
             archive_error_reason_code(&ArchiveError::OriginUnavailable {
-                host: "origin.invalid".to_owned(),
+                host: "origin.test".to_owned(),
                 message: "refused".to_owned()
             }),
             "download_origin_unreachable"
@@ -430,7 +426,7 @@ mod tests {
         let denied = archive::DownloadHostPolicy {
             allowed_hosts: &["updates.solstone.app"],
             allow_http: true,
-            origin_base_url: "http://localhost:9",
+            origin_base_url: "http://[::1]:9",
         };
         let error = install_with_rows(&home, &config, false, &denied, ("darwin", "arm64"), &rows)
             .unwrap_err();

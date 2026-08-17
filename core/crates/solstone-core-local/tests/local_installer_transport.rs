@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -15,6 +15,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{ServerConfig, ServerConnection};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use socket2::{Domain, Protocol, Socket, Type};
 use solstone_core_assets::{Artifact, Backend, Platform, catalog, resolve};
 use solstone_core_journal_config::{
     JournalConfigRead,
@@ -24,11 +25,9 @@ use solstone_core_journal_config::{
     },
 };
 use solstone_core_local::install::archive::{self, ArchiveError, DownloadHostPolicy};
-use solstone_core_local::install::coreml_install::{
-    install_with_rows_and_seams, install_with_rows_for_test,
-};
-use solstone_core_local::install::rfdetr_install::{
-    binary_path, install_rfdetr_with_artifacts, model_path,
+use solstone_core_local::install::rfdetr_install::{binary_path, model_path};
+use solstone_core_local::install::test_hooks::{
+    install_coreml_with_rows, install_coreml_with_seams, install_rfdetr_with_fixture_artifacts,
 };
 
 static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
@@ -63,7 +62,31 @@ fn loopback_host(address: SocketAddr) -> String {
     address.ip().to_string()
 }
 
-fn request_host(stream: &mut TcpStream) -> String {
+fn held_refusal_reservation() -> (Socket, SocketAddr) {
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    socket
+        .bind(&"127.0.0.1:0".parse::<SocketAddr>().unwrap().into())
+        .unwrap();
+    let address = socket.local_addr().unwrap().as_socket().unwrap();
+    (socket, address)
+}
+
+fn foreign_loopback_witness() -> (TcpListener, String) {
+    let listener = TcpListener::bind("[::1]:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    (listener, format!("http://[::1]:{}", address.port()))
+}
+
+fn assert_no_connection(listener: &TcpListener) {
+    match listener.accept() {
+        Err(error) if error.kind() == ErrorKind::WouldBlock => {}
+        Ok(_) => panic!("refused host accepted an unexpected connection"),
+        Err(error) => panic!("check refused-host connection: {error}"),
+    }
+}
+
+fn request(stream: &mut TcpStream) -> String {
     let mut request = Vec::new();
     let mut chunk = [0_u8; 1024];
     while !request.windows(4).any(|window| window == b"\r\n\r\n") {
@@ -71,7 +94,11 @@ fn request_host(stream: &mut TcpStream) -> String {
         assert_ne!(read, 0, "request ended before its headers");
         request.extend_from_slice(&chunk[..read]);
     }
-    let request = String::from_utf8(request).unwrap();
+    String::from_utf8(request).unwrap()
+}
+
+fn request_host(stream: &mut TcpStream) -> String {
+    let request = request(stream);
     let host = request
         .lines()
         .find_map(|line| {
@@ -80,6 +107,15 @@ fn request_host(stream: &mut TcpStream) -> String {
         })
         .expect("request has Host header");
     host.split(':').next().unwrap().to_owned()
+}
+
+fn request_path(stream: &mut TcpStream) -> String {
+    request(stream)
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .expect("request has a path")
+        .to_owned()
 }
 
 fn server(bytes: Vec<u8>, requests: usize) -> (String, thread::JoinHandle<()>) {
@@ -102,16 +138,17 @@ fn server(bytes: Vec<u8>, requests: usize) -> (String, thread::JoinHandle<()>) {
     (format!("http://{address}"), handle)
 }
 
-fn response_server(responses: Vec<String>) -> (String, thread::JoinHandle<()>) {
+fn response_server(responses: Vec<String>) -> (String, thread::JoinHandle<Vec<String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let handle = thread::spawn(move || {
+        let mut paths = Vec::new();
         for response in responses {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0; 1024];
-            let _ = stream.read(&mut request).unwrap();
+            paths.push(request_path(&mut stream));
             stream.write_all(response.as_bytes()).unwrap();
         }
+        paths
     });
     (format!("http://{address}"), handle)
 }
@@ -273,6 +310,7 @@ fn sidecar_path(journal: &Path) -> PathBuf {
 #[test]
 fn download_artifact_refuses_disallowed_redirect_target_in_envelope() {
     let root = temp("download-refused-redirect");
+    let (foreign_listener, foreign_base) = foreign_loopback_witness();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let served = listener.try_clone().unwrap();
@@ -280,7 +318,10 @@ fn download_artifact_refuses_disallowed_redirect_target_in_envelope() {
         let (mut stream, _) = served.accept().unwrap();
         stream
             .write_all(
-                b"HTTP/1.1 302 Found\r\nLocation: https://evil.example/file\r\nConnection: close\r\n\r\n",
+                format!(
+                    "HTTP/1.1 302 Found\r\nLocation: {foreign_base}/file\r\nConnection: close\r\n\r\n"
+                )
+                .as_bytes(),
             )
             .unwrap();
     });
@@ -294,9 +335,8 @@ fn download_artifact_refuses_disallowed_redirect_target_in_envelope() {
     )
     .unwrap_err();
     server.join().unwrap();
-    assert!(matches!(error, ArchiveError::HostRefused { host } if host == "evil.example"));
-    listener.set_nonblocking(true).unwrap();
-    assert!(listener.accept().is_err());
+    assert!(matches!(error, ArchiveError::HostRefused { host } if host == "::1"));
+    assert_no_connection(&foreign_listener);
     assert!(!destination.exists());
     assert!(!root.join(".artifact.part").exists());
     let _ = fs::remove_dir_all(root);
@@ -308,6 +348,7 @@ fn download_verified_follows_allowlisted_redirect_chain_and_commits_verified_byt
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let server = thread::spawn(move || {
+        let mut paths = Vec::new();
         for response in [
             format!(
                 "HTTP/1.1 302 Found\r\nLocation: http://{address}/middle\r\nConnection: close\r\n\r\n"
@@ -318,8 +359,10 @@ fn download_verified_follows_allowlisted_redirect_chain_and_commits_verified_byt
             "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello".to_owned(),
         ] {
             let (mut stream, _) = listener.accept().unwrap();
+            paths.push(request_path(&mut stream));
             stream.write_all(response.as_bytes()).unwrap();
         }
+        paths
     });
     let destination = root.join("artifact");
     let artifact = fixture_artifact(format!("http://{address}/start"), "artifact", b"hello");
@@ -331,7 +374,10 @@ fn download_verified_follows_allowlisted_redirect_chain_and_commits_verified_byt
         |received, total| progress.push((received, total)),
     )
     .unwrap();
-    server.join().unwrap();
+    assert_eq!(
+        server.join().unwrap(),
+        ["/test-origin", "/middle", "/final"]
+    );
     assert_eq!(fs::read(&destination).unwrap(), b"hello");
     assert!(!root.join(".artifact.part").exists());
     assert_eq!(progress.last(), Some(&(5, Some(5))));
@@ -397,7 +443,8 @@ fn download_verified_resolves_relative_locations_for_redirect_statuses() {
                 .unwrap();
         });
         let destination = root.join("artifact");
-        let artifact = fixture_artifact(format!("http://{address}/nested/start"), "artifact", b"ok");
+        let artifact =
+            fixture_artifact(format!("http://{address}/nested/start"), "artifact", b"ok");
         archive::download_verified(
             &artifact,
             &destination,
@@ -463,6 +510,7 @@ fn download_verified_reports_size_mismatch_before_digest_mismatch() {
     let destination = root.join("artifact");
     let mut artifact = fixture_artifact(format!("http://{address}"), "artifact", b"hello");
     artifact.size_bytes = 4;
+    artifact.sha256 = "00";
     assert!(matches!(
         archive::download_verified(
             &artifact,
@@ -482,7 +530,7 @@ fn download_verified_reports_size_mismatch_before_digest_mismatch() {
 }
 
 #[test]
-fn download_verified_accepts_case_insensitive_allowed_host() {
+fn download_verified_accepts_the_real_loopback_origin() {
     let root = temp("download-upper-host");
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -493,7 +541,7 @@ fn download_verified_accepts_case_insensitive_allowed_host() {
             .unwrap();
     });
     let destination = root.join("artifact");
-    let artifact = fixture_artifact(format!("HTTP://{address}/x"), "artifact", b"ok");
+    let artifact = fixture_artifact(format!("http://{address}/x"), "artifact", b"ok");
     archive::download_verified(
         &artifact,
         &destination,
@@ -541,15 +589,16 @@ fn userinfo_origin_is_refused_before_any_accept() {
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
     let artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
-    let origin_base_url = format!("http://{address}@evil.example");
+    let origin_base_url = format!("http://{address}@blocked.test");
     let policy = DownloadHostPolicy {
-        allowed_hosts: &["evil.example"],
+        allowed_hosts: &["blocked.test"],
         allow_http: true,
         origin_base_url: &origin_base_url,
     };
     let root = temp("download-userinfo-live");
     let destination = root.join("artifact");
-    let error = archive::download_verified(&artifact, &destination, &policy, |_, _| {}).unwrap_err();
+    let error =
+        archive::download_verified(&artifact, &destination, &policy, |_, _| {}).unwrap_err();
     assert!(matches!(error, ArchiveError::UrlUserinfoRefused { .. }));
     assert!(listener.accept().is_err());
     assert!(!destination.exists());
@@ -559,18 +608,9 @@ fn userinfo_origin_is_refused_before_any_accept() {
 #[test]
 fn origin_failures_have_a_distinct_reason_code_and_retain_the_host() {
     let root = temp("download-origin-failures");
-    let dns_artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
-    let dns_policy = DownloadHostPolicy {
-        allowed_hosts: &["origin.invalid"],
-        allow_http: false,
-        origin_base_url: "https://origin.invalid",
-    };
-    assert_origin_unavailable(&dns_artifact, &root.join("dns"), &dns_policy, "origin.invalid");
-
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let refused_address = listener.local_addr().unwrap();
-    drop(listener);
-    let refused_artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
+    let (_reservation, refused_address) = held_refusal_reservation();
+    let refused_artifact =
+        fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
     let refused_base = format!("http://{refused_address}");
     assert_origin_unavailable(
         &refused_artifact,
@@ -625,26 +665,7 @@ fn flipped_catalog_units_contact_only_origin_for_each_live_failure_class() {
     let artifacts = flipped_origin_artifacts();
     let connections = artifacts.len();
 
-    let dns_policy = DownloadHostPolicy {
-        allowed_hosts: &["origin.invalid"],
-        allow_http: false,
-        origin_base_url: "https://origin.invalid",
-    };
-    let mut dns_contacts = BTreeSet::new();
-    for artifact in &artifacts {
-        assert_origin_unavailable(
-            artifact,
-            &root.join(format!("dns-{}", artifact.filename)),
-            &dns_policy,
-            "origin.invalid",
-        );
-        dns_contacts.insert("origin.invalid".to_owned());
-    }
-    assert_only_origin_host(dns_contacts, "origin.invalid");
-
-    let refused_listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let refused_address = refused_listener.local_addr().unwrap();
-    drop(refused_listener);
+    let (_reservation, refused_address) = held_refusal_reservation();
     let refused_base = format!("http://{refused_address}");
     let refused_policy = loopback_download_policy(&refused_base);
     let refused_host = loopback_host(refused_address);
@@ -785,7 +806,7 @@ fn coreml_install_stages_all_catalog_paths_from_the_origin() {
     let origin_base_url = format!("http://{address}");
     let policy = loopback_download_policy(&origin_base_url);
     let references = rows.iter().collect::<Vec<_>>();
-    let target = install_with_rows_for_test(&home, &config, false, &policy, &references).unwrap();
+    let target = install_coreml_with_rows(&home, &config, false, &policy, &references).unwrap();
     server.join().unwrap();
 
     for (row, bytes) in rows.iter().zip(&bytes) {
@@ -794,10 +815,8 @@ fn coreml_install_stages_all_catalog_paths_from_the_origin() {
             bytes.as_slice()
         );
     }
-    let sentinel: Value = serde_json::from_slice(
-        &fs::read(parakeet_coreml_sentinel_path(&home)).unwrap(),
-    )
-    .unwrap();
+    let sentinel: Value =
+        serde_json::from_slice(&fs::read(parakeet_coreml_sentinel_path(&home)).unwrap()).unwrap();
     assert_eq!(sentinel["cache_dir"], configured.display().to_string());
     let _ = fs::remove_dir_all(root);
 }
@@ -813,7 +832,7 @@ fn install_uses_configured_tree_but_default_sentinel_and_writes_atomically() {
     let rows = [&artifact];
     let (base, server) = server(bytes.to_vec(), 1);
     let policy = loopback_download_policy(&base);
-    let target = install_with_rows_for_test(&home, &config, false, &policy, &rows).unwrap();
+    let target = install_coreml_with_rows(&home, &config, false, &policy, &rows).unwrap();
     server.join().unwrap();
     assert_eq!(
         target,
@@ -847,7 +866,7 @@ fn sentinel_write_failure_after_publish_leaves_no_sentinel() {
     let (base, server) = server(bytes.to_vec(), 1);
     let policy = loopback_download_policy(&base);
     let mut publish = |staging: &Path, target: &Path| publish_tree(staging, target);
-    let error = install_with_rows_and_seams(
+    let error = install_coreml_with_seams(
         &home,
         &config,
         false,
@@ -880,7 +899,7 @@ fn check_complete_install_succeeds_without_requests() {
     let rows = [&artifact];
     let (base, server) = server(bytes.to_vec(), 1);
     let download_policy = loopback_download_policy(&base);
-    install_with_rows_for_test(&home, &config, false, &download_policy, &rows).unwrap();
+    install_coreml_with_rows(&home, &config, false, &download_policy, &rows).unwrap();
     server.join().unwrap();
     assert!(read_valid_parakeet_coreml_sentinel(&home, "darwin", "arm64").is_some());
     assert!(
@@ -898,13 +917,16 @@ fn install_refuses_a_foreign_redirect_hop_without_writing() {
     let config = coreml_config(&temporary.join("cache"));
     let artifact = coreml_row("model.mil", b"model");
     let rows = [&artifact];
-    let (base, server) = response_server(vec![
-        "HTTP/1.1 302 Found\r\nLocation: http://localhost:9/foreign\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
-    ]);
+    let (foreign_listener, foreign_base) = foreign_loopback_witness();
+    let (base, server) = response_server(vec![format!(
+        "HTTP/1.1 302 Found\r\nLocation: {foreign_base}/foreign\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    )]);
     let download_policy = loopback_download_policy(&base);
-    let error = install_with_rows_for_test(&home, &config, false, &download_policy, &rows).unwrap_err();
-    server.join().unwrap();
+    let error =
+        install_coreml_with_rows(&home, &config, false, &download_policy, &rows).unwrap_err();
+    assert_eq!(server.join().unwrap(), ["/test/model.mil"]);
     assert_eq!(error.reason_code, "download_host_refused");
+    assert_no_connection(&foreign_listener);
     assert!(!parakeet_coreml_model_root(&parakeet_coreml_cache_dir(&config, &home)).exists());
     assert!(!parakeet_coreml_sentinel_path(&home).exists());
     let _ = fs::remove_dir_all(temporary);
@@ -940,7 +962,8 @@ fn failed_download_preserves_a_preexisting_complete_tree_and_sentinel() {
         "HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nnew one".to_owned(),
     ]);
     let download_policy = loopback_download_policy(&base);
-    let error = install_with_rows_for_test(&home, &config, true, &download_policy, &rows).unwrap_err();
+    let error =
+        install_coreml_with_rows(&home, &config, true, &download_policy, &rows).unwrap_err();
     server.join().unwrap();
     assert_eq!(error.reason_code, "download_digest_mismatch");
     assert_eq!(fs::read(target.join("one")).unwrap(), b"old one");
@@ -959,14 +982,13 @@ fn interrupted_publish_leaves_no_partial_tree() {
     let rows = [&artifact];
     let (base, server) = server(b"model".to_vec(), 1);
     let download_policy = loopback_download_policy(&base);
-    let mut publish = |_staging: &Path, _target: &Path| {
-        Err(std::io::Error::other("interrupted publish"))
-    };
+    let mut publish =
+        |_staging: &Path, _target: &Path| Err(std::io::Error::other("interrupted publish"));
     let mut write = |path: &Path, sentinel: &ParakeetCoremlSentinel| {
         write_sentinel(path, sentinel);
         Ok(())
     };
-    let error = install_with_rows_and_seams(
+    let error = install_coreml_with_seams(
         &home,
         &config,
         false,
@@ -995,7 +1017,7 @@ fn force_reinstalls_an_incomplete_tree_and_verifies_it() {
     fs::create_dir_all(parakeet_coreml_model_root(&configured)).unwrap();
     let (base, server) = server(b"model".to_vec(), 1);
     let download_policy = loopback_download_policy(&base);
-    install_with_rows_for_test(&home, &config, true, &download_policy, &rows).unwrap();
+    install_coreml_with_rows(&home, &config, true, &download_policy, &rows).unwrap();
     server.join().unwrap();
     assert!(read_valid_parakeet_coreml_sentinel(&home, "darwin", "arm64").is_some());
     assert!(
@@ -1084,14 +1106,8 @@ fn extracted_binary_digest_mismatch_cleans_install_outputs() {
         origin_base_url: &origin_base,
     };
 
-    let error = install_rfdetr_with_artifacts(
-        &temp,
-        "linux",
-        "x86_64",
-        true,
-        &policy,
-        &engine,
-        &model,
+    let error = install_rfdetr_with_fixture_artifacts(
+        &temp, "linux", "x86_64", true, &policy, &engine, &model,
     )
     .unwrap_err();
     server.join().unwrap();
@@ -1099,5 +1115,15 @@ fn extracted_binary_digest_mismatch_cleans_install_outputs() {
     assert!(!binary_path(&temp).exists());
     assert!(!model_path(&temp).exists());
     assert!(!sidecar_path(&temp).exists());
+    let engine_directory = binary_path(&temp).parent().unwrap().to_path_buf();
+    assert!(!engine_directory.join("fixture.tar.gz").exists());
+    assert!(!engine_directory.join("fixture.tar.gz.tmp").exists());
+    assert!(!engine_directory.join(".extract").exists());
+    assert!(!engine_directory.join(format!("{BINARY}.tmp")).exists());
+    assert!(
+        !model_path(&temp)
+            .with_file_name(format!("{MODEL_FILE}.tmp"))
+            .exists()
+    );
     let _ = fs::remove_dir_all(temp);
 }

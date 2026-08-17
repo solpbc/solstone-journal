@@ -3946,12 +3946,12 @@ id = "solstone-core-local::local_installer_transport"
 package = "solstone-core-local"
 target = "local_installer_transport"
 set = "component"
-areas = ["system"]
+areas = ["transfer"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
-required_features = []
+required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]

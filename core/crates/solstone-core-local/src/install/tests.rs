@@ -116,7 +116,7 @@ fn download_artifact_reason_codes_cover_every_archive_error() {
     assert_eq!(
         super::download_artifact_reason_code(
             &ArchiveError::HostRefused {
-                host: "evil.example".to_owned()
+                host: "blocked.test".to_owned()
             },
             fallback
         ),
@@ -165,7 +165,7 @@ fn download_artifact_reason_codes_cover_every_archive_error() {
     assert_eq!(
         super::download_artifact_reason_code(
             &ArchiveError::OriginUnavailable {
-                host: "origin.invalid".to_owned(),
+                host: "origin.test".to_owned(),
                 message: "refused".to_owned()
             },
             fallback
@@ -173,16 +173,34 @@ fn download_artifact_reason_codes_cover_every_archive_error() {
         "download_origin_unreachable"
     );
     assert_eq!(
-        super::download_artifact_reason_code(&ArchiveError::Io(std::io::Error::other("io")), fallback),
+        super::download_artifact_reason_code(
+            &ArchiveError::Io(std::io::Error::other("io")),
+            fallback
+        ),
         fallback
     );
     assert_eq!(
-        super::download_artifact_reason_code(&ArchiveError::Download("failed".to_owned()), fallback),
+        super::download_artifact_reason_code(
+            &ArchiveError::Download("failed".to_owned()),
+            fallback
+        ),
         fallback
     );
     assert_eq!(
         super::download_artifact_reason_code(&ArchiveError::PathEscape("..".to_owned()), fallback),
         fallback
+    );
+}
+
+#[test]
+fn injected_dns_failure_maps_to_origin_unreachable_without_a_lookup() {
+    let error = archive::ArchiveError::OriginUnavailable {
+        host: "origin.test".to_owned(),
+        message: "injected DNS resolution failure".to_owned(),
+    };
+    assert_eq!(
+        super::download_artifact_reason_code(&error, "download_failed"),
+        "download_origin_unreachable"
     );
 }
 
@@ -1890,9 +1908,9 @@ fn origin_contact_assertion_rejects_a_test_double_upstream_fallback() {
 fn download_artifact_refuses_userinfo_url_with_distinct_envelope_reason() {
     let artifact = fixture_artifact("https://github.com/upstream".to_owned(), "artifact", b"");
     let policy = archive::DownloadHostPolicy {
-        allowed_hosts: &["evil.example"],
+        allowed_hosts: &["blocked.test"],
         allow_http: true,
-        origin_base_url: "http://127.0.0.1:1@evil.example",
+        origin_base_url: "http://127.0.0.1:1@blocked.test",
     };
     let root = temp("download-userinfo");
     let destination = root.join("artifact");

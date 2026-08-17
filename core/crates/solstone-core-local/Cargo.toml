@@ -16,6 +16,10 @@ publish = false
 # checkout. They run from `make check-differentials`.
 differential = []
 
+# Narrow test driver for the loopback installer transport target.  Production
+# builds deliberately do not expose fixture-row or injected-write seams.
+test-hooks = []
+
 [dependencies]
 nix = { workspace = true, features = ["time"] }
 serde.workspace = true
@@ -44,6 +48,15 @@ rustls.workspace = true
 [[test]]
 name = "local_runtime_transport"
 path = "tests/local_runtime_transport.rs"
+
+[[test]]
+name = "local_installer_transport"
+path = "tests/local_installer_transport.rs"
+required-features = ["test-hooks"]
+
+[[test]]
+name = "local_installer_process"
+path = "tests/local_installer_process.rs"
 
 [[test]]
 name = "admission_cross_process"

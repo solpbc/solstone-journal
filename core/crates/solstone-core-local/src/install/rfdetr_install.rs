@@ -223,17 +223,22 @@ fn write_sidecar(journal: &Path, record: &RfdetrInstallRecord) -> Result<(), Rfd
     }
     result.map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))
 }
-fn cleanup(journal: &Path) {
+fn remove_archive(path: PathBuf) {
+    let _ = fs::remove_file(&path);
+    let _ = fs::remove_file(path.with_file_name(format!(
+        "{}.tmp",
+        path.file_name().unwrap().to_string_lossy()
+    )));
+}
+
+fn cleanup(journal: &Path, engine: &Artifact) {
     let binary = binary_path(journal);
     let _ = fs::remove_file(&binary);
     let _ = fs::remove_file(binary.with_file_name(format!("{BINARY}.tmp")));
     if let Ok(path) = tarball(journal) {
-        let _ = fs::remove_file(&path);
-        let _ = fs::remove_file(path.with_file_name(format!(
-            "{}.tmp",
-            path.file_name().unwrap().to_string_lossy()
-        )));
+        remove_archive(path);
     }
+    remove_archive(tarball_for(journal, engine));
     let _ = fs::remove_dir_all(extract_path(journal));
     let model = model_path(journal);
     let _ = fs::remove_file(&model);
@@ -355,8 +360,9 @@ pub(crate) fn install_rfdetr_with_policy(
     install_rfdetr_with_policy_and_report(journal, os_name, arch, force, policy, None, None)
 }
 
-/// Test door: install caller-supplied engine and model rows through the production installer.
-pub fn install_rfdetr_with_artifacts(
+/// Internal fixture seam: install caller-supplied rows through the production installer.
+#[cfg(feature = "test-hooks")]
+pub(crate) fn install_rfdetr_with_artifacts(
     journal: &Path,
     os_name: &str,
     arch: &str,
@@ -408,7 +414,7 @@ fn install_rfdetr_with_policy_and_report(
     if report.overall() == fit_report::FitSeverity::Warning {
         log::warn!("rf-detr.cpp host fit warning:\n{rendered}");
     }
-    cleanup(journal);
+    cleanup(journal, engine);
     let result = (|| {
         let archive_path = tarball_for(journal, engine);
         download_artifact(engine, &archive_path, policy, |_, _| {}, "download_failed")
@@ -473,7 +479,7 @@ fn install_rfdetr_with_policy_and_report(
         Ok(record)
     })();
     if result.is_err() {
-        cleanup(journal);
+        cleanup(journal, engine);
     }
     result
 }

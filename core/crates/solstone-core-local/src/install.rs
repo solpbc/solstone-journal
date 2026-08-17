@@ -26,6 +26,68 @@ pub mod rerank_install;
 pub mod rfdetr_install;
 pub mod status;
 
+/// Fixture-only driver for the registered loopback installer transport test.
+///
+/// Keeping this behind a non-default feature prevents fixture artifacts and
+/// injected filesystem seams from becoming an ordinary public API.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod test_hooks {
+    use std::path::{Path, PathBuf};
+
+    use solstone_core_assets::Artifact;
+    use solstone_core_journal_config::{
+        JournalConfigRead, parakeet_coreml::ParakeetCoremlSentinel,
+    };
+
+    use super::archive::DownloadHostPolicy;
+    use super::coreml_install::{
+        CoremlInstallError, install_with_rows_and_seams, install_with_rows_for_test,
+    };
+    use super::rfdetr_install::{
+        RfdetrInstallError, RfdetrInstallRecord, install_rfdetr_with_artifacts,
+    };
+
+    pub fn install_coreml_with_rows(
+        home_dir: &Path,
+        config: &JournalConfigRead,
+        force: bool,
+        policy: &DownloadHostPolicy<'_>,
+        rows: &[&Artifact],
+    ) -> Result<PathBuf, CoremlInstallError> {
+        install_with_rows_for_test(home_dir, config, force, policy, rows)
+    }
+
+    #[allow(clippy::too_many_arguments)] // Fixture-only write seams prove atomic ordering.
+    pub fn install_coreml_with_seams(
+        home_dir: &Path,
+        config: &JournalConfigRead,
+        force: bool,
+        policy: &DownloadHostPolicy<'_>,
+        platform: (&str, &str),
+        rows: &[&Artifact],
+        publish: &mut impl FnMut(&Path, &Path) -> std::io::Result<()>,
+        write: &mut impl FnMut(&Path, &ParakeetCoremlSentinel) -> std::io::Result<()>,
+    ) -> Result<PathBuf, CoremlInstallError> {
+        install_with_rows_and_seams(
+            home_dir, config, force, policy, platform, rows, publish, write,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)] // Fixture rows exercise installer cleanup through its production path.
+    pub fn install_rfdetr_with_fixture_artifacts(
+        journal: &Path,
+        os_name: &str,
+        arch: &str,
+        force: bool,
+        policy: &DownloadHostPolicy<'_>,
+        engine: &Artifact,
+        model: &Artifact,
+    ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
+        install_rfdetr_with_artifacts(journal, os_name, arch, force, policy, engine, model)
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_support {
     use std::fs;

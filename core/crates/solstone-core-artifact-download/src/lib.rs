@@ -567,6 +567,21 @@ mod tests {
     }
 
     #[test]
+    fn allowed_host_comparison_is_case_insensitive_without_a_network_request() {
+        let policy = DownloadHostPolicy {
+            allowed_hosts: &["MiXeD.ExAmPlE"],
+            allow_http: false,
+            origin_base_url: "https://mixed.example",
+        };
+        assert_eq!(
+            validate_url("https://mixed.example/asset", &policy)
+                .unwrap()
+                .host,
+            "mixed.example"
+        );
+    }
+
+    #[test]
     fn byte_download_http_status_is_not_retried() {
         let download = ScriptedDownload {
             responses: RefCell::new(vec![Err(ByteDownloadError::HttpStatus(404))]),
