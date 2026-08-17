@@ -1596,17 +1596,15 @@ mod tests {
         assert!(!is_dotted_release_version("1..0"));
     }
 
-    /// Pins the four session settings the reference sets, on both sides.
+    /// Pins the SessionOptions calls `SileroVadSession::open` applies.
     ///
     /// ONNX Runtime has no read-back for an applied `SessionOptions` and `ort`
     /// 2.0.0-rc.12 surfaces none either — a committed `Session` exposes its
     /// graph IO, allocator, and metadata, and nothing about the thread pools,
     /// the arena, or which providers were registered. There is also no
     /// behavioral probe: single-threaded execution and a disabled arena change
-    /// timing and allocation, not results. So the settings are pinned as
-    /// source on both sides, which still fails loudly when either drifts — the
-    /// failure mode this guards is a silent edit to one of the four calls, and
-    /// that is exactly what a text pin catches.
+    /// timing and allocation, not results. The settings are pinned as source
+    /// text so a silent edit to one of the three calls fails this test.
     #[test]
     fn session_options_match_the_reference_single_threaded_cpu_configuration() {
         let rust_source =
@@ -1620,20 +1618,6 @@ mod tests {
             assert!(
                 rust_source.contains(call),
                 "SileroVadSession::open no longer applies {call}"
-            );
-        }
-
-        let reference = fs::read_to_string(repo_root().join("solstone/observe/_silero_vad.py"))
-            .expect("read the Python reference");
-        for setting in [
-            "opts.intra_op_num_threads = 1",
-            "opts.inter_op_num_threads = 1",
-            "opts.enable_cpu_mem_arena = False",
-            "providers=[\"CPUExecutionProvider\"]",
-        ] {
-            assert!(
-                reference.contains(setting),
-                "the Python reference no longer sets {setting}; the port must follow"
             );
         }
     }

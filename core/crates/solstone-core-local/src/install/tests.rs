@@ -1864,7 +1864,7 @@ fn parakeet_backend_pin_is_none_for_an_unknown_backend_or_key() {
 }
 
 #[test]
-fn registry_binds_existing_pins_and_the_python_parakeet_model_pin() {
+fn registry_binds_existing_pins_and_the_parakeet_model_pin() {
     for (key, release, filename, sha256, _) in pins::LLAMA_SERVER_PINS {
         let row = resolve(
             "llama-server-vulkan",
@@ -1922,19 +1922,6 @@ fn registry_binds_existing_pins_and_the_python_parakeet_model_pin() {
     assert_eq!(row.len(), 1);
     assert_eq!(row[0].sha256, expected);
     assert_eq!(pins::PARAKEET_MODEL.3, expected);
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let repo_root = manifest_dir
-        .ancestors()
-        .nth(3)
-        .expect("local crate has repository-root ancestor")
-        .to_path_buf();
-    let python_pin = repo_root.join("solstone/think/providers/parakeet_install.py");
-    let source = fs::read_to_string(&python_pin)
-        .unwrap_or_else(|error| panic!("read {}: {error}", python_pin.display()));
-    assert!(
-        source.contains(expected),
-        "Python parakeet model digest drifted"
-    );
 
     for (key, _, _, _) in pins::CUDA_ARTIFACTS {
         assert_eq!(

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Time-boxed byte-identity gate for BK-1 crate copies of `solstone/` files.
-//! The deletion lode removes this module when Python is cut.
+//! Byte-identity gate for crate copies of non-Python `solstone/` files.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -43,31 +42,6 @@ const FILE_PAIRS: &[(&str, &str, &str)] = &[
         "native describe embeds this schema",
     ),
     (
-        "solstone/apps/settings/install_copy.py",
-        "core/crates/solstone-core-settings-web/assets/install_copy.py",
-        "settings-web build.rs parses install copy constants",
-    ),
-    (
-        "solstone/apps/chat/copy.py",
-        "core/crates/solstone-core-settings-web/assets/chat_copy.py",
-        "settings-web build.rs parses chat copy constants",
-    ),
-    (
-        "solstone/convey/sol_initiated/copy.py",
-        "core/crates/solstone-core-settings-web/assets/sol_initiated_copy.py",
-        "settings-web build.rs parses sol-initiated copy constants",
-    ),
-    (
-        "solstone/apps/backup/copy.py",
-        "core/crates/solstone-core-settings-web/assets/backup_copy.py",
-        "settings-web build.rs parses backup copy constants",
-    ),
-    (
-        "solstone/think/activities.py",
-        "core/crates/solstone-core-settings-web/assets/activities.py",
-        "settings-web build.rs parses DEFAULT_ACTIVITIES",
-    ),
-    (
         "solstone/think/link/mark_assets/glyphs.json",
         "core/crates/solstone-core-sol-link/assets/mark_assets/glyphs.json",
         "native link mark derivation embeds these JSON tables",
@@ -81,21 +55,6 @@ const FILE_PAIRS: &[(&str, &str, &str)] = &[
         "solstone/think/link/mark_assets/words.json",
         "core/crates/solstone-core-sol-link/assets/mark_assets/words.json",
         "native link mark derivation embeds these JSON tables",
-    ),
-    (
-        "solstone/apps/network/copy.py",
-        "core/crates/solstone-core-convey-shell/assets/network_copy.py",
-        "convey-shell build.rs parses network copy constants",
-    ),
-    (
-        "solstone/think/services/outcomes.py",
-        "core/crates/solstone-core-convey-shell/assets/outcomes.py",
-        "convey-shell build.rs parses SPL outcome strings",
-    ),
-    (
-        "solstone/think/pairing/config.py",
-        "core/crates/solstone-core-convey-shell/assets/pairing_config.py",
-        "convey-shell build.rs parses home-address copy constants",
     ),
 ];
 
