@@ -4125,3 +4125,29 @@ timeout = "standard"
 default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-repository-contracts::repository_make_command_graphs"
+package = "solstone-core-repository-contracts"
+target = "repository_make_command_graphs"
+set = "policy"
+areas = ["repository"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "host-tools"]
+timeout = "quick"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-repository-contracts::repository_cargo_command_graphs"
+package = "solstone-core-repository-contracts"
+target = "repository_cargo_command_graphs"
+set = "policy"
+areas = ["repository"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "quick"
+default_full = true
+required_features = []
+runtime = "none"

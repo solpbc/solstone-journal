@@ -28,9 +28,6 @@ mod distribution_payload;
 #[path = "contracts/distribution_workspace_bins.rs"]
 mod distribution_workspace_bins;
 #[cfg(test)]
-#[path = "contracts/journal_io_deny_policy.rs"]
-mod journal_io_deny_policy;
-#[cfg(test)]
 #[path = "contracts/retention_client_contracts.rs"]
 mod retention_client_contracts;
 #[cfg(test)]
@@ -48,9 +45,6 @@ mod service_legacy_gate_purity;
 #[cfg(test)]
 #[path = "contracts/settings_devices_python_web_cut.rs"]
 mod settings_devices_python_web_cut;
-#[cfg(test)]
-#[path = "contracts/settings_native_linkage.rs"]
-mod settings_native_linkage;
 #[cfg(test)]
 #[path = "contracts/solstone_compile_input_copies.rs"]
 mod solstone_compile_input_copies;

@@ -919,13 +919,60 @@ fn check_prerequisite(repo: &Path, prerequisite: &str) -> Result<(), String> {
                     ],
                 )?
         }
-        "host-tools" => command_status(repo, "make", &["--version"])?,
+        "host-tools" => host_tools_ready(repo)?,
         other => return Err(format!("runner does not know prerequisite {other}")),
     };
     if success {
         Ok(())
     } else {
         Err("not prepared; run the corresponding make ci-full-prep target".to_owned())
+    }
+}
+
+fn host_tools_ready(repo: &Path) -> Result<bool, String> {
+    let mut required = vec![
+        "make",
+        "/usr/bin/make",
+        "/usr/bin/uname",
+        "/bin/pwd",
+        "/bin/sh",
+        "chmod",
+        "find",
+        "mkdir",
+        "mktemp",
+        "/usr/bin/printf",
+        "rm",
+        "uname",
+    ];
+    match env::consts::OS {
+        "linux" => required.push("/usr/bin/sha256sum"),
+        "macos" => required.extend(["/usr/bin/shasum", "cc"]),
+        _ => {}
+    }
+
+    let mut missing = Vec::new();
+    for tool in required {
+        let available = command_status(
+            repo,
+            "/bin/sh",
+            &[
+                "-c",
+                "command -v \"$1\" >/dev/null 2>&1",
+                "solstone-ci-host-tool",
+                tool,
+            ],
+        )?;
+        if !available {
+            missing.push(tool);
+        }
+    }
+    if missing.is_empty() {
+        Ok(true)
+    } else {
+        Err(format!(
+            "missing required host tools: {}",
+            missing.join(", ")
+        ))
     }
 }
 

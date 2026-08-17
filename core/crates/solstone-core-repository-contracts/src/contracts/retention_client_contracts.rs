@@ -4,13 +4,6 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-
-use serde_json::Value;
-
-const CLIENT: &str = "solstone-core-retention-client";
-const HOME: &str = "solstone-core-home-web";
-const RETENTION: &str = "solstone-core-retention";
 const CLIENT_SOURCE: &str = "core/crates/solstone-core-retention-client/src";
 const ALLOWED_REEXPORTS: &[&str] = &[
     "Mark",
@@ -24,7 +17,6 @@ const ALLOWED_REEXPORTS: &[&str] = &[
     "policy_would_release",
     "stream_rel",
 ];
-const ALLOWED_DEPENDENTS: &[&str] = &["solstone-core-home-web"];
 
 fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -71,28 +63,6 @@ fn reexports(source: &str) -> BTreeSet<String> {
         .collect()
 }
 
-fn metadata(root: &Path) -> Value {
-    let output = Command::new("cargo")
-        .args([
-            "metadata",
-            "--manifest-path",
-            "core/Cargo.toml",
-            "--locked",
-            "--format-version",
-            "1",
-            "--no-deps",
-        ])
-        .current_dir(root)
-        .output()
-        .expect("locked workspace cargo metadata runs");
-    assert!(
-        output.status.success(),
-        "locked workspace cargo metadata must succeed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    serde_json::from_slice(&output.stdout).expect("workspace cargo metadata parses")
-}
-
 #[test]
 fn retention_client_source_has_one_bounded_process_path() {
     let source = client_source(&repository_root());
@@ -129,88 +99,5 @@ fn retention_client_reexports_only_its_allowlist() {
     assert_eq!(
         actual, expected,
         "retention client public reexports must exactly match the allowlist"
-    );
-}
-
-#[test]
-fn retention_client_has_no_unapproved_workspace_dependents() {
-    let root = repository_root();
-    let metadata = metadata(&root);
-    let workspace_members = metadata["workspace_members"]
-        .as_array()
-        .expect("workspace_members array")
-        .iter()
-        .map(|member| member.as_str().expect("workspace member id"))
-        .collect::<BTreeSet<_>>();
-    let dependents = metadata["packages"]
-        .as_array()
-        .expect("packages array")
-        .iter()
-        .filter(|package| {
-            workspace_members.contains(package["id"].as_str().expect("package id"))
-                && package["dependencies"]
-                    .as_array()
-                    .expect("package dependencies array")
-                    .iter()
-                    .any(|dependency| dependency["name"] == CLIENT)
-        })
-        .map(|package| package["name"].as_str().expect("package name").to_owned())
-        .collect::<BTreeSet<_>>();
-    let allowed = ALLOWED_DEPENDENTS
-        .iter()
-        .map(|name| (*name).to_owned())
-        .collect::<BTreeSet<_>>();
-    assert_eq!(
-        dependents, allowed,
-        "retention client workspace dependents must exactly match its allowlist"
-    );
-
-    let tree = Command::new("cargo")
-        .args([
-            "tree",
-            "--manifest-path",
-            "core/Cargo.toml",
-            "--locked",
-            "-p",
-            CLIENT,
-            "--edges",
-            "normal",
-            "--prefix",
-            "none",
-        ])
-        .current_dir(root)
-        .output()
-        .expect("locked workspace cargo tree runs");
-    assert!(
-        tree.status.success(),
-        "locked workspace cargo tree must succeed: {}",
-        String::from_utf8_lossy(&tree.stderr)
-    );
-}
-
-#[test]
-fn home_uses_the_bounded_client_without_a_direct_retention_edge() {
-    let metadata = metadata(&repository_root());
-    let home = metadata["packages"]
-        .as_array()
-        .expect("packages array")
-        .iter()
-        .find(|package| package["name"] == HOME)
-        .expect("home package");
-    let dependencies = home["dependencies"].as_array().expect("home dependencies");
-
-    assert!(
-        dependencies
-            .iter()
-            .any(|dependency| dependency["name"] == CLIENT),
-        "home must use the bounded retention client"
-    );
-    // Temporarily adding the direct edge to home's manifest made this assertion fail;
-    // the manifest was restored before committing this contract.
-    assert!(
-        dependencies
-            .iter()
-            .all(|dependency| dependency["name"] != RETENTION),
-        "home must not declare retention directly, including for tests"
     );
 }
