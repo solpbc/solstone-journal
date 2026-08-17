@@ -460,22 +460,11 @@ apps/my_app/talent/my_app/
 
 Apps have two maintenance surfaces with different lifecycles.
 
-#### One-time `maint/` tasks
+#### One-time `maint/` tasks — retired
 
-Define one-time maintenance scripts that run automatically when supervisor starts.
+The `journal maint` one-shot migration runner is retired. New journals are clean installs. Do not add `apps/<app>/maint/` scripts or a replacement runner. Historical `solstone/apps/*/maint/*.py` bodies stay in tree as frozen record only; they are not invoked.
 
-**Key Points:**
-- Create `maint/` directory with standalone Python scripts (each with a `main()` function)
-- Scripts are discovered and run in sorted order by filename (use `000_`, `001_` prefixes for ordering)
-- Completed tasks tracked in `<journal>/maint/{app}/{task}.jsonl` - runs once per journal
-- Exit code 0 = success, non-zero = failure (failed tasks can be re-run with `--force`)
-- Use `setup_cli()` for consistent argument parsing and logging
-
-**CLI:** `journal maint` (run pending), `journal maint --list` (show status), `journal maint --force` (re-run all)
-
-**Reference implementations:**
-- Example task: `solstone/apps/entities/maint/001_migrate_to_journal_entities.py` - real migration task demonstrating maint patterns
-- Discovery logic: `solstone/think/maint.py` - `discover_tasks()`, `run_task()`
+Recurring jobs use `maintenance.py` / `journal maintenance` below.
 
 #### Recurring `maintenance.py` routines
 
