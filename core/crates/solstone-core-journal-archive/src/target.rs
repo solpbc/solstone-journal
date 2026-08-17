@@ -512,7 +512,6 @@ mod tests {
     use std::fs;
     use std::os::unix::ffi::OsStringExt;
     use std::os::unix::fs::symlink;
-    use std::os::unix::net::UnixListener;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -627,49 +626,6 @@ mod tests {
             Err(ExplicitTargetError::InvalidTarget { .. })
         ));
         assert_eq!(fs::read_dir(&parent).expect("read parent").count(), 0);
-    }
-
-    #[test]
-    fn final_objects_are_classified_without_opening_or_replacing_them() {
-        let temp = TempDir::new("final-kind");
-        let parent = temp.path.join("output");
-        fs::create_dir(&parent).expect("create output parent");
-
-        let regular = parent.join("regular.zip");
-        fs::write(&regular, b"keep").expect("create collision");
-        assert!(matches!(
-            acquire_explicit_output_target(&request(regular.clone(), temp.path.clone(),)),
-            Err(ExplicitTargetError::Collision { .. })
-        ));
-        assert_eq!(fs::read(&regular).expect("read collision"), b"keep");
-
-        let directory = parent.join("directory.zip");
-        fs::create_dir(&directory).expect("create final directory");
-        assert!(matches!(
-            acquire_explicit_output_target(&request(directory, temp.path.clone(),)),
-            Err(ExplicitTargetError::UnsafeTarget {
-                kind: "directory",
-                ..
-            })
-        ));
-
-        let link = parent.join("link.zip");
-        symlink(&regular, &link).expect("create final symlink");
-        assert!(matches!(
-            acquire_explicit_output_target(&request(link, temp.path.clone(),)),
-            Err(ExplicitTargetError::UnsafeTarget {
-                kind: "symlink",
-                ..
-            })
-        ));
-
-        let socket = parent.join("socket.zip");
-        let listener = UnixListener::bind(&socket).expect("create final socket");
-        assert!(matches!(
-            acquire_explicit_output_target(&request(socket, temp.path.clone(),)),
-            Err(ExplicitTargetError::UnsafeTarget { kind: "socket", .. })
-        ));
-        drop(listener);
     }
 
     #[test]

@@ -1937,6 +1937,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-backup-web::backup_web_callosum_transport"
+package = "solstone-core-backup-web"
+target = "backup_web_callosum_transport"
+set = "component"
+areas = ["backup", "services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-callosum::callosum_cross_process"
 package = "solstone-core-callosum"
 target = "callosum_cross_process"
@@ -2154,6 +2167,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-cortex-client::cortex_client_claim_transport"
+package = "solstone-core-cortex-client"
+target = "cortex_client_claim_transport"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-describe::cli"
 package = "solstone-core-describe"
 target = "cli"
@@ -2164,6 +2190,19 @@ prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
 timeout = "standard"
 default_full = true
 required_features = ["test-stubs"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-distribution::distribution_cleanroom_loopback"
+package = "solstone-core-distribution"
+target = "distribution_cleanroom_loopback"
+set = "component"
+areas = ["repository"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
 runtime = "none"
 
 [[suites]]
@@ -3573,6 +3612,19 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-think-cli::think_cli_callosum_transport"
+package = "solstone-core-think-cli"
+target = "think_cli_callosum_transport"
+set = "component"
+areas = ["commands", "services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]

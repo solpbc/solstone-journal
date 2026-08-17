@@ -26,3 +26,7 @@ tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 tower.workspace = true
 solstone-core-convey-shell.workspace = true
+
+[[test]]
+name = "backup_web_callosum_transport"
+path = "tests/backup_web_callosum_transport.rs"

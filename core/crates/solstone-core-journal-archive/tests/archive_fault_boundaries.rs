@@ -5,6 +5,8 @@ mod common;
 
 use std::fs::{self, File};
 use std::io::{self, Cursor, Seek, SeekFrom, Write};
+use std::os::unix::fs::{MetadataExt, symlink};
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -16,9 +18,10 @@ use nix::sys::stat::Mode;
 use nix::unistd::mkfifo;
 use solstone_core_journal_archive::{
     AcquisitionPrimitive, ArchiveError, ArchiveSource, DescendantPrimitive, EncodeArchiveError,
-    EncodeArchiveRequest, EncodeTruncateBeforeRead, TestBoundary, TestFaultKind, TestSinkOperation,
-    encode_archive, run_with_acquisition_fault, run_with_descendant_barrier,
-    run_with_encode_control,
+    EncodeArchiveRequest, EncodeTruncateBeforeRead, ExplicitArchiveOutputRequest,
+    ExplicitTargetError, TestBoundary, TestFaultKind, TestSinkOperation,
+    acquire_explicit_output_target, encode_archive, run_with_acquisition_fault,
+    run_with_descendant_barrier, run_with_encode_control,
 };
 use zip::ZipWriter;
 
@@ -27,6 +30,90 @@ const DESCENDANT_BARRIER_MODE: &str = "SOLSTONE_ARCHIVE_DESCENDANT_BARRIER_MODE"
 const DESCENDANT_BARRIER_KIND: &str = "SOLSTONE_ARCHIVE_DESCENDANT_BARRIER_KIND";
 const DESCENDANT_MEMBER: &str = "imports/import-1/source.bin";
 const STDERR_CHILD: &str = "SOLSTONE_ARCHIVE_STDERR_CHILD";
+
+fn inode_identity(path: &Path) -> (u64, u64, u32, u64) {
+    let metadata = fs::symlink_metadata(path).expect("stat final object without following it");
+    (
+        metadata.dev(),
+        metadata.ino(),
+        metadata.mode(),
+        metadata.len(),
+    )
+}
+
+fn assert_identity_unchanged(path: &Path, before: (u64, u64, u32, u64)) {
+    assert_eq!(inode_identity(path), before, "{} changed", path.display());
+}
+
+#[test]
+#[allow(clippy::disallowed_methods)]
+fn final_object_kinds_are_classified_without_open_read_or_replacement() {
+    let temporary = TempDir::new("final-object-kinds");
+    let parent = temporary.path().join("output");
+    fs::create_dir(&parent).expect("create output parent");
+
+    let regular = parent.join("regular.zip");
+    fs::write(&regular, b"keep").expect("create regular final object");
+    let regular_witness = parent.join("regular-witness");
+    fs::hard_link(&regular, &regular_witness).expect("create regular content witness");
+    let regular_before = inode_identity(&regular);
+    assert!(matches!(
+        acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(
+            regular.clone(),
+            temporary.path().to_path_buf(),
+        )),
+        Err(ExplicitTargetError::Collision { .. })
+    ));
+    assert_identity_unchanged(&regular, regular_before);
+    assert_eq!(
+        fs::read(&regular_witness).expect("read hard-link witness, not final path"),
+        b"keep",
+        "classification must not modify the existing regular-file inode"
+    );
+
+    let directory = parent.join("directory.zip");
+    fs::create_dir(&directory).expect("create directory final object");
+    let directory_before = inode_identity(&directory);
+    assert!(matches!(
+        acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(
+            directory.clone(),
+            temporary.path().to_path_buf(),
+        )),
+        Err(ExplicitTargetError::UnsafeTarget {
+            kind: "directory",
+            ..
+        })
+    ));
+    assert_identity_unchanged(&directory, directory_before);
+
+    let link = parent.join("link.zip");
+    symlink(&regular, &link).expect("create symlink final object");
+    let link_before = inode_identity(&link);
+    assert!(matches!(
+        acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(
+            link.clone(),
+            temporary.path().to_path_buf(),
+        )),
+        Err(ExplicitTargetError::UnsafeTarget {
+            kind: "symlink",
+            ..
+        })
+    ));
+    assert_identity_unchanged(&link, link_before);
+
+    let socket = parent.join("socket.zip");
+    let listener = UnixListener::bind(&socket).expect("create socket final object");
+    let socket_before = inode_identity(&socket);
+    assert!(matches!(
+        acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(
+            socket.clone(),
+            temporary.path().to_path_buf(),
+        )),
+        Err(ExplicitTargetError::UnsafeTarget { kind: "socket", .. })
+    ));
+    assert_identity_unchanged(&socket, socket_before);
+    drop(listener);
+}
 
 #[allow(clippy::disallowed_methods)]
 fn nested_journal(temporary: &TempDir, bytes: &[u8]) -> PathBuf {

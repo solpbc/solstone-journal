@@ -189,22 +189,8 @@ where
     thread::spawn(move || cancel_worker(cancel_state, cancel_rx));
     connection.start();
     (dependencies.lifecycle)(ServiceLifecycle::BusConnected);
-    let renewal_handle = RenewalHandle::production(journal, outbound_tx, dependencies.now);
-    if renewal_handle.startup_refresh_needed()
-        && let Some(outbound) = renewal_handle.startup_refresh()
-    {
-        (dependencies.lifecycle)(ServiceLifecycle::StartupRefreshEmitted {
-            tract: outbound.tract,
-            event: outbound.event,
-            fields: outbound.fields,
-        });
-    }
-    let mut renewal = RenewalService::new((dependencies.worker_factory)(renewal_handle.clone()));
-    for _ in 0..dependencies.worker_start_requests {
-        if renewal.start_worker_once() {
-            (dependencies.lifecycle)(ServiceLifecycle::RenewalWorker);
-        }
-    }
+    let renewal_handle = RenewalHandle::production(journal, outbound_tx, dependencies.now.clone());
+    let mut renewal = start_renewal(&renewal_handle, &dependencies);
     let mut status = tokio::time::interval(Duration::from_secs(5));
     let mut drain = tokio::time::interval(Duration::from_millis(10));
     status.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -237,6 +223,28 @@ where
     renewal.stop();
     connection.stop().await;
     Ok(())
+}
+
+fn start_renewal(
+    renewal_handle: &RenewalHandle,
+    dependencies: &ServiceDependencies,
+) -> RenewalService {
+    if renewal_handle.startup_refresh_needed()
+        && let Some(outbound) = renewal_handle.startup_refresh()
+    {
+        (dependencies.lifecycle)(ServiceLifecycle::StartupRefreshEmitted {
+            tract: outbound.tract,
+            event: outbound.event,
+            fields: outbound.fields,
+        });
+    }
+    let mut renewal = RenewalService::new((dependencies.worker_factory)(renewal_handle.clone()));
+    for _ in 0..dependencies.worker_start_requests {
+        if renewal.start_worker_once() {
+            (dependencies.lifecycle)(ServiceLifecycle::RenewalWorker);
+        }
+    }
+    renewal
 }
 
 pub(crate) fn dispatch(
@@ -314,30 +322,6 @@ mod tests {
         }
     }
 
-    fn run_test_service(
-        directory: &tempfile::TempDir,
-        dependencies: ServiceDependencies,
-    ) -> Result<(), CortexServiceError> {
-        let connection = CallosumSocketConnection::new(
-            directory.path().join("health/callosum.sock"),
-            Map::new(),
-        );
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(run_until_with(
-                directory.path().to_path_buf(),
-                connection,
-                TalentExecutionPaths {
-                    executable_dir: directory.path().join("bin"),
-                    talent_root: directory.path().join("solstone/talent"),
-                    apps_root: directory.path().join("solstone/apps"),
-                    templates_dir: directory.path().join("solstone/think/templates"),
-                },
-                async { ShutdownMode::Immediate },
-                dependencies,
-            ))
-    }
-
     fn running_state() -> (tempfile::TempDir, CortexState) {
         let directory = tempfile::tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
@@ -373,11 +357,12 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let lifecycle = Arc::new(Mutex::new(Vec::new()));
         let factory_calls = Arc::new(Mutex::new(0));
-        run_test_service(
-            &directory,
-            test_dependencies(lifecycle.clone(), factory_calls.clone(), 2),
-        )
-        .unwrap();
+        let (handle, _outbound) = renewal_handle(&directory);
+        let mut renewal = start_renewal(
+            &handle,
+            &test_dependencies(lifecycle.clone(), factory_calls.clone(), 2),
+        );
+        renewal.stop();
         assert_eq!(
             lifecycle
                 .lock()
@@ -395,15 +380,15 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let lifecycle = Arc::new(Mutex::new(Vec::new()));
         let factory_calls = Arc::new(Mutex::new(0));
-        run_test_service(
-            &directory,
-            test_dependencies(lifecycle.clone(), factory_calls, 1),
-        )
-        .unwrap();
+        let (handle, _outbound) = renewal_handle(&directory);
+        let mut renewal = start_renewal(
+            &handle,
+            &test_dependencies(lifecycle.clone(), factory_calls, 1),
+        );
+        renewal.stop();
         assert_eq!(
             &*lifecycle.lock().unwrap(),
             &[
-                ServiceLifecycle::BusConnected,
                 ServiceLifecycle::StartupRefreshEmitted {
                     tract: "supervisor",
                     event: "request".into(),
@@ -413,7 +398,6 @@ mod tests {
                     )]),
                 },
                 ServiceLifecycle::RenewalWorker,
-                ServiceLifecycle::MainLoop,
             ]
         );
     }

@@ -553,14 +553,6 @@ mod tests {
     }
 
     #[test]
-    fn loopback_bind_is_localhost_ephemeral() {
-        let (listener, port) = bind_loopback().expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        assert_eq!(addr.ip(), Ipv4Addr::LOCALHOST);
-        assert_ne!(port, 0);
-    }
-
-    #[test]
     fn generation_fixture_requires_the_daily_activity_anchor_and_maps_the_full_batch() {
         let anchor = "20260817 (Monday):\n  03:17 - 03:28 (11m)";
         assert_eq!(

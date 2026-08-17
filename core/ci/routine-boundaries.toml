@@ -577,9 +577,6 @@ id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs
 id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::capture_logs::scheduling"
 
 [[findings]]
-id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::helpers_emit_status_and_day_log_match_the_reference_shapes::scheduling"
-
-[[findings]]
 id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::log::scheduling"
 
 [[findings]]

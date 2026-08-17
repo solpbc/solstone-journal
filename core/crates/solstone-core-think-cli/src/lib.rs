@@ -20,6 +20,18 @@ mod segment;
 mod weekly;
 mod workers;
 
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod test_support {
+    use std::path::Path;
+
+    use serde_json::{Map, Value};
+
+    pub fn emit(journal: &Path, now_ms: i64, event: &str, fields: Map<String, Value>) -> bool {
+        crate::helpers::emit(journal, now_ms, event, fields)
+    }
+}
+
 use std::path::Path;
 
 use chrono::{Local, NaiveDate};
@@ -479,11 +491,9 @@ fn validate(
 mod tests {
     use std::collections::BTreeSet;
     use std::fs;
-    use std::io::{self, Read, Write};
-    use std::os::unix::net::UnixListener;
+    use std::io::{self, Write};
     use std::path::Path;
     use std::sync::{Arc, Mutex, MutexGuard, Once, OnceLock};
-    use std::thread;
 
     use chrono::NaiveDate;
     use filetime::{FileTime, set_file_mtime};
@@ -866,33 +876,9 @@ mod tests {
     }
 
     #[test]
-    fn helpers_emit_status_and_day_log_match_the_reference_shapes() {
+    fn think_status_updates_match_the_reference_shape() {
         // Source-derived, not measured: thinking.py:770-773 updates status,
-        // thinking.py:895-898 emits a `think` envelope, and utils.py:927-929
-        // appends `epoch<TAB>message` to the selected day task log.
-        let journal = tempdir().unwrap();
-        let socket = journal.path().join("health/callosum.sock");
-        fs::create_dir_all(socket.parent().unwrap()).unwrap();
-        let listener = UnixListener::bind(&socket).unwrap();
-        let received = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut line = String::new();
-            stream.read_to_string(&mut line).unwrap();
-            line
-        });
-        assert!(helpers::emit(
-            journal.path(),
-            1_785_000_000_000,
-            "status",
-            Map::from_iter([("mode".to_owned(), Value::String("daily".to_owned()))]),
-        ));
-        let value: Value = serde_json::from_str(&received.join().unwrap()).unwrap();
-        assert_eq!(value["tract"], "think");
-        assert_eq!(value["event"], "status");
-        assert_eq!(value["mode"], "daily");
-        assert_eq!(value["ts"], 1_785_000_000_000_i64);
-        assert!(!helpers::emit(journal.path(), 1, "status", Map::new()));
-
+        // preserving deterministic in-process updates without a channel.
         let status = helpers::ThinkStatus::default();
         status.update(Map::from_iter([(
             "mode".to_owned(),
@@ -904,27 +890,39 @@ mod tests {
         )]));
         assert_eq!(status.snapshot()["mode"], "daily");
         assert_eq!(status.snapshot()["agents_completed"], 2);
+    }
 
-        for message in [
+    #[test]
+    fn day_log_appends_exact_epoch_message_rows_and_filesystem_failure_is_best_effort() {
+        // Source-derived, not measured: utils.py:927-929 appends exactly
+        // `epoch<TAB>message` to the selected day task log.
+        let journal = tempdir().unwrap();
+        helpers::day_log(
+            journal.path(),
+            "20260813",
+            1_785_000_000_999,
             "sense_repair timeout",
+        );
+        helpers::day_log(
+            journal.path(),
+            "20260813",
+            1_785_000_001_001,
             "sense_repair error 1",
-            "sense_repair exception",
-            "sense_repair error no_callosum",
-            "sense_repair error timeout",
-        ] {
-            helpers::day_log(journal.path(), "20260813", 1_785_000_000_000, message);
-        }
+        );
         let rows =
             fs::read_to_string(journal.path().join("chronicle/20260813/task_log.txt")).unwrap();
-        for message in [
-            "sense_repair timeout",
-            "sense_repair error 1",
-            "sense_repair exception",
-            "sense_repair error no_callosum",
-            "sense_repair error timeout",
-        ] {
-            assert!(rows.contains(&format!("1785000000\t{message}\n")));
-        }
+        assert_eq!(
+            rows,
+            "1785000000\tsense_repair timeout\n1785000001\tsense_repair error 1\n"
+        );
+
+        let blocked = tempdir().unwrap();
+        fs::write(blocked.path().join("chronicle"), b"unchanged").unwrap();
+        helpers::day_log(blocked.path(), "20260813", 1, "not-written");
+        assert_eq!(
+            fs::read(blocked.path().join("chronicle")).unwrap(),
+            b"unchanged"
+        );
     }
 
     #[test]

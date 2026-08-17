@@ -13,6 +13,10 @@ autobins = false
 [lints]
 workspace = true
 
+[features]
+default = []
+test-hooks = []
+
 [dependencies]
 chrono.workspace = true
 glob.workspace = true
@@ -40,3 +44,8 @@ tokio.workspace = true
 [dev-dependencies]
 filetime = "0.2.29"
 tempfile = "3.24.0"
+
+[[test]]
+name = "think_cli_callosum_transport"
+path = "tests/think_cli_callosum_transport.rs"
+required-features = ["test-hooks"]

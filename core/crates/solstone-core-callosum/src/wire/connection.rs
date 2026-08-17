@@ -331,8 +331,8 @@ impl CallosumSocketConnection {
         }
     }
 
-    #[cfg(test)]
-    fn with_retry_source_and_initial_counters(
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub(super) fn with_retry_source_and_initial_counters(
         socket_path: impl AsRef<Path>,
         mut defaults: Map<String, Value>,
         inbound_capacity: usize,
@@ -515,6 +515,21 @@ impl CallosumSocketConnection {
             eprintln!("callosum wire: connection drain continues after stop returns");
         }
     }
+
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub(super) async fn join_terminated_for_test(&mut self) {
+        assert!(
+            !self.running.load(Ordering::Acquire),
+            "test cleanup may only join an already-terminated connection"
+        );
+        let Some(mut task) = self.task.take() else {
+            return;
+        };
+        timeout(CLIENT_STOP_JOIN_TIMEOUT, &mut task)
+            .await
+            .expect("terminated Callosum test connection should join within its deadline")
+            .expect("terminated Callosum test connection task should not panic");
+    }
 }
 
 impl Drop for CallosumSocketConnection {
@@ -530,11 +545,11 @@ struct ConnectedStream {
 }
 
 #[derive(Clone)]
-struct ConnectionCounters {
-    generation: u64,
-    epoch: u64,
-    attempt: u64,
-    failures_since_success: u64,
+pub(super) struct ConnectionCounters {
+    pub(super) generation: u64,
+    pub(super) epoch: u64,
+    pub(super) attempt: u64,
+    pub(super) failures_since_success: u64,
 }
 
 impl ConnectionCounters {
@@ -820,28 +835,7 @@ fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 #[cfg(test)]
 mod counter_tests {
-    use std::future::Future;
-    use std::pin::Pin;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::Duration;
-
-    use serde_json::Map;
-    use tokio::time::timeout;
-
-    use super::{
-        CallosumConnectionPhase, CallosumRetrySource, CallosumSocketConnection,
-        CallosumStoppedReason, ConnectionCounters,
-    };
-
-    static NEXT_SOCKET: AtomicUsize = AtomicUsize::new(0);
-
-    struct ImmediateRetry;
-
-    impl CallosumRetrySource for ImmediateRetry {
-        fn next_attempt(&mut self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
-            Box::pin(async { true })
-        }
-    }
+    use super::{CallosumConnectionPhase, CallosumStoppedReason, ConnectionCounters};
 
     #[test]
     fn generation_and_attempt_overflow_stop_without_reuse() {
@@ -859,69 +853,5 @@ mod counter_tests {
                 reason: CallosumStoppedReason::CounterOverflow,
             }
         );
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn counter_overflow_is_delivered_as_a_stopped_continuity_event() {
-        let ordinal = NEXT_SOCKET.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!("solstone-counter-overflow-{ordinal}"));
-        std::fs::create_dir_all(&root).unwrap();
-
-        let mut attempt = CallosumSocketConnection::with_retry_source_and_initial_counters(
-            root.join("missing.sock"),
-            Map::new(),
-            1,
-            Box::new(ImmediateRetry),
-            ConnectionCounters {
-                generation: 0,
-                epoch: 0,
-                attempt: u64::MAX,
-                failures_since_success: 0,
-            },
-            false,
-        );
-        attempt.start();
-        let _ = attempt.next_event().await;
-        assert!(matches!(
-            timeout(Duration::from_secs(1), attempt.next_event())
-                .await
-                .unwrap(),
-            Some(super::CallosumReceiveEvent::Continuity {
-                phase: CallosumConnectionPhase::Stopped {
-                    reason: CallosumStoppedReason::CounterOverflow
-                },
-                ..
-            })
-        ));
-
-        let socket = root.join("connected.sock");
-        let _listener = tokio::net::UnixListener::bind(&socket).unwrap();
-        let mut generation = CallosumSocketConnection::with_retry_source_and_initial_counters(
-            &socket,
-            Map::new(),
-            1,
-            Box::new(ImmediateRetry),
-            ConnectionCounters {
-                generation: u64::MAX,
-                epoch: 0,
-                attempt: 1,
-                failures_since_success: 0,
-            },
-            true,
-        );
-        generation.start();
-        let _ = generation.next_event().await;
-        assert!(matches!(
-            timeout(Duration::from_secs(1), generation.next_event())
-                .await
-                .unwrap(),
-            Some(super::CallosumReceiveEvent::Continuity {
-                phase: CallosumConnectionPhase::Stopped {
-                    reason: CallosumStoppedReason::CounterOverflow
-                },
-                ..
-            })
-        ));
-        let _ = std::fs::remove_dir_all(root);
     }
 }

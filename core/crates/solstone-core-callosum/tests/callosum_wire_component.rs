@@ -8,12 +8,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use serde_json::{Map, Value, json};
-use solstone_core_callosum::test_support::ServerTestHooks;
+use solstone_core_callosum::test_support::{
+    ServerTestHooks, connection_with_initial_counters, join_terminated,
+};
 use solstone_core_callosum::{
     CallosumConnectionPhase, CallosumEnvelope, CallosumGapReason, CallosumReceiveEvent,
-    CallosumRetrySource, CallosumSocketConnection, CallosumSocketServer,
+    CallosumRetrySource, CallosumSocketConnection, CallosumSocketServer, CallosumStoppedReason,
 };
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::{sleep, timeout};
@@ -26,12 +28,11 @@ struct TempSocket {
 }
 
 impl TempSocket {
-    fn new(name: &str) -> Self {
+    fn new(_name: &str) -> Self {
         let ordinal = NEXT_SOCKET.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "solstone-core-callosum-wire-{name}-{}-{ordinal}",
-            std::process::id()
-        ));
+        // Unix-domain socket paths have a small platform limit. Keep the
+        // fixture basename compact even when TMPDIR is deliberately nested.
+        let root = std::env::temp_dir().join(format!("cw-{}-{ordinal}", std::process::id()));
         fs::create_dir_all(&root).expect("create temporary Callosum root");
         let path = root.join("callosum.sock");
         Self { root, path }
@@ -103,6 +104,137 @@ impl CallosumRetrySource for SuppliedRetries {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + '_>> {
         Box::pin(async move { self.0.recv().await.unwrap_or(false) })
     }
+}
+
+struct ImmediateRetry;
+
+impl CallosumRetrySource for ImmediateRetry {
+    fn next_attempt(
+        &mut self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + '_>> {
+        Box::pin(async {
+            tokio::task::yield_now().await;
+            true
+        })
+    }
+}
+
+async fn wait_until_stopped(client: &CallosumSocketConnection) {
+    timeout(Duration::from_secs(2), async {
+        while client.is_running() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("wire client should terminate after counter overflow");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn attempt_counter_overflow_stops_before_connection_without_reuse() {
+    let socket = TempSocket::new("attempt-counter-overflow");
+    let mut client = connection_with_initial_counters(
+        &socket.path,
+        Box::new(ImmediateRetry),
+        0,
+        0,
+        u64::MAX,
+        0,
+        false,
+    );
+    client.start();
+    let connecting = next_event(&mut client).await;
+    assert!(
+        matches!(
+            connecting,
+            CallosumReceiveEvent::Continuity {
+                generation: 0,
+                epoch: 0,
+                phase: CallosumConnectionPhase::Connecting { attempt: 1 },
+            }
+        ),
+        "{connecting:?}"
+    );
+    let stopped = next_event(&mut client).await;
+    assert!(
+        matches!(
+            stopped,
+            CallosumReceiveEvent::Continuity {
+                generation: 0,
+                epoch: 0,
+                phase: CallosumConnectionPhase::Stopped {
+                    reason: CallosumStoppedReason::CounterOverflow,
+                },
+            }
+        ),
+        "{stopped:?}"
+    );
+    wait_until_stopped(&client).await;
+    timeout(Duration::from_secs(2), join_terminated(&mut client))
+        .await
+        .expect("stopped attempt client cleanup");
+    assert!(!socket.path.exists(), "attempt overflow must not connect");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn generation_counter_overflow_stops_after_connection_without_reuse() {
+    let socket = TempSocket::new("generation-counter-overflow");
+    let listener = tokio::net::UnixListener::bind(&socket.path).expect("bind overflow listener");
+    let mut client = connection_with_initial_counters(
+        &socket.path,
+        Box::new(ImmediateRetry),
+        u64::MAX,
+        0,
+        1,
+        0,
+        true,
+    );
+    client.start();
+    let connecting = next_event(&mut client).await;
+    assert!(
+        matches!(
+            connecting,
+            CallosumReceiveEvent::Continuity {
+                generation: 0,
+                epoch: 0,
+                phase: CallosumConnectionPhase::Connecting { attempt: 1 },
+            }
+        ),
+        "{connecting:?}"
+    );
+    let mut peer = timeout(Duration::from_secs(2), listener.accept())
+        .await
+        .expect("overflow connection deadline")
+        .expect("accept overflow connection")
+        .0;
+    let stopped = next_event(&mut client).await;
+    assert!(
+        matches!(
+            stopped,
+            CallosumReceiveEvent::Continuity {
+                generation: u64::MAX,
+                epoch: 0,
+                phase: CallosumConnectionPhase::Stopped {
+                    reason: CallosumStoppedReason::CounterOverflow,
+                },
+            }
+        ),
+        "{stopped:?}"
+    );
+    wait_until_stopped(&client).await;
+    timeout(Duration::from_secs(2), join_terminated(&mut client))
+        .await
+        .expect("stopped generation client cleanup");
+    let mut after_close = [0_u8; 1];
+    assert_eq!(
+        timeout(Duration::from_secs(2), peer.read(&mut after_close))
+            .await
+            .expect("overflow connection teardown deadline")
+            .expect("read overflow connection teardown"),
+        0,
+        "generation overflow must close the connected socket"
+    );
+    drop(peer);
+    drop(listener);
 }
 
 struct ObservedRetries {

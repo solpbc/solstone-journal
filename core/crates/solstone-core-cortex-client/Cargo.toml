@@ -19,3 +19,8 @@ tokio = { workspace = true, features = ["rt", "sync", "time"] }
 
 [dev-dependencies]
 tempfile = "3.24.0"
+tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "cortex_client_claim_transport"
+path = "tests/cortex_client_claim_transport.rs"
