@@ -976,9 +976,7 @@ mod tests {
     }
 
     fn committed_model_path() -> PathBuf {
-        repo_root().join(
-            "core/models/assets/silero_vad_v6.onnx",
-        )
+        repo_root().join("core/models/assets/silero_vad_v6.onnx")
     }
 
     struct TestDir {

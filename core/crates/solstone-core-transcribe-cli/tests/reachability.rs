@@ -85,9 +85,7 @@ fn fixture_audio() -> PathBuf {
 }
 
 fn model_asset(name: &str) -> PathBuf {
-    repository_root()
-        .join("core/models/assets")
-        .join(name)
+    repository_root().join("core/models/assets").join(name)
 }
 
 fn repository_root() -> PathBuf {

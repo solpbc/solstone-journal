@@ -132,9 +132,7 @@ mod tests {
 
     #[test]
     fn committed_pyannote_model_accepts_zero_window_and_returns_589x7_finite_values() {
-        let model_path = repo_root().join(
-            "core/models/assets/pyannote-segmentation-3.0.onnx",
-        );
+        let model_path = repo_root().join("core/models/assets/pyannote-segmentation-3.0.onnx");
         let mut segmenter = PyannoteSegmenter::open(&model_path, &[SpeakerExecutionProvider::Cpu])
             .expect("segmenter");
         let audio = vec![0.0; PYANNOTE_WINDOW_S as usize * PYANNOTE_SAMPLE_RATE_HZ as usize];

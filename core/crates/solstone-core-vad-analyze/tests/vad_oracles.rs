@@ -35,8 +35,7 @@ fn fixtures() -> PathBuf {
 }
 
 fn model_path() -> PathBuf {
-    repository_root()
-        .join("core/models/assets/silero_vad_v6.onnx")
+    repository_root().join("core/models/assets/silero_vad_v6.onnx")
 }
 
 fn helper_binary() -> &'static str {

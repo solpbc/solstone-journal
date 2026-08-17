@@ -314,4 +314,3 @@ fn linux_only_row_is_missing_and_failing_on_simulated_linux() {
     assert_eq!(record.reason_code, "binary-missing");
     assert!(report.failed());
 }
-
