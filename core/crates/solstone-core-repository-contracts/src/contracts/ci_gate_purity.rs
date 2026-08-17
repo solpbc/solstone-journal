@@ -61,46 +61,6 @@ fn dependency_keys(manifest: &str) -> BTreeSet<String> {
     keys
 }
 
-/// Manually declared `[[test]]` targets and the features each one requires.
-fn manual_test_targets(manifest: &str) -> Vec<(String, BTreeSet<String>)> {
-    let mut targets = Vec::new();
-    let mut current: Option<(Option<String>, BTreeSet<String>)> = None;
-
-    for line in manifest.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') {
-            if let Some((Some(name), features)) = current.take() {
-                targets.push((name, features));
-            }
-            if trimmed == "[[test]]" {
-                current = Some((None, BTreeSet::new()));
-            }
-            continue;
-        }
-        let Some((name, features)) = current.as_mut() else {
-            continue;
-        };
-        if let Some(value) = trimmed.strip_prefix("name = ") {
-            *name = Some(value.trim().trim_matches('"').to_owned());
-        } else if let Some(value) = trimmed.strip_prefix("required-features = ") {
-            features.extend(
-                value
-                    .trim()
-                    .trim_start_matches('[')
-                    .trim_end_matches(']')
-                    .split(',')
-                    .map(|item| item.trim().trim_matches('"').to_owned())
-                    .filter(|item| !item.is_empty()),
-            );
-        }
-    }
-    if let Some((Some(name), features)) = current {
-        targets.push((name, features));
-    }
-
-    targets
-}
-
 fn explicit_binary_names(manifest: &str) -> BTreeSet<String> {
     let mut in_bin = false;
     let mut names = BTreeSet::new();
@@ -783,19 +743,6 @@ TARGETS = {
 }
 
 #[test]
-fn differential_gate_requires_validated_onnx_staging() {
-    let makefile = makefile_text(&repo_root());
-    let header = target_body(&makefile, "check-differentials")
-        .lines()
-        .next()
-        .expect("check-differentials header");
-    assert!(
-        header.contains("check-rust-onnx-stage"),
-        "check-differentials can bypass validated ONNX staging"
-    );
-}
-
-#[test]
 fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
     let makefile = makefile_text(&repo_root());
     let pdf_stager = fs::read_to_string(repo_root().join("scripts/stage_pdfium_runtime.py"))
@@ -882,123 +829,6 @@ fn explicit_workspace_binary_artifact_names_are_unique() {
     assert!(
         duplicates.is_empty(),
         "workspace packages must not race to write the same binary artifact: {duplicates:?}"
-    );
-}
-
-/// A test kept out of `make ci` because it executes the Python implementation
-/// must still be run by something. `check-differentials` is that something, and
-/// this pins the two together: gating a test off the native gate without
-/// naming it in the differential gate fails here rather than silently retiring
-/// its coverage.
-#[test]
-fn every_differential_test_is_named_in_its_own_gate() {
-    let root = repo_root();
-    let core = root.join("core");
-    let members = workspace_members(
-        &fs::read_to_string(core.join("Cargo.toml")).expect("read workspace manifest"),
-    );
-    let makefile = fs::read_to_string(root.join("Makefile")).expect("read Makefile");
-
-    let differentials = members
-        .iter()
-        .flat_map(|member| {
-            let manifest = fs::read_to_string(core.join(member).join("Cargo.toml"))
-                .expect("read member manifest");
-            manual_test_targets(&manifest)
-        })
-        .filter(|(_name, features)| features.contains("differential"))
-        .map(|(name, _features)| name)
-        .collect::<BTreeSet<_>>();
-    assert!(
-        !differentials.is_empty(),
-        "the differential feature must still gate at least one test target"
-    );
-
-    let gate = target_body(&makefile, "check-differentials");
-    for name in &differentials {
-        assert!(
-            gate.contains(&format!("--test {name}")),
-            "{name} is gated off make ci but not named in check-differentials"
-        );
-    }
-    assert!(
-        !target_body(&makefile, "check-rust-test").contains("differential"),
-        "make ci must not enable the differential feature"
-    );
-}
-
-/// Naming a test in the differential gate is not enough -- it has to be named
-/// under the package that owns it.
-///
-/// `cargo test -p A --test t` where `t` lives in package B does not skip `t`;
-/// it fails the whole invocation before running anything, so every other target
-/// sharing that leg is skipped too. Measured: one such leg had been carrying
-/// three targets and executing none of them, and the gate above was green the
-/// entire time because it only ever checked that the name appeared somewhere in
-/// the recipe.
-#[test]
-fn every_differential_leg_names_the_package_that_owns_its_tests() {
-    let root = repo_root();
-    let core = root.join("core");
-    let members = workspace_members(
-        &fs::read_to_string(core.join("Cargo.toml")).expect("read workspace manifest"),
-    );
-
-    // test-target name -> the packages that actually define it
-    let mut owners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for member in &members {
-        let directory = core.join(member);
-        let manifest =
-            fs::read_to_string(directory.join("Cargo.toml")).expect("read member manifest");
-        let package = package_name(&manifest);
-        for (name, _features) in manual_test_targets(&manifest) {
-            owners.entry(name).or_default().insert(package.clone());
-        }
-        let Ok(entries) = fs::read_dir(directory.join("tests")) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|extension| extension == "rs") {
-                let name = path
-                    .file_stem()
-                    .expect("test file stem")
-                    .to_string_lossy()
-                    .into_owned();
-                owners.entry(name).or_default().insert(package.clone());
-            }
-        }
-    }
-
-    let makefile = makefile_text(&root);
-    let gate = target_body(&makefile, "check-differentials");
-    let mut checked = 0_usize;
-    for leg in gate
-        .split('"')
-        .filter(|leg| leg.trim_start().starts_with("-p "))
-    {
-        let words = leg.split_whitespace().collect::<Vec<_>>();
-        let package = words[words.iter().position(|word| *word == "-p").expect("-p") + 1];
-        for (index, word) in words.iter().enumerate() {
-            if *word != "--test" {
-                continue;
-            }
-            let target = words[index + 1];
-            let owning = owners
-                .get(target)
-                .unwrap_or_else(|| panic!("no package in the workspace defines a test {target}"));
-            assert!(
-                owning.contains(package),
-                "check-differentials runs `-p {package} --test {target}`, but {target} \
-                 lives in {owning:?}. That leg fails before running anything, so every \
-                 target sharing it is skipped"
-            );
-            checked += 1;
-        }
-    }
-    assert!(
-        checked > 0,
-        "the differential gate named no targets -- the leg parsing is wrong"
     );
 }
 

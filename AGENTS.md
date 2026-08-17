@@ -124,7 +124,6 @@ Verified against `Makefile`. Grouped by use.
 | `make watch` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
 | `make ci` | Efficient Rust-only routine gate: formatting, workspace Clippy checks across all ordinary targets, and serialized library/binary unit tests. It does not run Cargo integration-test targets or the heavyweight native/cross/policy legs. |
 | `make ci-full` | Full operator gate: the former `make ci` task sequence, unchanged: formatting, MSRV, clippy, full Rust tests, describe stubs, ONNX/PDF runtime tests, shipped-binary build/smokes, iOS, macOS, and dependency policy. Run it on the exact final-tree SHA. |
-| `make check-differentials` | The Rust tests whose oracle is the running Python implementation. Installs first, because they need a populated `.venv`. Run it when a change touches a seam both languages implement. |
 | `make verify` | Alias for `make ci` during the Rust-conversion freeze. |
 | `make install-checks` | Directly runnable full Python-and-Rust preflight chain (format, ruff, layer hygiene, and related checks); no longer called by `ci` or `verify`. |
 | `make check-layer-hygiene` | Run `scripts/check_layer_hygiene.py` alone. Useful when iterating on an L1–L2 violation flagged by `make install-checks`. |
@@ -173,8 +172,7 @@ is the behavior; the goal is fewer binaries, not relabeling integration tests.
 - Run [`make ci-full`](Makefile) once on the exact final tree before merge or
   release. This host-conditional gate reports unsupported platform legs as
   skipped, so run affected platform lanes on their supported hosts. Separately
-  run `make check-differentials` when a Rust/Python seam changes and `make
-  check-rust-race` for concurrency-sensitive supervisor changes.
+  run `make check-rust-race` for concurrency-sensitive supervisor changes.
 
 ### Verification against a running sandbox
 
@@ -362,7 +360,7 @@ sets only the local verification path and may use any local filename.
 
 ## 6. Testing quickstart
 
-- **Rust gates:** `make` / `make all`, `make ci`, `make ci-full`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. Per the [Makefile](Makefile), `make ci` is the efficient routine path with formatting, all-target Clippy checks, and library/binary unit tests; `make ci-full` is the full operator final-tree gate and preserves the former task sequence. Cross-language tests run separately through `make check-differentials`. The [`ci_gate_purity` contract tests](core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs) check that each manifest-gated differential target is named in that Makefile recipe.
+- **Rust gates:** `make` / `make all`, `make ci`, `make ci-full`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. Per the [Makefile](Makefile), `make ci` is the efficient routine path with formatting, all-target Clippy checks, and library/binary unit tests; `make ci-full` is the full operator final-tree gate and preserves the former task sequence.
 - **Python suite:** pytest files remain `test_*.py` with `test_*` functions, shared fixtures in `tests/conftest.py`, and the fixture journal at `tests/fixtures/journal/`. The autouse `set_test_journal_path` fixture is unchanged; tests that write, scan, or rebuild journal/index state must use `journal_copy` or a smaller `tmp_path` journal (see §8). Run this suite directly with bare `pytest` when needed. `tests/` and `solstone/apps/*/tests/` are unchanged, but the former Python Make rails, including `make test-app`, `make test-only`, and the other `make test-*` targets, now fail with the freeze diagnostic.
 - **Marked Python tests:** integration, performance, and release tests remain in the suite and can be selected with bare pytest as needed; their former Make rails are frozen. Live product verification still uses `make sandbox`.
 - **After editing `solstone/convey/` or `solstone/apps/`:** `journal restart-convey` to reload code in a running stack.

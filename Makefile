@@ -99,9 +99,8 @@ ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # depends transitively on ffmpeg-sys-next (via solstone-core-grab), whose build
 # script needs these args to find limits.h. Leaving install off this list made
 # `make install` fail on a clean environment while every Rust gate stayed green,
-# because the gates carry the export and check-differentials inherits it when it
-# shells into install.
-install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries check-differentials ci-full-prep-cargo: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
+# because the gates carry the export and install itself must carry it too.
+install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries ci-full-prep-cargo: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
 REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
@@ -802,27 +801,6 @@ check-rust-deny:
 	@$(REQUIRE_CARGO)
 	cargo deny --manifest-path $(RUST_MANIFEST) --locked --offline check bans licenses sources
 
-# Cross-language differentials: Rust tests whose oracle is the running Python
-# implementation. They need a populated .venv, so they carry
-# `required-features = ["differential"]` in their crate manifests, which gates
-# them off `make ci` and is what lets that gate run on a bare checkout. This
-# target installs first, then runs exactly those tests.
-# ci_gate_purity::every_differential_test_is_named_in_its_own_gate asserts that
-# every differential target in the workspace is named here, so a differential
-# cannot be gated off `make ci` and then run nowhere.
-# A red leg must never hide a leg that never ran. Two mechanisms did exactly
-# that here, and closing either one alone leaves the other: `make` halts a
-# recipe at its first failing line, so a red package hid every later package;
-# and `cargo` halts after the first failing test *target* within one
-# invocation, so `wire` -- 14 tests, the one-shot conformance suite -- stopped
-# running the moment `session_real` went red. Every leg therefore runs with
-# --no-fail-fast, every leg runs regardless of its predecessors, and the target
-# exits non-zero if any of them did. A gate that could not judge must never
-# read as a gate that said yes.
-# The recipe is a one-item cargo-test loop:
-# solstone-core-observe-audio::audio_differential. That leg does not link ONNX
-# Runtime. The check-rust-onnx-stage prerequisite remains so the purity
-# assertion that this target cannot bypass validated staging stays intact.
 .PHONY: check-service-legacy-evidence service-legacy-evidence-capture
 # Hand-run immutable-evidence regeneration. This deliberately has no `install`
 # prerequisite: every leg is either stdlib Python, its own pinned interpreter
@@ -836,24 +814,6 @@ check-service-legacy-evidence:
 service-legacy-evidence-capture:
 	@test -n "$(CAPTURE_INPUT)" || { echo "CAPTURE_INPUT=<pushed-commit> is required" >&2; exit 2; }
 	python3 scripts/service_legacy_capture.py --capture-input "$(CAPTURE_INPUT)"
-
-.PHONY: check-differentials
-check-differentials: check-rust-onnx-stage build
-	@$(REQUIRE_CARGO)
-	$(MAKE) install
-	@status=0; \
-	for leg in \
-		"-p solstone-core-observe-audio --test audio_differential" ; do \
-		echo "==> cargo test --features differential --no-fail-fast $$leg"; \
-		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$leg \
-			|| status=$$?; \
-	done; \
-	if [ $$status -eq 0 ]; then \
-		echo "check-differentials: every leg ran and passed"; \
-	else \
-		echo "check-differentials: FAILED (status $$status) -- every leg above still ran; read each leg's own result line"; \
-	fi; \
-	exit $$status
 
 build:
 	@$(REQUIRE_CARGO)

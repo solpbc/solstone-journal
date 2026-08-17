@@ -76,10 +76,6 @@ test that writes, scans, or rebuilds journal/index state must use the
   Cargo targets. The default plan includes MSRV, all-target Clippy, doctest,
   dependency-policy, native runtime/helper, shipped-binary, and Apple-platform
   coverage in addition to every ordinary integration target.
-- `make check-differentials` runs Rust tests that compare behavior with the
-  Python implementation; use it when a change touches a shared seam. These
-  remain outside the Rust-only full runner because they intentionally require
-  an interpreter and installed legacy implementation.
 - `make check-rust-race` remains a selectable, repeated contention lane rather
   than part of the default full plan. Live-service validation remains an
   operator lane and is never inferred from a successful automated receipt.

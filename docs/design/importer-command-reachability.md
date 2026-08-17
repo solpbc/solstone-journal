@@ -179,9 +179,8 @@ fixture.
    route each parsed mode to an already-landed body where reachable and preserve
    named crate-boundary refusals for source bodies that cannot be reached.
 4. Add `core/crates/solstone-core/tests/importer_reachability.rs`. It uses the
-   spawned freshly built binary for every criterion, has no
-   `required-features = ["differential"]`, and therefore runs on a bare
-   checkout through `make ci`.
+   spawned freshly built binary for every criterion, is an ordinary crate
+   integration test, and therefore runs on a bare checkout through `make ci`.
 5. Keep all the process-table work cutover work separate: no process-table/probe mutation, no
    Python change, no source-crate/audio change, no native `sol import` change,
    and no generated-inventory change.

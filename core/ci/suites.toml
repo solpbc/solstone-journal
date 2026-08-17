@@ -2834,19 +2834,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-observe-audio::audio_differential"
-package = "solstone-core-observe-audio"
-target = "audio_differential"
-set = "differential"
-areas = ["observation"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-observer::observer_prune_contracts"
 package = "solstone-core-observer"
 target = "observer_prune_contracts"
@@ -3844,6 +3831,20 @@ runtime = "none"
 id = "solstone-core-observe-audio::audio_front_end"
 package = "solstone-core-observe-audio"
 target = "audio_front_end"
+set = "native"
+areas = ["observation"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "standard"
+serial_group = "native-runtime"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-observe-audio::audio_decode_corpus"
+package = "solstone-core-observe-audio"
+target = "audio_decode_corpus"
 set = "native"
 areas = ["observation"]
 platforms = ["linux", "macos"]

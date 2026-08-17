@@ -403,7 +403,7 @@ fn print_plan(plan: &[PlanItem], selectors: &Selectors) {
         );
     }
     println!(
-        "Excluded from the default: differential -> make check-differentials; race -> make check-rust-race or SETS=race; live -> operator-only live validation."
+        "Excluded from the default: differential -> reserved excluded lane, no suites registered; race -> make check-rust-race or SETS=race; live -> operator-only live validation."
     );
 }
 
@@ -486,7 +486,7 @@ fn execute(
         }
         if item.set == "differential" {
             println!(
-                "BLOCKED {}: differential suites remain in the dedicated make check-differentials lane",
+                "BLOCKED {}: differential suites remain in the reserved excluded lane",
                 item.id
             );
             results.push(ResultRow {
@@ -497,7 +497,7 @@ fn execute(
                 cpu_system_ms: 0,
                 command,
                 log_path: None,
-                detail: "dedicated lane: make check-differentials".to_owned(),
+                detail: "reserved excluded lane: differential".to_owned(),
             });
             continue;
         }

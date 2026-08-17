@@ -6,8 +6,7 @@ Add a manually-invoked Rust timing gate, check-rust-race, not a new leg of
 make ci. It runs five whole, serialized supervisor integration suites in
 parallel beneath bounded CPU contention and reports each run as GREEN,
 INCONCLUSIVE, or FAILED. ci-under-poison retains its current Cargo traversal,
-so its closing informational echo names this gate alongside check-differentials
-rather than invoking it.
+so its closing informational echo names this gate rather than invoking it.
 
 The registered set is exactly the three tests already using supervisor-race's load-aware
 WaitOutcome contract:
@@ -197,10 +196,10 @@ Convey tests are not timing race detectors.
 
 ## 4. Exact naming in ci-under-poison, and the naming guard
 
-Extend ci-under-poison's existing second closing @echo line, which currently
-names check-differentials, or add an adjacent closing @echo line, to also name
-the exact target check-rust-race and direct readers to run make check-rust-race
-for concurrency-sensitive supervisor changes.
+Extend ci-under-poison's existing second closing @echo line, or add an
+adjacent closing @echo line, to name the exact target check-rust-race and
+direct readers to run make check-rust-race for concurrency-sensitive
+supervisor changes.
 
 This is purely an informational echo, **not** a $(MAKE) check-rust-race
 invocation. The Cargo-subcommand traversal chain in ci-under-poison remains
@@ -216,7 +215,7 @@ check-rust-race. This guard reds if that naming is ever removed.
 **Standalone confirmation:** the check-rust-race target is never invoked via
 $(MAKE) check-rust-race anywhere in ci-under-poison's recipe body, and it is
 not part of any $(MAKE) ci traversal; it is a manually-invoked target only,
-following check-differentials' deliberately-excluded-but-named precedent.
+like the other excluded lanes.
 
 Do not add it to the ci-under-poison make chain. That would change the pinned
 Cargo subcommand vector asserted by make_ci_never_executes_forbidden_interpreters

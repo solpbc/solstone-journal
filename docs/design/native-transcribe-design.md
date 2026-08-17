@@ -44,9 +44,8 @@ list and no other helper-crate dependency:
 It must never list `solstone-core-vad-analyze`,
 `solstone-core-speakers-analyze`, or `solstone-core-speakers-onnx` in a
 dependency table, including as optional or feature-gated dependencies. The
-crate may retain a dependency-free `differential` feature solely to gate its
-Python-oracle test targets; it has no `real-vad` or `real-speakers-analyze`
-feature.
+crate has no Python-oracle test feature and no `real-vad` or
+`real-speakers-analyze` feature.
 
 Register the pair using the retention four-line form exactly: consecutive
 workspace members for `crates/solstone-core-transcribe` and
@@ -319,16 +318,17 @@ append that still says retention is sole remover.
 
 ## 9. Differential and gate plan
 
-The native crate declares a `differential` feature. Add only its Python-oracle
-integration targets with `required-features = ["differential"]`; each is owned
+The native crate does not currently declare a Python-oracle test feature.
+If later Python-oracle integration targets land, each is owned
 and invoked as `-p solstone-core-transcribe --test <target>`.
 
-2026-08-17: the unused `differential = []` line on
+2026-08-17: the unused empty differential feature line on
 `solstone-core-transcribe` was removed; no matching test file existed.
-`make check-differentials` and the `"differential"` CI set are still live
-(`solstone-core-observe-audio`). When these targets land,
-re-add the feature and `[[test]]` stanzas and wire them into that
-target/set. The former `solstone-core-vad-analyze --test vad_differential`
+That dedicated Python-oracle Makefile rail and the observe-audio feature
+that fed it were retired; the reserved excluded-lane set token remains
+with no registered suites. A future transcribe Python-oracle suite would
+have to be built from scratch — there is no rail to re-add.
+The former `solstone-core-vad-analyze --test vad_differential`
 ORT-prefixed Makefile leg is gone (native replay already lives in
 `vad_oracles.rs`), so `transcribe_vad_differential` should *be* the
 ORT-prefixed leg rather than sit beside it.
@@ -338,9 +338,9 @@ ORT-prefixed leg rather than sit beside it.
 - `transcribe_vad_differential`: drives the real VAD helper/model against the
   Python VAD/reference path.
 
-Add `transcribe_differential` as its own ordinary loop leg in
-`check-differentials`, with the package name above. Put
-`transcribe_vad_differential` after that loop as its own ORT-env-prefixed,
+Add `transcribe_differential` as its own ordinary integration target,
+owned by `-p solstone-core-transcribe`. Put
+`transcribe_vad_differential` after that as its own ORT-env-prefixed,
 status-accumulating leg. It uses the same
 `VAD_ANALYZE_HOST_ORT_ENV` staging prerequisite and remains isolated so ORT
 environment variables do not leak to other differential legs.
@@ -358,10 +358,6 @@ Do not add transcribe to `RUST_HOST_EXCLUDES` or the 22-crate iOS exclusion
 list. The AC38 stub-VAD reachability test supplies a test-injected fake helper
 binary; the real-VAD differential resolves the real VAD helper at runtime.
 The same pattern may supply a stub speakers-analyze binary to AC16.
-
-`ci_gate_purity` will mechanically require each `required-features =
-["differential"]` target to appear in `check-differentials`, and each quoted
-leg must name this owning package.
 
 ## 10. Ordered implementation sequence
 

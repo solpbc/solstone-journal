@@ -9,18 +9,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[features]
-differential = []
-
 [dependencies]
 ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format", "software-resampling", "build"] }
 ffmpeg-sys-next = { version = "9.0.0", default-features = false, features = ["build-portable"] }
 thiserror = { workspace = true }
-
-[[test]]
-name = "audio_differential"
-path = "tests/audio_differential.rs"
-required-features = ["differential"]
 
 [lints]
 workspace = true
