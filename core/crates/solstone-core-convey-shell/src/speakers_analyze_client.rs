@@ -32,6 +32,23 @@ struct InvocationBudget {
     stderr_limit: usize,
 }
 
+struct ReapOnDrop(Child);
+
+impl ReapOnDrop {
+    fn child(&mut self) -> &mut Child {
+        &mut self.0
+    }
+}
+
+impl Drop for ReapOnDrop {
+    fn drop(&mut self) {
+        if !matches!(self.0.try_wait(), Ok(Some(_))) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+}
+
 const DEFAULT_BUDGET: InvocationBudget = InvocationBudget {
     timeout: TIMEOUT,
     terminate_grace: TERMINATE_GRACE,
@@ -93,24 +110,29 @@ fn run_with_budget(
         let payload = dir.join("embeddings.f32le");
         write_payload(&payload, embeddings)?;
         let request = json!({"schema":REQUEST_SCHEMA,"embeddings_f32le_path":payload,"payload_format":"raw-f32le-row-major-v1","dtype":"float32-le","shape":[embeddings.len(),width],"min_cluster_size":5,"min_samples":3});
-        let mut child = Command::new(helper)
-            .arg("discovery-cluster")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| invoke(error.to_string()))?;
+        let mut child = ReapOnDrop(
+            Command::new(helper)
+                .arg("discovery-cluster")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|error| invoke(error.to_string()))?,
+        );
         child
+            .child()
             .stdin
             .take()
             .ok_or_else(|| invoke("stdin-unavailable"))?
             .write_all(request.to_string().as_bytes())
             .map_err(|error| invoke(error.to_string()))?;
         let stdout = child
+            .child()
             .stdout
             .take()
             .ok_or_else(|| invoke("stdout-unavailable"))?;
         let stderr = child
+            .child()
             .stderr
             .take()
             .ok_or_else(|| invoke("stderr-unavailable"))?;
@@ -120,12 +142,13 @@ fn run_with_budget(
         let deadline = Instant::now() + budget.timeout;
         loop {
             if let Ok(error) = capture_rx.try_recv() {
-                terminate_and_reap(&mut child, budget.terminate_grace);
+                terminate_and_reap(child.child(), budget.terminate_grace);
                 let _ = stdout_reader.join();
                 let _ = stderr_reader.join();
                 return Err(invoke(error));
             }
             if let Some(status) = child
+                .child()
                 .try_wait()
                 .map_err(|error| invoke(error.to_string()))?
             {
@@ -137,7 +160,7 @@ fn run_with_budget(
                 return parse(&String::from_utf8_lossy(&stdout), embeddings.len());
             }
             if Instant::now() >= deadline {
-                terminate_and_reap(&mut child, budget.terminate_grace);
+                terminate_and_reap(child.child(), budget.terminate_grace);
                 let _ = stdout_reader.join();
                 let _ = stderr_reader.join();
                 return Err(invoke("timeout"));

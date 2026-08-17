@@ -114,8 +114,6 @@ mod door;
 mod entities;
 #[cfg(feature = "host")]
 mod link_health_cache;
-#[cfg(all(feature = "host", any(test, feature = "test-hooks")))]
-pub use link_health_cache::set_relay_health_applied_notify;
 #[cfg(feature = "host")]
 mod network;
 #[cfg(feature = "host")]

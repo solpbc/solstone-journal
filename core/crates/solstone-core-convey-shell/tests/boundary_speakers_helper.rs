@@ -11,7 +11,7 @@ const TIMEOUT: Duration = Duration::from_millis(500);
 const TERMINATE_GRACE: Duration = Duration::from_millis(1500);
 
 struct HelperGuard {
-    dir: tempfile::TempDir,
+    _dir: tempfile::TempDir,
 }
 
 impl HelperGuard {
@@ -25,25 +25,7 @@ impl HelperGuard {
         );
         fs::write(&path, script).expect("helper");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("mode");
-        (Self { dir }, path, receipt)
-    }
-}
-
-impl Drop for HelperGuard {
-    fn drop(&mut self) {
-        let receipt = self.dir.path().join("receipt");
-        if let Ok(text) = fs::read_to_string(receipt) {
-            for line in text.lines() {
-                if let Some(pid) = line.strip_prefix("start ")
-                    && let Ok(pid) = pid.parse::<i32>()
-                {
-                    let _ = nix::sys::signal::kill(
-                        nix::unistd::Pid::from_raw(pid),
-                        nix::sys::signal::Signal::SIGKILL,
-                    );
-                }
-            }
-        }
+        (Self { _dir: dir }, path, receipt)
     }
 }
 
@@ -92,15 +74,16 @@ fn timeout_terminates_a_responsive_helper() {
 
 #[test]
 fn timeout_kills_after_grace_when_term_is_ignored() {
-    let (_guard, helper, receipt) =
-        HelperGuard::script("trap '' TERM\ncat >/dev/null\nwhile :; do :; done");
+    let (_guard, helper, receipt) = HelperGuard::script(
+        "trap 'printf \"term %s\\n\" \"$$\" >> \"$RECEIPT\"' TERM\ncat >/dev/null\nwhile :; do :; done",
+    );
     let started = Instant::now();
     let result = drive_discovery_cluster_helper(&helper, TIMEOUT, TERMINATE_GRACE, 1024);
     let elapsed = started.elapsed();
     assert_eq!(result.unwrap_err().1, "timeout");
     let text = fs::read_to_string(receipt).expect("receipt");
     assert!(text.contains("start "), "{text}");
-    assert!(!text.contains("term "), "{text}");
+    assert!(text.contains("term "), "{text}");
     // Ignoring TERM forces the grace poll to expire (`now < deadline`) before
     // kill()+wait(), so elapsed cannot be shorter than timeout + grace.
     assert!(

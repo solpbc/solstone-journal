@@ -4,6 +4,7 @@
 use std::fs;
 use std::os::unix::net::UnixListener as StdUnixListener;
 use std::sync::atomic::AtomicU64;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::CallosumEnvelope;
@@ -15,8 +16,9 @@ use tokio::sync::watch;
 
 use solstone_core_convey_shell::{
     ConveyServeOptions, authorization_gate, bind_with_authorization, router,
-    set_relay_health_applied_notify,
 };
+
+const IO_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn health_envelope(
     timestamp: i64,
@@ -48,26 +50,67 @@ fn health_envelope(
 }
 
 async fn loopback_get(address: std::net::SocketAddr) -> Value {
-    let mut stream = tokio::net::TcpStream::connect(address)
+    tokio::time::timeout(IO_TIMEOUT, async move {
+        let mut stream = tokio::net::TcpStream::connect(address)
+            .await
+            .expect("loopback connects");
+        stream
+            .write_all(
+                b"GET /app/network/api/status HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n",
+            )
+            .await
+            .expect("status request writes");
+        let mut response = Vec::new();
+        stream
+            .read_to_end(&mut response)
+            .await
+            .expect("status reads");
+        let header_end = response
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .expect("status headers")
+            + 4;
+        serde_json::from_slice(&response[header_end..]).expect("status JSON")
+    })
+    .await
+    .expect("status request reaches its bounded result")
+}
+
+async fn accept_subscriber(listener: &UnixListener) -> tokio::net::UnixStream {
+    tokio::time::timeout(IO_TIMEOUT, listener.accept())
         .await
-        .expect("loopback connects");
-    stream
-        .write_all(
-            b"GET /app/network/api/status HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n",
-        )
-        .await
-        .expect("status request writes");
-    let mut response = Vec::new();
-    stream
-        .read_to_end(&mut response)
-        .await
-        .expect("status reads");
-    let header_end = response
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .expect("status headers")
-        + 4;
-    serde_json::from_slice(&response[header_end..]).expect("status JSON")
+        .expect("subscriber connects before the deadline")
+        .expect("subscriber connects")
+        .0
+}
+
+async fn send_health(peer: &mut tokio::net::UnixStream, envelope: &CallosumEnvelope) {
+    let mut line = serde_json::to_vec(envelope).expect("envelope serializes");
+    line.push(b'\n');
+    peer.write_all(&line).await.expect("health writes");
+}
+
+async fn status_for_generation(address: std::net::SocketAddr, generation: u64) -> Value {
+    tokio::time::timeout(IO_TIMEOUT, async move {
+        loop {
+            let status = loopback_get(address).await;
+            if status["relay_listen_generation"] == generation {
+                return status;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("relay status observes the applied generation before the deadline")
+}
+
+fn current_epoch_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock follows the Unix epoch")
+        .as_millis()
+        .try_into()
+        .expect("current epoch milliseconds fit i64")
 }
 
 #[tokio::test]
@@ -103,10 +146,6 @@ async fn relay_health_subscriber_starts_late_and_drives_live_status() {
     );
     let listener = UnixListener::from_std(std_listener).expect("tokio listener");
 
-    let (notify, mut applied) = watch::channel(0_u64);
-    applied.borrow_and_update();
-    let _notify = RelayNotifyGuard::install(notify);
-
     let (authorization_sender, _) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
@@ -127,22 +166,22 @@ async fn relay_health_subscriber_starts_late_and_drives_live_status() {
     .await
     .expect("Convey binds");
 
-    let (mut peer, _) = listener.accept().await.expect("subscriber connects");
-    let now = 1_700_000_000_i64;
-    let mut line = serde_json::to_vec(&health_envelope(
-        now,
-        "connected",
-        590,
-        Some("unrelated_error"),
-        Some(596),
-        Some(595),
-    ))
-    .expect("envelope serializes");
-    line.push(b'\n');
-    peer.write_all(&line).await.expect("health writes");
-    applied.changed().await.expect("apply notified");
+    let mut peer = accept_subscriber(&listener).await;
+    let now = current_epoch_millis();
+    send_health(
+        &mut peer,
+        &health_envelope(
+            now,
+            "connected",
+            590,
+            Some("unrelated_error"),
+            Some(596),
+            Some(595),
+        ),
+    )
+    .await;
 
-    let status = loopback_get(handle.loopback_ipv4_addr()).await;
+    let status = status_for_generation(handle.loopback_ipv4_addr(), 590).await;
     assert_eq!(status["last_link_event_at"], now);
     assert_eq!(status["relay_listen_generation"], 590);
     assert_eq!(status["last_successful_relay_tunnel_at"], 595);
@@ -159,36 +198,13 @@ async fn relay_health_subscriber_starts_late_and_drives_live_status() {
     );
     assert_eq!(status["relay_state"], "parked");
 
-    applied.borrow_and_update();
-    let mut stale = serde_json::to_vec(&health_envelope(
-        now - 90_001,
-        "connected",
-        590,
-        None,
-        None,
-        Some(590),
-    ))
-    .expect("stale envelope serializes");
-    stale.push(b'\n');
-    peer.write_all(&stale).await.expect("stale health writes");
-    applied.changed().await.expect("stale apply notified");
-    let offline = loopback_get(handle.loopback_ipv4_addr()).await;
+    send_health(
+        &mut peer,
+        &health_envelope(now - 90_001, "connected", 591, None, None, Some(590)),
+    )
+    .await;
+    let offline = status_for_generation(handle.loopback_ipv4_addr(), 591).await;
     assert_eq!(offline["relay_state"], "offline");
 
     handle.shutdown();
-}
-
-struct RelayNotifyGuard;
-
-impl RelayNotifyGuard {
-    fn install(sender: watch::Sender<u64>) -> Self {
-        set_relay_health_applied_notify(Some(sender));
-        Self
-    }
-}
-
-impl Drop for RelayNotifyGuard {
-    fn drop(&mut self) {
-        set_relay_health_applied_notify(None);
-    }
 }

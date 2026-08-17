@@ -7,10 +7,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[cfg(any(test, feature = "test-hooks"))]
-static RELAY_HEALTH_APPLIED_NOTIFY: Mutex<Option<tokio::sync::watch::Sender<u64>>> =
-    Mutex::new(None);
-
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketConnection};
@@ -100,37 +96,12 @@ pub(crate) async fn subscribe_relay_health(journal_root: PathBuf, store: RelayHe
         }
         match parse_relay_health_event(&envelope, now_ms()) {
             Ok(candidate) => {
-                let generation = candidate.listen_generation.unwrap_or(0);
-                if replace_if_not_stale(&store, candidate) {
-                    notify_relay_health_applied(generation);
-                }
+                replace_if_not_stale(&store, candidate);
             }
             Err(error) => log::debug!("ignored malformed relay health event: {error}"),
         }
     }
 }
-
-#[cfg(any(test, feature = "test-hooks"))]
-#[doc(hidden)]
-pub fn set_relay_health_applied_notify(sender: Option<tokio::sync::watch::Sender<u64>>) {
-    *RELAY_HEALTH_APPLIED_NOTIFY
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = sender;
-}
-
-#[cfg(any(test, feature = "test-hooks"))]
-fn notify_relay_health_applied(generation: u64) {
-    if let Some(sender) = RELAY_HEALTH_APPLIED_NOTIFY
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .as_ref()
-    {
-        let _ = sender.send(generation);
-    }
-}
-
-#[cfg(not(any(test, feature = "test-hooks")))]
-fn notify_relay_health_applied(_generation: u64) {}
 
 fn now_ms() -> i64 {
     SystemTime::now()
