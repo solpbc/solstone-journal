@@ -248,6 +248,7 @@ fn local_backend_defaults_to_metal_on_apple_silicon() {
 }
 
 #[test]
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 fn metal_runtime_requires_the_supported_platform_without_ready_state() {
     let root = temp("metal-candidate-platform");
     let error = dispatch(
