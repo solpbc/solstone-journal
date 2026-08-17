@@ -10,7 +10,7 @@ rust_layer_size = 288641068
 
 [builder_rootfs]
 filename = "builder-rootfs.tar"
-sha256 = "8e7c13acb4e8a65e17c6db6d8152865ae5b4f1fd252ae455cd967927d42a8de3"
+sha256 = "c913ff15751cb42523dc163190fe9e223e7a68931a700a5eb64fccafe405d9c4"
 size = 1493800960
 
 [zig]
