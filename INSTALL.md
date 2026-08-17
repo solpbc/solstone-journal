@@ -2,7 +2,7 @@
 
 these instructions are for a coding agent and human working together. solstone is the platform: sol is the app, and the journal is the memory it keeps. sol lives on your devices, experiences your day with you, and keeps it all in your journal — always private, only yours. open source, made by sol pbc.
 
-**supported platforms:** linux (primary), macOS. windows is not yet supported.
+**supported platforms:** linux. mac runs the sol app today; the mac build of the journal is not published yet. windows is not yet supported.
 
 the latest version of these instructions is at https://solstone.app/install.
 
@@ -19,9 +19,9 @@ if solstone is running and healthy, skip to [install sol on your devices](#insta
 
 ### prerequisites
 
-linux: install `uv` (`curl -LsSf https://astral.sh/uv/install.sh | sh`),
-`ripgrep` (`rg`), and the system OpenMP runtime used by the default local
-Parakeet transcription provider:
+the journal ships as one self-contained tree. it needs no interpreter and no package manager of its own.
+
+on linux, the system OpenMP runtime, used by the default local Parakeet transcription provider:
 
 ```bash
 sudo apt install libgomp1      # Ubuntu/Debian
@@ -29,49 +29,79 @@ sudo dnf install libgomp       # Fedora/RHEL
 sudo pacman -S libgomp         # Arch
 ```
 
-macOS: install xcode command line tools (`xcode-select --install`) and homebrew (https://brew.sh), then `brew install uv ripgrep`.
+⚠ the `.deb` and `.rpm` do not declare this one for you, and transcription is the part that stops working without it. `journal doctor` names it if it is missing.
 
-## install
+## install the journal on linux
 
-most people install solstone to **run the journal here** — the full host that
-transcribes, makes sense of your day, and holds everything:
+⚠ **linux only.** the tree is built for `linux-x86_64` and `linux-aarch64`, and the bootstrap refuses any other system. for mac, see [install the journal on mac](#install-the-journal-on-mac).
 
-```bash
-pip install solstone-journal                                    # includes sol on PATH
-uv tool install solstone-journal && uv tool install solstone   # journal tool + sol tool
-pipx install solstone-journal && pipx install solstone         # same two-tool story
-```
+### where the files come from
 
-Pick one installer.
+⚠ **the tree is not published yet.** its release channel is `updates.solstone.app`. `install.sh` accepts only that host, re-checking on every redirect hop; loopback is allowed for testing, and `--origin` overrides.
 
-A pip install of solstone-journal puts `sol`, `solstone`, and `journal` on PATH.
-uv tool and pipx expose each installed package's own commands: the journal
-package provides `journal`, and the thin command package provides `sol` and `solstone`,
-which is why their install lines above are two commands. The
-[package metadata](packages/solstone-journal/pyproject.toml) and
-[cleanroom installer checks](scripts/cleanroom-install.sh) pin this command
-split.
+until the first release lands there, the routes below start from files you already have: a local build, or a copy someone handed you. `install.sh` itself is not inside the tree. today it lives in this repository at `core/distribution/install.sh`, and after the first release it is served from the origin as well.
 
-NVIDIA GPU owners who want GPU-accelerated transcription install
-`solstone-journal-cuda` **instead of** `solstone-journal` with the same
-installer command shape.
-
-### just the `sol` client
-
-`pip install solstone` (no extras) installs only the thin `sol` access client —
-talk to a journal running **elsewhere** (a second machine, or a journal you
-reach over your private link). it carries none of the journal host's AI/media
-stack, so it's small and fast:
+once it is published, one command does the whole thing, and this becomes the recommended route:
 
 ```bash
-uv tool install solstone        # the sol client, on PATH
-uvx solstone --help             # or ephemerally — no install, one-shot
+sh install.sh --version <version>
 ```
 
-Running the journal? Check the machine first: `uvx solstone check` renders a one-shot readiness verdict (GPU, memory, free disk) for the bundled local models — no install required. It exits 0 when ready, and prints exactly what's missing when not.
+that fetches the archive, its checksum and its release record from `updates.solstone.app`, verifies the digest, and installs. the archive route below is the same operation with the files already on disk; the package route is your distribution's installer and does not verify a checksum for you.
 
-A thin/no-extras install carries only `sol` and `solstone`. Install the journal
-to use `journal setup` and `journal start`.
+every release names its files the same way: `solstone-journal-<version>-linux-<arch>`, where `<arch>` is `x86_64` or `aarch64`. the three archives are `.tar.gz`, `.deb` and `.rpm`; each release also carries a `.sha256`, a `.manifest.json` and a `.release` record.
+
+### a distribution package
+
+on Debian or Ubuntu:
+
+```bash
+sudo apt install ./solstone-journal-<version>-linux-x86_64.deb
+```
+
+on Fedora or RHEL:
+
+```bash
+sudo dnf install ./solstone-journal-<version>-linux-x86_64.rpm
+```
+
+either one puts `sol`, `solstone` and `journal` on PATH for every account on the machine.
+
+### the archive
+
+for a machine you do not administer, or a prefix you choose:
+
+```bash
+sh install.sh --archive solstone-journal-<version>-linux-x86_64.tar.gz \
+              --sha256 solstone-journal-<version>-linux-x86_64.sha256 \
+              --release solstone-journal-<version>-linux-x86_64.release
+```
+
+with no `--prefix` it installs under `~/.local/solstone-journal`, keeps each version in its own directory, and points a `current` symlink at the live one. it adds `current/bin` to PATH by writing a block into `~/.profile` between `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`.
+
+⚠ **`~/.profile` is read by login shells.** a new terminal window on most linux desktops is not one, and zsh does not read it at all. either log out and back in, or:
+
+```bash
+. ~/.profile
+```
+
+**to verify the archive by hand** — `install.sh` already does this for you:
+
+```bash
+sha256sum --ignore-missing -c solstone-journal-<version>-linux-x86_64.sha256
+```
+
+⚠ `--ignore-missing` is not optional: the checksum file carries one line for each of the three archives, so a plain `-c` fails on the two you did not download.
+
+### one tree, whichever machine
+
+there is no separate download for talking to a journal running elsewhere. the tree carries `sol` and `solstone` alongside the journal binaries, so one install covers both roles. you carry a few binaries you will not run, and nothing else changes.
+
+## install the journal on mac
+
+sol on your mac installs from its own signed bundle, under [install sol on your devices](#install-sol-on-your-devices). what isn't ready yet is the journal.
+
+the mac build of the journal is moving to the same relocatable tree, signed and notarized, and is not published yet. until it is, run the journal on linux and reach it from your mac with sol.
 
 ## set up
 
@@ -79,126 +109,111 @@ to use `journal setup` and `journal start`.
 journal setup
 ```
 
-this runs the setup readiness doctor battery, confirms the journal directory at `~/journal`, installs the local transcription model (~1 GB on linux), installs the `sol` skill for claude code, codex, and gemini, installs the journal-side `sol` and `journal` router skills so sol can tend the journal, and starts a background service (systemd on linux, launchd on macOS) listening on http://localhost:5015.
+this runs the setup readiness doctor battery, confirms the journal directory at `~/journal`, fetches the local transcription model (~1 GB), installs the `sol` skill for Claude Code, Codex, and Gemini, installs the journal-side `sol` and `journal` router skills so sol can tend the journal, and starts a background service — `systemd` on linux — listening on http://localhost:5015.
 
-let your human know: **open http://localhost:5015 in a browser**. the first-run wizard walks them through setting their identity and choosing how sol thinks — local by default (the bundled model runs right in the journal), or their own provider key if the machine can't run a local model.
+let your human know: **open http://localhost:5015 in a browser**. the first-run wizard walks them through setting their identity and choosing how sol thinks: local by default (the local model runs right on the machine), or their own provider key if the machine can't run one.
 
-a `solstone-journal` install bundles the Python and native artifacts a journal
-host needs — PDF rendering, whisper, and the default CPU transcription stack
-are included; `journal setup` downloads the transcription model. on Linux, the
-host supplies the small system OpenMP runtime listed in prerequisites.
-`journal doctor --readiness` runs the actual Parakeet binary before reporting
-it ready and gives the exact package-manager command when that runtime is
-missing.
+⚠ **the tree carries the binaries the journal needs to run, not the transcription stack.** the Parakeet transcription helper and its model are fetched during setup, by `journal install-models`. `journal doctor --readiness` runs the actual binary before reporting it ready, and on linux it gives the exact package-manager command when the system OpenMP runtime listed in prerequisites is missing.
 
-Pick one of `solstone-journal` or `solstone-journal-cuda` — the CPU and GPU ONNX runtimes share the same files and must not both be installed. `journal doctor` reports whether the transcription runtime, native speaker-analysis helper, and bundled models are ready.
+`journal doctor` reports whether the transcription runtime, the native speaker-analysis helper, and the models they need are ready.
 
-This CUDA extra is only for transcription. The Linux local model provider picks its own GPU backend: on NVIDIA GPUs from the RTX 30 series up with a current NVIDIA driver (580 series or newer), it runs natively on CUDA; the runtime downloads from updates.solstone.app as a checksum-pinned bundle. On other hardware GPUs (AMD, Intel, or older NVIDIA) it uses Vulkan. CPU/software Vulkan devices are rejected instead of falling back silently. On AMD, the local model path runs through Mesa/RADV Vulkan, while transcription stays on the bundled CPU runtime.
+the linux local model provider picks its own GPU backend. on RTX 30, 40 and 50 series NVIDIA GPUs with a CUDA 13 driver it runs natively on CUDA, and the runtime downloads from `updates.solstone.app` as a checksum-pinned artifact. every other hardware GPU uses Vulkan. CPU and software Vulkan devices are rejected rather than falling back silently. transcription runs on the CPU runtime when the GPU cannot hold both it and the model.
 
 if the service fails to start, check `journal service logs`.
 
 ## choosing how to power sol
 
-sol is powered by an AI model, and it runs **locally by default** — on every device. the bundled model runs right in your journal, so your thinking never leaves the machine. a cloud lane is an option, not the default; you choose in settings → providers (or the thinking app).
+sol is powered by an AI model, and it runs **locally by default**, on every device. the local model runs right on the machine your journal lives on, so nothing is sent to a cloud provider. a cloud option is available, not the default; you choose in settings → providers.
 
-- **local built-in — the default.** on a capable machine sol thinks locally with nothing extra to set up — the bundled model handles both the reasoning over your journal and screen analysis, and nothing is sent to a cloud provider. the floor is **6 GB of GPU memory** on linux, or a **16 GB Apple Silicon mac** (the model is ~3.4 GB on disk, plus the ~1 GB transcription model). solstone checks first and won't activate a local model that won't fit; on Linux it needs a supported hardware GPU (NVIDIA via CUDA on RTX 30-series or newer, or AMD, NVIDIA, and Intel via Vulkan).
-- **an engine you bring yourself, if your machine can't clear that bar — or you'd rather not spend its power.** point solstone at Google (Gemini), OpenAI, or Anthropic with **your own developer API key**, created in that provider's developer console — *not* the consumer chat product (gemini.google.com / chatgpt.com / claude.ai). you can also point it at your own endpoint instead of a cloud provider — a model you run yourself, on this machine or another one you control. you can switch any time in settings → providers.
-- **confidential processing, if you'd rather not run it yourself or hand it to a provider.** sol's thinking runs on a sol pbc endpoint — verified by attestation before anything is sent, processed in memory, and not retained. it is off unless you turn it on, and only runs while it is enabled.
+- **local built-in, the default.** on a capable machine sol thinks locally with nothing extra to set up. the local model handles both the reasoning over your journal and screen analysis. the floor is **6 GB of GPU memory** on linux, or a **16 GB Apple Silicon mac** (the model is ~3.4 GB on disk, plus the ~1 GB transcription model). solstone checks first and tells you what won't fit; on linux it also needs a supported hardware GPU (see [set up](#set-up)).
+- **an engine you bring yourself**, if your machine can't clear that bar, or you'd rather not spend its power. point solstone at Google (Gemini), OpenAI, or Anthropic with **your own developer API key**, created in that provider's developer console, *not* the consumer chat product (gemini.google.com / chatgpt.com / claude.ai). you can also point it at your own endpoint instead of a cloud provider — a model you run yourself, on this machine or another one you control. you can switch any time in settings → providers.
+- **confidential processing**, if you'd rather not run it yourself or hand it to a provider. available to approved scouts. let sol think off your device on confidential hardware sol pbc runs that keeps nothing. your journal must verify the service before anything is sent; if it can't verify, it doesn't send. while it's on, sol can transcribe your audio there too — transcribed, never kept; turn that off any time and transcription returns to your device.
 
-what actually leaves your machine differs sharply between these paths: with the local model, nothing leaves; with a hosted provider, only that task's prompt plus the relevant journal context goes, directly to that provider under your own key — on that path solstone is never a proxy, and sol pbc is never in it and never sees it. there is a third case, and it is the one exception: if you turn on confidential processing, sol's thinking runs on a sol pbc endpoint — only while you have it enabled, verified by attestation before anything is sent, processed in memory, and not retained. for the full picture of what's sent, to whom, and under whose terms, see [what solstone sends](DATA-FLOW.md).
+what actually leaves your machine differs sharply between these paths. with the local model, nothing leaves. with a hosted provider, only that task's prompt plus the relevant journal context goes, directly to that provider under your own key; on that path solstone is never a proxy, and sol pbc is never in it. the third case is the one where sol pbc is in the path. with confidential processing on, sol's thinking is processed off your device, and with the audio setting on (it is on by default) speech-to-text runs there too — only while confidential processing is on, only over a channel your journal verified first, processed in memory and not retained. turn the audio setting off and transcription returns to your device. for the full picture of what's sent, to whom, and under whose terms, see [what solstone sends](DATA-FLOW.md).
 
 ## install sol on your devices
 
-your journal needs sol alongside it — sol takes in your day on each device and keeps it in your journal. each platform ships its own package; install one for each machine you want sol on.
+your journal needs sol alongside it: sol experiences your day with you on each device and keeps it in your journal. each platform ships its own package; install one for each machine you want sol on.
 
-**macOS:** download the signed app bundle from https://solstone.app/observers and drag it to Applications. it pairs itself with the running journal on first launch.
+⚠ each of these has its own install guide and they are the current source of truth. the pip and pipx routes they used to document are legacy builds that no longer receive releases.
 
-**linux:**
+**mac:** download the signed app bundle from https://solstone.app/download and drag it to Applications. on first launch it finds the journal running on this machine; click **connect your journal** to pair.
 
-```bash
-pipx install solstone-linux
-solstone-linux install-service
-```
+**linux:** follow `solstone-linux`'s own INSTALL guide. installing the service and pairing it are two separate steps — `install-service` writes and starts the unit, and pairing reads a pair link you create in the journal.
 
-`solstone-linux install-service` walks you through pairing this machine with your running journal. choose any name you'd like to identify this machine by.
+**tmux terminal sessions:** follow `solstone-tmux`'s own INSTALL guide, which also carries the steps for retiring a previous Python installation.
 
-**tmux terminal sessions:**
+## moving from a pip, uv or pipx install
 
-```bash
-pipx install solstone-tmux
-solstone-tmux install-service
-```
+**your journal itself is untouched by any of this.** it is a folder of dated directories and no installer owns it.
 
-(for these packages, `uv tool install solstone-tmux` is also fine if you prefer uv.)
+earlier releases installed the journal as a set of Python packages. the tree replaces them, and the two must not both be on PATH.
 
-## migrating from a pre-split install
+1. stop the service: `journal service stop`
+2. remove the old packages with whichever installer put them there:
+   ```bash
+   pip uninstall -y solstone-journal solstone-journal-cuda solstone-journal-host solstone
+   uv tool uninstall solstone-journal; uv tool uninstall solstone
+   pipx uninstall solstone-journal; pipx uninstall solstone
+   ```
+3. install the tree as above, then run `journal setup`.
 
-If you installed the journal before the package split, run the one-time migration
-line for your installer family, then run `journal setup`.
-
-```bash
-pip uninstall solstone-journal-host && pip install solstone-journal
-pipx uninstall solstone && pipx install solstone-journal && pipx install solstone
-uv tool uninstall solstone && uv tool install solstone-journal && uv tool install solstone
-```
+⚠ **there is no CUDA build of the tree.** if you were on `solstone-journal-cuda`, transcription moves to the CPU runtime — the same model, on the CPU, so long recordings take longer to process; nothing else about them changes. the local *model* provider still uses your GPU where it can. that path is separate and is described under [set up](#set-up).
 
 ## upgrading
 
-```bash
-pip install --upgrade solstone-journal && journal setup
-uv tool install --upgrade solstone-journal && uv tool install --upgrade solstone && journal setup
-pipx upgrade solstone-journal && journal setup
-```
+install the newer package or archive the same way you installed the first one, then run `journal setup`. the setup step refreshes runtime artifacts and reconciles the service unit if anything has changed.
 
-Use the same installer family you used for install. The `uv tool` form upgrades both
-the journal package and the thin `solstone` client, while the pipx form upgrades
-the journal tool. For GPU transcription, upgrade `solstone-journal-cuda` instead
-of `solstone-journal`. The `journal setup` step refreshes runtime artifacts and
-reconciles the systemd/launchd unit if anything has changed.
+the archive route keeps each version in its own directory and moves the `current` symlink, so an upgrade unpacks a second tree alongside the live one before switching.
 
-## upgrading an existing journal
+### if you already have a journal with history in it
 
-The steps above cover the package upgrade. If you already have a journal with history in it, two more things happen (or need to happen) on top of that:
+a few more things happen, or need to happen, on top of the install.
 
-**search index rebuild, if you're coming from before 0.7.0.** A pre-0.7.0 search index is dropped and rebuilt on first open after upgrade. The rebuild usually queues itself automatically, but if the service was still starting up when that happened, it can miss the window and print a message asking you to run it yourself. If search feels empty (or noticeably thinner than your journal's actual history) right after upgrading from a pre-0.7.0 install, run:
+**search index rebuild, on an older index schema.** an index on the older schema is dropped and rebuilt on first open after upgrade. the rebuild usually queues itself automatically, but if the service was still starting up when that happened, it can miss the window and print a message asking you to run it yourself. if search feels empty, or noticeably thinner than your journal's actual history, right after upgrading, run:
 
 ```bash
 journal indexer --rescan-full
 ```
 
-This is a full historical rescan — it can take a while on a large journal.
+this is a full historical rescan and can take a while on a large journal.
 
-**connections/edges backfill, if you're coming from before 0.8.3.** The relationship layer between entities (who's connected to whom, and how) is derived by a separate pass. `journal indexer --rescan` (and the automatic light rescan on service start) only covers today plus facets/imports/apps — it does **not** backfill edges over your existing history. To build connections for days you already have:
+**connections/edges backfill.** the relationship layer between entities (who's connected to whom, and how) is derived by a separate pass, and extraction is incremental on file modification time — so once a day's mtimes are recorded, an ordinary rescan will not re-extract its edges even with `--rescan-full`. a weekly schedule rebuilds them on its own. to force it now:
 
 ```bash
 journal indexer --rebuild-edges
 ```
 
-Run this once after upgrading to a version with the connections feature if your existing days show no connections.
+run this if your existing days show no connections and you would rather not wait for the weekly pass.
 
-**if your journal isn't at the default location.** `journal setup` expects `~/journal` unless told otherwise. If your journal lives somewhere else — including if you're on an early source install that relied on the now-retired source-tree fallback (running `journal setup` from inside a git checkout used to default the journal into `<repo>/journal`) — point setup at it explicitly so it reuses that journal instead of creating an empty one at the default path:
+**if your journal isn't at the default location.** `journal setup` expects `~/journal` unless told otherwise. if your journal lives somewhere else, point setup at it explicitly so it reuses that journal instead of creating an empty one at the default path:
 
 ```bash
 journal setup --journal /path/to/your/journal --accept-existing-journal
 ```
 
-Skipping `--journal` here silently resolves to `~/journal` and starts fresh — a real risk on the source-tree-fallback case, since a fresh `~/journal` looks like a working install even though your actual history is untouched at the old path.
+with no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `~/.config/solstone/config.toml`, then `~/journal`. on a machine with no prior config that last step starts fresh, and a fresh `~/journal` looks like a working install even though your actual history is untouched at the old path.
 
 ## uninstall
 
+**none of this removes your journal.** it is a folder of dated directories and it survives every step below.
+
 1. remove setup-managed runtime files: `journal setup --clean-uninstall`
-   this removes the user service, managed `~/.local/bin/sol` wrapper, user config, and setup manifest. it does not remove your journal.
+   this removes the service unit, the managed `sol` and `journal` wrappers in `~/.local/bin`, its config, and the setup manifest.
 2. optional: remove the installed `sol` agent skill: `sol skills uninstall`.
-3. uninstall the python packages: `uv tool uninstall solstone-journal && uv tool uninstall solstone` (or `pipx uninstall solstone-journal`).
-4. macOS only: drag `/Applications/solstone.app` to Trash.
-5. macOS only, optional: remove sol's app data and the parakeet model cache:
+3. remove the tree, by the route you installed it:
+   - `sudo apt remove solstone-journal` or `sudo dnf remove solstone-journal`
+   - archive install: delete the prefix directory (`~/.local/solstone-journal` by default) and the PATH block `install.sh` added to `~/.profile`, marked with `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`.
+4. mac only: drag `/Applications/solstone.app` to Trash.
+5. mac only, optional: remove sol's app data and the Parakeet model cache:
    ```bash
    rm -rf ~/Library/Application\ Support/solstone/
    ```
-   this evicts the parakeet cache; reinstall will re-download it.
-6. macOS only, optional: reset privacy permissions:
+   this evicts the Parakeet cache; reinstall will re-download it.
+6. mac only, optional: reset privacy permissions:
    ```bash
-   tccutil reset Microphone app.solstone.observer && tccutil reset ScreenCapture app.solstone.observer
+   tccutil reset Microphone app.solstone.observer
+   tccutil reset ScreenCapture app.solstone.observer
    ```
    or use System Settings → Privacy & Security.
 
