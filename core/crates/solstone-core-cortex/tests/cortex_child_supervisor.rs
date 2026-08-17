@@ -7,7 +7,7 @@ use std::os::unix::process::CommandExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,6 +22,7 @@ use tempfile::tempdir;
 struct ChildGuard {
     child: Option<Child>,
     pgid: i32,
+    armed: bool,
 }
 
 impl ChildGuard {
@@ -32,11 +33,8 @@ impl ChildGuard {
         Self {
             child: Some(child),
             pgid,
+            armed: true,
         }
-    }
-
-    fn wait(&mut self) -> ExitStatus {
-        self.child.take().expect("child").wait().expect("wait")
     }
 
     fn try_wait(&mut self) -> Option<ExitStatus> {
@@ -47,7 +45,37 @@ impl ChildGuard {
             .expect("try_wait")
     }
 
+    fn wait_bounded(&mut self, timeout: Duration) -> ExitStatus {
+        let started = Instant::now();
+        loop {
+            if let Some(status) = self.try_wait() {
+                self.child.take();
+                return status;
+            }
+            assert!(started.elapsed() < timeout, "fixture child did not exit");
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn reap_in_background(&mut self) -> mpsc::Receiver<ExitStatus> {
+        let mut child = self.child.take().expect("child");
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let status = child.wait().expect("wait");
+            let _ = sender.send(status);
+        });
+        receiver
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+
     fn terminate(&mut self) {
+        if !self.armed {
+            return;
+        }
+        self.armed = false;
         stop_group_with_grace(self.pgid, Duration::from_millis(200));
         if let Some(mut child) = self.child.take() {
             let _ = child.wait();
@@ -228,7 +256,8 @@ fn run_cwd_case(name: &str, frontmatter: &str) -> (PathBuf, PathBuf, String) {
     let cwd = poll_file(&cwd_receipt, Duration::from_secs(2));
     let status = poll_file(&status_path, Duration::from_secs(2));
     assert_eq!(status.trim(), "ok");
-    let _ = controller.wait();
+    let _ = controller.wait_bounded(Duration::from_secs(2));
+    controller.disarm();
     (fixture, journal, cwd.trim().to_owned())
 }
 
@@ -312,7 +341,7 @@ fn captured_process_group_survives_direct_child_reap() {
         .trim()
         .parse::<i32>()
         .unwrap();
-    let status = child.wait();
+    let status = child.wait_bounded(Duration::from_secs(2));
     assert!(status.success());
     assert!(nix::unistd::getpgid(Some(Pid::from_raw(child.pgid))).is_err());
     assert!(nix::sys::signal::kill(Pid::from_raw(descendant), None).is_ok());
@@ -320,6 +349,7 @@ fn captured_process_group_survives_direct_child_reap() {
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(2) {
         if nix::sys::signal::kill(Pid::from_raw(descendant), None).is_err() {
+            child.disarm();
             return;
         }
         thread::sleep(Duration::from_millis(10));
@@ -337,8 +367,13 @@ fn stop_group_records_term_and_does_not_kill_a_responsive_child() {
     command.env("CORTEX_SIGNALS", &signals);
     let mut child = ChildGuard::spawn(command);
     let _ = poll_file(&ready, Duration::from_secs(2));
-    stop_group_with_grace(child.pgid, Duration::from_secs(2));
-    let status = child.wait();
+    let status = child.reap_in_background();
+    let grace = Duration::from_secs(2);
+    let started = Instant::now();
+    stop_group_with_grace(child.pgid, grace);
+    assert!(started.elapsed() < grace, "responsive stop reached SIGKILL");
+    let status = status.recv_timeout(grace).expect("bounded child reap");
+    child.disarm();
     assert_eq!(poll_file(&signals, Duration::from_secs(1)).trim(), "TERM");
     assert_ne!(status.signal(), Some(Signal::SIGKILL as i32));
     assert!(status.success() || status.signal() == Some(Signal::SIGTERM as i32));
@@ -355,7 +390,8 @@ fn stop_group_records_term_then_kills_an_ignoring_child() {
     let mut child = ChildGuard::spawn(command);
     let _ = poll_file(&ready, Duration::from_secs(2));
     stop_group_with_grace(child.pgid, Duration::from_millis(100));
-    let status = child.wait();
+    let status = child.wait_bounded(Duration::from_secs(2));
+    child.disarm();
     assert_eq!(poll_file(&signals, Duration::from_secs(1)).trim(), "TERM");
     assert_eq!(status.signal(), Some(Signal::SIGKILL as i32));
 }
@@ -377,7 +413,8 @@ fn drain_keeps_running_use_alive_until_its_own_exit() {
     state.spawn_started(&work, child.pgid, Arc::new(Mutex::new(Vec::new())));
     state.stop_accepting();
     assert!(child.try_wait().is_none());
-    let status = child.wait();
+    let status = child.wait_bounded(Duration::from_secs(2));
+    child.disarm();
     assert!(status.success());
     state.finish("one", 0);
     state.spawn_finished();
@@ -402,6 +439,7 @@ fn immediate_stop_signals_the_running_group() {
     for running in state.stop_immediately() {
         stop_group_with_grace(running.pgid, Duration::from_millis(200));
     }
-    let status = child.wait();
+    let status = child.wait_bounded(Duration::from_secs(2));
+    child.disarm();
     assert!(!status.success());
 }

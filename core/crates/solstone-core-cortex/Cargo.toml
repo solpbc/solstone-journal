@@ -50,4 +50,3 @@ required-features = ["test-hooks"]
 name = "cortex_child_supervisor"
 path = "tests/cortex_child_supervisor.rs"
 required-features = ["test-hooks"]
-
