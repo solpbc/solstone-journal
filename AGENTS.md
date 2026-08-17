@@ -5,19 +5,21 @@ This file is the **developer guide** for the solstone repository. Read it before
 > ⚠️ **§7 has not caught up with the Rust conversion, and §7 is the section this guide calls required
 > reading.** The Python under `solstone/` was removed from `main`; the directory still carries live
 > schemas, `app.json` manifests, and `authority.toml`, which you do still edit, and `scripts/` still
-> holds working tooling. But **§7's L2 table names a write-owning module per domain, and nearly every
-> Python module it names is gone.** Its crate rows do still resolve and are the current owners, so read
-> that table for the domains and their rules, and trust its `core/crates/` entries over its `.py` ones.
+> holds working tooling. But **§7's L2 table names a write-owning module per domain, and every one of
+> the 64 Python modules it names is gone** — not most of them, all of them. Its crate rows do still
+> resolve and are the current owners, so read that table for the domains and their rules, and trust its
+> `core/crates/` entries over its `.py` ones.
 >
 > The directories in §2 all still exist; what has moved is what lives in them. Treat any `solstone/**.py`
-> path anywhere below as where a responsibility used to live. Its current home is a crate under
-> `core/crates/`, and the reliable way to find it is to search `core/crates/` for the behavior rather than
-> to follow a path from this document. `docs/PORTING.md` carries the conversion doctrine. Dead paths
-> outside §7 are called out where they appear rather than left for you to discover.
+> path anywhere below as where a responsibility used to live — **and assume nothing annotates it for
+> you**, including in §1's reading list. Its current home is a crate under `core/crates/`, and the
+> reliable way to find it is to search `core/crates/` for the behavior rather than to follow a path from
+> this document. `docs/PORTING.md` carries the conversion doctrine.
 >
-> Measured 2026-08-17 at this commit, counting backticked repository paths and testing each for
-> existence: 138 cited, 73 gone, 69 of those in §7. Re-run before trusting the split; the tree is
-> still moving.
+> Most of a hundred-odd repository paths cited below no longer resolve, and nearly all of those are in
+> §7. ⛔ **No exact count is given here on purpose**: this tree moved twice under a reviewer measuring
+> it, so a frozen number would be wrong within hours and would read as authority it does not have.
+> Count it yourself if you need it.
 
 Audience:
 
@@ -35,7 +37,7 @@ Read, in order, when you enter the repo for a coding task:
 
 1. **This file through §8** — the invariants must be in working memory before your first edit.
 2. **`docs/SOLCLI.md`** — the CLI routing map. `sol` and `journal` are separate native Rust executables with different authority.
-3. **`solstone/think/top.py` (first ~100 lines)** — the interactive TUI. Ties callosum + supervisor + service status together in one vantage point. Good "oh, this is how it connects" moment.
+3. ⛔ **`solstone/think/top.py` is gone** — it was the interactive TUI, and reading it was the "oh, this is how it connects" moment because it tied callosum, supervisor, and service status together in one vantage point. Nothing has replaced it as a single reading target; the equivalent orientation is now spread across the callosum, supervisor, and system crates under `core/crates/`.
 4. **The area you're about to touch:**
    - User-visible feature or `sol call <app> <verb>` → `core/native-sol/apps/<name>/native/{authority.toml,command.rs}` + `solstone/apps/<name>/routes.py` + `solstone/apps/<name>/templates/`.
    - Think pipeline → `solstone/think/<module>.py` + its tests.
