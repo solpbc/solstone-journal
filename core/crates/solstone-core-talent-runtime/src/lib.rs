@@ -168,11 +168,15 @@ pub fn run_worker(_args: &[String], journal: &Path) -> ExitCode {
             return ExitCode::from(70);
         }
     };
-    let client = OneShotClient::sibling();
+    let client = OneShotClient::sibling().map(configure_generate_client);
     let stdin = io::stdin().lock();
     let mut stdout = io::stdout().lock();
     run_lines(stdin, &mut stdout, &paths, &context, client.as_ref());
     ExitCode::SUCCESS
+}
+
+fn configure_generate_client(client: OneShotClient) -> OneShotClient {
+    client.with_prefix_arguments(["generate".into()])
 }
 
 fn runtime_paths_from_current_executable() -> Result<prepare::RuntimePaths, String> {
@@ -691,6 +695,27 @@ mod tests {
                 .execute(&request)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn sibling_client_uses_the_generate_one_shot_boundary() {
+        let root = tempfile::Builder::new()
+            .prefix("solstone-talent-generate-client-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let client = configure_generate_client(OneShotClient::at_path(
+            test_support::generate_one_shot_stub(root.path(), "generated"),
+        ));
+        let prepared = PreparedTalent {
+            name: "plain".to_owned(),
+            config: Map::from_iter([("prompt".to_owned(), Value::String("hello".to_owned()))]),
+        };
+        let GenerateResponse::Generated(response) =
+            client.execute(&generate_request(&prepared)).unwrap()
+        else {
+            panic!("stub generates")
+        };
+        assert_eq!(response.text, "generated");
     }
 
     #[test]

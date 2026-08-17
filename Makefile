@@ -668,8 +668,9 @@ check-rust-distribution:
 	$(call run-rust-gate-under-poison,check-rust-distribution-under-poison)
 
 # Live Docker/Podman oracle over already-produced x86_64 artifacts. Set
-# SOLSTONE_DISTRIBUTION_OUT, the captured SOLSTONE_CLEANROOM_BUILDER_ID, and,
-# for remote Docker, DOCKER_HOST explicitly.
+# SOLSTONE_DISTRIBUTION_OUT, the captured SOLSTONE_CLEANROOM_BUILDER_ID, a
+# SOLSTONE_DISTRIBUTION_BIN built in that baseline builder, and, for remote
+# Docker, DOCKER_HOST explicitly.
 check-rust-distribution-cleanroom:
 	core/distribution/cleanroom.sh --self-test
 	core/distribution/cleanroom.sh "$${SOLSTONE_DISTRIBUTION_OUT:-/var/tmp/solstone-distribution-out}"

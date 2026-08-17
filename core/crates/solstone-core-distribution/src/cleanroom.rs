@@ -194,10 +194,47 @@ fn handle_generation(
     let prompt = serde_json::from_str::<serde_json::Value>(body)
         .map(|value| flatten_json_strings(&value))
         .unwrap_or_else(|_| body.to_owned());
+    if prompt.contains("Reply with the single word OK.") {
+        return write_json(
+            &mut stream,
+            200,
+            &serde_json::json!({
+                "choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+            })
+            .to_string(),
+        );
+    }
+    if prompt.contains("bounded solstone diagnostic cogitate check")
+        && prompt.contains("emit_final")
+    {
+        return write_json(
+            &mut stream,
+            200,
+            &serde_json::json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [{
+                            "id": "final-1",
+                            "type": "function",
+                            "function": {"name": "emit_final", "arguments": r#"{"content":"OK"}"#}
+                        }]
+                    },
+                    "finish_reason": "tool_calls"
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+            })
+            .to_string(),
+        );
+    }
     let (talent, completion) = match generation_completion(&prompt, expected_fragment) {
         Ok(reply) => reply,
         Err(reason) => {
             append_evidence(evidence, reason)?;
+            let prompt_excerpt = prompt.chars().take(16_384).collect::<String>();
+            append_evidence(evidence, &format!("prompt={prompt_excerpt:?}"))?;
             return write_json(
                 &mut stream,
                 422,
@@ -281,7 +318,10 @@ fn generation_completion(
     prompt: &str,
     expected_fragment: &str,
 ) -> Result<(&'static str, &'static str), &'static str> {
-    if prompt.contains("primary") && prompt.contains("fallback") {
+    if prompt.contains("Maintenance Window Analysis")
+        && prompt.contains("primary")
+        && prompt.contains("fallback")
+    {
         if !prompt.contains(expected_fragment) {
             return Err("daily_schedule-anchor-missing");
         }
@@ -290,13 +330,16 @@ fn generation_completion(
             r#"{"primary":"03:00","fallback":"04:00"}"#,
         ));
     }
-    if prompt.contains("coverage_preamble") && prompt.contains("needs_attention") {
+    if prompt.contains("Morning Briefing")
+        && prompt.contains("coverage_preamble")
+        && prompt.contains("needs_attention")
+    {
         return Ok((
             "morning_briefing",
             r#"{"metadata":{"generated":"2099-01-01T00:00:00Z","model":"cleanroom","sources":{"segments":0,"anticipated_activities":0,"facet_newsletters":0,"followups":0,"steward_health":"missing"},"gaps":[],"coverage_preamble":""},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[]}"#,
         ));
     }
-    if prompt.contains("events") && prompt.contains("cancelled") {
+    if prompt.contains("Future Schedule Extraction") && prompt.contains("cancelled") {
         return Ok(("schedule", r#"{"events":[]}"#));
     }
     Err("unexpected-talent")
@@ -521,24 +564,27 @@ mod tests {
     fn generation_fixture_requires_the_daily_activity_anchor_and_maps_the_full_batch() {
         let anchor = "20260817 (Monday):\n  03:17 - 03:28 (11m)";
         assert_eq!(
-            generation_completion(&format!("required primary fallback\n{anchor}"), anchor),
+            generation_completion(
+                &format!("Maintenance Window Analysis primary fallback\n{anchor}"),
+                anchor
+            ),
             Ok((
                 "daily_schedule",
                 r#"{"primary":"03:00","fallback":"04:00"}"#
             ))
         );
         assert_eq!(
-            generation_completion("required primary fallback", anchor),
+            generation_completion("Maintenance Window Analysis primary fallback", anchor),
             Err("daily_schedule-anchor-missing")
         );
         assert_eq!(
-            generation_completion("required events cancelled", anchor)
+            generation_completion("Future Schedule Extraction cancelled", anchor)
                 .expect("schedule response")
                 .0,
             "schedule"
         );
         assert_eq!(
-            generation_completion("coverage_preamble needs_attention", anchor)
+            generation_completion("Morning Briefing coverage_preamble needs_attention", anchor)
                 .expect("morning response")
                 .0,
             "morning_briefing"

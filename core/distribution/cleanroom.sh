@@ -213,8 +213,14 @@ talent_rung() {
 	day=$(date +%Y%m%d)
 	weekday=$(date +%A)
 	segment=$journal/chronicle/$day/default/031700_697
-	mkdir -p "$journal/config" "$segment"
+	target_segment=$journal/chronicle/20990101/default/120000_001
+	mkdir -p "$journal/config" "$segment" "$target_segment/talents"
 	printf '%s\n' '{"stream":"default","seq":1,"prev_segment":null}' >"$segment/stream.json"
+	printf '%s\n' '{"stream":"default","seq":1,"prev_segment":null}' \
+		>"$target_segment/stream.json"
+	printf '%s\n' '# Audio Transcript' '' \
+		'No future scheduled activity appears in this synthetic cleanroom segment.' \
+		>"$target_segment/talents/audio.md"
 	printf '%s (%s):\n  03:17 - 03:28 (11m)' "$day" "$weekday" >"$journal/expected-fragment"
 	: >"$journal/generation-evidence"
 	: >"$journal/generation.addr"
@@ -238,8 +244,12 @@ talent_rung() {
 	[ ! -e "$journal/chronicle/20990101/talents/daily_schedule.json" ] \
 		|| refuse "daily_schedule output was pre-seeded"
 	[ ! -e "$journal/config/schedules.json" ] || refuse "schedule metadata was pre-seeded"
-	start_supervisor no
-	journal think --day 20990101 --refresh >"$journal/think.out" 2>"$journal/think.err"
+	start_supervisor yes
+	if ! journal think --day 20990101 --refresh >"$journal/think.out" 2>"$journal/think.err"; then
+		cat "$journal/think.out" "$journal/think.err" "$journal/supervisor.log" \
+			"$journal/generation.err" "$journal/generation-evidence" >&2 || true
+		refuse "journal think failed"
+	fi
 	stop_supervisor
 	stop_server
 	[ -f "$journal/chronicle/20990101/talents/daily_schedule.json" ] \
@@ -259,8 +269,14 @@ schedule" ] || {
 		cat "$journal/generation-evidence" >&2
 		refuse "generation fixture saw an incomplete or unexpected daily batch"
 	}
-	grep -F 'daily_schedule' "$journal/think.out" "$journal/think.err" >/dev/null \
-		|| refuse "think output did not attribute daily_schedule"
+	set -- "$journal"/talents/daily_schedule/*.jsonl
+	if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+		refuse "daily_schedule terminal event log missing"
+	fi
+	grep -F '"event":"finish"' "$1" >/dev/null \
+		|| refuse "daily_schedule did not reach a terminal finish event"
+	grep -F '"name":"daily_schedule"' "$1" >/dev/null \
+		|| refuse "daily_schedule terminal event was misattributed"
 	scan_zero
 	printf 'rung=talent ok\n'
 }
