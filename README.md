@@ -14,8 +14,6 @@ linux. mac runs the sol app today; the mac build of the journal is not published
 
 ## what you get
 
-**a system of intelligence, not just storage.**
-
 - **automatic transcription:** sol keeps conversations in your journal, transcribed with speaker identification and searchable.
 - **people and projects:** extracted from your conversations and remembered across time.
 - **knowledge graphs:** who works with whom, which projects connect to which people.
@@ -140,7 +138,7 @@ exact final tree before merge or release.
 
 ## feedback
 
-Questions, feedback, or a bug? **Follow and tag [@solstone.app](https://bsky.app/profile/solstone.app) on Bluesky** for discussion and updates, open an issue at [github.com/solpbc/solstone-journal/issues](https://github.com/solpbc/solstone-journal/issues) for bugs, or reach support at [support.solstone.app](https://support.solstone.app). You don't need to know anyone. Those are the front doors.
+questions, feedback, or a bug: follow and tag [@solstone.app](https://bsky.app/profile/solstone.app) on bluesky, open an issue at [github.com/solpbc/solstone-journal/issues](https://github.com/solpbc/solstone-journal/issues), or reach [support.solstone.app](https://support.solstone.app).
 
 ## contributing
 
