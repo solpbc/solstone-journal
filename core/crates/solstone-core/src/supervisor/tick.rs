@@ -183,17 +183,20 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
     let mut last_sync = Instant::now() - Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS);
     loop {
         let app_samples = reconcile_app_processes(state);
-        state.queue.enforce_deadlines(Instant::now());
+        let tick = Instant::now();
+        state.queue.enforce_deadlines(tick);
         record_schedule_completions(state);
         reconcile_providers(state);
         drain_inbound(state).await;
         let wall = chrono::Local::now();
+        let wall_now = SystemTime::now();
         check_segment_flush(
             &state.journal,
             &state.queue,
             state.is_remote_mode,
             &mut state.flush,
             false,
+            tick,
         );
         if !state.no_daily
             && let Err(error) = handle_daily_tasks(
@@ -203,6 +206,7 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
                 &mut state.daily,
                 &mut state.flush,
                 wall.date_naive(),
+                wall_now,
             )
         {
             eprintln!("supervisor: daily catchup drain failed: {error}");
@@ -301,6 +305,7 @@ pub(crate) fn check_segment_flush(
     is_remote: bool,
     flush: &mut FlushState,
     force: bool,
+    now: Instant,
 ) {
     if is_remote
         || flush.last_segment_ts.is_none()
@@ -308,9 +313,9 @@ pub(crate) fn check_segment_flush(
         || processing_is_deferred(journal)
         || no_thinking_engine_chosen(journal)
         || (!force
-            && flush
-                .last_segment_ts
-                .is_some_and(|last_segment_ts| last_segment_ts.elapsed() < FLUSH_TIMEOUT))
+            && flush.last_segment_ts.is_some_and(|last_segment_ts| {
+                now.saturating_duration_since(last_segment_ts) < FLUSH_TIMEOUT
+            }))
     {
         return;
     }
@@ -335,6 +340,7 @@ pub(crate) fn handle_daily_tasks(
     daily: &mut DailyState,
     flush: &mut FlushState,
     today: chrono::NaiveDate,
+    now: SystemTime,
 ) -> Result<(), CatchupError> {
     if is_remote || daily.last_day == Some(today) {
         return Ok(());
@@ -348,13 +354,15 @@ pub(crate) fn handle_daily_tasks(
     daily.last_day = Some(today);
     let previous_day = previous_day.format("%Y%m%d").to_string();
     if !flush.flushed && flush.day.as_deref() == Some(previous_day.as_str()) {
-        check_segment_flush(journal, queue, is_remote, flush, true);
+        let tick = flush.last_segment_ts.unwrap_or_else(Instant::now);
+        check_segment_flush(journal, queue, is_remote, flush, true, tick);
     }
     run_catchup_drain(
         journal,
         queue,
         &BTreeSet::from([today.format("%Y%m%d").to_string()]),
         &[],
+        now,
     )
 }
 
@@ -364,11 +372,12 @@ pub(crate) fn run_catchup_drain(
     queue: &TaskQueue,
     exclude: &BTreeSet<String>,
     force_days: &[String],
+    now: SystemTime,
 ) -> Result<(), CatchupError> {
     if no_thinking_engine_chosen(journal) {
         return Ok(());
     }
-    for day in eligible_catchup_days(journal, force_days, exclude, SystemTime::now())? {
+    for day in eligible_catchup_days(journal, force_days, exclude, now)? {
         let _ = submit_think(
             queue,
             daily_think_argv(&day),
@@ -833,12 +842,14 @@ fn handle_supervisor_drain(state: &mut SupervisorState, message: &CallosumEnvelo
     if message.tract != "supervisor" || message.event != "drain" || state.is_remote_mode {
         return;
     }
+    let now = SystemTime::now();
     let result = if let Some(day) = message_string(message, "day") {
         run_catchup_drain(
             &state.journal,
             &state.queue,
             &BTreeSet::new(),
             &[day.to_owned()],
+            now,
         )
     } else if message_truthy(message, "exclude_today") {
         run_catchup_drain(
@@ -846,9 +857,10 @@ fn handle_supervisor_drain(state: &mut SupervisorState, message: &CallosumEnvelo
             &state.queue,
             &BTreeSet::from([chrono::Local::now().format("%Y%m%d").to_string()]),
             &[],
+            now,
         )
     } else {
-        run_catchup_drain(&state.journal, &state.queue, &BTreeSet::new(), &[])
+        run_catchup_drain(&state.journal, &state.queue, &BTreeSet::new(), &[], now)
     };
     if let Err(error) = result {
         eprintln!("supervisor: catchup drain request failed: {error}");
@@ -1227,7 +1239,9 @@ mod tests {
     use chrono::NaiveDate;
     use solstone_core_system::cap::CapResolver;
     use solstone_core_system::partition::Partition;
-    use solstone_core_system::queue::{SystemProcessStateProbe, TaskQueue, TaskQueueOptions};
+    use solstone_core_system::queue::{
+        ProcessState, ProcessStateProbe, TaskQueue, TaskQueueOptions,
+    };
 
     use super::*;
 
@@ -1277,11 +1291,19 @@ mod tests {
         }
     }
 
+    struct UnreachableProcessStateProbe;
+
+    impl ProcessStateProbe for UnreachableProcessStateProbe {
+        fn state(&self, _pid: u32) -> ProcessState {
+            panic!("routine queue unit tests must not reach the process-state probe");
+        }
+    }
+
     fn queue(root: &std::path::Path) -> TaskQueue {
         TaskQueue::new(TaskQueueOptions {
             journal_root: root.to_path_buf(),
             cap_resolver: Arc::new(FixedCap),
-            process_state_probe: Arc::new(SystemProcessStateProbe),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
             queue_sink: None,
             process_sink: None,
             ready: false,
@@ -1508,15 +1530,16 @@ mod tests {
         let bed = Bed::new("forced-flush");
         bed.enable_thinking();
         let queue = queue(&bed.root);
+        let origin = Instant::now();
         let mut flush = FlushState {
-            last_segment_ts: Some(Instant::now()),
+            last_segment_ts: Some(origin),
             day: Some("20260101".to_owned()),
             segment: Some("120000_1".to_owned()),
             stream: Some("camera".to_owned()),
             flushed: false,
         };
 
-        check_segment_flush(&bed.root, &queue, false, &mut flush, true);
+        check_segment_flush(&bed.root, &queue, false, &mut flush, true, origin);
 
         assert!(flush.flushed);
         assert_eq!(pending(&queue), 1);
@@ -1536,6 +1559,53 @@ mod tests {
             ]
             .map(str::to_owned)
         );
+
+        let mut flush = FlushState {
+            last_segment_ts: Some(origin),
+            day: Some("20260101".to_owned()),
+            segment: Some("120000_1".to_owned()),
+            stream: Some("camera".to_owned()),
+            flushed: false,
+        };
+        check_segment_flush(
+            &bed.root,
+            &queue,
+            false,
+            &mut flush,
+            false,
+            origin + FLUSH_TIMEOUT - Duration::from_secs(1),
+        );
+        assert!(!flush.flushed);
+        assert_eq!(pending(&queue), 1);
+
+        check_segment_flush(
+            &bed.root,
+            &queue,
+            false,
+            &mut flush,
+            false,
+            origin + FLUSH_TIMEOUT,
+        );
+        assert!(flush.flushed);
+        assert_eq!(pending(&queue), 2);
+
+        let mut flush = FlushState {
+            last_segment_ts: Some(origin),
+            day: Some("20260101".to_owned()),
+            segment: Some("120000_1".to_owned()),
+            stream: Some("camera".to_owned()),
+            flushed: false,
+        };
+        check_segment_flush(
+            &bed.root,
+            &queue,
+            false,
+            &mut flush,
+            false,
+            origin + FLUSH_TIMEOUT + Duration::from_secs(1),
+        );
+        assert!(flush.flushed);
+        assert_eq!(pending(&queue), 3);
     }
 
     #[test]
@@ -1550,7 +1620,14 @@ mod tests {
             flushed: false,
         };
 
-        check_segment_flush(&bed.root, &queue, true, &mut flush, true);
+        check_segment_flush(
+            &bed.root,
+            &queue,
+            true,
+            &mut flush,
+            true,
+            Instant::now() - Duration::from_secs(3600),
+        );
 
         assert!(!flush.flushed);
         assert_eq!(pending(&queue), 0);
@@ -1577,8 +1654,16 @@ mod tests {
             flushed: false,
         };
 
-        handle_daily_tasks(&bed.root, &queue, false, &mut daily, &mut flush, date(7))
-            .expect("daily rollover");
+        handle_daily_tasks(
+            &bed.root,
+            &queue,
+            false,
+            &mut daily,
+            &mut flush,
+            date(7),
+            UNIX_EPOCH,
+        )
+        .expect("daily rollover");
 
         assert_eq!(daily.last_day, Some(date(7)));
         assert!(flush.flushed);
@@ -1598,8 +1683,16 @@ mod tests {
         let mut daily = DailyState { last_day: None };
         let mut flush = FlushState::default();
 
-        handle_daily_tasks(&bed.root, &queue, false, &mut daily, &mut flush, date(2))
-            .expect("missing previous day");
+        handle_daily_tasks(
+            &bed.root,
+            &queue,
+            false,
+            &mut daily,
+            &mut flush,
+            date(2),
+            UNIX_EPOCH,
+        )
+        .expect("missing previous day");
 
         assert_eq!(daily.last_day, Some(date(2)));
         assert_eq!(pending(&queue), 0);
@@ -1614,8 +1707,16 @@ mod tests {
         };
         let mut flush = FlushState::default();
 
-        handle_daily_tasks(&bed.root, &queue, true, &mut daily, &mut flush, date(2))
-            .expect("remote daily no-op");
+        handle_daily_tasks(
+            &bed.root,
+            &queue,
+            true,
+            &mut daily,
+            &mut flush,
+            date(2),
+            UNIX_EPOCH,
+        )
+        .expect("remote daily no-op");
 
         assert_eq!(daily.last_day, Some(date(1)));
         assert_eq!(pending(&queue), 0);

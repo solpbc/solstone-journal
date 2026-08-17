@@ -1270,6 +1270,14 @@ mod tests {
         queue_with_sink(ready, cap, plans, None)
     }
 
+    struct UnreachableProcessStateProbe;
+
+    impl ProcessStateProbe for UnreachableProcessStateProbe {
+        fn state(&self, _pid: u32) -> ProcessState {
+            panic!("routine queue unit tests must not reach the process-state probe");
+        }
+    }
+
     fn queue_with_sink(
         ready: bool,
         cap: u64,
@@ -1279,7 +1287,7 @@ mod tests {
         let queue = TaskQueue::new(TaskQueueOptions {
             journal_root: PathBuf::new(),
             cap_resolver: Arc::new(FixedCap(cap)),
-            process_state_probe: Arc::new(SystemProcessStateProbe),
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
             queue_sink,
             process_sink: None,
             ready,

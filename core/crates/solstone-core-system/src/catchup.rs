@@ -618,8 +618,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::thread;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, UNIX_EPOCH};
 
     use sha2::{Digest, Sha256};
 
@@ -975,21 +974,64 @@ mod tests {
         ] {
             bed.updated_day(day);
         }
+        let force = ["20260101".to_owned()];
+        let exclude = BTreeSet::new();
+        let uncapped = [
+            "20260101".to_owned(),
+            "20260103".to_owned(),
+            "20260104".to_owned(),
+            "20260105".to_owned(),
+            "20260106".to_owned(),
+        ];
+        assert_eq!(
+            eligible_catchup_days(&bed.root, &force, &exclude, UNIX_EPOCH).expect("eligible days"),
+            uncapped
+        );
+
+        let fingerprint = empty_fingerprint();
+        bed.write(
+            "health/catchup-state.json",
+            state_entry(
+                "20260106",
+                CatchupKind::DailyCatchup,
+                &format!(r#"{{"next_retry_at":10,"fingerprint":"{fingerprint}"}}"#),
+            ),
+        );
         assert_eq!(
             eligible_catchup_days(
                 &bed.root,
-                &["20260101".to_owned()],
-                &BTreeSet::new(),
-                SystemTime::now(),
+                &force,
+                &exclude,
+                UNIX_EPOCH + Duration::from_secs(9)
             )
-            .expect("eligible days"),
+            .expect("before retry"),
             vec![
                 "20260101".to_owned(),
+                "20260102".to_owned(),
                 "20260103".to_owned(),
                 "20260104".to_owned(),
                 "20260105".to_owned(),
-                "20260106".to_owned(),
             ]
+        );
+        assert_eq!(
+            eligible_catchup_days(
+                &bed.root,
+                &force,
+                &exclude,
+                UNIX_EPOCH + Duration::from_secs(10)
+            )
+            .expect("at retry"),
+            uncapped
+        );
+        assert_eq!(
+            eligible_catchup_days(
+                &bed.root,
+                &force,
+                &exclude,
+                UNIX_EPOCH + Duration::from_secs(11)
+            )
+            .expect("after retry"),
+            uncapped
         );
     }
 
@@ -998,11 +1040,19 @@ mod tests {
         let bed = Bed::new("updated-days");
         bed.updated_day("20260101");
         bed.write("chronicle/20260102/health/daily.updated", b"daily first");
-        thread::sleep(Duration::from_millis(20));
         bed.updated_day("20260102");
         bed.updated_day("20260103");
-        thread::sleep(Duration::from_millis(20));
         bed.write("chronicle/20260103/health/daily.updated", b"daily second");
+        let health = |day: &str| bed.root.join("chronicle").join(day).join("health");
+        let stamp = |path: &Path, seconds: i64| {
+            filetime::set_file_mtime(path, filetime::FileTime::from_unix_time(seconds, 0))
+                .expect("set fixture mtime");
+        };
+        let base = 1_700_000_000;
+        stamp(&health("20260102").join("daily.updated"), base);
+        stamp(&health("20260102").join("stream.updated"), base + 1);
+        stamp(&health("20260103").join("stream.updated"), base);
+        stamp(&health("20260103").join("daily.updated"), base + 1);
         assert_eq!(
             updated_days(&bed.root, &BTreeSet::new()).expect("updated days"),
             vec!["20260101".to_owned(), "20260102".to_owned()]

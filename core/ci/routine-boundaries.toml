@@ -1315,12 +1315,6 @@ id = "solstone-core-support-portal::core/crates/solstone-core-support-portal/src
 id = "solstone-core-system-health::core/crates/solstone-core-system-health/src/catchup_state.rs::tests::writers_populate_shipped_repair_and_drain_projections::clock"
 
 [[findings]]
-id = "solstone-core-system::core/crates/solstone-core-system/src/catchup.rs::tests::eligible_days_caps_natural_days_but_keeps_forced_days::clock"
-
-[[findings]]
-id = "solstone-core-system::core/crates/solstone-core-system/src/catchup.rs::tests::updated_days_honors_exclusion_and_marker_order::clock"
-
-[[findings]]
 id = "solstone-core-system::core/crates/solstone-core-system/src/memory_admission.rs::tests::waiting_has_stop_and_no_stop_blocking_arms_without_expiry::scheduling"
 
 [[findings]]
