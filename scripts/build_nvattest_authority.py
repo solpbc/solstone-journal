@@ -14,7 +14,7 @@ from pathlib import Path
 from solstone.think.providers import nvattest_authority
 
 ROOT = Path(__file__).resolve().parent.parent
-ARTIFACT_PATH = ROOT / "solstone" / "think" / "providers" / "nvattest_authority_v1.json"
+ARTIFACT_PATH = ROOT / "core" / "fixtures" / "nvattest_authority_v1.json"
 
 
 def render_nvattest_authority_json() -> str:

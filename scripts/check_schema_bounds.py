@@ -45,12 +45,6 @@ ALLOWLIST: dict[str, str] = {
     ),
     "solstone/talent/steward.schema.json": "morning_briefing follow-on work",
     "solstone/think/detect_created.schema.json": "created-detection follow-on work",
-    "solstone/think/detect_transcript_json.schema.json": (
-        "transcript detection follow-on work"
-    ),
-    "solstone/think/detect_transcript_segment.schema.json": (
-        "transcript detection follow-on work"
-    ),
 }
 
 

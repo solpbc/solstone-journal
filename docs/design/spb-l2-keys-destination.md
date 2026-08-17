@@ -96,7 +96,7 @@ Alphabet import validation:
 
 ### Backup config
 
-Add this top-level `backup` section to `solstone/think/journal_default.json`:
+Add this top-level `backup` section to `core/fixtures/journal_default.json`:
 
 - `enabled`: `false`
 - `mode`: `"byo"`

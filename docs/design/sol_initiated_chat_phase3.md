@@ -64,7 +64,7 @@ Chosen option: clean rename.
 
 Rename `category_self_mute_clear_marker_ts: int = 0` to
 `category_self_mute_clear_markers: dict[str, int] = field(default_factory=dict)`.
-The default seed in `solstone/think/journal_default.json` becomes
+The default seed in `core/fixtures/journal_default.json` becomes
 `"category_self_mute_clear_markers": {}`.
 
 Loader behavior:
@@ -296,7 +296,7 @@ Group 2 - settings schema rename:
 
 - EDIT `solstone/convey/sol_initiated/settings.py`: rename field, add `save_settings()` helper, extend schema with `system_notifications: {macos: bool, linux: bool}` and `debug_show_throttled: bool`, add WARN-on-rejected for new dict fields.
 - EDIT `solstone/convey/sol_initiated/policy.py:88`: read per-category marker.
-- EDIT `solstone/think/journal_default.json`: rename + new fields.
+- EDIT `core/fixtures/journal_default.json`: rename + new fields.
 - EDIT `tests/test_sol_initiated_policy.py`, `tests/test_chat_stream_sol_initiated.py`: update fixtures + add per-category isolation test.
 
 Group 3 - settings API + UI:

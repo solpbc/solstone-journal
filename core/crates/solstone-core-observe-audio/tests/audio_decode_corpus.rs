@@ -56,7 +56,7 @@ fn repository_root() -> PathBuf {
 }
 
 fn fixture_source() -> PathBuf {
-    repository_root().join("solstone/observe/transcribe/_fixtures/parakeet_sample.wav")
+    repository_root().join("core/fixtures/parakeet_sample.wav")
 }
 
 fn fixture_m4a_multi_track() -> PathBuf {

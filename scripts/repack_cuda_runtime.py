@@ -75,8 +75,8 @@ NVIDIA_EULA_DOC_PATHS = (
     Path("usr/share/doc/libcublas-13-3/copyright"),
 )
 NOTICE_FILES = {
-    "NVIDIA-CUDA-EULA-13.3.txt": Path("solstone/licenses/NVIDIA-CUDA-EULA-13.3.txt"),
-    "llama.cpp-LICENSE.txt": Path("solstone/licenses/llama.cpp-LICENSE.txt"),
+    "NVIDIA-CUDA-EULA-13.3.txt": Path("licenses/NVIDIA-CUDA-EULA-13.3.txt"),
+    "llama.cpp-LICENSE.txt": Path("licenses/llama.cpp-LICENSE.txt"),
 }
 REVISION_LABEL = "org.opencontainers.image.revision"
 ARTIFACT_RE = re.compile(r"^server-cuda13-(?P<tag>[^:@/]+)$")

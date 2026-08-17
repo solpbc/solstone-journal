@@ -81,7 +81,7 @@ fn standalone_binary_reaches_transcript_publication_with_stubbed_onnx_helpers() 
 }
 
 fn fixture_audio() -> PathBuf {
-    repository_root().join("solstone/observe/transcribe/_fixtures/parakeet_sample.wav")
+    repository_root().join("core/fixtures/parakeet_sample.wav")
 }
 
 fn model_asset(name: &str) -> PathBuf {
