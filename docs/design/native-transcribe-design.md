@@ -341,8 +341,7 @@ ORT-prefixed leg rather than sit beside it.
 Add `transcribe_differential` as its own ordinary loop leg in
 `check-differentials`, with the package name above. Put
 `transcribe_vad_differential` after that loop as its own ORT-env-prefixed,
-status-accumulating leg, alongside (not merged into) the existing
-`solstone-core-vad-analyze` VAD leg. It uses the same
+status-accumulating leg. It uses the same
 `VAD_ANALYZE_HOST_ORT_ENV` staging prerequisite and remains isolated so ORT
 environment variables do not leak to other differential legs.
 

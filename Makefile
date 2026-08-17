@@ -930,10 +930,11 @@ check-rust-deny:
 # --no-fail-fast, every leg runs regardless of its predecessors, and the target
 # exits non-zero if any of them did. A gate that could not judge must never
 # read as a gate that said yes.
-# The final leg is the only one that links ONNX Runtime, so it -- and only it --
-# carries the ORT_* / LD_LIBRARY_PATH plumbing and the staged-runtime
-# prerequisite. It sits outside the loop precisely so those variables do not
-# leak into legs that must not see them.
+# The recipe is a clippy of core_differentials, then a two-item cargo-test
+# loop: solstone-core::core_differentials and
+# solstone-core-observe-audio::audio_differential. Neither leg links ONNX
+# Runtime. The check-rust-onnx-stage prerequisite remains so the purity
+# assertion that this target cannot bypass validated staging stays intact.
 # The Vulkan differential fails without a loader unless the operator explicitly
 # sets SOLSTONE_VULKAN_DIFFERENTIAL_NO_LOADER=1; its --nocapture mode makes the
 # resulting RUN or SKIP report visible in this gate's output.

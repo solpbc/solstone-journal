@@ -4,7 +4,10 @@
 
 """Deterministic VAD fixtures for the native Silero VAD v6 helper.
 
-Three committed artefacts come out of this script:
+This script writes three artefacts. Only the speech seed is still committed
+and consumed; the probability pair is no longer committed or consumed now
+that ``vad_differential.rs`` is gone (native replay lives in
+``vad_oracles.rs``). The writer is retained.
 
 ``core/fixtures/vad_speech_seed.f32le``
     16384 raw little-endian float32 samples (65536 bytes) of synthetic voiced
@@ -17,27 +20,27 @@ Three committed artefacts come out of this script:
 
 ``core/fixtures/vad_probability_seed.f32le``
     1024 samples (4096 bytes) of the same synthesis at a shorter period. It is
-    the tile the probability oracle below is built from.
+    the tile the probability oracle below is built from. Not committed.
 
 ``core/fixtures/vad_probability_oracle.json``
     The frozen per-window probability sequence the reference
     ``SileroVADModel.__call__`` produced for the probability seed tiled
-    ``TILE_COUNT`` times. The tiling rule is exact and the Rust side replays
-    it: ``1024 * 5001 = 5_121_024`` raw samples, which
+    ``TILE_COUNT`` times. The tiling rule is exact and the Rust side used to
+    replay it: ``1024 * 5001 = 5_121_024`` raw samples, which
     ``get_speech_timestamps``' production pad
     (``512 - len % 512``, a *full* extra window when the length is already a
     multiple of 512) extends to ``5_121_536``, giving **10_003** encoder
     windows -- past the 10_000-window ``encoder_batch_size`` boundary, so the
     frozen sequence covers the batch seam where the LSTM state must carry from
-    one encoder batch into the next.
+    one encoder batch into the next. Not committed.
 
 Both seeds are periodic over their own length: every partial (``f0 * k``), the
 pitch-modulation term, the formant sweep, and the syllabic envelope all
 complete a whole number of cycles across the tile, so repeating a seed produces
 no discontinuity at the join.
 
-⛔ **No gate runs this script.** The artefacts are a FROZEN record: the
-consumer reads the committed bytes and compares bit-for-bit. Re-running it
+⛔ **No gate runs this script.** The committed speech seed is a FROZEN
+record: ``vad_oracles.rs`` reads those bytes and compares bit-for-bit. Re-running it
 against a different ONNX Runtime build, a different model, or edited synthesis
 parameters rewrites the oracle rather than testing against it, which would turn
 a real divergence into a silent baseline update.
