@@ -902,6 +902,7 @@
           "response.body.platform.machine",
           "response.body.platform.python",
           "response.body.platform.release",
+          "response.body.platform.system",
           "response.body.recent_errors.*.time",
           "response.body.revision",
           "response.body.version"
@@ -1695,6 +1696,7 @@
           "response.body.platform.machine",
           "response.body.platform.python",
           "response.body.platform.release",
+          "response.body.platform.system",
           "response.body.recent_errors.*.time",
           "response.body.revision",
           "response.body.version"
@@ -3566,6 +3568,7 @@
           "response.body.platform.machine",
           "response.body.platform.python",
           "response.body.platform.release",
+          "response.body.platform.system",
           "response.body.recent_errors.*.time",
           "response.body.revision",
           "response.body.version"
