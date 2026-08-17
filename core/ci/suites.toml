@@ -891,17 +891,6 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
-id = "package::solstone-core-maint"
-package = "solstone-core-maint"
-set = "component"
-areas = ["backup"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
 id = "package::solstone-core-maintenance"
 package = "solstone-core-maintenance"
 set = "component"
@@ -2823,32 +2812,6 @@ package = "solstone-core-local"
 target = "local_runtime_transport"
 set = "component"
 areas = ["system"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-maint::cli_contract"
-package = "solstone-core-maint"
-target = "cli_contract"
-set = "component"
-areas = ["backup"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-maint::runner_self_spawn"
-package = "solstone-core-maint"
-target = "runner_self_spawn"
-set = "component"
-areas = ["backup"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
