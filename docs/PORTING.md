@@ -74,7 +74,7 @@ the category API stays stable without carrying FFmpeg into a web settings read.
 
 A Rust conversion that adds or bumps a dependency with C/C++ build steps or
 native linkage is not complete after source checks alone. Before the conversion
-wave closes, prove the supported release targets still build and pass artifact
+closes, prove the supported release targets still build and pass artifact
 validation: Linux x86_64 musl, Linux aarch64 musl, and macOS arm64. Keep
 required toolchain, target, and linker behavior in checked-in repository release
 paths, not in a local shell profile. If a dependency cannot satisfy a supported
@@ -119,7 +119,7 @@ for the helper release lanes.
 | Helper coverage | Status | Evidence |
 |-----------------|--------|----------|
 | `solstone/think/probe.py:SOLSTONE_CORE_SPEAKERS_ANALYZE_COVERED_PLATFORMS` | Platform coverage authority. | Build, content check, install into a bare venv, and real-inference smoke using the shipped `pyannote-segmentation-3.0.onnx` and `wespeaker-resnet34-256.onnx` assets for each covered helper platform. Linux helper lanes use zig GNU cross-link artifacts; macOS evidence is produced by the macOS build/proof hosts. Do not provision an emulator for the aarch64 Linux lane. |
-| `solstone-core-pdf` (`sol-pdf/1`) | Separately packaged inspect/extract helper; it runtime-`dlopen`s its bundled PDFium shared library rather than build-time-linking an ONNX-style runtime. | `scripts/stage_pdfium_runtime.py` pins and verifies PDFium `chromium/7920` (archive digest plus GitHub attestation) and carries its full notice bundle; `target-family = "pdf"` ships on Linux x86_64/aarch64. macOS arm64/x86_64 archives are pinned but remain an explicit unvalidated gap this wave: no macOS proof host was reachable, so no macOS PDF wheel is attempted. |
+| `solstone-core-pdf` (`sol-pdf/1`) | Separately packaged inspect/extract helper; it runtime-`dlopen`s its bundled PDFium shared library rather than build-time-linking an ONNX-style runtime. | `scripts/stage_pdfium_runtime.py` pins and verifies PDFium `chromium/7920` (archive digest plus GitHub attestation) and carries its full notice bundle; `target-family = "pdf"` ships on Linux x86_64/aarch64. macOS arm64/x86_64 archives remain an explicit unvalidated gap during the conversion: no macOS proof host was reachable, so no macOS PDF wheel is attempted. |
 
 | Evidence | Repository command | Class | Notes |
 |----------|--------------------|-------|-------|
@@ -127,15 +127,13 @@ for the helper release lanes.
 | Rust MSRV | `make check-rust-msrv` | GNU-host check | Verifies the pinned MSRV rail without changing `rust-version`; excludes the three host-native helper packages from host coverage and invokes no Python. |
 | Rust routine lint | `make check-rust-clippy` | GNU-host check | Runs library/binary Clippy with `-D warnings`; excludes the host-native helper packages and invokes no Python. |
 | Rust full lint | `make check-rust-clippy-full` | GNU-host check | Compiles every ordinary target, including Cargo integration targets, with `-D warnings`; part of the default full registry plan. |
-| Rust unit boundary | `make check-rust-unit` | GNU-host check | Runs workspace library and binary harnesses only (`--lib --bins`), serialized. `core/ci/routine-boundaries.toml` prevents the known integration-style risks inside those harnesses from growing while they move to full suites. |
+| Rust unit boundary | `make check-rust-unit` | GNU-host check | Runs workspace library and binary harnesses only (`--lib --bins`), serialized, locked, and offline. `RUST_ROUTINE_EXCLUDES` omits three host-native helper packages, covered by the default `onnx-host-tests` leg, and four slower library harnesses, covered by default package suites. The topology validator has no baseline or allowlist and rejects every process-launch, network-constructor, or native-runtime call it detects in scanned unit-test code. |
 | Rust doctests | `make check-rust-doc` | GNU-host check | Runs documentation tests explicitly in the default full registry plan; excluded from routine `make ci`. |
-| Rust tests | `make check-rust-test` | GNU-host check | Retained direct legacy command for the workspace Rust tests. The canonical full gate selects every integration target from `core/ci/suites.toml` separately so one failure cannot hide later suites. |
+| Rust tests | `make check-rust-test` | GNU-host check | Retained direct legacy command for the workspace Rust tests. The full-gate runner executes each selected integration target from `core/ci/suites.toml` separately so one failure cannot hide later entries. |
 | Rust dependency policy | `make check-rust-deny` | GNU-host check | Locked, offline bans/licenses/sources policy over the supported cargo-deny graph. |
 | SPL dependency pin | `make check-spl-dependency-pin` | GNU-host check | Verifies the Rust core workspace resolves `spl-core` and `spl-transport` only through the workspace-owned `spl-rust` tag pin, with member manifests inheriting it, lockfile binding intact, and local patch/source replacement routes rejected. |
-| Rust advisories | `make audit` | GNU-host check | Verifies a signed advisory mirror packet, materializes its bundle locally, then performs a locked offline advisory check without refreshing or mutating the operator inputs. |
+| Rust advisories | `make audit` | Standalone check | Runs cargo-deny with its default advisory behavior. It is separate from the canonical full gate. |
 | iOS canary | `make check-rust-ios` | iOS cross-target canary | Cross-target drift evidence for eligible library crates; explicitly excludes `solstone-core-indexer-store` and `solstone-core-indexer-query` because their bundled-C SQLite paths are not yet in the iOS gate, and `solstone-core-speakers-analyze` plus `solstone-core-speakers-onnx` because the analyzer transitively depends on ONNX Runtime host-only native linkage. |
-| Core sdist compile inputs | `make check-core-sdist-compile-inputs` | Packaging-source check | Verifies shipping Rust compile-time inputs are discovered and covered by the normalized `solstone-core` sdist injection set. |
-| Release candidate rail | `scripts/release.sh --candidate` / `scripts/release.sh --recover <version> <source-commit>` | Frozen | During the Rust-conversion freeze, the script refuses unconditionally before producing any evidence. |
 
 ### Rust ONNX Runtime Provisioning
 
@@ -146,12 +144,12 @@ does not read paths from inside the crate. The host Rust commands
 `make build` exclude `solstone-core-vad-analyze`,
 `solstone-core-speakers-analyze`, and `solstone-core-speakers-onnx` through
 `RUST_HOST_EXCLUDES`, so they require no ONNX Runtime or Python provisioning. The
-frozen `ci`/`build`/`test` path does not
-invoke `scripts/resolve_onnxruntime_capi.py`. That resolver remains in the
+routine `ci`/`build`/`test` path does not invoke
+`scripts/resolve_onnxruntime_capi.py`. That resolver remains in the
 repository and has dedicated Python tests, but no current Makefile recipe invokes
-it. `wheel-speakers-analyze-linux-x86_64`,
-`wheel-speakers-analyze-linux-aarch64`, and `wheel-macos` build the analyzer for
-distribution by staging the runtime and setting `ORT_LIB_PATH` directly.
+it. Current full-gate preparation uses `make ci-full-prep-onnx`, which validates
+and, when needed, repairs the staged runtime before the full runner reaches its
+ONNX readiness and test entries.
 
 The resolver stages symlinks, never copies, under
 `core/target/onnxruntime-link/<platform>/lib/`. Linux stages
@@ -170,110 +168,70 @@ retroactively provide `ORT_LIB_PATH` to `ort-sys`.
 
 The development gate is Rust-only for the duration of the conversion. The
 default `make` / `make all` target now aliases the native `make build` rail. The
-release rail (`release`, `release-test`, `release-checks`, `publish-release`, and
-`publish-release-test`) and `scripts/release.sh` itself are hard-frozen: every
-mode, including `--candidate`, `--recover`, and `--dry-run-linux`, fails
-immediately with a freeze diagnostic. The alternate Python test rails
-`test-cov`, `test-integration`, `test-release`, `test-performance`, `test-app`,
-`test-only`, `watch`, and `coverage` do the same. There is no bypass; this freeze
-lifts only when the Makefile and release script are changed again.
+former release Make targets and `scripts/release.sh` have been removed. The
+remaining alternate Python test rails, `test-cov`, `test-integration`,
+`test-performance`, `test-app`, `test-only`, `watch`, and `coverage`, fail
+immediately with the conversion-freeze diagnostic.
 
-The [Makefile](../Makefile) defines the two Rust paths. `make ci` is the routine
-code-focused gate with formatting, the topology contract, library/binary
-Clippy, and the current serialized unit boundary. The transitional census in
-`core/ci/routine-boundaries.toml` records topology-scanner findings inside that
-boundary. The topology contract rejects each new finding while the conversion
-moves known process, network, clock, and native cases into full suites.
+The table above defines the two Rust validation paths. On Linux, routine
+`make ci` requires Bubblewrap and runs with networking disabled, separate PID,
+IPC, and UTS namespaces, a read-only checkout except for the configured Cargo
+target directory, and private disk-backed temporary storage. On macOS, the
+same locked, offline Rust checks run without the Linux containment layer.
 
-Run `make ci-full-prep` explicitly before the full gate. Prep may fetch locked
-Cargo inputs and stage pinned native runtimes; `make ci-full` never repairs or
-downloads them. Full validation is registry-driven, and its Cargo dependency
-resolution is locked and offline. It runs selected suites independently,
-continues after failures, applies bounded timeouts to suite and leg commands,
+On a cold checkout or after cleaning `core/target`, run
+`make ci-full-prep-cargo` before `make ci`. Run `make ci-full-prep` before the
+full gate. Full preparation fetches locked Cargo inputs, materializes the host
+library/binary check graph and routine library/binary test graph without
+executing tests, and verifies or repairs the pinned native runtimes.
+Full validation expects those inputs to be prepared. It is registry-driven; the
+runner sets Cargo offline mode for every selected entry, and Cargo invocations
+remain locked. It runs selected entries independently,
+continues after failures, applies a bounded timeout to every selected entry,
 and writes a JSON receipt bound to the clean starting revision.
 `make ci-full-plan` shows the default or selected plan without executing it;
 `SETS`, `AREAS`, `PACKAGES`, and `TARGETS` provide comma-separated selectors.
 The default includes:
 
 - MSRV, all-target Clippy, Rust doctests, and dependency policy;
-- every ordinary Cargo integration target;
+- every registered integration target except the one opt-in target;
+- each package-scope entry marked `default_full = true`;
 - native runtime and helper checks;
 - shipped-binary builds and smokes; and
 - Apple gates on applicable hosts.
 
-Both gates poison Python interpreters. `make verify` remains an alias for
-`make ci`.
+The opt-in integration target is the host-contention
+`solstone-core-speakers::discovery_semantics` target. `make ci` and
+`make ci-full` use the [Makefile](../Makefile)'s
+`run-rust-gate-under-poison` wrapper, which prepends failing shims for `python`,
+`python3`, `pytest`, `ruff`, and `uv`; invoking one exits with code 97. `make
+verify` remains an alias for `make ci`.
 
-`make audit` is unaffected and still runs its Python advisory validator.
+`make audit` is a standalone default cargo-deny check. Canonical full CI uses
+the locked, offline `make check-rust-deny` bans/licenses/sources policy instead.
 Per the [Makefile](../Makefile), `make install-checks` and its Python-and-Rust
 sub-targets also remain runnable directly, but neither Rust gate reaches them.
 Neither Rust gate invokes the Python product or pytest suite.
 
 **Do not add new Python tests.** Anything that needs a unit test is written in
-Rust. The Python tree is reference material for the duration of the conversion
-and is removed before the next release, so a new Python test is investment in
-something being deleted — and because no `make` target runs pytest, it is also
-investment nothing executes. A green `ci` says nothing about any Python
-assertion, so a wave whose criteria include one can report full green having run
-none of them.
+Rust. Neither Rust gate runs pytest, so a new Python assertion is outside the
+green gate. Separate opt-in verification targets still can. A green `ci` says
+nothing about any Python assertion, so a change whose criteria include one can
+report full green having run none of them.
 
 For a component that lives behind a process boundary, the honest test is a Rust
 test that **spawns the real executable** and observes its stdout, stderr and exit
 code. That tests the boundary as a boundary, it lands in the language that
-survives the conversion, and it puts the assertion inside the gate a wave
+survives the conversion, and it puts the assertion inside the gate a change
 actually names. If such a test cannot locate the executable it must fail loudly
 rather than skip — a skipped test is a criterion that did not run wearing a green
 tick.
 
-The one Python test that still earns its place is a **cross-language
-differential** comparing a rewritten component against the reference
-implementation it replaces. That cannot be written in one language, and deleting
-the reference makes "does the rewrite behave like the original?" permanently
-unanswerable.
+The retained `tests/verify_*` Python harnesses are manual tools; neither Rust
+gate selects them.
 
-Transparency is intentionally different: `TRANSPARENCY_ACTIVATED ?= 0` is
-exported by the Makefile and is checked inactive by default. It soft-gates
-`check-transparency-minisign`, `publish-transparency`, and
-`resign-transparency-pointer` through Makefile `ifeq` branches, as well as the
-direct `scripts/transparency_publish.py` CLI entrypoint. Set
-`TRANSPARENCY_ACTIVATED=1` in the environment or invoke
-`make TRANSPARENCY_ACTIVATED=1 <target>` to reach the real implementation. Unlike
-the hard-frozen release rail, this transparency gate is reversible without a
-code change.
-
-### Signed Advisory Mirror Audit
-
-`make audit` requires four operator-provided inputs: `AUDIT_ADVISORY_BUNDLE`
-for the local advisory bundle, `AUDIT_ADVISORY_RECEIPT` for the freshness
-receipt, `AUDIT_ADVISORY_PUBKEY` for the approved minisign public key, and
-`AUDIT_ADVISORY_LOCATOR` for the private mirror locator. The signature selector
-is derived from the receipt path as `<receipt>.minisig`; there is no separate
-signature option.
-
-The audit is local-only. Git verifies and clones only the local bundle file, and
-the locator is used only as cargo-deny's advisory database identity in the
-offline check. It is never used as a clone source, fetched, pulled, or probed.
-Use a placeholder such as `PRIVATE_MIRROR_LOCATOR` in notes and logs; do not
-record a real private host, path, credential, or URL-derived token.
-
-The public trust pins are key ID `5FCC81CD3DE12315` and public-key SHA-256
-`c9fb713fe57791afbdebddde7b334e950ce1efcc167d49daf4cc1cbd930bb122`. The
-receipt must be canonical JSON, its adjacent minisign signature must carry the
-trusted comment for the same advisory commit and UTC time, and the receipt UTC
-is the only freshness authority.
-
-On success, stdout is exactly one compact JSON object with these fields:
-`product`, `advisory_cohort`, `synced_commit`, `receipt_utc`, `max_age`,
-`checked_at`, `cargo_lock_sha256`, `cargo_deny_version`, and `verdict`.
-The witness contains no paths, locators, credentials, or child process output.
-
-The audit is non-destructive: packet inputs, the source tree, ambient Cargo
-state, and release candidate/evidence directories are not modified. The
-bundle-cloned advisory database and cargo-deny config are owned temporary
-materialization and are removed before the success witness is emitted.
-If any gate fails, reacquire the signed packet from the controlled mirror
-process, place the adjacent signature next to the receipt, verify the public key
-pin, and rerun `make audit`.
+The earlier transparency publishing targets and signed-advisory packet workflow
+have been removed.
 
 ## Owner Timezone
 

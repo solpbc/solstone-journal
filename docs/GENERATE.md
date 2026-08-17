@@ -329,8 +329,9 @@ this tree builds for Apple targets. A supervising reaper is a third process with
 level up. **One JSON line settles it portably.**
 
 ✅ **The guarantee holds today.** `criterion_8_killing_session_owner_aborts_wire_without_usage` in
-`core/crates/solstone-core/tests/generate_session.rs` is the test that holds it. It is an ordinary
-`#[test]` with no `#[ignore]` and no feature gate, so `make ci` runs it, and it passes.
+`core/crates/solstone-core/tests/generate_session.rs` is the test that holds it. The registered
+`solstone-core::core_brain_contracts` integration target includes that module and runs by default in
+`make ci-full`.
 
 📌 **It did not always, and the reason is worth keeping — it is a constraint on any future
 implementation of this lane, not a closed ticket.** The retired Python shim failed this guarantee, and

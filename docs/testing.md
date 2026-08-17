@@ -38,20 +38,33 @@ test that writes, scans, or rebuilds journal/index state must use the
 
 - `make test` runs the Rust workspace tests only
 - Per the [Makefile](../Makefile), `make ci` runs the routine code-focused lane:
-  formatting, the CI-topology contract, library/binary Clippy checks, and the
-  serialized library/binary test boundary. During the test-architecture
-  migration, `core/ci/routine-boundaries.toml` records every process, network,
-  clock, scheduling, native, and host-tool finding detected by the topology
-  scanner inside that boundary. The contract rejects new findings and requires
-  the census to shrink deliberately.
+  formatting, the CI-topology contract, library/binary Clippy checks, and
+  serialized library/binary unit tests. Four library harnesses,
+  `solstone-core-sol-link`, `solstone-core-convey-body`,
+  `solstone-core-facets`, and `solstone-core-describe`, are omitted from the
+  routine unit run and run as default package suites in `make ci-full`.
+  Routine execution also excludes the host-native
+  `solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`, and
+  `solstone-core-vad-analyze` packages; the default `onnx-host-tests` leg
+  covers them.
+- The topology validator has no baseline or allowlist. It rejects every
+  process-launch, network-constructor, or native-runtime call it detects in
+  scanned unit-test code. On Linux, `make ci` requires Bubblewrap and runs with
+  the network, PID, IPC, and UTS namespaces unshared, the checkout read-only
+  except for the Cargo target directory, disk-backed temporary storage, and
+  Cargo offline. On macOS, the same Rust checks run locked and offline without
+  the Linux containment layer.
+- On a cold checkout or after cleaning `core/target`, run
+  `make ci-full-prep-cargo` before `make ci` to materialize the build graph.
 - Prepare the full gate explicitly with `make ci-full-prep`. Preparation owns
-  locked Cargo fetches and staging for the pinned ONNX and PDFium runtimes.
-  Cargo dependency resolution during full-gate validation is locked and offline.
-  Test-level network risks remain in the transitional routine boundary and are
-  tracked by the topology scanner.
+  the locked Cargo fetch, materializes the host library/binary check graph and
+  routine library/binary test graph without executing tests, and verifies or
+  repairs the pinned ONNX and PDFium runtime stages. During `make ci-full`, the
+  runner sets `CARGO_NET_OFFLINE=true` for every selected entry, and Cargo
+  invocations remain locked.
 - `make ci-full` runs the default full-gate plan defined in
-  `core/ci/suites.toml`. It keeps
-  going after a failing suite, applies a timeout to every suite or leg command,
+  `core/ci/suites.toml`. It keeps going after a failing registry entry, applies
+  a timeout to every selected registry entry,
   and writes a revision-bound JSON receipt under `core/target/ci-receipts/`.
   Outcomes are `PASS`, `FAIL`, `BLOCKED`, `SKIP`, or `INCONCLUSIVE`; anything
   except `PASS` or a platform `SKIP` makes the command fail. Execution requires
@@ -75,7 +88,9 @@ test that writes, scans, or rebuilds journal/index state must use the
   full-gate legs. Its contract rejects missing, duplicated, stale, or unknown
   Cargo targets. The default plan includes MSRV, all-target Clippy, doctest,
   dependency-policy, native runtime/helper, shipped-binary, and Apple-platform
-  coverage in addition to every ordinary integration target.
+  coverage. It includes every registered integration target except
+  `solstone-core-speakers::discovery_semantics`, plus each package-scope entry
+  marked `default_full = true`.
 - `make check-rust-race` remains a selectable, repeated contention lane rather
   than part of the default full plan. Live-service validation remains an
   operator lane and is never inferred from a successful automated receipt.

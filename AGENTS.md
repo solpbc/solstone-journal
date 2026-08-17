@@ -40,7 +40,7 @@ Read, in order, when you enter the repo for a coding task:
 | `solstone/apps/` | Convey apps — each self-contained (`native/` authority + Rust command, `routes.py`, `templates/`) | adding a user-facing feature, a `sol call <app>` verb, a UI surface | `docs/APPS.md` (required reading before modifying `solstone/apps/`) |
 | `solstone/talent/` | AI talent configs (markdown prompts + optional `.py` post-hooks) + installed router skills (`sol`, `journal`); app fragments feed generated router references | defining or tuning a talent; updating router guidance | `solstone/talent/journal/SKILL.md`, `docs/PROMPT_TEMPLATES.md` |
 | `core/` | Rust workspace — thin `solstone-core` bin plus library-first adapter crates | Rust scaffold, gates, or Python→Rust porting doctrine | `docs/PORTING.md` |
-| `scripts/` | Repo maintenance scripts — `check_layer_hygiene.py` | tooling that guards the codebase; wired into `make install-checks`, not reached by the frozen `make ci` | channel adapters: `docs/CHANNEL_ADAPTERS.md` |
+| `scripts/` | Repo maintenance scripts — `check_layer_hygiene.py` | tooling that guards the codebase; wired into `make install-checks`, not reached by routine `make ci` | channel adapters: `docs/CHANNEL_ADAPTERS.md` |
 | `tests/` | Pytest suites + `tests/fixtures/journal/` mock journal | writing tests; debugging flakiness; `make dev` / `make sandbox` use fixtures as the journal | `docs/testing.md` |
 | `tests/js/` | JavaScript harnesses driven by Python node tests | testing browser scripts without a real browser | `docs/testing.md` |
 | `docs/` | All longform documentation | reference lookups; never your first stop | §10 below |
@@ -109,21 +109,19 @@ Verified against `Makefile`. Grouped by use.
 
 | Target | When to use |
 |--------|-------------|
-| `make` / `make all` / `make build` | Build the native Rust workspace, excluding the Python-provisioned ONNX crate pair during the conversion freeze. |
+| `make` / `make all` / `make build` | Build the native Rust workspace, excluding the three host-native helper packages during the conversion freeze. |
 | `make format` | Format the Rust workspace with Cargo fmt; modifies Rust source. |
 | `make format-check` | Cargo fmt dry-run (`cargo fmt --all -- --check`); one of the Rust-only CI checks. |
-| `make test` | Alias for `make check-rust-test`: Rust workspace tests only, excluding the ONNX crate pair from host coverage. |
+| `make test` | Alias for `make check-rust-test`: Rust workspace tests only, excluding the three host-native helper packages covered by the default `onnx-host-tests` full-gate leg. |
 | `make test-cov` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
 | `make test-integration` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
-| `make test-release` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
-| `make release-checks` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
 | `make test-performance` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
 | `make test-app APP=<name>` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
 | `make test-only TEST=<path-or-pattern>` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
 | `make coverage` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
 | `make watch` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
-| `make ci` | Efficient Rust-only routine gate: formatting, workspace Clippy checks across all ordinary targets, and serialized library/binary unit tests. It does not run Cargo integration-test targets or the heavyweight native/cross/policy legs. |
-| `make ci-full` | Full operator gate: the former `make ci` task sequence, unchanged: formatting, MSRV, clippy, full Rust tests, describe stubs, ONNX/PDF runtime tests, shipped-binary build/smokes, iOS, macOS, and dependency policy. Run it on the exact final-tree SHA. |
+| `make ci` | Efficient Rust-only routine gate: formatting, topology validation, library/binary Clippy, and serialized library/binary unit tests. It does not run Cargo integration-test targets or heavyweight native/platform/policy legs. |
+| `make ci-full` | Registry-driven full operator gate. It runs selected entries independently, continues after failures, applies per-entry timeouts, and writes a revision-bound receipt. Run it on the exact final-tree SHA after `make ci-full-prep`. |
 | `make verify` | Alias for `make ci` during the Rust-conversion freeze. |
 | `make install-checks` | Directly runnable full Python-and-Rust preflight chain (format, ruff, layer hygiene, and related checks); no longer called by `ci` or `verify`. |
 | `make check-layer-hygiene` | Run `scripts/check_layer_hygiene.py` alone. Useful when iterating on an L1–L2 violation flagged by `make install-checks`. |
@@ -165,8 +163,8 @@ is the behavior; the goal is fewer binaries, not relabeling integration tests.
   placeholder.
 - Iterate with the narrowest command, such as `cargo test --manifest-path
   core/Cargo.toml -p <package> --lib` or the affected `--test <harness> <test>`.
-  [`make ci`](Makefile) is the routine gate: a formatting check, static Clippy
-  checks of ordinary workspace targets, and library/binary unit harnesses. It
+  [`make ci`](Makefile) is the routine gate: a formatting check, topology
+  validation, library/binary Clippy, and library/binary unit harnesses. It
   does not link or execute integration-test binaries, so run affected harnesses
   directly.
 - Run [`make ci-full`](Makefile) once on the exact final tree before merge or
@@ -196,161 +194,13 @@ is the behavior; the goal is fewer binaries, not relabeling integration tests.
 | `make pre-commit` | Install pre-commit hooks (optional). |
 | `make versions` | Print versions of Python, uv, and key deps. Diagnostic. |
 
-### Release rail
+### Release and transparency
 
-> **Rust-conversion freeze:** this rail's documented entry points are frozen:
-> `scripts/release.sh` refuses unconditionally in every mode, and the Make
-> release targets fail immediately. See
-> `docs/PORTING.md#rust-conversion-freeze`.
-
-The rest of this section documents the retained release implementation for
-post-freeze restoration. These commands do not reach that implementation while
-the freeze is active.
-
-DESTRUCTIVE: `bash scripts/release.sh --candidate` is fresh construction; before
-policy or build work it first runs `make release-checks`, then deletes prior raw
-build/dist outputs and that version's stale payload/evidence. It verifies the
-expected source commit and lock state, gathers target evidence through
-configured build/proof-host channels, pair-promotes payload and evidence, and
-prints canonical local readiness JSON. This is candidate evidence only, not
-publication authorization. Advisory acquisition is a separate operator
-operation documented in `scripts/release_advisory_policy.py`.
-If retained `dist/release-candidate/<version>` or `target/release-evidence/<version>` bytes already exist, `--candidate` refuses before cleanup unless the operator sets `RELEASE_CANDIDATE_DISCARD_RETAINED=<version>` for an unpublished version or `RELEASE_CANDIDATE_DISCARD_PUBLISHED_TAG=<version>+<tag>` for a tagged version; undeterminable retained state is not authorizable.
-
-Every candidate attempt generates a fresh proof challenge and requires, for each
-configured native target, a challenge-bound nvattest receipt alongside the
-unchanged install/smoke receipt. Before the ledger is written and before any
-proof host is contacted, the rail extracts the nvattest authority from the
-candidate's own root wheels, requires every target's extraction to agree
-byte-for-byte, and materializes the locked support-wheel set declared by
-`uv.lock`, verifying each wheel's bytes against the lock. Challenge, authority,
-and that exact support set are then handed to every target lane. Two attempts
-over identical version, source, and payload inputs differ only in the challenge,
-the receipts bound to it, and observation timestamps.
-
-The retained support declarations recorded in the ledger *are* the lock-derived
-declarations captured when the candidate was cut. Disagreement with the release
-lock therefore fails at cut time rather than being re-litigated later, which is
-why a retained candidate keeps validating after an unrelated dependency bump.
-That durability is specific to dependency and lock drift. It does **not** extend
-to the retained ledger's own shape: changing a registered top-level or nested
-ledger key set breaks candidates that were already cut. The retained-ledger
-schema registry and frozen fixture tests make that visible; read
-`docs/release-evidence-contract.md` before changing the registry, and publish any
-outstanding retained candidate before merging such a change.
-
-`bash scripts/release.sh --recover <version> <source-commit>` is
-retained-byte-only, read-only validation. It preserves retained payload and
-evidence, revalidates them, and reports `retained-candidate-valid` for v2
-evidence or `retained-pre-nvattest-candidate-valid` for registered
-pre-nvattest v1 evidence; publication requires v2. It never rebuilds, refreshes
-advisories, contacts hosts, installs wheels, reads authentication, or uses the
-network.
-
-For v2 evidence, recovery re-derives the nvattest authority from the retained
-candidate wheel bytes rather than reading it from the ledger, requires every
-target's extraction to agree, and holds that extraction against the ledger's
-authority payload, its byte digest, and every receipt's installed authority. It
-re-hashes the retained support wheels against the ledger declarations and
-against every receipt, and binds the challenge and the candidate identities
-through both receipt classes.
-Because the anchor is the retained wheel bytes, a forgery that rewrites the
-ledger and every receipt to agree with itself is still rejected. Recovery reads
-no release lock, no clock, and no network, and writes nothing on either the
-success or the failure path.
-
-`bash scripts/release.sh --dry-run-linux` validates the Linux structural plan
-only. It emits no ready payload, manifest, ledger, proof, or clean-source claim.
-
-Candidate readiness means candidate payload, ledger, retained support wheels,
-and both per-target receipt classes — install/smoke and nvattest — are locally
-consistent for the retained bytes. Proofs do not authorize publication and do
-not prove external distribution. Live SPP composite acceptance, real remote
-lanes, and production URL reach are post-ship verification work; this rail does not
-attest them.
-
-Aggregate release publication is the retryable delivery step for an already
-finalized retained candidate. `make publish-release
-RELEASE_DIR=<retained ready dir>` runs `scripts/release_publish.py --mode
-production`: it revalidates retained candidate bytes, uploads the canonical PyPI
-artifact set, verifies PyPI digests, tags `v<version>` at the retained source
-commit, and records a GitHub Release witness. The independently versioned
-`solstone-journal-models` wheel and sdist may be reused when the package index
-already holds that ledger-declared version and its canonical archive manifests
-match the retained archives; reused model archives are removed from twine upload
-and train-owned exact-digest verification, then the model index is rechecked
-before tag/witness. The GitHub Release witness still receives the full retained
-asset list. `make publish-release-test RELEASE_DIR=<retained ready dir>` is
-TestPyPI upload+verify only; it does not validate changelog or tag readiness and
-does not invoke git or gh.
-
-Publication additionally refuses when the retained candidate's nvattest
-authority does not bind to the current checkout's canonical authority. That
-prerequisite runs immediately after retained-candidate revalidation and before
-the mode branch, so production and test alike fail with no index, upload, tag,
-or witness call attempted. The repair is to publish from a checkout whose
-authority matches the retained candidate, or to cut a new candidate; the
-retained bytes are never rewritten to satisfy the check.
-
-The no-arg release path, `--test`, `make release`, and `make release-test` stay
-locked out. They fail before any token, transport, build-host, git, upload, tag,
-or hosted-release seam is reached. Do not add publication behavior to this
-candidate rail.
-
-Transparency publication is the separate retryable evidence step after delivery;
-it never gates delivery. It is soft-gated while inactive: set
-`TRANSPARENCY_ACTIVATED=1` (or `make TRANSPARENCY_ACTIVATED=1 <target>`) to reach
-the real implementation; see `docs/PORTING.md#rust-conversion-freeze`.
-`make publish-transparency
-RELEASE_DIR=<retained ready dir>` is env-driven: operator endpoints, bucket,
-credentials, minisign key paths, and archive channel come from
-`TRANSPARENCY_*` env vars, while the public base defaults to
-`https://transparency.solstone.app`.
-`RELEASE_DIR` must resolve to `dist/release-candidate/<version>/`; the
-corresponding rail evidence is derived from `target/release-evidence/<version>/`.
-The evidence directory is inventory-exact within its retained ledger schema
-version: a missing entry and an unexpected extra both fail closed. Current v2
-evidence holds `ledger.json`, one install/smoke receipt per configured native
-target under `proofs/`, one challenge-bound nvattest receipt per the same
-targets under `nvattest/`, and the retained locked support wheels under
-`support/`; registered pre-nvattest v1 evidence holds only `ledger.json` and
-the install/smoke receipts under `proofs/`. After the prerequisite is published,
-the single post-finalization tombstone verification record is the only optional
-extra allowed for either schema version.
-
-The public layout is fixed:
-`releases/<product>/v/<version>/ledger-entry.json`,
-`ledger-entry.json.minisig`, the byte-identical companion manifests, and the
-byte-identical native proof receipts of both classes are immutable create-only
-objects. Install/smoke receipts publish under their target name; nvattest
-receipts publish under `<target>.nvattest.json`, mapped from their retained
-sibling directory at a single point in the publisher.
-`releases/<product>/ledger.jsonl` is mutable and derived.
-`releases/<product>/latest.json.minisig` and `latest.json` are the signed pointer
-pair, written in that order.
-The archive channel retains the full candidate artifact bytes; the public
-surface carries evidence only.
-
-Transparency attests what was released, that the public version history is
-immutable, and that history is publicly reconstructible; it does not attest that
-binaries provably match source. A version key is one-shot and permanent. If a
-version entry is uploaded but the pointer is not updated, rerun the publisher to
-reuse the staged bytes and finish the mutable pointer. If a different object is
-locked at a version key, the recovery is cutting the next version; a locked-zone
-object can never be replaced.
-Latest-pointer writes deliberately use an immediately re-fetched ETag as
-`If-Match`, even though fetch-time pointer ETag presence is also asserted.
-
-`make resign-transparency-pointer` refreshes only the signed latest pointer's
-`signed_at` and `valid_until`; it does not require `RELEASE_DIR` and does not
-change `chain_length`, `tip_sha256`, or `version`.
-
-The in-repo append-only head witness is [`transparency-head-log.jsonl`](transparency-head-log.jsonl).
-It is JSONL with no header row and is committed before the first publish.
-The public minisign trust-anchor filename is `solpbc-transparency-1.pub`,
-served at `releases/keys/solpbc-transparency-1.pub`; rotation increments the
-numeric suffix and uses cross-signed successor files. `TRANSPARENCY_MINISIGN_PUB`
-sets only the local verification path and may use any local filename.
+The legacy Python wheel/release targets, `scripts/release.sh`, and
+transparency-publishing commands have been removed during the Rust
+conversion. They are not frozen entry points and cannot be invoked. See
+[`docs/PORTING.md`](docs/PORTING.md#rust-conversion-freeze) for the current
+validation and release-adjacent command contract.
 
 ### Don't use
 
@@ -360,9 +210,9 @@ sets only the local verification path and may use any local filename.
 
 ## 6. Testing quickstart
 
-- **Rust gates:** `make` / `make all`, `make ci`, `make ci-full`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. Per the [Makefile](Makefile), `make ci` is the efficient routine path with formatting, all-target Clippy checks, and library/binary unit tests; `make ci-full` is the full operator final-tree gate and preserves the former task sequence.
-- **Python suite:** pytest files remain `test_*.py` with `test_*` functions, shared fixtures in `tests/conftest.py`, and the fixture journal at `tests/fixtures/journal/`. The autouse `set_test_journal_path` fixture is unchanged; tests that write, scan, or rebuild journal/index state must use `journal_copy` or a smaller `tmp_path` journal (see §8). Run this suite directly with bare `pytest` when needed. `tests/` and `solstone/apps/*/tests/` are unchanged, but the former Python Make rails, including `make test-app`, `make test-only`, and the other `make test-*` targets, now fail with the freeze diagnostic.
-- **Marked Python tests:** integration, performance, and release tests remain in the suite and can be selected with bare pytest as needed; their former Make rails are frozen. Live product verification still uses `make sandbox`.
+- **Rust gates:** `make` / `make all`, `make ci`, `make ci-full`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. Per the [Makefile](Makefile), `make ci` is the efficient routine path with formatting, topology validation, library/binary Clippy, and library/binary unit tests. `make ci-full` is the selectable, registry-driven final-tree gate; prepare it with `make ci-full-prep`.
+- **Python suite:** pytest files remain `test_*.py` with `test_*` functions, shared fixtures in `tests/conftest.py`, and the fixture journal at `tests/fixtures/journal/`. The autouse `set_test_journal_path` fixture is unchanged; tests that write, scan, or rebuild journal/index state must use `journal_copy` or a smaller `tmp_path` journal (see §8). Run this suite directly with bare `pytest` when needed. `tests/` and `solstone/apps/*/tests/` are unchanged, but the retained alternate Python Make rails named above fail with the freeze diagnostic.
+- **Marked Python tests:** integration, performance, and release tests remain in the suite and can be selected with bare pytest as needed. The retained integration and performance Make rails are frozen; the former release Make rail has been removed. Live product verification still uses `make sandbox`.
 - **After editing `solstone/convey/` or `solstone/apps/`:** `journal restart-convey` to reload code in a running stack.
 - **Runtime artifacts:** `make dev` writes them into the fixtures journal, where `tests/fixtures/journal/.gitignore` covers them. `make sandbox` uses an ephemeral copy and leaves only its `.sandbox.pid` and `.sandbox.journal` state files until `make sandbox-stop` removes them.
 - **Test invariants, not snapshots.** A test asserts what must hold in *every* valid state of the system — not what happens to be true today. Never pin a test to hand-edited prose (CHANGELOG / README / docs), to a value the system is *designed* to change (a version, a date, a growing count), or to a transient state. The tell: if doing the correct next thing — cut a release, rename a label, graduate a shipped changelog entry — turns the test red, the test is wrong, not the system. And test the code that *produces* a fact, never the rendered text about it. (A `[Unreleased]`-pinned changelog test was exactly this anti-pattern — its pass condition required the release process to *not* run; removed 2026-05-30.)
@@ -373,7 +223,7 @@ Full depth: `docs/testing.md`.
 
 **Why this lives here.** A codebase-wide audit in April 2026 found 14 layer-hygiene violations in `solstone/think/` and `solstone/apps/`. Infrastructure modules (indexer, importers, schedulers) were silently writing domain state; CLI read-verbs were mutating; get-prefixed functions were creating records on miss. These invariants encode the rules the audit distilled, so the same landmines don't get re-planted. They're inlined here because a one-click-away invariant is a routinely-skipped invariant.
 
-The low-bar grep enforcement is `scripts/check_layer_hygiene.py`, wired into `make install-checks` and not reached by the frozen `make ci`. Known audit-flagged files are allowlisted with audit-reference TODOs; the allowlist shrinks as remediation bundles ship.
+The low-bar grep enforcement is `scripts/check_layer_hygiene.py`, wired into `make install-checks` and not reached by routine `make ci`. Known exceptions are allowlisted and removed as fixes land.
 
 ### L1 — Layer boundaries are load-bearing
 

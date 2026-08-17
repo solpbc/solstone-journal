@@ -125,13 +125,14 @@ make ci
 make ci-full              # full operator final-tree gate
 ```
 
-During the Rust-conversion freeze, `make test` runs the full Rust workspace
-tests. The [Makefile](Makefile) is authoritative: `make ci` is the efficient
-routine gate with formatting, all-target Clippy checks, and serialized
-library/binary unit tests. It does not run Cargo integration-test targets or the
-heavyweight native, cross-target, and policy legs. An operator runs
-`make ci-full` on the exact final-tree SHA; it preserves the former full
-sequence.
+During the Rust-conversion freeze, `make test` runs the Rust workspace tests,
+excluding the three host-native helper packages. The [Makefile](Makefile) is
+authoritative: `make ci` is the efficient routine gate with formatting,
+topology validation, library/binary Clippy, and
+serialized library/binary unit tests. It does not run Cargo integration-test
+targets or heavyweight native, platform, and policy legs. An operator runs the
+selectable, registry-driven `make ci-full` gate on the exact final-tree SHA
+after `make ci-full-prep`.
 
 The former focused Python Make targets, including `make test-only` and
 `make test-app`, are frozen and fail immediately. Run focused Python tests
@@ -185,7 +186,7 @@ After changing a router skill or an app command fragment, run:
 make skills
 ```
 
-That target first runs `scripts/build_skill_references.py` to regenerate the checked-in references, then refreshes the `sol` + `journal` router skill symlinks inside the journal. `make install` also runs this target, and `make ci` / `make install-checks` runs `scripts/build_skill_references.py --check` to catch stale generated references.
+That target first runs `scripts/build_skill_references.py` to regenerate the checked-in references, then refreshes the `sol` + `journal` router skill symlinks inside the journal. `make install` also runs this target. Run `make check-skill-references` directly, or use `make install-checks`, to catch stale generated references.
 
 ## Migrating from a source install to a packaged install
 

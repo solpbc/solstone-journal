@@ -413,7 +413,7 @@ Project installs expose exactly two [Agent Skills](https://agentskills.io/specif
 - App command fragments live at `solstone/apps/<app>/talent/<app>/SKILL.md`.
 - The fragment directory name must match the `name` field in the YAML frontmatter.
 - `make skills` runs `scripts/build_skill_references.py`, then installs only the `sol` and `journal` router skill symlinks into `journal/.agents/skills/` and `journal/.claude/skills/`.
-- `make ci` / `make install-checks` runs `scripts/build_skill_references.py --check` and fails if generated references are stale.
+- `make check-skill-references` and `make install-checks` run `scripts/build_skill_references.py --check` and fail if generated references are stale.
 - Router skills and app fragments are standalone from the talent agent/generator system; the talent loader ignores subdirectories.
 
 **Router skill directory structure:**
