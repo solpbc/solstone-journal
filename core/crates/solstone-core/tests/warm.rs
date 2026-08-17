@@ -3,7 +3,6 @@
 
 #![cfg(unix)]
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -282,13 +281,12 @@ fn cargo_marker_makes_absent_sibling_a_named_gap() {
     assert!(!report.failed());
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .and_then(Path::parent)
-        .expect("workspace root")
-        .to_path_buf()
+fn describe_row() -> InventoryRow {
+    inventory_rows()
+        .iter()
+        .copied()
+        .find(|row| row.binary_name == "solstone-core-describe")
+        .expect("describe must be a warm inventory row")
 }
 
 #[test]
