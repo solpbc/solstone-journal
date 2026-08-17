@@ -422,7 +422,7 @@ check-rust-onnx-stage:
 	fi; \
 	echo "$$validation_error" >&2; \
 	echo "repairing the pinned host ONNX Runtime stage" >&2; \
-	if ! python3 scripts/stage_speakers_analyze_runtime.py --target $(ONNX_RUNTIME_HOST_TARGET) --package-dir packages/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/$(ONNX_RUNTIME_HOST_TARGET).json; then \
+	if ! python3 scripts/stage_speakers_analyze_runtime.py --target $(ONNX_RUNTIME_HOST_TARGET) --package-dir target/runtime-package-staging/solstone-core-vad-analyze --receipt target/vad-analyze-runtime-provenance/$(ONNX_RUNTIME_HOST_TARGET).json; then \
 		echo "failed to stage the pinned host ONNX Runtime" >&2; \
 		exit 1; \
 	fi; \
@@ -438,11 +438,11 @@ check-rust-onnx-stage:
 # stays OUTSIDE both poisoned Rust gates. The runtime-loaded crate itself remains in
 # ordinary host Cargo selection; only its real binary tests require this stage.
 $(PDF_RUNTIME_HOST_LINK_DIR):
-	python3 scripts/stage_pdfium_runtime.py --target $(PDF_RUNTIME_HOST_TARGET) --package-dir packages/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
+	python3 scripts/stage_pdfium_runtime.py --target $(PDF_RUNTIME_HOST_TARGET) --package-dir target/runtime-package-staging/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
 
 check-rust-pdf-stage:
 	@$(REQUIRE_SUPPORTED_PDF_HOST)
-	python3 scripts/stage_pdfium_runtime.py --target $(PDF_RUNTIME_HOST_TARGET) --package-dir packages/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
+	python3 scripts/stage_pdfium_runtime.py --target $(PDF_RUNTIME_HOST_TARGET) --package-dir target/runtime-package-staging/solstone-core-pdf --receipt target/pdfium-runtime-provenance/$(PDF_RUNTIME_HOST_TARGET).json
 	@set -eu; $(REQUIRE_PDF_HOST_RUNTIME)
 	@echo "host PDFium runtime staged and verified at $(PDF_RUNTIME_HOST_LINK_DIR)"
 
@@ -1595,4 +1595,3 @@ check-core-fixtures: .installed
 	$(VENV_BIN)/python scripts/generate_observe_category_registry.py --check
 	$(VENV_BIN)/python scripts/build_core_fixtures.py --check
 	$(VENV_BIN)/python scripts/check_service_runtime_reference.py
-

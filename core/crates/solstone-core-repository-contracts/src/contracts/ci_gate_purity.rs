@@ -766,6 +766,11 @@ fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
     }
     assert!(target_body(&makefile, "ci-full-prep-onnx").contains("check-rust-onnx-stage"));
     assert!(target_body(&makefile, "ci-full-prep-pdf").contains("check-rust-pdf-stage"));
+    assert!(
+        !makefile.contains("--package-dir packages/")
+            && makefile.contains("--package-dir target/runtime-package-staging/"),
+        "runtime prep must keep generated package-shaped staging under target/"
+    );
     let pdf_stage = target_body(&makefile, "check-rust-pdf-stage");
     assert!(pdf_stage.contains("scripts/stage_pdfium_runtime.py"));
     assert!(pdf_stage.contains("REQUIRE_PDF_HOST_RUNTIME"));
