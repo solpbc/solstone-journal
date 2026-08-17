@@ -6,6 +6,7 @@ use std::io;
 use std::path::Path;
 
 use crate::digest::sha256_hex;
+use crate::inventory::{artifact_archives, artifact_set};
 
 pub struct ReleaseInfo<'a> {
     pub product: &'a str,
@@ -15,11 +16,11 @@ pub struct ReleaseInfo<'a> {
     pub lock_sha256: &'a str,
 }
 
-pub fn write_sidecars(out_dir: &Path, release: &ReleaseInfo<'_>) -> io::Result<()> {
+pub fn write_sidecars(out_dir: &Path, release: &ReleaseInfo<'_>, basename: &str) -> io::Result<()> {
     let mut checksums = String::new();
     let mut files = Vec::new();
-    for name in ["tree.tar.gz", "tree.deb", "tree.rpm"] {
-        let path = out_dir.join(name);
+    for name in artifact_archives(basename) {
+        let path = out_dir.join(&name);
         if !path.is_file() {
             continue;
         }
@@ -27,7 +28,8 @@ pub fn write_sidecars(out_dir: &Path, release: &ReleaseInfo<'_>) -> io::Result<(
         checksums.push_str(&format!("{digest}  {name}\n"));
         files.push((name, digest));
     }
-    fs::write(out_dir.join(".sha256"), checksums)?;
+    let [_tar, _deb, _rpm, sha256, manifest_name, release_name] = artifact_set(basename);
+    fs::write(out_dir.join(sha256), checksums)?;
     let mut manifest = String::from("{\n");
     manifest.push_str(&format!("  \"product\": {:?},\n", release.product));
     manifest.push_str(&format!("  \"version\": {:?},\n", release.version));
@@ -38,8 +40,8 @@ pub fn write_sidecars(out_dir: &Path, release: &ReleaseInfo<'_>) -> io::Result<(
         manifest.push_str(&format!("    {name:?}: {digest:?}{comma}\n"));
     }
     manifest.push_str("  }\n}\n");
-    fs::write(out_dir.join(".manifest.json"), manifest)?;
-    fs::write(out_dir.join(".release"), render_release(release))?;
+    fs::write(out_dir.join(manifest_name), manifest)?;
+    fs::write(out_dir.join(release_name), render_release(release))?;
     Ok(())
 }
 
@@ -51,8 +53,9 @@ pub fn render_release(release: &ReleaseInfo<'_>) -> String {
     )
 }
 
-pub fn self_inspect(out_dir: &Path) -> io::Result<Vec<(String, String)>> {
-    parse_release(&fs::read_to_string(out_dir.join(".release"))?)
+pub fn self_inspect(out_dir: &Path, basename: &str) -> io::Result<Vec<(String, String)>> {
+    let release_name = format!("{basename}.release");
+    parse_release(&fs::read_to_string(out_dir.join(release_name))?)
 }
 
 pub fn parse_release(text: &str) -> io::Result<Vec<(String, String)>> {

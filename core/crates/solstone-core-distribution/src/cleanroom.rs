@@ -56,6 +56,22 @@ pub struct Aggregation {
     pub failed: Vec<String>,
 }
 
+fn cleanroom_install_commands(inventory: &Inventory) -> Vec<String> {
+    let version = env!("CARGO_PKG_VERSION");
+    let mut commands = inventory
+        .target
+        .iter()
+        .map(|target| {
+            let base = inventory.artifact.render(version, &target.arch);
+            format!(
+                "sh /opt/solstone/install.sh --archive /opt/solstone/{base}.tar.gz --sha256 /opt/solstone/{base}.sha256 --release /opt/solstone/{base}.release"
+            )
+        })
+        .collect::<Vec<_>>();
+    commands.push("test -L /opt/prefix/current".to_owned());
+    commands
+}
+
 pub fn refuse_unpinned(subject: &CleanroomSubject) -> Result<(), String> {
     if digest_is_pinned(&subject.digest) {
         return Ok(());
@@ -88,10 +104,7 @@ pub fn plan_from_inventory(inventory: &Inventory) -> Result<CleanroomPlan, Strin
                 "archive:ro".to_owned(),
             ],
             tools: vec!["sh".to_owned(), "tar".to_owned(), "sha256sum".to_owned()],
-            commands: vec![
-                "sh /opt/solstone/install.sh --archive /opt/solstone/tree.tar.gz --sha256 /opt/solstone/tree.tar.gz.sha256 --release /opt/solstone/tree.release".to_owned(),
-                "test -L /opt/prefix/current".to_owned(),
-            ],
+            commands: cleanroom_install_commands(inventory),
             artifacts: vec![
                 "current".to_owned(),
                 "current/bin".to_owned(),
@@ -255,6 +268,20 @@ mod tests {
                     .iter()
                     .any(|command| command.contains("install.sh"))
             );
+            let version = env!("CARGO_PKG_VERSION");
+            for target in &inventory.target {
+                let base = inventory.artifact.render(version, &target.arch);
+                assert!(
+                    subject
+                        .commands
+                        .iter()
+                        .any(|command| command.contains(&format!("{base}.tar.gz"))
+                            && command.contains(&format!("{base}.sha256"))
+                            && command.contains(&format!("{base}.release"))),
+                    "{} missing {base}",
+                    subject.id
+                );
+            }
             assert!(subject.artifacts.iter().any(|item| item == "current"));
         }
         assert!(plan.builders.iter().all(|builder| {

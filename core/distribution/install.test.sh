@@ -311,10 +311,8 @@ if [ -x "$BIN" ]; then
 	mkdir -p "$SERVE"
 	_base=solstone-journal-3.0.0-${TARGET}
 	cp "$ARCHIVE" "$SERVE/${_base}.tar.gz"
-	cp "$SHA" "$SERVE/${_base}.tar.gz.sha256"
 	make_release "$SERVE/${_base}.release" 3.0.0 "$TARGET"
-	# rebuild sha sidecar name to match fetched file
-	sha_sidecar "$SERVE/${_base}.tar.gz" "$SERVE/${_base}.tar.gz.sha256"
+	sha_sidecar "$SERVE/${_base}.tar.gz" "$SERVE/${_base}.sha256"
 	"$BIN" cleanroom-serve "$SERVE" >"$BASE/serve.out" 2>"$BASE/serve.err" &
 	_srv=$!
 	_i=0

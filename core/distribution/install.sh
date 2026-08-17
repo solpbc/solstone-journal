@@ -417,7 +417,7 @@ else
 		refuse fetcher-missing
 	fi
 	fetch_url "${_origin}/${_base}.tar.gz" "$WORK/tree.tar.gz"
-	fetch_url "${_origin}/${_base}.tar.gz.sha256" "$WORK/tree.sha256"
+	fetch_url "${_origin}/${_base}.sha256" "$WORK/tree.sha256"
 	fetch_url "${_origin}/${_base}.release" "$WORK/tree.release"
 fi
 

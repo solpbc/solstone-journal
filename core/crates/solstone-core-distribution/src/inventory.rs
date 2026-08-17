@@ -31,6 +31,37 @@ pub struct Artifact {
     pub basename: String,
 }
 
+impl Artifact {
+    #[must_use]
+    pub fn render(&self, version: &str, arch: &str) -> String {
+        self.basename
+            .replace("{version}", version)
+            .replace("{arch}", arch)
+    }
+}
+
+#[must_use]
+pub fn artifact_archives(basename: &str) -> [String; 3] {
+    [
+        format!("{basename}.tar.gz"),
+        format!("{basename}.deb"),
+        format!("{basename}.rpm"),
+    ]
+}
+
+#[must_use]
+pub fn artifact_set(basename: &str) -> [String; 6] {
+    let [tar, deb, rpm] = artifact_archives(basename);
+    [
+        tar,
+        deb,
+        rpm,
+        format!("{basename}.sha256"),
+        format!("{basename}.manifest.json"),
+        format!("{basename}.release"),
+    ]
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Target {
@@ -197,6 +228,13 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             "unsupported inventory version {}; expected 1",
             inventory.version
         )));
+    }
+    if !inventory.artifact.basename.contains("{version}")
+        || !inventory.artifact.basename.contains("{arch}")
+    {
+        return Err(InventoryError::new(
+            "missing required:\n  artifact basename {version} {arch}".to_owned(),
+        ));
     }
     let target_ids = inventory
         .target

@@ -10,7 +10,7 @@ use std::process::Command;
 
 use crate::digest::sha256_hex;
 use crate::elf;
-use crate::inventory::{Entry, Inventory, format_named_list, load_payload};
+use crate::inventory::{Entry, Inventory, artifact_set, format_named_list, load_payload};
 use crate::lanes::{self, write_wrappers};
 use crate::onnx_runtime;
 use crate::promote::{PromoteRequest, isolated_target_dir, promote};
@@ -392,11 +392,13 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             fs::create_dir_all(parent)?;
         }
         let dest = args.dest.clone();
+        let basename = inventory.artifact.render(&version, &target.arch);
         let produced = promote(&PromoteRequest {
             dest,
             work: work.join("promote"),
             tree,
             version,
+            basename: basename.clone(),
             arch: args.target_id.clone(),
             deb_arch: target.deb_arch.clone(),
             rpm_arch: target.rpm_arch.clone(),
@@ -413,17 +415,10 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         })
         .map_err(|error| ProduceError::new(error.to_string()))?;
 
-        let artifacts = [
-            "tree.tar.gz",
-            "tree.deb",
-            "tree.rpm",
-            ".sha256",
-            ".manifest.json",
-            ".release",
-        ]
-        .into_iter()
-        .map(|name| produced.join(name))
-        .collect::<Vec<_>>();
+        let artifacts = artifact_set(&basename)
+            .into_iter()
+            .map(|name| produced.join(name))
+            .collect::<Vec<_>>();
         for path in &artifacts {
             if !path.is_file() {
                 return Err(ProduceError::new(format!(

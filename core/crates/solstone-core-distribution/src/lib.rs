@@ -54,16 +54,18 @@ pub fn discover_and_validate_inventory(start: &Path) -> Result<Inventory, Invent
 #[derive(Clone, Copy)]
 pub struct ContainerMeta<'a> {
     pub version: &'a str,
+    pub basename: &'a str,
     pub deb_arch: &'a str,
     pub rpm_arch: &'a str,
 }
 
 pub fn write_containers(stage: &Path, out_dir: &Path, meta: ContainerMeta<'_>) -> io::Result<()> {
     fs::create_dir_all(out_dir)?;
-    tar::write_tar_gz(stage, &out_dir.join("tree.tar.gz"))?;
+    let [tar, deb_name, rpm_name] = inventory::artifact_archives(meta.basename);
+    tar::write_tar_gz(stage, &out_dir.join(tar))?;
     deb::write_deb(
         stage,
-        &out_dir.join("tree.deb"),
+        &out_dir.join(deb_name),
         deb::DebMeta {
             version: meta.version,
             arch: meta.deb_arch,
@@ -71,7 +73,7 @@ pub fn write_containers(stage: &Path, out_dir: &Path, meta: ContainerMeta<'_>) -
     )?;
     rpm::write_rpm(
         stage,
-        &out_dir.join("tree.rpm"),
+        &out_dir.join(rpm_name),
         rpm::RpmMeta {
             version: meta.version,
             arch: meta.rpm_arch,
@@ -225,21 +227,24 @@ fn containers_disagree_on_required_entry() {
     )
     .expect("stage contract bundle");
 
+    let basename = committed_inventory().artifact.render("1.0.22", "x86_64");
     write_containers(
         &root,
         &out,
         ContainerMeta {
             version: "1.0.22",
+            basename: &basename,
             deb_arch: "amd64",
             rpm_arch: "x86_64",
         },
     )
     .expect("write containers");
-    let tar_manifest = tar::tar_records(&fs::read(out.join("tree.tar.gz")).unwrap()).unwrap();
-    let deb_manifest = deb::deb_records(&out.join("tree.deb")).unwrap();
-    let rpm_manifest = rpm::rpm_records(&out.join("tree.rpm")).unwrap();
-    let control = deb::deb_control_text(&out.join("tree.deb")).unwrap();
-    let requires = rpm::rpm_requires(&out.join("tree.rpm")).unwrap();
+    let [tar_name, deb_name, rpm_name] = inventory::artifact_archives(&basename);
+    let tar_manifest = tar::tar_records(&fs::read(out.join(tar_name)).unwrap()).unwrap();
+    let deb_manifest = deb::deb_records(&out.join(&deb_name)).unwrap();
+    let rpm_manifest = rpm::rpm_records(&out.join(&rpm_name)).unwrap();
+    let control = deb::deb_control_text(&out.join(&deb_name)).unwrap();
+    let requires = rpm::rpm_requires(&out.join(&rpm_name)).unwrap();
     let _ = fs::remove_dir_all(&root);
     let _ = fs::remove_dir_all(&out);
     record::compare_records("tar", &tar_manifest, "deb", &deb_manifest).expect("tar vs deb");
@@ -292,19 +297,22 @@ fn arch_mapping_modes_and_clean_package_depends() {
             target.id
         ));
         let _ = fs::remove_dir_all(&out);
+        let basename = inventory.artifact.render(version, &target.arch);
         write_containers(
             &root,
             &out,
             ContainerMeta {
                 version,
+                basename: &basename,
                 deb_arch: &target.deb_arch,
                 rpm_arch: &target.rpm_arch,
             },
         )
         .unwrap();
-        let control = deb::deb_control_text(&out.join("tree.deb")).unwrap();
-        let requires = rpm::rpm_requires(&out.join("tree.rpm")).unwrap();
-        let arch = rpm::rpm_arch(&out.join("tree.rpm")).unwrap();
+        let [tar_name, deb_name, rpm_name] = inventory::artifact_archives(&basename);
+        let control = deb::deb_control_text(&out.join(&deb_name)).unwrap();
+        let requires = rpm::rpm_requires(&out.join(&rpm_name)).unwrap();
+        let arch = rpm::rpm_arch(&out.join(&rpm_name)).unwrap();
         assert!(control.contains("Package: solstone-journal"));
         assert!(control.contains(&format!("Version: {version}")));
         assert!(control.contains(&format!("Architecture: {}", target.deb_arch)));
@@ -321,9 +329,9 @@ fn arch_mapping_modes_and_clean_package_depends() {
             other => panic!("unexpected target {other}"),
         }
         for records in [
-            tar::tar_records(&fs::read(out.join("tree.tar.gz")).unwrap()).unwrap(),
-            deb::deb_records(&out.join("tree.deb")).unwrap(),
-            rpm::rpm_records(&out.join("tree.rpm")).unwrap(),
+            tar::tar_records(&fs::read(out.join(&tar_name)).unwrap()).unwrap(),
+            deb::deb_records(&out.join(&deb_name)).unwrap(),
+            rpm::rpm_records(&out.join(&rpm_name)).unwrap(),
         ] {
             for record in &records {
                 if record.dest.starts_with("bin/") {
@@ -360,8 +368,11 @@ fn two_constructions_are_byte_identical() {
     fs::create_dir_all(&root).expect("stage");
     stage::write_staged_file_mode(&root, "bin/solstone-core", b"core", 0o755).unwrap();
     stage::write_staged_file(&root, "share/LICENSE", b"license").unwrap();
+    let version = env!("CARGO_PKG_VERSION");
+    let basename = committed_inventory().artifact.render(version, "x86_64");
     let meta = ContainerMeta {
-        version: "1.0.22",
+        version,
+        basename: &basename,
         deb_arch: "amd64",
         rpm_arch: "x86_64",
     };
@@ -371,41 +382,36 @@ fn two_constructions_are_byte_identical() {
         &left,
         &inspect::ReleaseInfo {
             product: "solstone-journal",
-            version: "1.0.22",
+            version,
             target: "linux-x86_64",
             commit: "abc",
             lock_sha256: "def",
         },
+        &basename,
     )
     .unwrap();
     inspect::write_sidecars(
         &right,
         &inspect::ReleaseInfo {
             product: "solstone-journal",
-            version: "1.0.22",
+            version,
             target: "linux-x86_64",
             commit: "abc",
             lock_sha256: "def",
         },
+        &basename,
     )
     .unwrap();
-    for name in [
-        "tree.tar.gz",
-        "tree.deb",
-        "tree.rpm",
-        ".sha256",
-        ".manifest.json",
-        ".release",
-    ] {
+    for name in inventory::artifact_set(&basename) {
         assert_eq!(
-            fs::read(left.join(name)).unwrap(),
-            fs::read(right.join(name)).unwrap(),
+            fs::read(left.join(&name)).unwrap(),
+            fs::read(right.join(&name)).unwrap(),
             "{name}"
         );
     }
     assert_eq!(
-        inspect::self_inspect(&left).unwrap(),
-        inspect::self_inspect(&right).unwrap()
+        inspect::self_inspect(&left, &basename).unwrap(),
+        inspect::self_inspect(&right, &basename).unwrap()
     );
     let _ = fs::remove_dir_all(&root);
     let _ = fs::remove_dir_all(&left);
@@ -706,6 +712,7 @@ fn promotion_is_atomic_after_each_successive_write() {
             work: work.clone(),
             tree: vec![("bin/solstone-core".into(), b"core".to_vec(), 0o755)],
             version: "1.0.22".into(),
+            basename: committed_inventory().artifact.render("1.0.22", "x86_64"),
             arch: "linux-x86_64".into(),
             deb_arch: "amd64".into(),
             rpm_arch: "x86_64".into(),
@@ -726,6 +733,81 @@ fn promotion_is_atomic_after_each_successive_write() {
         assert_eq!(before, after, "{}", step.as_str());
         let _ = fs::remove_dir_all(&dest);
         let _ = fs::remove_dir_all(&work);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn emitted_basenames_follow_inventory_template_for_both_targets() {
+    let inventory = committed_inventory();
+    let version = env!("CARGO_PKG_VERSION");
+    assert!(
+        inventory.artifact.basename.contains("{version}")
+            && inventory.artifact.basename.contains("{arch}"),
+        "inventory basename must stay a template"
+    );
+    assert_eq!(inventory.target.len(), 2);
+    for target in &inventory.target {
+        let dest = PathBuf::from(format!(
+            "/var/tmp/solstone-distribution-basename-dest-{}",
+            target.id
+        ));
+        let work = PathBuf::from(format!(
+            "/var/tmp/solstone-distribution-basename-work-{}",
+            target.id
+        ));
+        let _ = fs::remove_dir_all(&dest);
+        let _ = fs::remove_dir_all(&work);
+        let basename = inventory.artifact.render(version, &target.arch);
+        assert_eq!(
+            basename,
+            format!("solstone-journal-{version}-linux-{}", target.arch)
+        );
+        promote::promote(&promote::PromoteRequest {
+            dest: dest.clone(),
+            work,
+            tree: vec![("bin/solstone-core".into(), b"core".to_vec(), 0o755)],
+            version: version.to_owned(),
+            basename: basename.clone(),
+            arch: target.id.clone(),
+            deb_arch: target.deb_arch.clone(),
+            rpm_arch: target.rpm_arch.clone(),
+            dirty: false,
+            observed: provenance::Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            expected: provenance::Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            fail_after: None,
+        })
+        .unwrap();
+        let expected = inventory::artifact_set(&basename);
+        let mut found = fs::read_dir(&dest)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        found.sort();
+        let mut expected_names = expected.iter().cloned().collect::<Vec<_>>();
+        expected_names.sort();
+        assert_eq!(found, expected_names, "{}", target.id);
+        for name in [
+            "tree.tar.gz",
+            "tree.deb",
+            "tree.rpm",
+            ".sha256",
+            ".manifest.json",
+            ".release",
+        ] {
+            assert!(
+                !found.iter().any(|item| item == name),
+                "{} still emits {name}",
+                target.id
+            );
+        }
+        let _ = fs::remove_dir_all(&dest);
     }
 }
 

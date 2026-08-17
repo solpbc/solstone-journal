@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::deb::{DebMeta, write_deb};
 use crate::inspect::{ReleaseInfo, write_sidecars};
+use crate::inventory::artifact_archives;
 use crate::provenance::{Provenance, require_clean, require_commit, require_lock};
 use crate::rpm::{RpmMeta, write_rpm};
 use crate::stage::write_staged_file_mode;
@@ -60,6 +61,7 @@ pub struct PromoteRequest {
     pub work: PathBuf,
     pub tree: Vec<(String, Vec<u8>, u32)>,
     pub version: String,
+    pub basename: String,
     pub arch: String,
     pub deb_arch: String,
     pub rpm_arch: String,
@@ -128,12 +130,13 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
     let partial = request.work.join("out.partial");
     let _ = fs::remove_dir_all(&partial);
     fs::create_dir_all(&partial).map_err(|error| PromoteError::new(error.to_string()))?;
-    crate::tar::write_tar_gz(&stage, &partial.join("tree.tar.gz"))
+    let [tar_name, deb_name, rpm_name] = artifact_archives(&request.basename);
+    crate::tar::write_tar_gz(&stage, &partial.join(tar_name))
         .map_err(|error| PromoteError::new(error.to_string()))?;
     checkpoint(request, PromoteStep::Tar)?;
     write_deb(
         &stage,
-        &partial.join("tree.deb"),
+        &partial.join(deb_name),
         DebMeta {
             version: &request.version,
             arch: &request.deb_arch,
@@ -143,7 +146,7 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
     checkpoint(request, PromoteStep::Deb)?;
     write_rpm(
         &stage,
-        &partial.join("tree.rpm"),
+        &partial.join(rpm_name),
         RpmMeta {
             version: &request.version,
             arch: &request.rpm_arch,
@@ -159,7 +162,8 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         commit: &request.expected.commit,
         lock_sha256: &request.expected.lock_sha256,
     };
-    write_sidecars(&partial, &release).map_err(|error| PromoteError::new(error.to_string()))?;
+    write_sidecars(&partial, &release, &request.basename)
+        .map_err(|error| PromoteError::new(error.to_string()))?;
     checkpoint(request, PromoteStep::Checksums)?;
     checkpoint(request, PromoteStep::Manifest)?;
 
