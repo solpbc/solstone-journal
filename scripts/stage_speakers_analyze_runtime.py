@@ -199,29 +199,41 @@ def _default_target() -> str:
     raise AssertionError("unreachable")
 
 
-def _assert_lock_contains(spec: TargetSpec) -> None:
-    lock_path = ROOT / "uv.lock"
+PRODUCER_PINS = Path("core/crates/solstone-core-distribution/src/onnx_runtime.rs")
+
+
+def _assert_producer_pin_matches(spec: TargetSpec) -> None:
+    """Cross-check this table against the producer's own pinned wheel.
+
+    This used to read `uv.lock`, which stopped carrying an `onnxruntime` entry
+    the moment the wheel packaging was retired and nothing in `pyproject.toml`
+    pulled it any more -- so the cross-check lost its subject and every host
+    stage failed. The producer's table is the better second source anyway: it
+    is what actually ships, it is not Python packaging metadata, and it cannot
+    be regenerated out from under this script by `make install`.
+    """
+    pins_path = ROOT / PRODUCER_PINS
     try:
-        lock_text = lock_path.read_text(encoding="utf-8")
+        pins_text = pins_path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         _fail(
-            "uv.lock is missing",
-            expected="uv.lock containing pinned onnxruntime wheel URLs",
+            f"{PRODUCER_PINS} is missing",
+            expected="the producer's pinned onnxruntime wheel table",
             actual="missing",
-            repair="restore uv.lock before staging runtime bytes",
+            repair="restore the distribution crate before staging runtime bytes",
         )
         raise AssertionError("unreachable") from exc
 
-    url_text = f'url = "{spec.wheel_url}"'
-    hash_text = f'hash = "sha256:{spec.wheel_sha256}"'
-    if url_text not in lock_text or hash_text not in lock_text:
+    url_text = f'wheel_url: "{spec.wheel_url}"'
+    hash_text = f'wheel_sha256: "{spec.wheel_sha256}"'
+    if url_text not in pins_text or hash_text not in pins_text:
         _fail(
-            "pinned onnxruntime wheel is not present in uv.lock",
+            f"pinned onnxruntime wheel is not present in {PRODUCER_PINS}",
             expected=f"{url_text} with {hash_text}",
             actual="missing URL or hash",
             repair=(
-                "restore the accepted uv.lock entry or update "
-                "scripts/stage_speakers_analyze_runtime.py through design review"
+                "make this table and the producer's agree; changing either alone "
+                "is the drift this check exists to catch"
             ),
         )
 
@@ -326,7 +338,7 @@ def stage_runtime(
     receipt_path: Path,
     offline: bool,
 ) -> dict[str, object]:
-    _assert_lock_contains(spec)
+    _assert_producer_pin_matches(spec)
     wheel_path = _ensure_wheel(spec, cache_dir, offline=offline)
     wheel_digest = _sha256_file(wheel_path)
     if wheel_digest != spec.wheel_sha256:
