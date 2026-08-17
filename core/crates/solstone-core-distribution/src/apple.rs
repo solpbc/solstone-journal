@@ -358,11 +358,23 @@ fn field(report: &str, key: &str) -> Option<String> {
 /// container in this set that can be stapled — a `.tar.gz` cannot carry a
 /// notarization ticket, so the tarball's binaries are covered by the online
 /// check against the tickets this submission registers.
+///
+/// 🔴 **Two steps, and the split is forced by the credential rather than by
+/// taste.** `pkgbuild --sign` fails against our Developer ID Installer key with
+/// `errSecInteractionNotAllowed (-25308)`, which reads exactly like a locked
+/// keychain or a cleared partition list and is neither: the key was imported
+/// with `-T /usr/bin/codesign -T /usr/bin/productbuild`, so `pkgbuild` is not
+/// an admitted tool for it and `productsign` is. Measured 2026-08-17 on pro5e
+/// in one session — `pkgbuild --sign` refused while `productsign` and
+/// `productbuild --sign` both succeeded with the same identity, keychain and
+/// unlock state. ⛔ Do not "fix" this by re-running the partition-list grant.
 pub fn build_pkg(stage: &Path, out: &Path, version: &str, apple: &Apple) -> Result<(), AppleError> {
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
     let keychain = apple.keychain_path().to_string_lossy().into_owned();
+    let unsigned = out.with_extension("unsigned.pkg");
+    let _ = fs::remove_file(&unsigned);
     run(
         "pkgbuild",
         &[
@@ -374,13 +386,32 @@ pub fn build_pkg(stage: &Path, out: &Path, version: &str, apple: &Apple) -> Resu
             version,
             "--install-location",
             &apple.install_location,
-            "--keychain",
-            &keychain,
-            "--sign",
-            &apple.installer_identity,
-            &out.to_string_lossy(),
+            &unsigned.to_string_lossy(),
         ],
     )?;
+    let _ = fs::remove_file(out);
+    let signed = run(
+        "productsign",
+        &[
+            "--sign",
+            &apple.installer_identity,
+            "--keychain",
+            &keychain,
+            &unsigned.to_string_lossy(),
+            &out.to_string_lossy(),
+        ],
+    );
+    // The unsigned component package is an intermediate, never an artifact. It
+    // must not survive into the promoted set, where it would sit beside the
+    // signed one looking like a second container.
+    let _ = fs::remove_file(&unsigned);
+    signed?;
+    if !out.is_file() {
+        return Err(AppleError::new(format!(
+            "missing required:\n  signed package {}",
+            out.display()
+        )));
+    }
     Ok(())
 }
 
