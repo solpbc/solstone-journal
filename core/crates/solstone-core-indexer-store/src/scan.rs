@@ -3459,14 +3459,14 @@ mod tests {
         );
         write(
             &root,
-            "facets/work/activities/20240101.jsonl",
+            "facets/Work/activities/20240101.jsonl",
             r#"{}
 {"id":"coding_090000_300","segments":["090000_300"]}
 "#,
         );
         write(
             &root,
-            "facets/work/logs/20240101.jsonl",
+            "facets/Work/logs/20240101.jsonl",
             r#"{"action":"activity_update","actor":"activities","source":"app","params":{"id":"coding"}}
 "#,
         );
@@ -3518,13 +3518,13 @@ mod tests {
         assert_eq!(
             count(
                 &conn,
-                "SELECT count(*) FROM chunks WHERE path='facets/work/activities/20240101.jsonl' AND agent='activity'"
+                "SELECT count(*) FROM chunks WHERE path='facets/Work/activities/20240101.jsonl' AND agent='activity'"
             ),
             2
         );
         let activity_content: String = conn
             .query_row(
-                "SELECT content FROM chunks WHERE path='facets/work/activities/20240101.jsonl' AND idx=1",
+                "SELECT content FROM chunks WHERE path='facets/Work/activities/20240101.jsonl' AND idx=1",
                 [],
                 |row| row.get(0),
             )
@@ -3534,7 +3534,7 @@ mod tests {
 
         let action_log_agent: String = conn
             .query_row(
-                "SELECT agent FROM chunks WHERE path='facets/work/logs/20240101.jsonl'",
+                "SELECT agent FROM chunks WHERE path='facets/Work/logs/20240101.jsonl'",
                 [],
                 |row| row.get(0),
             )
