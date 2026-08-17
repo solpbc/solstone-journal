@@ -6,11 +6,15 @@
 use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use nix::errno::Errno;
+use nix::sys::signal::{Signal, killpg};
+use nix::unistd::Pid;
 use serde_json::{Map, Value};
 use solstone_core_journal_config::{JournalConfigRead, parakeet_coreml::parakeet_coreml_cache_dir};
 use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes};
@@ -23,6 +27,7 @@ const HELPER_ENV_KEY: &str = "SOLSTONE_PARAKEET_HELPER";
 const HELPER_RELATIVE: &str = "solstone/observe/transcribe/parakeet_helper";
 const HELPER_NAME: &str = "parakeet-helper";
 const HELPER_SPAWN_RETRIES: usize = 3;
+const HELPER_SPAWN_RETRY_DELAY: Duration = Duration::from_millis(10);
 const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Invoke CoreML transcription. Model metadata is deliberately not probed here.
@@ -44,10 +49,14 @@ pub(crate) fn transcribe(
 /// Probe metadata only after the caller has completed a successful transcription.
 pub(crate) fn get_model_info(config: &JournalConfigRead) -> Result<ModelInfo, TranscribeError> {
     let helper = resolve_helper_path();
-    get_model_info_with_helper(&helper, &parakeet_coreml_model_version(config))
+    get_model_info_with_helper(
+        &helper,
+        &parakeet_coreml_model_version(config),
+        VERSION_TIMEOUT,
+    )
 }
 
-fn transcribe_with_helper(
+pub(crate) fn transcribe_with_helper(
     audio: &[f32],
     helper: &Path,
     cache_dir: &Path,
@@ -65,42 +74,24 @@ fn transcribe_with_helper(
         .write_all(&wav)
         .map_err(|error| failure("coreml_tempfile_failed", error.to_string()))?;
 
-    let arguments = [
-        // The helper's hardcoded fallback is unreachable here because this call
-        // always passes --cache-dir; a future invocation change could make it live.
-        "--cache-dir".to_owned(),
-        cache_dir.display().to_string(),
-        "--model".to_owned(),
-        model_version.to_owned(),
-        temporary.path().display().to_string(),
-    ];
-    let output = run_helper(helper, &arguments, timeout).map_err(|error| match error {
-        HelperRunError::TimedOut => deferred(
-            "coreml_helper_timeout",
-            format!(
-                "Parakeet helper timed out after {:.1}s",
-                timeout.as_secs_f64()
-            ),
-        ),
-        error => failure("coreml_helper_launch_failed", error.to_string()),
-    })?;
-    if !output.status.success() {
-        return Err(failure(
-            "coreml_helper_exit_failed",
-            helper_failure_detail(&output),
-        ));
-    }
+    // The helper's hardcoded fallback is unreachable here because this call
+    // always passes --cache-dir; a future invocation change could make it live.
+    let arguments = transcribe_helper_arguments(cache_dir, model_version, temporary.path());
+    let output = run_helper(helper, &arguments, timeout)
+        .map_err(|error| map_helper_run_error(error, timeout))?;
+    let output = map_helper_exit(output)?;
     parse_coreml_response(&output.stdout).map_err(|error| match error {
         CoremlResponseError::InvalidJson(detail) => failure("coreml_invalid_json", detail),
         CoremlResponseError::Contract(detail) => failure("coreml_contract_violation", detail),
     })
 }
 
-fn get_model_info_with_helper(
+pub(crate) fn get_model_info_with_helper(
     helper: &Path,
     model_version: &str,
+    timeout: Duration,
 ) -> Result<ModelInfo, TranscribeError> {
-    let output = run_helper(helper, &["--version".to_owned()], VERSION_TIMEOUT)
+    let output = run_helper(helper, &["--version".to_owned()], timeout)
         .map_err(|error| failure("coreml_version_probe_failed", error.to_string()))?;
     if !output.status.success() {
         return Err(failure(
@@ -226,6 +217,153 @@ fn python_helper_directories(library_directory: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+fn transcribe_helper_arguments(
+    cache_dir: &Path,
+    model_version: &str,
+    wav_path: &Path,
+) -> [String; 5] {
+    [
+        "--cache-dir".to_owned(),
+        cache_dir.display().to_string(),
+        "--model".to_owned(),
+        model_version.to_owned(),
+        wav_path.display().to_string(),
+    ]
+}
+
+fn map_helper_run_error(error: HelperRunError, timeout: Duration) -> TranscribeError {
+    match error {
+        HelperRunError::TimedOut => deferred(
+            "coreml_helper_timeout",
+            format!(
+                "Parakeet helper timed out after {:.1}s",
+                timeout.as_secs_f64()
+            ),
+        ),
+        error => failure("coreml_helper_launch_failed", error.to_string()),
+    }
+}
+
+fn map_helper_exit(output: HelperOutput) -> Result<HelperOutput, TranscribeError> {
+    if output.status.success() {
+        Ok(output)
+    } else {
+        Err(failure(
+            "coreml_helper_exit_failed",
+            helper_failure_detail(&output),
+        ))
+    }
+}
+
+fn retry_busy_spawn<T>(
+    mut spawn: impl FnMut() -> io::Result<T>,
+    mut sleep: impl FnMut(Duration),
+) -> io::Result<T> {
+    let mut retries = 0;
+    loop {
+        match spawn() {
+            Ok(value) => return Ok(value),
+            Err(error)
+                if error.kind() == io::ErrorKind::ExecutableFileBusy
+                    && retries < HELPER_SPAWN_RETRIES =>
+            {
+                retries += 1;
+                sleep(HELPER_SPAWN_RETRY_DELAY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn spawn_helper(helper: &Path, arguments: &[String]) -> io::Result<Child> {
+    retry_busy_spawn(
+        || {
+            Command::new(helper)
+                .args(arguments)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .process_group(0)
+                .spawn()
+        },
+        thread::sleep,
+    )
+}
+
+fn helper_pgid(child: &Child) -> io::Result<i32> {
+    i32::try_from(child.id()).map_err(|_| io::Error::other("invalid child pid"))
+}
+
+fn kill_helper_group(pgid: i32) -> io::Result<()> {
+    match killpg(Pid::from_raw(pgid), Signal::SIGKILL) {
+        Ok(()) => Ok(()),
+        Err(Errno::ESRCH) => Ok(()),
+        Err(errno) => Err(io::Error::from(errno)),
+    }
+}
+
+trait HelperSupervisor {
+    fn observe_without_reap(&mut self) -> io::Result<Option<ExitStatus>>;
+    fn kill_group(&mut self) -> io::Result<()>;
+    fn close_owned_pipes(&mut self);
+    fn reap_root(&mut self) -> io::Result<Option<ExitStatus>>;
+    fn join_readers(&mut self) -> Result<(String, String), HelperRunError>;
+}
+
+struct LiveHelper {
+    child: Child,
+    pgid: i32,
+    stdout_reader: Option<thread::JoinHandle<Result<String, HelperRunError>>>,
+    stderr_reader: Option<thread::JoinHandle<Result<String, HelperRunError>>>,
+}
+
+impl HelperSupervisor for LiveHelper {
+    fn observe_without_reap(&mut self) -> io::Result<Option<ExitStatus>> {
+        retry_interrupted(|| self.child.try_wait())
+    }
+
+    fn kill_group(&mut self) -> io::Result<()> {
+        kill_helper_group(self.pgid)
+    }
+
+    fn close_owned_pipes(&mut self) {
+        drop(self.child.stdout.take());
+        drop(self.child.stderr.take());
+    }
+
+    fn reap_root(&mut self) -> io::Result<Option<ExitStatus>> {
+        retry_interrupted(|| self.child.wait()).map(Some)
+    }
+
+    fn join_readers(&mut self) -> Result<(String, String), HelperRunError> {
+        let stdout = match self.stdout_reader.take() {
+            Some(reader) => join_reader(reader, "stdout")?,
+            None => String::new(),
+        };
+        let stderr = match self.stderr_reader.take() {
+            Some(reader) => join_reader(reader, "stderr")?,
+            None => String::new(),
+        };
+        Ok((stdout, stderr))
+    }
+}
+
+fn conclude_helper<S: HelperSupervisor>(
+    session: &mut S,
+) -> Result<(Option<ExitStatus>, String, String), HelperRunError> {
+    let observed = session
+        .observe_without_reap()
+        .map_err(|error| HelperRunError::Wait(error.to_string()))?;
+    session
+        .kill_group()
+        .map_err(|error| HelperRunError::Wait(error.to_string()))?;
+    session.close_owned_pipes();
+    let reaped = session
+        .reap_root()
+        .map_err(|error| HelperRunError::Wait(error.to_string()))?;
+    let (stdout, stderr) = session.join_readers()?;
+    Ok((observed.or(reaped), stdout, stderr))
+}
+
 fn run_helper(
     helper: &Path,
     arguments: &[String],
@@ -233,61 +371,61 @@ fn run_helper(
 ) -> Result<HelperOutput, HelperRunError> {
     let mut child = spawn_helper(helper, arguments)
         .map_err(|error| HelperRunError::Spawn(error.to_string()))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| HelperRunError::Read("missing stdout pipe".to_owned()))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| HelperRunError::Read("missing stderr pipe".to_owned()))?;
-    let stdout_reader = spawn_reader(stdout);
-    let stderr_reader = spawn_reader(stderr);
-    let started = Instant::now();
-    let status = loop {
-        match retry_interrupted(|| child.try_wait())
-            .map_err(|error| HelperRunError::Wait(error.to_string()))?
-        {
-            Some(status) => break status,
-            None if started.elapsed() >= timeout => {
-                let _ = child.kill();
-                let _ = child.wait();
-                join_reader(stdout_reader, "stdout")?;
-                join_reader(stderr_reader, "stderr")?;
-                return Err(HelperRunError::TimedOut);
-            }
-            None => thread::sleep(Duration::from_millis(10)),
+    let pgid = match helper_pgid(&child) {
+        Ok(pgid) => pgid,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(HelperRunError::Wait(error.to_string()));
         }
     };
-    let stdout = join_reader(stdout_reader, "stdout")?;
-    let stderr = join_reader(stderr_reader, "stderr")?;
+    let mut session = LiveHelper {
+        child,
+        pgid,
+        stdout_reader: None,
+        stderr_reader: None,
+    };
+    let stdout = match session.child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let _ = conclude_helper(&mut session);
+            return Err(HelperRunError::Read("missing stdout pipe".to_owned()));
+        }
+    };
+    let stderr = match session.child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            drop(stdout);
+            let _ = conclude_helper(&mut session);
+            return Err(HelperRunError::Read("missing stderr pipe".to_owned()));
+        }
+    };
+    session.stdout_reader = Some(spawn_reader(stdout));
+    session.stderr_reader = Some(spawn_reader(stderr));
+    let started = Instant::now();
+    loop {
+        match retry_interrupted(|| session.child.try_wait()) {
+            Err(error) => {
+                let _ = conclude_helper(&mut session);
+                return Err(HelperRunError::Wait(error.to_string()));
+            }
+            Ok(None) if started.elapsed() >= timeout => {
+                return match conclude_helper(&mut session) {
+                    Ok(_) => Err(HelperRunError::TimedOut),
+                    Err(error) => Err(error),
+                };
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(10)),
+            Ok(Some(_)) => break,
+        }
+    }
+    let (status, stdout, stderr) = conclude_helper(&mut session)?;
     Ok(HelperOutput {
-        status,
+        status: status
+            .ok_or_else(|| HelperRunError::Wait("helper exited without a status".to_owned()))?,
         stdout,
         stderr,
     })
-}
-
-fn spawn_helper(helper: &Path, arguments: &[String]) -> io::Result<std::process::Child> {
-    let mut retries = 0;
-    loop {
-        match Command::new(helper)
-            .args(arguments)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
-            Ok(child) => return Ok(child),
-            Err(error)
-                if error.kind() == io::ErrorKind::ExecutableFileBusy
-                    && retries < HELPER_SPAWN_RETRIES =>
-            {
-                retries += 1;
-                thread::sleep(Duration::from_millis(10));
-            }
-            Err(error) => return Err(error),
-        }
-    }
 }
 
 fn spawn_reader<R>(stream: R) -> thread::JoinHandle<Result<String, HelperRunError>>
@@ -538,6 +676,7 @@ fn failure(reason: impl Into<String>, detail: impl Into<String>) -> TranscribeEr
     }
 }
 
+#[derive(Debug)]
 struct HelperOutput {
     status: ExitStatus,
     stdout: String,
@@ -563,6 +702,7 @@ impl std::fmt::Display for HelperRunError {
     }
 }
 
+#[derive(Debug)]
 enum CoremlResponseError {
     InvalidJson(String),
     Contract(String),
@@ -578,12 +718,18 @@ struct TokenTiming {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::io::{self, Read};
-    use std::os::unix::fs::PermissionsExt;
-    use std::path::{Path, PathBuf};
+    use std::io::{self, Cursor, Read};
+    use std::os::unix::process::ExitStatusExt;
+    use std::path::Path;
+    use std::process::ExitStatus;
     use std::time::Duration;
 
-    use super::{get_model_info_with_helper, read_child_stream, transcribe_with_helper};
+    use super::{
+        CoremlResponseError, HELPER_SPAWN_RETRY_DELAY, HelperOutput, HelperRunError,
+        HelperSupervisor, conclude_helper, kill_helper_group, map_helper_exit,
+        map_helper_run_error, parse_coreml_response, parse_version_response, read_child_stream,
+        retry_busy_spawn, transcribe_helper_arguments, transcribe_with_helper,
+    };
     use crate::TranscribeError;
 
     const SUCCESS: &str = r#"{"transcript":"hello world!","audio_sec":1.0,"transcribe_ms":2,"rtfx":3.0,"token_timings":[{"token":"▁hel","token_id":1,"start":0.0,"end":0.1,"confidence":0.9},{"token":"lo","token_id":2,"start":0.1,"end":0.2,"confidence":0.6},{"token":"▁world","token_id":3,"start":0.2,"end":0.4,"confidence":0.8},{"token":"!","token_id":4,"start":0.4,"end":0.5,"confidence":0.7}]}"#;
@@ -594,7 +740,7 @@ mod tests {
         let error = transcribe_with_helper(
             &[0.0],
             Path::new("/definitely/missing/parakeet-helper"),
-            Path::new("/tmp/cache"),
+            Path::new("/var/tmp/cache"),
             "v3",
             Duration::from_secs(1),
         )
@@ -609,88 +755,16 @@ mod tests {
         let helper = temporary.path().join("parakeet-helper");
         fs::write(&helper, "#!/bin/sh\nexit 0\n").unwrap();
 
-        let error = transcribe(&helper).unwrap_err();
+        let error = transcribe_with_helper(
+            &[0.0],
+            &helper,
+            temporary.path(),
+            "v3",
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
 
         assert_deferred_reason(error, "coreml_helper_not_executable");
-    }
-
-    #[test]
-    fn timed_out_helper_defers() {
-        let helper = helper("sleep 1");
-
-        let error = transcribe_with_timeout(&helper, Duration::from_millis(25)).unwrap_err();
-
-        assert_deferred_reason(error, "coreml_helper_timeout");
-    }
-
-    #[test]
-    fn nonzero_helper_fails() {
-        let helper = helper("echo helper-error >&2\nexit 5");
-
-        assert_failure_reason(
-            transcribe(&helper).unwrap_err(),
-            "coreml_helper_exit_failed",
-        );
-    }
-
-    #[test]
-    fn helper_launch_failure_fails_with_its_own_reason() {
-        let temporary = tempfile::tempdir().unwrap();
-        let helper = temporary.path().join("parakeet-helper");
-        fs::write(&helper, "#!/definitely/missing/sh\n").unwrap();
-        let mut permissions = fs::metadata(&helper).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&helper, permissions).unwrap();
-
-        assert_failure_reason(
-            transcribe(&helper).unwrap_err(),
-            "coreml_helper_launch_failed",
-        );
-    }
-
-    #[test]
-    fn malformed_helper_json_fails() {
-        let helper = helper("printf '%s\\n' not-json");
-
-        assert_failure_reason(transcribe(&helper).unwrap_err(), "coreml_invalid_json");
-    }
-
-    #[test]
-    fn contract_violating_helper_json_fails() {
-        let helper = helper(
-            "printf '%s\\n' '{\"transcript\":\"hello\",\"audio_sec\":1.0,\"transcribe_ms\":2,\"rtfx\":3.0,\"token_timings\":[]}'",
-        );
-
-        assert_failure_reason(
-            transcribe(&helper).unwrap_err(),
-            "coreml_contract_violation",
-        );
-    }
-
-    #[test]
-    fn successful_helper_collapses_subwords_and_punctuation() {
-        let helper = helper(&format!("printf '%s\\n' '{SUCCESS}'"));
-
-        let response = transcribe(&helper).unwrap();
-
-        assert_eq!(response.text, "hello world!");
-        assert_eq!(response.words.len(), 2);
-        assert_eq!(response.words[0].word, " hello");
-        assert_eq!(response.words[0].probability, 0.6);
-        assert_eq!(response.words[1].word, " world!");
-        assert_eq!(response.words[1].probability, 0.7);
-    }
-
-    #[test]
-    fn large_helper_stdout_is_drained_before_exit() {
-        let helper = helper(
-            "printf '%s' '{\"transcript\":\"\",\"audio_sec\":1.0,\"transcribe_ms\":2,\"rtfx\":3.0,\"token_timings\":[],\"padding\":\"'\nhead -c 70000 /dev/zero | tr '\\0' x\nprintf '%s\\n' '\"}'",
-        );
-
-        let response = transcribe_with_timeout(&helper, Duration::from_secs(1)).unwrap();
-
-        assert!(response.words.is_empty());
-        assert!(response.text.is_empty());
     }
 
     #[test]
@@ -705,83 +779,232 @@ mod tests {
     }
 
     #[test]
-    fn version_probe_succeeds_only_with_a_valid_version_envelope() {
-        let helper = helper(&format!(
-            "if [ \"$1\" = \"--version\" ]; then printf '%s\\n' '{VERSION}'; else printf '%s\\n' '{SUCCESS}'; fi"
-        ));
-
-        let info = get_model_info_with_helper(&helper, "v2").unwrap();
-
-        assert_eq!(info.model, "parakeet-tdt-0.6b-v2");
-        assert_eq!(info.device, "ane");
-        assert_eq!(info.compute_type, "coreml_fp16");
+    fn read_child_stream_drains_more_than_seventy_thousand_bytes_without_a_cap() {
+        let bytes = vec![b'x'; 70_001];
+        let output = read_child_stream(Cursor::new(bytes.clone())).unwrap();
+        assert_eq!(output.len(), 70_001);
+        assert_eq!(output.as_bytes(), bytes);
     }
 
     #[test]
-    fn version_probe_failure_is_hard_not_deferred() {
-        let helper = helper("exit 5");
+    fn coreml_response_parse_table() {
+        assert!(matches!(
+            parse_coreml_response("not-json"),
+            Err(CoremlResponseError::InvalidJson(_))
+        ));
+        assert!(matches!(
+            parse_coreml_response(
+                r#"{"transcript":"hello","audio_sec":1.0,"transcribe_ms":2,"rtfx":3.0,"token_timings":[]}"#,
+            ),
+            Err(CoremlResponseError::Contract(_))
+        ));
 
+        let response = parse_coreml_response(SUCCESS).unwrap();
+        assert_eq!(response.text, "hello world!");
+        assert_eq!(response.words.len(), 2);
+        assert_eq!(response.words[0].word, " hello");
+        assert_eq!(response.words[0].probability, 0.6);
+        assert_eq!(response.words[1].word, " world!");
+        assert_eq!(response.words[1].probability, 0.7);
+
+        let padded = parse_coreml_response(
+            r#"{"transcript":"","audio_sec":1.0,"transcribe_ms":2,"rtfx":3.0,"token_timings":[],"padding":"xxx"}"#,
+        )
+        .unwrap();
+        assert!(padded.words.is_empty());
+        assert!(padded.text.is_empty());
+    }
+
+    #[test]
+    fn version_probe_parse_table() {
+        parse_version_response(VERSION).unwrap();
+        assert!(parse_version_response("not-json").is_err());
+        assert!(parse_version_response("{}").is_err());
         assert_failure_reason(
-            get_model_info_with_helper(&helper, "v3").unwrap_err(),
+            super::failure(
+                "coreml_version_probe_failed",
+                HelperRunError::TimedOut.to_string(),
+            ),
             "coreml_version_probe_failed",
         );
     }
 
     #[test]
-    fn helper_receives_direct_coreml_argv() {
-        let temporary = tempfile::tempdir().unwrap();
-        let arguments = temporary.path().join("arguments");
-        let helper = write_helper(
-            temporary.path(),
-            &format!(
-                "printf '%s\\n' \"$@\" > {}\nprintf '%s\\n' '{SUCCESS}'",
-                shell_quote(&arguments)
-            ),
+    fn helper_run_errors_map_to_transcribe_reasons() {
+        let timeout = Duration::from_millis(25);
+        assert_deferred_reason(
+            map_helper_run_error(HelperRunError::TimedOut, timeout),
+            "coreml_helper_timeout",
         );
-        let cache_dir = temporary.path().join("cache");
+        for error in [
+            HelperRunError::Spawn("boom".into()),
+            HelperRunError::Wait("wait".into()),
+            HelperRunError::Read("read".into()),
+        ] {
+            assert_failure_reason(
+                map_helper_run_error(error, timeout),
+                "coreml_helper_launch_failed",
+            );
+        }
+        assert_failure_reason(
+            map_helper_exit(HelperOutput {
+                status: ExitStatus::from_raw(5 << 8),
+                stdout: String::new(),
+                stderr: "helper-error".into(),
+            })
+            .unwrap_err(),
+            "coreml_helper_exit_failed",
+        );
+    }
 
-        transcribe_with_helper(&[0.0], &helper, &cache_dir, "v2", Duration::from_secs(1)).unwrap();
-
-        let arguments = fs::read_to_string(arguments).unwrap();
-        let arguments: Vec<_> = arguments.lines().collect();
+    #[test]
+    fn transcribe_helper_argv_is_cache_model_wav() {
+        let arguments = transcribe_helper_arguments(
+            Path::new("/var/tmp/cache"),
+            "v2",
+            Path::new("/var/tmp/clip.wav"),
+        );
         assert_eq!(
-            arguments[..4],
-            ["--cache-dir", cache_dir.to_str().unwrap(), "--model", "v2"]
+            arguments,
+            [
+                "--cache-dir",
+                "/var/tmp/cache",
+                "--model",
+                "v2",
+                "/var/tmp/clip.wav"
+            ]
         );
-        assert!(arguments[4].ends_with(".wav"));
     }
 
-    fn transcribe(helper: &Path) -> Result<super::TranscriptionResponse, TranscribeError> {
-        transcribe_with_timeout(helper, Duration::from_secs(1))
+    #[test]
+    fn kill_helper_group_treats_missing_group_as_success() {
+        kill_helper_group(i32::MAX - 1).unwrap();
     }
 
-    fn transcribe_with_timeout(
-        helper: &Path,
-        timeout: Duration,
-    ) -> Result<super::TranscriptionResponse, TranscribeError> {
-        transcribe_with_helper(&[0.0], helper, Path::new("/tmp/cache"), "v3", timeout)
+    #[test]
+    fn conclude_helper_surfaces_kill_group_failure_without_later_steps() {
+        let mut session = RecordingSupervisor {
+            steps: Vec::new(),
+            kill_error: Some(io::ErrorKind::PermissionDenied),
+        };
+        let error = conclude_helper(&mut session).unwrap_err();
+        assert!(matches!(error, HelperRunError::Wait(_)));
+        assert_eq!(session.steps, ["observe-without-reap", "kill-group"]);
     }
 
-    fn helper(body: &str) -> PathBuf {
-        let temporary = tempfile::tempdir().unwrap();
-        let path = temporary.keep();
-        write_helper(&path, body)
+    #[test]
+    fn helper_cleanup_records_observe_kill_close_reap_join_in_order() {
+        let mut session = RecordingSupervisor {
+            steps: Vec::new(),
+            kill_error: None,
+        };
+        conclude_helper(&mut session).unwrap();
+        assert_eq!(
+            session.steps,
+            [
+                "observe-without-reap",
+                "kill-group",
+                "close-owned-pipes",
+                "reap-root",
+                "join-readers",
+            ]
+        );
     }
 
-    fn write_helper(directory: &Path, body: &str) -> PathBuf {
-        let helper = directory.join("parakeet-helper");
-        fs::write(&helper, format!("#!/bin/sh\n{body}\n")).unwrap();
-        let mut permissions = fs::metadata(&helper).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&helper, permissions).unwrap();
-        helper
-    }
+    #[test]
+    fn busy_spawn_retries_then_succeeds_or_exhausts() {
+        for retries_before_success in [1_usize, 2, 3] {
+            let mut attempts = 0;
+            let mut sleeps = Vec::new();
+            retry_busy_spawn(
+                || {
+                    attempts += 1;
+                    if attempts <= retries_before_success {
+                        Err::<(), _>(io::Error::from(io::ErrorKind::ExecutableFileBusy))
+                    } else {
+                        Ok(())
+                    }
+                },
+                |delay| sleeps.push(delay),
+            )
+            .unwrap();
+            assert_eq!(attempts, retries_before_success + 1);
+            assert_eq!(sleeps.len(), retries_before_success);
+            assert!(
+                sleeps
+                    .iter()
+                    .all(|delay| *delay == HELPER_SPAWN_RETRY_DELAY)
+            );
+        }
 
-    fn shell_quote(path: &Path) -> String {
-        format!(
-            "'{}'",
-            path.display().to_string().replace('\'', "'\\\"'\\\"'")
+        let mut attempts = 0;
+        let mut sleeps = Vec::new();
+        let error = retry_busy_spawn(
+            || {
+                attempts += 1;
+                Err::<(), _>(io::Error::from(io::ErrorKind::ExecutableFileBusy))
+            },
+            |delay| sleeps.push(delay),
         )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::ExecutableFileBusy);
+        assert_eq!(attempts, 4);
+        assert_eq!(sleeps, [HELPER_SPAWN_RETRY_DELAY; 3]);
+    }
+
+    #[test]
+    fn busy_spawn_does_not_retry_a_non_busy_error() {
+        let mut attempts = 0;
+        let mut sleeps = Vec::new();
+        let error = retry_busy_spawn(
+            || {
+                attempts += 1;
+                if attempts == 1 {
+                    Err::<(), _>(io::Error::from(io::ErrorKind::ExecutableFileBusy))
+                } else {
+                    Err(io::Error::from(io::ErrorKind::PermissionDenied))
+                }
+            },
+            |delay| sleeps.push(delay),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(attempts, 2);
+        assert_eq!(sleeps, [HELPER_SPAWN_RETRY_DELAY]);
+    }
+
+    struct RecordingSupervisor {
+        steps: Vec<&'static str>,
+        kill_error: Option<io::ErrorKind>,
+    }
+
+    impl HelperSupervisor for RecordingSupervisor {
+        fn observe_without_reap(&mut self) -> io::Result<Option<ExitStatus>> {
+            self.steps.push("observe-without-reap");
+            Ok(None)
+        }
+
+        fn kill_group(&mut self) -> io::Result<()> {
+            self.steps.push("kill-group");
+            match self.kill_error {
+                Some(kind) => Err(io::Error::from(kind)),
+                None => Ok(()),
+            }
+        }
+
+        fn close_owned_pipes(&mut self) {
+            self.steps.push("close-owned-pipes");
+        }
+
+        fn reap_root(&mut self) -> io::Result<Option<ExitStatus>> {
+            self.steps.push("reap-root");
+            Ok(None)
+        }
+
+        fn join_readers(&mut self) -> Result<(String, String), HelperRunError> {
+            self.steps.push("join-readers");
+            Ok((String::new(), String::new()))
+        }
     }
 
     struct InterruptedReader {

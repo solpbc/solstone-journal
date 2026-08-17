@@ -6,6 +6,7 @@
 use std::fs;
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Child;
 use std::sync::mpsc;
@@ -16,9 +17,10 @@ use std::time::{Duration, Instant};
 use socket2::{Domain, Protocol, Socket, Type};
 use solstone_core_spp_ratls::AttestedIo;
 use solstone_core_transcribe::test_hooks::{
-    ConfidentialMultipart, ParakeetConnect, ParakeetHealth, ParakeetTranscribe, SpeakerInvoke,
-    confidential_multipart_exchange, invoke_speakers_child, parakeet_connect,
-    parakeet_probe_health, parakeet_transcribe, recorded_convey_is_up,
+    ConfidentialMultipart, CoremlModelInfo, CoremlTranscribe, ParakeetConnect, ParakeetHealth,
+    ParakeetTranscribe, SpeakerInvoke, confidential_multipart_exchange, coreml_get_model_info,
+    coreml_transcribe_with_helper, invoke_speakers_child, parakeet_connect, parakeet_probe_health,
+    parakeet_transcribe, recorded_convey_is_up,
 };
 
 const VALID: &str =
@@ -757,4 +759,289 @@ while :; do :; done
     assert_eq!(reason, "timeout");
     assert_eq!(native_exit_code, Some(-9));
     assert_eq!(fs::read_to_string(&siglog).unwrap(), "TERM\n");
+}
+
+const COREML_SUCCESS: &str = r#"{"transcript":"hello world!","audio_sec":1.0,"transcribe_ms":2,"rtfx":3.0,"token_timings":[{"token":"▁hel","token_id":1,"start":0.0,"end":0.1,"confidence":0.9},{"token":"lo","token_id":2,"start":0.1,"end":0.2,"confidence":0.6},{"token":"▁world","token_id":3,"start":0.2,"end":0.4,"confidence":0.8},{"token":"!","token_id":4,"start":0.4,"end":0.5,"confidence":0.7}]}"#;
+const COREML_VERSION: &str = r#"{"fluidaudio_version":"0.14.0","model_version_default":"v3","swift_version":"Swift","hardware":"M4","macos_version":"26"}"#;
+const LARGE_HELPER_BODY: &str = "printf '%s' '{\"transcript\":\"\",\"audio_sec\":1.0,\"transcribe_ms\":2,\"rtfx\":3.0,\"token_timings\":[],\"padding\":\"'\nhead -c 70000 /dev/zero | tr '\\0' x\nprintf '%s\\n' '\"}'";
+
+fn write_coreml_helper(directory: &Path, body: &str) -> std::path::PathBuf {
+    let helper = directory.join("parakeet-helper");
+    fs::write(&helper, format!("#!/bin/sh\n{body}\n")).unwrap();
+    let mut permissions = fs::metadata(&helper).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&helper, permissions).unwrap();
+    helper
+}
+
+fn quote_path(path: &Path) -> String {
+    format!(
+        "'{}'",
+        path.display().to_string().replace('\'', "'\\\"'\\\"'")
+    )
+}
+
+fn with_deadline<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let _ = sender.send(work());
+    });
+    receiver
+        .recv_timeout(IO_TIMEOUT)
+        .expect("coreml helper finishes before the outer deadline")
+}
+
+fn transcribe_script(body: &str, timeout: Duration) -> CoremlTranscribe {
+    let temporary = tempfile::tempdir().unwrap();
+    transcribe_helper(
+        &write_coreml_helper(temporary.path(), body),
+        temporary.path(),
+        "v3",
+        timeout,
+    )
+}
+
+fn transcribe_helper(
+    helper: &Path,
+    cache_dir: &Path,
+    model_version: &str,
+    timeout: Duration,
+) -> CoremlTranscribe {
+    let helper = helper.to_path_buf();
+    let cache_dir = cache_dir.to_path_buf();
+    let model_version = model_version.to_owned();
+    with_deadline(move || {
+        coreml_transcribe_with_helper(&[0.0], &helper, &cache_dir, &model_version, timeout)
+    })
+}
+
+fn version_script(body: &str, model_version: &str) -> CoremlModelInfo {
+    let temporary = tempfile::tempdir().unwrap();
+    let helper = write_coreml_helper(temporary.path(), body).to_path_buf();
+    let model_version = model_version.to_owned();
+    with_deadline(move || coreml_get_model_info(&helper, &model_version, Duration::from_secs(1)))
+}
+
+fn wait_until_dead(pid: u32) {
+    let deadline = Instant::now() + IO_TIMEOUT;
+    while process_is_live(pid) {
+        assert!(Instant::now() < deadline, "grandchild {pid} should die");
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn process_is_live(pid: u32) -> bool {
+    let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return false;
+    };
+    let Some((_, fields)) = stat.rsplit_once(") ") else {
+        return false;
+    };
+    fields.bytes().next() != Some(b'Z')
+}
+
+fn grandchild_pid(path: &Path) -> u32 {
+    fs::read_to_string(path)
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("helper wrote a grandchild pid")
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_timed_out_helper_defers() {
+    let CoremlTranscribe::Deferred { reason } =
+        transcribe_script("sleep 1", Duration::from_millis(25))
+    else {
+        panic!("expected deferred timeout");
+    };
+    assert_eq!(reason, "coreml_helper_timeout");
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_nonzero_helper_fails() {
+    let CoremlTranscribe::Failed { reason } =
+        transcribe_script("echo helper-error >&2\nexit 5", Duration::from_secs(1))
+    else {
+        panic!("expected hard helper failure");
+    };
+    assert_eq!(reason, "coreml_helper_exit_failed");
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_helper_launch_failure_fails_with_its_own_reason() {
+    let temporary = tempfile::tempdir().unwrap();
+    let helper = temporary.path().join("parakeet-helper");
+    fs::write(&helper, "#!/definitely/missing/sh\n").unwrap();
+    let mut permissions = fs::metadata(&helper).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&helper, permissions).unwrap();
+    let CoremlTranscribe::Failed { reason } =
+        transcribe_helper(&helper, temporary.path(), "v3", Duration::from_secs(1))
+    else {
+        panic!("expected launch failure");
+    };
+    assert_eq!(reason, "coreml_helper_launch_failed");
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_malformed_helper_json_fails() {
+    let CoremlTranscribe::Failed { reason } =
+        transcribe_script("printf '%s\\n' not-json", Duration::from_secs(1))
+    else {
+        panic!("expected invalid JSON");
+    };
+    assert_eq!(reason, "coreml_invalid_json");
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_contract_violating_helper_json_fails() {
+    let CoremlTranscribe::Failed { reason } = transcribe_script(
+        "printf '%s\\n' '{\"transcript\":\"hello\",\"audio_sec\":1.0,\"transcribe_ms\":2,\"rtfx\":3.0,\"token_timings\":[]}'",
+        Duration::from_secs(1),
+    ) else {
+        panic!("expected contract violation");
+    };
+    assert_eq!(reason, "coreml_contract_violation");
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_successful_helper_collapses_subwords_and_punctuation() {
+    let CoremlTranscribe::Ok { words, text } = transcribe_script(
+        &format!("printf '%s\\n' '{COREML_SUCCESS}'"),
+        Duration::from_secs(1),
+    ) else {
+        panic!("expected successful transcription");
+    };
+    assert_eq!(text, "hello world!");
+    assert_eq!(words.len(), 2);
+    assert_eq!(words[0].word, " hello");
+    assert_eq!(words[0].probability, 0.6);
+    assert_eq!(words[1].word, " world!");
+    assert_eq!(words[1].probability, 0.7);
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_large_helper_stdout_is_drained_before_exit() {
+    let CoremlTranscribe::Ok { words, text } =
+        transcribe_script(LARGE_HELPER_BODY, Duration::from_secs(1))
+    else {
+        panic!("expected drained large payload");
+    };
+    assert!(words.is_empty());
+    assert!(text.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_version_probe_succeeds_only_with_a_valid_version_envelope() {
+    let CoremlModelInfo::Ok {
+        model,
+        device,
+        compute_type,
+    } = version_script(
+        &format!(
+            "if [ \"$1\" = \"--version\" ]; then printf '%s\\n' '{COREML_VERSION}'; else printf '%s\\n' '{COREML_SUCCESS}'; fi"
+        ),
+        "v2",
+    )
+    else {
+        panic!("expected version envelope");
+    };
+    assert_eq!(model, "parakeet-tdt-0.6b-v2");
+    assert_eq!(device, "ane");
+    assert_eq!(compute_type, "coreml_fp16");
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_version_probe_failure_is_hard_not_deferred() {
+    let CoremlModelInfo::Failed { reason } = version_script("exit 5", "v3") else {
+        panic!("expected hard version-probe failure");
+    };
+    assert_eq!(reason, "coreml_version_probe_failed");
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_helper_receives_direct_coreml_argv() {
+    let temporary = tempfile::tempdir().unwrap();
+    let arguments = temporary.path().join("arguments");
+    let helper = write_coreml_helper(
+        temporary.path(),
+        &format!(
+            "printf '%s\\n' \"$@\" > {}\nprintf '%s\\n' '{COREML_SUCCESS}'",
+            quote_path(&arguments)
+        ),
+    );
+    let cache_dir = temporary.path().join("cache");
+    assert!(matches!(
+        transcribe_helper(&helper, &cache_dir, "v2", Duration::from_secs(1)),
+        CoremlTranscribe::Ok { .. }
+    ));
+    let recorded = fs::read_to_string(arguments).unwrap();
+    let recorded: Vec<_> = recorded.lines().collect();
+    assert_eq!(
+        recorded[..4],
+        ["--cache-dir", cache_dir.to_str().unwrap(), "--model", "v2"]
+    );
+    assert!(recorded[4].ends_with(".wav"));
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_root_exit_kills_descendant_that_holds_pipes() {
+    let temporary = tempfile::tempdir().unwrap();
+    let pid_file = temporary.path().join("grandchild");
+    let helper = write_coreml_helper(
+        temporary.path(),
+        &format!(
+            "sleep 30 &\nprintf '%s\\n' $! > {}\nprintf '%s\\n' '{COREML_SUCCESS}'",
+            quote_path(&pid_file)
+        ),
+    );
+    assert!(matches!(
+        transcribe_helper(&helper, temporary.path(), "v3", Duration::from_secs(1)),
+        CoremlTranscribe::Ok { .. }
+    ));
+    wait_until_dead(grandchild_pid(&pid_file));
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_timeout_kills_helper_process_group() {
+    let temporary = tempfile::tempdir().unwrap();
+    let pid_file = temporary.path().join("grandchild");
+    let helper = write_coreml_helper(
+        temporary.path(),
+        &format!(
+            "sleep 30 &\nprintf '%s\\n' $! > {}\nsleep 30",
+            quote_path(&pid_file)
+        ),
+    );
+    let CoremlTranscribe::Deferred { reason } =
+        transcribe_helper(&helper, temporary.path(), "v3", Duration::from_millis(200))
+    else {
+        panic!("expected group-wide timeout");
+    };
+    assert_eq!(reason, "coreml_helper_timeout");
+    wait_until_dead(grandchild_pid(&pid_file));
+}
+
+#[cfg(unix)]
+#[test]
+fn coreml_large_valid_output_joins_before_deadline() {
+    let started = Instant::now();
+    assert!(matches!(
+        transcribe_script(LARGE_HELPER_BODY, Duration::from_secs(1)),
+        CoremlTranscribe::Ok { .. }
+    ));
+    assert!(started.elapsed() < IO_TIMEOUT);
 }

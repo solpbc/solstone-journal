@@ -11,6 +11,7 @@ use solstone_core_spp_ratls::AttestedIo;
 
 use crate::TranscribeError;
 use crate::backend::confidential::{hosted_transcribe_transport_error, send_multipart_request};
+use crate::backend::parakeet_coreml::{get_model_info_with_helper, transcribe_with_helper};
 use crate::backend::parakeet_cpp::{
     HealthState, ParakeetServer, connect, probe_health, transcribe_transport_with_timeout,
 };
@@ -176,5 +177,90 @@ pub fn invoke_speakers_child(
             reason: error.reason,
             native_exit_code: error.native_exit_code,
         },
+    }
+}
+
+#[doc(hidden)]
+pub struct CoremlWord {
+    pub word: String,
+    pub start: f64,
+    pub end: f64,
+    pub probability: f64,
+}
+
+#[doc(hidden)]
+pub enum CoremlTranscribe {
+    Ok {
+        words: Vec<CoremlWord>,
+        text: String,
+    },
+    Deferred {
+        reason: String,
+    },
+    Failed {
+        reason: String,
+    },
+}
+
+#[doc(hidden)]
+pub fn coreml_transcribe_with_helper(
+    audio: &[f32],
+    helper: &Path,
+    cache_dir: &Path,
+    model_version: &str,
+    timeout: Duration,
+) -> CoremlTranscribe {
+    match transcribe_with_helper(audio, helper, cache_dir, model_version, timeout) {
+        Ok(response) => CoremlTranscribe::Ok {
+            words: response
+                .words
+                .into_iter()
+                .map(|word| CoremlWord {
+                    word: word.word,
+                    start: word.start,
+                    end: word.end,
+                    probability: word.probability,
+                })
+                .collect(),
+            text: response.text,
+        },
+        Err(TranscribeError::ParakeetCoremlDeferred { reason, .. }) => {
+            CoremlTranscribe::Deferred { reason }
+        }
+        Err(TranscribeError::ParakeetCoremlFailure { reason, .. }) => {
+            CoremlTranscribe::Failed { reason }
+        }
+        Err(error) => panic!("unexpected CoreML transcribe outcome: {error}"),
+    }
+}
+
+#[doc(hidden)]
+pub enum CoremlModelInfo {
+    Ok {
+        model: String,
+        device: String,
+        compute_type: String,
+    },
+    Failed {
+        reason: String,
+    },
+}
+
+#[doc(hidden)]
+pub fn coreml_get_model_info(
+    helper: &Path,
+    model_version: &str,
+    timeout: Duration,
+) -> CoremlModelInfo {
+    match get_model_info_with_helper(helper, model_version, timeout) {
+        Ok(info) => CoremlModelInfo::Ok {
+            model: info.model,
+            device: info.device,
+            compute_type: info.compute_type,
+        },
+        Err(TranscribeError::ParakeetCoremlFailure { reason, .. }) => {
+            CoremlModelInfo::Failed { reason }
+        }
+        Err(error) => panic!("unexpected CoreML version-probe outcome: {error}"),
     }
 }
