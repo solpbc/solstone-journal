@@ -234,8 +234,11 @@ async fn seam_contention_and_reentrancy<G, E>(
         .recv_timeout(WAIT)
         .expect("seam contender started before acquisition");
     assert!(
-        acquired_rx.try_recv().is_err(),
-        "contender must not acquire while the holder is still live"
+        matches!(
+            acquired_rx.recv_timeout(WAIT),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ),
+        "contender must remain blocked while the holder is still live"
     );
     release_tx.send(()).unwrap();
     acquired_rx

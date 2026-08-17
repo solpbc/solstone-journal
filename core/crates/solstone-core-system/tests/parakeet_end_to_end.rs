@@ -21,8 +21,8 @@ use std::time::Duration;
 use solstone_core_system::provider_runtime::{
     FileRuntimeStore, NoopWorkers, ParakeetLaunchConfig, ParakeetLifecycleSeam, ParakeetPlacement,
     ParakeetProbeSeam, ParakeetRuntimeShared, ProviderName, ProviderRuntimeCoordinator,
-    ProviderRuntimeNow, ProviderRuntimeState, ReconcileContext, RuntimeClock, RuntimePhase,
-    VecEventSink,
+    ProviderRuntimeNow, ProviderRuntimeState, ProviderStopCleanupRequest, ReasonCode,
+    ReconcileContext, RuntimeClock, RuntimePhase, VecEventSink,
 };
 
 const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
@@ -176,6 +176,39 @@ fn parakeet_launches_through_the_real_lifecycle_seam_and_reaches_ready() {
         Some(u64::from(published_port))
     );
     assert_eq!(health["process"]["name"], "parakeet-server");
+
+    state.pending_stop_request = Some(ProviderStopCleanupRequest {
+        managed: processes[0].clone(),
+        reason_code: ReasonCode::known("intent-removed"),
+        target_phase: RuntimePhase::Stopped,
+        target_reason_code: Some(ReasonCode::known("cleanup-succeeded")),
+        admission_exclusive: false,
+        orphaned_start_outcome: false,
+    });
+    for _ in 0..4 {
+        let mut context = ReconcileContext {
+            truth: &mut truth,
+            lifecycle: &mut lifecycle,
+            probe: &mut probe,
+            store: &mut store,
+            sink: &mut sink,
+            gate: None,
+        };
+        pump(
+            &coordinator,
+            now,
+            &mut state,
+            &mut processes,
+            &shared,
+            &mut context,
+        );
+        if state.latest_phase == RuntimePhase::Stopped {
+            break;
+        }
+    }
+    assert_eq!(state.latest_phase, RuntimePhase::Stopped);
+    assert!(processes.is_empty());
+    assert!(!port_path.exists());
 
     let _ = std::fs::remove_dir_all(journal);
 }
