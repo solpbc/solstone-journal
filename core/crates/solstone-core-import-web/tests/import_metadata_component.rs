@@ -2,8 +2,12 @@
 // Copyright (c) 2026 sol pbc
 
 use std::ffi::OsString;
+use std::fs;
 use std::time::Duration;
 
+use nix::errno::Errno;
+use nix::sys::signal::kill;
+use nix::unistd::Pid;
 use solstone_core_import_web::{MetadataCommandOutcome, MetadataCommandPlan, run_metadata_command};
 
 const STUB: &str = env!("CARGO_BIN_EXE_solstone-import-web-metadata-stub");
@@ -49,5 +53,13 @@ fn stall_times_out_after_marker_and_is_reaped() {
     let marker = dir.path().join("started");
     let outcome = run_metadata_command(&plan(["stall".into(), marker.as_os_str().to_os_string()]));
     assert_eq!(outcome, MetadataCommandOutcome::TimedOut);
-    assert!(marker.exists());
+    let pid = fs::read_to_string(&marker)
+        .expect("the child writes its PID before stalling")
+        .parse::<i32>()
+        .expect("the marker contains a process ID");
+    assert_eq!(
+        kill(Pid::from_raw(pid), None),
+        Err(Errno::ESRCH),
+        "the timed-out child must be killed and reaped before the runner returns"
+    );
 }

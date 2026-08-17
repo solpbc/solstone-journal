@@ -34,6 +34,7 @@ tempfile = "3.24.0"
 tokio = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
+nix = { workspace = true, features = ["process", "signal"] }
 solstone-core-convey-shell.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower.workspace = true

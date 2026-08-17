@@ -29,7 +29,7 @@ fn main() -> ExitCode {
                 Ok(file) => file,
                 Err(_) => return ExitCode::from(2),
             };
-            if file.write_all(b"started").is_err() || file.flush().is_err() {
+            if write!(file, "{}", std::process::id()).is_err() || file.flush().is_err() {
                 return ExitCode::from(2);
             }
             let _ = file.sync_all();
