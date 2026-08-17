@@ -3,10 +3,10 @@
 
 // Bounded `genai-prices` compatibility snapshot.
 //
-// Snapshot of genai-prices 0.0.55. Refreshed intentionally by re-running
-// `.venv/bin/python tools/derive_pricing.py` from this crate; never executed
-// at build or runtime. This bounded snapshot is deliberate: talent-cli
-// logs.rs declines to ship genai-prices' generated ~494KB generic table.
+// Snapshot of genai-prices 0.0.55. Frozen in tree; the generator that
+// emitted it was never run at build or runtime and has been removed.
+// This bounded snapshot is deliberate: talent-cli logs.rs declines to
+// ship genai-prices' generated ~494KB generic table.
 
 pub(super) static RATES: &[(&str, Rate)] = &[
     ("gpt-5.2", Rate::new(1.75, 0.175, 14.0)),

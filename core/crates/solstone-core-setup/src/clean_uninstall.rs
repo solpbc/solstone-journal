@@ -157,7 +157,7 @@ pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -
         "  - /Applications/solstone.app".into(),
         "  - ~/Library/Application Support/solstone/".into(),
         "  - macOS microphone or screen recording permissions".into(),
-        "  - the python package".into(),
+        "  - a leftover pip, uv or pipx journal install".into(),
         String::new(),
     ]);
     lines
@@ -546,6 +546,6 @@ mod tests {
             "  - journal directory: {}",
             context.journal_path.display()
         )));
-        assert!(lines.contains("  - the python package"));
+        assert!(lines.contains("  - a leftover pip, uv or pipx journal install"));
     }
 }

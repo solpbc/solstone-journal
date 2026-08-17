@@ -15,7 +15,7 @@ Required everywhere:
 - ffmpeg for audio processing
 - minisign 0.12 exactly; `scripts/transparency_signing.py` enforces this version
 
-Linux is the primary development platform. macOS is supported. Source-checkout installs on Apple Silicon need Xcode command line tools to build the CoreML parakeet helper; packaged host installs (`uv tool install solstone-journal && uv tool install solstone`) on macOS 14 or newer ship the helper as a pre-built binary. The `parakeet-helper` and `wheel-macos` targets in the Makefile define these two paths, and `scripts/check_wheel_contents.py` rejects a macOS wheel that lacks the executable arm64 helper.
+Linux is the primary development platform. macOS is supported. Source-checkout installs on Apple Silicon need Xcode command line tools to build the CoreML parakeet helper. Owner-facing installs are the relocatable tree in [INSTALL.md](INSTALL.md), not a pip/uv/pipx package.
 
 Linux source builds additionally require Clang development headers. Linux/x86_64
 also requires NASM; omit `nasm` from the commands below on Linux/aarch64.
@@ -185,22 +185,18 @@ make skills
 
 That target first runs `scripts/build_skill_references.py` to regenerate the checked-in references, then refreshes the `sol` + `journal` router skill symlinks inside the journal. `make install` also runs this target. Run `make check-skill-references` directly, or use `make install-checks`, to catch stale generated references.
 
-## Migrating from a source install to a packaged install
+## Migrating from a source install to a tree install
 
-A packaged host install puts `sol`, `solstone`, and `journal` on PATH directly. `pip install solstone-journal` exposes those commands in one environment; uv tool and pipx expose each tool's own commands, so install both the journal tool and the thin `solstone` tool. The package split is pinned by `packages/solstone-journal/pyproject.toml` and `scripts/cleanroom-install.sh`. It does not use the source-checkout managed wrapper, and it does not use `.venv/bin/sol`.
+A tree install puts `sol`, `solstone`, and `journal` on PATH directly. See [INSTALL.md](INSTALL.md). It does not use the source-checkout managed wrapper, and it does not use `.venv/bin/sol`.
 
-`make uninstall` is disabled by design. To migrate cleanly from a source checkout to a packaged install, remove user-runtime artifacts explicitly:
+`make uninstall` is disabled by design. To migrate cleanly from a source checkout to a tree install, remove user-runtime artifacts explicitly:
 
 ```bash
 journal service uninstall
 sol skills uninstall
-python -m solstone.think.install_guard uninstall
-uv tool install solstone-journal && uv tool install solstone
-journal setup
 ```
 
-For pip or pipx packaged installs, use `pip install solstone-journal` or
-`pipx install solstone-journal && pipx install solstone` before `journal setup`.
+Then install the tree from [INSTALL.md](INSTALL.md) and run `journal setup`.
 
 Your journal is preserved at `~/journal`; solstone does not remove it during install or uninstall. Do not add backwards-compatibility shims for the old source-checkout layout. This migration is a clean break.
 

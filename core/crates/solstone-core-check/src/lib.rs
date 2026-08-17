@@ -632,7 +632,23 @@ pub fn human_output(report: &CheckReport) -> String {
         };
         lines.push(format!("  {marker:<9} {:<9} {}", item.name, item.detail));
     }
-    match report.overall { Severity::Ok => lines.push(format!("Ready — install the journal next:  uv tool install {}", report.recommended_package.expect("supported ready report has package"))), Severity::Warning => lines.push(format!("Mostly ready (see the warnings above) — you can install the journal:  uv tool install {}", report.recommended_package.expect("supported warning report has package"))), Severity::Blocked => lines.push("Not ready — this computer can't run the bundled local models yet.".into()), Severity::Unknown => unreachable!() };
+    match report.overall {
+        Severity::Ok => {
+            let _ = report.recommended_package;
+            lines.push("Ready — install the journal next:  see INSTALL.md".to_owned());
+        }
+        Severity::Warning => {
+            let _ = report.recommended_package;
+            lines.push(
+                "Mostly ready (see the warnings above) — you can install the journal:  see INSTALL.md"
+                    .to_owned(),
+            );
+        }
+        Severity::Blocked => {
+            lines.push("Not ready — this computer can't run the bundled local models yet.".into())
+        }
+        Severity::Unknown => unreachable!(),
+    };
     lines.push(String::new());
     lines.push(format!(
         "Think this readout is wrong for your machine? We'd love a patch — {FEEDBACK_URL}"

@@ -1,39 +1,39 @@
 <img src="docs/static/sol-wordmark.svg" alt="solstone" width="300">
 
-# solstone — the journal
+# the journal
 
-a memory your agents can work from. sol — the app on your devices — experiences your day with you and keeps it all in your journal. your journal is always private, only yours.
+a memory your agents can work from. sol, the app on your devices, experiences your day with you and keeps it in your journal. the journal lives on a computer you choose.
 
-this repo is the journal: the memory that holds everything, plus the thin `sol` access client. it's the python core of the solstone platform — the [sol apps](https://solstone.app) on your devices pair with a journal running on a computer you choose. AI agents transcribe, extract entities, detect meetings, build knowledge graphs, and surface daily insights — all without any manual input. everything stays in daily journal directories on your machine. open source, local-first, no cloud required.
+this repo is that journal, plus sol. the [sol apps](https://solstone.app) pair with a journal running on a machine you pick. sol transcribes, extracts entities, detects meetings, builds knowledge graphs, and surfaces daily insights, without you filing anything by hand. your journal is a folder of dated directories on that machine. open source, local-first. if you point sol at your own provider key, [DATA-FLOW.md](DATA-FLOW.md) says what leaves.
 
-Python 3.12+, Linux + macOS, AGPL-3.0-only, maintained by [sol pbc](https://solpbc.org).
+linux. mac runs the sol app today; the mac build of the journal is not published yet. AGPL-3.0-only, maintained by [sol pbc](https://solpbc.org).
 
 <img src="docs/static/screenshot-home.png" alt="solstone daily dashboard" width="800">
 
-*Daily dashboard — goal, todos, upcoming events, and detected entities, all generated from observations. Facet tabs organize your life by project or context.*
+*Daily dashboard: goal, todos, upcoming events, and detected entities, all generated from what sol kept. Facet tabs organize your life by project or context.*
 
 ## what you get
 
 **a system of intelligence, not just storage.**
 
-- **automatic transcription** — sol hears what you hear and keeps every conversation in your journal, transcribed with speaker identification and searchable.
-- **people and projects** — extracted from your conversations and remembered across time.
-- **knowledge graphs** — relationships between entities mapped automatically. who works with whom, which projects connect to which people.
-- **meeting detection** — meetings identified, summarized, and linked. meeting prep that surfaces what you discussed last time and personal context you'd forget.
-- **commitments** — todos extracted from natural conversation. no manual entry.
-- **facet organization** — group everything by project or context (work, personal, client-name) with scoped views across all apps.
-- **AI chat** — talk to your journal. ask anything about your digital life and get answers grounded in your actual data.
-- **full-text search** — find anything you've ever seen or heard.
-- **30 AI agents** — configurable workflows for activities, scheduling, research, media analysis, and more. extensible via the agent skill framework.
-- **local-first** — all data in daily journal directories on your filesystem. configurable AI providers (Google Gemini, OpenAI, Anthropic). no cloud dependency.
+- **automatic transcription:** sol keeps conversations in your journal, transcribed with speaker identification and searchable.
+- **people and projects:** extracted from your conversations and remembered across time.
+- **knowledge graphs:** who works with whom, which projects connect to which people.
+- **meeting detection:** meetings identified, summarized, and linked, with prep that surfaces what you discussed last time.
+- **commitments:** todos extracted from natural conversation. no manual entry.
+- **facet organization:** group everything by project or context (work, personal, a client name) with scoped views across all apps.
+- **ask sol:** ask anything about your journal and get answers grounded in it.
+- **full-text search:** find anything in your journal.
+- **workflows:** scheduling, research, media analysis, and more, extensible via skills.
+- **local-first:** a folder of dated directories on your machine. sol thinks locally by default; you can point it at your own provider key if you'd rather.
 
 <img src="docs/static/screenshot-transcripts.png" alt="solstone transcript viewer" width="800">
 
-*Transcript viewer — dual-timeline navigation, speaker-diarized dialogue, audio playback, screen analysis. every conversation browsable by time.*
+*Transcript viewer: dual-timeline navigation, speaker-diarized dialogue, audio playback, screen analysis. every conversation browsable by time.*
 
 <img src="docs/static/screenshot-entities.png" alt="solstone people and projects" width="800">
 
-*People and projects — automatically extracted and remembered across your journal with mention counts and relationship data.*
+*People and projects: extracted and remembered across your journal with mention counts and relationship data.*
 
 ## architecture
 
@@ -59,38 +59,43 @@ Python 3.12+, Linux + macOS, AGPL-3.0-only, maintained by [sol pbc](https://solp
                      +-------------+
 ```
 
-- **observe** — receives audio and screen observations from standalone observers (solstone-linux, solstone-tmux, solstone-macos) via observer ingest. processes FLAC audio, WebM screen media, and timestamped metadata.
-- **think** — transcribes audio with Parakeet, analyzes screen observations, surfaces entities, detects meetings, and indexes everything into SQLite. runs 30 configurable agent/generator templates from `core/payload/solstone/talent/`.
-- **cortex** — orchestrates agent execution. receives events, dispatches agents, writes results back to the journal.
-- **callosum** — async message bus connecting all services. enables event-driven coordination between observe, think, cortex, and convey.
-- **convey** — Flask-based web interface with 17 pluggable apps for navigating journal data.
-- **journal** — `journal/YYYYMMDD/` daily directories. the single source of truth — transcripts, media, entities, agent outputs, and the SQLite index all live here.
+- **observe:** receives audio and screen from sol on your devices (solstone-linux, solstone-tmux, solstone-macos). processes FLAC audio, WebM screen media, and timestamped metadata.
+- **think:** transcribes audio with Parakeet, analyzes screen, surfaces entities, detects meetings, and indexes everything into SQLite. runs talent templates from `core/payload/solstone/talent/`.
+- **cortex:** orchestrates talent runs. receives events, dispatches work, writes results back to the journal.
+- **callosum:** async message bus connecting all services.
+- **convey:** web interface with pluggable apps for navigating journal data.
+- **journal:** a folder of dated directories. transcripts, media, entities, talent outputs, and the SQLite index all live here.
 
 ## quick start
 
-run a journal here — the full host:
+the journal ships as one self-contained tree. it needs no interpreter and no package manager of its own.
+
+⚠ **the tree is not published yet.** its release channel is `updates.solstone.app`. until the first release lands there, start from a local build or a copy someone handed you. [INSTALL.md](INSTALL.md) is the full guide.
+
+once it is published, one command does the whole thing:
 
 ```bash
-uv tool install solstone-journal && uv tool install solstone
+sh install.sh --version <version>
+```
+
+that fetches the archive from `updates.solstone.app`, verifies the digest, and installs. today, with the files already on disk:
+
+```bash
+sh core/distribution/install.sh --archive solstone-journal-<version>-linux-x86_64.tar.gz \
+              --sha256 solstone-journal-<version>-linux-x86_64.sha256 \
+              --release solstone-journal-<version>-linux-x86_64.release
 journal setup
 ```
 
-pip and pipx equivalents, followed by `journal setup`:
+debian and fedora can install the `.deb` or `.rpm` instead. one tree covers running the journal and talking to a journal that already runs elsewhere; there is no separate client download.
 
-```bash
-pip install solstone-journal
-pipx install solstone-journal && pipx install solstone
-```
+not sure a computer is up to running the journal? after the tree is on PATH, `sol check` gives a one-shot readiness verdict (gpu, memory, and disk) before you run setup.
 
-A `pip install solstone-journal` puts `journal` on PATH natively. `uv tool` and `pipx` expose each package's own commands, so install the journal and thin command packages as shown above. The [cleanroom installer checks](scripts/cleanroom-install.sh) pin this command split. For GPU transcription, install `solstone-journal-cuda` instead.
+then open http://localhost:5015 in a browser. the first-run wizard sets up your identity and gets sol thinking, locally by default, or on your own provider key if you'd rather.
 
-want only the thin `sol` client — to talk to a journal running elsewhere? `uv tool install solstone` (no extras), or `uvx solstone` for an ephemeral one-shot.
+if you still have a pip, uv or pipx install of the old journal packages, [INSTALL.md](INSTALL.md#moving-from-a-pip-uv-or-pipx-install) is the migration. there is no CUDA package of the tree.
 
-not sure a computer is up to running the journal? `uvx solstone check` gives a one-shot readiness verdict — GPU, memory, and disk — before you install anything.
-
-then open http://localhost:5015 in a browser; the first-run wizard sets up your identity and gets sol thinking — locally by default, or on your own provider key if you'd rather use a cloud lane.
-
-see [INSTALL.md](INSTALL.md) for prerequisites, observer install, and troubleshooting; see [CONTRIBUTING.md](CONTRIBUTING.md) if you want to develop on solstone from a source checkout.
+see [INSTALL.md](INSTALL.md) for prerequisites, sol on your other devices, and troubleshooting. see [CONTRIBUTING.md](CONTRIBUTING.md) to develop on solstone from a source checkout.
 
 ## CLI
 
@@ -135,7 +140,7 @@ exact final tree before merge or release.
 
 ## feedback
 
-Questions, feedback, or a bug? **Follow and tag [@solstone.app](https://bsky.app/profile/solstone.app) on Bluesky** for discussion and updates, open an issue at [github.com/solpbc/solstone-journal/issues](https://github.com/solpbc/solstone-journal/issues) for bugs, or reach support at [support.solstone.app](https://support.solstone.app). You don't need to know anyone — those are the front doors.
+Questions, feedback, or a bug? **Follow and tag [@solstone.app](https://bsky.app/profile/solstone.app) on Bluesky** for discussion and updates, open an issue at [github.com/solpbc/solstone-journal/issues](https://github.com/solpbc/solstone-journal/issues) for bugs, or reach support at [support.solstone.app](https://support.solstone.app). You don't need to know anyone. Those are the front doors.
 
 ## contributing
 

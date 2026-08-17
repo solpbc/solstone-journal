@@ -23,7 +23,7 @@ git clone https://github.com/solpbc/field_journal ~/Field_Journal
 
 ### 2. Scaffold the journal
 
-If you don't already have a configured `journal/` (identity, providers, convey secret, facets), bootstrap one the normal way first — `make install` (source checkout) or `uv tool install solstone-journal && uv tool install solstone` (packaged) followed by `journal setup`, then whatever initial first-run wizard work brings the journal to a usable state. `setup_field_journal.sh` only populates `chronicle/`; it expects the rest of the journal scaffolding to already exist.
+If you don't already have a configured `journal/` (identity, providers, convey secret, facets), bootstrap one the normal way first — `make install` (source checkout) or the tree install in [INSTALL.md](../INSTALL.md), followed by `journal setup`, then whatever initial first-run wizard work brings the journal to a usable state. `setup_field_journal.sh` only populates `chronicle/`; it expects the rest of the journal scaffolding to already exist.
 
 ### 3. Populate chronicle from field_journal
 

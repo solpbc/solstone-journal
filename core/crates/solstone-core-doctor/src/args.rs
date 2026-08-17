@@ -36,8 +36,8 @@ pub const HELP: &str = concat!(
     "  --port PORT        port to probe (default: 5015)\n",
     "  --readiness        run the setup readiness battery\n",
     "\n",
-    "If 'journal doctor' is unavailable (e.g. before 'make install' completes), run\n",
-    "'python3 scripts/doctor.py' from the repo root for the same diagnostic.\n",
+    "If 'journal doctor' is unavailable, build the native doctor from this checkout:\n",
+    "cargo run --manifest-path core/Cargo.toml -p solstone-core-doctor --bin solstone-core-doctor\n",
 );
 pub fn parse_doctor_args(args: &[OsString]) -> Result<DoctorArgs, DoctorUsageError> {
     let mut parsed = DoctorArgs {

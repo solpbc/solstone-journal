@@ -15,7 +15,7 @@ operational playbook in the sol pbc org repo,
 ```bash
 make build               # build the image
 make smoke               # ~30s — verifies systemd --user works end-to-end
-make install             # ~3-5min — uv tool host install, then journal setup
+make install             # ~3-5min — tree install, then journal setup
 make observer-ingest     # ~3-5min — install + setup + observer ingest round-trip
 make legacy-upgrade      # ~3-5min — install over a seeded legacy non-symlink wrapper
 ```
@@ -24,10 +24,11 @@ make legacy-upgrade      # ~3-5min — install over a seeded legacy non-symlink 
 `--user` accepts, enables, starts, and reports it active. Use it as a
 fast pre-flight before chasing solstone-specific failures.
 
-`install` runs the actual journal install path (`uv tool install solstone-journal`, then `journal setup -y --skip-models --skip-skills`) and
+`install` runs the actual journal install path (the relocatable tree from
+[INSTALL.md](../../INSTALL.md), then `journal setup -y --skip-models --skip-skills`) and
 verifies the resulting `solstone.service` reaches `active` plus `journal
 service status` returns 0. `--skip-models / --skip-skills` are passed by default because
-faster-whisper / Parakeet / Claude-skill installation is orthogonal to
+Parakeet / Claude-skill installation is orthogonal to
 the systemd question; use `make full` to drop those flags.
 
 `observer-ingest` extends `install` with one real observer round-trip. It
@@ -40,19 +41,9 @@ release gate for package-data omissions such as a missing
 `solstone/think/contract/layout.json`: it installs the built wheel, not the
 source checkout, and drives the route that calls the ingest contract.
 
-For a pre-publish local wheel gate, build the solstone artifacts and mount
-that `dist/` directory. The directory must contain the root `solstone`
-wheel, the `solstone-journal` leaf wheel, and the `solstone-journal-models`
-wheel; the runner installs the leaf with the root pinned as a direct-URL
-requirement plus `--find-links /work/dist`, so every first-party artifact
-is resolved from the candidate build, not PyPI.
-
-```bash
-cd ~/projects/solstone            # repo root
-rm -rf dist/ && uv build
-cd tests/systemd-test
-SOLSTONE_WHEEL_DIR=~/projects/solstone/dist make observer-ingest
-```
+For a pre-publish local tree gate, produce the linux-x86_64 artifacts with
+`solstone-distribution` and point the runner at that directory. The wheel
+path this test used to drive is retired; see [INSTALL.md](../../INSTALL.md).
 
 `legacy-upgrade` is `install` with one precondition added: before
 `journal setup` runs, it seeds a **legacy non-symlink regular-file wrapper**
@@ -78,7 +69,7 @@ Internally that runs (as the non-root `solstone` user inside a
 `--privileged` container that booted `/sbin/init` to PID 1):
 
 ```bash
-uv tool install solstone-journal
+# install the linux-x86_64 tree, then:
 journal setup -y --skip-models --skip-skills
 test -f ~/.config/systemd/user/solstone.service
 systemctl --user is-active solstone        # → active
