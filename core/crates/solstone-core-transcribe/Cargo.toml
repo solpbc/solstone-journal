@@ -21,6 +21,7 @@ required-features = ["test-hooks"]
 chrono = { workspace = true }
 getrandom = { workspace = true }
 nix = { workspace = true, features = ["process", "signal"] }
+rustix = { workspace = true, features = ["process"] }
 serde_json = { workspace = true }
 sha2.workspace = true
 solstone-core-observe-audio = { workspace = true }

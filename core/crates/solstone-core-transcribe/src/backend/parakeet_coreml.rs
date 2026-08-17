@@ -12,9 +12,6 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use nix::errno::Errno;
-use nix::sys::signal::{Signal, killpg};
-use nix::unistd::Pid;
 use serde_json::{Map, Value};
 use solstone_core_journal_config::{JournalConfigRead, parakeet_coreml::parakeet_coreml_cache_dir};
 use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes};
@@ -289,36 +286,47 @@ fn spawn_helper(helper: &Path, arguments: &[String]) -> io::Result<Child> {
     )
 }
 
-fn helper_pgid(child: &Child) -> io::Result<i32> {
-    i32::try_from(child.id()).map_err(|_| io::Error::other("invalid child pid"))
+fn helper_pgid(child: &Child) -> io::Result<rustix::process::Pid> {
+    i32::try_from(child.id())
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+        .ok_or_else(|| io::Error::other("invalid child pid"))
 }
 
-fn kill_helper_group(pgid: i32) -> io::Result<()> {
-    match killpg(Pid::from_raw(pgid), Signal::SIGKILL) {
-        Ok(()) => Ok(()),
-        Err(Errno::ESRCH) => Ok(()),
-        Err(errno) => Err(io::Error::from(errno)),
+fn kill_helper_group(pgid: rustix::process::Pid) -> io::Result<()> {
+    match rustix::process::kill_process_group(pgid, rustix::process::Signal::KILL) {
+        Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
+        Err(error) => Err(io::Error::from(error)),
     }
 }
 
 trait HelperSupervisor {
-    fn observe_without_reap(&mut self) -> io::Result<Option<ExitStatus>>;
+    fn observe_without_reap(&mut self) -> io::Result<bool>;
     fn kill_group(&mut self) -> io::Result<()>;
     fn close_owned_pipes(&mut self);
-    fn reap_root(&mut self) -> io::Result<Option<ExitStatus>>;
+    fn reap_root(&mut self) -> io::Result<ExitStatus>;
     fn join_readers(&mut self) -> Result<(String, String), HelperRunError>;
 }
 
 struct LiveHelper {
     child: Child,
-    pgid: i32,
+    pgid: rustix::process::Pid,
     stdout_reader: Option<thread::JoinHandle<Result<String, HelperRunError>>>,
     stderr_reader: Option<thread::JoinHandle<Result<String, HelperRunError>>>,
 }
 
 impl HelperSupervisor for LiveHelper {
-    fn observe_without_reap(&mut self) -> io::Result<Option<ExitStatus>> {
-        retry_interrupted(|| self.child.try_wait())
+    fn observe_without_reap(&mut self) -> io::Result<bool> {
+        retry_interrupted(|| {
+            rustix::process::waitid(
+                rustix::process::WaitId::Pid(self.pgid),
+                rustix::process::WaitIdOptions::EXITED
+                    | rustix::process::WaitIdOptions::NOHANG
+                    | rustix::process::WaitIdOptions::NOWAIT,
+            )
+            .map(|status| status.is_some())
+            .map_err(io::Error::from)
+        })
     }
 
     fn kill_group(&mut self) -> io::Result<()> {
@@ -330,8 +338,8 @@ impl HelperSupervisor for LiveHelper {
         drop(self.child.stderr.take());
     }
 
-    fn reap_root(&mut self) -> io::Result<Option<ExitStatus>> {
-        retry_interrupted(|| self.child.wait()).map(Some)
+    fn reap_root(&mut self) -> io::Result<ExitStatus> {
+        retry_interrupted(|| self.child.wait())
     }
 
     fn join_readers(&mut self) -> Result<(String, String), HelperRunError> {
@@ -349,10 +357,7 @@ impl HelperSupervisor for LiveHelper {
 
 fn conclude_helper<S: HelperSupervisor>(
     session: &mut S,
-) -> Result<(Option<ExitStatus>, String, String), HelperRunError> {
-    let observed = session
-        .observe_without_reap()
-        .map_err(|error| HelperRunError::Wait(error.to_string()))?;
+) -> Result<(ExitStatus, String, String), HelperRunError> {
     session
         .kill_group()
         .map_err(|error| HelperRunError::Wait(error.to_string()))?;
@@ -361,7 +366,7 @@ fn conclude_helper<S: HelperSupervisor>(
         .reap_root()
         .map_err(|error| HelperRunError::Wait(error.to_string()))?;
     let (stdout, stderr) = session.join_readers()?;
-    Ok((observed.or(reaped), stdout, stderr))
+    Ok((reaped, stdout, stderr))
 }
 
 fn run_helper(
@@ -404,25 +409,24 @@ fn run_helper(
     session.stderr_reader = Some(spawn_reader(stderr));
     let started = Instant::now();
     loop {
-        match retry_interrupted(|| session.child.try_wait()) {
+        match session.observe_without_reap() {
             Err(error) => {
                 let _ = conclude_helper(&mut session);
                 return Err(HelperRunError::Wait(error.to_string()));
             }
-            Ok(None) if started.elapsed() >= timeout => {
+            Ok(false) if started.elapsed() >= timeout => {
                 return match conclude_helper(&mut session) {
                     Ok(_) => Err(HelperRunError::TimedOut),
                     Err(error) => Err(error),
                 };
             }
-            Ok(None) => thread::sleep(Duration::from_millis(10)),
-            Ok(Some(_)) => break,
+            Ok(false) => thread::sleep(Duration::from_millis(10)),
+            Ok(true) => break,
         }
     }
     let (status, stdout, stderr) = conclude_helper(&mut session)?;
     Ok(HelperOutput {
-        status: status
-            .ok_or_else(|| HelperRunError::Wait("helper exited without a status".to_owned()))?,
+        status,
         stdout,
         stderr,
     })
@@ -878,7 +882,7 @@ mod tests {
 
     #[test]
     fn kill_helper_group_treats_missing_group_as_success() {
-        kill_helper_group(i32::MAX - 1).unwrap();
+        kill_helper_group(rustix::process::Pid::from_raw(i32::MAX - 1).unwrap()).unwrap();
     }
 
     #[test]
@@ -889,11 +893,11 @@ mod tests {
         };
         let error = conclude_helper(&mut session).unwrap_err();
         assert!(matches!(error, HelperRunError::Wait(_)));
-        assert_eq!(session.steps, ["observe-without-reap", "kill-group"]);
+        assert_eq!(session.steps, ["kill-group"]);
     }
 
     #[test]
-    fn helper_cleanup_records_observe_kill_close_reap_join_in_order() {
+    fn helper_cleanup_records_kill_close_reap_join_in_order() {
         let mut session = RecordingSupervisor {
             steps: Vec::new(),
             kill_error: None,
@@ -902,7 +906,6 @@ mod tests {
         assert_eq!(
             session.steps,
             [
-                "observe-without-reap",
                 "kill-group",
                 "close-owned-pipes",
                 "reap-root",
@@ -979,9 +982,9 @@ mod tests {
     }
 
     impl HelperSupervisor for RecordingSupervisor {
-        fn observe_without_reap(&mut self) -> io::Result<Option<ExitStatus>> {
+        fn observe_without_reap(&mut self) -> io::Result<bool> {
             self.steps.push("observe-without-reap");
-            Ok(None)
+            Ok(false)
         }
 
         fn kill_group(&mut self) -> io::Result<()> {
@@ -996,9 +999,9 @@ mod tests {
             self.steps.push("close-owned-pipes");
         }
 
-        fn reap_root(&mut self) -> io::Result<Option<ExitStatus>> {
+        fn reap_root(&mut self) -> io::Result<ExitStatus> {
             self.steps.push("reap-root");
-            Ok(None)
+            Ok(ExitStatus::from_raw(0))
         }
 
         fn join_readers(&mut self) -> Result<(String, String), HelperRunError> {

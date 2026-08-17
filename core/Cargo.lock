@@ -4646,6 +4646,7 @@ dependencies = [
  "chrono",
  "getrandom 0.3.4",
  "nix",
+ "rustix",
  "serde_json",
  "sha2",
  "socket2",
