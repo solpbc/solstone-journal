@@ -23,6 +23,19 @@ fn established_journal(root: &std::path::Path) {
     .expect("journal config writes");
 }
 
+fn stage_layout_anchors(prefix: &std::path::Path) {
+    for relative in [
+        solstone_core_journal::LAYOUT_BUNDLE_ANCHOR,
+        solstone_core_journal::LAYOUT_LAYOUT_ANCHOR,
+        solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR,
+    ] {
+        let path = prefix.join("share").join(relative);
+        fs::create_dir_all(path.parent().expect("layout anchor has parent"))
+            .expect("layout anchor parent creates");
+        fs::write(path, b"fixture").expect("layout anchor writes");
+    }
+}
+
 fn free_port() -> u16 {
     let listener = TcpListener::bind(("127.0.0.1", 0)).expect("free port reserves");
     listener.local_addr().expect("free port reads").port()
@@ -105,13 +118,15 @@ fn run_controlled_restart(
 
 #[test]
 fn convey_and_restart_convey_never_reach_an_interpreter_shim() {
-    let temp = std::env::temp_dir().join(format!("solstone-convey-poison-{}", std::process::id()));
+    let temp = std::path::Path::new("/var/tmp")
+        .join(format!("solstone-convey-poison-{}", std::process::id()));
     let _ = fs::remove_dir_all(&temp);
     let bin = temp.join("bin");
     fs::create_dir_all(&bin).expect("poison bin creates");
     let core = bin.join("solstone-core");
     fs::copy(env!("CARGO_BIN_EXE_solstone-core"), &core).expect("core copies");
     fs::set_permissions(&core, fs::Permissions::from_mode(0o755)).expect("core executable");
+    stage_layout_anchors(&temp);
 
     for name in ["python", "python3", "pytest", "uv", "ruff"] {
         let shim = bin.join(name);

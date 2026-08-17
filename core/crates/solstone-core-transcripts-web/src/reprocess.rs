@@ -275,20 +275,32 @@ fn create_analyzing_marker(
     let request_id = random_hex().map_err(CreateMarkerError::Io)?;
     let started_at = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
     let body = json!({"started_at":started_at,"modality":modality,"request_id":request_id});
+    let temporary = segment_dir.join(format!(".analyzing_{modality}.{request_id}.tmp"));
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&path)
-        .map_err(|error| {
-            if error.kind() == std::io::ErrorKind::AlreadyExists {
-                CreateMarkerError::Exists
-            } else {
-                CreateMarkerError::Io(error)
-            }
-        })?;
-    file.write_all(body.to_string().as_bytes())
+        .open(&temporary)
         .map_err(CreateMarkerError::Io)?;
-    file.write_all(b"\n").map_err(CreateMarkerError::Io)?;
+    if let Err(error) = file
+        .write_all(body.to_string().as_bytes())
+        .and_then(|_| file.write_all(b"\n"))
+    {
+        drop(file);
+        let _ = fs::remove_file(&temporary);
+        return Err(CreateMarkerError::Io(error));
+    }
+    drop(file);
+    // Linking a closed inode publishes complete JSON without replacing an
+    // existing claim, including when another server process wins the race.
+    let published = fs::hard_link(&temporary, &path);
+    let _ = fs::remove_file(&temporary);
+    if let Err(error) = published {
+        return Err(if error.kind() == std::io::ErrorKind::AlreadyExists {
+            CreateMarkerError::Exists
+        } else {
+            CreateMarkerError::Io(error)
+        });
+    }
     Ok(Marker {
         path,
         request_id,
@@ -554,9 +566,9 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        ChildExit, SenseChild, SenseRequest, SenseSpawner, analyzing_marker_path,
-        create_analyzing_marker, failed_marker_path, repair_modality_markers,
-        sibling_sense_binary_beside, watch_reprocess_completion,
+        ChildExit, CreateMarkerError, SenseChild, SenseRequest, SenseSpawner,
+        analyzing_marker_path, create_analyzing_marker, failed_marker_path, marker_payload,
+        repair_modality_markers, sibling_sense_binary_beside, watch_reprocess_completion,
     };
 
     struct FailingSpawner;
@@ -694,8 +706,22 @@ mod tests {
     fn exclusive_marker_creation_reports_existing_marker() {
         let root = TempDir::new().expect("segment");
         let first = create_analyzing_marker(root.path(), "audio").expect("first marker");
-        assert!(create_analyzing_marker(root.path(), "audio").is_err());
+        assert!(matches!(
+            create_analyzing_marker(root.path(), "audio"),
+            Err(CreateMarkerError::Exists)
+        ));
         assert!(first.path.is_file());
+        let payload = marker_payload(&first.path);
+        assert_eq!(payload["request_id"], first.request_id);
+        assert_eq!(payload["started_at"], first.started_at);
+        assert_eq!(payload["modality"], "audio");
+        assert!(fs::read_dir(root.path()).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".tmp")
+        }));
     }
 
     #[test]

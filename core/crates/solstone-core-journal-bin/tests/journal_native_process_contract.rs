@@ -165,7 +165,7 @@ fn criterion_18_cortex_spawns_native_talent_worker_without_interpreter_resolutio
         .expect("crates directory")
         .join("solstone-core-cortex/src/process.rs");
     let body = fs::read_to_string(source).expect("read cortex process source");
-    assert!(body.contains("sibling_native_in_dir(&executable_dir, \"solstone-core\")"));
+    assert!(body.contains("sibling_native_in_dir(executable_dir, \"solstone-core\")"));
     assert!(body.contains(".arg(\"__talent-worker\")"));
 
     let crates = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

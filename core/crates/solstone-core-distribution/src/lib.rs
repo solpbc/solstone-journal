@@ -828,7 +828,7 @@ fn emitted_basenames_follow_inventory_template_for_both_targets() {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect::<Vec<_>>();
         found.sort();
-        let mut expected_names = expected.iter().cloned().collect::<Vec<_>>();
+        let mut expected_names = expected.to_vec();
         expected_names.sort();
         assert_eq!(found, expected_names, "{}", target.id);
         for name in [

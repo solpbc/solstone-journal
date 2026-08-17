@@ -177,7 +177,11 @@ fn contract_build_and_check_against_a_staged_root() {
         .output()
         .unwrap();
     assert!(!fixture.status.success());
-    assert!(String::from_utf8_lossy(&fixture.stderr).contains("journal tree not found"));
+    assert!(
+        String::from_utf8_lossy(&fixture.stderr).contains("fixture journal missing"),
+        "{}",
+        String::from_utf8_lossy(&fixture.stderr)
+    );
 }
 
 #[test]

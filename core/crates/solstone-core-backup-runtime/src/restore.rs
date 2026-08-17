@@ -362,7 +362,7 @@ mod tests {
         );
         assert_eq!(result.status, "error");
         assert_eq!(result.reason_code, Some("body_rebuild_failed".into()));
-        assert_eq!(result.integrity_ok, false);
+        assert!(!result.integrity_ok);
         assert_eq!(result.bytes_restored, None);
         assert_eq!(*maintenance.0.borrow(), vec!["rebuild"]);
         let after = solstone_core_backup::get_backup_config(journal.path()).unwrap();

@@ -87,6 +87,44 @@ fn data_tar(stage: &Path) -> io::Result<Vec<u8>> {
     builder.into_inner()
 }
 
+pub fn deb_records(path: &Path) -> io::Result<Vec<FileRecord>> {
+    let bytes = fs::read(path)?;
+    let members = read_archive(&bytes)?;
+    let data = member(&members, "data.tar.gz")?;
+    let mut records = Vec::new();
+    for record in tar_records(data)? {
+        let dest = from_system_path(&record.dest).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("deb member {} is outside the system prefix", record.dest),
+            )
+        })?;
+        records.push(FileRecord::file(dest, record.mode, record.digest));
+    }
+    records.sort();
+    Ok(records)
+}
+
+pub fn deb_control_text(path: &Path) -> io::Result<String> {
+    let bytes = fs::read(path)?;
+    let members = read_archive(&bytes)?;
+    let control = member(&members, "control.tar.gz")?;
+    let decoder = flate2::read::GzDecoder::new(control);
+    let mut archive = tar::Archive::new(decoder);
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        if entry.path()?.to_string_lossy() == "control" {
+            let mut text = String::new();
+            std::io::Read::read_to_string(&mut entry, &mut text)?;
+            return Ok(text);
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        "deb control file missing",
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,42 +162,4 @@ mod tests {
             path == "usr/lib/solstone-core-speakers-analyze/libonnxruntime.so.1" && kind.is_file()
         }));
     }
-}
-
-pub fn deb_records(path: &Path) -> io::Result<Vec<FileRecord>> {
-    let bytes = fs::read(path)?;
-    let members = read_archive(&bytes)?;
-    let data = member(&members, "data.tar.gz")?;
-    let mut records = Vec::new();
-    for record in tar_records(data)? {
-        let dest = from_system_path(&record.dest).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("deb member {} is outside the system prefix", record.dest),
-            )
-        })?;
-        records.push(FileRecord::file(dest, record.mode, record.digest));
-    }
-    records.sort();
-    Ok(records)
-}
-
-pub fn deb_control_text(path: &Path) -> io::Result<String> {
-    let bytes = fs::read(path)?;
-    let members = read_archive(&bytes)?;
-    let control = member(&members, "control.tar.gz")?;
-    let decoder = flate2::read::GzDecoder::new(control);
-    let mut archive = tar::Archive::new(decoder);
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        if entry.path()?.to_string_lossy() == "control" {
-            let mut text = String::new();
-            std::io::Read::read_to_string(&mut entry, &mut text)?;
-            return Ok(text);
-        }
-    }
-    Err(io::Error::new(
-        io::ErrorKind::NotFound,
-        "deb control file missing",
-    ))
 }
