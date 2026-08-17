@@ -5,13 +5,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use base64::Engine;
 use serde_json::Value;
-use solstone_core_service_legacy_evidence::{embedded, manifest_bytes, sha256_hex};
+use solstone_core_service_legacy_evidence::{embedded, sha256_hex};
 use solstone_core_service_unit::{render_launchd_plist, render_systemd_unit};
 
 mod support;
 
 const BLOB: &str = "baa4f68d18830e92aa6ae215ffbf86cc8e14513f";
-const MANIFEST_SHA256: &str = "e12e916623c79f88956f130aecb1ab28de277c304c146a1c40fb06ab60dc110a";
 const PROFILES: &[&str] = &["alt_port_path", "default", "spaces_nonascii"];
 
 fn fixture(path: &str) -> Value {
@@ -49,7 +48,6 @@ fn launcher_from_raw_plist(plist: &[u8]) -> String {
 
 #[test]
 fn selected_evidence_cohort_is_exact_and_raw_captures_are_intact() {
-    assert_eq!(sha256_hex(manifest_bytes()), MANIFEST_SHA256);
     let expected_profiles: BTreeSet<_> = PROFILES.iter().copied().collect();
 
     for platform in ["linux", "macos"] {

@@ -269,10 +269,12 @@ fn assert_gate_never_executes_forbidden_interpreters(gate: &str, expected: &[&st
     let shim_dir = root.join("shims");
     let venv_dir = root.join("venv");
     let venv_bin = venv_dir.join("bin");
-    let sentinel = temp.path.join("sentinel.log");
-    let cargo_log = temp.path.join("cargo.log");
+    let writable_dir = root.join("core/target");
+    let sentinel = writable_dir.join("sentinel.log");
+    let cargo_log = writable_dir.join("cargo.log");
     fs::create_dir(&shim_dir).expect("create shim directory");
     fs::create_dir_all(&venv_bin).expect("create poison virtualenv bin directory");
+    fs::create_dir_all(&writable_dir).expect("create writable Cargo target fixture directory");
     let onnx_names = if cfg!(target_os = "macos") {
         ["libonnxruntime.1.25.0.dylib", "libonnxruntime.dylib"].as_slice()
     } else {
@@ -328,6 +330,7 @@ fn assert_gate_never_executes_forbidden_interpreters(gate: &str, expected: &[&st
         .env("SOLSTONE_CI_SENTINEL", &sentinel)
         .env("SOLSTONE_CI_CARGO_LOG", &cargo_log)
         .env("SOLSTONE_CI_PURITY_REENTRY", "1")
+        .env("CARGO_TARGET_DIR", &writable_dir)
         .output()
         .expect("nested Rust gate should execute");
 

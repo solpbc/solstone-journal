@@ -33,6 +33,8 @@ fn replacement_file_and_nested_directory_hard_link_are_detected() {
     let nested_source = ArchiveSource::open(&nested_root).expect("open nested source");
     let nested_entry = entry(&nested_source, "chronicle/20260101/nested/b.txt");
     let keeper = nested_temporary.path().join("original-child");
+    let _original_nested_directory = fs::File::open(nested_root.join("chronicle/20260101/nested"))
+        .expect("hold original nested directory inode");
     fs::hard_link(nested_root.join("chronicle/20260101/nested/b.txt"), &keeper)
         .expect("preserve original child inode");
     fs::remove_dir_all(nested_root.join("chronicle/20260101/nested"))
