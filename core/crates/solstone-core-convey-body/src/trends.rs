@@ -821,9 +821,8 @@ pub(crate) fn round_even(value: f64, digits: u32) -> f64 {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::{AtomicU64, AtomicUsize};
     use std::sync::mpsc;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use chrono::TimeZone;
     use serde_json::{Map, json};
@@ -831,16 +830,16 @@ mod tests {
 
     use super::*;
 
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    static TEST_SERIAL: Mutex<()> = Mutex::new(());
+
     struct TempDir(PathBuf);
     impl TempDir {
         fn new() -> Self {
             let path = std::env::temp_dir().join(format!(
                 "solstone-convey-body-trends-{}-{}",
                 std::process::id(),
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
+                SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir_all(&path).unwrap();
             Self(path)
@@ -859,13 +858,17 @@ mod tests {
         }
     }
 
-    fn clear_cache() {
+    fn clear_cache() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_SERIAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(!TRENDS_WARM_FLIGHT.load(Ordering::Acquire));
         TRENDS_CACHE
             .get_or_init(|| Mutex::new(BTreeMap::new()))
             .lock()
             .unwrap()
             .clear();
-        assert!(!TRENDS_WARM_FLIGHT.load(Ordering::Acquire));
+        guard
     }
     fn payload(label: &str) -> TrendsPayload {
         TrendsPayload {
@@ -1385,6 +1388,7 @@ mod tests {
     }
     #[test]
     fn cache_replaces_stale_signature_without_accumulating_entries() {
+        let _guard = clear_cache();
         let path = Path::new("/synthetic/trends.sqlite");
         let cache = TRENDS_CACHE.get_or_init(|| Mutex::new(BTreeMap::new()));
         cache.lock().unwrap().clear();
@@ -1399,7 +1403,7 @@ mod tests {
 
     #[test]
     fn frozen_corpus_encoder_and_fixed_replay_match_python() {
-        clear_cache();
+        let _guard = clear_cache();
         let fixed = fixture_case("fixed");
         let first_run = fixture_case("first_run");
         assert_python_bytes(
@@ -1444,7 +1448,7 @@ mod tests {
 
     #[test]
     fn first_run_route_is_python_exact_while_injected_fold_is_held() {
-        clear_cache();
+        let _guard = clear_cache();
         let root = TempDir::new();
         root.create_database();
         let count = Arc::new(AtomicUsize::new(0));
@@ -1482,7 +1486,7 @@ mod tests {
 
     #[test]
     fn global_single_flight_serves_cache_and_recovers_after_panic() {
-        clear_cache();
+        let _guard = clear_cache();
         let root = TempDir::new();
         root.create_database();
         let other_root = TempDir::new();
@@ -1522,7 +1526,11 @@ mod tests {
         release_tx.send(()).unwrap();
         assert_eq!(done_rx.recv().unwrap(), TrendsWarmOutcome::Succeeded);
         assert_eq!(route_value(&root)["warming"], json!(false));
-        clear_cache();
+        TRENDS_CACHE
+            .get_or_init(|| Mutex::new(BTreeMap::new()))
+            .lock()
+            .unwrap()
+            .clear();
         let (panic_done, panic_rx) = completion();
         let panic_count = Arc::clone(&count);
         warm_with(
@@ -1553,7 +1561,7 @@ mod tests {
 
     #[test]
     fn failed_warm_writes_constructed_sink_and_route_keeps_warming() {
-        clear_cache();
+        let _guard = clear_cache();
         let root = TempDir::new();
         root.create_database();
         let (done, rx) = completion();
@@ -1593,7 +1601,7 @@ mod tests {
 
     #[test]
     fn signature_before_fold_caches_under_the_old_signature_then_refolds() {
-        clear_cache();
+        let _guard = clear_cache();
         let root = TempDir::new();
         root.create_database();
         let count = Arc::new(AtomicUsize::new(0));
@@ -1651,7 +1659,7 @@ mod tests {
 
     #[test]
     fn shard_only_change_returns_stale_payload_without_refolding() {
-        clear_cache();
+        let _guard = clear_cache();
         let root = TempDir::new();
         root.create_database();
         let count = Arc::new(AtomicUsize::new(0));
@@ -1683,7 +1691,7 @@ mod tests {
 
     #[test]
     fn fixed_seed_omits_never_observed_signals_and_annotations_are_sorted_and_limited() {
-        clear_cache();
+        let _guard = clear_cache();
         let root = TempDir::new();
         seed_fixed(&root);
         let built = build_trends_payload(&root.0).unwrap();
@@ -1771,7 +1779,7 @@ mod tests {
 
     #[test]
     fn imported_store_change_refolds_to_new_route_numbers_once() {
-        clear_cache();
+        let _guard = clear_cache();
         let root = TempDir::new();
         seed_direct_resting_store(&root, "50");
         let count = Arc::new(AtomicUsize::new(0));
@@ -1836,7 +1844,7 @@ mod tests {
 
     #[test]
     fn store_signature_invalidates_both_native_caches() {
-        clear_cache();
+        let _guard = clear_cache();
         let root = TempDir::new();
         seed_direct_resting_store(&root, "50");
         let before = trends_signature(&root.0).unwrap();

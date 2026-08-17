@@ -1768,7 +1768,7 @@ pub(crate) mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use serde_json::{Map, Value, json};
 
@@ -1779,16 +1779,15 @@ pub(crate) mod tests {
         replace_trends_cache, seed_body_journal, trends_db_path, trends_signature,
     };
 
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
     struct TempDir(PathBuf);
     impl TempDir {
         fn new() -> Self {
             let path = std::env::temp_dir().join(format!(
                 "solstone-body-day-corpus-{}-{}",
                 std::process::id(),
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("clock after epoch")
-                    .as_nanos()
+                SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir_all(&path).expect("temporary journal creates");
             Self(path)
@@ -2236,10 +2235,7 @@ pub(crate) mod tests {
         let path = std::env::temp_dir().join(format!(
             "solstone-body-day-{}-{}.jsonl",
             std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock after epoch")
-                .as_nanos()
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
         fs::write(
             &path,

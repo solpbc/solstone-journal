@@ -79,42 +79,6 @@ id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/t
 id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/aggregate.rs::tests::cache_identity_changes_when_database_signature_changes::scheduling"
 
 [[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/aggregate.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/archive.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/chronicle.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/day.rs::tests::row::clock"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/freshness.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/health.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/inventory.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/month.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/router.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/seed.rs::tests::new::clock"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/shard.rs::tests::new::clock"
-
-[[findings]]
 id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::cache_replaces_stale_signature_without_accumulating_entries::scheduling"
 
 [[findings]]
@@ -133,16 +97,10 @@ id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trend
 id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::global_single_flight_serves_cache_and_recovers_after_panic::scheduling"
 
 [[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::new::clock"
-
-[[findings]]
 id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::signature_before_fold_caches_under_the_old_signature_then_refolds::scheduling"
 
 [[findings]]
 id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/trends.rs::tests::sink::scheduling"
-
-[[findings]]
-id = "solstone-core-convey-body::core/crates/solstone-core-convey-body/src/window.rs::tests::new::clock"
 
 [[findings]]
 id = "solstone-core-convey-http::core/crates/solstone-core-convey-http/src/listener.rs::tests::duplex_probe::scheduling"

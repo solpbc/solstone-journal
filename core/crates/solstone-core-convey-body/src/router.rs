@@ -141,7 +141,6 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
@@ -161,12 +160,8 @@ mod tests {
     impl TempDir {
         fn new() -> Self {
             let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock is after epoch")
-                .as_nanos();
             let path = std::env::temp_dir().join(format!(
-                "solstone-convey-body-router-{}-{nanos}-{sequence}",
+                "solstone-convey-body-router-{}-{sequence}",
                 std::process::id()
             ));
             fs::create_dir(&path).expect("temporary root creates");

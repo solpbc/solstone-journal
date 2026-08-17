@@ -242,20 +242,20 @@ fn normalized_months_label(months: &[String]) -> String {
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::*;
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     struct TempDir(PathBuf);
 
     impl TempDir {
         fn new() -> Self {
             let path = std::env::temp_dir().join(format!(
-                "solstone-convey-body-inventory-{}",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
+                "solstone-convey-body-inventory-{}-{}",
+                std::process::id(),
+                SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir_all(&path).unwrap();
             Self(path)
