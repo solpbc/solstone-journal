@@ -4,12 +4,13 @@
 //! Real loopback transport facts that cannot be scripted through EndpointTransport.
 
 use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use serde_json::{Map, Value, json};
+use socket2::{Domain, Protocol, Socket, Type};
 use solstone_core_generate::{ContentPart, GenerateRequest};
 use solstone_core_generate_wire::{
     EndpointFailure, EndpointResult, EndpointRuntime, endpoint_generate,
@@ -93,12 +94,16 @@ fn read_request(stream: &mut std::net::TcpStream) {
 
 #[test]
 fn reserved_port_connect_is_endpoint_unreachable() {
-    // This process binds 127.0.0.1:0, drops the listener, and does not bind
-    // that port again. Another process on the host can still steal the port
-    // in the window before connect; that fails loud rather than passing.
-    let listener = TcpListener::bind("127.0.0.1:0").expect("reserve ephemeral port");
-    let address = listener.local_addr().expect("listener address");
-    drop(listener);
+    let reservation = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+        .expect("create refusal reservation");
+    reservation
+        .bind(&SocketAddr::from((Ipv4Addr::LOCALHOST, 0)).into())
+        .expect("bind refusal reservation");
+    let address = reservation
+        .local_addr()
+        .expect("reservation address")
+        .as_socket()
+        .expect("IP reservation");
     let journal = journal_path();
     let result = endpoint_generate(
         &request(Some(0.2)),
@@ -113,6 +118,7 @@ fn reserved_port_connect_is_endpoint_unreachable() {
             reason_code: Some("local_endpoint_unreachable".into()),
         })
     );
+    drop(reservation);
     let _ = std::fs::remove_dir_all(journal);
 }
 

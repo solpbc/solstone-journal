@@ -41,6 +41,7 @@ path = "tests/token_log_differential.rs"
 required-features = ["differential"]
 
 [dev-dependencies]
+socket2.workspace = true
 solstone-core-spp-attest.workspace = true
 
 [lints]

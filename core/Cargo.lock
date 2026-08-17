@@ -3435,6 +3435,7 @@ dependencies = [
  "jsonschema",
  "regex",
  "serde_json",
+ "socket2",
  "solstone-core-generate",
  "solstone-core-local",
  "solstone-core-spp-attest",
