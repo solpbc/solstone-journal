@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
+use std::io::Write;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
+use std::os::unix::net::UnixDatagram;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
+use socket2::{Domain, Protocol, Socket, Type};
 use solstone_core_local::LoopbackAddr;
-use solstone_core_local::admission::acquire_local_slot;
+use solstone_core_local::admission::{AdmissionError, acquire_local_slot};
 use solstone_core_local::connect::{ConnectInput, ConnectOutcome, connect};
 use solstone_core_local::plan::Platform;
 
@@ -33,15 +38,98 @@ fn input(root: &Path) -> ConnectInput {
     }
 }
 
+fn refusal_reservation() -> Socket {
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+        .expect("create refusal socket");
+    socket
+        .bind(&SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0).into())
+        .expect("bind refusal socket");
+    socket
+}
+
+fn reserved_port(socket: &Socket) -> u16 {
+    socket
+        .local_addr()
+        .expect("refusal address")
+        .as_socket_ipv4()
+        .expect("IPv4 refusal address")
+        .port()
+}
+
+struct ReapChild(Option<std::process::Child>);
+
+impl ReapChild {
+    fn spawn(root: &Path, ready_socket: &Path) -> Self {
+        let child = Command::new(std::env::current_exe().expect("test executable"))
+            .args(["--exact", "child_holds_slot_until_killed", "--nocapture"])
+            .env("SOLSTONE_ADMISSION_HOLDER", "1")
+            .env("SOLSTONE_ADMISSION_ROOT", root)
+            .env("SOLSTONE_ADMISSION_READY_SOCKET", ready_socket)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn holder");
+        Self(Some(child))
+    }
+
+    fn kill_wait(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let _ = child.kill();
+            child.wait().expect("reap holder");
+        }
+    }
+}
+
+impl Drop for ReapChild {
+    fn drop(&mut self) {
+        self.kill_wait();
+    }
+}
+
+struct WithholdingPeer {
+    address: SocketAddr,
+    release: Option<mpsc::SyncSender<()>>,
+    join: Option<thread::JoinHandle<()>>,
+}
+
+impl WithholdingPeer {
+    fn spawn(listener: TcpListener, accepted: mpsc::SyncSender<()>) -> Self {
+        let address = listener.local_addr().expect("peer address");
+        let (release, released) = mpsc::sync_channel(1);
+        let join = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept health client");
+            let _ = accepted.try_send(());
+            let _ = released.recv();
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}");
+        });
+        Self {
+            address,
+            release: Some(release),
+            join: Some(join),
+        }
+    }
+}
+
+impl Drop for WithholdingPeer {
+    fn drop(&mut self) {
+        let _ = TcpStream::connect_timeout(&self.address, Duration::from_millis(200));
+        if let Some(release) = self.release.take() {
+            let _ = release.send(());
+        }
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+    }
+}
+
 #[test]
 fn connect_reports_transport_failure() {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-    let port = listener.local_addr().expect("address").port();
-    drop(listener);
+    let reservation = refusal_reservation();
+    let port = reserved_port(&reservation);
     let root = journal(Some(port));
     assert!(matches!(
         connect(input(root.path())),
-        ConnectOutcome::Failed { .. }
+        ConnectOutcome::Failed { ref reason } if reason.to_ascii_lowercase().contains("refused")
     ));
 }
 
@@ -50,11 +138,19 @@ fn health_response_timeout_is_bounded() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().expect("address").port();
     let root = journal(Some(port));
+    let (accepted, receiver) = mpsc::sync_channel(1);
+    let peer = WithholdingPeer::spawn(listener, accepted);
+    let input = input(root.path());
+    let connect = thread::spawn(move || connect(input));
+    receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("health peer accepted the client");
+    let outcome = connect.join().expect("connect thread");
+    drop(peer);
     assert!(matches!(
-        connect(input(root.path())),
-        ConnectOutcome::Failed { .. }
+        outcome,
+        ConnectOutcome::Failed { ref reason } if reason.to_ascii_lowercase().contains("timeout")
     ));
-    drop(listener);
 }
 
 #[test]
@@ -66,30 +162,32 @@ fn child_holds_slot_until_killed() {
         std::path::PathBuf::from(std::env::var("SOLSTONE_ADMISSION_ROOT").expect("child root"));
     let _permit = acquire_local_slot(&root, 1, Some(std::time::Duration::from_secs(2)), false)
         .expect("child permit");
-    let mut stdout = std::io::stdout().lock();
-    stdout.write_all(b"ready\n").expect("signal ready");
-    stdout.flush().expect("flush ready");
+    let ready_socket = std::env::var("SOLSTONE_ADMISSION_READY_SOCKET").expect("ready socket");
+    let ready = UnixDatagram::unbound().expect("create readiness socket");
+    ready
+        .connect(ready_socket)
+        .expect("connect readiness socket");
+    ready.send(b"ready").expect("signal ready");
     std::thread::park();
 }
 
 #[test]
 fn killed_holder_releases_slot_without_repair() {
     let root = tempfile::tempdir().expect("admission root");
-    let mut child = Command::new(std::env::current_exe().expect("test executable"))
-        .args(["--exact", "child_holds_slot_until_killed", "--nocapture"])
-        .env("SOLSTONE_ADMISSION_HOLDER", "1")
-        .env("SOLSTONE_ADMISSION_ROOT", root.path())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("spawn holder");
-    let stdout = child.stdout.take().expect("child stdout");
-    let mut line = String::new();
-    BufReader::new(stdout)
-        .read_line(&mut line)
-        .expect("read ready");
-    assert_eq!(line, "ready\n");
-    child.kill().expect("kill holder");
-    child.wait().expect("reap holder");
+    let ready_path = root.path().join("holder-ready.sock");
+    let ready = UnixDatagram::bind(&ready_path).expect("bind readiness socket");
+    ready
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("bound readiness timeout");
+    let mut child = ReapChild::spawn(root.path(), &ready_path);
+    let mut message = [0_u8; 16];
+    let length = ready.recv(&mut message).expect("receive child readiness");
+    assert_eq!(&message[..length], b"ready");
+    assert!(matches!(
+        acquire_local_slot(root.path(), 1, Some(Duration::from_millis(200)), false),
+        Err(AdmissionError::Timeout)
+    ));
+    child.kill_wait();
     let reclaimed = acquire_local_slot(
         root.path(),
         1,

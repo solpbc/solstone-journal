@@ -4,9 +4,10 @@
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
 
 use std::fs;
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
 use std::path::{Path, PathBuf};
 
+use socket2::{Domain, Protocol, Socket, Type};
 use solstone_core_segment::is_solstone_up;
 
 struct TempDir {
@@ -42,6 +43,14 @@ fn write_port(root: &Path, contents: &str) {
     fs::write(health.join("convey.port"), contents).unwrap();
 }
 
+fn refusal_reservation() -> Socket {
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    socket
+        .bind(&SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0).into())
+        .unwrap();
+    socket
+}
+
 #[test]
 fn recorded_convey_listener_marks_solstone_up() {
     let temporary = TempDir::new();
@@ -56,9 +65,13 @@ fn recorded_convey_listener_marks_solstone_up() {
 #[test]
 fn reserved_refused_port_is_not_up() {
     let temporary = TempDir::new();
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
+    let reservation = refusal_reservation();
+    let port = reservation
+        .local_addr()
+        .unwrap()
+        .as_socket_ipv4()
+        .unwrap()
+        .port();
     write_port(temporary.path(), &port.to_string());
     assert!(!is_solstone_up(temporary.path()));
 }

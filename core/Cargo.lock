@@ -3818,6 +3818,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "socket2",
  "solstone-core-artifact-download",
  "solstone-core-assets",
  "solstone-core-brain",
@@ -4063,6 +4064,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "socket2",
  "solstone-core-journal-io",
  "unicode-normalization",
 ]
