@@ -139,17 +139,12 @@ pub(crate) fn realpath_non_strict(path: &Path) -> Result<PathBuf, io::Error> {
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn containment_keeps_missing_inside_and_rejects_escape_symlinks() {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let base = std::env::temp_dir().join(format!("cogitate-tools-paths-{stamp}"));
-        let root = base.join("journal");
-        let outside = base.join("outside");
+        let base = tempfile::tempdir().expect("tempdir");
+        let root = base.path().join("journal");
+        let outside = base.path().join("outside");
         std::fs::create_dir_all(root.join("facets")).expect("root");
         std::fs::create_dir_all(&outside).expect("outside");
         std::fs::write(root.join("facets/work.md"), "work").expect("work");
@@ -169,6 +164,5 @@ mod tests {
             contained_path(&root, "escape"),
             Err(ContainedPathError::Escape)
         ));
-        std::fs::remove_dir_all(base).expect("cleanup");
     }
 }

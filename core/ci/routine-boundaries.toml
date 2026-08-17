@@ -49,15 +49,6 @@ id = "solstone-core-chat-append::core/crates/solstone-core-chat-append/src/lib.r
 id = "solstone-core-cli::core/crates/solstone-core-cli/src/lib.rs::tests::service_args_foundation_has_no_execution_or_python_bridge::scheduling"
 
 [[findings]]
-id = "solstone-core-cogitate-tools::core/crates/solstone-core-cogitate-tools/src/paths.rs::tests::containment_keeps_missing_inside_and_rejects_escape_symlinks::clock"
-
-[[findings]]
-id = "solstone-core-cogitate-tools::core/crates/solstone-core-cogitate-tools/src/sol_execution.rs::tests::unique_temp_dir::clock"
-
-[[findings]]
-id = "solstone-core-cogitate-tools::core/crates/solstone-core-cogitate-tools/src/walk.rs::tests::root::clock"
-
-[[findings]]
 id = "solstone-core-cogitate-wire::core/crates/solstone-core-cogitate-wire/src/tests.rs::ambient_provider_key_does_not_bypass_missing_journal_credential::process"
 
 [[findings]]
@@ -1036,21 +1027,6 @@ id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/pairing/non
 id = "solstone-core-sol-link::core/crates/solstone-core-sol-link/src/serve.rs::tests::new::scheduling"
 
 [[findings]]
-id = "solstone-core-sol::core/crates/solstone-core-sol/src/lib.rs::tests::temp_path::clock"
-
-[[findings]]
-id = "solstone-core-sol::core/crates/solstone-core-sol/src/skills.rs::tests::mixed_writability_installs_writable_agent_and_reports_unwritable_agent::process"
-
-[[findings]]
-id = "solstone-core-sol::core/crates/solstone-core-sol/src/skills.rs::tests::unique_temp::clock"
-
-[[findings]]
-id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/speaker_candidate_pair_review_candidates.rs::tests::temporary_journal::clock"
-
-[[findings]]
-id = "solstone-core-speaker-resolve::core/crates/solstone-core-speaker-resolve/src/speaker_review_candidates.rs::tests::temporary_journal::clock"
-
-[[findings]]
 id = "solstone-core-speakers::core/crates/solstone-core-speakers/src/discovery.rs::tests::benchmark_10_000_by_256_discovery_clustering::clock"
 
 [[findings]]
@@ -1373,9 +1349,6 @@ id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs
 
 [[findings]]
 id = "solstone-core-talent-cli::core/crates/solstone-core-talent-cli/src/logs.rs::tests::table_name_width_uses_code_points::clock"
-
-[[findings]]
-id = "solstone-core-talent-runtime::core/crates/solstone-core-talent-runtime/src/documents.rs::tests::criterion_11_reads_process_environment_not_request_env::process"
 
 [[findings]]
 id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::tests::capture_logs::scheduling"

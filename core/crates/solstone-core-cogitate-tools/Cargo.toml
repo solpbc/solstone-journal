@@ -18,6 +18,7 @@ solstone-core-format.workspace = true
 nix.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
+tempfile = "3.24.0"
 
 [lints]
 workspace = true

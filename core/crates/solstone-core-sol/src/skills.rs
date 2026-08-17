@@ -1048,19 +1048,16 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::process::Command;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::Value;
 
     use super::*;
 
-    fn unique_temp(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be available")
-            .as_nanos();
-        std::env::temp_dir().join(format!("solstone-core-sol-skills-{name}-{stamp}"))
+    fn unique_temp(name: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("solstone-core-sol-skills-{name}-"))
+            .tempdir()
+            .expect("tempdir")
     }
 
     fn fixture_root() -> PathBuf {
@@ -1195,11 +1192,14 @@ mod tests {
             let id = vector["id"].as_str().expect("vector id");
             let temp = unique_temp(id);
             let root = source_root();
-            let fake_root = temp.join("fake-root");
+            let fake_root = temp.path().join("fake-root");
             fs::create_dir_all(fake_root.join("solstone/talent")).expect("fake root setup");
             let mut values = BTreeMap::new();
             values.insert("${PROJECT_ROOT}".to_string(), root.display().to_string());
-            values.insert("${TEMP_ROOT}".to_string(), temp.display().to_string());
+            values.insert(
+                "${TEMP_ROOT}".to_string(),
+                temp.path().display().to_string(),
+            );
             values.insert("${FAKE_ROOT}".to_string(), fake_root.display().to_string());
             let home = PathBuf::from(subst(vector["home"].as_str().expect("home"), &values));
             let cwd = PathBuf::from(subst(vector["cwd"].as_str().expect("cwd"), &values));
@@ -1255,7 +1255,6 @@ mod tests {
                     "{id} stderr"
                 );
             }
-            let _ = fs::remove_dir_all(&temp);
         }
     }
 
@@ -1264,10 +1263,10 @@ mod tests {
     fn installed_user_files_are_0600() {
         use std::os::unix::fs::PermissionsExt;
         let temp = unique_temp("mode");
-        let home = temp.join("home");
+        let home = temp.path().join("home");
         let context = RuntimeContext {
             home: home.clone(),
-            cwd: temp.clone(),
+            cwd: temp.path().to_path_buf(),
             project_root: source_root(),
         };
         let command = parse_command(&[
@@ -1286,7 +1285,6 @@ mod tests {
             .mode()
             & 0o777;
         assert_eq!(mode, 0o600);
-        let _ = fs::remove_dir_all(temp);
     }
 
     #[cfg(unix)]
@@ -1294,10 +1292,10 @@ mod tests {
     fn user_reinstall_noop_preserves_inode_and_mtime() {
         use std::os::unix::fs::MetadataExt;
         let temp = unique_temp("user-idempotent");
-        let home = temp.join("home");
+        let home = temp.path().join("home");
         let context = RuntimeContext {
             home: home.clone(),
-            cwd: temp.clone(),
+            cwd: temp.path().to_path_buf(),
             project_root: source_root(),
         };
         let command = parse_command(&[
@@ -1316,7 +1314,6 @@ mod tests {
         assert_eq!(before.ino(), after.ino());
         assert_eq!(before.mtime_nsec(), after.mtime_nsec());
         assert_eq!(before.mtime(), after.mtime());
-        let _ = fs::remove_dir_all(temp);
     }
 
     #[cfg(unix)]
@@ -1324,10 +1321,10 @@ mod tests {
     fn project_reinstall_noop_preserves_readlink_and_lstat_mtime() {
         use std::os::unix::fs::MetadataExt;
         let temp = unique_temp("project-idempotent");
-        let project = temp.join("project");
+        let project = temp.path().join("project");
         let context = RuntimeContext {
-            home: temp.join("home"),
-            cwd: temp.clone(),
+            home: temp.path().join("home"),
+            cwd: temp.path().to_path_buf(),
             project_root: source_root(),
         };
         let command = parse_command(&[
@@ -1350,15 +1347,14 @@ mod tests {
         assert_eq!(before_link, after_link);
         assert_eq!(before_meta.mtime(), after_meta.mtime());
         assert_eq!(before_meta.mtime_nsec(), after_meta.mtime_nsec());
-        let _ = fs::remove_dir_all(temp);
     }
 
     #[cfg(unix)]
     #[test]
     fn user_install_replaces_symlink_without_touching_pointed_to_directory() {
         let temp = unique_temp("symlink-replace");
-        let home = temp.join("home");
-        let external = temp.join("external");
+        let home = temp.path().join("home");
+        let external = temp.path().join("external");
         fs::create_dir_all(&external).expect("external dir");
         fs::write(external.join("keep.txt"), "keep\n").expect("external content");
         let link = home.join(".claude/skills/sol");
@@ -1366,7 +1362,7 @@ mod tests {
         create_symlink(&external, &link).expect("setup symlink");
         let context = RuntimeContext {
             home: home.clone(),
-            cwd: temp.clone(),
+            cwd: temp.path().to_path_buf(),
             project_root: source_root(),
         };
         let command = parse_command(&[
@@ -1390,25 +1386,24 @@ mod tests {
                 .is_symlink()
         );
         assert!(link.join("SKILL.md").is_file());
-        let _ = fs::remove_dir_all(temp);
     }
 
     #[cfg(unix)]
     #[test]
     fn skills_canonicalizes_symlinked_checkout_root_for_project_links() {
         let temp = unique_temp("symlinked-root");
-        let real = temp.join("real");
-        let linked = temp.join("linked");
+        let real = temp.path().join("real");
+        let linked = temp.path().join("linked");
         fs::create_dir_all(real.join("solstone/talent")).expect("real talent");
         fs::create_dir_all(real.join("solstone/talent/sol")).expect("real sol");
         fs::create_dir_all(real.join("solstone/talent/journal")).expect("real journal");
         fs::write(real.join("solstone/talent/sol/SKILL.md"), "---\n").expect("sol skill");
         fs::write(real.join("solstone/talent/journal/SKILL.md"), "---\n").expect("journal skill");
         create_symlink(&real, &linked).expect("linked checkout");
-        let project = temp.join("project");
+        let project = temp.path().join("project");
         let context = RuntimeContext {
-            home: temp.join("home"),
-            cwd: temp.clone(),
+            home: temp.path().join("home"),
+            cwd: temp.path().to_path_buf(),
             project_root: canonicalize_project_root_for_skills(linked.clone()),
         };
         let command = parse_command(&[
@@ -1428,16 +1423,15 @@ mod tests {
         let link_target = link_target.to_string_lossy();
         assert!(link_target.contains("real/solstone/talent/journal"));
         assert!(!link_target.contains("linked"));
-        let _ = fs::remove_dir_all(temp);
     }
 
     #[test]
     fn row_order_matches_python_contract() {
         let temp = unique_temp("row-order");
-        let home = temp.join("home");
+        let home = temp.path().join("home");
         let context = RuntimeContext {
             home: home.clone(),
-            cwd: temp.clone(),
+            cwd: temp.path().to_path_buf(),
             project_root: source_root(),
         };
         let user = run_with_context(
@@ -1446,7 +1440,7 @@ mod tests {
         );
         assert!(user.stdout.find("claude").unwrap() < user.stdout.find("codex").unwrap());
         assert!(user.stdout.find("codex").unwrap() < user.stdout.find("gemini").unwrap());
-        let project = temp.join("project");
+        let project = temp.path().join("project");
         let output = run_with_context(
             parse_command(&[
                 OsString::from("install"),
@@ -1459,14 +1453,13 @@ mod tests {
             &context,
         );
         assert!(output.stdout.find("journal").unwrap() < output.stdout.find(" sol ").unwrap());
-        let _ = fs::remove_dir_all(temp);
     }
 
     #[cfg(unix)]
     #[test]
     fn mixed_writability_regular_file_component_still_installs_writable_agent() {
         let temp = unique_temp("mixed-writability-file-component");
-        let home = temp.join("home");
+        let home = temp.path().join("home");
         let claude_config = home.join(".claude");
         let claude_skills_root = home.join(".claude/skills");
         let codex_skills_root = home.join(".codex/skills");
@@ -1487,50 +1480,5 @@ mod tests {
         let output = report_output(report, "install");
         assert_eq!(output.exit, 1);
         assert!(home.join(".codex/skills/sol/SKILL.md").is_file());
-        let _ = fs::remove_dir_all(temp);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn mixed_writability_installs_writable_agent_and_reports_unwritable_agent() {
-        use std::os::unix::fs::PermissionsExt;
-        let is_root = Command::new("id")
-            .arg("-u")
-            .output()
-            .ok()
-            .and_then(|output| String::from_utf8(output.stdout).ok())
-            .is_some_and(|uid| uid.trim() == "0");
-        if is_root {
-            eprintln!("skipped under root: chmod permission-bit vector requires non-root uid");
-            return;
-        }
-        let temp = unique_temp("mixed-writability");
-        let home = temp.join("home");
-        let claude_target = home.join(".claude/skills/sol");
-        copy_tree_files(&source_root().join("solstone/talent/sol"), &claude_target)
-            .expect("setup claude target");
-        fs::write(claude_target.join("extra.txt"), "extra").expect("make mismatch");
-        fs::set_permissions(&claude_target, fs::Permissions::from_mode(0o500))
-            .expect("make claude target unwritable");
-        let context = RuntimeContext {
-            home: home.clone(),
-            cwd: temp.clone(),
-            project_root: source_root(),
-        };
-        let output = run_with_context(
-            parse_command(&[OsString::from("install")]).expect("parse install all"),
-            &context,
-        );
-        fs::set_permissions(&claude_target, fs::Permissions::from_mode(0o700))
-            .expect("restore permissions");
-
-        assert_eq!(output.exit, 1);
-        assert!(
-            output
-                .stderr
-                .contains(&format!("error: install {}", claude_target.display()))
-        );
-        assert!(home.join(".codex/skills/sol/SKILL.md").is_file());
-        let _ = fs::remove_dir_all(temp);
     }
 }

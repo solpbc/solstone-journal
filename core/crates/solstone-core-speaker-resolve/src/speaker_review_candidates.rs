@@ -142,23 +142,15 @@ fn now_iso() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use serde_json::json;
 
     use super::*;
 
-    fn temporary_journal(name: &str) -> PathBuf {
-        let path = PathBuf::from("/var/tmp").join(format!(
-            "solstone-speaker-review-{name}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        path
+    fn temporary_journal(name: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("solstone-speaker-review-{name}-"))
+            .tempdir_in("/var/tmp")
+            .unwrap()
     }
 
     fn row() -> Value {
@@ -180,48 +172,48 @@ mod tests {
     #[test]
     fn accept_marks_row_and_persists_merge_id() {
         let journal = temporary_journal("accept");
-        seed(&journal);
+        seed(journal.path());
 
-        let accepted = accept_candidate(&journal, "alicia", "alice", Some("merge-7"))
+        let accepted = accept_candidate(journal.path(), "alicia", "alice", Some("merge-7"))
             .unwrap()
             .unwrap();
 
         assert_eq!(accepted["status"], "accepted");
         assert_eq!(accepted["merge_id"], "merge-7");
         assert!(accepted["updated_at"].as_str().unwrap().ends_with('Z'));
-        assert_eq!(load_candidates(&journal).unwrap()[0]["status"], "accepted");
-        fs::remove_dir_all(journal).unwrap();
+        assert_eq!(
+            load_candidates(journal.path()).unwrap()[0]["status"],
+            "accepted"
+        );
     }
 
     #[test]
     fn dismiss_captures_detection_count_and_persists() {
         let journal = temporary_journal("dismiss");
-        seed(&journal);
+        seed(journal.path());
 
-        let dismissed = dismiss_candidate(&journal, "alice", "alicia")
+        let dismissed = dismiss_candidate(journal.path(), "alice", "alicia")
             .unwrap()
             .unwrap();
 
         assert_eq!(dismissed["status"], "dismissed");
         assert_eq!(dismissed["dismissed_detection_count"], 7);
         assert_eq!(
-            load_candidates(&journal).unwrap()[0]["dismissed_detection_count"],
+            load_candidates(journal.path()).unwrap()[0]["dismissed_detection_count"],
             7
         );
-        fs::remove_dir_all(journal).unwrap();
     }
 
     #[test]
     fn missing_candidate_returns_none_without_creating_a_row() {
         let journal = temporary_journal("missing");
-        seed(&journal);
+        seed(journal.path());
 
         assert!(
-            accept_candidate(&journal, "missing", "candidate", None)
+            accept_candidate(journal.path(), "missing", "candidate", None)
                 .unwrap()
                 .is_none()
         );
-        assert_eq!(load_candidates(&journal).unwrap().len(), 1);
-        fs::remove_dir_all(journal).unwrap();
+        assert_eq!(load_candidates(journal.path()).unwrap().len(), 1);
     }
 }

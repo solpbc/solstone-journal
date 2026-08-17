@@ -3757,3 +3757,29 @@ timeout = "standard"
 default_full = true
 required_features = []
 runtime = "none"
+
+[[suites]]
+id = "solstone-core-sol::skill_install_permissions"
+package = "solstone-core-sol"
+target = "skill_install_permissions"
+set = "platform"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-talent-runtime::documents_environment"
+package = "solstone-core-talent-runtime"
+target = "documents_environment"
+set = "component"
+areas = ["talents"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"

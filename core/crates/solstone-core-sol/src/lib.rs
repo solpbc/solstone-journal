@@ -1131,12 +1131,11 @@ mod tests {
         values.iter().map(OsString::from).collect()
     }
 
-    fn temp_path(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should be available")
-            .as_nanos();
-        env::temp_dir().join(format!("solstone-core-sol-{name}-{stamp}"))
+    fn temp_path(name: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("solstone-core-sol-{name}-"))
+            .tempdir()
+            .expect("tempdir")
     }
 
     #[test]
@@ -1147,7 +1146,11 @@ mod tests {
     #[test]
     fn canonical_site_packages_returns_single_plain_candidate() {
         let root = temp_path("single-site-packages");
-        let site_packages = root.join("lib").join("python3.13").join("site-packages");
+        let site_packages = root
+            .path()
+            .join("lib")
+            .join("python3.13")
+            .join("site-packages");
         fs::create_dir_all(&site_packages).expect("create site-packages");
         let expected = fs::canonicalize(&site_packages).expect("canonical site-packages");
 
@@ -1155,17 +1158,24 @@ mod tests {
             resolve_canonical_site_packages(std::slice::from_ref(&site_packages)),
             Some(expected)
         );
-        fs::remove_dir_all(root).expect("cleanup single-site-packages");
     }
 
     #[cfg(unix)]
     #[test]
     fn canonical_site_packages_collapses_lib64_alias_in_both_orders() {
         let root = temp_path("lib64-site-packages");
-        let site_packages = root.join("lib").join("python3.13").join("site-packages");
+        let site_packages = root
+            .path()
+            .join("lib")
+            .join("python3.13")
+            .join("site-packages");
         fs::create_dir_all(&site_packages).expect("create lib site-packages");
-        std::os::unix::fs::symlink("lib", root.join("lib64")).expect("create lib64 symlink");
-        let lib64_site_packages = root.join("lib64").join("python3.13").join("site-packages");
+        std::os::unix::fs::symlink("lib", root.path().join("lib64")).expect("create lib64 symlink");
+        let lib64_site_packages = root
+            .path()
+            .join("lib64")
+            .join("python3.13")
+            .join("site-packages");
         let expected = fs::canonicalize(&site_packages).expect("canonical lib site-packages");
 
         assert_eq!(
@@ -1176,14 +1186,21 @@ mod tests {
             resolve_canonical_site_packages(&[lib64_site_packages, site_packages]),
             Some(expected)
         );
-        fs::remove_dir_all(root).expect("cleanup lib64-site-packages");
     }
 
     #[test]
     fn canonical_site_packages_selects_distinct_real_candidates_deterministically() {
         let root = temp_path("distinct-site-packages");
-        let first = root.join("a").join("python3.13").join("site-packages");
-        let second = root.join("z").join("python3.13").join("site-packages");
+        let first = root
+            .path()
+            .join("a")
+            .join("python3.13")
+            .join("site-packages");
+        let second = root
+            .path()
+            .join("z")
+            .join("python3.13")
+            .join("site-packages");
         fs::create_dir_all(&first).expect("create first site-packages");
         fs::create_dir_all(&second).expect("create second site-packages");
         let expected = fs::canonicalize(&first).expect("canonical first site-packages");
@@ -1196,7 +1213,6 @@ mod tests {
             resolve_canonical_site_packages(&[first, second]),
             Some(expected)
         );
-        fs::remove_dir_all(root).expect("cleanup distinct-site-packages");
     }
 
     #[test]
@@ -1293,7 +1309,7 @@ mod tests {
     #[test]
     fn project_root_prefers_installed_package_layout_over_checkout_ancestor() {
         let root = temp_path("installed-root");
-        let checkout = root.join("checkout");
+        let checkout = root.path().join("checkout");
         let bin = checkout.join(".venv").join("bin");
         let site_packages = checkout
             .join(".venv")
@@ -1310,13 +1326,12 @@ mod tests {
         let resolved = resolve_project_root_from_executable(&bin.join("sol"))
             .expect("installed project root should resolve");
         assert_eq!(resolved, site_packages);
-        fs::remove_dir_all(root).expect("cleanup temp root");
     }
 
     #[test]
     fn project_root_uses_executable_checkout_ancestry_without_cwd_fallback() {
         let root = temp_path("checkout-root");
-        let checkout = root.join("checkout");
+        let checkout = root.path().join("checkout");
         let bin = checkout.join("core").join("target").join("debug");
         fs::create_dir_all(checkout.join(".git")).expect("create .git");
         fs::write(checkout.join("pyproject.toml"), "[project]\n").expect("write pyproject");
@@ -1326,19 +1341,17 @@ mod tests {
         let resolved = resolve_project_root_from_executable(&bin.join("sol"))
             .expect("checkout should resolve");
         assert_eq!(resolved, checkout);
-        fs::remove_dir_all(root).expect("cleanup temp root");
     }
 
     #[test]
     fn project_root_errors_when_executable_artifact_is_unclassified() {
         let root = temp_path("unclassified-root");
-        let bin = root.join("bin");
+        let bin = root.path().join("bin");
         fs::create_dir_all(&bin).expect("create bin");
         let error = resolve_project_root_from_executable(&bin.join("sol")).unwrap_err();
         assert!(error.to_string().contains(
             "native sol project root resolution failed: could not locate source checkout or installed solstone package"
         ));
-        fs::remove_dir_all(root).expect("cleanup temp root");
     }
 
     #[test]

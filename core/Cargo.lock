@@ -3091,6 +3091,7 @@ dependencies = [
  "serde_json",
  "solstone-core-cogitate",
  "solstone-core-format",
+ "tempfile",
 ]
 
 [[package]]
@@ -4184,6 +4185,7 @@ dependencies = [
  "solstone-core-sol-client",
  "solstone-core-sol-client-cli",
  "solstone-core-sol-link",
+ "tempfile",
 ]
 
 [[package]]
@@ -4286,6 +4288,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-npy",
  "solstone-core-speaker-id",
+ "tempfile",
  "thiserror 2.0.20",
  "zip",
 ]

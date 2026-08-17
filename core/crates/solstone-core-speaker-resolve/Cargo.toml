@@ -50,3 +50,6 @@ solstone-core-npy.workspace = true
 solstone-core-speaker-id.workspace = true
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3.24.0"

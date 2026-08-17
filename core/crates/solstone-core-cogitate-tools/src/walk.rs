@@ -166,28 +166,28 @@ fn resolve_entry(
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn root(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("cogitate-tools-walk-{name}-{stamp}"));
-        fs::create_dir_all(&root).expect("root");
-        root
+    fn root(name: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("cogitate-tools-walk-{name}-"))
+            .tempdir()
+            .expect("tempdir")
     }
 
     #[test]
     fn dangling_symlink_is_a_file_walk_entry() {
         let root = root("dangling");
-        fs::create_dir_all(root.join("allowed")).expect("allowed");
-        symlink("missing.txt", root.join("allowed/dangling")).expect("link");
-        let paths: Vec<_> = walk_allowed(&root, &root, &root.join("allowed"), false)
-            .map(|entry| journal_rel(&entry.path, &root).expect("relative"))
-            .collect();
+        fs::create_dir_all(root.path().join("allowed")).expect("allowed");
+        symlink("missing.txt", root.path().join("allowed/dangling")).expect("link");
+        let paths: Vec<_> = walk_allowed(
+            root.path(),
+            root.path(),
+            &root.path().join("allowed"),
+            false,
+        )
+        .map(|entry| journal_rel(&entry.path, root.path()).expect("relative"))
+        .collect();
         assert_eq!(paths, ["allowed/missing.txt"]);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
@@ -195,16 +195,15 @@ mod tests {
         let root = root("lazy");
         for directory in 0..30 {
             for file in 0..30 {
-                let path = root.join(format!("d{directory:02}/f{file:02}.txt"));
+                let path = root.path().join(format!("d{directory:02}/f{file:02}.txt"));
                 fs::create_dir_all(path.parent().expect("parent")).expect("parent directory");
                 fs::write(path, "x").expect("file");
             }
         }
-        let mut walk = walk_allowed(&root, &root, &root, false);
+        let mut walk = walk_allowed(root.path(), root.path(), root.path(), false);
         assert_eq!(walk.directory_reads, 0);
         assert!(walk.next().is_some());
         assert_eq!(walk.directory_reads, 1);
         assert!(walk.seen.len() <= 30);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 }

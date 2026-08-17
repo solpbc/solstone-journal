@@ -263,15 +263,14 @@ pub fn truncate_output(text: &str, cap: usize) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
 
     #[test]
     fn executable_beside_current_binary_wins_over_path() {
         let root = unique_temp_dir("resolution");
-        let sibling = root.join("sibling");
-        let path = root.join("path");
+        let sibling = root.path().join("sibling");
+        let path = root.path().join("path");
         fs::create_dir_all(&sibling).expect("sibling directory");
         fs::create_dir_all(&path).expect("path directory");
         fs::write(sibling.join("sol"), "sibling").expect("sibling fixture");
@@ -280,7 +279,6 @@ mod tests {
             resolve_executable_in("sol", Some(&sibling), &[path]),
             Some(sibling.join("sol"))
         );
-        fs::remove_dir_all(root).expect("remove fixtures");
     }
 
     #[test]
@@ -299,11 +297,10 @@ mod tests {
         );
     }
 
-    fn unique_temp_dir(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        env::temp_dir().join(format!("solstone-cogitate-tools-{name}-{stamp}"))
+    fn unique_temp_dir(name: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("solstone-cogitate-tools-{name}-"))
+            .tempdir()
+            .expect("tempdir")
     }
 }

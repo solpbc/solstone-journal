@@ -18,5 +18,8 @@ solstone-core-skill-state = { workspace = true }
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 solstone-core-sol-link = { workspace = true, features = ["client"] }
 
+[dev-dependencies]
+tempfile = "3.24.0"
+
 [lints]
 workspace = true

@@ -37,4 +37,5 @@ solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 tempfile = "3.24.0"

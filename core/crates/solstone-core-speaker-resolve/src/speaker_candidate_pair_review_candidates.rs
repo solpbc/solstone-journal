@@ -137,23 +137,15 @@ fn now_iso() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use serde_json::json;
 
     use super::*;
 
-    fn temporary_journal(name: &str) -> PathBuf {
-        let path = PathBuf::from("/var/tmp").join(format!(
-            "solstone-speaker-pair-{name}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        path
+    fn temporary_journal(name: &str) -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(&format!("solstone-speaker-pair-{name}-"))
+            .tempdir_in("/var/tmp")
+            .unwrap()
     }
 
     fn seed(journal: &Path) {
@@ -174,23 +166,25 @@ mod tests {
     #[test]
     fn accept_marks_row_and_persists() {
         let journal = temporary_journal("accept");
-        seed(&journal);
+        seed(journal.path());
 
-        let accepted = accept_candidate(&journal, "anchor-b", "anchor-a")
+        let accepted = accept_candidate(journal.path(), "anchor-b", "anchor-a")
             .unwrap()
             .unwrap();
 
         assert_eq!(accepted["status"], "accepted");
-        assert_eq!(load_candidates(&journal).unwrap()[0]["status"], "accepted");
-        fs::remove_dir_all(journal).unwrap();
+        assert_eq!(
+            load_candidates(journal.path()).unwrap()[0]["status"],
+            "accepted"
+        );
     }
 
     #[test]
     fn dismiss_records_sorted_anchors_and_shared_timestamp() {
         let journal = temporary_journal("dismiss");
-        seed(&journal);
+        seed(journal.path());
 
-        let dismissed = dismiss_candidate(&journal, "anchor-b", "anchor-a")
+        let dismissed = dismiss_candidate(journal.path(), "anchor-b", "anchor-a")
             .unwrap()
             .unwrap();
 
@@ -198,20 +192,18 @@ mod tests {
         assert_eq!(dismissed["dismissed_anchor_a"], "anchor-a");
         assert_eq!(dismissed["dismissed_anchor_b"], "anchor-b");
         assert_eq!(dismissed["dismissed_at"], dismissed["updated_at"]);
-        fs::remove_dir_all(journal).unwrap();
     }
 
     #[test]
     fn missing_candidate_returns_none_without_creating_a_row() {
         let journal = temporary_journal("missing");
-        seed(&journal);
+        seed(journal.path());
 
         assert!(
-            dismiss_candidate(&journal, "missing-a", "missing-b")
+            dismiss_candidate(journal.path(), "missing-a", "missing-b")
                 .unwrap()
                 .is_none()
         );
-        assert_eq!(load_candidates(&journal).unwrap().len(), 1);
-        fs::remove_dir_all(journal).unwrap();
+        assert_eq!(load_candidates(journal.path()).unwrap().len(), 1);
     }
 }
