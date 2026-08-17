@@ -106,15 +106,46 @@ impl ReapOnDrop {
     }
 
     fn wait_ready(&mut self) {
-        let mut line = String::new();
-        let read = {
-            let stdout = self.child().stdout.as_mut().expect("piped stdout");
-            BufReader::new(stdout)
-                .read_line(&mut line)
-                .expect("read ready line")
-        };
-        if read == 0 {
-            panic!("helper exited before ready: {:?}", self.child().try_wait());
+        let stdout = self.child().stdout.take().expect("piped stdout");
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let reader = thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match reader.read_line(&mut line) {
+                    Ok(0) => {
+                        let _ = sender.send(Err("helper exited before emitting its ready record"));
+                        return;
+                    }
+                    Ok(_) if line.trim_end() == "ready" => {
+                        let _ = sender.send(Ok(()));
+                        return;
+                    }
+                    Ok(_) => {}
+                    Err(_) => {
+                        let _ = sender.send(Err("failed to read helper output"));
+                        return;
+                    }
+                }
+            }
+        });
+        match receiver.recv_timeout(Duration::from_secs(2)) {
+            Ok(Ok(())) => reader.join().expect("ready reader joins"),
+            Ok(Err(message)) => {
+                reader.join().expect("failed ready reader joins");
+                panic!("{message}");
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                self.kill_wait();
+                reader.join().expect("timed-out ready reader joins");
+                panic!("helper did not emit its ready record before the deadline");
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                self.kill_wait();
+                reader.join().expect("disconnected ready reader joins");
+                panic!("ready reader disconnected");
+            }
         }
     }
 
@@ -162,6 +193,19 @@ fn signal_ready() {
     let mut stdout = std::io::stdout();
     writeln!(stdout, "ready").unwrap();
     stdout.flush().unwrap();
+}
+
+fn emitted_key(stdout: &[u8]) -> String {
+    let output = std::str::from_utf8(stdout).expect("helper stdout is UTF-8");
+    let mut keys = output.lines().filter(|line| {
+        line.len() == 64
+            && line
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    });
+    let key = keys.next().expect("helper emitted one hexadecimal key");
+    assert!(keys.next().is_none(), "helper emitted multiple keys");
+    key.to_owned()
 }
 
 #[test]
@@ -356,6 +400,6 @@ fn key_generation_race_keeps_one_key() {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    assert_eq!(String::from_utf8_lossy(&left_out.stdout).trim(), expected);
-    assert_eq!(String::from_utf8_lossy(&right_out.stdout).trim(), expected);
+    assert_eq!(emitted_key(&left_out.stdout), expected);
+    assert_eq!(emitted_key(&right_out.stdout), expected);
 }
