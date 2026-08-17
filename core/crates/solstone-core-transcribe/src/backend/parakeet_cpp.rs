@@ -375,9 +375,11 @@ mod tests {
 
     use serde_json::json;
 
+    #[cfg(target_os = "linux")]
+    use super::{COMPUTE_TYPE, MODEL_FILENAME, get_model_info};
     use super::{
-        COMPUTE_TYPE, MODEL_FILENAME, WordContractError, connect, get_model_info, map_ureq_error,
-        parse_transcription_response, parse_verbose_json, read_placement, read_port,
+        WordContractError, connect, map_ureq_error, parse_transcription_response,
+        parse_verbose_json, read_placement, read_port,
     };
     use crate::TranscribeError;
     use crate::config::{parakeet_cpp_device, read_transcribe_config};
@@ -399,6 +401,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn placement_overrides_configured_device() {
         let temporary = tempfile::tempdir().unwrap();
         write_placement(temporary.path(), "gpu");
@@ -411,6 +414,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn configured_device_is_used_without_placement() {
         let temporary = tempfile::tempdir().unwrap();
 
@@ -483,6 +487,7 @@ mod tests {
         fs::write(health.join("parakeet-cpp.port"), port.to_string()).unwrap();
     }
 
+    #[cfg(target_os = "linux")]
     fn write_placement(journal_path: &std::path::Path, device: &str) {
         let health = journal_path.join("health");
         fs::create_dir_all(&health).unwrap();
