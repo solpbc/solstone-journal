@@ -16,6 +16,7 @@ workspace = true
 # by default; that is what lets the frozen native `make ci` run on a bare
 # checkout. They run from `make check-differentials`.
 differential = []
+test-hooks = []
 
 [[test]]
 name = "core_brain_contracts"
@@ -61,6 +62,11 @@ path = "tests/supervisor_shutdown.rs"
 [[test]]
 name = "supervisor_tick"
 path = "tests/supervisor_tick.rs"
+
+[[test]]
+name = "wrapper_write_lock_component"
+path = "tests/wrapper_write_lock_component.rs"
+required-features = ["test-hooks"]
 
 [[bin]]
 name = "solstone-core-generate-session-kill-helper"

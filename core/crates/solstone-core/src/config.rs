@@ -6,6 +6,8 @@
 use std::env;
 use std::fs;
 use std::io;
+#[cfg(feature = "test-hooks")]
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -448,6 +450,12 @@ fn install_wrappers_at(
         .truncate(false)
         .write(true)
         .open(lock_path)?;
+    #[cfg(feature = "test-hooks")]
+    {
+        let mut stdout = io::stdout();
+        writeln!(stdout, "ready")?;
+        stdout.flush()?;
+    }
     let _lock = nix::fcntl::Flock::lock(lock, nix::fcntl::FlockArg::LockExclusive)
         .map_err(|(_, error)| io::Error::other(error))?;
     let items = [
@@ -498,6 +506,46 @@ fn install_wrappers_at(
         }
     }
     Ok(())
+}
+
+#[cfg(feature = "test-hooks")]
+pub(crate) fn run_wrapper_write_test_child(args: &[std::ffi::OsString]) -> Option<ExitCode> {
+    if args
+        .first()
+        .is_none_or(|argument| argument != "__wrapper-write")
+    {
+        return None;
+    }
+    Some(execute_wrapper_write_test_child(&args[1..]))
+}
+
+#[cfg(feature = "test-hooks")]
+fn execute_wrapper_write_test_child(args: &[std::ffi::OsString]) -> ExitCode {
+    if args.len() != 2 {
+        eprintln!("__wrapper-write requires <bin-dir> <target-root>");
+        return ExitCode::from(2);
+    }
+    let bin_dir = Path::new(&args[0]);
+    let target = Path::new(&args[1]);
+    let sol = bin_dir.join("sol");
+    let journal = bin_dir.join("journal");
+    let bins = WrapperBins {
+        sol: PathBuf::from("/new/sol"),
+        journal: PathBuf::from("/new/journal"),
+    };
+    match install_wrappers_at(target, &bins, &sol, &journal, &RealCommitter) {
+        Ok(()) => {
+            let mut stdout = io::stdout();
+            if writeln!(stdout, "wrapper-write-lock").is_err() || stdout.flush().is_err() {
+                return ExitCode::from(1);
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::from(1)
+        }
+    }
 }
 
 fn wrapper_refusal(path: &Path) -> String {
@@ -1019,8 +1067,6 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::mpsc;
-    use std::time::Duration;
 
     static TEST_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
@@ -1596,50 +1642,6 @@ mod tests {
             .is_err()
         );
         assert!(!root.join("bin/.sol.tmp-0").exists());
-    }
-
-    #[test]
-    fn wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes() {
-        let root = test_root("wrapper-lock");
-        let sol = root.join("bin/sol");
-        let journal_alias = root.join("bin/journal");
-        fs::create_dir_all(sol.parent().unwrap()).unwrap();
-        fs::write(&sol, b"old sol bytes").unwrap();
-        fs::write(&journal_alias, b"old journal bytes").unwrap();
-        let lock_file = fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(root.join("bin/.sol.lock"))
-            .unwrap();
-        let held = nix::fcntl::Flock::lock(lock_file, nix::fcntl::FlockArg::LockExclusive).unwrap();
-        let bins = WrapperBins {
-            sol: PathBuf::from("/new/sol"),
-            journal: PathBuf::from("/new/journal"),
-        };
-        let (done, finished) = mpsc::channel();
-        let writer_root = root.clone();
-        let writer_sol = sol.clone();
-        let writer_journal = journal_alias.clone();
-        let writer = std::thread::spawn(move || {
-            let result = install_wrappers_at(
-                &writer_root.join("target"),
-                &bins,
-                &writer_sol,
-                &writer_journal,
-                &RealCommitter,
-            );
-            done.send(result.is_ok()).unwrap();
-        });
-        assert!(matches!(
-            finished.recv_timeout(Duration::from_millis(100)),
-            Err(mpsc::RecvTimeoutError::Timeout)
-        ));
-        assert_eq!(fs::read(&sol).unwrap(), b"old sol bytes");
-        assert_eq!(fs::read(&journal_alias).unwrap(), b"old journal bytes");
-        drop(held);
-        assert!(finished.recv_timeout(Duration::from_secs(2)).unwrap());
-        writer.join().unwrap();
     }
 
     #[test]

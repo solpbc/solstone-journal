@@ -1441,9 +1441,6 @@ id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend
 id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::new::scheduling"
 
 [[findings]]
-id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes::scheduling"
-
-[[findings]]
 id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::real_asset_gate_reports_wespeaker_digest_mismatch_before_installing::process"
 
 [[findings]]
