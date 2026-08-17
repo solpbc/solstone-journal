@@ -47,7 +47,16 @@ ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 SCAN_SH=$ROOT/core/distribution/scan-python.sh
 INSTALL_SH=$ROOT/core/distribution/install.sh
 ARTIFACTS=${SOLSTONE_MACOS_ARTIFACTS:-/var/tmp/solstone-distribution-out/macos-arm64}
-WORK=${SOLSTONE_MACOS_WORK:-/var/tmp/solstone-macos-rung}
+# 🔴 A FRESH work root per run, and this is not tidiness — a reused path can be
+# permanently poisoned. Measured 2026-08-17: one execution of a QUARANTINED
+# binary in a headless session blocks forever waiting on a first-launch
+# assessment that wants a GUI, and it leaves a stuck syspolicy record keyed to
+# that PATH. `rm -rf` and a clean re-extract do NOT clear it: the same bytes
+# from the same tarball timed out at 15s under the poisoned path and returned in
+# 1s at `…/tree2` and at a different root, in one script, back to back.
+# ⚠ A rung pinned to a fixed path therefore reports a healthy artifact as hung,
+# for as long as that host lives.
+WORK=${SOLSTONE_MACOS_WORK:-$(mktemp -d /var/tmp/solstone-macos-rung.XXXXXX)}
 TREE=$WORK/tree
 JOURNAL=$WORK/journal
 
@@ -63,17 +72,33 @@ one_artifact() {
 reset_work() {
 	rm -rf "$WORK"
 	mkdir -p "$WORK"
+	printf 'work root: %s\n' "$WORK"
 }
 
 # --- python census ----------------------------------------------------------
 
+# 🔴 A bare zero is NOT achievable on any Mac and must not be the criterion.
+# `/usr/bin/python3` is present on every macOS install as a Command Line Tools
+# shim — a real, executable file — so a census that keys on name and mode
+# reports a Python runtime on a host that has never had one. The census
+# classifies a candidate that cannot `import sys` as `shim`, and the zero this
+# rung asserts is over the REAL interpreters.
+#
+# ✅ Shims are printed rather than dropped: an unreported exclusion is how a
+# criterion quietly stops covering the thing it names.
 scan_zero() {
 	matches=$(sh "$SCAN_SH" / || true)
-	[ -z "$matches" ] || {
-		printf '%s\n' "$matches" >&2
+	shims=$(printf '%s\n' "$matches" | grep '^shim ' || true)
+	real=$(printf '%s\n' "$matches" | grep -v '^shim ' | grep . || true)
+	[ -z "$shims" ] || {
+		printf 'disclosed non-findings (present, not an interpreter):\n%s\n' "$shims"
+	}
+	[ -z "$real" ] || {
+		printf '%s\n' "$real" >&2
 		refuse "Python runtime found on a host declared interpreter-free"
 	}
-	printf 'scan=zero ok\n'
+	printf 'scan=zero ok (0 interpreters, %s shim(s) disclosed)\n' \
+		"$(printf '%s\n' "$shims" | grep -c . || true)"
 }
 
 scan_control() {
@@ -121,17 +146,25 @@ macho_members() {
 	done | LC_ALL=C sort
 }
 
+# ⛔ Split executables from payloads by Mach-O FILETYPE, never by the +x bit or
+# by extension. Both shipped dylibs are staged mode 0755, so an `-x` test counts
+# them as executables (measured: 10 where the inventory admits 8) and an
+# extension test misses any payload that does not end in `.dylib`. The filetype
+# is a property of the bytes and it is the same discriminator the producer's
+# Rust census uses, so the two agree by construction rather than by convention.
+macho_filetype() {
+	LC_ALL=C od -An -j12 -N4 -t u4 "$1" 2>/dev/null | tr -d ' \n'
+}
+
 macho_executables() {
 	macho_members | while IFS= read -r path; do
-		[ -x "$path" ] && printf '%s\n' "$path"
+		[ "$(macho_filetype "$path")" = "2" ] && printf '%s\n' "$path"
 	done
 }
 
 macho_payloads() {
 	macho_members | while IFS= read -r path; do
-		case ${path##*/} in
-		*.dylib | *.so | *.so.*) printf '%s\n' "$path" ;;
-		esac
+		[ "$(macho_filetype "$path")" = "6" ] && printf '%s\n' "$path"
 	done
 }
 
@@ -149,42 +182,133 @@ assert_signed_by_us() {
 		|| refuse "trusted timestamp absent: $path"
 }
 
-quarantine_tree() {
-	xattr -w -r com.apple.quarantine '0081;00000000;solstone-macos-rung;' "$TREE"
-	# Prove the mark actually landed. curl and tar do not set it, so a rung
-	# that skips this step evaluates an UNQUARANTINED tree and passes
-	# identically on binaries Gatekeeper would have rejected.
-	marked=$(xattr -p com.apple.quarantine "$TREE/bin/solstone-core" 2>/dev/null || true)
-	[ -n "$marked" ] || refuse "quarantine attribute did not land; the Gatekeeper rung would be measuring nothing"
-	printf 'quarantine ok (%s)\n' "$marked"
+# Notarization, asserted two independent ways.
+#
+# ⛔ `spctl -t exec` is the WRONG instrument here and its rejection is not about
+# our signature: for a bare CLI Mach-O it answers *"the code is valid but does
+# not seem to be an app"* while printing our own `origin=`. `-t open` with the
+# primary-signature context is the assessment that applies to a plain file.
+# `codesign -R="notarized"` is the second, and it names the property directly
+# rather than inferring it from an assessment verdict.
+assert_notarized() {
+	path=$1
+	out=$(spctl -a -vvv -t open --context context:primary-signature "$path" 2>&1) || {
+		printf '%s\n' "$out" >&2
+		refuse "Gatekeeper did not accept $path"
+	}
+	printf '%s\n' "$out" | grep -Fq 'Notarized Developer ID' \
+		|| { printf '%s\n' "$out" >&2; refuse "$path is signed but NOT notarized"; }
+	/usr/bin/codesign -vvv -R='notarized' --check-notarization "$path" >"$WORK/notarized.out" 2>&1 \
+		|| { cat "$WORK/notarized.out" >&2; refuse "$path failed the notarized code requirement"; }
+}
+
+# ⛔ `timeout` is NOT a base-macOS tool — it arrives with GNU coreutils, so a
+# rung that uses it passes on a developer's Mac and dies on a clean one with
+# `command not found`. Bound the run by hand instead.
+#
+# ⚠ And stdin must be closed: three of the eight binaries speak a JSON request
+# protocol on stdin, so an unbounded probe with an open stdin hangs forever and
+# reads as a wedge rather than as a passing binary.
+# ⛔ Do NOT poll `kill -0 "$pid"` to decide whether a background child is still
+# running. A child that has already exited stays a ZOMBIE until it is reaped, and
+# `kill -0` on a zombie SUCCEEDS — so the loop runs to its limit and reports a
+# timeout on a command that finished in one second. That is exactly what this
+# rung did on its first run: it declared eight signed, notarized binaries hung
+# while each of them was returning promptly, which reads as a product failure and
+# is a harness failure. The sentinel file is written by the thing that did the
+# work, so it is the only honest signal.
+run_bounded() {
+	path=$1
+	out=$2
+	limit=$3
+	: >"$out"
+	rm -f "$out.rc"
+	( "$path" --version </dev/null >"$out" 2>&1; printf '%s\n' "$?" >"$out.rc" ) &
+	probe_pid=$!
+	waited=0
+	while [ ! -f "$out.rc" ]; do
+		if [ "$waited" -ge "$limit" ]; then
+			kill "$probe_pid" 2>/dev/null || true
+			return 1
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+	return 0
+}
+
+# Liveness for a binary that may legitimately refuse `--version`.
+#
+# ⚠ `depict`, `solstone-retention` and `speakers-analyze` answer a JSON request
+# protocol and reject `--version` with a TYPED error and a nonzero status — so
+# exit 0 is the wrong test, and asserting it would fail three shipped binaries
+# that are working correctly. What proves the process started is that IT wrote
+# something recognisably its own. A Gatekeeper kill produces no output at all.
+assert_starts() {
+	path=$1
+	if ! run_bounded "$path" "$WORK/start.out" 20; then
+		refuse "signed, notarized, and did not return within 20s: $path"
+	fi
+	# Non-empty output is the positive: a process that the loader refused
+	# produces none at all. ⛔ Do NOT additionally require the output to
+	# *look* like ours — `solstone-retention` answers `{"ok":false,"error":
+	# "unknown verb --version"}`, which names neither the binary nor the
+	# product, and an allow-list of expected shapes fails three working
+	# binaries while proving nothing extra.
+	[ -s "$WORK/start.out" ] \
+		|| refuse "signed, notarized, and produced no output at all: $path"
+	# The failures this rung exists to catch all announce themselves, and each
+	# of them can occur on a binary whose signature is perfectly valid.
+	if grep -Eq 'dyld\[|Library not loaded|code signature|Killed: 9|Trace/BPT|Operation not permitted|invalid active developer path' "$WORK/start.out"; then
+		cat "$WORK/start.out" >&2
+		refuse "loader or signature failure on start: $path"
+	fi
+}
+
+# 🔴 The extracted tree carries NO quarantine, and that is a fact about the
+# owner's real path rather than an oversight to correct.
+#
+# Measured 2026-08-17 on pro5e: a fresh `tar -xzf` of our tarball has no
+# `com.apple.quarantine` xattr at all, and `curl` does not set one either — only
+# quarantine-aware launchers (browsers, Mail, Messages) do. ⛔ So the `.tar.gz`
+# path is **not adjudicated by Gatekeeper on first launch**; the signature and
+# notarization are what a later check validates, and the `.pkg` is the container
+# where Gatekeeper actually decides. Asserting the absence here keeps the rest of
+# this rung honest about which question it is answering.
+#
+# ⚠ And do NOT "strengthen" this by marking the tree and executing it. Measured
+# the same day: a quarantined binary run from a headless shell BLOCKS FOREVER —
+# `solstone-core --version` returned in 1s unquarantined and had not returned
+# after four minutes quarantined, for a 7.9 MB binary as well as a 95 MB one.
+# The first-launch assessment wants a GUI session that an ssh/tmux context does
+# not have, so a rung built on it measures the harness and hangs the host.
+assert_tar_sets_no_quarantine() {
+	if xattr -p com.apple.quarantine "$TREE/bin/solstone-core" >/dev/null 2>&1; then
+		refuse "the extracted tree carries a quarantine attribute; this rung's premise no longer holds and its conclusions do not follow"
+	fi
+	printf 'tar sets no quarantine (verified absent)\n'
 }
 
 gatekeeper_rung() {
 	install_tar
-	quarantine_tree
+	assert_tar_sets_no_quarantine
 
 	count=0
 	for path in $(macho_executables); do
 		count=$((count + 1))
 		assert_signed_by_us "$path"
-		spctl -a -vvv -t exec "$path" >"$WORK/spctl.out" 2>&1 \
-			|| { cat "$WORK/spctl.out" >&2; refuse "Gatekeeper rejected $path"; }
-		grep -Fq 'accepted' "$WORK/spctl.out" \
-			|| { cat "$WORK/spctl.out" >&2; refuse "spctl did not accept $path"; }
-		grep -Fq 'Notarized Developer ID' "$WORK/spctl.out" \
-			|| { cat "$WORK/spctl.out" >&2; refuse "$path is signed but NOT notarized"; }
+		assert_notarized "$path"
 		# Signed and assessed is still not started. Run it.
-		"$path" --version >/dev/null 2>&1 \
-			|| "$path" --help >/dev/null 2>&1 \
-			|| refuse "signed, notarized and would not start: $path"
+		assert_starts "$path"
 	done
-	[ "$count" -ge 8 ] || refuse "expected at least 8 executables in the tree, found $count"
+	[ "$count" -eq 8 ] || refuse "expected exactly 8 executables in the tree, found $count"
 	printf 'gatekeeper half 1: %s executables signed, notarized, accepted and started\n' "$count"
 
 	payloads=0
 	for path in $(macho_payloads); do
 		payloads=$((payloads + 1))
 		assert_signed_by_us "$path"
+		assert_notarized "$path"
 	done
 	[ "$payloads" -ge 1 ] || refuse "no loaded payload found in the tree: half 2 has nothing to test"
 
@@ -208,32 +332,43 @@ gatekeeper_negatives() {
 	broken=$WORK/broken
 	rm -rf "$broken"
 	cp -R "$TREE" "$broken"
-	xattr -w -r com.apple.quarantine '0081;00000000;solstone-macos-rung;' "$broken"
 
 	# Control for half 1: an ad-hoc signature is a VALID signature, which is
-	# why `codesign --verify` cannot be the test. Gatekeeper must still refuse.
+	# why `codesign --verify` cannot be the test. Both notarization instruments
+	# must refuse it, and `--verify` must still pass — that contrast is the
+	# whole point.
 	adhoc=$broken/bin/solstone-core
 	/usr/bin/codesign --force --sign - "$adhoc" >/dev/null 2>&1 \
 		|| refuse "could not build the ad-hoc control"
 	/usr/bin/codesign --verify --strict "$adhoc" >/dev/null 2>&1 \
 		|| note "ad-hoc control did not even verify; the control is weaker than intended"
-	if spctl -a -vvv -t exec "$adhoc" >/dev/null 2>&1; then
+	if spctl -a -vvv -t open --context context:primary-signature "$adhoc" >/dev/null 2>&1; then
 		refuse "CONTROL FAILED: Gatekeeper accepted an ad-hoc signed binary, so half 1 proves nothing"
 	fi
-	printf 'control 1 ok: Gatekeeper refuses an ad-hoc signed binary\n'
+	if /usr/bin/codesign -vvv -R='notarized' --check-notarization "$adhoc" >/dev/null 2>&1; then
+		refuse "CONTROL FAILED: an ad-hoc binary satisfied the notarized requirement, so half 1 proves nothing"
+	fi
+	printf 'control 1 ok: both notarization instruments refuse an ad-hoc signed binary that codesign --verify accepts\n'
 
 	# Control for half 2: strip the payload's signature and require the
 	# hardened-runtime helper to refuse to start. This is the exact failure a
 	# binaries-only signing census ships.
-	for path in $(SOLSTONE_MACOS_TREE=$broken macho_members_in "$broken"); do
-		case ${path##*/} in
-		*.dylib) /usr/bin/codesign --remove-signature "$path" >/dev/null 2>&1 || true ;;
-		esac
+	stripped=0
+	for path in $(macho_members_in "$broken"); do
+		if [ "$(macho_filetype "$path")" = "6" ]; then
+			/usr/bin/codesign --remove-signature "$path" >/dev/null 2>&1 || true
+			stripped=$((stripped + 1))
+		fi
 	done
-	if TREE=$broken speakers_probe "$WORK/broken-response.json" 2>"$WORK/broken.err"; then
+	[ "$stripped" -ge 1 ] || refuse "CONTROL FAILED: no payload was stripped, so control 2 changed nothing"
+	saved_tree=$TREE
+	TREE=$broken
+	if speakers_probe "$WORK/broken-response.json" 2>"$WORK/broken.err"; then
+		TREE=$saved_tree
 		refuse "CONTROL FAILED: the helper ran with an unsigned payload, so half 2 proves nothing"
 	fi
-	printf 'control 2 ok: a hardened-runtime binary refuses an unsigned payload\n'
+	TREE=$saved_tree
+	printf 'control 2 ok: %s payload(s) stripped, and a hardened-runtime binary refused to start\n' "$stripped"
 	rm -rf "$broken"
 }
 
@@ -343,7 +478,13 @@ talent_rung() {
 	unset SOL_SKIP_SUPERVISOR_CHECK || true
 	[ ! -e "$JOURNAL/chronicle/20990101/talents/daily_schedule.json" ] \
 		|| refuse "daily_schedule output was pre-seeded"
-	solstone-core supervisor --journal "$JOURNAL" --no-spl --no-daily 5015 \
+	# ⛔ NOT 5015. The Docker cleanroom owns its whole network namespace; this
+	# rung runs on a real Mac where the founder's own journal is live on the
+	# default port, and binding it would both fail the rung (convey exits 75)
+	# and disturb a running install. Measured: the first run of this rung died
+	# with `convey exited during startup (exit 75)` for exactly that reason.
+	port=${SOLSTONE_MACOS_CONVEY_PORT:-51015}
+	solstone-core supervisor --journal "$JOURNAL" --no-spl --no-daily "$port" \
 		>"$JOURNAL/supervisor.log" 2>&1 &
 	SUPERVISOR_PID=$!
 	attempt=0
@@ -352,6 +493,15 @@ talent_rung() {
 		if ! kill -0 "$SUPERVISOR_PID" 2>/dev/null || [ "$attempt" -ge 30 ]; then
 			cat "$JOURNAL/supervisor.log" >&2 || true
 			refuse "supervisor did not become ready"
+		fi
+		sleep 1
+	done
+	attempt=0
+	while [ "$(cat "$JOURNAL/health/convey.port" 2>/dev/null || true)" != "$port" ]; do
+		attempt=$((attempt + 1))
+		if ! kill -0 "$SUPERVISOR_PID" 2>/dev/null || [ "$attempt" -ge 30 ]; then
+			cat "$JOURNAL/supervisor.log" >&2 || true
+			refuse "convey did not become ready on port $port"
 		fi
 		sleep 1
 	done

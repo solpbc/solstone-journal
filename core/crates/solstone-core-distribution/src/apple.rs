@@ -18,7 +18,6 @@
 //! we replaced. Apple's platform tools are not in that class and there is no
 //! alternative to them that Gatekeeper would accept.
 
-use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -489,42 +488,24 @@ pub fn assess(path: &Path, kind: &str) -> Result<String, AppleError> {
     Ok(report)
 }
 
-/// Set `com.apple.quarantine` so Gatekeeper actually engages.
-///
-/// 🔴 Without this the whole assessment is theatre. `curl` and `tar` do not
-/// set the quarantine attribute, so a tree fetched by the bootstrap and
-/// extracted on a clean Mac is evaluated only when something marks it — which
-/// means a proof harness that skips this step passes identically on an
-/// unsigned tree. Marking it is what makes the check able to fail.
-pub fn quarantine(path: &Path) -> Result<(), AppleError> {
-    run(
-        "xattr",
-        &[
-            "-w",
-            "-r",
-            "com.apple.quarantine",
-            "0081;00000000;solstone-distribution;",
-            &path.to_string_lossy(),
-        ],
-    )?;
-    Ok(())
-}
-
-#[must_use]
-pub fn quarantine_marks(path: &Path) -> BTreeSet<String> {
-    let mut marked = BTreeSet::new();
-    let Ok(report) = run("xattr", &["-r", "-l", &path.to_string_lossy()]) else {
-        return marked;
-    };
-    for line in report.lines() {
-        if line.contains("com.apple.quarantine")
-            && let Some((file, _)) = line.split_once(": com.apple.quarantine")
-        {
-            marked.insert(file.trim().to_owned());
-        }
-    }
-    marked
-}
+// ⛔ There is deliberately no `quarantine()` helper here, and an earlier draft
+// of this file had one whose rationale was wrong in a way worth recording:
+// *"marking the tree is what makes the Gatekeeper check able to fail."*
+//
+// Measured 2026-08-17 on pro5e, both halves:
+//   · a fresh `tar -xzf` of our own tarball carries NO `com.apple.quarantine`
+//     at all, and `curl` sets none either — so the owner's real path is never
+//     marked, and a rung that marks it is testing a state no install produces;
+//   · executing a marked binary from a headless shell BLOCKS INDEFINITELY.
+//     `solstone-core --version` returned in 1s unmarked and had not returned
+//     after four minutes marked; a 7.9 MB binary behaved identically, so it is
+//     not size. The first-launch assessment wants a GUI session.
+//
+// What actually makes the assessment falsifiable is the ad-hoc control:
+// `spctl -a -t open --context context:primary-signature` and
+// `codesign -R="notarized"` both accept our binaries and both reject an
+// ad-hoc-signed copy that `codesign --verify` happily accepts. That contrast is
+// the proof; the xattr was theatre in the other direction.
 
 #[cfg(test)]
 mod tests {

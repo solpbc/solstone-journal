@@ -43,7 +43,20 @@ while IFS= read -r path; do
 	case $base in
 	python | python3 | python[0-9] | python[0-9].[0-9] | python[0-9].[0-9][0-9])
 		if [ -f "$path" ] && [ -x "$path" ]; then
-			printf 'executable %s\n' "$path" >>"$matches"
+			# An executable file named python3 is not necessarily an
+			# interpreter. macOS ships /usr/bin/python3 as a Command Line
+			# Tools SHIM on every install, including one that has never had
+			# Xcode: it is a regular file, it is +x, and running it without
+			# CLT fails with `xcrun: error: invalid active developer path`.
+			# Classifying it by name and mode alone reports a Python runtime
+			# on a host that has none — a false POSITIVE, which on the
+			# zero-Python subject is the one direction that reads as a
+			# correctly-firing instrument rather than as a bug.
+			if "$path" -c 'import sys' >/dev/null 2>&1; then
+				printf 'executable %s\n' "$path" >>"$matches"
+			else
+				printf 'shim %s\n' "$path" >>"$matches"
+			fi
 		elif [ -d "$path" ] && [ -f "$path/os.py" ] && [ -f "$path/encodings/__init__.py" ]; then
 			printf 'stdlib %s\n' "$path" >>"$matches"
 		fi
