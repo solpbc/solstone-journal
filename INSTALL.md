@@ -79,7 +79,7 @@ to use `journal setup` and `journal start`.
 journal setup
 ```
 
-this runs the setup readiness doctor battery, confirms the journal directory at `~/journal`, installs the local transcription model (~2.5 GB on linux), installs the `sol` skill for claude code, codex, and gemini, installs the journal-side `sol` and `journal` router skills so sol can tend the journal, and starts a background service (systemd on linux, launchd on macOS) listening on http://localhost:5015.
+this runs the setup readiness doctor battery, confirms the journal directory at `~/journal`, installs the local transcription model (~1 GB on linux), installs the `sol` skill for claude code, codex, and gemini, installs the journal-side `sol` and `journal` router skills so sol can tend the journal, and starts a background service (systemd on linux, launchd on macOS) listening on http://localhost:5015.
 
 let your human know: **open http://localhost:5015 in a browser**. the first-run wizard walks them through setting their identity and choosing how sol thinks — local by default (the bundled model runs right in the journal), or their own provider key if the machine can't run a local model.
 
@@ -101,7 +101,7 @@ if the service fails to start, check `journal service logs`.
 
 sol is powered by an AI model, and it runs **locally by default** — on every device. the bundled model runs right in your journal, so your thinking never leaves the machine. a cloud lane is an option, not the default; you choose in settings → providers (or the thinking app).
 
-- **local built-in — the default.** on a capable machine sol thinks locally with nothing extra to set up — the bundled model handles both the reasoning over your journal and screen analysis, and nothing is sent to a cloud provider. the practical floor is about **8 GB**: an 8 GB GPU, or 8 GB of free memory on Apple Silicon (the model is ~2.74 GB on disk, plus the ~2.5 GB transcription model). solstone checks first and won't activate a local model that won't fit; on Linux it needs a supported hardware GPU (NVIDIA via CUDA on RTX 30-series or newer, or AMD, NVIDIA, and Intel via Vulkan).
+- **local built-in — the default.** on a capable machine sol thinks locally with nothing extra to set up — the bundled model handles both the reasoning over your journal and screen analysis, and nothing is sent to a cloud provider. the floor is **6 GB of GPU memory** on linux, or a **16 GB Apple Silicon mac** (the model is ~3.4 GB on disk, plus the ~1 GB transcription model). solstone checks first and won't activate a local model that won't fit; on Linux it needs a supported hardware GPU (NVIDIA via CUDA on RTX 30-series or newer, or AMD, NVIDIA, and Intel via Vulkan).
 - **an engine you bring yourself, if your machine can't clear that bar — or you'd rather not spend its power.** point solstone at Google (Gemini), OpenAI, or Anthropic with **your own developer API key**, created in that provider's developer console — *not* the consumer chat product (gemini.google.com / chatgpt.com / claude.ai). you can also point it at your own endpoint instead of a cloud provider — a model you run yourself, on this machine or another one you control. you can switch any time in settings → providers.
 - **confidential processing, if you'd rather not run it yourself or hand it to a provider.** sol's thinking runs on a sol pbc endpoint — verified by attestation before anything is sent, processed in memory, and not retained. it is off unless you turn it on, and only runs while it is enabled.
 
@@ -195,7 +195,7 @@ Skipping `--journal` here silently resolves to `~/journal` and starts fresh — 
    ```bash
    rm -rf ~/Library/Application\ Support/solstone/
    ```
-   this evicts the ~2.5 GB parakeet cache; reinstall will re-download it.
+   this evicts the parakeet cache; reinstall will re-download it.
 6. macOS only, optional: reset privacy permissions:
    ```bash
    tccutil reset Microphone app.solstone.observer && tccutil reset ScreenCapture app.solstone.observer
