@@ -7,10 +7,11 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
+use std::process::Child;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use socket2::{Domain, Protocol, Socket, Type};
 use solstone_core_spp_ratls::AttestedIo;
@@ -22,6 +23,7 @@ use solstone_core_transcribe::test_hooks::{
 
 const VALID: &str =
     r#"{"words":[{"word":"hello","start":0.0,"end":1.0,"conf":0.9}],"text":"hello"}"#;
+const IO_TIMEOUT: Duration = Duration::from_secs(2);
 
 enum Reply {
     Http { status: u16, body: &'static str },
@@ -52,7 +54,7 @@ impl StubServer {
             let address = listener.local_addr().unwrap();
             ready_tx.send(address).unwrap();
             for reply in replies {
-                let (stream, _) = listener.accept().unwrap();
+                let stream = accept_with_deadline(&listener);
                 let request = read_parakeet_request(stream.try_clone().unwrap());
                 recorded.lock().unwrap().push(request);
                 match reply {
@@ -65,7 +67,9 @@ impl StubServer {
                 }
             }
         });
-        let address = ready_rx.recv().unwrap();
+        let address = ready_rx
+            .recv_timeout(IO_TIMEOUT)
+            .expect("stub listener becomes ready before the deadline");
         Self {
             base_url: format!("http://{address}"),
             requests,
@@ -82,11 +86,37 @@ impl StubServer {
     }
 }
 
-fn read_confidential_request(stream: &mut TcpStream) -> String {
+fn accept_with_deadline(listener: &TcpListener) -> TcpStream {
+    listener.set_nonblocking(true).unwrap();
+    let deadline = Instant::now() + IO_TIMEOUT;
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                stream.set_nonblocking(false).unwrap();
+                stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+                stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
+                return stream;
+            }
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                assert!(
+                    Instant::now() < deadline,
+                    "stub accepts a connection before the deadline"
+                );
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => panic!("stub accept failed: {error}"),
+        }
+    }
+}
+
+fn read_confidential_request(stream: &mut TcpStream) -> Vec<u8> {
+    stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+    stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
     let mut bytes = Vec::new();
     let mut buffer = [0_u8; 1024];
     let header_end = loop {
         let count = stream.read(&mut buffer).unwrap();
+        assert_ne!(count, 0, "confidential request ended before its headers");
         bytes.extend_from_slice(&buffer[..count]);
         if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
             break index + 4;
@@ -96,27 +126,30 @@ fn read_confidential_request(stream: &mut TcpStream) -> String {
     let length = headers
         .lines()
         .find_map(|line| {
-            line.strip_prefix("Content-Length:")?
-                .trim()
-                .parse::<usize>()
-                .ok()
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())?
         })
         .unwrap();
     while bytes.len() < header_end + length {
         let count = stream.read(&mut buffer).unwrap();
+        assert_ne!(count, 0, "confidential request ended before its body");
         bytes.extend_from_slice(&buffer[..count]);
     }
-    String::from_utf8_lossy(&bytes).into_owned()
+    bytes.truncate(header_end + length);
+    bytes
 }
 
 fn read_parakeet_request(mut stream: TcpStream) -> CapturedRequest {
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .unwrap();
+    stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
     let mut bytes = Vec::new();
     let mut buffer = [0_u8; 1024];
     let header_end = loop {
         let count = stream.read(&mut buffer).unwrap();
+        assert_ne!(count, 0, "Parakeet request ended before its headers");
         bytes.extend_from_slice(&buffer[..count]);
         if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
             break index + 4;
@@ -136,6 +169,7 @@ fn read_parakeet_request(mut stream: TcpStream) -> CapturedRequest {
         .unwrap_or(0);
     while bytes.len() < header_end + content_length {
         let count = stream.read(&mut buffer).unwrap();
+        assert_ne!(count, 0, "Parakeet request ended before its body");
         bytes.extend_from_slice(&buffer[..count]);
     }
     let request_line = headers.lines().next().unwrap();
@@ -279,18 +313,19 @@ fn multipart_request_uses_one_plain_tcp_channel_with_expected_fields() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let handle = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+        let mut stream = accept_with_deadline(&listener);
         let request = read_confidential_request(&mut stream);
         write_response(&mut stream, 200, VALID);
         request
     });
     let mut stream = TcpStream::connect(address).unwrap();
+    const WAV: &[u8] = b"\x00WAV\xff";
 
     let response = confidential_multipart_exchange(
         &mut stream,
         &address.to_string(),
         Some("credential"),
-        b"WAV",
+        WAV,
         Duration::from_secs(1),
     );
     let request = handle.join().unwrap();
@@ -299,23 +334,34 @@ fn multipart_request_uses_one_plain_tcp_channel_with_expected_fields() {
         panic!("expected received multipart response");
     };
     assert_eq!(status, 200);
-    assert!(request.starts_with("POST /v1/audio/transcriptions HTTP/1.1\r\n"));
-    assert!(request.contains("Authorization: Bearer credential\r\n"));
-    assert!(!request.contains("x-sol-device"));
-    let boundary = request
+    let header_end = request
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .unwrap()
+        + 4;
+    let headers = std::str::from_utf8(&request[..header_end]).unwrap();
+    let boundary = headers
         .lines()
         .find_map(|line| line.strip_prefix("Content-Type: multipart/form-data; boundary="))
         .unwrap();
     assert!(boundary.starts_with("solstone-confidential-stt-"));
-    assert!(request.contains(&format!("--{boundary}\r\n")));
-    let file = request
-        .find("name=\"file\"; filename=\"audio.wav\"")
-        .unwrap();
-    let format = request.find("name=\"response_format\"").unwrap();
-    let words = request
-        .find("name=\"timestamp_granularities[]=word\"")
-        .unwrap();
-    assert!(file < format && format < words);
+    let mut expected_body = format!(
+        "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\n"
+    )
+    .into_bytes();
+    expected_body.extend_from_slice(WAV);
+    expected_body.extend_from_slice(
+        format!(
+            "\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"response_format\"\r\n\r\nverbose_json\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"timestamp_granularities[]=word\"\r\n\r\nword\r\n--{boundary}--\r\n"
+        )
+        .as_bytes(),
+    );
+    let expected_headers = format!(
+        "POST /v1/audio/transcriptions HTTP/1.1\r\nHost: {address}\r\nContent-Type: multipart/form-data; boundary={boundary}\r\nContent-Length: {}\r\nAuthorization: Bearer credential\r\n\r\n",
+        expected_body.len()
+    );
+    assert_eq!(&request[..header_end], expected_headers.as_bytes());
+    assert_eq!(&request[header_end..], expected_body);
 }
 
 #[test]
@@ -323,7 +369,7 @@ fn multipart_transport_retries_interrupted_write() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let handle = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+        let mut stream = accept_with_deadline(&listener);
         let _ = read_confidential_request(&mut stream);
         write_response(&mut stream, 200, VALID);
     });
@@ -350,7 +396,7 @@ fn multipart_transport_retries_interrupted_read() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let handle = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+        let mut stream = accept_with_deadline(&listener);
         let _ = read_confidential_request(&mut stream);
         write_response(&mut stream, 200, VALID);
     });
@@ -377,7 +423,7 @@ fn transport_failure_defers_without_a_second_request() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let handle = thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
+        let stream = accept_with_deadline(&listener);
         drop(stream);
     });
     let mut stream = TcpStream::connect(address).unwrap();
@@ -418,7 +464,6 @@ fn recorded_convey_is_down_when_port_is_bound_but_not_listening() {
     assert!(!recorded_convey_is_up(temporary.path()));
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn health_and_transcription_use_the_expected_wire_paths_and_form_fields() {
     let temporary = tempfile::tempdir().unwrap();
@@ -492,7 +537,6 @@ fn refused_health_defers_with_server_not_ready() {
     assert_eq!(reason, "server_not_ready");
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn disconnected_transcription_defers_with_server_disconnected() {
     let stub = StubServer::start(vec![Reply::Close]);
@@ -506,7 +550,6 @@ fn disconnected_transcription_defers_with_server_disconnected() {
     assert_eq!(reason, "server_disconnected");
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn timed_out_transcription_defers_with_read_timeout() {
     let stub = StubServer::start(vec![Reply::Sleep(Duration::from_millis(150))]);
@@ -520,7 +563,6 @@ fn timed_out_transcription_defers_with_read_timeout() {
     assert_eq!(reason, "read_timeout");
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn refused_transcription_defers_with_connect_error() {
     let (_reserved, port) = reserve_unlistening_loopback();
@@ -534,7 +576,6 @@ fn refused_transcription_defers_with_connect_error() {
     assert_eq!(reason, "connect_error");
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn live_http_500_is_a_hard_transcription_error() {
     let stub = StubServer::start(vec![Reply::Http {
@@ -551,7 +592,6 @@ fn live_http_500_is_a_hard_transcription_error() {
     assert_eq!(reason, "transcription_http_error");
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn malformed_live_json_is_a_hard_error() {
     let stub = StubServer::start(vec![Reply::Http {
@@ -568,7 +608,6 @@ fn malformed_live_json_is_a_hard_error() {
     assert_eq!(reason, "invalid_json");
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn text_without_word_timings_is_a_hard_contract_error() {
     let stub = StubServer::start(vec![Reply::Http {
@@ -599,30 +638,58 @@ fn health_probe_accepts_only_http_200() {
     stub.finish();
 }
 
-fn spawn_speaker_child(script: &str, receipt: &Path, siglog: &Path) -> std::process::Child {
-    let status = std::process::Command::new("mkfifo")
-        .arg(receipt)
-        .status()
-        .unwrap();
-    assert!(status.success(), "mkfifo");
-    fs::write(siglog, []).unwrap();
-    std::process::Command::new("sh")
-        .arg("-c")
-        .arg(script)
-        .env("RECEIPT", receipt)
-        .env("SIGLOG", siglog)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap()
+struct SpeakerChildGuard(Option<Child>);
+
+impl SpeakerChildGuard {
+    fn child(&mut self) -> &mut Child {
+        self.0.as_mut().expect("speaker child remains owned")
+    }
 }
 
-fn wait_for_started(receipt: &Path) {
-    let mut started = fs::File::open(receipt).unwrap();
-    let mut buf = String::new();
-    started.read_to_string(&mut buf).unwrap();
-    assert_eq!(buf, "started");
+impl Drop for SpeakerChildGuard {
+    fn drop(&mut self) {
+        let Some(child) = self.0.as_mut() else {
+            return;
+        };
+        if !matches!(child.try_wait(), Ok(Some(_))) {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+fn spawn_speaker_child(script: &str, receipt: &Path, siglog: &Path) -> SpeakerChildGuard {
+    fs::write(receipt, []).unwrap();
+    fs::write(siglog, []).unwrap();
+    SpeakerChildGuard(Some(
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(script)
+            .env("RECEIPT", receipt)
+            .env("SIGLOG", siglog)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap(),
+    ))
+}
+
+fn wait_for_started(child: &mut SpeakerChildGuard, receipt: &Path) {
+    let deadline = Instant::now() + IO_TIMEOUT;
+    loop {
+        if fs::read_to_string(receipt).unwrap() == "started" {
+            return;
+        }
+        if let Some(status) = child.child().try_wait().unwrap() {
+            panic!("speaker child exited before its ready receipt: {status}");
+        }
+        assert!(
+            Instant::now() < deadline,
+            "speaker child writes its ready receipt before the deadline"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
 }
 
 fn invoke_timeout(child: &mut std::process::Child) -> SpeakerInvoke {
@@ -647,16 +714,16 @@ fn responsive_speaker_child_observes_term_without_kill() {
     let mut child = spawn_speaker_child(
         r#"trap 'printf "%s\n" TERM >> "$SIGLOG"; exit 0' TERM
 printf started > "$RECEIPT"
-sleep 5 & wait
+while :; do :; done
 "#,
         &receipt,
         &siglog,
     );
-    wait_for_started(&receipt);
+    wait_for_started(&mut child, &receipt);
     let SpeakerInvoke::Failed {
         reason,
         native_exit_code,
-    } = invoke_timeout(&mut child)
+    } = invoke_timeout(child.child())
     else {
         panic!("expected timeout failure");
     };
@@ -674,16 +741,16 @@ fn ignoring_speaker_child_observes_term_before_kill() {
     let mut child = spawn_speaker_child(
         r#"trap 'printf "%s\n" TERM >> "$SIGLOG"' TERM
 printf started > "$RECEIPT"
-sleep 5 & wait
+while :; do :; done
 "#,
         &receipt,
         &siglog,
     );
-    wait_for_started(&receipt);
+    wait_for_started(&mut child, &receipt);
     let SpeakerInvoke::Failed {
         reason,
         native_exit_code,
-    } = invoke_timeout(&mut child)
+    } = invoke_timeout(child.child())
     else {
         panic!("expected timeout failure");
     };

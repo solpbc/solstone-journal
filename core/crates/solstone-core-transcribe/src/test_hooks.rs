@@ -12,7 +12,7 @@ use solstone_core_spp_ratls::AttestedIo;
 use crate::TranscribeError;
 use crate::backend::confidential::{hosted_transcribe_transport_error, send_multipart_request};
 use crate::backend::parakeet_cpp::{
-    HealthState, ParakeetServer, connect, probe_health, transcribe_with_timeout,
+    HealthState, ParakeetServer, connect, probe_health, transcribe_transport_with_timeout,
 };
 use crate::speakers::{SpeakersAnalyzeBudget, invoke_child};
 
@@ -110,7 +110,7 @@ pub fn parakeet_transcribe(base_url: &str, wav: &[u8], timeout: Duration) -> Par
         port: 0,
         base_url: base_url.to_owned(),
     };
-    match transcribe_with_timeout(&server, wav, timeout) {
+    match transcribe_transport_with_timeout(&server, wav, timeout) {
         Ok(response) => ParakeetTranscribe::Ok {
             words: response
                 .words

@@ -147,6 +147,14 @@ pub(crate) fn transcribe_with_timeout(
     timeout: Duration,
 ) -> Result<TranscriptionResponse, TranscribeError> {
     require_linux()?;
+    transcribe_transport_with_timeout(server, wav_bytes, timeout)
+}
+
+pub(crate) fn transcribe_transport_with_timeout(
+    server: &ParakeetServer,
+    wav_bytes: &[u8],
+    timeout: Duration,
+) -> Result<TranscriptionResponse, TranscribeError> {
     let form = Form::new()
         .text("response_format", "verbose_json")
         .text("timestamp_granularities[]", "word")
