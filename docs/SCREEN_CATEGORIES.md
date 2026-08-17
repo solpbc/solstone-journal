@@ -36,7 +36,7 @@ Categories with prompt content after the frontmatter are "extractable" - they ca
 
 Defines the strict structured-output schema for categories with `"output": "json"`. The file is discovered by filename convention next to the markdown prompt (`<category>.schema.json`).
 
-JSON category schemas are checked by `scripts/check_schema_bounds.py` and `tests/test_schema_strict_portability.py`:
+JSON category schemas must satisfy the following. ⚠ The checker that enforced them (`scripts/check_schema_bounds.py`, with a pytest companion) read the deleted Python tree and has been removed, so these are currently conventions rather than gated rules:
 - Every array must have `maxItems`
 - Every free-text string must have `maxLength`
 - Every object must set `additionalProperties:false`

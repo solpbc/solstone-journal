@@ -2,6 +2,23 @@
 
 This file is the **developer guide** for the solstone repository. Read it before writing code.
 
+> ⚠️ **§7 has not caught up with the Rust conversion, and §7 is the section this guide calls required
+> reading.** The Python under `solstone/` was removed from `main`; the directory still carries live
+> schemas, `app.json` manifests, and `authority.toml`, which you do still edit, and `scripts/` still
+> holds working tooling. But **§7's L2 table names a write-owning module per domain, and nearly every
+> Python module it names is gone.** Its crate rows do still resolve and are the current owners, so read
+> that table for the domains and their rules, and trust its `core/crates/` entries over its `.py` ones.
+>
+> The directories in §2 all still exist; what has moved is what lives in them. Treat any `solstone/**.py`
+> path anywhere below as where a responsibility used to live. Its current home is a crate under
+> `core/crates/`, and the reliable way to find it is to search `core/crates/` for the behavior rather than
+> to follow a path from this document. `docs/PORTING.md` carries the conversion doctrine. Dead paths
+> outside §7 are called out where they appear rather than left for you to discover.
+>
+> Measured 2026-08-17 at this commit, counting backticked repository paths and testing each for
+> existence: 138 cited, 73 gone, 69 of those in §7. Re-run before trusting the split; the tree is
+> still moving.
+
 Audience:
 
 - **Coders** (cwd = repo root, editing `solstone/observe/`, `solstone/think/`, `solstone/convey/`, `solstone/apps/`, `core/payload/solstone/talent/`, `tests/`) — you're in the right place.
@@ -40,8 +57,8 @@ Read, in order, when you enter the repo for a coding task:
 | `solstone/apps/` | Convey apps — each self-contained (`native/` authority + Rust command, `routes.py`, `templates/`) | adding a user-facing feature, a `sol call <app>` verb, a UI surface | `docs/APPS.md` (required reading before modifying `solstone/apps/`) |
 | `core/payload/solstone/talent/` | AI talent configs (markdown prompts) + installed router skills (`sol`, `journal`); app fragments feed generated router references. **The `.py` post-hooks are not here** — they are not shipped data and stay at `solstone/talent/` | defining or tuning a talent; updating router guidance | `core/payload/solstone/talent/journal/SKILL.md`, `docs/PROMPT_TEMPLATES.md` |
 | `core/` | Rust workspace — thin `solstone-core` bin plus library-first adapter crates | Rust scaffold, gates, or Python→Rust porting doctrine | `docs/PORTING.md` |
-| `scripts/` | Repo maintenance scripts — `check_layer_hygiene.py` | tooling that guards the codebase; wired into `make install-checks`, not reached by routine `make ci` | channel adapters: `docs/CHANNEL_ADAPTERS.md` |
-| `tests/` | Pytest suites + `tests/fixtures/journal/` mock journal | writing tests; debugging flakiness; `make dev` / `make sandbox` use fixtures as the journal | `docs/testing.md` |
+| `scripts/` | Repo maintenance scripts. ⚠ Reduced with the Python reference cut — anything whose oracle was the Python implementation is gone, so treat a script here as build tooling, not as a source of truth about behaviour | tooling that guards the codebase; reached by `make install-checks`, never by `make ci` | channel adapters: `docs/CHANNEL_ADAPTERS.md` |
+| `tests/` | `tests/fixtures/journal/` mock journal. ⚠ **No Python suites remain** — the pytest tree went with the reference cut, and Rust tests live beside their crates under `core/crates/*/tests/` | `make dev` / `make sandbox` use the fixtures as the journal | `docs/testing.md` |
 | `tests/js/` | JavaScript harnesses driven by Python node tests | testing browser scripts without a real browser | `docs/testing.md` |
 | `docs/` | All longform documentation | reference lookups; never your first stop | §10 below |
 | `journal/` | The live journal (user data). Git-ignored content; checked-in template (`AGENTS.md`, skills symlinks) | **rarely as a coder** — modify `solstone/think/`, `solstone/apps/`, or `core/payload/solstone/talent/`, not journal data | `core/payload/solstone/talent/journal/SKILL.md` |
@@ -90,7 +107,6 @@ Verified against `Makefile`. Grouped by use.
 | Target | When to use |
 |--------|-------------|
 | `make install` | First setup and whenever `pyproject.toml` or `uv.lock` changes. Creates `.venv/`, syncs deps, runs `make skills`. |
-| `make speakers-analyze-helper` | Reinstall the published speakers-analyze helper into `.venv` after a source-checkout `uv sync` prunes it. Normally run by `make install`; useful after manual syncs. |
 | `make skills` | Regenerate generated router references, then rewrite the `sol` + `journal` router skill symlinks into `journal/`. (`make install` depends on this; rarely run alone.) |
 | `make update` | Upgrade all deps to latest, regenerate `uv.lock`. Expect test churn. |
 | `make update-prices` | Refresh genai-prices model-cost data when adding a new provider model or when pricing tests fail. |
@@ -124,7 +140,6 @@ Verified against `Makefile`. Grouped by use.
 | `make ci-full` | Registry-driven full operator gate. It runs selected entries independently, continues after failures, applies per-entry timeouts, and writes a revision-bound receipt. Run it on the exact final-tree SHA after `make ci-full-prep`. |
 | `make verify` | Alias for `make ci` during the Rust-conversion freeze. |
 | `make install-checks` | Directly runnable full Python-and-Rust preflight chain (format, ruff, layer hygiene, and related checks); no longer called by `ci` or `verify`. |
-| `make check-layer-hygiene` | Run `scripts/check_layer_hygiene.py` alone. Useful when iterating on an L1–L2 violation flagged by `make install-checks`. |
 
 During the Rust-conversion freeze, use the narrowest applicable
 `make check-rust-*` target, then efficient `make ci` for routine validation.
@@ -176,8 +191,6 @@ is the behavior; the goal is fewer binaries, not relabeling integration tests.
 
 | Target | When to use |
 |--------|-------------|
-| `make verify-api` | Start a sandbox, run `tests/verify_api.py` against its convey port, stop the sandbox. API-regression check. |
-| `make update-api-baselines` | Same, but update the baseline fixtures instead of failing on diff. Run after intentional API changes. |
 
 ### Service management (systemd / launchd)
 
@@ -211,8 +224,8 @@ validation and release-adjacent command contract.
 ## 6. Testing quickstart
 
 - **Rust gates:** `make` / `make all`, `make ci`, `make ci-full`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. Per the [Makefile](Makefile), `make ci` is the efficient routine path with formatting, topology validation, library/binary Clippy, and library/binary unit tests. `make ci-full` is the selectable, registry-driven final-tree gate; prepare it with `make ci-full-prep`.
-- **Python suite:** pytest files remain `test_*.py` with `test_*` functions, shared fixtures in `tests/conftest.py`, and the fixture journal at `tests/fixtures/journal/`. The autouse `set_test_journal_path` fixture is unchanged; tests that write, scan, or rebuild journal/index state must use `journal_copy` or a smaller `tmp_path` journal (see §8). Run this suite directly with bare `pytest` when needed. `tests/` and `solstone/apps/*/tests/` are unchanged, but the retained alternate Python Make rails named above fail with the freeze diagnostic.
-- **Marked Python tests:** integration, performance, and release tests remain in the suite and can be selected with bare pytest as needed. The retained integration and performance Make rails are frozen; the former release Make rail has been removed. Live product verification still uses `make sandbox`.
+- **Python suite:** ⚠ **there is none.** The pytest tree, `tests/conftest.py`, and the marked integration/performance/release suites were all removed with the Python reference cut. `tests/` now holds only the fixture journal at `tests/fixtures/journal/`. Live product verification still uses `make sandbox`.
+- **API baselines:** ⚠ **`make verify-api`, `make update-api-baselines` and `make verify-schemathesis` are gone**, because each drove a deleted Python file. Nothing checks SPA/API response baselines or fuzzes the OpenAPI contract today.
 - **After editing `solstone/convey/` or `solstone/apps/`:** `journal restart-convey` to reload code in a running stack.
 - **Runtime artifacts:** `make dev` writes them into the fixtures journal, where `tests/fixtures/journal/.gitignore` covers them. `make sandbox` uses an ephemeral copy and leaves only its `.sandbox.pid` and `.sandbox.journal` state files until `make sandbox-stop` removes them.
 - **Test invariants, not snapshots.** A test asserts what must hold in *every* valid state of the system — not what happens to be true today. Never pin a test to hand-edited prose (CHANGELOG / README / docs), to a value the system is *designed* to change (a version, a date, a growing count), or to a transient state. The tell: if doing the correct next thing — cut a release, rename a label, graduate a shipped changelog entry — turns the test red, the test is wrong, not the system. And test the code that *produces* a fact, never the rendered text about it. (A `[Unreleased]`-pinned changelog test was exactly this anti-pattern — its pass condition required the release process to *not* run; removed 2026-05-30.)
@@ -223,7 +236,7 @@ Full depth: `docs/testing.md`.
 
 **Why this lives here.** A codebase-wide audit in April 2026 found 14 layer-hygiene violations in `solstone/think/` and `solstone/apps/`. Infrastructure modules (indexer, importers, schedulers) were silently writing domain state; CLI read-verbs were mutating; get-prefixed functions were creating records on miss. These invariants encode the rules the audit distilled, so the same landmines don't get re-planted. They're inlined here because a one-click-away invariant is a routinely-skipped invariant.
 
-The low-bar grep enforcement is `scripts/check_layer_hygiene.py`, wired into `make install-checks` and not reached by routine `make ci`. Known exceptions are allowlisted and removed as fixes land.
+⚠ **These invariants currently have NO automated enforcement.** The low-bar grep checker was `scripts/check_layer_hygiene.py`, which read the Python tree the reference cut deleted; it was removed rather than left as a check that could only pass vacuously. The rules below still bind — they are now held by review, and by the Rust type and module boundaries, rather than by a gate.
 
 ### L1 — Layer boundaries are load-bearing
 
@@ -236,7 +249,7 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Domain | Write-owning module(s) |
 |--------|------------------------|
 | Entities (`entities/*/entity.json`) | `solstone/think/entities/journal.py` + `solstone/think/entities/relationships.py` + `solstone/think/entities/saving.py` + `solstone/think/entities/merge.py` |
-| Speaker-identity entity artifacts (`entities/*/{voiceprints,owner_centroid}.npz`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/think/entities/voiceprints.py` remains only for the entity-merge flow; `scripts/entity_corpus.py` remains the differential-fixture oracle builder. |
+| Speaker-identity entity artifacts (`entities/*/{voiceprints,owner_centroid}.npz`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. The Python transport, the entity-merge module, and the `scripts/entity_corpus.py` fixture-oracle builder were all removed with the reference cut; `core/fixtures/` still holds the vectors it produced. |
 | Entity history content (`entities/*/history/{events,prepared,private}/**`) | `solstone/think/entities/history.py` is the sole writer of history events, prepared staging, and private merge payloads. Whole-entity deletion by entity owners removes `history/` only as part of removing `entities/<id>/`. |
 | Owner voice candidate (`awareness/owner_candidate.npz`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`. |
 | Speaker discovery clusters (`awareness/discovery_clusters.json`, `awareness/discovery_clusters.resolved.json`) | `core/crates/solstone-core-convey-shell/` (`speakers_discovery_write.rs`) |

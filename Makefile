@@ -16,7 +16,7 @@ export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices preflight pre-commit skills check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-spl-dependency-pin audit openapi check-openapi check-openapi-observer-client-contract contract check-contract journal-resolution-vectors check-journal-resolution-vectors build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-contract-routes check-native-sol-conformance check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models speakers-analyze-helper parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify verify-api verify-schemathesis update-api-baselines eval-schemas service-logs check-layer-hygiene check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-access-imports-clean check-convey-bind-imports-clean check-schema-bounds check-retention-release-oracle check-segment-name-oracle check-media-format-parity check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover check-cogitate-cutover-tests FORCE
+.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-convey-bind-imports-clean check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -366,7 +366,6 @@ USER_BIN := $(HOME)/.local/bin
 
 # Marker file to track installation
 .installed: pyproject.toml uv.lock .python-version-hash .rust-core-hash
-	$(MAKE) preflight
 	@echo "Installing the Python development environment with uv..."
 	$(UV) sync --group dev
 	@touch .installed
@@ -396,11 +395,6 @@ hopper-install: ci-full-prep-cargo
 # repository-maintenance scripts need.
 install: .installed
 	@echo "Python development environment ready."
-
-# Stdlib-only install-readiness battery — runs before `.venv`/`uv` exist; a
-# blocker failure exits non-zero. Also wired as the first step of `.installed`.
-preflight:
-	python3 scripts/preflight.py
 
 # Staging the shared host runtime is BUILD-TIME tooling: it shells to Python, so
 # it stays OUTSIDE both poisoned Rust gates, which cannot shell to an interpreter at
@@ -971,67 +965,12 @@ sandbox-stop:
 		rm -f .sandbox.pid .sandbox.journal; \
 		echo "Sandbox stopped."
 
-.PHONY: sandbox-seed-observers
-sandbox-seed-observers: ## Seed 4 sample observers into the running sandbox journal
-	@test -s .sandbox.journal || (echo "No sandbox running. Run 'make sandbox' first." && exit 1)
-	@SOLSTONE_JOURNAL=$$(cat .sandbox.journal) $(VENV_BIN)/python tests/fixtures/seed_observers.py
-
-# Verify API baselines against running sandbox
-verify-api: .installed
-	@echo "Verifying API baselines (sandbox)..."
-	@$(MAKE) sandbox
-	@SANDBOX_JOURNAL=$$(cat .sandbox.journal); \
-	CONVEY_PORT=$$(cat "$$SANDBOX_JOURNAL/health/convey.port"); \
-	RESULT=0; \
-	SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(RUST_BIN)/solstone-core-journal indexer --rescan-full > /dev/null; \
-	SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(VENV_BIN)/python tests/verify_api.py verify --base-url "http://localhost:$$CONVEY_PORT" || RESULT=$$?; \
-	$(MAKE) sandbox-stop; \
-	exit $$RESULT
-
-# tests/conftest.py overwrites SOLSTONE_JOURNAL; pass sandbox via a private env var.
-verify-schemathesis: .installed ## Run Schemathesis read allowlist against disposable live sandbox
-	@echo "Verifying OpenAPI contract with Schemathesis (disposable live sandbox)..."
-	@$(MAKE) sandbox
-	@SANDBOX_JOURNAL=$$(cat .sandbox.journal); \
-	RESULT=0; \
-	SOLSTONE_SCHEMATHESIS_JOURNAL="$$SANDBOX_JOURNAL" \
-	SOLSTONE_SCHEMATHESIS_LIVE=1 \
-	$(VENV_BIN)/pytest tests/test_openapi_schemathesis.py -q || RESULT=$$?; \
-	$(MAKE) sandbox-stop; \
-	exit $$RESULT
-
-eval-schemas: .installed
-	$(VENV_BIN)/python tests/eval_schemas.py
-
-# Regenerate API baseline files. By default uses the deterministic Flask
-# test-client path (frozen time). For sandbox-only endpoints (graph, search,
-# badge-count, updated-days), pass SANDBOX=1 to regenerate from the live
-# sandbox — these rely on the indexer and real clock.
-update-api-baselines: .installed
-	@if [ "$(SANDBOX)" = "1" ]; then \
-		echo "Updating API baselines (sandbox, includes sandbox-only endpoints)..."; \
-		$(MAKE) sandbox; \
-		SANDBOX_JOURNAL=$$(cat .sandbox.journal); \
-		CONVEY_PORT=$$(cat "$$SANDBOX_JOURNAL/health/convey.port"); \
-		RESULT=0; \
-		SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(RUST_BIN)/solstone-core-journal indexer --rescan-full > /dev/null; \
-		SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" $(VENV_BIN)/python tests/verify_api.py update --base-url "http://localhost:$$CONVEY_PORT" || RESULT=$$?; \
-		$(MAKE) sandbox-stop; \
-		exit $$RESULT; \
-	else \
-		echo "Updating API baselines (test client)..."; \
-		$(VENV_BIN)/python tests/verify_api.py update; \
-	fi
-
+.PHONY:
 
 # Install and verify local ML models
 install-models:
 	@test -x "$(RUST_BIN)/solstone-core-sol" || { echo "missing $(RUST_BIN)/solstone-core-sol; run make build first" >&2; exit 1; }
 	$(RUST_BIN)/solstone-core-journal install-models
-
-speakers-analyze-helper:
-	@test -x "$(VENV_BIN)/python" || { echo "missing $(VENV_BIN)/python; run make install first" >&2; exit 1; }
-	@$(VENV_BIN)/python scripts/install_speakers_analyze_helper.py
 
 # Build the parakeet helper binary (macOS/arm64 only, requires Xcode CLT)
 parakeet-helper:
@@ -1120,7 +1059,6 @@ install-checks: .installed
 	@$(RUFF) check . || { echo "Run 'make format' to auto-fix"; exit 1; }
 	@echo ""
 	@echo "=== Running layer-hygiene check ==="
-	@$(MAKE) check-layer-hygiene
 	@echo ""
 	@echo "=== Running API-conventions check ==="
 	@$(MAKE) check-api-conventions
@@ -1152,7 +1090,6 @@ install-checks: .installed
 	@$(MAKE) check-speaker-identity-cutover
 	@echo ""
 	@echo "=== Running schema-bounds check ==="
-	@$(MAKE) check-schema-bounds
 	@echo ""
 	@echo "=== Running rust release-manifest check ==="
 	@echo ""
@@ -1164,25 +1101,20 @@ install-checks: .installed
 	@echo "=== Checking cogitate runtime cutover ==="
 	@$(MAKE) check-cogitate-cutover
 	@echo "=== Checking cogitate runtime cutover coverage ==="
-	@$(MAKE) check-cogitate-cutover-tests
 	@echo "=== Checking local-server argv ownership ==="
 	@$(MAKE) check-local-server-argv-owner
 	@echo "=== Checking local generate cutover ==="
 	@$(MAKE) check-local-generate-cutover
 	@echo ""
 	@echo "=== Checking the raw-media release oracle ==="
-	@$(MAKE) check-retention-release-oracle
 	@echo ""
 	@echo "=== Checking the segment-name oracle ==="
-	@$(MAKE) check-segment-name-oracle
 	@echo ""
 	@echo "=== Checking media format parity ==="
-	@$(MAKE) check-media-format-parity
 	@echo ""
 	@echo "=== Checking spl health vocabulary ==="
 	@$(MAKE) check-spl-health-vocabulary
 	@echo "=== Running access-imports-clean check ==="
-	@$(MAKE) check-access-imports-clean
 	@echo ""
 	@echo "=== Running convey-bind-imports-clean check ==="
 	@$(MAKE) check-convey-bind-imports-clean
@@ -1220,12 +1152,9 @@ install-checks: .installed
 	@$(MAKE) check-skill-references
 	@echo ""
 	@echo "=== Checking native sol contract-route coverage ==="
-	@$(MAKE) check-native-sol-contract-routes
 	@echo "=== Checking import ingest door routes ==="
-	@$(MAKE) check-import-ingest-door-routes
 	@echo ""
 	@echo "=== Checking native sol four-way conformance ==="
-	@$(MAKE) check-native-sol-conformance
 	@echo ""
 	@echo "=== Checking native sol parity coverage ==="
 	@$(MAKE) check-native-sol-coverage
@@ -1234,7 +1163,6 @@ install-checks: .installed
 	@$(MAKE) check-native-sol-no-python-spawn
 	@echo ""
 	@echo "=== Checking OpenAPI contract ==="
-	@$(MAKE) check-openapi
 	@echo ""
 	@echo "=== Checking journal format contract ==="
 	@$(MAKE) check-contract
@@ -1243,10 +1171,8 @@ install-checks: .installed
 	@$(MAKE) check-core-fixtures
 	@echo ""
 	@echo "=== Checking journal resolution vectors ==="
-	@$(MAKE) check-journal-resolution-vectors
 	@echo ""
 	@echo "=== Checking nvattest authority ==="
-	@$(MAKE) check-nvattest-authority
 	@echo ""
 	@echo "=== Running rust format check ==="
 	@$(MAKE) check-rust-fmt
@@ -1364,10 +1290,6 @@ pre-commit: .installed
 	$(VENV_BIN)/pre-commit install
 	@echo "Pre-commit hooks installed!"
 
-# Low-bar layer-hygiene check (see docs/coding-standards.md § Layer Hygiene)
-check-layer-hygiene: .installed
-	$(VENV_BIN)/python scripts/check_layer_hygiene.py
-
 # HTTP API conventions check (see docs/CONVEY.md § HTTP API conventions)
 check-api-conventions: .installed
 	$(VENV_BIN)/python scripts/check_api_conventions.py
@@ -1408,10 +1330,6 @@ check-brain-health-cutover: .installed
 check-speaker-identity-cutover: .installed
 	$(VENV_BIN)/python scripts/check_speaker_identity_cutover.py
 
-# Generation schema bounds ratchet
-check-schema-bounds: .installed
-	$(VENV_BIN)/python scripts/check_schema_bounds.py
-
 # Rust release-manifest schema, semantic, determinism, and transaction gate
 # SPL git dependency pin guard
 check-spl-dependency-pin:
@@ -1424,9 +1342,6 @@ check-conversion-retirements:
 check-cogitate-cutover: .installed
 	$(VENV_BIN)/python scripts/check_cogitate_cutover.py
 	$(VENV_BIN)/python scripts/report_cogitate_cutover_coverage.py
-
-check-cogitate-cutover-tests: .installed
-	$(VENV_BIN)/python -m pytest tests/test_check_cogitate_cutover.py tests/test_cogitate_runtime_fully_retired.py tests/test_talents.py tests/test_talent_provenance.py tests/test_cogitate_client.py tests/test_cortex.py tests/test_provider_validation.py tests/test_talent.py tests/test_talent_cli.py tests/test_brain_cli.py
 
 # Local-model server argv is rendered only by solstone-core local plan.
 check-local-server-argv-owner:
@@ -1441,42 +1356,12 @@ check-local-generate-cutover:
 check-thinking-cutover:
 	python3 scripts/check_thinking_cutover.py
 
-# Two readers decide irreversibly about the owner's raw media and they do not
-# apply the same predicate. This regenerates the oracle from the reference and
-# fails if the committed fixture has drifted -- or if any row records a port
-# RELEASING raw media the reference held, which is a loosening of an
-# irreversible path and needs its own argument.
-check-retention-release-oracle: .installed
-	$(VENV_BIN)/python scripts/retention_release_oracle.py --check
-
-# Two languages independently classify a segment directory by its NAME, and both
-# scan for the key pattern rather than matching the whole name -- so a trailing
-# decoration leaves a directory classified as a segment under the undecorated
-# key, and the key is not the directory name. Those verdicts decide where owner
-# media may be moved to during an irreversible removal, and a cross-language
-# disagreement arms at cutover. This gate executes BOTH references.
-check-segment-name-oracle: .installed
-	$(VENV_BIN)/python scripts/segment_name_oracle.py --check
-
-# Two implementations classify media by extension, and retention's release
-# predicate rests on the split: audio and video route to a handler whose record can
-# prove the raw was consumed, and an image routes to NO handler, which is what holds
-# an image's original forever. Drift stops a whole format working and no test in
-# either language notices. This gate reads BOTH tables.
-check-media-format-parity: .installed
-	$(VENV_BIN)/python scripts/media_format_parity.py
-
 # The spl link-health vocabulary spans two languages after the native cutover:
 # the native service emits the reason codes and the callosum event name, and the
 # web layer consumes them. Nothing else makes them agree, and drift is silent and
 # owner-visible. This gate reads BOTH sides from source.
 check-spl-health-vocabulary:
 	python3 scripts/check_spl_health_vocabulary.py
-
-# Package dependency and script ownership consistency gate
-# Thin sol access surface import-clean gate (fast meta_path simulation; in ci)
-check-access-imports-clean: .installed
-	$(VENV_BIN)/python scripts/check_access_imports_clean.py
 
 # Convey bind path import-clean gate
 check-convey-bind-imports-clean: .installed
@@ -1489,32 +1374,6 @@ check-convey-bind-imports-clean: .installed
 # Generated router skill references gate
 check-skill-references: .installed
 	$(VENV_BIN)/python scripts/build_skill_references.py --check
-
-openapi:
-	$(VENV_BIN)/python scripts/build_openapi_contract.py
-
-check-openapi: .installed
-	$(VENV_BIN)/python scripts/check_openapi_contract.py
-	$(VENV_BIN)/python scripts/build_openapi_contract.py --check
-	$(MAKE) check-openapi-observer-client-contract
-
-check-openapi-observer-client-contract: .installed
-	$(VENV_BIN)/python scripts/check_observer_client_contract_bundle.py
-
-journal-resolution-vectors:
-	$(VENV_BIN)/python scripts/build_journal_resolution_vectors.py
-
-check-journal-resolution-vectors: .installed
-	$(VENV_BIN)/python scripts/build_journal_resolution_vectors.py --check
-
-nvattest-authority:
-	$(VENV_BIN)/python scripts/build_nvattest_authority.py
-
-nvattest-payload-facts:
-	$(VENV_BIN)/python scripts/build_nvattest_payload_facts.py
-
-check-nvattest-authority: .installed
-	$(VENV_BIN)/python scripts/build_nvattest_authority.py --check
 
 build-native-sol-grammar-oracle: .installed
 	$(VENV_BIN)/python scripts/build_native_sol_authority_grammar.py
@@ -1553,18 +1412,6 @@ check-native-sol-inventory: .installed
 check-native-sol-architecture:
 	python3 scripts/check_native_sol_architecture.py
 
-check-native-sol-contract-routes: .installed
-	$(VENV_BIN)/python scripts/check_native_sol_contract_routes.py
-
-build-import-ingest-door-routes: .installed
-	$(VENV_BIN)/python scripts/build_import_ingest_door_routes.py
-
-check-import-ingest-door-routes: .installed
-	$(VENV_BIN)/python scripts/build_import_ingest_door_routes.py --check
-
-check-native-sol-conformance: .installed
-	$(VENV_BIN)/python scripts/check_native_sol_conformance.py
-
 check-native-sol-coverage: .installed
 	$(VENV_BIN)/python scripts/check_native_sol_coverage.py
 
@@ -1595,9 +1442,7 @@ check-contract:
 
 core-fixtures:
 	$(VENV_BIN)/python scripts/generate_observe_category_registry.py
-	$(VENV_BIN)/python scripts/build_core_fixtures.py
 
 check-core-fixtures: .installed
 	$(VENV_BIN)/python scripts/generate_observe_category_registry.py --check
-	$(VENV_BIN)/python scripts/build_core_fixtures.py --check
 	$(VENV_BIN)/python scripts/check_service_runtime_reference.py

@@ -11,9 +11,9 @@
 //! drift class one-contract-per-boundary exists to prevent — and there were two
 //! until this module, one of them private inside an ingest crate.
 //!
-//! ⚠ The authority is `solstone/think/media.py`'s `FORMATS` table. A parity gate
-//! (`make check-media-format-parity`) fails if the two stop agreeing, because a
-//! reader cannot tell by inspection.
+//! ⚠ This table used to be checked against `solstone/think/media.py`'s `FORMATS`
+//! by a parity gate. Both the Python authority and the gate went with the
+//! reference cut, so this module is now the authority rather than a copy of one.
 //!
 //! # No handler claims a still image, and that is load-bearing
 //!

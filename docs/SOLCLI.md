@@ -267,9 +267,10 @@ mismatch, crash loops, systemd failed state, and journal-sync conflicts. An
 installed service with no supervisor socket is a warning when the OS unit is not
 failed.
 
-Use `journal doctor` for “why is this journal host unhealthy?”, `make preflight`
-for the stdlib-only fresh-clone check before `.venv`/`uv` exist, and `journal
-health` for the live supervisor status view.
+Use `journal doctor` for “why is this journal host unhealthy?” and `journal
+health` for the live supervisor status view. ⚠ There is no fresh-clone check that
+runs before `.venv`/`uv` exist; `make preflight` filled that role and was removed
+with the Python reference cut.
 
 ## Structured output: `journal setup --jsonl` and doctor `--jsonl`
 

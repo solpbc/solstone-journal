@@ -29,13 +29,11 @@ Use the diagnostic command that matches the question:
 
 - `journal doctor` — is this journal host healthy, and what should be fixed?
   This is the health diagnosis view.
-- `make preflight` — can a fresh source checkout get ready before `.venv` or
-  `uv` exist?
 - `journal health` — what live supervisor status is being reported right now?
 
 `journal`-prefixed commands, including `journal doctor` and `journal setup`, require a journal-host install because the `journal` executable ships in the `solstone-journal` distribution, not in the thin `sol` client.
 
-Each doctor and preflight check is an independent observation. If a check raises
+Each doctor check is an independent observation. If a check raises
 an ordinary execution exception, the row is reported as `ERROR`, the check result
 uses status `fail`, and the aggregate fails independently of that check's
 severity. The public result includes the exception type and a truncated message,
@@ -88,13 +86,14 @@ It does not run runtime service, sync, config-dir, or launchd checks. A blocker
 failure still stops setup early. An execution error in any readiness check also
 stops setup early, even when that check is advisory.
 
-`make preflight` runs `scripts/preflight.py`, the stdlib-only source-checkout
-readiness battery that is valid before `.venv`/`uv` exist:
-`python_version`, `uv_installed`, `venv_consistent`,
-`local_bin_sol_reachable`, `disk_space`, and `config_dir_readable`. It shares
-probe primitives with doctor through `solstone/think/probe.py`, but its
-execution-error rows follow the same aggregate rules: they are labeled `ERROR`,
-counted in both `failed` and `errors`, and exit nonzero regardless of severity.
+⚠ **`make preflight` is gone.** It ran a stdlib-only source-checkout readiness
+battery (`python_version`, `uv_installed`, `venv_consistent`,
+`local_bin_sol_reachable`, `disk_space`, `config_dir_readable`) built on
+`solstone/think/probe.py`, and both went with the Python reference cut. Nothing
+checks source-checkout readiness before `.venv`/`uv` exist today. `journal
+doctor` still covers `local_bin_sol_reachable`, `disk_space` and
+`config_dir_readable`, but it needs a working install to run, so it cannot answer
+the question preflight existed to answer.
 
 ---
 

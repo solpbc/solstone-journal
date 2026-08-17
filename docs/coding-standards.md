@@ -54,6 +54,6 @@ Use `//` comments for JavaScript files.
 
 The L1–L9 layer-hygiene invariants (read/write separation, domain write ownership, naming contracts, CLI verb polarity, indexer/importer/hook/event-handler rules) are inlined in `AGENTS.md` §7. They're promoted to the coder guide because a codebase-wide audit in April 2026 found 14 violations across `solstone/think/` and `solstone/apps/`, and a one-click-away invariant is a routinely-skipped invariant.
 
-Enforcement: `scripts/check_layer_hygiene.py`, reached through `make check-layer-hygiene` and `make install-checks`. Known exceptions are allowlisted and removed as fixes land.
+Enforcement: none, currently. The grep checker read the Python tree that the reference cut removed, so it was deleted rather than left to pass vacuously. The invariants still bind; they are held by review and by Rust's own module boundaries until a native check replaces them.
 
 **Go to `AGENTS.md` §7 for the full rules and the domain ownership table.**

@@ -2,32 +2,29 @@
 
 ## Test Structure
 
-- **Framework**: pytest for the Python suite and Cargo for the native Rust workspace
-- **Unit Tests**: live under `tests/` (and each app's `tests/` dir)
+⚠ **There is no Python test suite.** It went with the Python reference cut, along with
+`tests/conftest.py` and the `pytest` markers this section used to describe. `tests/` now holds
+`tests/fixtures/journal/` and nothing else executable.
+
+- **Framework**: Cargo, for the native Rust workspace
+- **Unit Tests**: live beside their crate, under `core/crates/<crate>/src/` and `core/crates/<crate>/tests/`
   - Fast, with mocked process/thread/clock/network/repository boundaries
   - No external API calls, real browser, heavyweight build, or shared fixture writes
-  - Read `tests/fixtures/journal/` mock data; use `journal_copy` or `tmp_path`
+  - Read `tests/fixtures/journal/` mock data; copy it, or use a temporary directory,
     for any scan, index rebuild, or mutation
-  - Test individual functions and modules
-- **Integration Tests**: marked `@pytest.mark.integration`
-  - Select directly with `pytest -m integration`; the former Python Make target is frozen
-  - Real local processes/builds and persisted-index contracts
-  - Still use disposable `tmp_path` state and never the owner's journal
-- **Release Tests**: marked `@pytest.mark.release`
-  - Select directly with `pytest -m release -n 0`; the former Python Make target is frozen
-  - Cover release transactions, release entrypoints, packaging/install probes,
-    and release-host tool contracts
-- **Naming**: Files `test_*.py`, functions `test_*`
-- **Fixtures**: Shared fixtures in `tests/conftest.py`
+- **Integration Tests**: Cargo integration targets, grouped into named legs by
+  `core/ci/suites.toml` and validated by `make check-rust-ci-topology`
 
 ## Fixture Journal
 
-```python
-# The autouse set_test_journal_path fixture in tests/conftest.py does this
-# for unit tests. Set it explicitly only when a test needs a different journal.
-os.environ["SOLSTONE_JOURNAL"] = "tests/fixtures/journal"
-# Now all journal operations work with test data
+A test points the journal at the checked-in fixtures by setting `SOLSTONE_JOURNAL`:
+
 ```
+SOLSTONE_JOURNAL=tests/fixtures/journal
+```
+
+⚠ The autouse `set_test_journal_path` fixture that used to do this for every unit test
+lived in `tests/conftest.py` and is gone, so a Rust test sets it explicitly.
 
 The `tests/fixtures/journal/` directory contains immutable mock input with sample
 facets, agents, transcripts, and indexed data. Tests may read it directly. Any
@@ -98,36 +95,24 @@ test that writes, scans, or rebuilds journal/index state must use the
   `core/crates/solstone-core/tests/support/await_outcome.rs`, emit the
   `SUPERVISOR_RACE_INCONCLUSIVE` marker when that helper returns an inconclusive outcome,
   and join `RUST_RACE_TEST_TARGETS` so `make check-rust-race` covers them.
-- Run Python tests directly with `pytest`, for example `pytest tests/test_doctor.py`
-  or `pytest solstone/apps/my_app/tests/`
-- The former Python Make targets, including `make test-cov`, `make test-app`,
-  `make test-only`, and the other `make test-*` targets, are frozen and fail
-  immediately during the Rust conversion
-- Always run `journal restart-convey` after editing `solstone/convey/` or `solstone/apps/` to reload code
+- Run one crate's tests with `cargo test -p <crate>`. ⚠ That does **not** run a
+  dependency's tests; use `--workspace` when you need the sweep
+- The Python `make test-*` targets are gone, not frozen
 
 ## OpenAPI Verification Lanes
 
 There are two API referees with different jobs:
 
-- `tests/test_openapi_schemathesis.py` fuzzes a small allowlist from the committed
-  native-client contract at `docs/openapi/convey-clients.json` against the Flask WSGI
-  app. It runs with the normal unit suite because it uses an isolated tmp journal and
-  does not use HTTP transport sockets.
-- `make verify-api` checks SPA/API response baselines against a running sandbox.
-  That lane verifies rendered baseline behavior, not the native-client OpenAPI
-  contract.
+- ⚠ **The Schemathesis fuzzing lane is gone.** It fuzzed the committed native-client
+  contract at `docs/openapi/convey-clients.json` against the Flask WSGI app; both the
+  test and that app were removed with the Python reference cut, and the contract file
+  itself now has no producer and no checker.
+- ⚠ **`make verify-api` is gone too**, along with `make update-api-baselines`. It drove
+  `tests/verify_api.py`, deleted with the reference cut, so the sandbox baseline lane went
+  with it.
 
-Run the Schemathesis lane directly with:
-
-```bash
-pytest tests/test_openapi_schemathesis.py
-```
-
-The operator live lane is:
-
-```bash
-make verify-schemathesis
-```
+⚠ **Both referees are therefore absent.** Nothing checks SPA/API response baselines and
+nothing fuzzes the native-client contract; `make sandbox` and manual review are what remain.
 
 `verify-schemathesis` starts a disposable sandbox, sets
 `SOLSTONE_SCHEMATHESIS_LIVE=1`, and resolves the base URL through

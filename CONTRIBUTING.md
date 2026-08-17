@@ -19,7 +19,7 @@ Linux is the primary development platform. macOS is supported. Source-checkout i
 
 Linux source builds additionally require Clang development headers. Linux/x86_64
 also requires NASM; omit `nasm` from the commands below on Linux/aarch64.
-`make preflight` enforces this architecture split before compilation.
+⚠ Nothing enforces this architecture split before compilation any more; `make preflight` did, and it went with the Python reference cut. Check the requirements above by hand.
 Install the exact minisign 0.12 binary from the
 [upstream 0.12 release](https://github.com/jedisct1/minisign/releases/tag/0.12)
 rather than relying on an unpinned distro package, then confirm `minisign -v`
@@ -64,7 +64,7 @@ make install
 
 `make install` creates `.venv/`, syncs dependencies from `pyproject.toml` and `uv.lock`, installs the package in editable mode, regenerates router skill references, and refreshes the `sol` + `journal` project skill symlinks into the journal.
 
-In a source checkout, bare `uv sync` removes the published speakers-analyze helper because the workspace config prunes that package from the active dev environment; `make speakers-analyze-helper` puts the published helper back, and `make install` runs it after the final sync. Use `uv sync --inexact` when you intentionally need a prune-free sync. From inside this workspace, `uv pip install` of the helper can report success with exit code 0 while installing nothing unless `--no-config` is passed, so use the Make target instead of hand-running uv.
+In a source checkout, bare `uv sync` removes the published speakers-analyze helper because the workspace config prunes that package from the active dev environment; the `make speakers-analyze-helper` target that restored it was removed with the Python reference cut, so the helper must currently be reinstalled by hand. Use `uv sync --inexact` when you intentionally need a prune-free sync, which avoids the prune and is now the cleaner route. ⚠ If you do reinstall the helper by hand, note that from inside this workspace `uv pip install` can report success with exit code 0 while installing nothing unless `--no-config` is passed.
 
 `.venv/bin/journal setup` runs doctor diagnostics, confirms the journal path, installs local transcription models, installs the `sol` user skill for Claude Code / Codex / Gemini when those agents are configured, installs the `sol` + `journal` router skills into the journal, creates or refreshes the source-checkout wrappers at `~/.local/bin/sol` and `~/.local/bin/journal`, and starts the background service. The default web interface listens on http://localhost:5015. Use `.venv/bin/journal setup --port 8000` to choose another port on the first run.
 
@@ -134,21 +134,18 @@ targets or heavyweight native, platform, and policy legs. An operator runs the
 selectable, registry-driven `make ci-full` gate on the exact final-tree SHA
 after `make ci-full-prep`.
 
-The former focused Python Make targets, including `make test-only` and
-`make test-app`, are frozen and fail immediately. Run focused Python tests
-directly instead:
+⚠ **There is no Python test suite.** It was removed with the Python reference tree,
+along with the `make test-*` targets that drove it. Run focused Rust tests directly:
 
 ```bash
-pytest tests/test_utils.py::test_foo
-pytest solstone/apps/settings/tests/
+cargo test --manifest-path core/Cargo.toml -p solstone-core-facets
 ```
 
-The Python suite uses unit/component tests without a real browser, live network,
-or API keys. For user-visible web changes, use the API verification target and
-review the live UI in a sandbox when relevant:
+⚠ **`make verify-api` and `make verify-schemathesis` are also gone**, because each drove
+a deleted Python file, so nothing checks API baselines automatically today. For
+user-visible web changes, review the live UI in a sandbox:
 
 ```bash
-make verify-api    # check API baselines against a sandbox
 make sandbox       # start a sandbox to review the live UI (make sandbox-stop when done)
 ```
 
