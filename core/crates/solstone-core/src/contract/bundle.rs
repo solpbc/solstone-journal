@@ -65,8 +65,16 @@ pub(crate) fn build_bundle(paths: &ContractPaths) -> Result<Value, String> {
     Ok(json!({
         "contract": "solstone-journal-at-rest",
         "contract_version": 1,
-        "generated_by": "python -m solstone.think.contract_cli build",
-        "description": "Generated journal at-rest contract bundle. Do not hand-edit; regenerate with `python -m solstone.think.contract_cli build`.",
+        // This bundle ships, so these two strings are the only regeneration
+        // instruction most readers ever see. They named `python -m
+        // solstone.think.contract_cli build` -- a module the Python reference
+        // cut deleted -- while this native builder was the thing writing the
+        // file, so the artifact credited a producer that no longer existed and
+        // told its reader to run a command that could not work. The spelling
+        // here matches the stale-bundle message and the usage text, so a reader
+        // who hits either is told the same command.
+        "generated_by": "journal contract build",
+        "description": "Generated journal at-rest contract bundle. Do not hand-edit; regenerate with `journal contract build`.",
         "layout": layout,
         "schemas": schemas,
     }))
