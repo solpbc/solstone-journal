@@ -458,7 +458,7 @@ apps/my_app/talent/my_app/
 
 ### 11. App Maintenance
 
-Apps have two maintenance surfaces with different lifecycles.
+Apps have one live maintenance surface (recurring jobs) and one retired one (historical one-time migrations, kept as frozen record).
 
 #### One-time `maint/` tasks — retired
 
