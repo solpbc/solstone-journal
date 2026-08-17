@@ -10,12 +10,6 @@ license.workspace = true
 publish = false
 
 [features]
-# Cross-language differentials — tests that drive a real Python process as an
-# oracle. They need a populated `.venv` (`make install`), so they are off by
-# default; that is what lets the frozen native `make ci` run on a bare
-# checkout. They run from `make check-differentials`.
-differential = []
-
 # Narrow test driver for the loopback installer transport target.  Production
 # builds deliberately do not expose fixture-row or injected-write seams.
 test-hooks = []

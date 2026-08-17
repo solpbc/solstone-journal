@@ -6,9 +6,6 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[features]
-differential = []
-
 [[bin]]
 name = "solstone-core-journal"
 path = "src/main.rs"

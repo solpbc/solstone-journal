@@ -9,13 +9,6 @@ publish = false
 [lints]
 workspace = true
 
-[features]
-# Cross-language differentials — tests that drive a real Python process as an
-# oracle. They need a populated `.venv` (`make install`), so they are off by
-# default; that is what lets the frozen native `make ci` run on a bare
-# checkout. They run from `make check-differentials`.
-differential = []
-
 [dependencies]
 ort = { workspace = true, features = ["api-24", "std"] }
 serde_json.workspace = true
@@ -23,8 +16,3 @@ sha2.workspace = true
 
 [dev-dependencies]
 solstone-core-transcribe = { workspace = true }
-
-[[test]]
-name = "vad_differential"
-path = "tests/vad_differential.rs"
-required-features = ["differential"]

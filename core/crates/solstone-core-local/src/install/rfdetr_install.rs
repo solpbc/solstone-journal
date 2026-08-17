@@ -15,8 +15,6 @@ use super::{archive, download_artifact, fit_report, select_artifact};
 const ENGINE_UNIT: &str = "rfdetr-engine";
 const MODEL_UNIT: &str = "rfdetr-model";
 const ENGINE_REF: &str = "65c0ffcc";
-#[cfg(feature = "differential")]
-const RELEASE_TAG: &str = "bin-65c0ffcc-1";
 const BINARY: &str = "rfdetr-cli";
 const MODEL_REVISION: &str = "c3dc0c037df499f5503545247df6618415fca643";
 const MODEL_FILE: &str = "rfdetr-nano-f16.gguf";
@@ -498,32 +496,6 @@ fn dispatch_error(error: super::DispatchError) -> RfdetrInstallError {
             .unwrap_or_else(|| "rf-detr download failed".to_owned()),
         error.exit_code,
     )
-}
-
-#[cfg(feature = "differential")]
-pub fn differential_snapshot(journal: &Path) -> serde_json::Value {
-    let engine = engine().expect("static rf-detr engine row");
-    let model = model().expect("static rf-detr model row");
-    serde_json::json!({
-        "engine_ref": ENGINE_REF,
-        "release_tag": RELEASE_TAG,
-        "tarball": {
-            "filename": engine.filename,
-            "sha256": engine.sha256,
-            "extracted_binary_sha256": engine.extracted_binary_sha256,
-        },
-        "model": {
-            "repo": MODEL_REPO,
-            "revision": MODEL_REVISION,
-            "filename": model.filename,
-            "sha256": model.sha256,
-            "size_bytes": model.size_bytes,
-        },
-        "cache_root": root(journal),
-        "engine_binary": binary_path(journal),
-        "model_path": model_path(journal),
-        "sidecar": sidecar_path(journal),
-    })
 }
 
 #[cfg(test)]

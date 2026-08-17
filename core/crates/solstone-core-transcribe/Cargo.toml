@@ -10,7 +10,6 @@ license.workspace = true
 publish = false
 
 [features]
-differential = []
 test-hooks = []
 
 [[test]]

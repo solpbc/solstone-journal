@@ -244,24 +244,6 @@ fn install_rerank_model_with_rows(
     result
 }
 
-#[cfg(feature = "differential")]
-pub fn differential_snapshot(journal: &Path) -> serde_json::Value {
-    let rows = expected().expect("static rerank catalog rows");
-    serde_json::json!({
-        "repo": REPO,
-        "revision": REVISION,
-        "files": rows.iter().map(|row| serde_json::json!({
-            "filename": row.filename,
-            "sha256": row.sha256,
-            "size_bytes": row.size_bytes,
-            "destination": root(journal).join(row.filename),
-        })).collect::<Vec<_>>(),
-        "cache_root": root(journal).parent().expect("rerank asset root has cache parent"),
-        "sidecar": sidecar(journal),
-        "sidecar_file_keys": expected_files(&rows).into_keys().collect::<Vec<_>>(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

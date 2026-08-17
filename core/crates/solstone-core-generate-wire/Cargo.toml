@@ -22,9 +22,6 @@ ureq = { workspace = true, features = ["rustls"] }
 regex = "1.13.1"
 
 [features]
-# Cross-language differentials against the Python reference implementation.
-# They need a populated `.venv` (`make install`).
-differential = []
 test-hooks = []
 
 [[test]]

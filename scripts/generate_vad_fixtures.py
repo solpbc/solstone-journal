@@ -8,8 +8,8 @@ Three committed artefacts come out of this script:
 
 ``core/fixtures/vad_speech_seed.f32le``
     16384 raw little-endian float32 samples (65536 bytes) of synthetic voiced
-    audio that Silero VAD v6 actually classifies as speech. The differential
-    corpus in ``core/crates/solstone-core-vad-analyze/tests/vad_differential.rs``
+    audio that Silero VAD v6 actually classifies as speech. The native
+    corpus in ``core/crates/solstone-core-vad-analyze/tests/vad_oracles.rs``
     builds every one of its named cases by concatenating and repeating *these*
     bytes with zero-silence windows, so the Rust helper and the Python
     reference are handed the same buffer rather than two independent

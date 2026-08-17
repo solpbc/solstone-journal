@@ -421,49 +421,6 @@ fn dispatch_error(error: super::DispatchError) -> CedInstallError {
     )
 }
 
-#[cfg(feature = "differential")]
-pub fn differential_snapshot(journal: &Path) -> serde_json::Value {
-    let keys = ["linux-cpu-x64", "linux-cpu-arm64", "macos-metal-arm64"];
-    let engines = keys
-        .iter()
-        .map(|key| {
-            let row = engine_artifact(key).expect("static CED engine row");
-            serde_json::json!({
-                "artifact_key": key,
-                "filename": row.filename,
-                "sha256": row.sha256,
-                "size_bytes": row.size_bytes,
-                "engine_dir": engine_dir(journal, key),
-            })
-        })
-        .collect::<Vec<_>>();
-    let model = model_artifact().expect("static CED model row");
-    let mut expected_file_keys = keys
-        .iter()
-        .flat_map(|key| {
-            expected_files(key)
-                .expect("static CED sidecar map")
-                .into_keys()
-        })
-        .collect::<Vec<_>>();
-    expected_file_keys.sort();
-    serde_json::json!({
-        "engine_version": ENGINE_VERSION,
-        "engines": engines,
-        "model": {
-            "repo": MODEL_REPO,
-            "revision": MODEL_REVISION,
-            "filename": model.filename,
-            "sha256": model.sha256,
-            "size_bytes": model.size_bytes,
-        },
-        "cache_root": root(journal).parent().expect("CED asset root has cache parent"),
-        "model_dir": ced_model_path(journal).parent().expect("CED model has parent"),
-        "sidecar": sidecar(journal),
-        "expected_file_keys": expected_file_keys,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

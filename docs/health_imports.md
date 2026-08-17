@@ -172,8 +172,8 @@ Focused gates:
 
 ```text
 cargo test -p solstone-core-body-ingest
-cargo test -p solstone-core --features differential --test body_restore_client
-cargo test -p solstone-core --features differential --test body_restore_client apple_and_oura_body_history_survives_real_backup_restore_and_native_rebuild -- --ignored --exact
+cargo test --manifest-path core/Cargo.toml -p solstone-core --features differential --test core_differentials
+cargo test --manifest-path core/Cargo.toml -p solstone-core --features differential --test core_differentials body_restore_client::apple_and_oura_body_history_survives_real_backup_restore_and_native_rebuild -- --ignored --exact
 cargo clippy -p solstone-core-body-ingest --all-targets -- -D warnings
 cargo clippy -p solstone-core --all-targets -- -D warnings
 ```

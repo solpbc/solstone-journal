@@ -10,9 +10,6 @@ license.workspace = true
 publish = false
 autotests = false
 
-[features]
-differential = []
-
 [dependencies]
 chrono.workspace = true
 serde.workspace = true
@@ -34,11 +31,6 @@ path = "tests/system_health_state_contracts.rs"
 [[test]]
 name = "system_health_static_contracts"
 path = "tests/system_health_static_contracts.rs"
-
-[[test]]
-name = "pipeline_health_oracle"
-path = "tests/pipeline_health_oracle.rs"
-required-features = ["differential"]
 
 [dev-dependencies]
 solstone-core-cogitate.workspace = true

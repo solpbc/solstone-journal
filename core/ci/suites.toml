@@ -1950,19 +1950,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-callosum::callosum_cross_process"
-package = "solstone-core-callosum"
-target = "callosum_cross_process"
-set = "differential"
-areas = ["services"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "slow"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-callosum::callosum_wire_component"
 package = "solstone-core-callosum"
 target = "callosum_wire_component"
@@ -1986,19 +1973,6 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-callosum::registry_conformance"
-package = "solstone-core-callosum"
-target = "registry_conformance"
-set = "differential"
-areas = ["services"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
 runtime = "none"
 
 [[suites]]
@@ -2441,19 +2415,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-import-sources::archive_merge_oracle"
-package = "solstone-core-import-sources"
-target = "archive_merge_oracle"
-set = "differential"
-areas = ["import"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-import-sources::source_archive_contracts"
 package = "solstone-core-import-sources"
 target = "source_archive_contracts"
@@ -2880,20 +2841,6 @@ areas = ["observation"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-observer::observer_differentials"
-package = "solstone-core-observer"
-target = "observer_differentials"
-set = "differential"
-areas = ["observation"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "slow"
-serial_group = "local-services"
 default_full = false
 required_features = ["differential"]
 runtime = "none"
@@ -3524,19 +3471,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-system::system_differentials"
-package = "solstone-core-system"
-target = "system_differentials"
-set = "differential"
-areas = ["system"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-system::system_lifecycle"
 package = "solstone-core-system"
 target = "system_lifecycle"
@@ -3573,19 +3507,6 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-system-health::pipeline_health_oracle"
-package = "solstone-core-system-health"
-target = "pipeline_health_oracle"
-set = "differential"
-areas = ["system"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
 runtime = "none"
 
 [[suites]]
@@ -3693,19 +3614,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-transfer::transfer_differential"
-package = "solstone-core-transfer"
-target = "transfer_differential"
-set = "differential"
-areas = ["transfer"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-vad-analyze::vad_oracles"
 package = "solstone-core-vad-analyze"
 target = "vad_oracles"
@@ -3716,19 +3624,6 @@ prerequisites = ["cargo-cache", "onnx-runtime"]
 timeout = "standard"
 default_full = true
 required_features = []
-runtime = "onnx"
-
-[[suites]]
-id = "solstone-core-vad-analyze::vad_differential"
-package = "solstone-core-vad-analyze"
-target = "vad_differential"
-set = "differential"
-areas = ["audio"]
-platforms = ["linux"]
-prerequisites = ["cargo-cache", "onnx-runtime"]
-timeout = "standard"
-default_full = false
-required_features = ["differential"]
 runtime = "onnx"
 
 [[suites]]

@@ -323,6 +323,16 @@ The native crate declares a `differential` feature. Add only its Python-oracle
 integration targets with `required-features = ["differential"]`; each is owned
 and invoked as `-p solstone-core-transcribe --test <target>`.
 
+2026-08-17: the unused `differential = []` line on
+`solstone-core-transcribe` was removed; no matching test file existed.
+`make check-differentials` and the `"differential"` CI set are still live
+(`solstone-core`, `solstone-core-observe-audio`). When these targets land,
+re-add the feature and `[[test]]` stanzas and wire them into that
+target/set. The former `solstone-core-vad-analyze --test vad_differential`
+ORT-prefixed Makefile leg is gone (native replay already lives in
+`vad_oracles.rs`), so `transcribe_vad_differential` should *be* the
+ORT-prefixed leg rather than sit beside it.
+
 - `transcribe_differential`: no real ONNX VAD requirement; compares fixture
   stage/output/event/exit behavior under stub VAD/STT/speaker seams.
 - `transcribe_vad_differential`: drives the real VAD helper/model against the

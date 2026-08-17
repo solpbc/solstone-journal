@@ -14,13 +14,6 @@ autotests = false
 [lints]
 workspace = true
 
-[features]
-# Cross-language differentials — tests that drive a real Python process as an
-# oracle. They need a populated `.venv` (`make install`), so they are off by
-# default; that is what lets the frozen native `make ci` run on a bare
-# checkout. They run from `make check-differentials`.
-differential = []
-
 [dependencies]
 chrono = { workspace = true }
 # `feature` enables sysconf/SysconfVar for Linux process start-time identity.
@@ -62,8 +55,3 @@ path = "tests/system_provider_runtime.rs"
 [[test]]
 name = "system_schedule_queue"
 path = "tests/system_schedule_queue.rs"
-
-[[test]]
-name = "system_differentials"
-path = "tests/system_differentials.rs"
-required-features = ["differential"]

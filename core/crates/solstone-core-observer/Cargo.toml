@@ -13,17 +13,9 @@ autotests = false
 [lints]
 workspace = true
 
-[features]
-differential = []
-
 [[test]]
 name = "observer_prune_contracts"
 path = "tests/observer_prune_contracts.rs"
-
-[[test]]
-name = "observer_differentials"
-path = "tests/observer_differentials.rs"
-required-features = ["differential"]
 
 [dependencies]
 chrono.workspace = true

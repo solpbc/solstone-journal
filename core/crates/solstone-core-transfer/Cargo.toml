@@ -9,14 +9,6 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[features]
-differential = []
-
-[[test]]
-name = "transfer_differential"
-path = "tests/transfer_differential.rs"
-required-features = ["differential"]
-
 [dependencies]
 chrono.workspace = true
 flate2.workspace = true

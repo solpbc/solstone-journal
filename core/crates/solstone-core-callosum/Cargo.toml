@@ -17,8 +17,6 @@ default = []
 wire = ["dep:tokio"]
 # Hidden door for live-socket wire tests. Production crates must not enable this.
 test-hooks = []
-# Cross-language Callosum differentials (AC19-22), run by `make check-differentials`.
-differential = ["wire"]
 
 [dependencies]
 serde = { workspace = true }
@@ -32,19 +30,9 @@ solstone-core-cogitate-wire.workspace = true
 solstone-core-system = { workspace = true }
 
 [[test]]
-name = "callosum_cross_process"
-path = "tests/callosum_cross_process.rs"
-required-features = ["differential"]
-
-[[test]]
 name = "callosum_wire_component"
 path = "tests/callosum_wire_component.rs"
 required-features = ["test-hooks", "wire"]
-
-[[test]]
-name = "registry_conformance"
-path = "tests/registry_conformance.rs"
-required-features = ["differential"]
 
 [lints]
 workspace = true

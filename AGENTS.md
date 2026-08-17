@@ -133,7 +133,7 @@ During the Rust-conversion freeze, use the narrowest applicable
 `make check-rust-*` target, then efficient `make ci` for routine validation.
 An operator runs `make ci-full` on the exact final-tree SHA for full host
 evidence. These paths are enforced by the
-[`ci_gate_purity` contract tests](core/crates/solstone-core/tests/ci_gate_purity.rs).
+[`ci_gate_purity` contract tests](core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs).
 The focused Python Make targets are frozen; run the Python suite directly when
 it is needed.
 Do not rerun an unchanged failure merely to seek green.
@@ -362,7 +362,7 @@ sets only the local verification path and may use any local filename.
 
 ## 6. Testing quickstart
 
-- **Rust gates:** `make` / `make all`, `make ci`, `make ci-full`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. Per the [Makefile](Makefile), `make ci` is the efficient routine path with formatting, all-target Clippy checks, and library/binary unit tests; `make ci-full` is the full operator final-tree gate and preserves the former task sequence. Cross-language tests run separately through `make check-differentials`. The [`ci_gate_purity` contract tests](core/crates/solstone-core/tests/ci_gate_purity.rs) check that each manifest-gated differential target is named in that Makefile recipe.
+- **Rust gates:** `make` / `make all`, `make ci`, `make ci-full`, `make test`, `make verify`, and `make build` operate only on the native `core/` Cargo workspace during the Rust-conversion freeze. Per the [Makefile](Makefile), `make ci` is the efficient routine path with formatting, all-target Clippy checks, and library/binary unit tests; `make ci-full` is the full operator final-tree gate and preserves the former task sequence. Cross-language tests run separately through `make check-differentials`. The [`ci_gate_purity` contract tests](core/crates/solstone-core-repository-contracts/src/contracts/ci_gate_purity.rs) check that each manifest-gated differential target is named in that Makefile recipe.
 - **Python suite:** pytest files remain `test_*.py` with `test_*` functions, shared fixtures in `tests/conftest.py`, and the fixture journal at `tests/fixtures/journal/`. The autouse `set_test_journal_path` fixture is unchanged; tests that write, scan, or rebuild journal/index state must use `journal_copy` or a smaller `tmp_path` journal (see §8). Run this suite directly with bare `pytest` when needed. `tests/` and `solstone/apps/*/tests/` are unchanged, but the former Python Make rails, including `make test-app`, `make test-only`, and the other `make test-*` targets, now fail with the freeze diagnostic.
 - **Marked Python tests:** integration, performance, and release tests remain in the suite and can be selected with bare pytest as needed; their former Make rails are frozen. Live product verification still uses `make sandbox`.
 - **After editing `solstone/convey/` or `solstone/apps/`:** `journal restart-convey` to reload code in a running stack.

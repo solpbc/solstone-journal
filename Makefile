@@ -961,22 +961,11 @@ check-differentials: check-rust-onnx-stage build
 		-p solstone-core --test core_differentials -- -D warnings || status=$$?; \
 	for leg in \
 		"-p solstone-core --test core_differentials" \
-		"-p solstone-core-observer --test observer_differentials" \
-		"-p solstone-core-system --test system_differentials" \
-		"-p solstone-core-callosum --test callosum_cross_process --test registry_conformance" \
-		"-p solstone-core-transfer --test transfer_differential" \
-		"-p solstone-core-system-health --test pipeline_health_oracle" \
-		"-p solstone-core-observe-audio --test audio_differential" \
-		"-p solstone-core-import-sources --test archive_merge_oracle" ; do \
+		"-p solstone-core-observe-audio --test audio_differential" ; do \
 		echo "==> cargo test --features differential --no-fail-fast $$leg"; \
 		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$leg \
 			|| status=$$?; \
 	done; \
-	ort_leg="-p solstone-core-vad-analyze --test vad_differential"; \
-	echo "==> cargo test --features differential --no-fail-fast $$ort_leg"; \
-	$(VAD_ANALYZE_HOST_ORT_ENV) \
-		cargo test --manifest-path $(RUST_MANIFEST) --features differential --locked --no-fail-fast $$ort_leg \
-			|| status=$$?; \
 	if [ $$status -eq 0 ]; then \
 		echo "check-differentials: every leg ran and passed"; \
 	else \

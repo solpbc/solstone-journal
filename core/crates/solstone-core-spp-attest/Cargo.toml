@@ -5,9 +5,6 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-[features]
-differential = []
-
 [dependencies]
 base64 = "=0.22.1"
 ring = "=0.17.14"
