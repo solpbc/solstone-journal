@@ -213,7 +213,6 @@
         "install-models",
         "install-provider",
         "journal-stats",
-        "maint",
         "maintenance",
         "navigate",
         "observer",

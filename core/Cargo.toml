@@ -33,7 +33,6 @@ members = [
     "crates/solstone-core-backup-runtime",
     "crates/solstone-core-offload",
     "crates/solstone-core-maintenance",
-    "crates/solstone-core-maint",
     "crates/solstone-core-convey-config",
     "crates/solstone-core-talents",
     "crates/solstone-core-doctor",
@@ -173,7 +172,6 @@ solstone-core-artifact-download = { path = "crates/solstone-core-artifact-downlo
 solstone-core-backup-runtime = { path = "crates/solstone-core-backup-runtime" }
 solstone-core-offload = { path = "crates/solstone-core-offload" }
 solstone-core-maintenance = { path = "crates/solstone-core-maintenance" }
-solstone-core-maint = { path = "crates/solstone-core-maint" }
 solstone-core-convey-config = { path = "crates/solstone-core-convey-config" }
 solstone-core-talents = { path = "crates/solstone-core-talents" }
 solstone-core-doctor = { path = "crates/solstone-core-doctor" }

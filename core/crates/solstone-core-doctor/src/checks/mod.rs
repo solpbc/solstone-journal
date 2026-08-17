@@ -11,7 +11,6 @@ pub mod host_dependencies;
 pub mod journal_caught_up;
 pub mod journal_dir_writable;
 pub mod journal_leaf_exclusivity;
-pub mod journal_maint_tasks;
 pub mod journal_package_version;
 pub mod journal_sync;
 pub mod launchd_stale_plist;
