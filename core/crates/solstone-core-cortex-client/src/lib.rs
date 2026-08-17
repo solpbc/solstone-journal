@@ -639,19 +639,27 @@ mod tests {
 
     #[test]
     fn concurrent_allocator_bumps_same_millisecond_ids() {
+        const WORKERS: usize = 32;
         let allocator = Arc::new(UseIdAllocator::new(|| Some(42)));
+        let start = Arc::new(std::sync::Barrier::new(WORKERS));
         let mut workers = Vec::new();
-        for _ in 0..32 {
+        for _ in 0..WORKERS {
             let allocator = Arc::clone(&allocator);
-            workers.push(std::thread::spawn(move || allocator.next().unwrap()));
+            let start = Arc::clone(&start);
+            workers.push(std::thread::spawn(move || {
+                start.wait();
+                allocator.next().unwrap()
+            }));
         }
-        let ids: HashSet<_> = workers
+        let mut ids: Vec<_> = workers
             .into_iter()
             .map(|worker| worker.join().unwrap())
             .collect();
-        assert_eq!(ids.len(), 32);
-        // Unique paths follow from unique use ids; asserting paths would require
-        // a running Cortex or a fake that would only test the fake.
+        ids.sort_unstable();
+        assert_eq!(
+            ids,
+            (42..42 + i64::try_from(WORKERS).unwrap()).collect::<Vec<_>>()
+        );
     }
 
     #[test]

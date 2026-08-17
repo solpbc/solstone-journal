@@ -1381,9 +1381,6 @@ id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::sam
 id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::same_target_held_lease_is_observed_to_ready::scheduling"
 
 [[findings]]
-id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::local_install_busy_observes_the_existing_local_attempt::scheduling"
-
-[[findings]]
 id = "solstone-core::core/crates/solstone-core/src/install_provider.rs::tests::local_preheld_lease_observes_the_existing_local_attempt::scheduling"
 
 [[findings]]

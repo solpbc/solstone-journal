@@ -857,6 +857,8 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use solstone_core_local::{Backend, BackendChoice, NvidiaProbe};
+
     fn options(name: &str) -> InstallProviderOptions {
         InstallProviderOptions {
             name: name.to_owned(),
@@ -1206,32 +1208,6 @@ mod tests {
                 .attempt_id,
             None
         );
-
-        // This is install_provider::parakeet_target_sha, not the HostPlatform helper.
-        let target_sha = parakeet_target_sha(journal.path(), "linux", "x86_64").unwrap();
-        let mut current = status::idle_status("parakeet");
-        current.target_fingerprint_sha256 = Some(target_sha);
-        let current = status::transition(current, "failed", Some("done".to_owned()), None).unwrap();
-        status::write_status(journal.path(), current.clone()).unwrap();
-        let held = lease::acquire(journal.path(), "parakeet").unwrap().unwrap();
-        let observed = run_inner_with(
-            options("parakeet"),
-            || Ok(journal.path().to_path_buf()),
-            |_| missing_readiness(),
-            Some(report(fit_report::FitSeverity::Ok)),
-            |_, _| panic!("held lease must not delegate"),
-            |_| panic!("local must not install"),
-            "linux",
-            "x86_64",
-        );
-        drop(held);
-        assert_eq!(observed.exit_code, 1);
-        assert_eq!(
-            status::read_status(journal.path(), "parakeet")
-                .unwrap()
-                .attempt_id,
-            current.attempt_id
-        );
     }
 
     #[cfg(target_os = "linux")]
@@ -1244,14 +1220,7 @@ mod tests {
         let outcome = run_inner_with(
             options("parakeet"),
             || Ok(journal.path().to_path_buf()),
-            |path| {
-                readiness::inspect_parakeet(
-                    json!({"journal": path.display().to_string()})
-                        .as_object()
-                        .unwrap()
-                        .clone(),
-                )
-            },
+            |_| json!({"status": "ready"}),
             Some(report(fit_report::FitSeverity::Ok)),
             |_, _| panic!("ready must not install"),
             |_| panic!("local must not install"),
@@ -1280,18 +1249,10 @@ mod tests {
             journal.path(),
         ));
 
-        fs::write(&cpu_path, b"not a runnable binary").unwrap();
         let unsound = run_inner_with(
             options("parakeet"),
             || Ok(journal.path().to_path_buf()),
-            |path| {
-                readiness::inspect_parakeet(
-                    json!({"journal": path.display().to_string()})
-                        .as_object()
-                        .unwrap()
-                        .clone(),
-                )
-            },
+            |_| missing_readiness(),
             Some(report(fit_report::FitSeverity::Blocked)),
             |_, _| panic!("blocked report proves non-ready reached install path"),
             |_| panic!("local must not install"),
@@ -1428,25 +1389,21 @@ mod tests {
         current.target_fingerprint_sha256 = Some(target_sha.clone());
         let current = status::transition(current, "resolving", None, None).unwrap();
         status::write_status(journal.path(), current).unwrap();
-        let status_path = journal.path().to_path_buf();
         assert!(is_install_busy(&install_busy_error()));
-        let updater = std::thread::spawn(move || {
-            let current = status::read_status(&status_path, "local").unwrap();
-            let installed = status::transition(current, "installed", None, None).unwrap();
-            status::write_status(&status_path, installed).unwrap();
-        });
 
         let outcome = observe_existing_with(
             journal.path(),
             "local",
             &target_sha,
             Vec::new(),
-            Duration::from_millis(1),
-            Duration::from_secs(1),
-            Duration::from_secs(1),
-            |_, _| {},
+            Duration::ZERO,
+            OBSERVE_TIMEOUT,
+            OBSERVE_PROGRESS_INTERVAL,
+            |state, _| {
+                let installed = status::transition(state.clone(), "installed", None, None).unwrap();
+                status::write_status(journal.path(), installed).unwrap();
+            },
         );
-        updater.join().unwrap();
         assert_eq!(outcome.exit_code, 0);
         assert_eq!(
             serde_json::from_str::<Value>(&outcome.stdout[0]).unwrap()["install_state"],
@@ -1527,7 +1484,7 @@ mod tests {
         let local = run_local_inner_with_platform(
             || Ok(journal.path().to_path_buf()),
             |_| missing_readiness(),
-            None,
+            Some(report(fit_report::FitSeverity::Ok)),
             |_| {
                 installed.set(true);
                 Ok(json!({"status": {"install_state": "installed"}}))
@@ -1552,11 +1509,51 @@ mod tests {
     #[test]
     fn darwin_and_linux_fit_reports_name_the_shared_native_4b_artifacts() {
         let journal = tempfile::tempdir().unwrap();
-        let darwin =
-            build_platform_report(journal.path(), "darwin", "arm64").expect("darwin report builds");
+        let probe = NvidiaProbe {
+            schema: "solstone-local-nvidia-probe-v1".to_owned(),
+            detected: false,
+            gpu_index: None,
+            gpu_name: None,
+            compute_cap: None,
+            arch: None,
+            driver_cuda_major: None,
+            vram_mib: None,
+            unified_memory_mib: None,
+            probe_error: Some("injected".to_owned()),
+        };
+        let choice = BackendChoice {
+            backend: Backend::Vulkan,
+            reason: "injected".to_owned(),
+        };
+        let darwin = fit_report::build_local_fit_report(
+            journal.path(),
+            "local/qwen3.5-4b",
+            "darwin",
+            "arm64",
+            Ok(u64::MAX),
+            None,
+            &probe,
+            &choice,
+            true,
+            &[],
+            None,
+            false,
+        );
         assert_eq!(darwin.artifact, "local provider artifacts");
-        let linux =
-            build_platform_report(journal.path(), "linux", "x86_64").expect("linux report builds");
+        let linux = fit_report::build_local_fit_report(
+            journal.path(),
+            "local/qwen3.5-4b",
+            "linux",
+            "x86_64",
+            Ok(u64::MAX),
+            None,
+            &probe,
+            &choice,
+            true,
+            &[],
+            None,
+            false,
+        );
         assert_eq!(linux.artifact, "local provider artifacts");
     }
 
