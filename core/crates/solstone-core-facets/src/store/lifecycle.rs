@@ -141,6 +141,23 @@ pub fn block_journal_entity(
     journal_root: &Path,
     entity_id: &str,
 ) -> Result<EntityBlockReport, FacetEntityLifecycleError> {
+    block_journal_entity_inner(journal_root, entity_id, || {})
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn block_journal_entity_with_hook(
+    journal_root: &Path,
+    entity_id: &str,
+    hook: impl FnOnce(),
+) -> Result<EntityBlockReport, FacetEntityLifecycleError> {
+    block_journal_entity_inner(journal_root, entity_id, hook)
+}
+
+fn block_journal_entity_inner(
+    journal_root: &Path,
+    entity_id: &str,
+    hook: impl FnOnce(),
+) -> Result<EntityBlockReport, FacetEntityLifecycleError> {
     let _facet_trust =
         hold_facet_trust_lock(journal_root).map_err(FacetEntityLifecycleError::FacetTrustLock)?;
     let _entity_trust = solstone_core_entity::hold_entity_trust_lock(journal_root)
@@ -183,6 +200,7 @@ pub fn block_journal_entity(
     };
     save_entity_identity(journal_root, entity_id, &blocked_identity, Some(&operation))
         .map_err(entity_write_error)?;
+    hook();
 
     let mut facets_detached = Vec::new();
     for entry in list_dir_entries(&facets_dir(journal_root)?)
@@ -219,6 +237,23 @@ pub fn block_journal_entity(
 pub fn delete_journal_entity(
     journal_root: &Path,
     entity_id: &str,
+) -> Result<EntityDeleteReport, FacetEntityLifecycleError> {
+    delete_journal_entity_inner(journal_root, entity_id, || {})
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn delete_journal_entity_with_hook(
+    journal_root: &Path,
+    entity_id: &str,
+    hook: impl FnOnce(),
+) -> Result<EntityDeleteReport, FacetEntityLifecycleError> {
+    delete_journal_entity_inner(journal_root, entity_id, hook)
+}
+
+fn delete_journal_entity_inner(
+    journal_root: &Path,
+    entity_id: &str,
+    hook: impl FnOnce(),
 ) -> Result<EntityDeleteReport, FacetEntityLifecycleError> {
     let _facet_trust =
         hold_facet_trust_lock(journal_root).map_err(FacetEntityLifecycleError::FacetTrustLock)?;
@@ -270,6 +305,7 @@ pub fn delete_journal_entity(
             facets_deleted.push(facet_dir);
         }
     }
+    hook();
     remove_entity_ambiguity_references(journal_root, entity_id).map_err(entity_write_error)?;
     delete_entity_directory(journal_root, entity_id).map_err(FacetEntityLifecycleError::Entity)?;
     Ok(EntityDeleteReport {
@@ -304,8 +340,8 @@ pub fn delete_created_entity_if_unreferenced(
     )
 }
 
-#[cfg(test)]
-pub(crate) fn delete_created_entity_if_unreferenced_with_hook(
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn delete_created_entity_if_unreferenced_with_hook(
     journal_root: &Path,
     entity_id: &str,
     operation_id: &str,

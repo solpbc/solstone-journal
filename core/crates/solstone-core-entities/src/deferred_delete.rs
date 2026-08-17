@@ -4,7 +4,7 @@
 //! Process-lifetime deferred journal-entity deletion scheduling.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -37,31 +37,50 @@ impl DeferredDeleteRegistry {
         let task_pending_id = pending_id.clone();
         let task = tokio::spawn(async move {
             tokio::time::sleep(delay).await;
-            if handles
-                .lock()
-                .expect("deferred-delete registry mutex is not poisoned")
-                .remove(&task_pending_id)
-                .is_none()
-            {
-                return;
-            }
-            let delete_root = journal_root.clone();
-            let delete_entity_id = entity_id.clone();
-            let facets_deleted = solstone_core_serving::seam::run_blocking(move || {
-                solstone_core_facets::delete_journal_entity(&delete_root, &delete_entity_id)
-                    .map(|report| report.facets_deleted)
+            let _ = solstone_core_serving::seam::run_blocking(move || {
+                Self::commit_if_still_scheduled(
+                    &handles,
+                    &journal_root,
+                    &entity_id,
+                    &task_pending_id,
+                );
             })
-            .await
-            .ok()
-            .and_then(Result::ok)
-            .unwrap_or_default();
-            let _ =
-                action_log::committed(&journal_root, &entity_id, &task_pending_id, &facets_deleted);
+            .await;
         });
         self.handles
             .lock()
             .expect("deferred-delete registry mutex is not poisoned")
             .insert(pending_id, task.abort_handle());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn commit_if_pending(
+        &self,
+        journal_root: &Path,
+        entity_id: &str,
+        pending_id: &str,
+    ) {
+        Self::commit_if_still_scheduled(&self.handles, journal_root, entity_id, pending_id);
+    }
+
+    fn commit_if_still_scheduled(
+        handles: &Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
+        journal_root: &Path,
+        entity_id: &str,
+        pending_id: &str,
+    ) {
+        if handles
+            .lock()
+            .expect("deferred-delete registry mutex is not poisoned")
+            .remove(pending_id)
+            .is_none()
+        {
+            return;
+        }
+        let facets_deleted = solstone_core_facets::delete_journal_entity(journal_root, entity_id)
+            .map(|report| report.facets_deleted)
+            .unwrap_or_default();
+        let _ = action_log::committed(journal_root, entity_id, pending_id, &facets_deleted);
     }
 
     pub(crate) fn cancel(&self, pending_id: &str) -> bool {

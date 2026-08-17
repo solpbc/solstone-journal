@@ -61,6 +61,11 @@ pub use store::{
 pub use trust_lock::{
     FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test,
 };
+#[cfg(any(test, feature = "test-hooks"))]
+pub use store::{
+    block_journal_entity_with_hook, delete_created_entity_if_unreferenced_with_hook,
+    delete_journal_entity_with_hook,
+};
 
 #[cfg(test)]
 mod detected_entity_exclusion_fixture_tests;

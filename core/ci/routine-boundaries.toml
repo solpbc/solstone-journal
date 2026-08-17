@@ -280,33 +280,6 @@ id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::
 id = "solstone-core-doctor::core/crates/solstone-core-doctor/src/lib.rs::tests::ac9_full_batteries_never_invoke_poisoned_interpreters::process"
 
 [[findings]]
-id = "solstone-core-entities::core/crates/solstone-core-entities/src/router_tests.rs::await_deferred_delete_phase::clock"
-
-[[findings]]
-id = "solstone-core-entities::core/crates/solstone-core-entities/src/router_tests.rs::deferred_delete_cancel_preserves_entity_and_logs_cancellation::clock"
-
-[[findings]]
-id = "solstone-core-entity::core/crates/solstone-core-entity/src/resolution_tests.rs::mutation_resolution_waits_for_the_outermost_trust_guard::scheduling"
-
-[[findings]]
-id = "solstone-core-entity::core/crates/solstone-core-entity/src/store_tests.rs::identity_repair_waits_for_the_journal_trust_lock::scheduling"
-
-[[findings]]
-id = "solstone-core-entity::core/crates/solstone-core-entity/src/trust_lock_tests.rs::second_thread_waits_for_the_outermost_guard_to_drop::scheduling"
-
-[[findings]]
-id = "solstone-core-entity::core/crates/solstone-core-entity/src/voiceprint_tests.rs::concurrent_batch_saves_preserve_both_updates::scheduling"
-
-[[findings]]
-id = "solstone-core-facets::core/crates/solstone-core-facets/src/lifecycle_tests.rs::block_holds_entity_trust_through_relationship_detachment::scheduling"
-
-[[findings]]
-id = "solstone-core-facets::core/crates/solstone-core-facets/src/lifecycle_tests.rs::delete_lock_contention_observed::scheduling"
-
-[[findings]]
-id = "solstone-core-facets::core/crates/solstone-core-facets/src/lifecycle_tests.rs::guarded_delete_contention_observed::scheduling"
-
-[[findings]]
 id = "solstone-core-facets::core/crates/solstone-core-facets/src/store/awareness.rs::tests::temporary_journal::clock"
 
 [[findings]]
@@ -484,67 +457,10 @@ id = "solstone-core-journal-config-write::core/crates/solstone-core-journal-conf
 id = "solstone-core-journal-config::core/crates/solstone-core-journal-config/src/tests.rs::new::scheduling"
 
 [[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/atomic.rs::tests::atomic_replace_survives_kill_at_every_boundary::clock"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/atomic.rs::tests::atomic_replace_survives_kill_at_every_boundary::process"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/atomic.rs::tests::atomic_replace_survives_kill_at_every_boundary::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::lease_is_released_when_the_holder_dies::clock"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::lease_pause_helper::clock"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::spawn_lease_holder::process"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::spawn_lease_holder::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::wait_for_marker::clock"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/lease.rs::tests::zero_attempts_and_retry_window_make_one_immediate_attempt::clock"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::existing_parent_lock_first_time_contenders_produce_one_winner::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::existing_parent_lock_leaves_umask_restricted_creation_unrepaired::process"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::lock_is_released_when_the_holder_dies::clock"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::lock_is_released_when_the_holder_dies::process"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::lock_is_released_when_the_holder_dies::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/locking.rs::tests::lock_pause_helper::clock"
-
-[[findings]]
 id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/readers.rs::tests::install_logger::scheduling"
 
 [[findings]]
 id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/readers.rs::tests::log::scheduling"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/staged.rs::tests::killed_publish_never_exposes_a_torn_set::clock"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/staged.rs::tests::killed_publish_never_exposes_a_torn_set::process"
-
-[[findings]]
-id = "solstone-core-journal-io::core/crates/solstone-core-journal-io/src/staged.rs::tests::killed_publish_never_exposes_a_torn_set::scheduling"
 
 [[findings]]
 id = "solstone-core-journal::core/crates/solstone-core-journal/src/lib.rs::tests::unique_temp::clock"

@@ -8,8 +8,6 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
-use std::thread;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -2380,39 +2378,6 @@ fn identity_repair_aborts_without_marker_and_resumes_after_a_partial_write_failu
     assert_eq!(resumed.left_alone, vec!["alpha"]);
     assert_eq!(resumed.added, vec!["beta"]);
     assert!(repair_marker_path(temporary.path()).is_file());
-}
-
-#[test]
-fn identity_repair_waits_for_the_journal_trust_lock() {
-    let temporary = TempDir::new();
-    write_json(
-        temporary.path(),
-        "entities/alice/entity.json",
-        &json!({"name": "Alice"}),
-    );
-    let outer = crate::hold_entity_trust_lock(temporary.path()).unwrap();
-    let root = temporary.path().to_path_buf();
-    let (started_tx, started_rx) = mpsc::channel();
-    let (finished_tx, finished_rx) = mpsc::channel();
-    let worker = thread::spawn(move || {
-        started_tx.send(()).unwrap();
-        finished_tx.send(repair_entity_identities(&root)).unwrap();
-    });
-
-    started_rx.recv().unwrap();
-    assert!(
-        finished_rx
-            .recv_timeout(Duration::from_millis(100))
-            .is_err()
-    );
-    drop(outer);
-    assert!(
-        finished_rx
-            .recv_timeout(Duration::from_secs(1))
-            .unwrap()
-            .is_ok()
-    );
-    worker.join().unwrap();
 }
 
 fn incomplete_repair_report(root: &Path) -> crate::EntityIdentityRepairReport {

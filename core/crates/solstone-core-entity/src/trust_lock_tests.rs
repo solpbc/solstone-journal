@@ -6,8 +6,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
-use std::thread;
 use std::time::Duration;
 
 use solstone_core_journal_io::{LockError, LockOptions, contained_path, hold_lock};
@@ -57,41 +55,6 @@ fn nested_lock_reuses_the_sidecar_until_the_outermost_drop() {
     let released = hold_lock(&lock_path, short_options()).unwrap();
     drop(released);
     assert!(sidecar_path(&lock_path).is_file());
-}
-
-#[test]
-fn second_thread_waits_for_the_outermost_guard_to_drop() {
-    let temporary = TempDir::new();
-    let outer = hold_entity_trust_lock(temporary.path()).unwrap();
-    let inner = hold_entity_trust_lock(temporary.path()).unwrap();
-    let root = temporary.path().to_path_buf();
-    let (started_tx, started_rx) = mpsc::channel();
-    let (acquired_tx, acquired_rx) = mpsc::channel();
-
-    let worker = thread::spawn(move || {
-        started_tx.send(()).unwrap();
-        let lock = hold_entity_trust_lock(&root).unwrap();
-        acquired_tx.send(()).unwrap();
-        drop(lock);
-    });
-
-    started_rx.recv().unwrap();
-    assert!(
-        acquired_rx
-            .recv_timeout(Duration::from_millis(100))
-            .is_err(),
-        "second thread acquired before the outermost guard dropped"
-    );
-    drop(inner);
-    assert!(
-        acquired_rx
-            .recv_timeout(Duration::from_millis(100))
-            .is_err(),
-        "second thread acquired after only the nested guard dropped"
-    );
-    drop(outer);
-    acquired_rx.recv_timeout(Duration::from_secs(1)).unwrap();
-    worker.join().unwrap();
 }
 
 #[test]

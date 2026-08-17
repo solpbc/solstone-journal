@@ -67,8 +67,11 @@ pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
 pub use legacy_entity_migration::{
     FacetEntityMigrationError, LegacyFacetEntityMigrationReport, migrate_legacy_facet_entities,
 };
-#[cfg(test)]
-pub(crate) use lifecycle::delete_created_entity_if_unreferenced_with_hook;
+#[cfg(any(test, feature = "test-hooks"))]
+pub use lifecycle::{
+    block_journal_entity_with_hook, delete_created_entity_if_unreferenced_with_hook,
+    delete_journal_entity_with_hook,
+};
 pub use lifecycle::{
     EntityBlockReport, EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference,
     FacetEntityLifecycleError, block_journal_entity, delete_created_entity_if_unreferenced,

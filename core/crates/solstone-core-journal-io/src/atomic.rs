@@ -691,12 +691,6 @@ fn pause_at(_step: &str) {}
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::process::Command;
-    use std::thread;
-    use std::time::{Duration, Instant};
-
-    use nix::sys::signal::{Signal, kill};
-    use nix::unistd::Pid;
 
     use super::*;
 
@@ -781,52 +775,4 @@ mod tests {
         assert_eq!(fs::read(&target).unwrap().len(), 1024 * 1024);
     }
 
-    #[test]
-    fn atomic_pause_helper() {
-        let Ok(target) = std::env::var("JOURNAL_IO_HELPER_TARGET") else {
-            return;
-        };
-        atomic_replace(target, b"new-content", AtomicWriteOptions::default()).unwrap();
-    }
-
-    #[test]
-    fn atomic_replace_survives_kill_at_every_boundary() {
-        let temporary = TempDir::new();
-        for step in [
-            "temp-create",
-            "write",
-            "fsync-file",
-            "chmod",
-            "close",
-            "rename",
-            "fsync-parent-dir",
-        ] {
-            let target = temporary.path().join(format!("{step}.txt"));
-            let marker = temporary.path().join(format!("{step}.ready"));
-            fs::write(&target, b"old-content").unwrap();
-            let mut child = Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "--exact",
-                    "atomic::tests::atomic_pause_helper",
-                    "--nocapture",
-                ])
-                .env("JOURNAL_IO_HELPER_TARGET", &target)
-                .env("JOURNAL_IO_TEST_PAUSE_AT", step)
-                .env("JOURNAL_IO_TEST_MARKER", &marker)
-                .spawn()
-                .unwrap();
-            let deadline = Instant::now() + Duration::from_secs(3);
-            while !marker.exists() && Instant::now() < deadline {
-                thread::sleep(Duration::from_millis(10));
-            }
-            assert!(marker.exists(), "helper did not reach {step}");
-            kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL).unwrap();
-            child.wait().unwrap();
-            let contents = fs::read(&target).unwrap();
-            assert!(
-                contents == b"old-content" || contents == b"new-content",
-                "{step}"
-            );
-        }
-    }
 }

@@ -1,0 +1,448 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+#![allow(clippy::disallowed_methods, clippy::disallowed_types)]
+
+use std::ffi::OsStr;
+use std::fs::{self, File};
+use std::io;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::{Arc, Barrier, mpsc};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use nix::errno::Errno;
+use nix::fcntl::{Flock, FlockArg};
+use nix::sys::signal::{Signal, kill};
+use nix::sys::stat::{Mode, umask};
+use nix::unistd::Pid;
+use solstone_core_journal_io::{
+    AtomicWriteOptions, ExistingParentLock, ExistingParentLockError, LeaseOptions, LockError,
+    LockOptions, StagedDirOptions, acquire_existing_parent_lock, acquire_file_lease,
+    atomic_replace, hold_lock, publish_staged_dir,
+};
+
+#[test]
+fn atomic_pause_helper() {
+    let Ok(target) = std::env::var("JOURNAL_IO_HELPER_TARGET") else {
+        return;
+    };
+    atomic_replace(target, b"new-content", AtomicWriteOptions::default()).unwrap();
+}
+
+#[test]
+fn atomic_replace_survives_kill_at_every_boundary() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    for step in [
+        "temp-create",
+        "write",
+        "fsync-file",
+        "chmod",
+        "close",
+        "rename",
+        "fsync-parent-dir",
+    ] {
+        let target = temporary.path().join(format!("{step}.txt"));
+        let marker = temporary.path().join(format!("{step}.ready"));
+        fs::write(&target, b"old-content").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "atomic_pause_helper", "--nocapture"])
+            .env("JOURNAL_IO_HELPER_TARGET", &target)
+            .env("JOURNAL_IO_TEST_PAUSE_AT", step)
+            .env("JOURNAL_IO_TEST_MARKER", &marker)
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !marker.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(marker.exists(), "helper did not reach {step}");
+        kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL).unwrap();
+        child.wait().unwrap();
+        let contents = fs::read(&target).unwrap();
+        assert!(
+            contents == b"old-content" || contents == b"new-content",
+            "{step}"
+        );
+    }
+}
+
+#[test]
+fn staged_pause_helper() {
+    let Ok(destination) = std::env::var("JOURNAL_IO_HELPER_STAGED_DESTINATION") else {
+        return;
+    };
+    publish_staged_dir(
+        Path::new(&destination),
+        StagedDirOptions {
+            directory_mode: Some(0o700),
+        },
+        |staging| {
+            fs::write(staging.join("manifest.json"), b"{\"complete\":true}\n")?;
+            // Production pause_at is env-driven; this mid-populate write is the
+            // helper-owned checkpoint the parent kills against.
+            if std::env::var("JOURNAL_IO_TEST_PAUSE_AT").ok().as_deref() == Some("mid-populate") {
+                if let Ok(marker) = std::env::var("JOURNAL_IO_TEST_MARKER") {
+                    let _ = fs::write(marker, "mid-populate");
+                }
+                loop {
+                    thread::sleep(Duration::from_millis(25));
+                }
+            }
+            fs::write(staging.join("payload.bin"), b"complete-payload")?;
+            Ok::<_, io::Error>(())
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn killed_publish_never_exposes_a_torn_set() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    for checkpoint in [
+        "before-staging-dir-create",
+        "after-staging-dir-create",
+        "mid-populate",
+        "after-populate",
+        "after-staging-sync",
+        "after-rename",
+    ] {
+        let destination = temporary.path().join(format!("bundle-{checkpoint}"));
+        let marker = temporary.path().join(format!("{checkpoint}.ready"));
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "staged_pause_helper", "--nocapture"])
+            .env("JOURNAL_IO_HELPER_STAGED_DESTINATION", &destination)
+            .env("JOURNAL_IO_TEST_PAUSE_AT", checkpoint)
+            .env("JOURNAL_IO_TEST_MARKER", &marker)
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !marker.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(marker.exists(), "helper did not reach {checkpoint}");
+        kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL).unwrap();
+        child.wait().unwrap();
+
+        if checkpoint == "after-rename" {
+            assert!(destination.exists(), "destination missing after rename");
+            assert_eq!(
+                fs::read(destination.join("manifest.json")).unwrap(),
+                b"{\"complete\":true}\n"
+            );
+            assert_eq!(
+                fs::read(destination.join("payload.bin")).unwrap(),
+                b"complete-payload"
+            );
+        } else {
+            assert!(
+                !destination.exists(),
+                "destination appeared before rename at {checkpoint}"
+            );
+        }
+    }
+}
+
+#[test]
+fn lease_pause_helper() {
+    let Ok(path) = std::env::var("JOURNAL_IO_HELPER_LEASE_PATH") else {
+        return;
+    };
+    let lease = acquire_file_lease(path, LeaseOptions::default())
+        .unwrap()
+        .expect("helper acquires lease");
+    let marker = std::env::var("JOURNAL_IO_TEST_MARKER").unwrap();
+    fs::write(marker, "locked").unwrap();
+    let _keep_guard_alive = lease;
+    loop {
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
+fn contention_returns_none_from_another_process() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let path = temporary.path().join("refresh.lease");
+    let holder = spawn_lease_holder(&path, temporary.path());
+    wait_for_marker(&holder.marker);
+
+    let contention = acquire_file_lease(
+        &path,
+        LeaseOptions {
+            attempts: 2,
+            retry_max: Duration::from_millis(25),
+            ..LeaseOptions::default()
+        },
+    );
+    assert!(matches!(contention, Ok(None)));
+    kill_holder(holder);
+}
+
+#[test]
+fn lease_is_released_when_the_holder_dies() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let path = temporary.path().join("refresh.lease");
+    let mut holder = spawn_lease_holder(&path, temporary.path());
+    wait_for_marker(&holder.marker);
+
+    assert!(matches!(
+        acquire_file_lease(
+            &path,
+            LeaseOptions {
+                retry_max: Duration::ZERO,
+                ..LeaseOptions::default()
+            },
+        ),
+        Ok(None)
+    ));
+    kill(Pid::from_raw(holder.child.id() as i32), Signal::SIGKILL).unwrap();
+    holder.child.wait().unwrap();
+    fs::remove_file(&holder.marker).unwrap();
+    fs::remove_file(holder.marker.with_extension("pid")).unwrap();
+
+    let started = Instant::now();
+    assert!(
+        acquire_file_lease(&path, LeaseOptions::default())
+            .unwrap()
+            .is_some()
+    );
+    assert!(started.elapsed() < Duration::from_millis(200));
+}
+
+#[test]
+fn zero_attempts_and_retry_window_make_one_immediate_attempt() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let path = temporary.path().join("refresh.lease");
+    let holder = spawn_lease_holder(&path, temporary.path());
+    wait_for_marker(&holder.marker);
+
+    let started = Instant::now();
+    let result = acquire_file_lease(
+        &path,
+        LeaseOptions {
+            attempts: 0,
+            retry_max: Duration::ZERO,
+            ..LeaseOptions::default()
+        },
+    );
+    assert!(matches!(result, Ok(None)));
+    assert!(started.elapsed() < Duration::from_millis(100));
+    kill_holder(holder);
+}
+
+struct LeaseHolder {
+    child: std::process::Child,
+    marker: PathBuf,
+}
+
+fn spawn_lease_holder(path: &Path, temporary: &Path) -> LeaseHolder {
+    let marker = temporary.join(format!("lease-holder-{}.ready", std::process::id()));
+    let child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "lease_pause_helper", "--nocapture"])
+        .env("JOURNAL_IO_HELPER_LEASE_PATH", path)
+        .env("JOURNAL_IO_TEST_MARKER", &marker)
+        .spawn()
+        .unwrap();
+    fs::write(marker.with_extension("pid"), child.id().to_string()).unwrap();
+    LeaseHolder { child, marker }
+}
+
+fn wait_for_marker(marker: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !marker.exists() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(marker.exists(), "helper did not acquire the lease");
+}
+
+fn kill_holder(mut holder: LeaseHolder) {
+    kill(Pid::from_raw(holder.child.id() as i32), Signal::SIGKILL).unwrap();
+    holder.child.wait().unwrap();
+    fs::remove_file(&holder.marker).unwrap();
+    fs::remove_file(holder.marker.with_extension("pid")).unwrap();
+}
+
+#[test]
+fn lock_pause_helper() {
+    let Ok(path) = std::env::var("JOURNAL_IO_HELPER_LOCK_PATH") else {
+        return;
+    };
+    let lock = hold_lock(path, LockOptions::default()).unwrap();
+    let marker = std::env::var("JOURNAL_IO_TEST_MARKER").unwrap();
+    fs::write(marker, "locked").unwrap();
+    let _keep_guard_alive = lock;
+    loop {
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
+fn lock_is_released_when_the_holder_dies() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let path = temporary.path().join("config.json");
+    let marker = temporary.path().join("locked.ready");
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "lock_pause_helper", "--nocapture"])
+        .env("JOURNAL_IO_HELPER_LOCK_PATH", &path)
+        .env("JOURNAL_IO_TEST_MARKER", &marker)
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !marker.exists() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(marker.exists(), "helper did not acquire the lock");
+    let contention = hold_lock(
+        &path,
+        LockOptions {
+            timeout: Duration::from_millis(100),
+            ..LockOptions::default()
+        },
+    );
+    assert!(
+        matches!(contention, Err(LockError::Timeout(_))),
+        "child did not create real lock contention"
+    );
+    kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL).unwrap();
+    child.wait().unwrap();
+
+    let started = Instant::now();
+    let _lock = hold_lock(
+        &path,
+        LockOptions {
+            timeout: Duration::from_secs(1),
+            ..LockOptions::default()
+        },
+    )
+    .unwrap();
+    assert!(started.elapsed() < Duration::from_millis(200));
+}
+
+struct UmaskRestore(Mode);
+
+impl UmaskRestore {
+    fn set(mask: u32) -> Self {
+        Self(umask(Mode::from_bits_truncate(mask as nix::libc::mode_t)))
+    }
+}
+
+impl Drop for UmaskRestore {
+    fn drop(&mut self) {
+        umask(self.0);
+    }
+}
+
+fn entry_mode(path: &Path) -> u32 {
+    fs::symlink_metadata(path).unwrap().permissions().mode() & 0o7777
+}
+
+fn acquire(
+    parent: &Path,
+    name: &OsStr,
+    timeout: Duration,
+) -> Result<ExistingParentLock, ExistingParentLockError> {
+    acquire_existing_parent_lock(parent, name, timeout, Duration::from_millis(10))
+}
+
+#[test]
+fn existing_parent_lock_umask_helper() {
+    let Some(parent) = std::env::var_os("JOURNAL_IO_UMASK_PARENT") else {
+        return;
+    };
+    let parent = PathBuf::from(parent);
+    let _restore = UmaskRestore::set(0o200);
+    let error = acquire(&parent, OsStr::new("lock"), Duration::from_secs(1)).unwrap_err();
+    assert!(matches!(
+        error,
+        ExistingParentLockError::WrongMode {
+            observed: 0o400,
+            ..
+        }
+    ));
+    assert_eq!(entry_mode(&parent.join("lock")), 0o400);
+}
+
+#[test]
+fn existing_parent_lock_leaves_umask_restricted_creation_unrepaired() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let parent = temporary.path().join("locks");
+    fs::create_dir(&parent).unwrap();
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "existing_parent_lock_umask_helper",
+            "--nocapture",
+        ])
+        .env("JOURNAL_IO_UMASK_PARENT", &parent)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert_eq!(entry_mode(&parent.join("lock")), 0o400);
+}
+
+#[test]
+fn existing_parent_lock_first_time_contenders_produce_one_winner() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let parent = temporary.path().join("locks");
+    fs::create_dir(&parent).unwrap();
+    let start = Arc::new(Barrier::new(3));
+    let finish = Arc::new(Barrier::new(3));
+    let (sender, receiver) = mpsc::channel();
+    for _ in 0..2 {
+        let parent = parent.clone();
+        let start = Arc::clone(&start);
+        let finish = Arc::clone(&finish);
+        let sender = sender.clone();
+        thread::spawn(move || {
+            start.wait();
+            let result = acquire(&parent, OsStr::new("fresh"), Duration::from_millis(100));
+            sender.send(result.is_ok()).unwrap();
+            finish.wait();
+        });
+    }
+    start.wait();
+    assert_eq!(
+        [receiver.recv().unwrap(), receiver.recv().unwrap()]
+            .into_iter()
+            .filter(|won| *won)
+            .count(),
+        1
+    );
+    finish.wait();
+    assert_eq!(entry_mode(&parent.join("fresh")), 0o600);
+}
+
+#[test]
+fn existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions() {
+    let temporary = tempfile::TempDir::new().unwrap();
+    let parent = temporary.path().join("locks");
+    fs::create_dir(&parent).unwrap();
+    let entry = parent.join("fresh");
+    drop(acquire(&parent, OsStr::new("fresh"), Duration::from_secs(1)).unwrap());
+    let api_guard = acquire(&parent, OsStr::new("fresh"), Duration::from_secs(1)).unwrap();
+    let raw = File::open(&entry).unwrap();
+    assert!(matches!(
+        Flock::lock(raw, FlockArg::LockExclusiveNonblock),
+        Err((_, Errno::EACCES | Errno::EAGAIN))
+    ));
+    drop(api_guard);
+    let raw_guard =
+        Flock::lock(File::open(&entry).unwrap(), FlockArg::LockExclusiveNonblock).unwrap();
+    let (sender, receiver) = mpsc::channel();
+    let parent_for_thread = parent.clone();
+    thread::spawn(move || {
+        sender
+            .send(acquire(
+                &parent_for_thread,
+                OsStr::new("fresh"),
+                Duration::from_millis(50),
+            ))
+            .unwrap()
+    });
+    assert!(
+        matches!(receiver.recv_timeout(Duration::from_secs(1)).unwrap(), Err(ExistingParentLockError::Timeout(timeout)) if timeout.timeout == Duration::from_millis(50))
+    );
+    drop(raw_guard);
+}

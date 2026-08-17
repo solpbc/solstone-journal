@@ -209,12 +209,6 @@ fn pause_at(_step: &str) {}
 mod tests {
     use std::fs;
     use std::io;
-    use std::process::Command;
-    use std::thread;
-    use std::time::{Duration, Instant};
-
-    use nix::sys::signal::{Signal, kill};
-    use nix::unistd::Pid;
 
     use super::*;
     use crate::test_support::TempDir;
@@ -223,77 +217,6 @@ mod tests {
         fs::write(staging.join("manifest.json"), b"{\"complete\":true}\n")?;
         fs::write(staging.join("payload.bin"), b"complete-payload")?;
         Ok(())
-    }
-
-    #[test]
-    fn staged_pause_helper() {
-        let Ok(destination) = std::env::var("JOURNAL_IO_HELPER_STAGED_DESTINATION") else {
-            return;
-        };
-        publish_staged_dir(
-            Path::new(&destination),
-            StagedDirOptions {
-                directory_mode: Some(0o700),
-            },
-            |staging| {
-                fs::write(staging.join("manifest.json"), b"{\"complete\":true}\n")?;
-                pause_at("mid-populate");
-                fs::write(staging.join("payload.bin"), b"complete-payload")?;
-                Ok::<_, io::Error>(())
-            },
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn killed_publish_never_exposes_a_torn_set() {
-        let temporary = TempDir::new();
-        for checkpoint in [
-            "before-staging-dir-create",
-            "after-staging-dir-create",
-            "mid-populate",
-            "after-populate",
-            "after-staging-sync",
-            "after-rename",
-        ] {
-            let destination = temporary.path().join(format!("bundle-{checkpoint}"));
-            let marker = temporary.path().join(format!("{checkpoint}.ready"));
-            let mut child = Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "--exact",
-                    "staged::tests::staged_pause_helper",
-                    "--nocapture",
-                ])
-                .env("JOURNAL_IO_HELPER_STAGED_DESTINATION", &destination)
-                .env("JOURNAL_IO_TEST_PAUSE_AT", checkpoint)
-                .env("JOURNAL_IO_TEST_MARKER", &marker)
-                .spawn()
-                .unwrap();
-            let deadline = Instant::now() + Duration::from_secs(3);
-            while !marker.exists() && Instant::now() < deadline {
-                thread::sleep(Duration::from_millis(10));
-            }
-            assert!(marker.exists(), "helper did not reach {checkpoint}");
-            kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL).unwrap();
-            child.wait().unwrap();
-
-            if checkpoint == "after-rename" {
-                assert!(destination.exists(), "destination missing after rename");
-                assert_eq!(
-                    fs::read(destination.join("manifest.json")).unwrap(),
-                    b"{\"complete\":true}\n"
-                );
-                assert_eq!(
-                    fs::read(destination.join("payload.bin")).unwrap(),
-                    b"complete-payload"
-                );
-            } else {
-                assert!(
-                    !destination.exists(),
-                    "destination appeared before rename at {checkpoint}"
-                );
-            }
-        }
     }
 
     #[test]

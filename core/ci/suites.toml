@@ -2154,6 +2154,32 @@ required_features = ["test-stubs"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-entity::entity_trust_lock_component"
+package = "solstone-core-entity"
+target = "entity_trust_lock_component"
+set = "component"
+areas = ["entities"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-facets::facet_lock_component"
+package = "solstone-core-facets"
+target = "facet_lock_component"
+set = "component"
+areas = ["facets"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-generate::contract_precedence"
 package = "solstone-core-generate"
 target = "contract_precedence"
@@ -2778,6 +2804,19 @@ prerequisites = ["cargo-cache"]
 timeout = "slow"
 default_full = true
 required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-journal-io::journal_io_lock_component"
+package = "solstone-core-journal-io"
+target = "journal_io_lock_component"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]

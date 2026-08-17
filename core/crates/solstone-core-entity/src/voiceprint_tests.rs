@@ -7,9 +7,6 @@ use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Barrier, mpsc};
-use std::thread;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 use zip::write::SimpleFileOptions;
@@ -479,58 +476,6 @@ fn duplicate_python_equal_exact_matches_are_refused_without_partial_write() {
         VoiceprintOperationError::DuplicateExactMatch
     ));
     assert_eq!(fs::read(path).unwrap(), before);
-}
-
-#[test]
-fn concurrent_batch_saves_preserve_both_updates() {
-    let temporary = fixture_journal();
-    let path = voiceprint_path(temporary.path());
-    fs::remove_file(path).unwrap();
-    let root = Arc::new(temporary.path().to_path_buf());
-    let barrier = Arc::new(Barrier::new(2));
-    let (sender, receiver) = mpsc::channel();
-    let mut workers = Vec::new();
-    for sentence_id in [21_u64, 22] {
-        let root = Arc::clone(&root);
-        let barrier = Arc::clone(&barrier);
-        let sender = sender.clone();
-        workers.push(thread::spawn(move || {
-            barrier.wait();
-            let result = save_voiceprints_batch(
-                &root,
-                fixture_entity_id(),
-                &[VoiceprintItem {
-                    embedding: embedding(sentence_id as f32),
-                    metadata: json!({
-                        "day": "20260805",
-                        "segment_key": format!("parallel-{sentence_id}"),
-                        "source": "mic_audio",
-                        "sentence_id": sentence_id,
-                    }),
-                }],
-            );
-            sender.send(result).unwrap();
-        }));
-    }
-    drop(sender);
-    for _ in 0..2 {
-        assert_eq!(
-            receiver
-                .recv_timeout(Duration::from_secs(3))
-                .unwrap()
-                .unwrap(),
-            1
-        );
-    }
-    for worker in workers {
-        worker.join().unwrap();
-    }
-    assert_eq!(
-        load_entity_voiceprints_file(temporary.path(), fixture_entity_id())
-            .unwrap()
-            .rows,
-        2
-    );
 }
 
 #[test]

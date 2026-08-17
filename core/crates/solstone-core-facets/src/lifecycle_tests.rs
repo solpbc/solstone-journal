@@ -4,13 +4,8 @@
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
 
 use std::fs;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
-use std::thread;
 
 use serde_json::{Value, json};
-use solstone_core_entity::hold_entity_trust_lock;
 use solstone_core_entity::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,
     EntityOperationKind, EntityResolutionEntity, EntityResolutionOutcome, read_identity_map,
@@ -19,7 +14,6 @@ use solstone_core_entity::{
 };
 use solstone_core_indexer_store::db::open_index;
 
-use crate::store::delete_created_entity_if_unreferenced_with_hook;
 use crate::store_tests::{
     TempDir, create_test_facet, relationship_value, write_facet_relationship, write_journal_entity,
 };
@@ -108,139 +102,6 @@ fn block_refuses_principal_before_mutating_identity_or_relationships() {
     ));
     assert_eq!(fs::read(&owner).unwrap(), identity_before);
     assert_eq!(fs::read(&relationship).unwrap(), relationship_before);
-}
-
-#[test]
-fn block_holds_entity_trust_through_relationship_detachment() {
-    let temporary = TempDir::new();
-    write_journal_entity(temporary.path(), "target", Some("target"));
-    create_test_facet(temporary.path(), "work");
-    for index in 0..300 {
-        write_facet_relationship(
-            temporary.path(),
-            "work",
-            &format!("legacy-{index}"),
-            json!({"entity_id": "target"}),
-        );
-    }
-
-    let returned = Arc::new(AtomicBool::new(false));
-    let attempted_before_return = Arc::new(AtomicBool::new(false));
-    let acquired_before_return = Arc::new(AtomicBool::new(false));
-    let contender_root = temporary.path().to_path_buf();
-    let contender_returned = Arc::clone(&returned);
-    let contender_attempted = Arc::clone(&attempted_before_return);
-    let contender_acquired = Arc::clone(&acquired_before_return);
-    let contender = thread::spawn(move || {
-        loop {
-            let identity = contender_root.join("entities/target/entity.json");
-            if let Ok(bytes) = fs::read(&identity)
-                && serde_json::from_slice::<Value>(&bytes)
-                    .ok()
-                    .and_then(|value| value.get("blocked").cloned())
-                    == Some(Value::Bool(true))
-            {
-                contender_attempted
-                    .store(!contender_returned.load(Ordering::SeqCst), Ordering::SeqCst);
-                let _trust = hold_entity_trust_lock(&contender_root).unwrap();
-                contender_acquired
-                    .store(!contender_returned.load(Ordering::SeqCst), Ordering::SeqCst);
-                return;
-            }
-            thread::yield_now();
-        }
-    });
-    let block_root = temporary.path().to_path_buf();
-    let block_returned = Arc::clone(&returned);
-    let block = thread::spawn(move || {
-        let result = block_journal_entity(&block_root, "target");
-        block_returned.store(true, Ordering::SeqCst);
-        result
-    });
-    block.join().unwrap().unwrap();
-    contender.join().unwrap();
-
-    assert!(attempted_before_return.load(Ordering::SeqCst));
-    assert!(
-        !acquired_before_return.load(Ordering::SeqCst),
-        "this catches a naive implementation that releases entity trust after the identity write but before facet writes"
-    );
-}
-
-#[test]
-fn delete_holds_entity_trust_through_relationship_removal() {
-    // Proving the lock spans relationship removal requires observing the delete
-    // mid-flight, and under parallel load the contender thread can fail to be
-    // scheduled inside that window at all. A miss is a scheduling artefact, not
-    // a defect, so it retries; the assertion that matters still runs on every
-    // attempt that did observe the window.
-    for attempt in 0..8 {
-        if delete_lock_contention_observed() {
-            return;
-        }
-        assert!(
-            attempt < 7,
-            "the contender never observed the delete mid-flight in 8 attempts"
-        );
-    }
-}
-
-fn delete_lock_contention_observed() -> bool {
-    let temporary = TempDir::new();
-    write_journal_entity(temporary.path(), "target", Some("target"));
-    create_test_facet(temporary.path(), "work");
-    for index in 0..300 {
-        write_facet_relationship(
-            temporary.path(),
-            "work",
-            &format!("legacy-{index}"),
-            json!({"entity_id": "target"}),
-        );
-    }
-
-    let returned = Arc::new(AtomicBool::new(false));
-    let attempted_before_return = Arc::new(AtomicBool::new(false));
-    let acquired_before_return = Arc::new(AtomicBool::new(false));
-    let contender_root = temporary.path().to_path_buf();
-    let contender_returned = Arc::clone(&returned);
-    let contender_attempted = Arc::clone(&attempted_before_return);
-    let contender_acquired = Arc::clone(&acquired_before_return);
-    let contender = thread::spawn(move || {
-        loop {
-            let identity = contender_root.join("entities/target/entity.json");
-            let relationship = contender_root.join("facets/work/entities/legacy-0");
-            if identity.exists() && !relationship.exists() {
-                contender_attempted
-                    .store(!contender_returned.load(Ordering::SeqCst), Ordering::SeqCst);
-                let _trust = hold_entity_trust_lock(&contender_root).unwrap();
-                contender_acquired
-                    .store(!contender_returned.load(Ordering::SeqCst), Ordering::SeqCst);
-                return;
-            }
-            if contender_returned.load(Ordering::SeqCst) {
-                return;
-            }
-            thread::yield_now();
-        }
-    });
-    let delete_root = temporary.path().to_path_buf();
-    let delete_returned = Arc::clone(&returned);
-    let delete = thread::spawn(move || {
-        let result = delete_journal_entity(&delete_root, "target");
-        delete_returned.store(true, Ordering::SeqCst);
-        result
-    });
-    delete.join().unwrap().unwrap();
-    contender.join().unwrap();
-
-    if !attempted_before_return.load(Ordering::SeqCst) {
-        return false;
-    }
-    assert!(
-        !acquired_before_return.load(Ordering::SeqCst),
-        "this catches a naive implementation that releases entity trust before deleting every relationship"
-    );
-    true
 }
 
 #[test]
@@ -549,79 +410,6 @@ fn guarded_delete_fails_closed_for_missing_index_without_changing_owner_delete_r
     write_journal_entity(owner_delete.path(), "target", Some("target"));
     let report = delete_journal_entity(owner_delete.path(), "target").unwrap();
     assert_eq!(report.references, Default::default());
-}
-
-#[test]
-fn guarded_delete_holds_entity_trust_until_it_returns() {
-    // The observation flag records whether the delete was still running at the
-    // moment the contender attempted, which is a boundary race in the probe
-    // itself: under load the delete can finish first. A miss retries; the
-    // assertion that matters still runs on every attempt that observed it.
-    for attempt in 0..8 {
-        if guarded_delete_contention_observed() {
-            return;
-        }
-        assert!(
-            attempt < 7,
-            "the contender never attempted before the guarded delete returned in 8 attempts"
-        );
-    }
-}
-
-fn guarded_delete_contention_observed() -> bool {
-    let temporary = TempDir::new();
-    let (identity, history) = create_identify_entity(temporary.path(), "target", "op-1");
-    open_index(temporary.path()).unwrap();
-
-    let returned = Arc::new(AtomicBool::new(false));
-    let attempted_before_return = Arc::new(AtomicBool::new(false));
-    let acquired_before_return = Arc::new(AtomicBool::new(false));
-    let (hook_reached_sender, hook_reached) = mpsc::channel();
-    let (hook_continue, hook_continue_receiver) = mpsc::channel();
-    let (contender_waiting_sender, contender_waiting) = mpsc::channel();
-    let delete_root = temporary.path().to_path_buf();
-    let delete_returned = Arc::clone(&returned);
-    let delete = thread::spawn(move || {
-        let result = delete_created_entity_if_unreferenced_with_hook(
-            &delete_root,
-            "target",
-            "op-1",
-            &identity,
-            &[history],
-            move || {
-                hook_reached_sender.send(()).unwrap();
-                hook_continue_receiver.recv().unwrap();
-            },
-        );
-        delete_returned.store(true, Ordering::SeqCst);
-        result
-    });
-
-    let contender_root = temporary.path().to_path_buf();
-    let contender_returned = Arc::clone(&returned);
-    let contender_attempted = Arc::clone(&attempted_before_return);
-    let contender_acquired = Arc::clone(&acquired_before_return);
-    let contender = thread::spawn(move || {
-        hook_reached.recv().unwrap();
-        contender_attempted.store(!contender_returned.load(Ordering::SeqCst), Ordering::SeqCst);
-        contender_waiting_sender.send(()).unwrap();
-        let _trust = hold_entity_trust_lock(&contender_root).unwrap();
-        contender_acquired.store(!contender_returned.load(Ordering::SeqCst), Ordering::SeqCst);
-    });
-
-    contender_waiting.recv().unwrap();
-    hook_continue.send(()).unwrap();
-
-    assert_eq!(delete.join().unwrap().unwrap(), deleted_outcome());
-    contender.join().unwrap();
-    if !attempted_before_return.load(Ordering::SeqCst) {
-        return false;
-    }
-    assert!(
-        !acquired_before_return.load(Ordering::SeqCst),
-        "guarded delete must retain entity trust through its nested owner delete"
-    );
-    true
 }
 
 #[test]

@@ -21,8 +21,16 @@ solstone-core-indexer-store.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-convey-config.workspace = true
 
+[features]
+test-hooks = []
+
 [dev-dependencies]
 tempfile = "3"
 
 [lints]
 workspace = true
+
+[[test]]
+name = "facet_lock_component"
+path = "tests/facet_lock_component.rs"
+required-features = ["test-hooks"]

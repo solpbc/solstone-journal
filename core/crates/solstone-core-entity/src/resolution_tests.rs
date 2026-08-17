@@ -6,9 +6,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc;
-use std::thread;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 
@@ -17,8 +14,8 @@ use solstone_core_entity_matching::{EntityNameCandidate, MatchTier, find_matchin
 use crate::resolution::collect_low_confidence_candidates;
 use crate::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, EntityResolutionEntity, EntityResolutionError,
-    EntityResolutionOutcome, hold_entity_trust_lock, record_ambiguity_choice,
-    record_entity_resolution, record_entity_resolution_from_name_evidence,
+    EntityResolutionOutcome, record_ambiguity_choice, record_entity_resolution,
+    record_entity_resolution_from_name_evidence,
 };
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -472,50 +469,6 @@ fn read_only_ambiguity_does_not_create_locks_or_store_rows() {
             .join("health/locks/entity-trust.lock")
             .exists()
     );
-}
-
-#[test]
-fn mutation_resolution_waits_for_the_outermost_trust_guard() {
-    let temporary = TempDir::new();
-    let outer = hold_entity_trust_lock(temporary.path()).unwrap();
-    let root = temporary.path().to_path_buf();
-    let (started_tx, started_rx) = mpsc::channel();
-    let (finished_tx, finished_rx) = mpsc::channel();
-
-    let worker = thread::spawn(move || {
-        started_tx.send(()).unwrap();
-        let result = resolve(
-            &root,
-            "Sarah",
-            &[
-                entity(Some("sarah_connor"), "Sarah Connor", false),
-                entity(Some("sarah_lee"), "Sarah Lee", false),
-            ],
-            journal_scope(),
-            origin("lock-worker"),
-            false,
-        );
-        finished_tx.send(result).unwrap();
-    });
-
-    started_rx.recv().unwrap();
-    assert!(
-        finished_rx
-            .recv_timeout(Duration::from_millis(100))
-            .is_err(),
-        "resolution completed before the trust guard dropped"
-    );
-    drop(outer);
-    // Liveness, not latency: the claim is that dropping the guard lets the
-    // worker through, and the 100ms bound above is what proves the guard held
-    // it. This ceiling only has to outlast a loaded machine, and one second
-    // does not -- `make ci` runs a whole nested `make ci` alongside this suite.
-    let result = finished_rx
-        .recv_timeout(Duration::from_secs(60))
-        .unwrap()
-        .unwrap();
-    assert_eq!(result.outcome, EntityResolutionOutcome::Ambiguous);
-    worker.join().unwrap();
 }
 
 #[test]

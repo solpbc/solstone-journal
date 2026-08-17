@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -58,11 +60,14 @@ pub fn api_router_with_delete_window(
     journal_root: impl AsRef<Path>,
     delete_window: Duration,
 ) -> Router {
-    let state = Arc::new(RouterState {
+    api_router_from_state(Arc::new(RouterState {
         journal_root: journal_root.as_ref().to_path_buf(),
         deferred_deletes: Arc::new(DeferredDeleteRegistry::new()),
         delete_window,
-    });
+    }))
+}
+
+fn api_router_from_state(state: Arc<RouterState>) -> Router {
     Router::new()
         .route("/app/entities/api/state", get(state_route))
         .route("/app/entities/api/network", get(index_plate_network))
@@ -208,6 +213,113 @@ pub(crate) fn router_with_delete_window(
     delete_window: Duration,
 ) -> Router {
     api_router_with_delete_window(journal_root, delete_window).fallback(not_found_fallback)
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn router_with_delete_window_and_registry(
+    journal_root: impl AsRef<Path>,
+    delete_window: Duration,
+    deferred_deletes: Arc<DeferredDeleteRegistry>,
+) -> Router {
+    api_router_from_state(Arc::new(RouterState {
+        journal_root: journal_root.as_ref().to_path_buf(),
+        deferred_deletes,
+        delete_window,
+    }))
+    .fallback(not_found_fallback)
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy)]
+pub(crate) enum ForcedWriteOutcome {
+    Contended,
+    Acquired,
+}
+
+#[cfg(test)]
+thread_local! {
+    static FORCED_WRITE_OUTCOME: Cell<Option<ForcedWriteOutcome>> = const { Cell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) struct ForcedWriteGuard;
+
+#[cfg(test)]
+pub(crate) fn force_write_outcome(outcome: ForcedWriteOutcome) -> ForcedWriteGuard {
+    FORCED_WRITE_OUTCOME.with(|cell| cell.set(Some(outcome)));
+    ForcedWriteGuard
+}
+
+#[cfg(test)]
+impl Drop for ForcedWriteGuard {
+    fn drop(&mut self) {
+        FORCED_WRITE_OUTCOME.with(|cell| cell.set(None));
+    }
+}
+
+#[cfg(test)]
+fn forced_lock_timeout() -> solstone_core_entity::LockError {
+    solstone_core_entity::LockError::Timeout(solstone_core_entity::LockTimeout {
+        path: PathBuf::from("health/locks/test"),
+        timeout: Duration::from_millis(1),
+    })
+}
+
+fn apply_forced_facet_entity_write<T>(
+    result: Result<T, solstone_core_facets::FacetEntityWriteError>,
+) -> Result<T, solstone_core_facets::FacetEntityWriteError> {
+    #[cfg(test)]
+    {
+        if let Some(ForcedWriteOutcome::Contended) = FORCED_WRITE_OUTCOME.with(|cell| cell.get()) {
+            return Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
+                solstone_core_facets::FacetTrustLockError::Lock(forced_lock_timeout()),
+            ));
+        }
+    }
+    result
+}
+
+fn apply_forced_entity_write<T>(
+    result: Result<T, solstone_core_entity::EntityWriteError>,
+) -> Result<T, solstone_core_entity::EntityWriteError> {
+    #[cfg(test)]
+    {
+        if let Some(ForcedWriteOutcome::Contended) = FORCED_WRITE_OUTCOME.with(|cell| cell.get()) {
+            return Err(solstone_core_entity::EntityWriteError::TrustLock(
+                solstone_core_entity::EntityTrustLockError::Lock(forced_lock_timeout()),
+            ));
+        }
+    }
+    result
+}
+
+fn apply_forced_entity_lifecycle<T>(
+    result: Result<T, solstone_core_entity::EntityLifecycleError>,
+) -> Result<T, solstone_core_entity::EntityLifecycleError> {
+    #[cfg(test)]
+    {
+        if let Some(ForcedWriteOutcome::Contended) = FORCED_WRITE_OUTCOME.with(|cell| cell.get()) {
+            return Err(solstone_core_entity::EntityLifecycleError::TrustLock(
+                solstone_core_entity::EntityTrustLockError::Lock(forced_lock_timeout()),
+            ));
+        }
+    }
+    result
+}
+
+fn apply_forced_observation_write<T>(
+    result: Result<T, solstone_core_facets::ObservationWriteError>,
+) -> Result<T, solstone_core_facets::ObservationWriteError> {
+    #[cfg(test)]
+    {
+        if let Some(ForcedWriteOutcome::Contended) = FORCED_WRITE_OUTCOME.with(|cell| cell.get()) {
+            return Err(solstone_core_facets::ObservationWriteError::TrustLock(
+                solstone_core_facets::FacetTrustLockError::Lock(forced_lock_timeout()),
+            ));
+        }
+    }
+    result
 }
 
 #[derive(Deserialize)]
@@ -665,6 +777,7 @@ async fn detect_entity_route(
         )
     })
     .await
+    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(_)) => Json(json!({"name":response_name})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. }))
@@ -2211,6 +2324,7 @@ async fn restore_journal_entity_version_route(
         Ok::<_, solstone_core_entity::EntityLifecycleError>((event, entity.value().clone()))
     })
     .await
+    .map(apply_forced_entity_lifecycle)
     {
         Ok(Ok((event, entity))) => {
             Json(json!({"restored":true,"entity":entity,"event":event})).into_response()
@@ -2471,6 +2585,7 @@ async fn resolve_ambiguity_route(
         solstone_core_entity::record_ambiguity_choice(&root, &request, &eligible)
     })
     .await
+    .map(apply_forced_entity_write)
     {
         Ok(Ok(ambiguity)) => Json(json!({"ambiguity":ambiguity,"entity":chosen})).into_response(),
         Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(
@@ -2755,6 +2870,7 @@ async fn update_description_route(
         )
     })
     .await
+    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(entity)) => Json(json!({"entity":entity})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
@@ -2810,6 +2926,7 @@ async fn update_detected_route(
         solstone_core_facets::update_detected_entity(&root, &facet, &day, &entity, &description)
     })
     .await
+    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(entity)) => Json(json!({"entity":entity})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
@@ -2902,6 +3019,7 @@ async fn detach_route(
         solstone_core_facets::detach_facet_entity(&root, &facet, &entity_id)
     })
     .await
+    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(_)) => Json(json!({"success":true})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
@@ -2948,6 +3066,7 @@ async fn update_path_description_route(
         )
     })
     .await
+    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(_)) => Json(json!({"success":true})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
@@ -3024,6 +3143,7 @@ async fn observe_route(
         )
     })
     .await
+    .map(apply_forced_observation_write)
     {
         Ok(Ok((observations, count))) => Json(json!({
             "result":{"observations":observations,"count":count}
@@ -3114,6 +3234,7 @@ async fn delete_detected_route(
         Ok::<_, solstone_core_facets::FacetEntityWriteError>(days_modified)
     })
     .await
+    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(days_modified)) => Json(json!({"days_modified":days_modified})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
@@ -3251,6 +3372,7 @@ async fn update_entity_route(
         )
     })
     .await
+    .map(apply_forced_facet_entity_write)
     {
         Ok(Ok(entity)) => Json(json!({"entity":entity})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {

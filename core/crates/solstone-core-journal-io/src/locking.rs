@@ -540,14 +540,7 @@ mod tests {
     use std::fs;
     use std::os::unix::ffi::OsStringExt;
     use std::os::unix::fs::{PermissionsExt, symlink};
-    use std::process::Command;
-    use std::sync::{Arc, Barrier, mpsc};
-    use std::thread;
-    use std::time::{Duration, Instant};
-
-    use nix::sys::signal::{Signal, kill};
-    use nix::sys::stat::umask;
-    use nix::unistd::Pid;
+    use std::time::Duration;
 
     use super::*;
     use crate::test_support::TempDir;
@@ -555,20 +548,6 @@ mod tests {
     thread_local! {
         static PARENT_SWAP: RefCell<Option<(PathBuf, PathBuf)>> = const { RefCell::new(None) };
         static ENTRY_REPLACEMENT: RefCell<Option<(PathBuf, PathBuf)>> = const { RefCell::new(None) };
-    }
-
-    struct UmaskRestore(Mode);
-
-    impl UmaskRestore {
-        fn set(mask: u32) -> Self {
-            Self(umask(Mode::from_bits_truncate(mask as nix::libc::mode_t)))
-        }
-    }
-
-    impl Drop for UmaskRestore {
-        fn drop(&mut self) {
-            umask(self.0);
-        }
     }
 
     #[derive(Debug, PartialEq, Eq)]
@@ -657,66 +636,6 @@ mod tests {
             }
             LockError::Io { .. } => panic!("expected timeout"),
         }
-    }
-
-    #[test]
-    fn lock_pause_helper() {
-        let Ok(path) = std::env::var("JOURNAL_IO_HELPER_LOCK_PATH") else {
-            return;
-        };
-        let lock = hold_lock(path, LockOptions::default()).unwrap();
-        let marker = std::env::var("JOURNAL_IO_TEST_MARKER").unwrap();
-        fs::write(marker, "locked").unwrap();
-        let _keep_guard_alive = lock;
-        loop {
-            thread::sleep(Duration::from_millis(25));
-        }
-    }
-
-    #[test]
-    fn lock_is_released_when_the_holder_dies() {
-        let temporary = TempDir::new();
-        let path = temporary.path().join("config.json");
-        let marker = temporary.path().join("locked.ready");
-        let mut child = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "locking::tests::lock_pause_helper",
-                "--nocapture",
-            ])
-            .env("JOURNAL_IO_HELPER_LOCK_PATH", &path)
-            .env("JOURNAL_IO_TEST_MARKER", &marker)
-            .spawn()
-            .unwrap();
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while !marker.exists() && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(10));
-        }
-        assert!(marker.exists(), "helper did not acquire the lock");
-        let contention = hold_lock(
-            &path,
-            LockOptions {
-                timeout: Duration::from_millis(100),
-                ..LockOptions::default()
-            },
-        );
-        assert!(
-            matches!(contention, Err(LockError::Timeout(_))),
-            "child did not create real lock contention"
-        );
-        kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL).unwrap();
-        child.wait().unwrap();
-
-        let started = Instant::now();
-        let _lock = hold_lock(
-            &path,
-            LockOptions {
-                timeout: Duration::from_secs(1),
-                ..LockOptions::default()
-            },
-        )
-        .unwrap();
-        assert!(started.elapsed() < Duration::from_millis(200));
     }
 
     #[test]
@@ -813,43 +732,6 @@ mod tests {
     }
 
     #[test]
-    fn existing_parent_lock_umask_helper() {
-        let Some(parent) = std::env::var_os("JOURNAL_IO_UMASK_PARENT") else {
-            return;
-        };
-        let parent = PathBuf::from(parent);
-        let _restore = UmaskRestore::set(0o200);
-        let error = acquire(&parent, OsStr::new("lock"), Duration::from_secs(1)).unwrap_err();
-        assert!(matches!(
-            error,
-            ExistingParentLockError::WrongMode {
-                observed: 0o400,
-                ..
-            }
-        ));
-        assert_eq!(snapshot(&parent.join("lock")).mode, 0o400);
-    }
-
-    #[test]
-    fn existing_parent_lock_leaves_umask_restricted_creation_unrepaired() {
-        // umask is process-global, so exercise it in an isolated test process.
-        let temporary = TempDir::new();
-        let parent = temporary.path().join("locks");
-        fs::create_dir(&parent).unwrap();
-        let status = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "locking::tests::existing_parent_lock_umask_helper",
-                "--nocapture",
-            ])
-            .env("JOURNAL_IO_UMASK_PARENT", &parent)
-            .status()
-            .unwrap();
-        assert!(status.success());
-        assert_eq!(snapshot(&parent.join("lock")).mode, 0o400);
-    }
-
-    #[test]
     fn existing_parent_lock_detects_parent_and_entry_replacement() {
         let temporary = TempDir::new();
         let root = temporary.path().join("root");
@@ -927,69 +809,4 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn existing_parent_lock_first_time_contenders_produce_one_winner() {
-        let temporary = TempDir::new();
-        let parent = temporary.path().join("locks");
-        fs::create_dir(&parent).unwrap();
-        let start = Arc::new(Barrier::new(3));
-        let finish = Arc::new(Barrier::new(3));
-        let (sender, receiver) = mpsc::channel();
-        for _ in 0..2 {
-            let parent = parent.clone();
-            let start = Arc::clone(&start);
-            let finish = Arc::clone(&finish);
-            let sender = sender.clone();
-            thread::spawn(move || {
-                start.wait();
-                let result = acquire(&parent, OsStr::new("fresh"), Duration::from_millis(100));
-                sender.send(result.is_ok()).unwrap();
-                finish.wait();
-            });
-        }
-        start.wait();
-        assert_eq!(
-            [receiver.recv().unwrap(), receiver.recv().unwrap()]
-                .into_iter()
-                .filter(|won| *won)
-                .count(),
-            1
-        );
-        finish.wait();
-        let entry = parent.join("fresh");
-        assert_eq!(snapshot(&entry).mode, 0o600);
-    }
-
-    #[test]
-    fn existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions() {
-        let temporary = TempDir::new();
-        let parent = temporary.path().join("locks");
-        fs::create_dir(&parent).unwrap();
-        let entry = parent.join("fresh");
-        drop(acquire(&parent, OsStr::new("fresh"), Duration::from_secs(1)).unwrap());
-        let api_guard = acquire(&parent, OsStr::new("fresh"), Duration::from_secs(1)).unwrap();
-        let raw = File::open(&entry).unwrap();
-        assert!(matches!(
-            Flock::lock(raw, FlockArg::LockExclusiveNonblock),
-            Err((_, Errno::EACCES | Errno::EAGAIN))
-        ));
-        drop(api_guard);
-        let raw_guard =
-            Flock::lock(File::open(&entry).unwrap(), FlockArg::LockExclusiveNonblock).unwrap();
-        let (sender, receiver) = mpsc::channel();
-        let parent_for_thread = parent.clone();
-        thread::spawn(move || {
-            sender
-                .send(acquire(
-                    &parent_for_thread,
-                    OsStr::new("fresh"),
-                    Duration::from_millis(50),
-                ))
-                .unwrap()
-        });
-        assert!(
-            matches!(receiver.recv_timeout(Duration::from_secs(1)).unwrap(), Err(ExistingParentLockError::Timeout(LockTimeout { timeout, .. })) if timeout == Duration::from_millis(50))
-        );
-        drop(raw_guard);
-    }
 }

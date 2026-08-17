@@ -24,3 +24,8 @@ tempfile = "3.24.0"
 
 [lints]
 workspace = true
+
+[[test]]
+name = "journal_io_lock_component"
+path = "tests/journal_io_lock_component.rs"
+required-features = ["test-hooks"]

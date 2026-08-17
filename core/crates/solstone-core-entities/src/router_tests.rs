@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -187,30 +188,6 @@ fn deferred_delete_action_records(root: &Path) -> Vec<Value> {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
-}
-
-/// Wait for a deferred-delete phase to reach the action ledger, then return the
-/// ledger.
-///
-/// A commit writes its ledger record *after* the removal it describes, so
-/// sleeping past the delete window races that write: the entity is already gone
-/// while the `committed` record is still in flight. Under a loaded suite that
-/// race lands, so wait on the record instead of on the clock.
-async fn await_deferred_delete_phase(root: &Path, pending_id: &str, phase: &str) -> Vec<Value> {
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        let records = deferred_delete_action_records(root);
-        if records.iter().any(|record| {
-            record["params"]["pending_id"] == pending_id && record["params"]["phase"] == phase
-        }) {
-            return records;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "deferred delete {pending_id} never logged its {phase} phase"
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
 }
 
 #[derive(Deserialize)]
@@ -2872,7 +2849,12 @@ async fn deferred_delete_lapse_commits_and_logs_both_phases() {
     let j = Journal::new();
     seed_entity(j.path(), "target", "Target");
     seed_facet_entity(j.path(), "work", "target");
-    let router = crate::router_with_delete_window(j.path(), Duration::from_millis(20));
+    let registry = Arc::new(crate::deferred_delete::DeferredDeleteRegistry::new());
+    let router = crate::router_with_delete_window_and_registry(
+        j.path(),
+        Duration::from_secs(3600),
+        Arc::clone(&registry),
+    );
 
     let (status, response) =
         delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
@@ -2881,9 +2863,10 @@ async fn deferred_delete_lapse_commits_and_logs_both_phases() {
     let pending_id = response["pending"].as_str().unwrap().to_owned();
     assert_eq!(pending_id.len(), 32);
     assert!(response["commit_at_ms"].is_u64());
-    assert_eq!(response["ttl_seconds"], 0.02);
+    assert_eq!(response["ttl_seconds"], 3600.0);
 
-    let records = await_deferred_delete_phase(j.path(), &pending_id, "committed").await;
+    registry.commit_if_pending(j.path(), "target", &pending_id);
+    let records = deferred_delete_action_records(j.path());
 
     let (entity_status, entity) = call(j.path(), "/app/entities/api/journal/entity/target").await;
     assert_eq!(entity_status, 404);
@@ -2893,6 +2876,9 @@ async fn deferred_delete_lapse_commits_and_logs_both_phases() {
     assert!(records.iter().any(|record| {
         record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "pending"
     }));
+    assert!(records.iter().any(|record| {
+        record["params"]["pending_id"] == pending_id && record["params"]["phase"] == "committed"
+    }));
 }
 
 #[tokio::test]
@@ -2900,7 +2886,12 @@ async fn deferred_delete_cancel_preserves_entity_and_logs_cancellation() {
     let j = Journal::new();
     seed_entity(j.path(), "target", "Target");
     seed_facet_entity(j.path(), "work", "target");
-    let router = crate::router_with_delete_window(j.path(), Duration::from_millis(80));
+    let registry = Arc::new(crate::deferred_delete::DeferredDeleteRegistry::new());
+    let router = crate::router_with_delete_window_and_registry(
+        j.path(),
+        Duration::from_secs(3600),
+        Arc::clone(&registry),
+    );
     let (_, scheduled) =
         delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
     let pending_id = scheduled["pending"].as_str().unwrap();
@@ -2913,7 +2904,7 @@ async fn deferred_delete_cancel_preserves_entity_and_logs_cancellation() {
 
     assert_eq!(cancel_status, 200);
     assert_eq!(cancelled, json!({"cancelled":pending_id}));
-    tokio::time::sleep(Duration::from_millis(120)).await;
+    registry.commit_if_pending(j.path(), "target", pending_id);
     let (entity_status, entity) = call(j.path(), "/app/entities/api/journal/entity/target").await;
     assert_eq!(entity_status, 200);
     assert_eq!(entity["entity"]["id"], "target");
@@ -4333,6 +4324,149 @@ async fn refusal_sites_batch_6_busy_routes_contend_on_their_real_trust_locks() {
         503,
     );
     drop(held);
+}
+
+#[tokio::test]
+async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
+    use crate::router::{ForcedWriteOutcome, force_write_outcome};
+
+    fn attached(root: &Path) {
+        seed_entity(root, "a", "Alice");
+        seed_facet_entity(root, "work", "a");
+    }
+    fn detected(root: &Path) {
+        fs::create_dir_all(root.join("facets/work/entities")).unwrap();
+        fs::write(
+            root.join("facets/work/entities/20260101.jsonl"),
+            "{\"name\":\"Alice\",\"type\":\"Person\"}\n",
+        )
+        .unwrap();
+    }
+
+    async fn drive(root: &Path, kind: &str) -> (u16, Value) {
+        match kind {
+            "delete_detected" => {
+                delete_json(root, "/app/entities/api/work/detected", json!({"name":"Alice"})).await
+            }
+            "detach_entity" => delete(root, "/app/entities/api/work/entity/a").await,
+            "detect_entity_route" => {
+                post(
+                    root,
+                    "/app/entities/api/work/detected",
+                    json!({"day":"20260101","type":"Person","entity":"Alice","description":"seen"}),
+                )
+                .await
+            }
+            "observe_entity" => {
+                post(
+                    root,
+                    "/app/entities/api/work/observe",
+                    json!({"name":"Alice","content":"seen"}),
+                )
+                .await
+            }
+            "resolve_ambiguity" => {
+                let row = seed_facet_ambiguity(root, "Alice");
+                post(
+                    root,
+                    &format!(
+                        "/app/entities/api/ambiguities/{}/resolve",
+                        row["ambiguity_id"].as_str().unwrap()
+                    ),
+                    json!({"entity_id":"a"}),
+                )
+                .await
+            }
+            "restore_version" => {
+                let version = solstone_core_entity::save_entity_identity(
+                    root,
+                    "a",
+                    &json!({"id":"a","name":"Alice","type":"Person"}),
+                    None,
+                )
+                .unwrap()
+                .event
+                .unwrap()["version_id"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+                post(
+                    root,
+                    "/app/entities/api/journal/entity/a/restore",
+                    json!({"version_id":version}),
+                )
+                .await
+            }
+            "update_description_path" => {
+                put(
+                    root,
+                    "/app/entities/api/work/entity/a/description",
+                    json!({"description":"new"}),
+                )
+                .await
+            }
+            "update_description_call" => {
+                post(
+                    root,
+                    "/app/entities/api/work/update-description",
+                    json!({"entity_id":"a","description":"new"}),
+                )
+                .await
+            }
+            "update_detected" => {
+                post(
+                    root,
+                    "/app/entities/api/work/update-detected",
+                    json!({"day":"20260101","entity":"Alice","description":"new"}),
+                )
+                .await
+            }
+            "update_entity" => {
+                put(
+                    root,
+                    "/app/entities/api/work/update",
+                    json!({"old_name":"Alice","new_name":"Alicia"}),
+                )
+                .await
+            }
+            other => panic!("unknown route kind {other}"),
+        }
+    }
+
+    for kind in [
+        "delete_detected",
+        "detach_entity",
+        "detect_entity_route",
+        "observe_entity",
+        "resolve_ambiguity",
+        "restore_version",
+        "update_description_path",
+        "update_description_call",
+        "update_detected",
+        "update_entity",
+    ] {
+        let journal = Journal::new();
+        match kind {
+            "delete_detected" | "update_detected" => detected(journal.path()),
+            "restore_version" => {}
+            _ => attached(journal.path()),
+        }
+        let _guard = force_write_outcome(ForcedWriteOutcome::Contended);
+        let (status, body) = drive(journal.path(), kind).await;
+        assert_eq!(status, 503, "{kind} contended status");
+        assert_eq!(body["reason_code"], "entity_busy", "{kind} contended code");
+        drop(_guard);
+
+        let journal = Journal::new();
+        match kind {
+            "delete_detected" | "update_detected" => detected(journal.path()),
+            "restore_version" => {}
+            _ => attached(journal.path()),
+        }
+        let _guard = force_write_outcome(ForcedWriteOutcome::Acquired);
+        let (status, _) = drive(journal.path(), kind).await;
+        assert_ne!(status, 503, "{kind} acquired must not report entity_busy");
+    }
 }
 
 #[tokio::test]

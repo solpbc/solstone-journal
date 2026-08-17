@@ -29,3 +29,7 @@ zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true
+
+[[test]]
+name = "entity_trust_lock_component"
+path = "tests/entity_trust_lock_component.rs"
