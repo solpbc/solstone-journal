@@ -822,7 +822,7 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
             cargo_rendered_errors(&String::from_utf8_lossy(&output.stdout))
         )));
     }
-    bind_cargo_json(&String::from_utf8_lossy(&output.stdout))
+    bind_cargo_json(&String::from_utf8_lossy(&output.stdout), lane.triple)
         .map_err(|error| ProduceError::new(error.to_string()))
 }
 

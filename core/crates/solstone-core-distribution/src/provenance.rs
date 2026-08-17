@@ -65,7 +65,23 @@ pub fn require_lock(expected: &str, actual: &str) -> Result<(), ProvenanceError>
     Ok(())
 }
 
-pub fn bind_cargo_json(lines: &str) -> Result<BTreeMap<ArtifactId, PathBuf>, ProvenanceError> {
+/// Bind cargo's JSON output to inventory artifact ids.
+///
+/// `expected_triple` is the triple the lane asked cargo to build. An artifact
+/// is stamped with it only when that exact directory component appears in the
+/// artifact path — cargo writes a cross build to `target/<triple>/release/` and
+/// a host build to `target/release/`, so an unstamped id is precisely the
+/// host-built artifact `refuse_wrong_triple` exists to reject.
+///
+/// ⛔ This used to key on the substring `-unknown-linux-`, which is a fact
+/// about one platform's triples rather than about cargo's layout: every
+/// `aarch64-apple-darwin` artifact came back with an EMPTY triple and the whole
+/// admitted set was refused as wrong-triple. Matching the expected triple
+/// exactly is both platform-neutral and strictly stronger than the substring.
+pub fn bind_cargo_json(
+    lines: &str,
+    expected_triple: &str,
+) -> Result<BTreeMap<ArtifactId, PathBuf>, ProvenanceError> {
     #[derive(serde::Deserialize)]
     struct Message {
         reason: Option<String>,
@@ -113,7 +129,8 @@ pub fn bind_cargo_json(lines: &str) -> Result<BTreeMap<ArtifactId, PathBuf>, Pro
                 .components()
                 .find_map(|component| {
                     let name = component.as_os_str().to_string_lossy();
-                    name.contains("-unknown-linux-").then(|| name.into_owned())
+                    (!expected_triple.is_empty() && name == expected_triple)
+                        .then(|| name.into_owned())
                 })
                 .unwrap_or_default();
             artifacts.insert(
