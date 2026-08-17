@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import IO, Callable, Sequence
 
 from solstone.think import features as _features
-from solstone.think import maint, parakeet_readiness
+from solstone.think import parakeet_readiness
 from solstone.think.capture_health import _STALE_MS, get_capture_health
 from solstone.think.health_cli import fetch_supervisor_status
 from solstone.think.media import PDF_EXTENSIONS
@@ -160,7 +160,6 @@ _COREML_MODEL_FIX = (
     "CoreML parakeet model is not downloaded — fetch it with: journal install-models"
 )
 JOURNAL_CAUGHT_UP_CHECK = Check("journal_caught_up", "advisory", ("linux", "darwin"))
-JOURNAL_MAINT_TASKS_CHECK = Check("journal_maint_tasks", "blocker", ("linux", "darwin"))
 TASK_PACE_CHECK = Check("task_pace", "advisory", ("linux", "darwin"))
 CAPTURE_HEALTH_CHECK = Check("capture_health", "advisory", ("linux", "darwin"))
 OBSERVER_BINDING_CHECK = Check("observer_binding", "advisory", ("linux", "darwin"))
@@ -177,10 +176,6 @@ _CAUGHT_UP_BACKLOG_FIX = (
     "to prioritize it"
 )
 _CAUGHT_UP_CANT_TELL_FIX = "re-run journal doctor; check the health logs if it persists"
-_MAINT_STALE_MS = 5 * 60 * 1000
-_MAINT_TASK_FIX = (
-    "inspect with journal maint <task>; re-run with journal maint --force <task>"
-)
 _TASK_PACE_FIX = (
     "a job is running long; it will be stopped automatically if it passes its cap "
     "— no action needed unless it persists"
@@ -197,8 +192,7 @@ _OBSERVER_DELIVERY_STALL_FIX = "restart the observer, then confirm a new upload 
 # and solstone/observe/protocol.schema.json:17,:52.
 _OBSERVER_DELIVERY_STALL_MS = 6 * 60 * 60 * 1000
 _ORPHAN_SEGMENT_PDF_FIX = (
-    "journal maint --force settings:007_migrate_pdf_extractions, "
-    "then re-run journal doctor"
+    "add a readable *_transcript.md beside the PDF original, then re-run journal doctor"
 )
 _SUPERVISOR_CONFLICT_FIX = "journal service uninstall"
 _SUPERVISOR_CONFLICT_FIX_POINTER_TEMPLATE = (
@@ -998,52 +992,6 @@ def journal_caught_up_check(args: Args) -> CheckResult:
     return make_result(check, "warn", detail, _CAUGHT_UP_BACKLOG_FIX)
 
 
-def journal_maint_tasks_check(args: Args) -> CheckResult:
-    del args
-    check = JOURNAL_MAINT_TASKS_CHECK
-    path_text, _source = get_journal_info()
-    journal = Path(path_text)
-    if not journal.is_dir():
-        return make_result(check, "skip", "no local journal")
-
-    tasks = maint.list_tasks(journal)
-    failed = [task for task in tasks if task.get("status") == "failed"]
-    if failed:
-        detail = "failed maint task(s): " + ", ".join(
-            f"{task['qualified_name']} (exit {task.get('exit_code', 'unknown')})"
-            for task in failed
-        )
-        return make_result(check, "fail", detail, _MAINT_TASK_FIX)
-
-    current_ms = now_ms()
-    stale = [
-        task
-        for task in tasks
-        if task.get("status") == "in_progress"
-        and isinstance(task.get("ran_ts"), int)
-        and current_ms - task["ran_ts"] > _MAINT_STALE_MS
-    ]
-    if stale:
-        detail = "started, no exit: " + ", ".join(
-            str(task["qualified_name"]) for task in stale
-        )
-        return make_result(check, "warn", detail, _MAINT_TASK_FIX)
-
-    indeterminate = [
-        task
-        for task in tasks
-        if task.get("status") == "in_progress"
-        and not isinstance(task.get("ran_ts"), int)
-    ]
-    if indeterminate:
-        detail = "couldn't fully determine — maint state unreadable: " + ", ".join(
-            str(task["qualified_name"]) for task in indeterminate
-        )
-        return make_result(check, "warn", detail, _MAINT_TASK_FIX)
-
-    return make_result(check, "ok", "no unresolved maint tasks")
-
-
 def task_pace_check(args: Args) -> CheckResult:
     del args
     check = TASK_PACE_CHECK
@@ -1302,7 +1250,7 @@ def orphan_segment_pdf_check(args: Args) -> CheckResult:
 
     For the owner, this means the original is present in the journal as raw
     media but the readable document transcript is missing, so catchup cannot
-    use that PDF's text until the maintenance task migrates or rebuilds it.
+    use that PDF's text until a readable document transcript exists.
     """
     del args
     check = ORPHAN_SEGMENT_PDF_CHECK
@@ -1502,7 +1450,6 @@ JOURNAL_CHECKS: list[tuple[Check, Runner]] = [
     (SERVICE_RUNNING_CHECK, service_running_check),
     (JOURNAL_SYNC_CHECK, journal_sync_check),
     (JOURNAL_CAUGHT_UP_CHECK, journal_caught_up_check),
-    (JOURNAL_MAINT_TASKS_CHECK, journal_maint_tasks_check),
     (TASK_PACE_CHECK, task_pace_check),
     (BRAIN_CHECK, brain_check),
     (CAPTURE_HEALTH_CHECK, capture_health_check),
