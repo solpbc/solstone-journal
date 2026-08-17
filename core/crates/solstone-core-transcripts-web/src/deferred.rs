@@ -30,7 +30,13 @@ impl DeferredDeleteRegistry {
         let handles = Arc::clone(&self.handles);
         let task_pending_id = pending_id.clone();
         let task = tokio::spawn(async move {
-            tokio::time::sleep(delay).await;
+            // A zero delay arms no timer. The timer wheel only fires once
+            // wall-clock advances, so scheduling one for an immediate commit
+            // made the commit observable only after real time passed -- which
+            // a caller polling with cooperative yields never provides.
+            if !delay.is_zero() {
+                tokio::time::sleep(delay).await;
+            }
             if handles
                 .lock()
                 .expect("deferred-delete registry mutex is not poisoned")
