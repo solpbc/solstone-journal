@@ -535,12 +535,6 @@ id = "solstone-core-grab::core/crates/solstone-core-grab/src/extract.rs::tests::
 id = "solstone-core-grab::core/crates/solstone-core-grab/src/extract.rs::tests::requested_ids_use_pts_based_linear_identity_and_preserve_order::native"
 
 [[findings]]
-id = "solstone-core-health-web::core/crates/solstone-core-health-web/src/corpus.rs::ac16_poisoned_python_is_observable_only_under_ci::host-tool"
-
-[[findings]]
-id = "solstone-core-health-web::core/crates/solstone-core-health-web/src/corpus.rs::ac16_poisoned_python_is_observable_only_under_ci::process"
-
-[[findings]]
 id = "solstone-core-identity::core/crates/solstone-core-identity/src/store.rs::tests::new::clock"
 
 [[findings]]
@@ -1447,73 +1441,13 @@ id = "solstone-core-think-cli::core/crates/solstone-core-think-cli/src/lib.rs::t
 id = "solstone-core-thinking::core/crates/solstone-core-thinking/src/confidential.rs::tests::exhausted_generation_refuses_to_reuse_an_identity::scheduling"
 
 [[findings]]
-id = "solstone-core-top::core/crates/solstone-core-top/src/production.rs::tests::production_receive_is_driven_while_the_sync_consumer_polls::clock"
-
-[[findings]]
-id = "solstone-core-top::core/crates/solstone-core-top/src/production.rs::tests::production_receive_is_driven_while_the_sync_consumer_polls::scheduling"
-
-[[findings]]
-id = "solstone-core-top::core/crates/solstone-core-top/src/production.rs::tests::terminal_decodes_only_complete_up_and_down_escape_sequences::scheduling"
-
-[[findings]]
 id = "solstone-core-transcribe::core/crates/solstone-core-transcribe/src/backend/parakeet_cpp.rs::tests::catch_all_ureq_error_defers_with_transport_error::network"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::cancellation_preserves_the_segment_and_never_commits::clock"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::deferred_delete_commits_to_a_tombstone_and_logs_pending_then_committed::clock"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::redirect_target_and_workspace_asset_are_deterministic::host-tool"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::redirect_target_and_workspace_asset_are_deterministic::process"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::snapshot::clock"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::stats_cache_wins_and_month_validation_is_exact::clock"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/corpus.rs::tests::this_process_started_at::process"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/deferred.rs::tests::cancellation_prevents_the_scheduled_commit::clock"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/deferred.rs::tests::deadline_commits_once_and_makes_the_id_unavailable::clock"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::concurrent_reprocess_creates_one_marker_and_spawns_once::clock"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::repair_modality_markers_is_noop_fresh_and_repairs_a_populated_stale_marker::clock"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::sense_spawn_resolution_uses_only_the_current_executable_sibling::process"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::snapshot::clock"
-
-[[findings]]
-id = "solstone-core-transcripts-web::core/crates/solstone-core-transcripts-web/src/reprocess.rs::tests::wait::clock"
 
 [[findings]]
 id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::new::scheduling"
 
 [[findings]]
 id = "solstone-core::core/crates/solstone-core/src/config.rs::tests::wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes::scheduling"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/health.rs::tests::expired_deadline_does_not_wait_for_listener_stop::clock"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/health.rs::tests::filters_envelopes_without_a_socket::clock"
-
-[[findings]]
-id = "solstone-core::core/crates/solstone-core/src/health.rs::tests::reports_malformed_frames_observed_before_timeout_without_a_socket::clock"
 
 [[findings]]
 id = "solstone-core::core/crates/solstone-core/src/install_models.rs::tests::real_asset_gate_reports_wespeaker_digest_mismatch_before_installing::process"

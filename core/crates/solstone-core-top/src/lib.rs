@@ -20,7 +20,8 @@ pub use process::{
     platform_observer,
 };
 pub use production::{
-    TerminalOwner, TerminalOwnerError, TerminalSyscalls, run_top_with_outer_panic_cleanup,
+    ProductionCallosum, ProductionReceive, ProductionTerminal, TerminalOwner, TerminalOwnerError,
+    TerminalSyscalls, run_top_with_outer_panic_cleanup,
 };
 pub use reduce::{
     ReductionDisposition, ReductionEffects, ReductionSample, STATUS_TIMEOUT_SECONDS, TopMalformed,

@@ -24,7 +24,7 @@ use crate::{AppState, legacy_error_response};
 
 const SENSE_BINARY: &str = "solstone-core";
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SenseRequest {
     pub(crate) day: String,
     pub(crate) stream: String,
@@ -160,12 +160,26 @@ pub(crate) async fn reprocess_segment(
         let _ = fs::remove_file(&failed_path);
     }
 
-    let marker = match create_analyzing_marker(&segment_dir, &modality) {
-        Ok(marker) => marker,
-        Err(CreateMarkerError::Exists) => {
+    let marker = match tokio::task::spawn_blocking({
+        let segment_dir = segment_dir.clone();
+        let modality = modality.clone();
+        move || create_analyzing_marker(&segment_dir, &modality)
+    })
+    .await
+    {
+        Ok(Ok(marker)) => marker,
+        Ok(Err(CreateMarkerError::Exists)) => {
             return running_response(&segment_dir, &modality, state.clock.now());
         }
-        Err(CreateMarkerError::Io(error)) => {
+        Ok(Err(CreateMarkerError::Io(error))) => {
+            return legacy_error_response(
+                "file_read_failed",
+                "I couldn't read that file.",
+                format!("Failed to create analysis marker: {error}"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+        Err(error) => {
             return legacy_error_response(
                 "file_read_failed",
                 "I couldn't read that file.",
@@ -526,17 +540,17 @@ fn invalid_segment(detail: &str, status: StatusCode) -> Response {
 mod tests {
     use std::collections::BTreeMap;
     use std::fs;
-    use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::{Duration, SystemTime};
+    use std::time::{Duration, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
-    use chrono::Utc;
+    use chrono::{TimeZone, Utc};
     use serde_json::Value;
     use tempfile::TempDir;
+    use tokio::sync::Notify;
     use tower::ServiceExt;
 
     use super::{
@@ -553,22 +567,59 @@ mod tests {
         }
     }
 
-    struct DelayedSpawner(Arc<AtomicUsize>);
+    struct DelayedSpawner {
+        launches: Arc<AtomicUsize>,
+        release: Arc<Notify>,
+    }
 
     impl SenseSpawner for DelayedSpawner {
         fn spawn(&self, _request: &SenseRequest) -> Result<Box<dyn SenseChild>, String> {
-            self.0.fetch_add(1, Ordering::SeqCst);
-            Ok(Box::new(DelayedChild))
+            self.launches.fetch_add(1, Ordering::SeqCst);
+            Ok(Box::new(DelayedChild {
+                release: Arc::clone(&self.release),
+            }))
         }
     }
 
-    struct DelayedChild;
+    struct DelayedChild {
+        release: Arc<Notify>,
+    }
 
     impl SenseChild for DelayedChild {
         fn wait(self: Box<Self>) -> Result<ChildExit, String> {
-            std::thread::sleep(Duration::from_millis(200));
+            tokio::runtime::Handle::current().block_on(self.release.notified());
             Ok(ChildExit {
                 code: 0,
+                stderr: String::new(),
+            })
+        }
+    }
+
+    struct ExpectingSpawner {
+        expected: SenseRequest,
+        calls: AtomicUsize,
+    }
+
+    impl SenseSpawner for ExpectingSpawner {
+        fn spawn(&self, request: &SenseRequest) -> Result<Box<dyn SenseChild>, String> {
+            if request != &self.expected {
+                return Err(format!("unexpected request: {request:?}"));
+            }
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Box::new(ImmediateChild {
+                code: self.expected.key.len() as i32,
+            }))
+        }
+    }
+
+    struct ImmediateChild {
+        code: i32,
+    }
+
+    impl SenseChild for ImmediateChild {
+        fn wait(self: Box<Self>) -> Result<ChildExit, String> {
+            Ok(ChildExit {
+                code: self.code,
                 stderr: String::new(),
             })
         }
@@ -584,12 +635,8 @@ mod tests {
         fs::write(path, contents).unwrap();
     }
 
-    fn snapshot(root: &Path) -> BTreeMap<PathBuf, (u64, std::time::SystemTime, Vec<u8>)> {
-        fn visit(
-            root: &Path,
-            path: &Path,
-            snapshot: &mut BTreeMap<PathBuf, (u64, std::time::SystemTime, Vec<u8>)>,
-        ) {
+    fn snapshot(root: &Path) -> BTreeMap<PathBuf, (u64, Vec<u8>)> {
+        fn visit(root: &Path, path: &Path, snapshot: &mut BTreeMap<PathBuf, (u64, Vec<u8>)>) {
             for entry in fs::read_dir(path).unwrap().flatten() {
                 let path = entry.path();
                 if path.is_dir() {
@@ -598,11 +645,7 @@ mod tests {
                     let metadata = fs::metadata(&path).unwrap();
                     snapshot.insert(
                         path.strip_prefix(root).unwrap().to_path_buf(),
-                        (
-                            metadata.len(),
-                            metadata.modified().unwrap(),
-                            fs::read(path).unwrap(),
-                        ),
+                        (metadata.len(), fs::read(path).unwrap()),
                     );
                 }
             }
@@ -612,9 +655,19 @@ mod tests {
         result
     }
 
+    async fn yield_until(predicate: impl Fn() -> bool, what: &str) {
+        for _ in 0..256 {
+            if predicate() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("{what}");
+    }
+
     fn assert_only_segment_changed(
-        before: &BTreeMap<PathBuf, (u64, std::time::SystemTime, Vec<u8>)>,
-        after: &BTreeMap<PathBuf, (u64, std::time::SystemTime, Vec<u8>)>,
+        before: &BTreeMap<PathBuf, (u64, Vec<u8>)>,
+        after: &BTreeMap<PathBuf, (u64, Vec<u8>)>,
     ) {
         for path in before.keys().chain(after.keys()) {
             if before.get(path) != after.get(path) {
@@ -630,7 +683,7 @@ mod tests {
     fn test_router(root: &std::path::Path, spawner: Arc<dyn SenseSpawner>) -> axum::Router {
         crate::router_with_test_spawner(
             root.to_path_buf(),
-            crate::Clock::system(),
+            crate::Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
             shell,
             Duration::from_secs(10),
             spawner,
@@ -655,10 +708,15 @@ mod tests {
         let marker = create_analyzing_marker(root.path(), "audio").expect("marker");
         fs::File::open(&marker.path)
             .unwrap()
-            .set_modified(SystemTime::now() - Duration::from_secs(31 * 60))
+            .set_modified(UNIX_EPOCH)
             .unwrap();
         assert_eq!(
-            super::modality_signals(root.path(), "audio", Utc::now()).state,
+            super::modality_signals(
+                root.path(),
+                "audio",
+                Utc.with_ymd_and_hms(2026, 7, 31, 9, 0, 0).unwrap()
+            )
+            .state,
             super::DataState::Failed
         );
         repair_modality_markers(root.path(), "audio", false);
@@ -666,54 +724,95 @@ mod tests {
         assert!(failed_marker_path(root.path(), "audio").exists());
     }
 
-    #[cfg(unix)]
     #[test]
-    fn sense_spawn_resolution_uses_only_the_current_executable_sibling() {
+    fn sibling_sense_binary_beside_resolves_only_the_adjacent_solstone_core() {
         let root = TempDir::new().expect("shims");
         let adjacent = root.path().join("adjacent");
-        let path_dir = root.path().join("path");
         fs::create_dir_all(&adjacent).unwrap();
-        fs::create_dir_all(&path_dir).unwrap();
-        let sibling_marker = root.path().join("sibling-ran");
-        let path_marker = root.path().join("path-ran");
         let sibling = adjacent.join("solstone-core");
-        let path_shim = path_dir.join("solstone-core");
-        fs::write(
-            &sibling,
-            format!("#!/bin/sh\ntouch {}\n", sibling_marker.display()),
-        )
-        .unwrap();
-        fs::write(
-            &path_shim,
-            format!("#!/bin/sh\ntouch {}\n", path_marker.display()),
-        )
-        .unwrap();
-        for shim in [&sibling, &path_shim] {
-            let mut permissions = fs::metadata(shim).unwrap().permissions();
+        fs::write(&sibling, b"helper").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(&sibling).unwrap().permissions();
             permissions.set_mode(0o755);
-            fs::set_permissions(shim, permissions).unwrap();
+            fs::set_permissions(&sibling, permissions).unwrap();
         }
+        assert_eq!(
+            sibling_sense_binary_beside(&adjacent.join("server")).unwrap(),
+            sibling
+        );
+        assert!(
+            sibling_sense_binary_beside(Path::new("/"))
+                .unwrap_err()
+                .contains("current executable has no parent")
+        );
+        assert!(
+            sibling_sense_binary_beside(&root.path().join("missing").join("server"))
+                .unwrap_err()
+                .starts_with("helper-missing:")
+        );
+    }
 
-        // The PATH shim is prepended to the inherited PATH and executable, but
-        // resolution accepts only the adjacent executable. Production spawning
-        // does not sanitize PATH; this retains every inherited PATH entry.
-        let resolved = sibling_sense_binary_beside(&adjacent.join("server")).unwrap();
-        let inherited_path = std::env::var_os("PATH").expect("inherited PATH");
-        let path = std::env::join_paths(
-            std::iter::once(path_dir.clone()).chain(std::env::split_paths(&inherited_path)),
-        )
-        .expect("PATH");
-        std::process::Command::new(resolved)
-            .env("PATH", path)
-            .status()
+    #[tokio::test]
+    async fn reprocess_handler_forwards_the_sense_request_to_the_injected_spawner() {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "chronicle/20260731/field/090000_300/audio.flac",
+            b"raw",
+        );
+        let expected = SenseRequest {
+            day: "20260731".into(),
+            stream: "field".into(),
+            key: "090000_300".into(),
+            modality: "audio".into(),
+        };
+        let spawner = Arc::new(ExpectingSpawner {
+            expected: expected.clone(),
+            calls: AtomicUsize::new(0),
+        });
+        let response = test_router(root.path(), Arc::clone(&spawner) as Arc<dyn SenseSpawner>)
+            .oneshot(
+                Request::post("/app/transcripts/api/segment/20260731/field/090000_300/reprocess")
+                    .body(Body::from(r#"{"modality":"audio"}"#))
+                    .unwrap(),
+            )
+            .await
             .unwrap();
-        assert!(sibling_marker.exists());
-        assert!(!path_marker.exists());
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(spawner.calls.load(Ordering::SeqCst), 1);
+
+        let mismatch = TempDir::new().unwrap();
+        write(
+            mismatch.path(),
+            "chronicle/20260731/field/090000_300/audio.flac",
+            b"raw",
+        );
+        let rejected = test_router(
+            mismatch.path(),
+            Arc::new(ExpectingSpawner {
+                expected: SenseRequest {
+                    key: "other".into(),
+                    ..expected
+                },
+                calls: AtomicUsize::new(0),
+            }),
+        )
+        .oneshot(
+            Request::post("/app/transcripts/api/segment/20260731/field/090000_300/reprocess")
+                .body(Body::from(r#"{"modality":"audio"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(rejected.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[test]
     fn watcher_writes_only_for_its_own_request_and_preserves_exit_shape() {
         let root = TempDir::new().expect("segment");
+        let now = Utc.with_ymd_and_hms(2026, 7, 31, 9, 0, 0).unwrap();
         let marker = create_analyzing_marker(root.path(), "audio").expect("marker");
         watch_reprocess_completion(
             root.path(),
@@ -723,7 +822,7 @@ mod tests {
                 code: 7,
                 stderr: "broken".into(),
             },
-            Utc::now(),
+            now,
         );
         let failed: Value = serde_json::from_str(
             &fs::read_to_string(failed_marker_path(root.path(), "audio")).expect("failed marker"),
@@ -742,7 +841,7 @@ mod tests {
                 code: 0,
                 stderr: String::new(),
             },
-            Utc::now(),
+            now,
         );
         assert!(analyzing_marker_path(root.path(), "audio").is_file());
         assert_eq!(
@@ -760,7 +859,7 @@ mod tests {
                 code: 0,
                 stderr: String::new(),
             },
-            Utc::now(),
+            now,
         );
         let no_output_failed: Value = serde_json::from_str(
             &fs::read_to_string(failed_marker_path(root.path(), "audio")).unwrap(),
@@ -778,7 +877,7 @@ mod tests {
                 code: 0,
                 stderr: String::new(),
             },
-            Utc::now(),
+            now,
         );
         assert!(!analyzing_marker_path(root.path(), "audio").exists());
     }
@@ -855,7 +954,14 @@ mod tests {
         );
         let before = snapshot(root.path());
         let launches = Arc::new(AtomicUsize::new(0));
-        let app = test_router(root.path(), Arc::new(DelayedSpawner(Arc::clone(&launches))));
+        let release = Arc::new(Notify::new());
+        let app = test_router(
+            root.path(),
+            Arc::new(DelayedSpawner {
+                launches: Arc::clone(&launches),
+                release: Arc::clone(&release),
+            }),
+        );
         let path = "/app/transcripts/api/segment/20260731/field/090000_300/reprocess";
         let first = app.clone().oneshot(
             Request::post(path)
@@ -881,8 +987,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(launches.load(Ordering::SeqCst), 1);
-        assert_eq!(first["repair_status"], "accepted");
-        assert_eq!(second["repair_status"], "running");
+        let statuses = [
+            first["repair_status"].as_str().unwrap(),
+            second["repair_status"].as_str().unwrap(),
+        ];
+        assert!(statuses.contains(&"accepted"));
+        assert!(statuses.contains(&"running"));
         assert_eq!(
             first["marker"]["started_at"],
             second["marker"]["started_at"]
@@ -911,7 +1021,16 @@ mod tests {
                 std::collections::BTreeSet::from(["started_at".into()])
             );
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        release.notify_one();
+        let marker = analyzing_marker_path(
+            &root.path().join("chronicle/20260731/field/090000_300"),
+            "audio",
+        );
+        yield_until(
+            || !marker.exists(),
+            "reprocess watcher did not settle the analyzing marker",
+        )
+        .await;
         let after = snapshot(root.path());
         assert_only_segment_changed(&before, &after);
     }

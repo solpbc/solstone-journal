@@ -151,11 +151,11 @@ struct ProductionCallosumInner {
     generation: u64,
     epoch: u64,
 }
-pub(crate) struct ProductionCallosum {
+pub struct ProductionCallosum {
     inner: Mutex<ProductionCallosumInner>,
 }
 impl ProductionCallosum {
-    pub(crate) fn new(path: impl AsRef<Path>) -> Result<Arc<Self>, String> {
+    pub fn new(path: impl AsRef<Path>) -> Result<Arc<Self>, String> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
             .enable_all()
@@ -241,11 +241,11 @@ impl ProductionCallosum {
         self.inner.lock().map_or(0, |inner| inner.epoch)
     }
 }
-pub(crate) struct ProductionReceive {
+pub struct ProductionReceive {
     shared: Arc<ProductionCallosum>,
 }
 impl ProductionReceive {
-    pub(crate) fn new(shared: Arc<ProductionCallosum>) -> Self {
+    pub fn new(shared: Arc<ProductionCallosum>) -> Self {
         Self { shared }
     }
 }
@@ -461,12 +461,20 @@ impl TerminalSyscalls for SystemTerminalSyscalls {
     }
 }
 
-pub(crate) struct ProductionTerminal {
+pub struct ProductionTerminal {
     owner: TerminalOwner<SystemTerminalSyscalls>,
     keys: Receiver<u8>,
 }
 impl ProductionTerminal {
-    pub(crate) fn new() -> Self {
+    pub fn from_key_source(keys: Receiver<u8>) -> Self {
+        Self {
+            owner: TerminalOwner::new(SystemTerminalSyscalls),
+            keys,
+        }
+    }
+
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
         let (sender, keys) = mpsc::channel();
         std::thread::spawn(move || {
             let mut input = std::io::stdin();
@@ -477,12 +485,36 @@ impl ProductionTerminal {
                 }
             }
         });
-        Self {
-            owner: TerminalOwner::new(SystemTerminalSyscalls),
-            keys,
-        }
+        Self::from_key_source(keys)
+    }
+
+    fn decode_escape(&self) -> Result<TopInput, String> {
+        let wait = Duration::from_millis(10);
+        let first = match self.keys.recv_timeout(wait) {
+            Ok(byte) => byte,
+            Err(mpsc::RecvTimeoutError::Timeout) => return Ok(TopInput::None),
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(TopInput::EndOfFile),
+        };
+        let second = match self.keys.recv_timeout(wait) {
+            Ok(byte) => Some(byte),
+            Err(mpsc::RecvTimeoutError::Timeout) => None,
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(TopInput::EndOfFile),
+        };
+        Ok(match second {
+            Some(second) => decode_escape_bytes(&[first, second]),
+            None => decode_escape_bytes(&[first]),
+        })
     }
 }
+
+fn decode_escape_bytes(payload: &[u8]) -> TopInput {
+    match payload {
+        [b'[', b'A', ..] => TopInput::Up,
+        [b'[', b'B', ..] => TopInput::Down,
+        _ => TopInput::None,
+    }
+}
+
 impl TopTerminal for ProductionTerminal {
     fn enter(&mut self) -> Result<(), String> {
         self.owner.enter().map_err(|error| error.to_string())
@@ -513,30 +545,11 @@ impl TopTerminal for ProductionTerminal {
     }
 }
 
-impl ProductionTerminal {
-    fn decode_escape(&self) -> Result<TopInput, String> {
-        let wait = Duration::from_millis(10);
-        match self.keys.recv_timeout(wait) {
-            Ok(b'[') => match self.keys.recv_timeout(wait) {
-                Ok(b'A') => Ok(TopInput::Up),
-                Ok(b'B') => Ok(TopInput::Down),
-                Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => Ok(TopInput::None),
-                Err(mpsc::RecvTimeoutError::Disconnected) => Ok(TopInput::EndOfFile),
-            },
-            Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => Ok(TopInput::None),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Ok(TopInput::EndOfFile),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{TopReceiveTransport, TopRestartTransport};
-    use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    static NEXT_SOCKET: AtomicUsize = AtomicUsize::new(0);
     #[test]
     fn production_callosum_start_stop_and_restart_adapter_are_safe_without_server() {
         let path = std::env::temp_dir().join("solstone-top-no-server.sock");
@@ -560,64 +573,13 @@ mod tests {
         receive.stop().unwrap();
     }
 
-    #[tokio::test]
-    async fn production_receive_is_driven_while_the_sync_consumer_polls() {
-        let ordinal = NEXT_SOCKET.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!("solstone-top-production-{ordinal}"));
-        std::fs::create_dir_all(&root).unwrap();
-        let socket = root.join("callosum.sock");
-        let server = CallosumSocketServer::bind(&socket).await.unwrap();
-        let shared = ProductionCallosum::new(&socket).unwrap();
-        let mut receive = ProductionReceive::new(shared);
-        receive.start().unwrap();
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while server.client_count() != 1 {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await
-        .unwrap();
-        assert!(server.broadcast(CallosumEnvelope {
-            tract: "supervisor".to_owned(),
-            event: "status".to_owned(),
-            ts: None,
-            extra: Map::new(),
-        }));
-        let event = tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                if let Some(event @ CallosumReceiveEvent::Envelope { .. }) = receive.next().unwrap()
-                {
-                    return event;
-                }
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await
-        .unwrap();
-        assert!(matches!(event, CallosumReceiveEvent::Envelope { .. }));
-        std::thread::spawn(move || receive.stop().unwrap())
-            .join()
-            .unwrap();
-        server.stop().await;
-        let _ = std::fs::remove_dir_all(root);
-    }
-
     #[test]
-    fn terminal_decodes_only_complete_up_and_down_escape_sequences() {
-        let (sender, keys) = mpsc::channel();
-        let mut terminal = ProductionTerminal {
-            owner: TerminalOwner::new(SystemTerminalSyscalls),
-            keys,
-        };
-        sender.send(b'\x1b').unwrap();
-        sender.send(b'[').unwrap();
-        sender.send(b'A').unwrap();
-        assert_eq!(terminal.input(0.0).unwrap(), TopInput::Up);
-        sender.send(b'\x1b').unwrap();
-        sender.send(b'[').unwrap();
-        sender.send(b'B').unwrap();
-        assert_eq!(terminal.input(0.0).unwrap(), TopInput::Down);
-        sender.send(b'\x1b').unwrap();
-        assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
+    fn decode_escape_bytes_accepts_only_complete_up_and_down_sequences() {
+        assert_eq!(decode_escape_bytes(b"[A"), TopInput::Up);
+        assert_eq!(decode_escape_bytes(b"[B"), TopInput::Down);
+        assert_eq!(decode_escape_bytes(b"[C"), TopInput::None);
+        assert_eq!(decode_escape_bytes(b"["), TopInput::None);
+        assert_eq!(decode_escape_bytes(b""), TopInput::None);
+        assert_eq!(decode_escape_bytes(b"\x1b"), TopInput::None);
     }
 }

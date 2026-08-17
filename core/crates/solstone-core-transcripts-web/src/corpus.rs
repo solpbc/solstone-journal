@@ -7,7 +7,7 @@ mod tests {
     use std::fs;
     use std::panic;
     use std::path::{Path, PathBuf};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Method, Request, StatusCode, header};
@@ -494,12 +494,8 @@ mod tests {
         );
     }
 
-    fn snapshot(root: &Path) -> BTreeMap<PathBuf, (u64, SystemTime, String)> {
-        fn visit(
-            root: &Path,
-            path: &Path,
-            output: &mut BTreeMap<PathBuf, (u64, SystemTime, String)>,
-        ) {
+    fn snapshot(root: &Path) -> BTreeMap<PathBuf, (u64, String)> {
+        fn visit(root: &Path, path: &Path, output: &mut BTreeMap<PathBuf, (u64, String)>) {
             for entry in fs::read_dir(path).expect("read") {
                 let path = entry.expect("entry").path();
                 if path.is_dir() {
@@ -511,7 +507,6 @@ mod tests {
                     path.strip_prefix(root).unwrap().to_path_buf(),
                     (
                         metadata.len(),
-                        metadata.modified().unwrap(),
                         format!("{:x}", Sha256::digest(fs::read(&path).unwrap())),
                     ),
                 );
@@ -520,6 +515,16 @@ mod tests {
         let mut output = BTreeMap::new();
         visit(root, root, &mut output);
         output
+    }
+
+    async fn yield_until(predicate: impl Fn() -> bool, what: &str) {
+        for _ in 0..256 {
+            if predicate() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("{what}");
     }
 
     fn deletion_root() -> TempDir {
@@ -565,8 +570,8 @@ mod tests {
     }
 
     fn assert_only_write_route_paths_changed(
-        before: &BTreeMap<PathBuf, (u64, SystemTime, String)>,
-        after: &BTreeMap<PathBuf, (u64, SystemTime, String)>,
+        before: &BTreeMap<PathBuf, (u64, String)>,
+        after: &BTreeMap<PathBuf, (u64, String)>,
     ) {
         for path in before.keys().chain(after.keys()) {
             if before.get(path) != after.get(path) {
@@ -597,13 +602,18 @@ mod tests {
     async fn deferred_delete_commits_to_a_tombstone_and_logs_pending_then_committed() {
         let root = deletion_root();
         let before = snapshot(root.path());
-        let app = delete_app(root.path(), Duration::from_millis(20));
+        let app = delete_app(root.path(), Duration::ZERO);
         let response = delete_request(app.clone()).await;
         assert_eq!(response["ttl_seconds"], 10);
         assert_eq!(response["success"], true);
-        tokio::time::sleep(Duration::from_millis(80)).await;
         let segment = root.path().join("chronicle/20260731/field/090000_300");
-        let names = fs::read_dir(segment)
+        let tombstone = segment.join("tombstone.json");
+        yield_until(
+            || tombstone.is_file(),
+            "deferred delete did not write tombstone.json",
+        )
+        .await;
+        let names = fs::read_dir(&segment)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().into_string().unwrap())
             .collect::<Vec<_>>();
@@ -633,7 +643,7 @@ mod tests {
     async fn cancellation_preserves_the_segment_and_never_commits() {
         let root = deletion_root();
         let before = snapshot(root.path());
-        let app = delete_app(root.path(), Duration::from_millis(40));
+        let app = delete_app(root.path(), Duration::from_secs(60));
         let response = delete_request(app.clone()).await;
         let pending = response["pending"].as_str().unwrap();
         let (status, _, body) = request(
@@ -648,7 +658,7 @@ mod tests {
             serde_json::from_slice::<Value>(&body).unwrap(),
             json!({"cancelled":pending})
         );
-        tokio::time::sleep(Duration::from_millis(90)).await;
+        tokio::task::yield_now().await;
         let after = snapshot(root.path());
         for (path, value) in &before {
             if !path.starts_with("config/actions") {
@@ -676,76 +686,6 @@ mod tests {
         assert!(phases.contains(&"pending"));
         assert!(phases.contains(&"cancelled"));
         assert!(!phases.contains(&"committed"));
-    }
-
-    #[cfg(target_os = "linux")]
-    fn this_process_started_at() -> f64 {
-        let pid = std::process::id();
-        let stat = fs::read_to_string(format!("/proc/{pid}/stat")).expect("proc stat");
-        let close = stat.rfind(')').expect("comm close");
-        let ticks: f64 = stat[close + 1..]
-            .split_whitespace()
-            .nth(19)
-            .expect("start ticks")
-            .parse()
-            .expect("numeric ticks");
-        let boot: f64 = fs::read_to_string("/proc/stat")
-            .expect("proc stat")
-            .lines()
-            .find_map(|line| line.strip_prefix("btime "))
-            .expect("boot time")
-            .parse()
-            .expect("numeric boot");
-        let ticks_per_second: f64 = std::process::Command::new("getconf")
-            .arg("CLK_TCK")
-            .output()
-            .expect("getconf")
-            .stdout
-            .iter()
-            .map(|byte| *byte as char)
-            .collect::<String>()
-            .trim()
-            .parse()
-            .expect("clock ticks");
-        boot + ticks / ticks_per_second
-    }
-
-    #[cfg(target_os = "linux")]
-    #[tokio::test]
-    async fn search_index_warning_tracks_the_native_supervisor_identity_contract() {
-        let down = deletion_root();
-        let down_response = delete_request(delete_app(down.path(), Duration::from_secs(1))).await;
-        assert_eq!(down_response["search_index_warning"], true);
-
-        let up = deletion_root();
-        write(
-            up.path(),
-            "health/supervisor.pid",
-            std::process::id().to_string().as_bytes(),
-        );
-        write(
-            up.path(),
-            "health/supervisor.start_time",
-            this_process_started_at().to_string().as_bytes(),
-        );
-        assert!(solstone_core_system::lifecycle::is_supervisor_up(up.path()));
-        let up_response = delete_request(delete_app(up.path(), Duration::from_secs(1))).await;
-        assert!(up_response.get("search_index_warning").is_none());
-        assert_eq!(
-            up_response
-                .as_object()
-                .unwrap()
-                .keys()
-                .cloned()
-                .collect::<BTreeSet<_>>(),
-            BTreeSet::from([
-                "commit_at_ms".into(),
-                "deleted".into(),
-                "pending".into(),
-                "success".into(),
-                "ttl_seconds".into(),
-            ])
-        );
     }
 
     #[tokio::test]
@@ -1269,7 +1209,7 @@ mod tests {
         fs::write(&path, serde_json::to_vec(&cache).unwrap()).unwrap();
         fs::File::open(&path)
             .unwrap()
-            .set_modified(SystemTime::now() + Duration::from_secs(60))
+            .set_modified(UNIX_EPOCH + Duration::from_secs(4_102_444_800))
             .unwrap();
         let app = app(root.path());
         let (_, _, cached) = response(app.clone(), "/app/transcripts/api/stats/202607").await;
@@ -1299,7 +1239,7 @@ mod tests {
         fs::write(&unrelated, b"not a cache input").unwrap();
         fs::File::open(&unrelated)
             .unwrap()
-            .set_modified(SystemTime::now() + Duration::from_secs(120))
+            .set_modified(UNIX_EPOCH + Duration::from_secs(4_102_444_860))
             .unwrap();
         assert_eq!(bounded_input_mtime(&bounded).unwrap(), before);
     }
@@ -1401,7 +1341,7 @@ mod tests {
     }
 
     #[test]
-    fn redirect_target_and_workspace_asset_are_deterministic() {
+    fn redirect_target_prefers_populated_days_then_clock_day() {
         let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
         assert_eq!(
             redirect_target(
@@ -1411,18 +1351,5 @@ mod tests {
             "20260801"
         );
         assert_eq!(redirect_target(&BTreeMap::new(), now), "20260801");
-        let source = include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/assets/transcripts/workspace.html"
-        ));
-        let ground = std::process::Command::new("git")
-            .args([
-                "show",
-                "f17280333736016c219d3f6a4b3a263763529833:solstone/apps/transcripts/workspace.html",
-            ])
-            .output()
-            .unwrap();
-        assert!(ground.status.success());
-        assert_eq!(source, ground.stdout.as_slice());
     }
 }

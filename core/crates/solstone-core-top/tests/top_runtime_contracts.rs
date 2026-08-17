@@ -7,6 +7,8 @@ mod brain_loop;
 mod continuity;
 #[path = "process_identity.rs"]
 mod process_identity;
+#[path = "production_component.rs"]
+mod production_component;
 #[path = "production_reach.rs"]
 mod production_reach;
 #[path = "restart_protocol.rs"]
