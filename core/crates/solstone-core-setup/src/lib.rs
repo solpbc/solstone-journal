@@ -405,7 +405,7 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
-        root
+        root.canonicalize().unwrap()
     }
 
     fn parsed(values: &[String], current_dir: &Path) -> SetupArgs {
