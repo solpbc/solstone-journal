@@ -665,7 +665,7 @@ check-rust-ci-topology:
 
 .PHONY: check-rust-distribution check-rust-distribution-under-poison check-rust-distribution-cleanroom
 check-rust-distribution:
-	$(call run-rust-gate-under-poison,check-rust-distribution-under-poison)
+	$(call run-rust-gate-under-poison,check-rust-distribution-under-poison,$(DISTRIBUTION_FORBIDDEN_TOOLS))
 
 # Live Docker/Podman oracle over already-produced x86_64 artifacts. Set
 # SOLSTONE_DISTRIBUTION_OUT, the captured SOLSTONE_CLEANROOM_BUILDER_ID, a
@@ -1478,13 +1478,14 @@ check-release-package-inventory:
 # It already runs in install-checks, which depends on .installed and is where
 # interpreter-requiring checks belong. Run it directly with
 # `make check-release-package-inventory`.
-CI_FORBIDDEN_INTERPRETERS := python python3 pytest ruff uv maturin pip pipx setuptools twine dpkg-deb rpmbuild ar rpm tar cpio curl wget
+CI_FORBIDDEN_INTERPRETERS := python python3 pytest ruff uv
+DISTRIBUTION_FORBIDDEN_TOOLS := $(CI_FORBIDDEN_INTERPRETERS) maturin pip pipx setuptools twine dpkg-deb rpmbuild ar rpm tar cpio curl wget
 define run-rust-gate-under-poison
 	@set -eu; \
 	shim_dir=$$(mktemp -d); \
 	trap 'rm -rf "$$shim_dir"' 0 1 2 15; \
 	export SOLSTONE_POISON_LOG="$$shim_dir/poison.log"; \
-	for interpreter in $(CI_FORBIDDEN_INTERPRETERS); do \
+	for interpreter in $(if $(strip $(2)),$(2),$(CI_FORBIDDEN_INTERPRETERS)); do \
 		printf '%s\n' '#!/bin/sh' \
 			'if [ -n "$${SOLSTONE_POISON_LOG:-}" ]; then printf "%s %s\n" "$$0" "$$*" >> "$$SOLSTONE_POISON_LOG"; fi' \
 			'echo "Rust gate invoked a forbidden interpreter: $$0 $$*" >&2' \

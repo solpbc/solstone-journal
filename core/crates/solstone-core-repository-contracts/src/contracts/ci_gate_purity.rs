@@ -483,6 +483,47 @@ fn public_rust_gates_share_poison_and_refuse_internal_entrypoints() {
 }
 
 #[test]
+fn distribution_poison_does_not_forbid_native_tools_in_canonical_ci() {
+    let makefile = makefile_text(&repo_root());
+    assert!(
+        makefile.contains("CI_FORBIDDEN_INTERPRETERS := python python3 pytest ruff uv\n"),
+        "canonical CI poison must remain limited to interpreters"
+    );
+    let distribution_tools = makefile
+        .lines()
+        .find(|line| line.starts_with("DISTRIBUTION_FORBIDDEN_TOOLS :="))
+        .expect("distribution must declare its expanded producer-tool poison");
+    for tool in [
+        "$(CI_FORBIDDEN_INTERPRETERS)",
+        "maturin",
+        "dpkg-deb",
+        "rpmbuild",
+        "ar",
+        "rpm",
+        "tar",
+        "cpio",
+        "curl",
+        "wget",
+    ] {
+        assert!(
+            distribution_tools
+                .split_whitespace()
+                .any(|item| item == tool),
+            "distribution poison lost {tool}"
+        );
+    }
+    assert!(
+        target_body(&makefile, "check-rust-distribution")
+            .contains("$(DISTRIBUTION_FORBIDDEN_TOOLS)"),
+        "distribution gate must select its expanded tool poison"
+    );
+    assert!(
+        makefile.contains("$(if $(strip $(2)),$(2),$(CI_FORBIDDEN_INTERPRETERS))"),
+        "shared poison wrapper must honor the distribution gate's override"
+    );
+}
+
+#[test]
 fn make_ci_full_names_the_manual_rust_race_gate() {
     let registry = ci_registry(&repo_root());
     let race = registry

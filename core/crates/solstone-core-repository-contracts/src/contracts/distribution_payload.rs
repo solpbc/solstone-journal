@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -22,43 +23,43 @@ fn format_named_list(label: &str, names: &BTreeSet<String>) -> String {
 }
 
 fn collect_payload_roots(root: &Path) -> BTreeSet<String> {
-    let mut found = BTreeSet::new();
-    collect_files(root, &root.join("solstone/talent"), &mut found);
-    collect_files(root, &root.join("solstone/think/templates"), &mut found);
-    collect_files(
-        root,
-        &root.join("solstone/think/services/spp_attest/roots"),
-        &mut found,
+    let output = Command::new("git")
+        .args([
+            "ls-files",
+            "-z",
+            "--",
+            "solstone/talent",
+            "solstone/think/templates",
+            "solstone/think/services/spp_attest/roots",
+            "solstone/think/contract/layout.json",
+            "solstone/apps",
+        ])
+        .current_dir(root)
+        .output()
+        .expect("run git ls-files payload oracle");
+    assert!(
+        output.status.success(),
+        "git ls-files payload oracle failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    let apps = root.join("solstone/apps");
-    if let Ok(entries) = fs::read_dir(&apps) {
-        for entry in entries.flatten() {
-            collect_files(root, &entry.path().join("talent"), &mut found);
-        }
-    }
-    found
+    String::from_utf8(output.stdout)
+        .expect("git payload paths are UTF-8")
+        .split('\0')
+        .filter(|path| !path.is_empty() && !path.ends_with(".py"))
+        .filter(|path| is_payload_path(path))
+        .map(str::to_owned)
+        .collect()
 }
 
-fn collect_files(root: &Path, dir: &Path, found: &mut BTreeSet<String>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_files(root, &path, found);
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if name.ends_with(".py") {
-            continue;
-        }
-        if let Ok(relative) = path.strip_prefix(root) {
-            found.insert(relative.to_string_lossy().replace('\\', "/"));
-        }
-    }
+fn is_payload_path(path: &str) -> bool {
+    path == "solstone/think/contract/layout.json"
+        || path.starts_with("solstone/talent/")
+        || path.starts_with("solstone/think/templates/")
+        || path.starts_with("solstone/think/services/spp_attest/roots/")
+        || path
+            .strip_prefix("solstone/apps/")
+            .and_then(|relative| relative.split_once('/'))
+            .is_some_and(|(_, child)| child.starts_with("talent/"))
 }
 
 #[test]
@@ -72,6 +73,14 @@ fn payload_txt_matches_git_ls_files_oracle() {
         .map(str::to_owned)
         .collect::<BTreeSet<_>>();
     let oracle = collect_payload_roots(&root);
+    assert!(
+        oracle.contains("solstone/talent/daily_schedule.md"),
+        "payload oracle must see a known talent positive"
+    );
+    assert!(
+        oracle.contains("solstone/think/contract/layout.json"),
+        "payload oracle must see the layout contract anchor"
+    );
     let missing = oracle.difference(&listed).cloned().collect::<BTreeSet<_>>();
     let unexpected = listed.difference(&oracle).cloned().collect::<BTreeSet<_>>();
     assert!(

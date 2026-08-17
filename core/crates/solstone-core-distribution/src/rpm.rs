@@ -349,7 +349,7 @@ impl HeaderBuilder {
     }
 
     fn align_store(&mut self, alignment: usize) {
-        while self.store.len() % alignment != 0 {
+        while !self.store.len().is_multiple_of(alignment) {
             self.store.push(0);
         }
     }

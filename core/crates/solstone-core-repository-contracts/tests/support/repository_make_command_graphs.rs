@@ -305,26 +305,7 @@ fn assert_gate_never_executes_forbidden_interpreters(gate: &str, expected: &[&st
     let pdf_link_dir = root.join("target/pdfium-runtime-link").join(pdf_target);
     fs::create_dir_all(&pdf_link_dir).expect("create fake PDFium link directory");
     fs::write(pdf_link_dir.join(pdf_filename), []).expect("write fake PDFium runtime");
-    for name in [
-        "python",
-        "python3",
-        "pytest",
-        "ruff",
-        "uv",
-        "maturin",
-        "pip",
-        "pipx",
-        "setuptools",
-        "twine",
-        "dpkg-deb",
-        "rpmbuild",
-        "ar",
-        "rpm",
-        "tar",
-        "cpio",
-        "curl",
-        "wget",
-    ] {
+    for name in ["python", "python3", "pytest", "ruff", "uv"] {
         write_forbidden_shim(&shim_dir.join(name));
         write_forbidden_shim(&venv_bin.join(name));
     }
