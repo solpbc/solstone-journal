@@ -138,6 +138,20 @@ pub struct CleanroomSubject {
     pub network: String,
     #[serde(default)]
     pub python: bool,
+    #[serde(default)]
+    pub control: bool,
+    #[serde(default)]
+    pub roles: Vec<String>,
+    #[serde(default)]
+    pub required_tools: Vec<String>,
+    #[serde(default)]
+    pub forbidden_tools: Vec<String>,
+    #[serde(default)]
+    pub mounts: Vec<String>,
+    #[serde(default)]
+    pub entry_command: String,
+    #[serde(default)]
+    pub expected: Vec<String>,
 }
 
 fn default_cleanroom_network() -> String {
@@ -301,7 +315,7 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
 
     let mut unpinned = BTreeSet::new();
     let mut unexpected_network = BTreeSet::new();
-    let mut python_subjects = BTreeSet::new();
+    let mut invalid_controls = BTreeSet::new();
     for subject in &inventory.cleanroom.subject {
         if !digest_is_pinned(&subject.digest) {
             unpinned.insert(subject.id.clone());
@@ -309,8 +323,8 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
         if subject.network != "none" {
             unexpected_network.insert(format!("{}={}", subject.id, subject.network));
         }
-        if subject.python {
-            python_subjects.insert(subject.id.clone());
+        if subject.python != subject.control {
+            invalid_controls.insert(subject.id.clone());
         }
     }
     if !unpinned.is_empty() {
@@ -325,10 +339,10 @@ fn validate_inventory(path: &Path, inventory: &Inventory) -> Result<(), Inventor
             &unexpected_network,
         )));
     }
-    if !python_subjects.is_empty() {
+    if !invalid_controls.is_empty() {
         return Err(InventoryError::new(format_named_list(
-            "unexpected python subject",
-            &python_subjects,
+            "invalid cleanroom control",
+            &invalid_controls,
         )));
     }
     Ok(())

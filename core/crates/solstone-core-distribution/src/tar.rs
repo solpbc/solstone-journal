@@ -63,12 +63,34 @@ fn append_file<W: io::Write>(
     Ok(())
 }
 
+pub(crate) fn append_directory<W: io::Write>(
+    builder: &mut Builder<W>,
+    dest: &str,
+    mode: u32,
+) -> io::Result<()> {
+    let mut header = Header::new_gnu();
+    header.set_entry_type(EntryType::Directory);
+    header.set_path(dest)?;
+    header.set_size(0);
+    header.set_mode(mode);
+    header.set_uid(0);
+    header.set_gid(0);
+    header.set_username("")?;
+    header.set_groupname("")?;
+    header.set_mtime(0);
+    header.set_cksum();
+    builder.append(&header, io::empty())
+}
+
 pub fn tar_records(bytes: &[u8]) -> io::Result<Vec<FileRecord>> {
     let decoder = GzDecoder::new(bytes);
     let mut archive = tar::Archive::new(decoder);
     let mut records = Vec::new();
     for entry in archive.entries()? {
         let mut entry = entry?;
+        if entry.header().entry_type().is_dir() {
+            continue;
+        }
         if !entry.header().entry_type().is_file() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

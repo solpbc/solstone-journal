@@ -4,7 +4,7 @@
 //! Cleanroom plan, fail-closed aggregation, and loopback origin stand-in.
 
 use std::collections::BTreeSet;
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -22,6 +22,8 @@ pub struct SubjectPlan {
     pub digest: String,
     pub network: String,
     pub python: bool,
+    pub control: bool,
+    pub roles: Vec<String>,
     pub mounts: Vec<String>,
     pub tools: Vec<String>,
     pub commands: Vec<String>,
@@ -88,27 +90,25 @@ pub fn plan_from_inventory(inventory: &Inventory) -> Result<CleanroomPlan, Strin
         if subject.network != SUBJECT_NETWORK {
             unexpected.insert(format!("{} network {}", subject.id, subject.network));
         }
-        if subject.python {
-            unexpected.insert(format!("{} python", subject.id));
+        if subject.python != subject.control {
+            unexpected.insert(format!("{} invalid-control", subject.id));
         }
         subjects.push(SubjectPlan {
             id: subject.id.clone(),
             image: subject.image.clone(),
             digest: subject.digest.clone(),
             network: SUBJECT_NETWORK.to_owned(),
-            python: false,
-            mounts: vec![
-                "versions:ro".to_owned(),
-                "install.sh:ro".to_owned(),
-                "archive:ro".to_owned(),
-            ],
-            tools: vec!["sh".to_owned(), "tar".to_owned(), "sha256sum".to_owned()],
-            commands: cleanroom_install_commands(inventory),
-            artifacts: vec![
-                "current".to_owned(),
-                "current/bin".to_owned(),
-                ".profile".to_owned(),
-            ],
+            python: subject.python,
+            control: subject.control,
+            roles: subject.roles.clone(),
+            mounts: subject.mounts.clone(),
+            tools: subject.required_tools.clone(),
+            commands: if subject.entry_command.is_empty() {
+                cleanroom_install_commands(inventory)
+            } else {
+                vec![subject.entry_command.clone()]
+            },
+            artifacts: subject.expected.clone(),
         });
     }
     let subject_ids = subjects
@@ -159,6 +159,154 @@ pub fn serve_directory(listener: TcpListener, root: &Path) -> io::Result<()> {
     Ok(())
 }
 
+pub fn serve_generation_fixture(
+    listener: TcpListener,
+    evidence: &Path,
+    expected_fragment: &str,
+) -> io::Result<()> {
+    for incoming in listener.incoming() {
+        let stream = incoming?;
+        handle_generation(stream, evidence, expected_fragment)?;
+    }
+    Ok(())
+}
+
+fn handle_generation(
+    mut stream: TcpStream,
+    evidence: &Path,
+    expected_fragment: &str,
+) -> io::Result<()> {
+    let request = read_http_request(&mut stream)?;
+    let request_line = request.lines().next().unwrap_or_default();
+    let body = request.split_once("\r\n\r\n").map_or("", |(_, body)| body);
+    if request_line.starts_with("GET /health ") {
+        return write_json(&mut stream, 200, r#"{"loaded_model":"cleanroom"}"#);
+    }
+    if request_line.starts_with("GET /props ") {
+        return write_json(&mut stream, 200, r#"{"n_ctx":16384,"total_slots":16}"#);
+    }
+    if request_line.starts_with("POST /tokenize ") {
+        return write_json(&mut stream, 200, r#"{"tokens":[1]}"#);
+    }
+    if !request_line.starts_with("POST /v1/chat/completions ") {
+        return write_json(&mut stream, 404, r#"{"error":"unexpected-endpoint"}"#);
+    }
+    let prompt = serde_json::from_str::<serde_json::Value>(body)
+        .map(|value| flatten_json_strings(&value))
+        .unwrap_or_else(|_| body.to_owned());
+    let (talent, completion) = match generation_completion(&prompt, expected_fragment) {
+        Ok(reply) => reply,
+        Err(reason) => {
+            append_evidence(evidence, reason)?;
+            return write_json(
+                &mut stream,
+                422,
+                &serde_json::json!({"error": reason}).to_string(),
+            );
+        }
+    };
+    append_evidence(evidence, talent)?;
+    write_json(
+        &mut stream,
+        200,
+        &serde_json::json!({
+            "choices": [{"message": {"content": completion}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        })
+        .to_string(),
+    )
+}
+
+fn read_http_request(stream: &mut TcpStream) -> io::Result<String> {
+    let mut request = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = stream.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        request.extend_from_slice(&chunk[..read]);
+        if request.len() > 4 * 1024 * 1024 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "cleanroom request exceeds 4 MiB",
+            ));
+        }
+        let Some(header_end) = request.windows(4).position(|window| window == b"\r\n\r\n") else {
+            continue;
+        };
+        let header = String::from_utf8_lossy(&request[..header_end]);
+        let content_length = header
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+            .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+            .unwrap_or_default();
+        if request.len() >= header_end + 4 + content_length {
+            break;
+        }
+    }
+    String::from_utf8(request)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "cleanroom request is not UTF-8"))
+}
+
+fn flatten_json_strings(value: &serde_json::Value) -> String {
+    fn visit(value: &serde_json::Value, output: &mut String) {
+        match value {
+            serde_json::Value::String(text) => {
+                output.push_str(text);
+                output.push('\n');
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    visit(value, output);
+                }
+            }
+            serde_json::Value::Object(values) => {
+                for (key, value) in values {
+                    output.push_str(key);
+                    output.push('\n');
+                    visit(value, output);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut output = String::new();
+    visit(value, &mut output);
+    output
+}
+
+fn generation_completion(
+    prompt: &str,
+    expected_fragment: &str,
+) -> Result<(&'static str, &'static str), &'static str> {
+    if prompt.contains("primary") && prompt.contains("fallback") {
+        if !prompt.contains(expected_fragment) {
+            return Err("daily_schedule-anchor-missing");
+        }
+        return Ok((
+            "daily_schedule",
+            r#"{"primary":"03:00","fallback":"04:00"}"#,
+        ));
+    }
+    if prompt.contains("coverage_preamble") && prompt.contains("needs_attention") {
+        return Ok((
+            "morning_briefing",
+            r#"{"metadata":{"generated":"2099-01-01T00:00:00Z","model":"cleanroom","sources":{"segments":0,"anticipated_activities":0,"facet_newsletters":0,"followups":0,"steward_health":"missing"},"gaps":[],"coverage_preamble":""},"your_day":[],"yesterday":[],"needs_attention":[],"forward_look":[],"reading":[]}"#,
+        ));
+    }
+    if prompt.contains("events") && prompt.contains("cancelled") {
+        return Ok(("schedule", r#"{"events":[]}"#));
+    }
+    Err("unexpected-talent")
+}
+
+fn append_evidence(path: &Path, line: &str) -> io::Result<()> {
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(file, "{line}")
+}
+
 fn handle_get(mut stream: TcpStream, root: &Path) -> io::Result<()> {
     let mut buf = [0_u8; 4096];
     let read = stream.read(&mut buf)?;
@@ -195,12 +343,33 @@ fn write_http(stream: &mut TcpStream, status: u16, body: &[u8]) -> io::Result<()
     Ok(())
 }
 
+fn write_json(stream: &mut TcpStream, status: u16, body: &str) -> io::Result<()> {
+    let reason = match status {
+        200 => "OK",
+        404 => "Not Found",
+        422 => "Unprocessable Entity",
+        _ => "Error",
+    };
+    let header = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream.write_all(header.as_bytes())?;
+    stream.write_all(body.as_bytes())
+}
+
 pub fn render_plan(plan: &CleanroomPlan) -> String {
     let mut out = String::new();
     for subject in &plan.subjects {
         out.push_str(&format!(
             "SUBJECT {} {} {} {}\n",
             subject.id, subject.image, subject.digest, subject.network
+        ));
+        out.push_str(&format!("CONTROL {} {}\n", subject.id, subject.control));
+        out.push_str(&format!(
+            "ROLES {} {}\n",
+            subject.id,
+            subject.roles.join(",")
         ));
         out.push_str(&format!("MOUNTS {}\n", subject.mounts.join(",")));
         out.push_str(&format!("TOOLS {}\n", subject.tools.join(",")));
@@ -251,38 +420,51 @@ mod tests {
         let inventory = committed_inventory();
         let plan = plan_from_inventory(&inventory).expect("plan");
         assert!(!plan.subjects.is_empty());
+        let mut controls = 0;
+        let mut roles = BTreeSet::new();
         for subject in &plan.subjects {
             assert!(digest_is_pinned(&subject.digest), "{}", subject.id);
             assert_eq!(subject.network, SUBJECT_NETWORK);
+            roles.extend(subject.roles.iter().cloned());
+            if subject.control {
+                controls += 1;
+                assert!(subject.python);
+                assert!(subject.tools.iter().any(|tool| tool == "python3"));
+                continue;
+            }
             assert!(!subject.python);
             assert!(subject.tools.iter().all(|tool| {
                 !FORBIDDEN_SUBJECT_TOOLS
                     .iter()
                     .any(|forbidden| tool == forbidden)
             }));
-            assert!(subject.mounts.iter().any(|mount| mount.contains("archive")));
+            assert!(
+                subject
+                    .mounts
+                    .iter()
+                    .any(|mount| mount.contains("artifacts"))
+            );
             assert!(
                 subject
                     .commands
                     .iter()
-                    .any(|command| command.contains("install.sh"))
+                    .any(|command| command.contains("cleanroom.sh --inside"))
             );
-            let version = env!("CARGO_PKG_VERSION");
-            for target in &inventory.target {
-                let base = inventory.artifact.render(version, &target.arch);
-                assert!(
-                    subject
-                        .commands
-                        .iter()
-                        .any(|command| command.contains(&format!("{base}.tar.gz"))
-                            && command.contains(&format!("{base}.sha256"))
-                            && command.contains(&format!("{base}.release"))),
-                    "{} missing {base}",
-                    subject.id
-                );
-            }
-            assert!(subject.artifacts.iter().any(|item| item == "current"));
+            assert!(!subject.artifacts.is_empty());
         }
+        assert_eq!(controls, 1);
+        assert_eq!(
+            roles,
+            BTreeSet::from_iter([
+                "bootstrap".to_owned(),
+                "deb".to_owned(),
+                "python-control".to_owned(),
+                "rpm".to_owned(),
+                "speakers".to_owned(),
+                "talent".to_owned(),
+                "tar".to_owned(),
+            ])
+        );
         assert!(plan.builders.iter().all(|builder| {
             plan.subjects
                 .iter()
@@ -333,5 +515,37 @@ mod tests {
         let addr = listener.local_addr().expect("addr");
         assert_eq!(addr.ip(), Ipv4Addr::LOCALHOST);
         assert_ne!(port, 0);
+    }
+
+    #[test]
+    fn generation_fixture_requires_the_daily_activity_anchor_and_maps_the_full_batch() {
+        let anchor = "20260817 (Monday):\n  03:17 - 03:28 (11m)";
+        assert_eq!(
+            generation_completion(&format!("required primary fallback\n{anchor}"), anchor),
+            Ok((
+                "daily_schedule",
+                r#"{"primary":"03:00","fallback":"04:00"}"#
+            ))
+        );
+        assert_eq!(
+            generation_completion("required primary fallback", anchor),
+            Err("daily_schedule-anchor-missing")
+        );
+        assert_eq!(
+            generation_completion("required events cancelled", anchor)
+                .expect("schedule response")
+                .0,
+            "schedule"
+        );
+        assert_eq!(
+            generation_completion("coverage_preamble needs_attention", anchor)
+                .expect("morning response")
+                .0,
+            "morning_briefing"
+        );
+        assert_eq!(
+            generation_completion("unknown", anchor),
+            Err("unexpected-talent")
+        );
     }
 }

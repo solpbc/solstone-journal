@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
@@ -12,7 +13,7 @@ use crate::ar::{member, read_archive, write_archive};
 use crate::record::FileRecord;
 use crate::relocate::{from_system_path, to_system_path};
 use crate::stage::staged_files;
-use crate::tar::{append_regular, gzip_bytes, tar_records};
+use crate::tar::{append_directory, append_regular, gzip_bytes, tar_records};
 
 pub struct DebMeta<'a> {
     pub version: &'a str,
@@ -38,7 +39,7 @@ pub fn write_deb(stage: &Path, dest: &Path, meta: DebMeta<'_>) -> io::Result<()>
 
 fn control_tar(meta: DebMeta<'_>) -> io::Result<Vec<u8>> {
     let control = format!(
-        "Package: solstone-journal\nVersion: {}\nArchitecture: {}\nDescription: solstone-journal\nDepends: libc6 (>= 2.27)\n",
+        "Package: solstone-journal\nVersion: {}\nArchitecture: {}\nMaintainer: sol pbc <support@solstone.app>\nDescription: solstone-journal\nDepends: libc6 (>= 2.27), libstdc++6, libgcc-s1\n",
         meta.version, meta.arch
     );
     let mut builder = Builder::new(Vec::new());
@@ -49,7 +50,28 @@ fn control_tar(meta: DebMeta<'_>) -> io::Result<Vec<u8>> {
 
 fn data_tar(stage: &Path) -> io::Result<Vec<u8>> {
     let mut builder = Builder::new(Vec::new());
-    for dest in staged_files(stage)? {
+    let files = staged_files(stage)?;
+    let mut directories = BTreeSet::new();
+    for dest in &files {
+        let archive = to_system_path(dest).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unstaged dest {dest} has no system prefix"),
+            )
+        })?;
+        let mut parent = Path::new(&archive).parent();
+        while let Some(path) = parent {
+            if path.as_os_str().is_empty() {
+                break;
+            }
+            directories.insert(path.to_string_lossy().replace('\\', "/"));
+            parent = path.parent();
+        }
+    }
+    for directory in directories {
+        append_directory(&mut builder, &directory, 0o755)?;
+    }
+    for dest in files {
         let archive = to_system_path(&dest).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -63,6 +85,45 @@ fn data_tar(stage: &Path) -> io::Result<Vec<u8>> {
     }
     builder.finish()?;
     builder.into_inner()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn data_tar_carries_deterministic_parent_directories() {
+        let stage = tempfile::Builder::new()
+            .prefix("solstone-deb-test-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        crate::stage::write_staged_file_mode(
+            stage.path(),
+            "lib/solstone-core-speakers-analyze/libonnxruntime.so.1",
+            b"runtime",
+            0o755,
+        )
+        .unwrap();
+        let bytes = data_tar(stage.path()).unwrap();
+        let mut archive = tar::Archive::new(bytes.as_slice());
+        let entries = archive
+            .entries()
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                (
+                    entry.path().unwrap().to_string_lossy().into_owned(),
+                    entry.header().entry_type(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(entries.iter().any(|(path, kind)| {
+            path == "usr/lib/solstone-core-speakers-analyze" && kind.is_dir()
+        }));
+        assert!(entries.iter().any(|(path, kind)| {
+            path == "usr/lib/solstone-core-speakers-analyze/libonnxruntime.so.1" && kind.is_file()
+        }));
+    }
 }
 
 pub fn deb_records(path: &Path) -> io::Result<Vec<FileRecord>> {

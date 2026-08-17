@@ -265,6 +265,41 @@ image = "debian:bookworm-slim"
 digest = "sha256:362e64223cc0da95422b3b13c045186fc0a81250e765d31c025fbddf257f6143"
 network = "none"
 python = false
+control = false
+roles = ["tar", "deb", "talent", "speakers"]
+required_tools = ["sh", "tar", "sha256sum", "dpkg", "dd", "od"]
+forbidden_tools = ["python", "python3", "pip", "maturin"]
+mounts = ["artifacts:ro", "cleanroom.sh:ro", "scan-python.sh:ro", "producer:ro"]
+entry_command = "sh /cleanroom.sh --inside <role>"
+expected = ["fresh-journal-loop", "daily_schedule-output", "speaker-response", "python-scan-zero"]
+
+[[cleanroom.subject]]
+id = "fedora-42-no-python"
+image = "fedora:42"
+digest = "sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814"
+network = "none"
+python = false
+control = false
+roles = ["rpm", "bootstrap"]
+required_tools = ["sh", "tar", "sha256sum", "curl", "rpm"]
+forbidden_tools = ["python", "python3", "pip", "maturin"]
+mounts = ["artifacts:ro", "cleanroom.sh:ro", "install.sh:ro", "scan-python.sh:ro", "producer:ro"]
+entry_command = "sh /cleanroom.sh --inside <role>"
+expected = ["fresh-journal-loop", "fresh-login-launchers", "python-scan-zero"]
+
+[[cleanroom.subject]]
+id = "python-3.12-control"
+image = "python:3.12-slim-bookworm"
+digest = "sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b"
+network = "none"
+python = true
+control = true
+roles = ["python-control"]
+required_tools = ["sh", "python3"]
+forbidden_tools = []
+mounts = ["scan-python.sh:ro"]
+entry_command = "sh /cleanroom.sh --inside scan-control"
+expected = ["python-scan-positive"]
 
 [[cleanroom.builder]]
 id = "rust-zig-no-python"

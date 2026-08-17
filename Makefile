@@ -663,9 +663,16 @@ check-rust-ci-topology:
 	@$(REQUIRE_CARGO)
 	$(SOLSTONE_CI_RUNNER) validate
 
-.PHONY: check-rust-distribution check-rust-distribution-under-poison
+.PHONY: check-rust-distribution check-rust-distribution-under-poison check-rust-distribution-cleanroom
 check-rust-distribution:
 	$(call run-rust-gate-under-poison,check-rust-distribution-under-poison)
+
+# Live Docker/Podman oracle over already-produced x86_64 artifacts. Set
+# SOLSTONE_DISTRIBUTION_OUT, the captured SOLSTONE_CLEANROOM_BUILDER_ID, and,
+# for remote Docker, DOCKER_HOST explicitly.
+check-rust-distribution-cleanroom:
+	core/distribution/cleanroom.sh --self-test
+	core/distribution/cleanroom.sh "$${SOLSTONE_DISTRIBUTION_OUT:-/var/tmp/solstone-distribution-out}"
 
 # AR_<triple>/RANLIB_<triple> must point at zig wrappers before this recipe
 # invokes the producer: PATH poison covers `ar`, so cc/ffmpeg-sys-next/ort

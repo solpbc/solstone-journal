@@ -6,13 +6,14 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use solstone_core_distribution::cleanroom::{
-    bind_loopback, plan_text_from_inventory_path, serve_directory, serve_root_from_args,
+    bind_loopback, plan_text_from_inventory_path, serve_directory, serve_generation_fixture,
+    serve_root_from_args,
 };
 use solstone_core_distribution::discover_and_validate_inventory;
 use solstone_core_distribution::produce::{self, ProduceArgs};
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|cleanroom-plan|cleanroom-serve|help> [ARG]"
+    "usage: solstone-distribution <validate|produce|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
 }
 
 fn main() -> ExitCode {
@@ -118,6 +119,41 @@ fn main() -> ExitCode {
                 },
                 Err(error) => {
                     eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("cleanroom-generate-serve") => {
+            let evidence = args.next().map(PathBuf::from);
+            let expected = args.next().map(PathBuf::from);
+            match (evidence, expected) {
+                (Some(evidence), Some(expected)) => match std::fs::read_to_string(&expected) {
+                    Ok(expected) => match bind_loopback() {
+                        Ok((listener, port)) => {
+                            println!("127.0.0.1:{port}");
+                            let _ = std::io::Write::flush(&mut std::io::stdout());
+                            match serve_generation_fixture(listener, &evidence, &expected) {
+                                Ok(()) => ExitCode::SUCCESS,
+                                Err(error) => {
+                                    eprintln!("{error}");
+                                    ExitCode::from(2)
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("{error}");
+                            ExitCode::from(2)
+                        }
+                    },
+                    Err(error) => {
+                        eprintln!("read expected fragment {}: {error}", expected.display());
+                        ExitCode::from(2)
+                    }
+                },
+                _ => {
+                    eprintln!(
+                        "usage: solstone-distribution cleanroom-generate-serve EVIDENCE EXPECTED_FRAGMENT_FILE"
+                    );
                     ExitCode::from(2)
                 }
             }
