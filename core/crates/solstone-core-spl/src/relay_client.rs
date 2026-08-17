@@ -33,9 +33,9 @@ use crate::relay_websocket::ListenEvent;
 use crate::{
     BufferedWsReader, CallosumEmit, ListenControl, RelayAdmissionGate, RelayHealth,
     RelayHealthState, RelayTunnelFailure, RelayTunnelFailureSignal, RelayWebSocket,
-    RelayWebSocketError, RelayWebSocketWriter, ServiceToken, TunnelRoute, WsByteSink,
-    classify_relay_tunnel_failure, pipe_tunnel, relay_tunnel_url, route_tunnel_prefix,
-    schedule_reconnect,
+    RelayWebSocketError, RelayWebSocketReader, RelayWebSocketWriter, ServiceToken, TunnelRoute,
+    WsByteSink, WsByteSource, WsClosed, classify_relay_tunnel_failure, pipe_tunnel,
+    relay_tunnel_url, route_tunnel_prefix, schedule_reconnect,
 };
 
 /// A stream accepted by the local private listener.
@@ -51,6 +51,136 @@ pub type LoopbackConnect =
 pub trait LoopbackDialer: Send + Sync {
     /// Opens a loopback stream for one TLS tunnel.
     fn connect(&self) -> LoopbackConnect;
+}
+
+/// Object-safe listen-socket reader used by [`RelayClient`] and test doubles.
+pub(crate) trait ListenReader: Send + 'static {
+    /// Reads one listen-channel event, retaining raw Pong payloads.
+    fn next_listen_event(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<ListenEvent, WsClosed>> + Send + '_>>;
+
+    /// Reads the next data-bearing WebSocket message, skipping control frames.
+    fn next_message(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, WsClosed>> + Send + '_>>;
+}
+
+/// Object-safe listen-socket writer used by [`RelayClient`] and test doubles.
+pub(crate) trait ListenWriter: Send + 'static {
+    /// Sends a WebSocket Ping carrying the acknowledgement nonce.
+    fn send_ping(
+        &mut self,
+        payload: Bytes,
+    ) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>>;
+
+    /// Sends one data-bearing WebSocket message.
+    fn send(
+        &mut self,
+        bytes: Bytes,
+    ) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>>;
+
+    /// Closes the write half.
+    fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>>;
+}
+
+/// The swappable seam for opening a relay listen or tunnel WebSocket.
+pub(crate) trait RelayConnector: Send + Sync {
+    /// Connects one authenticated relay WebSocket and splits it.
+    fn connect(
+        &self,
+        url: &str,
+        token: &ServiceToken,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        (Box<dyn ListenReader>, Box<dyn ListenWriter>),
+                        RelayWebSocketError,
+                    >,
+                > + Send,
+        >,
+    >;
+}
+
+struct DefaultRelayConnector;
+
+impl RelayConnector for DefaultRelayConnector {
+    fn connect(
+        &self,
+        url: &str,
+        token: &ServiceToken,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        (Box<dyn ListenReader>, Box<dyn ListenWriter>),
+                        RelayWebSocketError,
+                    >,
+                > + Send,
+        >,
+    > {
+        let url = url.to_owned();
+        let token = token.clone();
+        Box::pin(async move {
+            let websocket = RelayWebSocket::connect(&url, &token).await?;
+            let (reader, writer) = websocket.split();
+            Ok((
+                Box::new(reader) as Box<dyn ListenReader>,
+                Box::new(writer) as Box<dyn ListenWriter>,
+            ))
+        })
+    }
+}
+
+impl ListenReader for RelayWebSocketReader {
+    fn next_listen_event(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<ListenEvent, WsClosed>> + Send + '_>> {
+        Box::pin(async move { RelayWebSocketReader::next_listen_event(self).await })
+    }
+
+    fn next_message(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, WsClosed>> + Send + '_>> {
+        Box::pin(async move { WsByteSource::next_message(self).await })
+    }
+}
+
+impl ListenWriter for RelayWebSocketWriter {
+    fn send_ping(
+        &mut self,
+        payload: Bytes,
+    ) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>> {
+        Box::pin(async move { RelayWebSocketWriter::send_ping(self, payload).await })
+    }
+
+    fn send(
+        &mut self,
+        bytes: Bytes,
+    ) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>> {
+        Box::pin(async move { WsByteSink::send(self, bytes).await })
+    }
+
+    fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>> {
+        Box::pin(async move { WsByteSink::close(self).await })
+    }
+}
+
+impl<'a> WsByteSource for Box<dyn ListenReader + 'a> {
+    fn next_message(&mut self) -> impl Future<Output = Result<Option<Bytes>, WsClosed>> + Send {
+        ListenReader::next_message(self.as_mut())
+    }
+}
+
+impl<'a> WsByteSink for Box<dyn ListenWriter + 'a> {
+    fn send(&mut self, bytes: Bytes) -> impl Future<Output = Result<(), WsClosed>> + Send {
+        ListenWriter::send(self.as_mut(), bytes)
+    }
+
+    fn close(&mut self) -> impl Future<Output = Result<(), WsClosed>> + Send {
+        ListenWriter::close(self.as_mut())
+    }
 }
 
 /// Configuration that is fixed for one relay-client lifetime.
@@ -93,6 +223,7 @@ struct RelayClientInner {
     config: RelayClientConfig,
     emit: Arc<dyn CallosumEmit>,
     dialer: Arc<dyn LoopbackDialer>,
+    connector: Arc<dyn RelayConnector>,
     admission: Arc<RelayAdmissionGate>,
     health: Mutex<RelayHealth>,
     accepting_tunnels: AtomicBool,
@@ -114,12 +245,32 @@ impl RelayClient {
         emit: Arc<dyn CallosumEmit>,
         dialer: Arc<dyn LoopbackDialer>,
     ) -> Self {
+        Self::compose(config, emit, dialer, Arc::new(DefaultRelayConnector))
+    }
+
+    #[cfg(test)]
+    fn new_with_connector(
+        config: RelayClientConfig,
+        emit: Arc<dyn CallosumEmit>,
+        dialer: Arc<dyn LoopbackDialer>,
+        connector: Arc<dyn RelayConnector>,
+    ) -> Self {
+        Self::compose(config, emit, dialer, connector)
+    }
+
+    fn compose(
+        config: RelayClientConfig,
+        emit: Arc<dyn CallosumEmit>,
+        dialer: Arc<dyn LoopbackDialer>,
+        connector: Arc<dyn RelayConnector>,
+    ) -> Self {
         let admission = Arc::new(RelayAdmissionGate::new(config.global_admission_ceiling));
         Self {
             inner: Arc::new(RelayClientInner {
                 config,
                 emit,
                 dialer,
+                connector,
                 admission,
                 health: Mutex::new(RelayHealth::new()),
                 accepting_tunnels: AtomicBool::new(true),
@@ -168,16 +319,19 @@ impl RelayClient {
             &self.inner.config.instance_id,
             self.inner.config.service_token.as_str(),
         );
-        let websocket =
-            match RelayWebSocket::connect(&listen_url, &self.inner.config.service_token).await {
-                Ok(websocket) => websocket,
-                Err(_) => {
-                    return ListenAttemptEnd {
-                        reset_backoff: false,
-                    };
-                }
-            };
-        let (mut reader, mut writer) = websocket.split();
+        let (mut reader, mut writer) = match self
+            .inner
+            .connector
+            .connect(&listen_url, &self.inner.config.service_token)
+            .await
+        {
+            Ok(websocket) => websocket,
+            Err(_) => {
+                return ListenAttemptEnd {
+                    reset_backoff: false,
+                };
+            }
+        };
         let mut nonce_sequence = 0_u64;
         let initial_nonce = next_ping_nonce(&mut nonce_sequence);
         let mut outstanding_nonce = Some(initial_nonce.clone());
@@ -276,8 +430,12 @@ impl RelayClient {
             &self.inner.config.instance_id,
             self.inner.config.service_token.as_str(),
         );
-        let websocket = RelayWebSocket::connect(&url, &self.inner.config.service_token).await;
-        let websocket = match websocket {
+        let websocket = self
+            .inner
+            .connector
+            .connect(&url, &self.inner.config.service_token)
+            .await;
+        let (reader, mut writer) = match websocket {
             Ok(websocket) => websocket,
             Err(error) => {
                 self.record_connect_failure(error);
@@ -285,7 +443,6 @@ impl RelayClient {
             }
         };
         self.record_tunnel_success();
-        let (reader, mut writer) = websocket.split();
         let mut buffered = BufferedWsReader::new(reader);
 
         let Some(mut admission) = GlobalAdmission::acquire(Arc::clone(&self.inner.admission))
@@ -459,12 +616,12 @@ fn stability_window_reached(first_ack: Instant, current_ack: Instant, window: Du
 }
 
 async fn send_ping_before_deadline(
-    writer: &mut RelayWebSocketWriter,
+    writer: &mut Box<dyn ListenWriter>,
     nonce: Bytes,
     deadline: Instant,
 ) -> bool {
     tokio::select! {
-        result = writer.send_ping(nonce) => result.is_ok(),
+        result = ListenWriter::send_ping(writer.as_mut(), nonce) => result.is_ok(),
         _ = sleep_until(deadline) => false,
     }
 }
@@ -549,27 +706,184 @@ impl Drop for GlobalAdmission {
 }
 
 #[cfg(test)]
+struct FakeListenReader {
+    events: tokio::sync::mpsc::UnboundedReceiver<Result<ListenEvent, WsClosed>>,
+}
+
+#[cfg(test)]
+struct FakeListenWriter {
+    pings: tokio::sync::mpsc::UnboundedSender<Bytes>,
+    writes: tokio::sync::mpsc::UnboundedSender<Bytes>,
+    closed: Arc<AtomicBool>,
+}
+
+#[cfg(test)]
+struct FakeSocketHandle {
+    events: tokio::sync::mpsc::UnboundedSender<Result<ListenEvent, WsClosed>>,
+    pings: tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    #[allow(dead_code)]
+    writes: tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    closed: Arc<AtomicBool>,
+}
+
+#[cfg(test)]
+impl FakeSocketHandle {
+    async fn recv_ping(&mut self) -> Result<Bytes, ()> {
+        self.pings.recv().await.ok_or(())
+    }
+
+    fn push_pong(&self, nonce: Bytes) {
+        let _ = self.events.send(Ok(ListenEvent::Pong(nonce)));
+    }
+
+    fn push_message(&self, bytes: impl Into<Bytes>) {
+        let _ = self.events.send(Ok(ListenEvent::Message(bytes.into())));
+    }
+
+    fn close_read(&self) {
+        let _ = self.events.send(Err(WsClosed));
+    }
+
+    async fn answer_one_ping(&mut self) -> Result<(), ()> {
+        let nonce = self.recv_ping().await?;
+        self.push_pong(nonce);
+        Ok(())
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
+}
+
+#[cfg(test)]
+struct FakeConnector {
+    sockets: Mutex<std::collections::VecDeque<(FakeListenReader, FakeListenWriter)>>,
+}
+
+#[cfg(test)]
+impl FakeConnector {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            sockets: Mutex::new(std::collections::VecDeque::new()),
+        })
+    }
+
+    fn push_socket(self: &Arc<Self>) -> FakeSocketHandle {
+        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (ping_tx, ping_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel();
+        let closed = Arc::new(AtomicBool::new(false));
+        lock_unpoisoned(&self.sockets).push_back((
+            FakeListenReader { events: event_rx },
+            FakeListenWriter {
+                pings: ping_tx,
+                writes: write_tx,
+                closed: Arc::clone(&closed),
+            },
+        ));
+        FakeSocketHandle {
+            events: event_tx,
+            pings: ping_rx,
+            writes: write_rx,
+            closed,
+        }
+    }
+}
+
+#[cfg(test)]
+impl ListenReader for FakeListenReader {
+    fn next_listen_event(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<ListenEvent, WsClosed>> + Send + '_>> {
+        Box::pin(async move { self.events.recv().await.unwrap_or(Err(WsClosed)) })
+    }
+
+    fn next_message(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, WsClosed>> + Send + '_>> {
+        Box::pin(async move {
+            loop {
+                match self.events.recv().await.unwrap_or(Err(WsClosed)) {
+                    Ok(ListenEvent::Message(bytes)) => return Ok(Some(bytes)),
+                    Ok(ListenEvent::Pong(_)) => {}
+                    Err(error) => return Err(error),
+                }
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+impl ListenWriter for FakeListenWriter {
+    fn send_ping(
+        &mut self,
+        payload: Bytes,
+    ) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>> {
+        let pings = self.pings.clone();
+        Box::pin(async move { pings.send(payload).map_err(|_| WsClosed) })
+    }
+
+    fn send(
+        &mut self,
+        bytes: Bytes,
+    ) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>> {
+        let writes = self.writes.clone();
+        Box::pin(async move { writes.send(bytes).map_err(|_| WsClosed) })
+    }
+
+    fn close(&mut self) -> Pin<Box<dyn Future<Output = Result<(), WsClosed>> + Send + '_>> {
+        self.closed.store(true, Ordering::Release);
+        Box::pin(async { Ok(()) })
+    }
+}
+
+#[cfg(test)]
+impl RelayConnector for FakeConnector {
+    fn connect(
+        &self,
+        _url: &str,
+        _token: &ServiceToken,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        (Box<dyn ListenReader>, Box<dyn ListenWriter>),
+                        RelayWebSocketError,
+                    >,
+                > + Send,
+        >,
+    > {
+        let pair = lock_unpoisoned(&self.sockets).pop_front();
+        Box::pin(async move {
+            pair.ok_or(RelayWebSocketError::Connection)
+                .map(|(reader, writer)| {
+                    (
+                        Box::new(reader) as Box<dyn ListenReader>,
+                        Box::new(writer) as Box<dyn ListenWriter>,
+                    )
+                })
+        })
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::{
         collections::HashSet,
-        future,
         sync::{Arc, Mutex},
-        time::{Duration, Instant},
+        time::Duration,
     };
 
     use super::{
-        GlobalAdmission, LoopbackConnect, LoopbackDialer, RelayClient, RelayClientConfig,
-        TunnelLifecycle, lock_unpoisoned, prefix_hex, stability_window_reached,
+        FakeConnector, GlobalAdmission, LoopbackConnect, LoopbackDialer, RelayClient,
+        RelayClientConfig, TunnelLifecycle, lock_unpoisoned, prefix_hex, stability_window_reached,
     };
     use bytes::Bytes;
-    use futures_util::{SinkExt, StreamExt};
     use tokio::{
-        io::{AsyncRead, AsyncReadExt, AsyncWrite, DuplexStream},
-        net::TcpListener,
+        io::{AsyncReadExt, DuplexStream},
         sync::{Notify, oneshot},
         time::timeout,
     };
-    use tokio_tungstenite::{WebSocketStream, accept_async, tungstenite::Message};
 
     use crate::{CallosumEmit, ServiceToken};
 
@@ -663,16 +977,8 @@ mod tests {
         }
     }
 
-    async fn answer_one_ping<S>(websocket: &mut WebSocketStream<S>) -> Result<(), ()>
-    where
-        S: AsyncRead + AsyncWrite + Unpin,
-    {
-        match websocket.next().await {
-            Some(Ok(Message::Ping(payload))) => {
-                websocket.send(Message::Pong(payload)).await.map_err(|_| ())
-            }
-            _ => Err(()),
-        }
+    fn dummy_addr() -> std::net::SocketAddr {
+        "127.0.0.1:9".parse().expect("dummy address")
     }
 
     #[test]
@@ -797,39 +1103,21 @@ mod tests {
 
     #[tokio::test]
     async fn listener_requires_a_matching_pong_before_reporting_connected() -> Result<(), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "relay bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "relay address failed".to_owned())?;
-        let (ping_send, ping_receive) = oneshot::channel();
-        let (reply_send, reply_receive) = oneshot::channel();
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut listen = accept_async(stream).await.map_err(|_| ())?;
-            let nonce = match listen.next().await {
-                Some(Ok(Message::Ping(nonce))) => nonce,
-                _ => return Err(()),
-            };
-            let _ = ping_send.send(nonce.clone());
-            reply_receive.await.map_err(|_| ())?;
-            listen.send(Message::Pong(nonce)).await.map_err(|_| ())?;
-            future::pending::<()>().await;
-            Ok::<(), ()>(())
-        });
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
         let emitter = Arc::new(Emitter::default());
-        let client = RelayClient::new(
-            client_config(address, "test-token"),
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "test-token"),
             Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
             Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
         );
         let running = {
             let client = client.clone();
             tokio::spawn(async move { client.run_once().await })
         };
 
-        let nonce = timeout(Duration::from_secs(1), ping_receive)
+        let nonce = timeout(Duration::from_secs(1), listen.recv_ping())
             .await
             .map_err(|_| "initial ping was not observed".to_owned())?
             .map_err(|_| "initial ping sender dropped".to_owned())?;
@@ -845,9 +1133,7 @@ mod tests {
         assert!(health["last_relay_listener_ack_at"].is_null());
         assert!(health["last_relay_listener_ack_generation"].is_null());
 
-        reply_send
-            .send(())
-            .map_err(|_| "relay did not await pong permission".to_owned())?;
+        listen.push_pong(nonce);
         timeout(Duration::from_secs(1), emitter.wait_for_event("connected"))
             .await
             .map_err(|_| "matching pong did not connect listener".to_owned())?;
@@ -864,69 +1150,44 @@ mod tests {
 
         running.abort();
         let _ = running.await;
-        server.abort();
-        let _ = server.await;
         Ok(())
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn wrong_pongs_and_control_traffic_do_not_extend_the_ack_deadline() -> Result<(), String>
     {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "relay bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "relay address failed".to_owned())?;
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut listen = accept_async(stream).await.map_err(|_| ())?;
-            match listen.next().await {
-                Some(Ok(Message::Ping(_))) => {}
-                _ => return Err(()),
-            }
-            for _ in 0..4 {
-                tokio::time::sleep(Duration::from_millis(40)).await;
-                if listen
-                    .send(Message::Pong(Bytes::from_static(b"wrong")))
-                    .await
-                    .is_err()
-                    || listen
-                        .send(Message::Text("{\"type\":\"ignored\"}".into()))
-                        .await
-                        .is_err()
-                {
-                    return Ok(());
-                }
-            }
-            future::pending::<()>().await;
-            Ok::<(), ()>(())
-        });
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
         let emitter = Arc::new(Emitter::default());
-        let mut config = client_config(address, "test-token");
+        let mut config = client_config(dummy_addr(), "test-token");
         config.ping_ack_timeout = Duration::from_millis(80);
-        let client = RelayClient::new(
+        let client = RelayClient::new_with_connector(
             config,
             Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
             Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
         );
-        let started_at = Instant::now();
         let run = {
             let client = client.clone();
             tokio::spawn(async move { client.run().await })
         };
 
+        timeout(Duration::from_secs(1), listen.recv_ping())
+            .await
+            .map_err(|_| "initial ping was not observed".to_owned())?
+            .map_err(|_| "initial ping sender dropped".to_owned())?;
+        for _ in 0..4 {
+            tokio::time::advance(Duration::from_millis(40)).await;
+            listen.push_pong(Bytes::from_static(b"wrong"));
+            listen.push_message(&b"{\"type\":\"ignored\"}"[..]);
+        }
+        tokio::time::advance(Duration::from_millis(80)).await;
         timeout(
             Duration::from_millis(150),
             emitter.wait_for_event("disconnect"),
         )
         .await
         .map_err(|_| "missed acknowledgement did not disconnect".to_owned())?;
-        if started_at.elapsed() > Duration::from_millis(150) {
-            return Err(
-                "wrong Pong/control traffic postponed the acknowledgement deadline".to_owned(),
-            );
-        }
         let events = emitter.snapshot();
         assert!(events.iter().all(|(event, _)| event != "connected"));
         assert!(
@@ -937,125 +1198,102 @@ mod tests {
 
         run.abort();
         let _ = run.await;
-        server.abort();
-        let _ = server.await;
         Ok(())
     }
 
     #[tokio::test]
     async fn listener_ack_before_stability_window_does_not_reset_backoff() -> Result<(), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "relay bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "relay address failed".to_owned())?;
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut listen = accept_async(stream).await.map_err(|_| ())?;
-            answer_one_ping(&mut listen).await?;
-            listen.close(None).await.map_err(|_| ())
-        });
-        let mut config = client_config(address, "test-token");
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
+        let mut config = client_config(dummy_addr(), "test-token");
         config.ping_interval = Duration::from_millis(60);
         config.ping_ack_timeout = Duration::from_millis(30);
         config.ack_stability_window = Duration::from_millis(120);
-        let client = RelayClient::new(
+        let client = RelayClient::new_with_connector(
             config,
             Arc::new(Emitter::default()) as Arc<dyn CallosumEmit>,
             Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
         );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run_once().await })
+        };
+        timeout(Duration::from_secs(1), listen.answer_one_ping())
+            .await
+            .map_err(|_| "initial ping was not observed".to_owned())?
+            .map_err(|_| "initial ping sender dropped".to_owned())?;
+        listen.close_read();
 
-        let attempt = timeout(Duration::from_secs(2), client.run_once())
+        let attempt = timeout(Duration::from_secs(2), running)
             .await
-            .map_err(|_| "under-window listener did not end".to_owned())?;
+            .map_err(|_| "under-window listener did not end".to_owned())?
+            .map_err(|_| "under-window listener task failed".to_owned())?;
         assert!(!attempt.reset_backoff);
-        server
-            .await
-            .map_err(|_| "relay server panicked".to_owned())?
-            .map_err(|_| "relay server failed".to_owned())?;
         Ok(())
     }
 
     #[tokio::test]
     async fn continuously_acknowledged_listener_earns_backoff_reset() -> Result<(), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "relay bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "relay address failed".to_owned())?;
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut listen = accept_async(stream).await.map_err(|_| ())?;
-            for _ in 0..3 {
-                answer_one_ping(&mut listen).await?;
-            }
-            listen.close(None).await.map_err(|_| ())
-        });
-        let mut config = client_config(address, "test-token");
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
+        let mut config = client_config(dummy_addr(), "test-token");
         config.ping_interval = Duration::from_millis(60);
         config.ping_ack_timeout = Duration::from_millis(30);
         config.ack_stability_window = Duration::from_millis(120);
-        let client = RelayClient::new(
+        let client = RelayClient::new_with_connector(
             config,
             Arc::new(Emitter::default()) as Arc<dyn CallosumEmit>,
             Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
         );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run_once().await })
+        };
+        for _ in 0..3 {
+            timeout(Duration::from_secs(1), listen.answer_one_ping())
+                .await
+                .map_err(|_| "acknowledged ping was not observed".to_owned())?
+                .map_err(|_| "acknowledged ping sender dropped".to_owned())?;
+        }
+        listen.close_read();
 
-        let attempt = timeout(Duration::from_secs(2), client.run_once())
+        let attempt = timeout(Duration::from_secs(2), running)
             .await
-            .map_err(|_| "acknowledged listener did not end".to_owned())?;
+            .map_err(|_| "acknowledged listener did not end".to_owned())?
+            .map_err(|_| "acknowledged listener task failed".to_owned())?;
         assert!(attempt.reset_backoff);
-        server
-            .await
-            .map_err(|_| "relay server panicked".to_owned())?
-            .map_err(|_| "relay server failed".to_owned())?;
         Ok(())
     }
 
     #[tokio::test]
     async fn replacement_generation_keeps_old_ack_but_stays_connecting_until_its_pong()
     -> Result<(), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "relay bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "relay address failed".to_owned())?;
-        let (replacement_send, replacement_receive) = oneshot::channel();
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut first = accept_async(stream).await.map_err(|_| ())?;
-            answer_one_ping(&mut first).await?;
-            first.close(None).await.map_err(|_| ())?;
-
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut replacement = accept_async(stream).await.map_err(|_| ())?;
-            match replacement.next().await {
-                Some(Ok(Message::Ping(_))) => {
-                    let _ = replacement_send.send(());
-                }
-                _ => return Err(()),
-            }
-            future::pending::<()>().await;
-            Ok::<(), ()>(())
-        });
+        let connector = FakeConnector::new();
+        let mut first = connector.push_socket();
+        let mut replacement = connector.push_socket();
         let emitter = Arc::new(Emitter::default());
-        let client = RelayClient::new(
-            client_config(address, "test-token"),
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "test-token"),
             Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
             Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
         );
         let run = {
             let client = client.clone();
             tokio::spawn(async move { client.run().await })
         };
 
+        timeout(Duration::from_secs(1), first.answer_one_ping())
+            .await
+            .map_err(|_| "first generation ping was not observed".to_owned())?
+            .map_err(|_| "first generation ping sender dropped".to_owned())?;
         timeout(Duration::from_secs(1), emitter.wait_for_event("connected"))
             .await
             .map_err(|_| "first generation did not connect".to_owned())?;
-        timeout(Duration::from_secs(3), replacement_receive)
+        first.close_read();
+        timeout(Duration::from_secs(3), replacement.recv_ping())
             .await
             .map_err(|_| "replacement generation did not begin".to_owned())?
             .map_err(|_| "replacement signal dropped".to_owned())?;
@@ -1076,70 +1314,37 @@ mod tests {
         client.stop().await;
         run.abort();
         let _ = run.await;
-        server.abort();
-        let _ = server.await;
         Ok(())
     }
 
     #[tokio::test]
     async fn tunnel_offers_coalesce_across_listener_generations() -> Result<(), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "relay bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "relay address failed".to_owned())?;
-        let (second_offer_send, second_offer_receive) = oneshot::channel();
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut first_listen = accept_async(stream).await.map_err(|_| ())?;
-            answer_one_ping(&mut first_listen).await?;
-            for _ in 0..2 {
-                first_listen
-                    .send(Message::Text(
-                        "{\"type\":\"incoming\",\"tunnel_id\":\"shared\"}".into(),
-                    ))
-                    .await
-                    .map_err(|_| ())?;
-            }
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut tunnel = accept_async(stream).await.map_err(|_| ())?;
-            tunnel
-                .send(Message::Binary(Bytes::from_static(&[
-                    0x16, 0x03, 0x01, 0x00,
-                ])))
-                .await
-                .map_err(|_| ())?;
-            first_listen.close(None).await.map_err(|_| ())?;
-
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut replacement_listen = accept_async(stream).await.map_err(|_| ())?;
-            answer_one_ping(&mut replacement_listen).await?;
-            replacement_listen
-                .send(Message::Text(
-                    "{\"type\":\"incoming\",\"tunnel_id\":\"shared\"}".into(),
-                ))
-                .await
-                .map_err(|_| ())?;
-            let duplicate_opened = timeout(Duration::from_millis(250), listener.accept())
-                .await
-                .is_ok();
-            let _ = second_offer_send.send(duplicate_opened);
-            future::pending::<()>().await;
-            Ok::<(), ()>(())
-        });
+        let connector = FakeConnector::new();
+        let mut first_listen = connector.push_socket();
+        let tunnel = connector.push_socket();
+        let mut replacement_listen = connector.push_socket();
+        let mut extra = connector.push_socket();
         let (peer_sender, mut peer_receiver) = oneshot::channel();
         let emitter = Arc::new(Emitter::default());
-        let client = RelayClient::new(
-            client_config(address, "test-token"),
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "test-token"),
             Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
             Arc::new(Dialer::new(peer_sender)),
+            connector,
         );
         let run = {
             let client = client.clone();
             tokio::spawn(async move { client.run().await })
         };
 
+        timeout(Duration::from_secs(1), first_listen.answer_one_ping())
+            .await
+            .map_err(|_| "first listen ping was not observed".to_owned())?
+            .map_err(|_| "first listen ping sender dropped".to_owned())?;
+        for _ in 0..2 {
+            first_listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"shared\"}"[..]);
+        }
+        tunnel.push_message(Bytes::from_static(&[0x16, 0x03, 0x01, 0x00]));
         let mut peer = timeout(Duration::from_secs(2), &mut peer_receiver)
             .await
             .map_err(|_| "shared tunnel did not reach loopback".to_owned())?
@@ -1149,13 +1354,16 @@ mod tests {
             .await
             .map_err(|_| "loopback prefix read failed".to_owned())?;
         assert_eq!(prefix, [0x16, 0x03, 0x01, 0x00]);
-        assert!(
-            !timeout(Duration::from_secs(3), second_offer_receive)
-                .await
-                .map_err(|_| "replacement listener did not receive duplicate offer".to_owned())?
-                .map_err(|_| "replacement listener dropped duplicate result".to_owned())?,
-            "duplicate offer opened a second tunnel"
-        );
+        first_listen.close_read();
+        timeout(Duration::from_secs(3), replacement_listen.answer_one_ping())
+            .await
+            .map_err(|_| "replacement listener did not begin".to_owned())?
+            .map_err(|_| "replacement listener ping dropped".to_owned())?;
+        replacement_listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"shared\"}"[..]);
+        let duplicate_opened = timeout(Duration::from_millis(250), extra.recv_ping())
+            .await
+            .is_ok();
+        assert!(!duplicate_opened, "duplicate offer opened a second tunnel");
         assert_eq!(
             emitter
                 .snapshot()
@@ -1168,55 +1376,36 @@ mod tests {
         client.stop().await;
         run.abort();
         let _ = run.await;
-        server.abort();
-        let _ = server.await;
         Ok(())
     }
 
     #[tokio::test]
     async fn listener_dispatches_tls_to_loopback_and_replays_the_peeked_prefix()
     -> Result<(), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "relay bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "relay address failed".to_owned())?;
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut listen = accept_async(stream).await.map_err(|_| ())?;
-            answer_one_ping(&mut listen).await?;
-            listen
-                .send(Message::Text(
-                    "{\"type\":\"incoming\",\"tunnel_id\":\"tls\"}".into(),
-                ))
-                .await
-                .map_err(|_| ())?;
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut tunnel = accept_async(stream).await.map_err(|_| ())?;
-            tunnel
-                .send(Message::Binary(Bytes::from_static(&[0x16, 0x03])))
-                .await
-                .map_err(|_| ())?;
-            tunnel
-                .send(Message::Binary(Bytes::from_static(&[0x01, 0x00])))
-                .await
-                .map_err(|_| ())?;
-            let _ = tunnel.next().await;
-            Ok::<(), ()>(())
-        });
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
+        let tunnel = connector.push_socket();
         let (peer_sender, mut peer_receiver) = oneshot::channel();
         let emitter = Arc::new(Emitter::default());
         let emission: Arc<dyn CallosumEmit> = emitter.clone();
-        let client = RelayClient::new(
-            client_config(address, "known-service-token"),
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "known-service-token"),
             emission,
             Arc::new(Dialer::new(peer_sender)),
+            connector,
         );
         let running = {
             let client = client.clone();
             tokio::spawn(async move { client.run().await })
         };
+
+        timeout(Duration::from_secs(1), listen.answer_one_ping())
+            .await
+            .map_err(|_| "listen ping was not observed".to_owned())?
+            .map_err(|_| "listen ping sender dropped".to_owned())?;
+        listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"tls\"}"[..]);
+        tunnel.push_message(Bytes::from_static(&[0x16, 0x03]));
+        tunnel.push_message(Bytes::from_static(&[0x01, 0x00]));
 
         let mut peer = timeout(Duration::from_secs(2), &mut peer_receiver)
             .await
@@ -1249,57 +1438,44 @@ mod tests {
         assert_eq!(tail[3].0, "health");
         running.abort();
         let _ = running.await;
-        server.abort();
-        let _ = server.await;
         Ok(())
     }
 
     #[tokio::test]
     async fn unsupported_prefixes_close_as_the_same_unknown_route() -> Result<(), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "relay bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "relay address failed".to_owned())?;
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut listen = accept_async(stream).await.map_err(|_| ())?;
-            answer_one_ping(&mut listen).await?;
-            listen
-                .send(Message::Text(
-                    "{\"type\":\"incoming\",\"tunnel_id\":\"unknown\"}".into(),
-                ))
-                .await
-                .map_err(|_| ())?;
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut tunnel = accept_async(stream).await.map_err(|_| ())?;
-            tunnel
-                .send(Message::Binary(Bytes::from_static(b"RETI")))
-                .await
-                .map_err(|_| ())?;
-            match timeout(Duration::from_secs(2), tunnel.next()).await {
-                Ok(Some(Ok(Message::Close(_)))) | Ok(None) => Ok::<(), ()>(()),
-                _ => Err(()),
-            }
-        });
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
+        let tunnel = connector.push_socket();
         let (peer_sender, _peer_receiver) = oneshot::channel();
         let emitter = Arc::new(Emitter::default());
         let emission: Arc<dyn CallosumEmit> = emitter.clone();
-        let client = RelayClient::new(
-            client_config(address, "known-service-token"),
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "known-service-token"),
             emission,
             Arc::new(Dialer::new(peer_sender)),
+            connector,
         );
         let running = {
             let client = client.clone();
             tokio::spawn(async move { client.run().await })
         };
 
-        server
+        timeout(Duration::from_secs(1), listen.answer_one_ping())
             .await
-            .map_err(|_| "relay server panicked".to_owned())?
-            .map_err(|_| "unknown prefix did not close".to_owned())?;
+            .map_err(|_| "listen ping was not observed".to_owned())?
+            .map_err(|_| "listen ping sender dropped".to_owned())?;
+        listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"unknown\"}"[..]);
+        tunnel.push_message(Bytes::from_static(b"RETI"));
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if tunnel.is_closed() {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .map_err(|_| "unknown prefix did not close".to_owned())?;
         assert_eq!(client.inner.admission.count(), 0);
         let formatted = {
             let events = match emitter.events.lock() {
@@ -1319,53 +1495,42 @@ mod tests {
 
     #[tokio::test]
     async fn short_prefix_error_releases_the_global_admission_slot() -> Result<(), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "relay bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "relay address failed".to_owned())?;
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut listen = accept_async(stream).await.map_err(|_| ())?;
-            answer_one_ping(&mut listen).await?;
-            listen
-                .send(Message::Text(
-                    "{\"type\":\"incoming\",\"tunnel_id\":\"short\"}".into(),
-                ))
-                .await
-                .map_err(|_| ())?;
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut tunnel = accept_async(stream).await.map_err(|_| ())?;
-            tunnel
-                .send(Message::Binary(Bytes::from_static(b"no")))
-                .await
-                .map_err(|_| ())?;
-            tunnel.close(None).await.map_err(|_| ())?;
-            Ok::<(), ()>(())
-        });
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
+        let tunnel = connector.push_socket();
         let (peer_sender, _peer_receiver) = oneshot::channel();
         let emitter = Arc::new(Emitter::default());
         let emission: Arc<dyn CallosumEmit> = emitter.clone();
-        let client = RelayClient::new(
-            client_config(address, "known-service-token"),
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "known-service-token"),
             emission,
             Arc::new(Dialer::new(peer_sender)),
+            connector,
         );
         let running = {
             let client = client.clone();
             tokio::spawn(async move { client.run().await })
         };
 
-        server
+        timeout(Duration::from_secs(1), listen.answer_one_ping())
             .await
-            .map_err(|_| "relay server panicked".to_owned())?
-            .map_err(|_| "relay server failed".to_owned())?;
+            .map_err(|_| "listen ping was not observed".to_owned())?
+            .map_err(|_| "listen ping sender dropped".to_owned())?;
+        timeout(Duration::from_secs(1), emitter.wait_for_event("connected"))
+            .await
+            .map_err(|_| "listener did not connect before the short prefix".to_owned())?;
+        listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"short\"}"[..]);
+        tunnel.push_message(Bytes::from_static(b"no"));
+        tunnel.close_read();
+        timeout(
+            Duration::from_secs(2),
+            emitter.wait_for_event("tunnel_close"),
+        )
+        .await
+        .map_err(|_| "short-prefix tunnel did not finish".to_owned())?;
         {
             let mut tunnels = client.inner.tunnels.lock().await;
-            let joined = timeout(Duration::from_secs(2), tunnels.join_next())
-                .await
-                .map_err(|_| "short-prefix tunnel did not finish".to_owned())?;
+            let joined = tunnels.try_join_next();
             assert!(joined.is_some());
         }
         assert_eq!(client.inner.admission.count(), 0);
@@ -1390,48 +1555,41 @@ mod tests {
     }
 
     /// A quiet but acknowledged listener refreshes health at every Ping/Pong.
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_quiet_connected_listener_keeps_refreshing_its_health_snapshot() -> Result<(), String>
     {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "relay bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "relay address failed".to_owned())?;
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut listen = accept_async(stream).await.map_err(|_| ())?;
-            for _ in 0..4 {
-                answer_one_ping(&mut listen).await?;
-            }
-            future::pending::<()>().await;
-            Ok::<(), ()>(())
-        });
-
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
         let emitter = Arc::new(Emitter::default());
-        let mut config = client_config(address, "test-token");
+        let mut config = client_config(dummy_addr(), "test-token");
         config.ping_interval = Duration::from_millis(120);
         config.ping_ack_timeout = Duration::from_millis(40);
         config.ack_stability_window = Duration::from_millis(240);
-        let client = RelayClient::new(
+        let client = RelayClient::new_with_connector(
             config,
             Arc::clone(&emitter) as Arc<dyn CallosumEmit>,
             Arc::new(Dialer::new(oneshot::channel().0)),
+            connector,
         );
         let run = {
             let client = client.clone();
             tokio::spawn(async move { client.run().await })
         };
 
-        tokio::time::sleep(Duration::from_millis(550)).await;
+        for _ in 0..4 {
+            timeout(Duration::from_secs(1), listen.answer_one_ping())
+                .await
+                .map_err(|_| "quiet listener ping was not observed".to_owned())?
+                .map_err(|_| "quiet listener ping sender dropped".to_owned())?;
+            tokio::task::yield_now().await;
+            tokio::time::advance(Duration::from_millis(120)).await;
+        }
         let health_emits = emitter
             .snapshot()
             .into_iter()
             .filter(|(event, _)| event == "health")
             .count();
         run.abort();
-        server.abort();
 
         if health_emits < 4 {
             return Err(format!(
@@ -1444,44 +1602,26 @@ mod tests {
     #[tokio::test]
     async fn stop_emits_final_disconnect_and_health_before_run_task_cancellation()
     -> Result<(), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "relay bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "relay address failed".to_owned())?;
-        let (connected_sender, connected_receiver) = oneshot::channel();
-        let (check_sender, check_receiver) = oneshot::channel();
-        let (open_sender, open_receiver) = oneshot::channel();
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.map_err(|_| ())?;
-            let mut listen = accept_async(stream).await.map_err(|_| ())?;
-            answer_one_ping(&mut listen).await?;
-            let _ = connected_sender.send(());
-            check_receiver.await.map_err(|_| ())?;
-            let remains_open = timeout(Duration::from_millis(50), listen.next())
-                .await
-                .is_err();
-            let _ = open_sender.send(remains_open);
-            future::pending::<()>().await;
-            Ok::<(), ()>(())
-        });
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
         let (peer_sender, _peer_receiver) = oneshot::channel();
         let emitter = Arc::new(Emitter::default());
         let emission: Arc<dyn CallosumEmit> = emitter.clone();
-        let client = RelayClient::new(
-            client_config(address, "known-service-token"),
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "known-service-token"),
             emission,
             Arc::new(Dialer::new(peer_sender)),
+            connector,
         );
         let running = {
             let client = client.clone();
             tokio::spawn(async move { client.run().await })
         };
 
-        connected_receiver
+        timeout(Duration::from_secs(1), listen.answer_one_ping())
             .await
-            .map_err(|_| "listen websocket did not connect".to_owned())?;
+            .map_err(|_| "listen websocket did not connect".to_owned())?
+            .map_err(|_| "listen ping sender dropped".to_owned())?;
         timeout(Duration::from_secs(2), emitter.wait_for_event("connected"))
             .await
             .map_err(|_| "connected event did not arrive".to_owned())?;
@@ -1521,20 +1661,11 @@ mod tests {
                 }),
             )
         );
-        check_sender
-            .send(())
-            .map_err(|_| "listen server stopped early".to_owned())?;
-        assert!(
-            open_receiver
-                .await
-                .map_err(|_| "listen-open check did not finish".to_owned())?
-        );
+        assert!(!listen.is_closed());
 
         running.abort();
         let _ = running.await;
         assert_eq!(emitter.snapshot(), events_after_stop);
-        server.abort();
-        let _ = server.await;
         Ok(())
     }
 }

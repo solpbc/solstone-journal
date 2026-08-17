@@ -40,7 +40,8 @@ use crate::{
 const DEFAULT_RELAY_ENDPOINT: &str = "https://link.solstone.app";
 const DISPATCH_READ_DEADLINE: Duration = Duration::from_secs(10);
 const GLOBAL_ADMISSION_CEILING: usize = 32;
-const CALLOSUM_QUEUE_CAPACITY: usize = 1_000;
+/// Bounded regular Callosum output capacity. Exposed for test-hooks saturation tests.
+pub const CALLOSUM_QUEUE_CAPACITY: usize = 1_000;
 const CALLOSUM_IO_TIMEOUT: Duration = Duration::from_secs(2);
 const CALLOSUM_STOP_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 
@@ -301,7 +302,8 @@ fn read_journal_config_map(journal_root: &Path) -> Result<Map<String, Value>, Co
     Ok(read.config.unwrap_or_else(plain_defaults))
 }
 
-struct CallosumOutput {
+/// Nonblocking Callosum output task. Reachable outside the crate only via `test_hooks`.
+pub struct CallosumOutput {
     queue: Arc<Mutex<CallosumQueue>>,
     lifecycle_notify: Arc<Notify>,
     dropped_regular_events: AtomicU64,
@@ -344,19 +346,21 @@ impl CallosumOutput {
         })
     }
 
-    #[cfg(test)]
-    fn paused(socket_path: PathBuf) -> (Arc<Self>, Arc<Notify>) {
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub fn paused(socket_path: PathBuf) -> (Arc<Self>, Arc<Notify>) {
         let gate = Arc::new(Notify::new());
         let output = Self::start_with_gate(socket_path, Some(Arc::clone(&gate)));
         (output, gate)
     }
 
-    #[cfg(test)]
-    fn dropped_regular_events(&self) -> u64 {
+    #[cfg(any(test, feature = "test-hooks"))]
+    #[allow(dead_code)]
+    pub fn dropped_regular_events(&self) -> u64 {
         self.dropped_regular_events.load(Ordering::Acquire)
     }
 
-    async fn stop(&self) {
+    /// Stops the output task after draining or aborting the writer.
+    pub async fn stop(&self) {
         match self.queue.lock() {
             Ok(mut queue) => queue.close(),
             Err(poisoned) => poisoned.into_inner().close(),
@@ -665,27 +669,19 @@ mod tests {
     use std::{
         fs,
         path::{Path, PathBuf},
-        sync::Arc,
         sync::atomic::{AtomicU64, Ordering},
         time::{Duration, Instant},
     };
 
-    use futures_util::StreamExt;
     use serde_json::{Value, json};
-    use tokio::{
-        io::AsyncBufReadExt,
-        net::{TcpListener, UnixListener},
-        sync::oneshot,
-        time::timeout,
-    };
-    use tokio_tungstenite::accept_async;
+    use tokio::time::timeout;
 
     use super::{
         CALLOSUM_QUEUE_CAPACITY, CallosumOutput, CallosumQueue, DEFAULT_RELAY_ENDPOINT,
-        PENDING_TERMINAL_CAPACITY, ProcessServiceDeps, QueueEvictions, QueueInsertion,
-        RelayServiceToken, ServiceDeps, callosum_line,
+        PENDING_TERMINAL_CAPACITY, ProcessServiceDeps, QueueEvictions, QueueInsertion, ServiceDeps,
+        callosum_line,
     };
-    use crate::{CallosumEmit, stop_relay_run};
+    use crate::CallosumEmit;
 
     struct TempJournal {
         path: PathBuf,
@@ -845,144 +841,118 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn saturated_regular_output_still_delivers_the_final_lifecycle_tail() -> Result<(), String>
-    {
-        let journal = TempJournal::new()?;
-        let socket_path = journal.path().join("health").join("callosum.sock");
-        let socket_parent = socket_path
-            .parent()
-            .ok_or_else(|| "Callosum test socket had no parent".to_owned())?;
-        fs::create_dir_all(socket_parent)
-            .map_err(|_| "could not create Callosum test directory".to_owned())?;
-        let listener = UnixListener::bind(&socket_path)
-            .map_err(|_| "could not bind Callosum test socket".to_owned())?;
-        let (output, start_gate) = CallosumOutput::paused(socket_path);
-        let regular_payload = json!({"state": "connected", "padding": "x".repeat(4096)});
-        for _ in 0..=super::CALLOSUM_QUEUE_CAPACITY {
-            output.emit("health", regular_payload.clone());
+    #[test]
+    fn saturated_regular_queue_still_retains_the_final_lifecycle_tail() -> Result<(), String> {
+        let mut queue = CallosumQueue::default();
+        let regular = callosum_line(
+            "health",
+            json!({"state": "connected", "padding": "x".repeat(4096)}),
+        )
+        .ok_or_else(|| "could not serialize regular health".to_owned())?;
+        for _ in 0..CALLOSUM_QUEUE_CAPACITY {
+            assert_eq!(
+                queue.push("health", regular.clone()),
+                QueueInsertion::Queued(QueueEvictions::default())
+            );
         }
-        if output.dropped_regular_events() == 0 {
-            return Err("regular Callosum output queue did not saturate".to_owned());
-        }
-        output.emit("disconnect", json!({}));
-        output.emit("health", json!({"state": "reconnecting"}));
-
-        let reader = tokio::spawn(async move {
-            let (stream, _) = listener
-                .accept()
-                .await
-                .map_err(|_| "writer did not connect to Callosum test socket".to_owned())?;
-            let mut lines = tokio::io::BufReader::new(stream).lines();
-            let first = lines
-                .next_line()
-                .await
-                .map_err(|_| "could not read first lifecycle line".to_owned())?
-                .ok_or_else(|| "Callosum closed before first lifecycle line".to_owned())?;
-            let second = lines
-                .next_line()
-                .await
-                .map_err(|_| "could not read second lifecycle line".to_owned())?
-                .ok_or_else(|| "Callosum closed before second lifecycle line".to_owned())?;
-            Ok::<[String; 2], String>([first, second])
-        });
-        start_gate.notify_one();
-
-        let lines = timeout(Duration::from_secs(3), reader)
-            .await
-            .map_err(|_| "lifecycle tail was not delivered under saturation".to_owned())?
-            .map_err(|_| "Callosum saturation reader task failed".to_owned())??;
-        assert_eq!(lines[0], "{\"tract\":\"link\",\"event\":\"disconnect\"}");
         assert_eq!(
-            lines[1],
-            "{\"tract\":\"link\",\"event\":\"health\",\"state\":\"reconnecting\"}"
+            queue.push("health", regular),
+            QueueInsertion::DroppedRegular
         );
-        if lines.iter().any(|line| line.contains("process-test-token")) {
-            return Err("lifecycle tail leaked a service token".to_owned());
-        }
-        output.stop().await;
+        let disconnect = callosum_line("disconnect", json!({}))
+            .ok_or_else(|| "could not serialize disconnect".to_owned())?;
+        assert!(matches!(
+            queue.push("disconnect", disconnect),
+            QueueInsertion::Pending(_)
+        ));
+        let health = callosum_line("health", json!({"state": "reconnecting"}))
+            .ok_or_else(|| "could not serialize reconnecting health".to_owned())?;
+        assert!(matches!(
+            queue.push("health", health),
+            QueueInsertion::Queued(_)
+        ));
+
+        let first: Value = serde_json::from_slice(
+            &queue
+                .pop_next()
+                .ok_or_else(|| "lifecycle tail missing disconnect".to_owned())?,
+        )
+        .map_err(|_| "disconnect line was not JSONL".to_owned())?;
+        let second: Value = serde_json::from_slice(
+            &queue
+                .pop_next()
+                .ok_or_else(|| "lifecycle tail missing health".to_owned())?,
+        )
+        .map_err(|_| "health line was not JSONL".to_owned())?;
+        assert_eq!(first["event"], "disconnect");
+        assert_eq!(second["event"], "health");
+        assert_eq!(second["state"], "reconnecting");
         Ok(())
     }
 
-    #[tokio::test]
-    async fn saturated_regular_output_preserves_each_tunnel_close_id_and_health()
-    -> Result<(), String> {
-        let journal = TempJournal::new()?;
-        let socket_path = journal.path().join("health").join("callosum.sock");
-        let socket_parent = socket_path
-            .parent()
-            .ok_or_else(|| "Callosum test socket had no parent".to_owned())?;
-        fs::create_dir_all(socket_parent)
-            .map_err(|_| "could not create Callosum test directory".to_owned())?;
-        let listener = UnixListener::bind(&socket_path)
-            .map_err(|_| "could not bind Callosum test socket".to_owned())?;
-        let (output, start_gate) = CallosumOutput::paused(socket_path);
-        let regular_payload = json!({"state": "connected", "padding": "x".repeat(4096)});
-        for _ in 0..=super::CALLOSUM_QUEUE_CAPACITY {
-            output.emit("health", regular_payload.clone());
+    #[test]
+    fn saturated_regular_queue_preserves_each_tunnel_close_id_and_health() -> Result<(), String> {
+        let mut queue = CallosumQueue::default();
+        let regular = callosum_line(
+            "health",
+            json!({"state": "connected", "padding": "x".repeat(4096)}),
+        )
+        .ok_or_else(|| "could not serialize regular health".to_owned())?;
+        for _ in 0..CALLOSUM_QUEUE_CAPACITY {
+            assert_eq!(
+                queue.push("health", regular.clone()),
+                QueueInsertion::Queued(QueueEvictions::default())
+            );
         }
-        if output.dropped_regular_events() == 0 {
-            return Err("regular Callosum output queue did not saturate".to_owned());
-        }
-        output.emit("tunnel_close", json!({"tunnel_id": "terminal-tunnel-7"}));
-        output.emit("health", json!({"state": "connected"}));
-        output.emit("tunnel_close", json!({"tunnel_id": "terminal-tunnel-8"}));
-        output.emit("health", json!({"state": "reconnecting"}));
+        assert_eq!(
+            queue.push("health", regular),
+            QueueInsertion::DroppedRegular
+        );
 
-        let reader = tokio::spawn(async move {
-            let (stream, _) = listener
-                .accept()
-                .await
-                .map_err(|_| "writer did not connect to Callosum test socket".to_owned())?;
-            let mut lines = tokio::io::BufReader::new(stream).lines();
-            let first = lines
-                .next_line()
-                .await
-                .map_err(|_| "could not read first lifecycle line".to_owned())?
-                .ok_or_else(|| "Callosum closed before first lifecycle line".to_owned())?;
-            let second = lines
-                .next_line()
-                .await
-                .map_err(|_| "could not read second lifecycle line".to_owned())?
-                .ok_or_else(|| "Callosum closed before second lifecycle line".to_owned())?;
-            let third = lines
-                .next_line()
-                .await
-                .map_err(|_| "could not read third lifecycle line".to_owned())?
-                .ok_or_else(|| "Callosum closed before third lifecycle line".to_owned())?;
-            let fourth = lines
-                .next_line()
-                .await
-                .map_err(|_| "could not read fourth lifecycle line".to_owned())?
-                .ok_or_else(|| "Callosum closed before fourth lifecycle line".to_owned())?;
-            Ok::<[String; 4], String>([first, second, third, fourth])
-        });
-        start_gate.notify_one();
+        let close_seven = callosum_line("tunnel_close", json!({"tunnel_id": "terminal-tunnel-7"}))
+            .ok_or_else(|| "could not serialize first tunnel close".to_owned())?;
+        let health_seven = callosum_line("health", json!({"state": "connected"}))
+            .ok_or_else(|| "could not serialize first tunnel health".to_owned())?;
+        let close_eight = callosum_line("tunnel_close", json!({"tunnel_id": "terminal-tunnel-8"}))
+            .ok_or_else(|| "could not serialize second tunnel close".to_owned())?;
+        let health_eight = callosum_line("health", json!({"state": "reconnecting"}))
+            .ok_or_else(|| "could not serialize second tunnel health".to_owned())?;
+        assert!(matches!(
+            queue.push("tunnel_close", close_seven),
+            QueueInsertion::Pending(_)
+        ));
+        assert!(matches!(
+            queue.push("health", health_seven),
+            QueueInsertion::Queued(_)
+        ));
+        assert!(matches!(
+            queue.push("tunnel_close", close_eight),
+            QueueInsertion::Pending(_)
+        ));
+        assert!(matches!(
+            queue.push("health", health_eight),
+            QueueInsertion::Queued(_)
+        ));
 
-        let lines = timeout(Duration::from_secs(3), reader)
-            .await
-            .map_err(|_| "tunnel-close tail was not delivered under saturation".to_owned())?
-            .map_err(|_| "Callosum tunnel-close reader task failed".to_owned())??;
-        assert_eq!(
-            lines[0],
-            "{\"tract\":\"link\",\"event\":\"tunnel_close\",\"tunnel_id\":\"terminal-tunnel-7\"}"
-        );
-        assert_eq!(
-            lines[1],
-            "{\"tract\":\"link\",\"event\":\"health\",\"state\":\"connected\"}"
-        );
-        assert_eq!(
-            lines[2],
-            "{\"tract\":\"link\",\"event\":\"tunnel_close\",\"tunnel_id\":\"terminal-tunnel-8\"}"
-        );
-        assert_eq!(
-            lines[3],
-            "{\"tract\":\"link\",\"event\":\"health\",\"state\":\"reconnecting\"}"
-        );
-        if lines.iter().any(|line| line.contains("process-test-token")) {
-            return Err("tunnel-close tail leaked a service token".to_owned());
+        let mut lines = Vec::new();
+        for _ in 0..4 {
+            lines.push(
+                serde_json::from_slice::<Value>(
+                    &queue
+                        .pop_next()
+                        .ok_or_else(|| "saturated queue lost a tunnel-close pair".to_owned())?,
+                )
+                .map_err(|_| "tunnel-close pair was not JSONL".to_owned())?,
+            );
         }
-        output.stop().await;
+        assert_eq!(lines[0]["event"], "tunnel_close");
+        assert_eq!(lines[0]["tunnel_id"], "terminal-tunnel-7");
+        assert_eq!(lines[1]["event"], "health");
+        assert_eq!(lines[1]["state"], "connected");
+        assert_eq!(lines[2]["event"], "tunnel_close");
+        assert_eq!(lines[2]["tunnel_id"], "terminal-tunnel-8");
+        assert_eq!(lines[3]["event"], "health");
+        assert_eq!(lines[3]["state"], "reconnecting");
         Ok(())
     }
 
@@ -1050,77 +1020,5 @@ mod tests {
             crate::callosum::Verbosity::Quiet,
             shutdown_receive,
         )
-    }
-
-    #[tokio::test]
-    async fn concrete_service_client_stop_then_aborts_the_live_listen_socket() -> Result<(), String>
-    {
-        let relay = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "could not bind fake relay".to_owned())?;
-        let address = relay
-            .local_addr()
-            .map_err(|_| "could not read fake relay address".to_owned())?;
-        let (opened_send, opened_receive) = oneshot::channel();
-        let (closed_send, closed_receive) = oneshot::channel();
-        let relay_task = tokio::spawn(async move {
-            let (stream, _) = relay
-                .accept()
-                .await
-                .map_err(|_| "fake relay did not accept listen socket".to_owned())?;
-            let mut socket = accept_async(stream)
-                .await
-                .map_err(|_| "fake relay WebSocket upgrade failed".to_owned())?;
-            let _ = opened_send.send(());
-            let closed = timeout(Duration::from_secs(2), socket.next())
-                .await
-                .map_err(|_| "listen socket stayed open after service cancellation".to_owned())?;
-            let observed_close = matches!(closed, None | Some(Err(_)));
-            let _ = closed_send.send(observed_close);
-            Ok::<(), String>(())
-        });
-
-        let journal = TempJournal::new()?;
-        journal.write(
-            "config/journal.json",
-            &format!(r#"{{"link":{{"relay_url":"http://{address}"}}}}"#),
-        )?;
-        journal.write(
-            "link/state.json",
-            r#"{"instance_id":"persisted-instance","home_label":"Home"}"#,
-        )?;
-        let (shutdown_send, shutdown_receive) = tokio::sync::watch::channel(false);
-        drop(shutdown_send);
-        let callosum = super::CallosumOutput::start(journal.path().join("health/callosum.sock"));
-        let mut deps = ProcessServiceDeps::new(
-            journal.path().to_path_buf(),
-            Arc::clone(&callosum),
-            crate::callosum::Verbosity::Quiet,
-            shutdown_receive,
-        );
-
-        let (mut client, run_task) = deps
-            .start_relay(RelayServiceToken::new("test-service-token".to_owned()))
-            .map_err(|_| "concrete service client did not start".to_owned())?;
-        timeout(Duration::from_secs(2), opened_receive)
-            .await
-            .map_err(|_| "relay listen socket was never opened".to_owned())?
-            .map_err(|_| "fake relay did not report opened socket".to_owned())?;
-
-        stop_relay_run(&mut client, run_task)
-            .await
-            .map_err(|_| "service stop did not cancel relay run task".to_owned())?;
-        let closed = timeout(Duration::from_secs(2), closed_receive)
-            .await
-            .map_err(|_| "fake relay did not observe socket closure".to_owned())?
-            .map_err(|_| "fake relay closure report dropped".to_owned())?;
-        if !closed {
-            return Err("relay listen socket ended without closing".to_owned());
-        }
-        relay_task
-            .await
-            .map_err(|_| "fake relay task failed".to_owned())??;
-        callosum.stop().await;
-        Ok(())
     }
 }

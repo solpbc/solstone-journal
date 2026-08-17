@@ -577,25 +577,13 @@ id = "solstone-core-spl::core/crates/solstone-core-spl/src/loopback_pipe.rs::tes
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/loopback_pipe.rs::tests::websocket_eof_writes_tcp_eof_and_cancels_reverse_read::scheduling"
 
 [[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/private_link.rs::tests::relay_response::network"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/private_link.rs::tests::relay_response::scheduling"
-
-[[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::a_quiet_connected_listener_keeps_refreshing_its_health_snapshot::clock"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::a_quiet_connected_listener_keeps_refreshing_its_health_snapshot::network"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::a_quiet_connected_listener_keeps_refreshing_its_health_snapshot::scheduling"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::continuously_acknowledged_listener_earns_backoff_reset::clock"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::continuously_acknowledged_listener_earns_backoff_reset::network"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::continuously_acknowledged_listener_earns_backoff_reset::scheduling"
@@ -607,25 +595,16 @@ id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::test
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_ack_before_stability_window_does_not_reset_backoff::clock"
 
 [[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_ack_before_stability_window_does_not_reset_backoff::network"
-
-[[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_ack_before_stability_window_does_not_reset_backoff::scheduling"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_dispatches_tls_to_loopback_and_replays_the_peeked_prefix::clock"
 
 [[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_dispatches_tls_to_loopback_and_replays_the_peeked_prefix::network"
-
-[[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_dispatches_tls_to_loopback_and_replays_the_peeked_prefix::scheduling"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_requires_a_matching_pong_before_reporting_connected::clock"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_requires_a_matching_pong_before_reporting_connected::network"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::listener_requires_a_matching_pong_before_reporting_connected::scheduling"
@@ -640,25 +619,16 @@ id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::test
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::replacement_generation_keeps_old_ack_but_stays_connecting_until_its_pong::clock"
 
 [[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::replacement_generation_keeps_old_ack_but_stays_connecting_until_its_pong::network"
-
-[[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::replacement_generation_keeps_old_ack_but_stays_connecting_until_its_pong::scheduling"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::short_prefix_error_releases_the_global_admission_slot::clock"
 
 [[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::short_prefix_error_releases_the_global_admission_slot::network"
-
-[[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::short_prefix_error_releases_the_global_admission_slot::scheduling"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::stop_emits_final_disconnect_and_health_before_run_task_cancellation::clock"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::stop_emits_final_disconnect_and_health_before_run_task_cancellation::network"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::stop_emits_final_disconnect_and_health_before_run_task_cancellation::scheduling"
@@ -673,16 +643,10 @@ id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::test
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::tunnel_offers_coalesce_across_listener_generations::clock"
 
 [[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::tunnel_offers_coalesce_across_listener_generations::network"
-
-[[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::tunnel_offers_coalesce_across_listener_generations::scheduling"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::unsupported_prefixes_close_as_the_same_unknown_route::clock"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::unsupported_prefixes_close_as_the_same_unknown_route::network"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::unsupported_prefixes_close_as_the_same_unknown_route::scheduling"
@@ -691,52 +655,13 @@ id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::test
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::wrong_pongs_and_control_traffic_do_not_extend_the_ack_deadline::clock"
 
 [[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::wrong_pongs_and_control_traffic_do_not_extend_the_ack_deadline::network"
-
-[[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_client.rs::tests::wrong_pongs_and_control_traffic_do_not_extend_the_ack_deadline::scheduling"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_websocket.rs::tests::listen_events_surface_pongs_and_flush_automatic_ping_replies::clock"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_websocket.rs::tests::listen_events_surface_pongs_and_flush_automatic_ping_replies::network"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_websocket.rs::tests::listen_events_surface_pongs_and_flush_automatic_ping_replies::scheduling"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_websocket.rs::tests::split_adapter_preserves_binary_and_text_source_bytes::network"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/relay_websocket.rs::tests::split_adapter_preserves_binary_and_text_source_bytes::scheduling"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::start_relay::scheduling"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/service.rs::tests::state::scheduling"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::concrete_service_client_stop_then_aborts_the_live_listen_socket::clock"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::concrete_service_client_stop_then_aborts_the_live_listen_socket::network"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::concrete_service_client_stop_then_aborts_the_live_listen_socket::scheduling"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::saturated_regular_output_preserves_each_tunnel_close_id_and_health::clock"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::saturated_regular_output_preserves_each_tunnel_close_id_and_health::scheduling"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::saturated_regular_output_still_delivers_the_final_lifecycle_tail::clock"
-
-[[findings]]
-id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::saturated_regular_output_still_delivers_the_final_lifecycle_tail::scheduling"
 
 [[findings]]
 id = "solstone-core-spl::core/crates/solstone-core-spl/src/service_process.rs::tests::test_deps::scheduling"

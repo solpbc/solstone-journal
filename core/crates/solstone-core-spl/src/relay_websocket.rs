@@ -182,20 +182,9 @@ fn unbounded_config() -> WebSocketConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ListenEvent, RelayWebSocket, RelayWebSocketError, relay_request, unbounded_config,
-    };
-    use crate::{
-        PostureGate, PostureInput, RelayDecision, TokenInput, WsByteSink, WsByteSource,
-        relay_tunnel_url,
-    };
-    use bytes::Bytes;
-    use futures_util::{SinkExt, StreamExt};
-    use tokio::{net::TcpListener, time::timeout};
-    use tokio_tungstenite::{
-        accept_async,
-        tungstenite::{Message, http::header::AUTHORIZATION},
-    };
+    use super::{RelayWebSocketError, relay_request, unbounded_config};
+    use crate::{PostureGate, PostureInput, RelayDecision, TokenInput, relay_tunnel_url};
+    use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
 
     fn token() -> Result<crate::ServiceToken, String> {
         let mut gate = PostureGate::new();
@@ -237,140 +226,6 @@ mod tests {
                 .to_string()
                 .contains(token.as_str())
         );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn split_adapter_preserves_binary_and_text_source_bytes() -> Result<(), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "listener bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "listener address failed".to_owned())?;
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener
-                .accept()
-                .await
-                .map_err(|_| "listener accept failed".to_owned())?;
-            let mut websocket = accept_async(stream)
-                .await
-                .map_err(|_| "server upgrade failed".to_owned())?;
-            websocket
-                .send(Message::Binary(Bytes::from_static(b"binary")))
-                .await
-                .map_err(|_| "server binary send failed".to_owned())?;
-            websocket
-                .send(Message::Text("text".into()))
-                .await
-                .map_err(|_| "server text send failed".to_owned())?;
-            let response = websocket
-                .next()
-                .await
-                .ok_or_else(|| "server response ended".to_owned())?
-                .map_err(|_| "server response failed".to_owned())?;
-            assert_eq!(response, Message::Binary(Bytes::from_static(b"reply")));
-            websocket
-                .close(None)
-                .await
-                .map_err(|_| "server close failed".to_owned())
-        });
-
-        let token = token()?;
-        let endpoint = format!("ws://{address}");
-        let url = relay_tunnel_url(&endpoint, "/session/listen", "home-a", token.as_str());
-        let websocket = RelayWebSocket::connect(&url, &token)
-            .await
-            .map_err(|error| error.to_string())?;
-        let (mut reader, mut writer) = websocket.split();
-
-        assert_eq!(
-            reader
-                .next_message()
-                .await
-                .map_err(|_| "binary source read failed".to_owned())?,
-            Some(Bytes::from_static(b"binary"))
-        );
-        assert_eq!(
-            reader
-                .next_message()
-                .await
-                .map_err(|_| "text source read failed".to_owned())?,
-            Some(Bytes::from_static(b"text"))
-        );
-        writer
-            .send(Bytes::from_static(b"reply"))
-            .await
-            .map_err(|_| "sink response failed".to_owned())?;
-        server
-            .await
-            .map_err(|_| "server task failed".to_owned())??;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn listen_events_surface_pongs_and_flush_automatic_ping_replies() -> Result<(), String> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| "listener bind failed".to_owned())?;
-        let address = listener
-            .local_addr()
-            .map_err(|_| "listener address failed".to_owned())?;
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener
-                .accept()
-                .await
-                .map_err(|_| "listener accept failed".to_owned())?;
-            let mut websocket = accept_async(stream)
-                .await
-                .map_err(|_| "server upgrade failed".to_owned())?;
-            websocket
-                .send(Message::Ping(Bytes::from_static(b"peer-ping")))
-                .await
-                .map_err(|_| "server ping send failed".to_owned())?;
-            let reply = timeout(std::time::Duration::from_secs(1), websocket.next())
-                .await
-                .map_err(|_| "client did not flush automatic pong".to_owned())?
-                .ok_or_else(|| "client closed before pong".to_owned())?
-                .map_err(|_| "client pong read failed".to_owned())?;
-            if reply != Message::Pong(Bytes::from_static(b"peer-ping")) {
-                return Err("client automatic pong payload differed".to_owned());
-            }
-            websocket
-                .send(Message::Pong(Bytes::from_static(b"heartbeat")))
-                .await
-                .map_err(|_| "server pong send failed".to_owned())?;
-            websocket
-                .send(Message::Text("{\"type\":\"incoming\"}".into()))
-                .await
-                .map_err(|_| "server control send failed".to_owned())
-        });
-
-        let token = token()?;
-        let endpoint = format!("ws://{address}");
-        let url = relay_tunnel_url(&endpoint, "/session/listen", "home-a", token.as_str());
-        let websocket = RelayWebSocket::connect(&url, &token)
-            .await
-            .map_err(|error| error.to_string())?;
-        let (mut reader, _writer) = websocket.split();
-
-        assert!(matches!(
-            reader
-                .next_listen_event()
-                .await
-                .map_err(|_| "listen pong read failed".to_owned())?,
-            ListenEvent::Pong(payload) if payload == Bytes::from_static(b"heartbeat")
-        ));
-        assert!(matches!(
-            reader
-                .next_listen_event()
-                .await
-                .map_err(|_| "listen control read failed".to_owned())?,
-            ListenEvent::Message(payload) if payload == Bytes::from_static(b"{\"type\":\"incoming\"}")
-        ));
-        server
-            .await
-            .map_err(|_| "server task failed".to_owned())??;
         Ok(())
     }
 }
