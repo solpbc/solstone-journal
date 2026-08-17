@@ -13,7 +13,7 @@ position is load-bearing (the derivation selects by `value % len`).
 
 - **Lucide icons** — ISC License. Source: https://github.com/lucide-icons/lucide (lucide-static).
   The 60-icon subset was curated for visual distinctness; full set is also vendored at
-  `solstone/convey/static/icons/` with its license.
+  `core/crates/solstone-core-convey-shell/assets/static/icons/` with its license.
 - **EFF Long Wordlist** — Creative Commons Attribution 3.0 US (CC BY 3.0 US). Source:
   https://www.eff.org/dice ("EFF's New Wordlists for Random Passphrases", 2016).
 - **Color list** — sol pbc; no third-party rights.

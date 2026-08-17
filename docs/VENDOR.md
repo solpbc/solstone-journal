@@ -46,7 +46,7 @@ const html = marked.parse(markdown, {
 ```
 
 **Currently Used By** (legacy references):
-- `solstone/convey/templates/chat.html` (via `solstone/convey/static/marked.min.js`)
+- `solstone/convey/templates/chat.html` (via `core/crates/solstone-core-convey-shell/assets/static/marked.min.js`)
 - `solstone/convey/templates/facet_detail.html` (via CDN)
 - `solstone/convey/templates/agents.html` (via CDN)
 

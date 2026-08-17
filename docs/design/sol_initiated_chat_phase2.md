@@ -259,7 +259,7 @@ contract.
 
 ### D7. Shared JS constants module
 
-Add `solstone/convey/static/sol_initiated_constants.js`.
+Add `core/crates/solstone-core-convey-shell/assets/static/sol_initiated_constants.js`.
 
 The module defines `window.SOL_INITIATED` with:
 
@@ -276,7 +276,7 @@ IIFE consumes it. Observer cards may also consume it later.
 
 Constants discipline:
 
-- `solstone/convey/static/sol_initiated_constants.js` is the centralized
+- `core/crates/solstone-core-convey-shell/assets/static/sol_initiated_constants.js` is the centralized
   browser contract.
 - Keep its literal values aligned with
   `solstone/convey/sol_initiated/copy.py:6-9`, with the tooltip literal in a
@@ -284,7 +284,7 @@ Constants discipline:
 
 ### D8. CSS pulse animation
 
-Add CSS in `solstone/convey/static/app.css`.
+Add CSS in `core/crates/solstone-core-convey-shell/assets/static/app.css`.
 
 Behavior:
 
@@ -301,15 +301,15 @@ The timeout must be cleared when the request opens, dismisses, or is superseded.
 
 ### D9. Offline detection
 
-Prep found no state-change subscription API in `solstone/convey/static/websocket.js`.
+Prep found no state-change subscription API in `core/crates/solstone-core-convey-shell/assets/static/websocket.js`.
 The existing public signal is `window.appEvents.getMetrics()` at
-`solstone/convey/static/websocket.js:346-356`, which returns `connected`, `state`,
+`core/crates/solstone-core-convey-shell/assets/static/websocket.js:346-356`, which returns `connected`, `state`,
 `uptimeMs`, `lastMessageMs`, `lastMessageAt`, and `connectedAt`.
 
 Design:
 
 - Add a tiny browser event hook in `websocket.js` from `updateStatusIcon(state)`
-  at `solstone/convey/static/websocket.js:168-195`.
+  at `core/crates/solstone-core-convey-shell/assets/static/websocket.js:168-195`.
 - The hook announces connection state changes only; it does not change websocket
   reconnect behavior.
 - The chat-bar listens for that event only while a sol-ping is unread.
@@ -357,7 +357,7 @@ New files:
 - `docs/design/sol_initiated_chat_phase2.md`: this design.
 - `solstone/convey/sol_initiated/state.py`: read-only latest-unread request
   helper shared by `apps.py` and `/app/chat`.
-- `solstone/convey/static/sol_initiated_constants.js`: browser constants for the
+- `core/crates/solstone-core-convey-shell/assets/static/sol_initiated_constants.js`: browser constants for the
   four kinds, surface label, and offline tooltip.
 - `solstone/observe/sol_chat_filter.py`: observer-side filter/normalizer.
 
@@ -369,8 +369,8 @@ Modified files:
   add `openConversation`, render sol-ping state, consume live lifecycle events.
 - `solstone/convey/templates/chat_bar.html`: add only minimal data/DOM hooks if
   the IIFE cannot use inline JSON cleanly.
-- `solstone/convey/static/app.css`: pulse/offline classes.
-- `solstone/convey/static/websocket.js`: add a tiny connection-state browser
+- `core/crates/solstone-core-convey-shell/assets/static/app.css`: pulse/offline classes.
+- `core/crates/solstone-core-convey-shell/assets/static/websocket.js`: add a tiny connection-state browser
   event hook from `updateStatusIcon`.
 - `solstone/convey/chat.py`: add open/dismiss POST endpoints.
 - `solstone/apps/chat/routes.py`: record page-load `owner_chat_open` for today's
@@ -452,7 +452,7 @@ Add or extend:
    `solstone/apps/chat/routes.py:29-45`.
 6. Multi-tab clear works from broadcasts:
    `solstone/convey/templates/app.html:591-638`,
-   `solstone/convey/static/websocket.js:267-271`.
+   `core/crates/solstone-core-convey-shell/assets/static/websocket.js:267-271`.
 7. Per-observer `last_chat_request_at` updates on SSE delivery:
    `solstone/convey/bridge.py:87-112`.
 8. `/app/observer/api/list` exposes `last_chat_request_at`:
@@ -462,9 +462,9 @@ Add or extend:
 10. Observer-side filter helper normalizes four kinds:
     `solstone/observe/sol_chat_filter.py`.
 11. JS constants are centralized:
-    `solstone/convey/static/sol_initiated_constants.js`.
+    `core/crates/solstone-core-convey-shell/assets/static/sol_initiated_constants.js`.
 12. Offline pulse behavior has deterministic test path:
-    `solstone/convey/static/app.css`,
+    `core/crates/solstone-core-convey-shell/assets/static/app.css`,
     `solstone/convey/templates/app.html`,
     optional `window.__solChatTestClock`.
 

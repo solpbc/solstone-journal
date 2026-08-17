@@ -64,7 +64,7 @@ POPULATED_DAY = "20260403"
 # SVG path coordinates in the shipped Sol workspace happen to match the shared
 # dotted-quad shape guard.  This literal is source-owned, not host-derived: it
 # is the cubic-bezier wrench-icon fragment in solstone/apps/sol/workspace.html:1083
-# and solstone/convey/static/convey_icons.js:41; 438 and 662 are not IPv4 octets.
+# and core/crates/solstone-core-convey-shell/assets/static/convey_icons.js:41; 438 and 662 are not IPv4 octets.
 AUTHORED_IPV4 = ("438.12.54.662",)
 
 EMPTY_REASONS = {

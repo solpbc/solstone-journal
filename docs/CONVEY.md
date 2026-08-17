@@ -76,7 +76,7 @@ Read it before touching any workspace, shell chrome, or shared client helper.
 These conventions apply to every app `routes.py` and the core blueprints. New and
 refactored routes follow them; the shared helpers in `solstone/convey/utils.py`
 (`error_response`, `success_response`, `parse_pagination_params`) are the reusable
-parts, and the browser client `solstone/convey/static/api.js` (`apiJson`,
+parts, and the browser client `core/crates/solstone-core-convey-shell/assets/static/api.js` (`apiJson`,
 `saveControl`) is the consumer side.
 
 **Namespacing.** JSON APIs live under `/api/` — `/app/{name}/api/<resource>` for an

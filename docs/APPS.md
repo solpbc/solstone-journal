@@ -234,7 +234,7 @@ Both badge types appear as red notification counts.
 **Reference implementations:**
 - `solstone/apps/timeline/background.html` - App icon badge with API fetch
 
-**Implementation source:** `solstone/convey/static/app.js` - AppServices framework, `solstone/convey/static/websocket.js` - WebSocket API
+**Implementation source:** `core/crates/solstone-core-convey-shell/assets/static/app.js` - AppServices framework, `core/crates/solstone-core-convey-shell/assets/static/websocket.js` - WebSocket API
 
 ---
 
@@ -610,7 +610,7 @@ See [talent/journal/SKILL.md](../talent/journal/SKILL.md), [CORTEX.md](CORTEX.md
 
 ### Global Variables
 
-Set up by the shell runtime (`solstone/convey/static/app.js`):
+Set up by the shell runtime (`core/crates/solstone-core-convey-shell/assets/static/app.js`):
 - `window.facetsData` - Array of facet objects `[{name, title, color, emoji}, ...]`
 - `window.selectedFacet` - Current facet name or null (see Facet Selection below)
 - `window.appFacetCounts` - Badge counts for current app `{"work": 5, "personal": 3}` (set via route's `facet_counts`)
@@ -630,7 +630,7 @@ Apps can access and control facet selection through a uniform API:
 
 **UX Tip:** Apps should provide visual indication when in all-facet mode vs showing a specific facet. For example, group items by facet, show facet badges/colors on items, or display a subtle "All facets" label. This helps owners understand the scope of what they're viewing.
 
-**See implementation:** `solstone/convey/static/app.js` - Facet switching logic and event dispatch
+**See implementation:** `core/crates/solstone-core-convey-shell/assets/static/app.js` - Facet switching logic and event dispatch
 
 **Disabled mode:** On apps with facets disabled, `renderFacetChooser()` empties the pill container, marks it `aria-hidden="true"`, and returns **before building any pills**. A disabled app therefore renders **zero** `.facet-pill` elements — the row has nothing focusable and nothing to read. The bar itself remains as always-visible chrome.
 
@@ -638,7 +638,7 @@ Apps can access and control facet selection through a uniform API:
 
 ### WebSocket Events (Client-Side)
 
-`window.appEvents` API defined in `solstone/convey/static/websocket.js`:
+`window.appEvents` API defined in `core/crates/solstone-core-convey-shell/assets/static/websocket.js`:
 - `listen(tract, callback)` - Subscribe to specific tract or '*' for all events
 - Messages structure: `{tract: 'cortex', event: 'agent_complete', ...data}`
 
@@ -697,7 +697,7 @@ def handle_action():
 - `.workspace-content-wide` - Full viewport width, ideal for data tables and grids
 - Both include consistent padding and mobile responsiveness
 
-**See:** `solstone/convey/static/app.css` for implementation details
+**See:** `core/crates/solstone-core-convey-shell/assets/static/app.css` for implementation details
 
 **Examples:**
 - Standard: `solstone/apps/home/workspace.html`, `solstone/apps/entities/workspace.html`, `solstone/apps/activities/workspace.html`
@@ -725,7 +725,7 @@ Use these in your app-specific styles to respond to facet theme.
 
 ### Global Styles
 
-Main stylesheet `solstone/convey/static/app.css` provides base components. Review for available classes and patterns.
+Main stylesheet `core/crates/solstone-core-convey-shell/assets/static/app.css` provides base components. Review for available classes and patterns.
 
 ---
 
@@ -812,9 +812,9 @@ Browse `solstone/apps/*/` directories for reference implementations. Apps range 
 
 - **`solstone/apps/__init__.py`** - App discovery and registry implementation
 - **`solstone/convey/apps.py`** - Context processors and vendor library helper
-- **`solstone/convey/static/shell.html`** - Static SPA shell served for every app
-- **`solstone/convey/static/app.js`** - AppServices framework
-- **`solstone/convey/static/websocket.js`** - WebSocket event system
+- **`core/crates/solstone-core-convey-shell/assets/static/shell.html`** - Static SPA shell served for every app
+- **`core/crates/solstone-core-convey-shell/assets/static/app.js`** - AppServices framework
+- **`core/crates/solstone-core-convey-shell/assets/static/websocket.js`** - WebSocket event system
 - [../AGENTS.md](../AGENTS.md) - Project development guidelines and standards
 - [storage.md](../talent/journal/references/storage.md) - Journal directory structure and data organization
 - [CORTEX.md](CORTEX.md) - Agent system architecture and spawning agents

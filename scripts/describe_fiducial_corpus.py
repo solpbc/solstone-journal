@@ -7,7 +7,8 @@
 The convey web interface renders four corner tags so a screencast of the
 journal's own interface can be recognised and blacked out before any frame is
 described. This corpus is the detector's pinned surface: PNG screens carrying
-the **real** tags from ``solstone/convey/static/tags/`` at a range of sizes,
+the **real** tags from ``core/crates/solstone-core-convey-shell/assets/static/tags/``
+at a range of sizes,
 placements and rotations, plus the cases that must NOT produce a polygon.
 
 The companion fixture is ``core/fixtures/describe_fiducials.json``.
@@ -29,7 +30,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 WIDTH, HEIGHT = 1280, 720
-TAGS_DIR = Path("solstone/convey/static/tags")
+TAGS_DIR = Path("core/crates/solstone-core-convey-shell/assets/static/tags")
 # 6=TL 7=TR 4=BL 2=BR -- the placement convention the interface renders.
 CORNERS = {6: "tl", 7: "tr", 4: "bl", 2: "br"}
 

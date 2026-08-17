@@ -41,7 +41,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 WIDTH, HEIGHT = 1280, 720
-TAGS_DIR = Path("solstone/convey/static/tags")
+TAGS_DIR = Path("core/crates/solstone-core-convey-shell/assets/static/tags")
 CORNERS = {6: "tl", 7: "tr", 4: "bl", 2: "br"}
 TAG_SIZE = 48
 FRAMES = 8
