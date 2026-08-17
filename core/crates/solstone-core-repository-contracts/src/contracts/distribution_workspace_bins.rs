@@ -138,10 +138,11 @@ fn package_bins(member_dir: &Path, manifest: &str) -> BTreeSet<String> {
         .iter()
         .filter_map(|bin| bin.path.clone())
         .collect::<BTreeSet<_>>();
-    if member_dir.join("src/main.rs").is_file() && !claimed.contains("src/main.rs") {
-        if let Some(name) = package_name(manifest) {
-            names.insert(name);
-        }
+    if member_dir.join("src/main.rs").is_file()
+        && !claimed.contains("src/main.rs")
+        && let Some(name) = package_name(manifest)
+    {
+        names.insert(name);
     }
     let bin_dir = member_dir.join("src/bin");
     let Ok(entries) = fs::read_dir(&bin_dir) else {

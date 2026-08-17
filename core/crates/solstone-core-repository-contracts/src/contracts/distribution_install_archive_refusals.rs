@@ -48,11 +48,11 @@ fn comment_block_names(text: &str, header: &str) -> BTreeSet<String> {
             continue;
         }
         if take {
-            if let Some(name) = trimmed.strip_prefix("#   ") {
-                if !name.is_empty() {
-                    names.insert(name.to_owned());
-                    continue;
-                }
+            if let Some(name) = trimmed.strip_prefix("#   ")
+                && !name.is_empty()
+            {
+                names.insert(name.to_owned());
+                continue;
             }
             if trimmed.starts_with('#') && trimmed.contains("REFUSALS:") {
                 break;
