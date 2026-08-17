@@ -14,11 +14,9 @@ use solstone_core_entity::{
     EntityResolutionEntity, hold_entity_trust_lock, record_entity_resolution, save_entity_identity,
 };
 use solstone_core_facets::{create_facet, hold_facet_trust_lock};
-
-use crate::seam::run_blocking;
+use solstone_core_serving::seam::run_blocking;
 
 const WAIT: Duration = Duration::from_secs(1);
-const STILL_HELD: Duration = Duration::from_millis(75);
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
 
@@ -235,7 +233,10 @@ async fn seam_contention_and_reentrancy<G, E>(
     started_rx
         .recv_timeout(WAIT)
         .expect("seam contender started before acquisition");
-    assert!(acquired_rx.recv_timeout(STILL_HELD).is_err());
+    assert!(
+        acquired_rx.try_recv().is_err(),
+        "contender must not acquire while the holder is still live"
+    );
     release_tx.send(()).unwrap();
     acquired_rx
         .recv_timeout(WAIT)

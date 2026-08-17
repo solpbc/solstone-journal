@@ -4,6 +4,3 @@
 //! Async-to-sync serving bridge for thread-affine entity and facet stores, not a route surface.
 
 pub mod seam;
-
-#[cfg(test)]
-mod seam_tests;

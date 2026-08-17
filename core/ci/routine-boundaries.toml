@@ -970,27 +970,6 @@ id = "solstone-core-sense::core/crates/solstone-core-sense/src/dispatch.rs::test
 id = "solstone-core-sense::core/crates/solstone-core-sense/src/dispatch.rs::tests::unavailable_worker_pool_completes_segment_with_error::scheduling"
 
 [[findings]]
-id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::assert_contender_acquires::scheduling"
-
-[[findings]]
-id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::cancellation_release::scheduling"
-
-[[findings]]
-id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::normal_completion_release::clock"
-
-[[findings]]
-id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::normal_completion_release::scheduling"
-
-[[findings]]
-id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::panic_release::scheduling"
-
-[[findings]]
-id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::seam_contention_and_reentrancy::clock"
-
-[[findings]]
-id = "solstone-core-serving::core/crates/solstone-core-serving/src/seam_tests.rs::seam_contention_and_reentrancy::scheduling"
-
-[[findings]]
 id = "solstone-core-sol-client::core/crates/solstone-core-sol-client/src/decode.rs::tests::transport_error_messages_are_exact::clock"
 
 [[findings]]
