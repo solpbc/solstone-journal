@@ -39,7 +39,7 @@ fn request_value() -> Value {
         "model": "fixture-model",
         "correlation_id": "corr-1",
         "initial_prompt": "Do the task.",
-        "journal_root": "/tmp/solstone-cogitate-wire-test"
+        "journal_root": "/var/tmp/solstone-cogitate-wire-test"
     })
 }
 
@@ -140,7 +140,7 @@ fn valid_request_round_trips_to_runtime_input() {
     );
     assert_eq!(
         input.journal_root,
-        std::path::PathBuf::from("/tmp/solstone-cogitate-wire-test")
+        std::path::PathBuf::from("/var/tmp/solstone-cogitate-wire-test")
     );
     assert!(!request.dry_run);
 }

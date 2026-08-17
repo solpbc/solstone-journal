@@ -84,7 +84,7 @@ fn request() -> CogitateRequest {
         "model": "fixture-model",
         "correlation_id": "corr-env",
         "initial_prompt": "Do the task.",
-        "journal_root": "/tmp/solstone-cogitate-wire-env-test"
+        "journal_root": "/var/tmp/solstone-cogitate-wire-env-test"
     }))
     .expect("fixture request is valid")
 }
