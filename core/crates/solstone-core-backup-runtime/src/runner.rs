@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use nix::errno::Errno;
 use nix::fcntl::{FcntlArg, FdFlag, fcntl};
 use nix::sys::signal::{Signal, killpg};
-use nix::sys::wait::WaitPidFlag;
+use nix::sys::wait::{WaitPidFlag, waitpid};
 use nix::unistd::{Pid, pipe};
 use serde_json::Value;
 use thiserror::Error;
@@ -95,6 +95,7 @@ enum Step {
     GroupCleanup,
     CloseOwned,
     Reap,
+    CollectReaders,
 }
 
 trait SessionIo {
@@ -102,6 +103,7 @@ trait SessionIo {
     fn group_cleanup(&mut self) -> io::Result<()>;
     fn close_owned_endpoints(&mut self);
     fn reap_root(&mut self) -> io::Result<ExitStatus>;
+    fn collect_readers(&mut self) -> io::Result<(Vec<u8>, Vec<u8>)>;
 }
 
 fn push_step(trace: &mut Option<&mut Vec<Step>>, step: Step) {
@@ -113,7 +115,7 @@ fn push_step(trace: &mut Option<&mut Vec<Step>>, step: Step) {
 fn complete_session<S: SessionIo>(
     session: &mut S,
     mut trace: Option<&mut Vec<Step>>,
-) -> io::Result<ExitStatus> {
+) -> io::Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
     push_step(&mut trace, Step::Observe);
     session.observe_exit_without_reap()?;
     push_step(&mut trace, Step::GroupCleanup);
@@ -122,24 +124,31 @@ fn complete_session<S: SessionIo>(
     session.close_owned_endpoints();
     push_step(&mut trace, Step::Reap);
     let reaped = session.reap_root();
-    match cleanup_err {
-        Some(err) => Err(err),
-        None => reaped,
+    if let Some(err) = cleanup_err {
+        // If killpg failed with EPERM, descendants can still hold the
+        // pipe write ends; joining would reintroduce the unbounded hang
+        // this supervisor exists to remove.
+        return Err(err);
     }
+    let status = reaped?;
+    push_step(&mut trace, Step::CollectReaders);
+    let (stdout, stderr) = session.collect_readers()?;
+    Ok((status, stdout, stderr))
 }
 
 struct GroupGuard {
     pgid: Pid,
-    armed: bool,
     reaped: bool,
 }
 
 impl Drop for GroupGuard {
     fn drop(&mut self) {
-        if self.armed && !self.reaped {
-            // Drop cannot return an error. This is the only path that
-            // best-effort swallows killpg failure; returning paths never do.
+        if !self.reaped {
+            // Drop cannot return an error. Signal first, then reap.
+            // This is the only path that best-effort swallows these
+            // failures; returning paths never do.
             let _ = kill_group(self.pgid);
+            let _ = waitpid(self.pgid, None);
         }
     }
 }
@@ -173,6 +182,17 @@ impl SessionIo for SpawnedChild {
     fn reap_root(&mut self) -> io::Result<ExitStatus> {
         self.guard.reaped = true;
         self.child.wait()
+    }
+
+    fn collect_readers(&mut self) -> io::Result<(Vec<u8>, Vec<u8>)> {
+        let (stdout_reader, stderr_reader) = self.readers.take().expect("readers");
+        let stdout = stdout_reader
+            .join()
+            .map_err(|_| io::Error::other("stdout reader panicked"))??;
+        let stderr = stderr_reader
+            .join()
+            .map_err(|_| io::Error::other("stderr reader panicked"))??;
+        Ok((stdout, stderr))
     }
 }
 
@@ -252,8 +272,19 @@ impl SystemToolRunner {
         // spawn takes &mut self; drop the Command so its Stdio write-end
         // clones close. Otherwise read_to_end never sees EOF.
         drop(command);
-        let pid = i32::try_from(child.id()).map_err(io::Error::other)?;
-        let pgid = Pid::from_raw(pid);
+        // pids fit in i32 on every target this crate builds; cast so no
+        // `?` can return between spawn and an armed GroupGuard.
+        let pgid = Pid::from_raw(child.id() as i32);
+        let mut session = SpawnedChild {
+            guard: GroupGuard {
+                pgid,
+                reaped: false,
+            },
+            stdout_w: Some(stdout_w),
+            stderr_w: Some(stderr_w),
+            child,
+            readers: None,
+        };
         let stdout_reader = thread::spawn(move || {
             let mut stdout = File::from(stdout_r);
             let mut bytes = Vec::new();
@@ -264,17 +295,7 @@ impl SystemToolRunner {
             let mut bytes = Vec::new();
             stderr.read_to_end(&mut bytes).map(|_| bytes)
         });
-        let mut session = SpawnedChild {
-            guard: GroupGuard {
-                pgid,
-                armed: true,
-                reaped: false,
-            },
-            stdout_w: Some(stdout_w),
-            stderr_w: Some(stderr_w),
-            child,
-            readers: Some((stdout_reader, stderr_reader)),
-        };
+        session.readers = Some((stdout_reader, stderr_reader));
         let start = Instant::now();
         let timed_out = loop {
             if session.observe_exit_without_reap()? {
@@ -288,15 +309,7 @@ impl SystemToolRunner {
             }
             thread::sleep(Duration::from_millis(5));
         };
-        let status = complete_session(&mut session, None)?;
-        let (stdout_reader, stderr_reader) = session.readers.take().expect("readers");
-        session.guard.armed = false;
-        let stdout = stdout_reader
-            .join()
-            .map_err(|_| io::Error::other("stdout reader panicked"))??;
-        let stderr = stderr_reader
-            .join()
-            .map_err(|_| io::Error::other("stderr reader panicked"))??;
+        let (status, stdout, stderr) = complete_session(&mut session, None)?;
         Ok(ToolOutput {
             returncode: if timed_out {
                 124
@@ -583,6 +596,9 @@ mod tests {
             fn reap_root(&mut self) -> io::Result<ExitStatus> {
                 Ok(ExitStatus::from_raw(0))
             }
+            fn collect_readers(&mut self) -> io::Result<(Vec<u8>, Vec<u8>)> {
+                Ok((Vec::new(), Vec::new()))
+            }
         }
         let mut log = Vec::new();
         complete_session(&mut Fake, Some(&mut log)).unwrap();
@@ -592,7 +608,8 @@ mod tests {
                 Step::Observe,
                 Step::GroupCleanup,
                 Step::CloseOwned,
-                Step::Reap
+                Step::Reap,
+                Step::CollectReaders
             ]
         );
     }

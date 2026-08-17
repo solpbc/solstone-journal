@@ -6,11 +6,13 @@ use std::io::Write;
 use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use nix::errno::Errno;
+use nix::sys::signal::kill;
+use nix::unistd::Pid;
 use solstone_core_backup_runtime::{SystemToolRunner, run_restic};
 
 const OUTER_DEADLINE: Duration = Duration::from_secs(2);
@@ -32,27 +34,20 @@ fn write_fixture(path: &Path, body: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
 }
 
-fn process_is_live(pid: i32) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
 fn wait_until_dead(pid: i32) {
     let started = Instant::now();
     loop {
-        if !process_is_live(pid) {
-            return;
+        match kill(Pid::from_raw(pid), None) {
+            Ok(()) => {
+                assert!(
+                    started.elapsed() < Duration::from_secs(1),
+                    "descendant {pid} still live"
+                );
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(Errno::ESRCH) => return,
+            Err(err) => panic!("kill({pid}, 0) failed: {err}"),
         }
-        assert!(
-            started.elapsed() < Duration::from_secs(1),
-            "descendant {pid} still live"
-        );
-        thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -98,7 +93,7 @@ fn timeout_scrubs_partial_output_and_passes_live_key_fd() {
         let pidfile = directory.path().join("sleep.pid");
         write_fixture(
             &fixture,
-            "#!/bin/sh\ncat /dev/fd/$1\nprintf ' PASSWORD' >&2\nsleep 1 &\necho $! > \"$2\"\nwait\n",
+            "#!/bin/sh\nsleep 1 &\necho $! > \"$2\"\ncat /dev/fd/$1\nprintf ' PASSWORD' >&2\nwait\n",
         );
         let (reader, writer) = nix::unistd::pipe().unwrap();
         let mut writer = std::fs::File::from(writer);
@@ -133,7 +128,7 @@ fn timeout_scrubs_partial_output_and_passes_live_key_fd() {
 }
 
 #[test]
-fn natural_exit_reaps_orphaned_descendant() {
+fn natural_exit_terminates_orphaned_descendant() {
     run_bounded(|| {
         let directory = tempfile::tempdir().unwrap();
         let fixture = directory.path().join("fixture");

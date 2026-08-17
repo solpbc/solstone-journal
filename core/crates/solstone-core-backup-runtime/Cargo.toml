@@ -37,7 +37,7 @@ solstone-core-indexer-store.workspace = true
 solstone-core-journal-io.workspace = true
 
 [dev-dependencies]
-nix = { workspace = true, features = ["fs"] }
+nix = { workspace = true, features = ["fs", "signal"] }
 tempfile = "3.24.0"
 
 [[test]]
