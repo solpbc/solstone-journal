@@ -52,28 +52,4 @@ fn list_json_matches_seeded_fixture() {
         ]),
         "list json document"
     );
-    let rust_names: Vec<_> = rust
-        .as_array()
-        .expect("array")
-        .iter()
-        .filter_map(|record| record["name"].as_str())
-        .collect();
-    assert!(
-        rust_names.contains(&"bound-live"),
-        "bound-live must be listed"
-    );
-    assert!(
-        rust_names.contains(&"unbound-stale"),
-        "unbound-stale must be listed"
-    );
-    for excluded in [
-        "fingerprint-rejected",
-        "missing-key-rejected",
-        "filename-rejected",
-    ] {
-        assert!(
-            !rust_names.contains(&excluded),
-            "{excluded} must be skipped"
-        );
-    }
 }

@@ -124,8 +124,4 @@ fn prune_last_physical_copy_marking_and_summary_count() {
     let result = run_prune(root.path(), &days, Some(STREAM), false, 1_000);
     let text = format_result(&result);
     assert_eq!(text, EXPECTED_LAST_PHYSICAL_COPY, "last-physical-copy text");
-    assert!(
-        text.contains("last-physical-copy: 1"),
-        "last-physical-copy summary count"
-    );
 }

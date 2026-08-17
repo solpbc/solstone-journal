@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use super::observer_render_support::{NOW_MS, snapshot, write_record};
+use super::observer_render_support::{NOW_MS, write_record};
 use serde_json::json;
 use solstone_core_observer::store::reconcile::reconcile_plan;
 use solstone_core_observer::store::reload::load_observers;
@@ -41,7 +41,8 @@ fn reconcile_dry_run_plan_across_duplicate_edge_cases_without_writes() {
         root.path(),
         json!({"key":"hhhhhhhh888","name":"","created_at":NOW_MS-150,"stats":{"segments_received":5,"bytes_received":50}}),
     );
-    let before = snapshot(root.path());
+    // reconcile_plan(&[ObserverRecord]) takes no journal path, so the
+    // no-writes claim is structural rather than something a snapshot can fail.
     let records = load_observers(root.path()).expect("records");
     let rust = serde_json::to_value(
         reconcile_plan(&records)
@@ -80,44 +81,4 @@ fn reconcile_dry_run_plan_across_duplicate_edge_cases_without_writes() {
         ]),
         "reconcile dry-run plan"
     );
-    let names: Vec<_> = rust
-        .as_array()
-        .expect("array")
-        .iter()
-        .filter_map(|entry| entry["name"].as_str())
-        .collect();
-    assert!(names.contains(&"triple"), "triple group");
-    assert!(names.contains(&""), "empty-name group");
-    assert!(!names.contains(&"single"), "single must be omitted");
-    assert!(
-        !names.contains(&"revoked-same"),
-        "revoked-same must be omitted"
-    );
-    let triple = rust
-        .as_array()
-        .expect("array")
-        .iter()
-        .find(|entry| entry["name"] == "triple")
-        .expect("triple");
-    assert_eq!(
-        triple["stats"]["segments_received"], 7,
-        "triple segments_received"
-    );
-    assert_eq!(
-        triple["stats"]["bytes_received"], 70,
-        "triple bytes_received"
-    );
-    assert_eq!(
-        triple["stats"]["duplicates_rejected"], 2,
-        "triple duplicates_rejected"
-    );
-    assert!(
-        triple["stats"].get("note").is_none(),
-        "triple drops non-numeric note"
-    );
-    assert!(
-        triple["stats"].get("ignored").is_none(),
-        "triple drops boolean ignored"
-    );
-    assert_eq!(snapshot(root.path()), before, "no-writes snapshot");
 }

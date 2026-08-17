@@ -5,18 +5,14 @@ use solstone_core_system_health::{
     FilesystemHealthLogSource, HealthLogSource, read_terminal_states,
 };
 
-fn fixture_journal() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(3)
-        .expect("repository root")
-        .join("tests/fixtures/journal")
-}
+use super::corpus;
 
 #[test]
 fn fixture_journal_has_empty_health_logs() {
-    let root = fixture_journal();
-    let source = FilesystemHealthLogSource::new(&root);
+    let source_journal = corpus::repository_root().join("tests/fixtures/journal");
+    let root = tempfile::tempdir().unwrap();
+    corpus::copy_tree(&source_journal, root.path());
+    let source = FilesystemHealthLogSource::new(root.path());
     assert!(
         source.health_log_paths("20250101").unwrap().is_empty(),
         "fixture health_log_paths"

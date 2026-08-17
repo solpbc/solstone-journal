@@ -183,7 +183,7 @@ fn pure_completion(
 }
 
 #[test]
-fn synthesized_corpus_fold_results_match_inlined_oracle() {
+fn synthesized_corpus_folds_match_inlined_expectations() {
     let root = tempfile::tempdir().unwrap();
     corpus::write_corpus(root.path());
     let source = FilesystemHealthLogSource::new(root.path());

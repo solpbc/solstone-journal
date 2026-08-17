@@ -84,3 +84,20 @@ pub fn repository_root() -> PathBuf {
         .unwrap()
         .to_path_buf()
 }
+
+pub fn copy_tree(source: &Path, destination: &Path) {
+    fs::create_dir_all(destination).unwrap();
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let target = destination.join(entry.file_name());
+        let kind = entry.file_type().unwrap();
+        if kind.is_symlink() {
+            continue;
+        }
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}

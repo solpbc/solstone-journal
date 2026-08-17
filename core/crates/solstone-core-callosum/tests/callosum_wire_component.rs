@@ -956,16 +956,27 @@ async fn escaped_large_unicode_frames_keep_peer_connected() {
     assert!(first.emit("unicode", "large", fields([("text", json!(text))])));
     for peer in [&mut first, &mut second] {
         let message = next(peer).await;
-        assert_eq!(message.tract, "unicode");
-        assert_eq!(message.event, "large");
-        assert_eq!(message.extra["text"], json!(text));
+        assert_eq!(message.tract, "unicode", "escaped-large-unicode tract");
+        assert_eq!(message.event, "large", "escaped-large-unicode event");
+        assert_eq!(
+            message.extra["text"],
+            json!(text),
+            "escaped-large-unicode text"
+        );
     }
 
     assert!(first.emit("unicode", "after", fields([("extension", json!(true))])));
     for peer in [&mut first, &mut second] {
         let message = next(peer).await;
-        assert_eq!(message.event, "after");
-        assert_eq!(message.extra["extension"], json!(true));
+        assert_eq!(
+            message.event, "after",
+            "escaped-large-unicode follow-up event"
+        );
+        assert_eq!(
+            message.extra["extension"],
+            json!(true),
+            "escaped-large-unicode follow-up extension"
+        );
     }
 
     first.stop().await;
@@ -992,9 +1003,28 @@ async fn encode_envelope_is_compact_and_ascii_escapes_non_ascii() {
         ])
     ));
     let echoed = next(&mut sender).await;
-    assert_eq!(echoed.event, "nested");
+    assert_eq!(echoed.event, "nested", "encode_envelope echo event");
     let line = raw_line(&mut receiver).await;
     drop(receiver_write);
+    assert!(
+        line.contains(r#"\u65e5\u672c\u8a9e\ud83e\udd80"#),
+        "encode_envelope must ASCII-escape 日本語🦀 as the Python ensure_ascii form: {line}"
+    );
+    let mut object: Value = serde_json::from_str(line.trim()).expect("encode_envelope JSON");
+    object
+        .as_object_mut()
+        .expect("encode_envelope object")
+        .remove("ts");
+    assert_eq!(
+        object,
+        json!({
+            "tract": "unicode",
+            "event": "nested",
+            "text": "日本語🦀",
+            "payload": {"items": [1, {"state": "kept"}]},
+        }),
+        "encode_envelope compact object minus ts"
+    );
     assert!(
         !line.contains(", ") && !line.contains(": "),
         "encode_envelope must emit compact separators: {line}"

@@ -129,22 +129,6 @@ fn status_all_and_single_human_and_json_with_history_fallback() {
         EXPECTED_STATUS_SINGLE_HUMAN,
         "status_single human"
     );
-    assert!(
-        single_human.contains("Today ("),
-        "status_single history today heading"
-    );
-    assert!(
-        single_human.contains("Recent days:"),
-        "status_single recent-days heading"
-    );
-    assert!(
-        single_human.contains("boolean-ts"),
-        "status_single boolean-ts history row"
-    );
-    assert!(
-        single_human.contains("Last segment: —"),
-        "status_single last-segment fallback dash"
-    );
     let single_json: Value = serde_json::from_str(&render_status_single(
         root.path(),
         &records[0],

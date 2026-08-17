@@ -8,28 +8,17 @@ use solstone_core_system_health::{
 };
 
 #[test]
-fn vocabulary_constants_match_inlined_python_lists() {
+fn vocabulary_constants_match_inlined_expectations() {
     assert_eq!(json!(SEGMENT_FLOOR_TALENTS), json!(["documents"]), "floor");
     assert_eq!(
         json!(SEGMENT_NONGATING_TALENTS),
         json!(["entities:detection"]),
         "nongating"
     );
-    let mut no_processing = SEGMENT_NO_PROCESSING_MODALITIES.to_vec();
-    no_processing.sort_unstable();
     assert_eq!(
-        json!(no_processing),
-        json!(["browser", "markdown"]),
+        SEGMENT_NO_PROCESSING_MODALITIES,
+        &["markdown", "browser"],
         "no_processing"
-    );
-    let superseded: serde_json::Map<String, serde_json::Value> = SEGMENT_SUPERSEDED_TALENTS
-        .iter()
-        .map(|(from, to)| ((*from).to_owned(), json!(*to)))
-        .collect();
-    assert_eq!(
-        serde_json::Value::Object(superseded),
-        json!({"entities": "entities:detection"}),
-        "superseded"
     );
     assert_eq!(
         SEGMENT_SUPERSEDED_TALENTS,
@@ -38,11 +27,9 @@ fn vocabulary_constants_match_inlined_python_lists() {
     );
     assert_eq!(json!(CAP), json!(5), "cap");
     assert_eq!(MIN_SPAN_MS, 7_200_000, "min_span_ms");
-    let mut deterministic = DETERMINISTIC_FAILURE_REASON_CODES.to_vec();
-    deterministic.sort_unstable();
     assert_eq!(
-        json!(deterministic),
-        json!([
+        DETERMINISTIC_FAILURE_REASON_CODES,
+        &[
             "agent_stuck",
             "context_window_exceeded",
             "max_turns_exhausted",
@@ -53,7 +40,7 @@ fn vocabulary_constants_match_inlined_python_lists() {
             "schema_invalid",
             "token_budget_exceeded",
             "wall_clock_exceeded"
-        ]),
+        ],
         "deterministic"
     );
 }

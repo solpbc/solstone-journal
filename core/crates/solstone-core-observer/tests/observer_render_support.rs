@@ -112,33 +112,3 @@ pub fn seed_full_fixture(root: &Path) {
         json!({"key":"ffffffff666", "name":"filename-rejected", "created_at":NOW_MS}),
     );
 }
-
-pub fn snapshot(root: &Path) -> Vec<(String, u64, u128)> {
-    fn walk(root: &Path, current: &Path, rows: &mut Vec<(String, u64, u128)>) {
-        for entry in fs::read_dir(current).expect("directory") {
-            let path = entry.expect("entry").path();
-            let metadata = fs::metadata(&path).expect("metadata");
-            if metadata.is_dir() {
-                walk(root, &path, rows);
-            } else {
-                rows.push((
-                    path.strip_prefix(root)
-                        .expect("relative")
-                        .display()
-                        .to_string(),
-                    metadata.len(),
-                    metadata
-                        .modified()
-                        .expect("mtime")
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .expect("epoch")
-                        .as_nanos(),
-                ));
-            }
-        }
-    }
-    let mut rows = Vec::new();
-    walk(root, &root.join("apps/observer"), &mut rows);
-    rows.sort();
-    rows
-}

@@ -169,6 +169,18 @@ fn native_producible_pairs_are_declared() {
         .map(|(tract, event)| ((*tract).to_owned(), (*event).to_owned()))
         .collect::<BTreeSet<_>>();
 
+    for (tract, event) in KNOWN_UNDECLARED_NATIVE_PAIRS {
+        let pair = ((*tract).to_owned(), (*event).to_owned());
+        assert!(
+            produced.contains_key(&pair),
+            "KNOWN_UNDECLARED_NATIVE_PAIRS entry {tract}.{event} is no longer native-producible; delete this constant"
+        );
+        assert!(
+            !wildcard_tracts.contains(*tract) && !declared.contains(&pair),
+            "KNOWN_UNDECLARED_NATIVE_PAIRS entry {tract}.{event} is now declared in the fixture; delete this constant"
+        );
+    }
+
     let undeclared = produced
         .iter()
         .filter(|((tract, event), _sites)| {
