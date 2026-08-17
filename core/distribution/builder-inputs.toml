@@ -20,6 +20,27 @@ url = "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
 sha256 = "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
 size = 55478392
 
+[rust_std_aarch64_unknown_linux_gnu]
+version = "1.97.1"
+filename = "rust-std-1.97.1-aarch64-unknown-linux-gnu.tar.xz"
+url = "https://static.rust-lang.org/dist/2026-07-16/rust-std-1.97.1-aarch64-unknown-linux-gnu.tar.xz"
+sha256 = "46aed8e63186350004d8ec6afca798811e6530b514352e5a8a26f3dc4939b3be"
+size = 30254096
+
+[rust_std_aarch64_unknown_linux_musl]
+version = "1.97.1"
+filename = "rust-std-1.97.1-aarch64-unknown-linux-musl.tar.xz"
+url = "https://static.rust-lang.org/dist/2026-07-16/rust-std-1.97.1-aarch64-unknown-linux-musl.tar.xz"
+sha256 = "49ff0879d94e2e8e86d5e85eb15a9215943e8c78b51363d6553443598cab5d31"
+size = 29062284
+
+[rust_std_x86_64_unknown_linux_musl]
+version = "1.97.1"
+filename = "rust-std-1.97.1-x86_64-unknown-linux-musl.tar.xz"
+url = "https://static.rust-lang.org/dist/2026-07-16/rust-std-1.97.1-x86_64-unknown-linux-musl.tar.xz"
+sha256 = "51d83178680556f73a5fa8ad865b76a1ff541867445c00fc65dc67246bc2de66"
+size = 39201688
+
 [ffmpeg]
 commit = "03d9533176e98bb9fbf569c1f34968e73e948dd9"
 filename = "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9.tar.gz"
