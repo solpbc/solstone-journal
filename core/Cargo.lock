@@ -4680,6 +4680,7 @@ dependencies = [
  "axum",
  "chrono",
  "getrandom 0.3.4",
+ "nix",
  "serde",
  "serde_json",
  "sha2",

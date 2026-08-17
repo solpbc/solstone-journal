@@ -37,6 +37,7 @@ zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 serde_json.workspace = true
 
 [dev-dependencies]
+nix = { workspace = true, features = ["process", "signal"] }
 sha2.workspace = true
 solstone-core-convey-shell.workspace = true
 temp-env = "0.3.6"
