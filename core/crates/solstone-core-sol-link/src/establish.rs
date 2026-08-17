@@ -23,6 +23,7 @@ use solstone_core_journal_io::{
 
 use crate::ca::{CaError, LocalCa, generate_ca, jid_from_spki, load_ca};
 use crate::mark::{Mark, MarkError, mark_from_jid};
+use crate::publish_checkpoint::PublishCheckpoint;
 
 const DEFAULT_HOME_LABEL: &str = "solstone";
 
@@ -93,6 +94,26 @@ impl From<MarkError> for EstablishError {
 }
 
 pub fn lock_in(journal_root: &Path, home_label: Option<&str>) -> Result<LinkState, EstablishError> {
+    lock_in_with_interruption(journal_root, home_label, &NoopInterruption)
+}
+
+trait PublishInterruption {
+    fn at(&self, checkpoint: PublishCheckpoint) -> Result<(), EstablishError>;
+}
+
+struct NoopInterruption;
+
+impl PublishInterruption for NoopInterruption {
+    fn at(&self, _checkpoint: PublishCheckpoint) -> Result<(), EstablishError> {
+        Ok(())
+    }
+}
+
+fn lock_in_with_interruption(
+    journal_root: &Path,
+    home_label: Option<&str>,
+    interruption: &dyn PublishInterruption,
+) -> Result<LinkState, EstablishError> {
     let bundle = bundle_path(journal_root);
     let _lock = hold_lock(identity_lock_path(journal_root), LockOptions::default())?;
     if bundle.exists() {
@@ -108,9 +129,54 @@ pub fn lock_in(journal_root: &Path, home_label: Option<&str>) -> Result<LinkStat
         home_label: home_label.unwrap_or(DEFAULT_HOME_LABEL).to_owned(),
         locked_at: now_ms(),
     };
-    publish_bundle(&bundle, &ca, &state)?;
+    publish_bundle(&bundle, &ca, &state, interruption)?;
     discard_candidate_unlocked(&candidate);
     Ok(state)
+}
+
+#[cfg(all(feature = "host", feature = "test-hooks"))]
+#[doc(hidden)]
+pub fn run_env_paused_lock_in() {
+    let Ok(journal) = std::env::var("SOL_LINK_TEST_JOURNAL") else {
+        return;
+    };
+    let name = std::env::var("JOURNAL_IO_TEST_PAUSE_AT")
+        .unwrap_or_else(|_| panic!("JOURNAL_IO_TEST_PAUSE_AT is required"));
+    let checkpoint = PublishCheckpoint::from_name(&name)
+        .unwrap_or_else(|| panic!("unknown publication checkpoint {name}"));
+    let marker = std::env::var("JOURNAL_IO_TEST_MARKER")
+        .ok()
+        .map(PathBuf::from);
+    lock_in_with_interruption(
+        Path::new(&journal),
+        None,
+        &EnvPauseInterruption {
+            wanted: checkpoint,
+            marker,
+        },
+    )
+    .expect("env-paused lock_in");
+}
+
+#[cfg(feature = "test-hooks")]
+struct EnvPauseInterruption {
+    wanted: PublishCheckpoint,
+    marker: Option<PathBuf>,
+}
+
+#[cfg(feature = "test-hooks")]
+impl PublishInterruption for EnvPauseInterruption {
+    fn at(&self, checkpoint: PublishCheckpoint) -> Result<(), EstablishError> {
+        if checkpoint != self.wanted {
+            return Ok(());
+        }
+        if let Some(path) = &self.marker {
+            let _ = fs::write(path, checkpoint.as_str());
+        }
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+    }
 }
 
 /// Return a valid staged candidate, regenerating a missing or invalid one.
@@ -230,17 +296,26 @@ fn publish_bundle(
     bundle: &Path,
     ca: &crate::ca::LocalCa,
     state: &LinkState,
+    interruption: &dyn PublishInterruption,
 ) -> Result<(), EstablishError> {
+    interruption.at(PublishCheckpoint::BeforeStagingDirCreate)?;
     publish_staged_dir(
         bundle,
         StagedDirOptions {
             directory_mode: Some(0o700),
         },
         |staging| {
+            interruption
+                .at(PublishCheckpoint::AfterStagingDirCreate)
+                .map_err(io::Error::other)?;
             write_certificate(staging, ca)?;
-            pause_at("mid-populate-cert");
+            interruption
+                .at(PublishCheckpoint::MidPopulateCert)
+                .map_err(io::Error::other)?;
             write_private_key(staging, ca)?;
-            pause_at("mid-populate-key");
+            interruption
+                .at(PublishCheckpoint::MidPopulateKey)
+                .map_err(io::Error::other)?;
             write_json(
                 staging.join("state.json"),
                 &json!({
@@ -254,6 +329,9 @@ fn publish_bundle(
                 },
             )
             .map_err(io::Error::other)?;
+            interruption
+                .at(PublishCheckpoint::AfterPopulate)
+                .map_err(io::Error::other)?;
             Ok::<_, io::Error>(())
         },
     )?;
@@ -343,32 +421,10 @@ fn now_ms() -> i64 {
 }
 
 #[cfg(test)]
-fn pause_at(step: &str) {
-    if std::env::var("JOURNAL_IO_TEST_PAUSE_AT").ok().as_deref() != Some(step) {
-        return;
-    }
-    if let Ok(marker) = std::env::var("JOURNAL_IO_TEST_MARKER") {
-        let _ = fs::write(marker, step);
-    }
-    loop {
-        std::thread::sleep(std::time::Duration::from_millis(25));
-    }
-}
-
-#[cfg(not(test))]
-fn pause_at(_step: &str) {}
-
-#[cfg(test)]
 mod tests {
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
-    #[cfg(unix)]
-    use std::process::Command;
-    #[cfg(unix)]
-    use std::thread;
-    #[cfg(unix)]
-    use std::time::{Duration, Instant};
 
     use super::*;
 
@@ -393,6 +449,7 @@ mod tests {
                 & 0o777,
             0o600
         );
+        assert_complete_bundle(temporary.path());
     }
 
     #[test]
@@ -492,117 +549,135 @@ mod tests {
         assert!(!candidate_path(temporary.path()).exists());
     }
 
-    #[cfg(unix)]
     #[test]
-    fn lock_in_pause_helper() {
-        let Ok(journal) = std::env::var("SOL_LINK_TEST_JOURNAL") else {
-            return;
-        };
-        lock_in(Path::new(&journal), None).unwrap();
+    fn lock_in_rejects_bundle_missing_cert_pem() {
+        let temporary = committed_journal();
+        fs::remove_file(bundle_path(temporary.path()).join("cert.pem")).unwrap();
+        let error = lock_in(temporary.path(), None).unwrap_err();
+        assert!(error.to_string().contains("cert.pem"));
     }
 
-    #[cfg(unix)]
     #[test]
-    fn crash_before_staging_dir_create_leaves_no_bundle_and_retries() {
-        assert_crash_before_publish_then_retry("before-staging-dir-create");
+    fn lock_in_rejects_bundle_missing_private_pem() {
+        let temporary = committed_journal();
+        fs::remove_file(bundle_path(temporary.path()).join("private.pem")).unwrap();
+        let error = lock_in(temporary.path(), None).unwrap_err();
+        assert!(error.to_string().contains("private.pem"));
     }
 
-    #[cfg(unix)]
     #[test]
-    fn crash_after_staging_dir_create_leaves_no_bundle_and_retries() {
-        assert_crash_before_publish_then_retry("after-staging-dir-create");
+    fn lock_in_rejects_bundle_missing_state_json() {
+        let temporary = committed_journal();
+        fs::remove_file(bundle_path(temporary.path()).join("state.json")).unwrap();
+        let error = lock_in(temporary.path(), None).unwrap_err();
+        assert!(error.to_string().contains("state.json"));
     }
 
-    #[cfg(unix)]
     #[test]
-    fn crash_after_cert_write_leaves_no_bundle_and_retries() {
-        assert_crash_before_publish_then_retry("mid-populate-cert");
+    fn lock_in_rejects_bundle_with_invalid_private_key() {
+        let temporary = committed_journal();
+        fs::write(
+            bundle_path(temporary.path()).join("private.pem"),
+            "not a private key",
+        )
+        .unwrap();
+        let error = lock_in(temporary.path(), None).unwrap_err();
+        assert!(matches!(error, EstablishError::Ca(_)));
     }
 
-    #[cfg(unix)]
     #[test]
-    fn crash_after_private_key_write_leaves_no_bundle_and_retries() {
-        assert_crash_before_publish_then_retry("mid-populate-key");
+    fn lock_in_rejects_bundle_with_malformed_state_json() {
+        let temporary = committed_journal();
+        fs::write(bundle_path(temporary.path()).join("state.json"), b"[]").unwrap();
+        let error = lock_in(temporary.path(), None).unwrap_err();
+        assert!(error.to_string().contains("state.json must be an object"));
     }
 
-    #[cfg(unix)]
     #[test]
-    fn crash_after_populate_leaves_no_bundle_and_retries() {
-        assert_crash_before_publish_then_retry("after-populate");
+    fn lock_in_rejects_bundle_when_state_instance_id_does_not_match_ca() {
+        let temporary = committed_journal();
+        let path = bundle_path(temporary.path()).join("state.json");
+        let mut value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        value["instance_id"] = json!("not-the-committed-jid");
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        let error = lock_in(temporary.path(), None).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("state instance_id does not match the CA public key")
+        );
     }
 
-    #[cfg(unix)]
     #[test]
-    fn crash_after_staging_sync_leaves_no_bundle_and_retries() {
-        assert_crash_before_publish_then_retry("after-staging-sync");
+    fn interrupt_before_staging_dir_create_leaves_no_bundle_and_retries() {
+        assert_interrupt_before_publish_then_retry(PublishCheckpoint::BeforeStagingDirCreate);
     }
 
-    #[cfg(unix)]
     #[test]
-    fn crash_after_rename_leaves_complete_bundle() {
+    fn interrupt_after_staging_dir_create_leaves_no_bundle_and_retries() {
+        assert_interrupt_before_publish_then_retry(PublishCheckpoint::AfterStagingDirCreate);
+    }
+
+    #[test]
+    fn interrupt_after_cert_write_leaves_no_bundle_and_retries() {
+        assert_interrupt_before_publish_then_retry(PublishCheckpoint::MidPopulateCert);
+    }
+
+    #[test]
+    fn interrupt_after_private_key_write_leaves_no_bundle_and_retries() {
+        assert_interrupt_before_publish_then_retry(PublishCheckpoint::MidPopulateKey);
+    }
+
+    #[test]
+    fn interrupt_after_populate_leaves_no_bundle_and_retries() {
+        assert_interrupt_before_publish_then_retry(PublishCheckpoint::AfterPopulate);
+    }
+
+    struct FailAt(PublishCheckpoint);
+
+    impl PublishInterruption for FailAt {
+        fn at(&self, checkpoint: PublishCheckpoint) -> Result<(), EstablishError> {
+            if checkpoint == self.0 {
+                Err(EstablishError::State(format!(
+                    "injected at {}",
+                    checkpoint.as_str()
+                )))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    fn committed_journal() -> TempDir {
         let temporary = TempDir::new();
         current_candidate(temporary.path()).unwrap();
-        run_child_until_pause(temporary.path(), "after-rename");
-        assert_complete_bundle(temporary.path());
+        lock_in(temporary.path(), None).unwrap();
+        temporary
     }
 
-    #[cfg(unix)]
-    fn assert_crash_before_publish_then_retry(checkpoint: &str) {
+    fn assert_interrupt_before_publish_then_retry(checkpoint: PublishCheckpoint) {
         let temporary = TempDir::new();
         current_candidate(temporary.path()).unwrap();
-        run_child_until_pause(temporary.path(), checkpoint);
+        assert!(
+            lock_in_with_interruption(temporary.path(), None, &FailAt(checkpoint)).is_err(),
+            "checkpoint: {}",
+            checkpoint.as_str()
+        );
         assert!(
             !bundle_path(temporary.path()).exists(),
-            "checkpoint: {checkpoint}"
+            "checkpoint: {}",
+            checkpoint.as_str()
         );
         lock_in(temporary.path(), None).unwrap();
         assert_complete_bundle(temporary.path());
     }
 
-    #[cfg(unix)]
-    fn run_child_until_pause(journal: &Path, checkpoint: &str) {
-        let marker = journal.join("pause-marker");
-        let mut child = Command::new(std::env::current_exe().unwrap())
-            .arg("establish::tests::lock_in_pause_helper")
-            .arg("--exact")
-            .env("SOL_LINK_TEST_JOURNAL", journal)
-            .env("JOURNAL_IO_TEST_PAUSE_AT", checkpoint)
-            .env("JOURNAL_IO_TEST_MARKER", &marker)
-            .spawn()
-            .unwrap();
-        wait_for_marker(&mut child, &marker, checkpoint);
-        child.kill().unwrap();
-        let status = child.wait().unwrap();
-        assert!(
-            !status.success(),
-            "child unexpectedly completed at {checkpoint}"
-        );
-    }
-
-    #[cfg(unix)]
-    fn wait_for_marker(child: &mut std::process::Child, marker: &Path, checkpoint: &str) {
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            if fs::read_to_string(marker).ok().as_deref() == Some(checkpoint) {
-                return;
-            }
-            if let Some(status) = child.try_wait().unwrap() {
-                panic!("child exited before {checkpoint}: {status}");
-            }
-            assert!(
-                Instant::now() < deadline,
-                "timed out waiting for {checkpoint}"
-            );
-            thread::sleep(Duration::from_millis(10));
-        }
-    }
-
-    #[cfg(unix)]
     fn assert_complete_bundle(journal: &Path) {
         let bundle = bundle_path(journal);
         assert!(bundle.join("cert.pem").is_file());
         assert!(bundle.join("private.pem").is_file());
         assert!(bundle.join("state.json").is_file());
+        #[cfg(unix)]
         assert_eq!(
             fs::metadata(bundle.join("private.pem"))
                 .unwrap()
@@ -612,21 +687,12 @@ mod tests {
             0o600
         );
         let state = load_committed(journal).unwrap().unwrap();
-        assert_eq!(
-            state.instance_id,
-            jid_from_spki(&load_ca_bundle_spki(&bundle)).unwrap()
-        );
-    }
-
-    #[cfg(unix)]
-    fn load_ca_bundle_spki(bundle: &Path) -> Vec<u8> {
-        load_ca(
+        let ca = load_ca(
             &fs::read_to_string(bundle.join("cert.pem")).unwrap(),
             &fs::read_to_string(bundle.join("private.pem")).unwrap(),
         )
-        .unwrap()
-        .spki_der()
-        .to_vec()
+        .unwrap();
+        assert_eq!(state.instance_id, jid_from_spki(ca.spki_der()).unwrap());
     }
 
     struct TempDir {

@@ -678,10 +678,8 @@ fn endpoint_scope_name(scope: EndpointScope) -> &'static str {
 mod tests {
     use std::fs;
     use std::net::{IpAddr, Ipv4Addr};
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use axum::Router;
     use axum::body::{Body, to_bytes};
@@ -695,31 +693,15 @@ mod tests {
 
     use super::*;
 
-    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    struct TempDir(PathBuf);
+    struct TempDir(tempfile::TempDir);
 
     impl TempDir {
         fn new() -> Self {
-            let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos();
-            let path =
-                std::env::temp_dir().join(format!("solstone-network-status-{nanos}-{sequence}"));
-            fs::create_dir(&path).expect("temporary root");
-            Self(path)
+            Self(tempfile::TempDir::new_in("/var/tmp").expect("temporary root"))
         }
 
         fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            self.0.path()
         }
     }
 

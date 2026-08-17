@@ -320,6 +320,39 @@ mod tests {
     }
 
     #[test]
+    fn window_and_consume_treat_expires_at_as_the_closed_bound() {
+        let (_temporary, store) = store();
+        let first = store
+            .add("bound-live".into(), "phone".into(), "".into(), false, 1_000)
+            .expect("live");
+        assert_eq!(first.expires_at, 1_000 + NONCE_TTL_SECONDS);
+        assert!(pairing_window_open(&store, first.expires_at - 1));
+        assert!(!pairing_window_open(&store, first.expires_at));
+        assert!(
+            store
+                .consume("bound-live", first.expires_at - 1)
+                .expect("consume inside the window")
+                .is_some()
+        );
+
+        store
+            .add(
+                "bound-closed".into(),
+                "phone".into(),
+                "".into(),
+                false,
+                1_000,
+            )
+            .expect("closed");
+        assert!(
+            store
+                .consume("bound-closed", 1_000 + NONCE_TTL_SECONDS)
+                .expect("consume at the closed bound")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn consume_reads_through_its_lock_and_window_maps_bad_states_to_closed() {
         let (temporary, store) = store();
         store

@@ -236,11 +236,6 @@ async fn require_authorization(
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     use axum::body::Body;
     use axum::body::to_bytes;
     use axum::http::{Method, Request, StatusCode};
@@ -257,30 +252,6 @@ mod tests {
         authorized_router_with_router, require_authorization,
     };
 
-    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new() -> Self {
-            let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos();
-            let path =
-                std::env::temp_dir().join(format!("solstone-confinement-{nanos}-{sequence}"));
-            fs::create_dir(&path).expect("temporary root");
-            Self(path)
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
     #[test]
     fn exemption_inventory_is_named_and_closed() {
         assert_eq!(
@@ -294,7 +265,7 @@ mod tests {
 
     #[tokio::test]
     async fn pairing_peer_falls_through_the_authorization_gate() {
-        let temporary = TempDir::new();
+        let temporary = tempfile::TempDir::new_in("/var/tmp").expect("temporary root");
         let (_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
             AuthorizedClientsRead::Missing,
         ));
@@ -303,7 +274,7 @@ mod tests {
             .route_layer(middleware::from_fn_with_state(
                 AuthorizationGateState {
                     authorization,
-                    authorized_clients_path: AuthorizationLedger::new(&temporary.0)
+                    authorized_clients_path: AuthorizationLedger::new(temporary.path())
                         .authorized_clients_path()
                         .to_path_buf(),
                 },
@@ -319,13 +290,13 @@ mod tests {
 
     #[tokio::test]
     async fn pairing_confinement_checks_window_then_path_and_covers_unmatched_routes() {
-        let temporary = TempDir::new();
+        let temporary = tempfile::TempDir::new_in("/var/tmp").expect("temporary root");
         let (_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
             AuthorizedClientsRead::Missing,
         ));
         let app = authorized_router_with_router(
             Router::new().route(spl_core::PAIR_PATH, post(|| async { StatusCode::OK })),
-            temporary.0.clone(),
+            temporary.path().to_path_buf(),
             authorization,
         )
         .into_inner();
@@ -353,13 +324,15 @@ mod tests {
             closed,
             (StatusCode::FORBIDDEN, b"pairing window closed".to_vec())
         );
-        let store = solstone_core_sol_link::pairing::nonces::NonceStore::new(&temporary.0);
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_secs() as i64;
+        let store = solstone_core_sol_link::pairing::nonces::NonceStore::new(temporary.path());
         store
-            .add("nonce".into(), "phone".into(), "".into(), false, now)
+            .add(
+                "nonce".into(),
+                "phone".into(),
+                "".into(),
+                false,
+                2_200_000_000,
+            )
             .expect("open window");
         assert_eq!(
             response(app.clone(), Method::POST, spl_core::PAIR_PATH)

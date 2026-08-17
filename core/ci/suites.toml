@@ -1991,6 +1991,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-convey-shell::convey_shell_boundaries"
+package = "solstone-core-convey-shell"
+target = "convey_shell_boundaries"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-convey-shell::convey_speaker_contracts"
 package = "solstone-core-convey-shell"
 target = "convey_speaker_contracts"
@@ -3130,6 +3144,32 @@ prerequisites = ["cargo-cache"]
 timeout = "slow"
 default_full = true
 required_features = ["host"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-sol-link::sol_link_serving"
+package = "solstone-core-sol-link"
+target = "sol_link_serving"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["host"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-sol-link::sol_link_publish_crash"
+package = "solstone-core-sol-link"
+target = "sol_link_publish_crash"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["host", "test-hooks"]
 runtime = "none"
 
 [[suites]]

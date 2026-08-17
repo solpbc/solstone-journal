@@ -56,8 +56,8 @@ pub use sleep::{
 pub use solstone_core_body_source::{BodyValue, FieldState, ValueState};
 pub use trends::{
     TrendAnnotation, TrendCoverage, TrendSignal, TrendValue, TrendsCacheError, TrendsFoldError,
-    TrendsPayload, TrendsWarmOutcome, read_trends_cache, replace_trends_cache,
-    trends_warm_invocations, typical_by_signal, warm_trends,
+    TrendsPayload, TrendsWarmOutcome, TrendsWarmProbe, read_trends_cache, replace_trends_cache,
+    typical_by_signal, warm_trends,
 };
 
 #[cfg(test)]

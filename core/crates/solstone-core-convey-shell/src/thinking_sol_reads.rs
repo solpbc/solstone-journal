@@ -847,58 +847,44 @@ fn file_read_failed(detail: impl Into<String>) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     use axum::body::{Body, to_bytes};
     use axum::http::Request;
     use axum::routing::get;
+    use filetime::FileTime;
     use tower::ServiceExt;
 
     use super::*;
 
-    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
     #[tokio::test]
     async fn preview_composes_distinct_sections_without_journal_write() {
-        let root = PathBuf::from("/var/tmp").join(format!(
-            "solstone-thinking-preview-{}-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos(),
-            SEQUENCE.fetch_add(1, Ordering::Relaxed),
-        ));
-        fs::create_dir_all(root.join("talent")).expect("talent root");
-        fs::create_dir_all(root.join("apps")).expect("apps root");
-        fs::create_dir_all(root.join("think/templates")).expect("template root");
-        fs::create_dir_all(root.join("config")).expect("config root");
+        let root = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+        fs::create_dir_all(root.path().join("talent")).expect("talent root");
+        fs::create_dir_all(root.path().join("apps")).expect("apps root");
+        fs::create_dir_all(root.path().join("think/templates")).expect("template root");
+        fs::create_dir_all(root.path().join("config")).expect("config root");
         fs::write(
-            root.join("config/journal.json"),
+            root.path().join("config/journal.json"),
             r#"{"setup":{"completed_at":1},"agent":{"name":"Agent"},"identity":{"name":"Owner"}}"#,
         )
         .expect("config");
         fs::write(
-            root.join("talent/demo.md"),
+            root.path().join("talent/demo.md"),
             "{\n\"type\": \"generate\",\n\"title\": \"\",\n\"output\": \"json\",\n\"system_instruction\": \"SYSTEM\",\n\"extra_context\": \"CONTEXT\"\n}\nINSTRUCTIONS\n",
         )
         .expect("talent");
-        let config = root.join("config/journal.json");
+        let config = root.path().join("config/journal.json");
         let before = fs::read(&config).expect("config bytes");
-        let before_mtime = fs::metadata(&config)
-            .expect("metadata")
-            .modified()
-            .expect("mtime");
+        let authored = FileTime::from_unix_time(1_700_000_000, 0);
+        filetime::set_file_mtime(&config, authored).expect("mtime stamps");
         let roots = TalentRoots::explicit(
-            root.join("talent"),
-            root.join("apps"),
-            root.join("think/templates"),
+            root.path().join("talent"),
+            root.path().join("apps"),
+            root.path().join("think/templates"),
         );
         let app = axum::Router::new()
             .route("/preview/{*name}", get(api_preview_prompt))
             .layer(Extension(Arc::new(roots)))
-            .layer(Extension(Arc::new(JournalRoot(root.clone()))));
+            .layer(Extension(Arc::new(JournalRoot(root.path().to_path_buf()))));
         let response = app
             .oneshot(
                 Request::get("/preview/demo")
@@ -922,13 +908,9 @@ mod tests {
         );
         assert_eq!(fs::read(&config).expect("config bytes"), before);
         assert_eq!(
-            fs::metadata(&config)
-                .expect("metadata")
-                .modified()
-                .expect("mtime"),
-            before_mtime
+            FileTime::from_last_modification_time(&fs::metadata(&config).expect("metadata")),
+            authored
         );
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

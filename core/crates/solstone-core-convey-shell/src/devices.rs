@@ -402,9 +402,6 @@ fn settings_operation_failed(detail: &str) -> Response {
 mod tests {
     use std::collections::BTreeSet;
     use std::fs;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
@@ -412,8 +409,6 @@ mod tests {
     use tower::ServiceExt;
 
     use super::*;
-
-    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     const INGEST_REJECTION_FIELDS: [&str; 7] = [
         "reason_code",
@@ -425,41 +420,26 @@ mod tests {
         "version",
     ];
 
-    struct EstablishedJournal(PathBuf);
+    struct EstablishedJournal(tempfile::TempDir);
 
     impl EstablishedJournal {
         fn new() -> Self {
-            let path = Self::temporary_path();
-            fs::create_dir(&path).expect("journal root");
-            fs::create_dir(path.join("config")).expect("config directory");
+            let dir = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+            fs::create_dir(dir.path().join("config")).expect("config directory");
             fs::write(
-                path.join("config/journal.json"),
+                dir.path().join("config/journal.json"),
                 br#"{"setup":{"completed_at":1767225600}}"#,
             )
             .expect("journal config");
-            Self(path)
+            Self(dir)
         }
 
         fn unestablished() -> Self {
-            let path = Self::temporary_path();
-            fs::create_dir(&path).expect("journal root");
-            Self(path)
-        }
-
-        fn temporary_path() -> PathBuf {
-            let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos();
-            std::env::temp_dir().join(format!(
-                "solstone-devices-{}-{nanos}-{sequence}",
-                std::process::id()
-            ))
+            Self(tempfile::TempDir::new_in("/var/tmp").expect("journal root"))
         }
 
         fn observer(&self, key: &str, name: &str, last_seen: Option<i64>, revoked: bool) {
-            let directory = self.0.join("apps/observer/observers");
+            let directory = self.0.path().join("apps/observer/observers");
             fs::create_dir_all(&directory).expect("observer directory");
             let prefix = key.chars().take(8).collect::<String>();
             fs::write(
@@ -479,7 +459,7 @@ mod tests {
         }
 
         fn failing_observer(&self, key: &str) {
-            let directory = self.0.join("apps/observer/observers");
+            let directory = self.0.path().join("apps/observer/observers");
             fs::create_dir_all(&directory).expect("observer directory");
             let prefix = key.chars().take(8).collect::<String>();
             fs::write(
@@ -507,12 +487,6 @@ mod tests {
         }
     }
 
-    impl Drop for EstablishedJournal {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
     async fn request(app: axum::Router, request: Request<Body>) -> (StatusCode, Value) {
         let response = app.oneshot(request).await.expect("router responds");
         let status = response.status();
@@ -527,7 +501,7 @@ mod tests {
     async fn routes_project_manage_and_keep_the_observer_ingest_wire_literal() {
         let journal = EstablishedJournal::new();
         journal.observer("abcdefgh-key", "phone", None, false);
-        let app = crate::router(journal.0.clone());
+        let app = crate::router(journal.0.path().to_path_buf());
 
         let root = app
             .clone()
@@ -584,7 +558,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(key["ingest_url"], "/app/observer/ingest");
         assert_eq!(key["protocol_version"], OBSERVER_PROTOCOL_VERSION);
-        let actions = fs::read_dir(journal.0.join("config/actions"))
+        let actions = fs::read_dir(journal.0.path().join("config/actions"))
             .expect("key view action directory")
             .map(|entry| entry.expect("action entry").path())
             .collect::<Vec<_>>();
@@ -728,7 +702,7 @@ mod tests {
         let journal = EstablishedJournal::new();
         journal.failing_observer("failing0-key");
         let (status, listed) = request(
-            crate::router(journal.0.clone()),
+            crate::router(journal.0.path().to_path_buf()),
             Request::get("/app/devices/api/list")
                 .body(Body::empty())
                 .unwrap(),
@@ -752,7 +726,7 @@ mod tests {
     #[tokio::test]
     async fn observer_wire_refusals_keep_the_json_contract_and_devices_stays_gated() {
         let journal = EstablishedJournal::new();
-        let app = crate::router(journal.0.clone());
+        let app = crate::router(journal.0.path().to_path_buf());
         let expected = serde_json::to_vec(&AppNotConverted::new("observer")).expect("refusal");
         for path in [
             "/app/observer/callosum",
@@ -788,7 +762,7 @@ mod tests {
         assert_eq!(bare_ingest.status(), StatusCode::NOT_FOUND);
 
         let unestablished = EstablishedJournal::unestablished();
-        let app = crate::router(unestablished.0.clone());
+        let app = crate::router(unestablished.0.path().to_path_buf());
         let observer = app
             .clone()
             .oneshot(
@@ -813,7 +787,7 @@ mod tests {
     #[tokio::test]
     async fn retired_create_and_null_live_asset_are_explicit() {
         let journal = EstablishedJournal::new();
-        let app = crate::router(journal.0.clone());
+        let app = crate::router(journal.0.path().to_path_buf());
         let (status, refusal) = request(
             app.clone(),
             Request::post("/app/devices/api/create")

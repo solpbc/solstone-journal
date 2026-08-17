@@ -344,9 +344,6 @@ pub fn shell_payload() -> ShellPayload {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode, header};
@@ -354,39 +351,22 @@ mod tests {
 
     use super::{APP_REGISTRY, known_app, shell_payload};
 
-    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    struct EstablishedJournal(PathBuf);
+    struct EstablishedJournal(tempfile::TempDir);
 
     impl EstablishedJournal {
         fn new() -> Self {
-            let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "solstone-registry-{}-{nanos}-{sequence}",
-                std::process::id()
-            ));
-            fs::create_dir(&path).expect("journal root");
-            fs::create_dir(path.join("config")).expect("config directory");
+            let dir = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+            fs::create_dir(dir.path().join("config")).expect("config directory");
             fs::write(
-                path.join("config/journal.json"),
+                dir.path().join("config/journal.json"),
                 br#"{"setup":{"completed_at":1767225600}}"#,
             )
             .expect("journal config");
-            Self(path)
+            Self(dir)
         }
 
         fn path(&self) -> &std::path::Path {
-            &self.0
-        }
-    }
-
-    impl Drop for EstablishedJournal {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            self.0.path()
         }
     }
 

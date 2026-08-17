@@ -283,6 +283,27 @@ fn parse(stdout: &str, rows: usize) -> Result<Vec<i64>, DiscoveryHelperError> {
     }
     Ok(labels)
 }
+#[cfg(any(test, feature = "test-hooks"))]
+#[doc(hidden)]
+pub fn drive_discovery_cluster_helper(
+    helper: &Path,
+    timeout: Duration,
+    terminate_grace: Duration,
+    stdout_limit: usize,
+) -> Result<Vec<i64>, (String, String)> {
+    run_with_budget(
+        helper,
+        &[vec![1.0]],
+        InvocationBudget {
+            timeout,
+            terminate_grace,
+            stdout_limit,
+            stderr_limit: 1024,
+        },
+    )
+    .map_err(|error| (error.stage.to_owned(), error.reason))
+}
+
 fn invoke(reason: impl ToString) -> DiscoveryHelperError {
     DiscoveryHelperError {
         stage: "invoke",
@@ -305,70 +326,5 @@ mod tests {
         assert_eq!(parse("no", 1).unwrap_err().stage, "response");
         let valid = json!({"schema":RESPONSE_SCHEMA,"labels":[-1],"parameters":{"min_cluster_size":5,"min_samples":3},"algorithm":ALGORITHM,"noise_count":1,"cluster_count":0});
         assert_eq!(parse(&valid.to_string(), 1), Ok(vec![-1]));
-    }
-
-    #[cfg(unix)]
-    fn helper_script(body: &str) -> PathBuf {
-        use std::os::unix::fs::PermissionsExt;
-
-        let directory = std::env::temp_dir().join(format!(
-            "solstone-speakers-analyze-client-test-{}-{}",
-            std::process::id(),
-            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&directory).expect("test directory");
-        let path = directory.join("helper");
-        fs::write(&path, format!("#!/bin/sh\n{body}")).expect("helper");
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("helper mode");
-        path
-    }
-
-    #[cfg(unix)]
-    fn test_budget(
-        timeout: Duration,
-        terminate_grace: Duration,
-        stdout_limit: usize,
-    ) -> InvocationBudget {
-        InvocationBudget {
-            timeout,
-            terminate_grace,
-            stdout_limit,
-            stderr_limit: 1024,
-        }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn oversized_stdout_is_rejected_while_the_helper_is_running() {
-        let helper = helper_script("cat >/dev/null\nhead -c 1048577 /dev/zero");
-        let started = Instant::now();
-        let result = run_with_budget(
-            &helper,
-            &[vec![1.0]],
-            test_budget(
-                Duration::from_secs(1),
-                Duration::from_millis(20),
-                STDOUT_LIMIT,
-            ),
-        );
-        assert_eq!(result.unwrap_err().reason, "stdout-too-large");
-        assert!(started.elapsed() < Duration::from_secs(1));
-        fs::remove_dir_all(helper.parent().expect("parent")).expect("cleanup");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn timeout_terminates_then_kills_after_the_grace_period() {
-        let helper = helper_script("trap '' TERM\ncat >/dev/null\nwhile :; do :; done");
-        let grace = Duration::from_millis(30);
-        let started = Instant::now();
-        let result = run_with_budget(
-            &helper,
-            &[vec![1.0]],
-            test_budget(Duration::from_millis(20), grace, 1024),
-        );
-        assert_eq!(result.unwrap_err().reason, "timeout");
-        assert!(started.elapsed() >= grace);
-        fs::remove_dir_all(helper.parent().expect("parent")).expect("cleanup");
     }
 }

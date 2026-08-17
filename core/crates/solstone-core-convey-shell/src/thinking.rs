@@ -107,13 +107,7 @@ impl ConfidentialPoll for PortalPoll {
         let agent = ureq::Agent::new_with_config(config);
         let response = match agent.get(&url).header("Connection", "close").call() {
             Ok(response) => response,
-            Err(ureq::Error::Timeout(_)) => return PollOutcome::Continue,
-            Err(error) => {
-                return PollOutcome::Failed {
-                    token: "portal_unreachable".to_owned(),
-                    detail: Some(error.to_string()),
-                };
-            }
+            Err(error) => return classify_portal_call_error(error),
         };
         match response.status().as_u16() {
             204 => PollOutcome::Continue,
@@ -131,6 +125,16 @@ impl ConfidentialPoll for PortalPoll {
                 detail: None,
             },
         }
+    }
+}
+
+fn classify_portal_call_error(error: ureq::Error) -> PollOutcome {
+    match error {
+        ureq::Error::Timeout(_) => PollOutcome::Continue,
+        error => PollOutcome::Failed {
+            token: "portal_unreachable".to_owned(),
+            detail: Some(error.to_string()),
+        },
     }
 }
 
@@ -1493,12 +1497,27 @@ mod tests {
     use solstone_core_brain::{begin_refresh, finish_refresh};
     use tower::ServiceExt;
 
-    use super::{PollOutcome, poll_success_body};
+    use super::{PollOutcome, classify_portal_call_error, poll_success_body};
 
     #[test]
     fn portal_body_timeout_keeps_polling() {
         assert!(matches!(
             poll_success_body(Err(ureq::Error::Timeout(ureq::Timeout::RecvBody))),
+            PollOutcome::Continue
+        ));
+        assert!(matches!(
+            poll_success_body(Err(ureq::Error::HostNotFound)),
+            PollOutcome::Failed {
+                token,
+                ..
+            } if token == "unexpected_payload"
+        ));
+        assert!(matches!(
+            classify_portal_call_error(ureq::Error::Timeout(ureq::Timeout::Connect)),
+            PollOutcome::Continue
+        ));
+        assert!(matches!(
+            classify_portal_call_error(ureq::Error::Timeout(ureq::Timeout::RecvResponse)),
             PollOutcome::Continue
         ));
     }

@@ -114,6 +114,8 @@ mod door;
 mod entities;
 #[cfg(feature = "host")]
 mod link_health_cache;
+#[cfg(all(feature = "host", any(test, feature = "test-hooks")))]
+pub use link_health_cache::set_relay_health_applied_notify;
 #[cfg(feature = "host")]
 mod network;
 #[cfg(feature = "host")]
@@ -128,6 +130,8 @@ pub mod session;
 pub mod session_gate;
 mod speakers;
 mod speakers_analyze_client;
+#[cfg(any(test, feature = "test-hooks"))]
+pub use speakers_analyze_client::drive_discovery_cluster_helper;
 mod speakers_attribution;
 mod speakers_calendar;
 mod speakers_cli_discovery;
@@ -833,19 +837,13 @@ async fn not_found() -> Response {
 mod tests {
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode, header};
-    use serde_json::{Map, Value, json};
-    use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
-    use solstone_core_sol_link::DeviceDoorAuthorization;
-    use solstone_core_sol_link::ledger::AuthorizedClientsRead;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::sync::watch;
+    use serde_json::Value;
     use tower::ServiceExt;
 
-    use super::{ConveyServeOptions, authorization_gate, bind_with_authorization, router};
+    use super::router;
     use crate::registry::APP_REGISTRY;
 
     #[test]
@@ -855,211 +853,22 @@ mod tests {
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-    #[test]
-    fn router_invokes_trends_warm_once() {
-        let path = std::env::temp_dir().join(format!(
-            "solstone-convey-shell-trends-{}-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-            SEQUENCE.fetch_add(1, Ordering::Relaxed),
-        ));
-        fs::create_dir(&path).unwrap();
-        let before = solstone_core_convey_body::trends_warm_invocations();
-        let _router = router(path.clone());
-        assert_eq!(
-            solstone_core_convey_body::trends_warm_invocations() - before,
-            1
-        );
-        let _ = fs::remove_dir_all(path);
-    }
-
-    fn health_envelope(
-        timestamp: i64,
-        state: &str,
-        generation: u64,
-        error: Option<&str>,
-        error_at: Option<u64>,
-        success_at: Option<u64>,
-    ) -> CallosumEnvelope {
-        let mut extra = Map::new();
-        extra.insert("state".to_owned(), json!(state));
-        extra.insert("listen_generation".to_owned(), json!(generation));
-        extra.insert(
-            "last_successful_relay_tunnel_at".to_owned(),
-            json!(success_at),
-        );
-        extra.insert("last_relay_tunnel_error".to_owned(), json!(error));
-        extra.insert("last_relay_tunnel_error_at".to_owned(), json!(error_at));
-        extra.insert("relay_tunnel_error_status".to_owned(), json!(591));
-        extra.insert("relay_admission_saturated_count".to_owned(), json!(592));
-        extra.insert("last_relay_listener_ack_at".to_owned(), json!(593));
-        extra.insert("last_relay_listener_ack_generation".to_owned(), json!(594));
-        CallosumEnvelope {
-            tract: "link".to_owned(),
-            event: solstone_core_spl::LINK_HEALTH_EVENT.to_owned(),
-            ts: Some(timestamp),
-            extra,
-        }
-    }
-
-    async fn loopback_status(address: std::net::SocketAddr) -> Value {
-        let mut stream = tokio::net::TcpStream::connect(address)
-            .await
-            .expect("loopback connects");
-        stream
-            .write_all(
-                b"GET /app/network/api/status HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n",
+    #[tokio::test]
+    async fn router_invokes_trends_warm_once() {
+        let root = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+        let probe = solstone_core_convey_body::TrendsWarmProbe::new();
+        let app = router(root.path().to_path_buf());
+        assert_eq!(probe.count(), 1);
+        let response = app
+            .oneshot(
+                Request::get("/favicon.ico")
+                    .body(Body::empty())
+                    .expect("request"),
             )
             .await
-            .expect("status request writes");
-        let mut response = Vec::new();
-        stream
-            .read_to_end(&mut response)
-            .await
-            .expect("status reads");
-        let header_end = response
-            .windows(4)
-            .position(|window| window == b"\r\n\r\n")
-            .expect("status headers")
-            + 4;
-        serde_json::from_slice(&response[header_end..]).expect("status JSON")
-    }
-
-    async fn status_until(
-        address: std::net::SocketAddr,
-        predicate: impl Fn(&Value) -> bool,
-    ) -> Value {
-        tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                let status = loopback_status(address).await;
-                if predicate(&status) {
-                    return status;
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        })
-        .await
-        .expect("status reflected within deadline")
-    }
-
-    async fn clients_until(server: &CallosumSocketServer, expected: usize) {
-        tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                if server.client_count() == expected {
-                    return;
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        })
-        .await
-        .expect("Callosum client count reached deadline");
-    }
-
-    #[tokio::test]
-    async fn relay_health_subscriber_starts_late_and_drives_live_status() {
-        let path = std::path::PathBuf::from("/var/tmp").join(format!(
-            "solstone-convey-health-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos(),
-        ));
-        fs::create_dir_all(path.join("config")).expect("config directory");
-        fs::create_dir_all(path.join("link/tokens")).expect("token directory");
-        fs::write(
-            path.join("config/journal.json"),
-            br#"{"setup":{"completed_at":1},"link":{"posture":"spl"},"pairing":{"home_address":"203.0.113.77:7657"}}"#,
-        )
-        .expect("config writes");
-        fs::write(
-            path.join("link/tokens/account.json"),
-            br#"{"service_token":"test-token"}"#,
-        )
-        .expect("token writes");
-
-        let server = CallosumSocketServer::bind(path.join("health/callosum.sock"))
-            .await
-            .expect("Callosum server binds");
-        let _router_without_runtime = router(path.clone());
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        assert_eq!(
-            server.client_count(),
-            0,
-            "router does not start a subscriber"
-        );
-
-        let (authorization_sender, _) = watch::channel(DeviceDoorAuthorization::from(
-            AuthorizedClientsRead::Missing,
-        ));
-        let handle = bind_with_authorization(
-            ConveyServeOptions {
-                journal_root: path.clone(),
-                loopback_port: 0,
-                door_port: 0,
-                handshake_timeout: Duration::from_secs(1),
-                stream_stall_timeout: Duration::from_secs(1),
-                router: router(path.clone()),
-                carrier_loop_iterations: std::sync::Arc::new(AtomicU64::new(0)),
-                handshake_authorization_read_ticks: std::sync::Arc::new(AtomicU64::new(0)),
-            },
-            authorization_gate::DoorRouter::unconfined(router(path.clone())),
-            authorization_sender,
-        )
-        .await
-        .expect("Convey binds without a pre-existing subscriber");
-        clients_until(&server, 1).await;
-
-        let now = chrono::Utc::now().timestamp_millis();
-        assert!(server.broadcast(health_envelope(
-            now,
-            "connected",
-            590,
-            Some("unrelated_error"),
-            Some(596),
-            Some(595),
-        )));
-        let status = status_until(handle.loopback_ipv4_addr(), |status| {
-            status["last_link_event_at"] == now
-        })
-        .await;
-        assert_eq!(status["last_link_event_at"], now);
-        assert_eq!(status["relay_listen_generation"], 590);
-        assert_eq!(status["last_successful_relay_tunnel_at"], 595);
-        assert_eq!(status["last_relay_tunnel_error"], "unrelated_error");
-        assert_eq!(status["last_relay_tunnel_error_at"], 596);
-        assert_eq!(status["last_relay_listener_ack_at"], 593);
-        assert_eq!(status["last_relay_listener_ack_generation"], 594);
-        assert!(
-            status["home_candidates"]
-                .as_array()
-                .expect("home candidates array")
-                .iter()
-                .any(|candidate| candidate["source"] == "override")
-        );
-        assert_eq!(status["relay_state"], "parked");
-
-        assert!(server.broadcast(health_envelope(
-            now - 90_001,
-            "connected",
-            590,
-            None,
-            None,
-            Some(590),
-        )));
-        let offline = status_until(handle.loopback_ipv4_addr(), |status| {
-            status["last_link_event_at"] == now - 90_001
-        })
-        .await;
-        assert_eq!(offline["relay_state"], "offline");
-
-        handle.shutdown();
-        clients_until(&server, 0).await;
-        server.stop().await;
-        let _ = fs::remove_dir_all(path);
+            .expect("router responds");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(probe.count(), 1);
     }
 
     #[tokio::test]

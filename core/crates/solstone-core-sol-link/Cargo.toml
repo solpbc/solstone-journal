@@ -32,6 +32,7 @@ host = [
     "dep:time",
     "dep:x509-parser",
 ]
+test-hooks = ["solstone-core-journal-io?/test-hooks"]
 
 [dependencies]
 base64 = { version = "0.22.1", optional = true }
@@ -69,7 +70,6 @@ x509-parser = { version = "0.16.0", optional = true }
 
 [dev-dependencies]
 rcgen = { workspace = true }
-solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
 tower = { workspace = true }
 
 [[test]]
@@ -79,6 +79,14 @@ required-features = ["host"]
 [[test]]
 name = "device_door_tls"
 required-features = ["host"]
+
+[[test]]
+name = "sol_link_serving"
+required-features = ["host"]
+
+[[test]]
+name = "sol_link_publish_crash"
+required-features = ["host", "test-hooks"]
 
 # `getifaddrs` requires one audited unsafe syscall boundary; keep the exception
 # local to that function instead of relaxing the workspace-wide hard forbid.

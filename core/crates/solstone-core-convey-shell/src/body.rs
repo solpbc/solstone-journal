@@ -44,44 +44,25 @@ fn day_refusal() -> Response {
 mod tests {
     use super::*;
     use std::fs;
-    use std::path::{Path as FsPath, PathBuf};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::path::Path as FsPath;
 
     use axum::body::{Body, to_bytes};
     use axum::http::Request;
     use serde_json::Value;
     use tower::ServiceExt;
 
-    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    struct EstablishedJournal(PathBuf);
+    struct EstablishedJournal(tempfile::TempDir);
 
     impl EstablishedJournal {
         fn new(config: &[u8]) -> Self {
-            let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock is after epoch")
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "solstone-body-shell-{}-{nanos}-{sequence}",
-                std::process::id()
-            ));
-            fs::create_dir(&path).expect("temporary root creates");
-            fs::create_dir(path.join("config")).expect("config directory creates");
-            fs::write(path.join("config/journal.json"), config).expect("config writes");
-            Self(path)
+            let dir = tempfile::TempDir::new_in("/var/tmp").expect("temporary root creates");
+            fs::create_dir(dir.path().join("config")).expect("config directory creates");
+            fs::write(dir.path().join("config/journal.json"), config).expect("config writes");
+            Self(dir)
         }
 
         fn established() -> Self {
             Self::new(br#"{"setup":{"completed_at":1767225600}}"#)
-        }
-    }
-
-    impl Drop for EstablishedJournal {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
         }
     }
 
@@ -124,7 +105,7 @@ mod tests {
     #[tokio::test]
     async fn body_documents_are_embedded_and_day_validation_is_calendar_aware() {
         let journal = EstablishedJournal::established();
-        let app = crate::router(journal.0.clone());
+        let app = crate::router(journal.0.path().to_path_buf());
         let root = get(app.clone(), "/app/body/").await;
         assert_eq!(root.0, StatusCode::OK);
         assert_eq!(root.2, reference("solstone/convey/static/shell.html"));
@@ -151,7 +132,7 @@ mod tests {
     #[tokio::test]
     async fn background_404_and_day_refusal_are_distinct() {
         let journal = EstablishedJournal::established();
-        let app = crate::router(journal.0.clone());
+        let app = crate::router(journal.0.path().to_path_buf());
         let background = get(app.clone(), "/app/body/background").await;
         assert_eq!(background.0, StatusCode::NOT_FOUND);
         assert_eq!(background.1, "text/html; charset=utf-8");
@@ -169,7 +150,7 @@ mod tests {
     #[tokio::test]
     async fn all_body_api_routes_are_native() {
         let journal = EstablishedJournal::established();
-        let app = crate::router(journal.0.clone());
+        let app = crate::router(journal.0.path().to_path_buf());
         let expected = serde_json::to_value(crate::refusal::AppNotConverted::new("body"))
             .expect("refusal serializes");
         for path in [
@@ -186,7 +167,7 @@ mod tests {
     #[tokio::test]
     async fn body_conversion_leaves_other_apps_unconverted_and_unknown_body_api_html_404() {
         let journal = EstablishedJournal::established();
-        let app = crate::router(journal.0.clone());
+        let app = crate::router(journal.0.path().to_path_buf());
         assert_eq!(get(app.clone(), "/app/body/").await.0, StatusCode::OK);
         assert_eq!(
             get(app.clone(), "/app/activities/").await.0,
@@ -231,14 +212,14 @@ mod tests {
                 "/app/body/api/recent",
                 "/app/body/api/window?from=2026-08-01T00%3A00%3A00%2B00%3A00&to=2026-08-02T00%3A00%3A00%2B00%3A00",
             ] {
-                let response = get(crate::router(journal.0.clone()), path).await;
+                let response = get(crate::router(journal.0.path().to_path_buf()), path).await;
                 assert_eq!(response.0, expected_status, "{path}");
                 if expected_status == StatusCode::INTERNAL_SERVER_ERROR {
                     if path.contains("/api/") {
                         assert_eq!(json_body(&response.2)["reason_code"], "corrupt_config");
                         assert_eq!(
                             json_body(&response.2)["detail"],
-                            crate::session::corrupt_config_detail(&journal.0),
+                            crate::session::corrupt_config_detail(journal.0.path()),
                             "{path} preserves the session gate detail byte-for-byte"
                         );
                     } else {
@@ -253,7 +234,7 @@ mod tests {
     async fn bare_body_and_speakers_share_the_html_404_fallback() {
         let journal = EstablishedJournal::established();
         for path in ["/app/body", "/app/speakers"] {
-            let response = get(crate::router(journal.0.clone()), path).await;
+            let response = get(crate::router(journal.0.path().to_path_buf()), path).await;
             assert_eq!(response.0, StatusCode::NOT_FOUND, "{path}");
             assert_eq!(response.1, "text/html; charset=utf-8", "{path}");
         }
