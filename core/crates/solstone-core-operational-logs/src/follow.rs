@@ -585,6 +585,7 @@ fn output_error(source: io::Error) -> FollowFatalError {
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::collections::{HashMap, VecDeque};
+    #[cfg(target_os = "linux")]
     use std::os::unix::ffi::OsStringExt;
     use std::os::unix::fs::symlink;
     use std::rc::Rc;
