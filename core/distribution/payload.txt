@@ -58,6 +58,7 @@ solstone/talent/steward.schema.json
 solstone/talent/story.schema.json
 solstone/talent/weekly_reflection.md
 solstone/talent/work.md
+solstone/think/contract/layout.json
 solstone/think/services/spp_attest/roots/amd/Genoa/ark.pem
 solstone/think/services/spp_attest/roots/amd/Genoa/ask.pem
 solstone/think/services/spp_attest/roots/amd/Milan/ark.pem

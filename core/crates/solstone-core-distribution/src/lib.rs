@@ -35,9 +35,26 @@ use inventory::{
     Inventory, InventoryError, load_inventory, load_payload, repository_inventory_path,
 };
 
+const REQUIRED_LAYOUT_PAYLOAD: &[&str] = &[
+    "solstone/talent/journal/contract/bundle.json",
+    "solstone/think/contract/layout.json",
+    "solstone/think/templates/segment_preamble.md",
+];
+
 pub fn validate_distribution_inventory(inventory_path: &Path) -> Result<Inventory, InventoryError> {
     let inventory = load_inventory(inventory_path)?;
-    let _payload = load_payload(inventory_path, &inventory)?;
+    let payload = load_payload(inventory_path, &inventory)?;
+    let missing = REQUIRED_LAYOUT_PAYLOAD
+        .iter()
+        .filter(|required| !payload.iter().any(|path| path == **required))
+        .copied()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(InventoryError::new(format!(
+            "missing required distribution layout anchor:\n  {}",
+            missing.join("\n  ")
+        )));
+    }
     Ok(inventory)
 }
 
@@ -49,6 +66,27 @@ pub fn discover_and_validate_inventory(start: &Path) -> Result<Inventory, Invent
         ))
     })?;
     validate_distribution_inventory(&path)
+}
+
+#[cfg(test)]
+#[test]
+fn inventory_requires_every_runtime_layout_anchor() {
+    let temporary = tempfile::tempdir().expect("temporary inventory");
+    fs::write(
+        temporary.path().join("inventory.toml"),
+        include_str!("../../../distribution/inventory.toml"),
+    )
+    .expect("write inventory");
+    let payload = include_str!("../../../distribution/payload.txt")
+        .replace("solstone/think/contract/layout.json\n", "");
+    fs::write(temporary.path().join("payload.txt"), payload).expect("write payload");
+    let error = validate_distribution_inventory(&temporary.path().join("inventory.toml"))
+        .expect_err("missing anchor must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("solstone/think/contract/layout.json")
+    );
 }
 
 #[derive(Clone, Copy)]
