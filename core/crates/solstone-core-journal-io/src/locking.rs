@@ -808,5 +808,4 @@ mod tests {
                 if timeout == Duration::ZERO
         ));
     }
-
 }

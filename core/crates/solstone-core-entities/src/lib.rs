@@ -11,12 +11,12 @@ mod model;
 mod router;
 
 pub use model::{ATTENDANCE_KINDS, ENTITIES_COPY};
-pub use router::{api_router, api_router_with_delete_window};
-#[cfg(test)]
-pub(crate) use router::{router, router_with_delete_window_and_registry};
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use router::router_with_delete_window;
+pub use router::{api_router, api_router_with_delete_window};
+#[cfg(test)]
+pub(crate) use router::{router, router_with_delete_window_and_registry};
 
 #[cfg(test)]
 mod router_tests;

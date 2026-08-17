@@ -58,13 +58,13 @@ pub use store::{
     list_scoped_facet_entities_tolerant, move_facet_entity, update_facet_entity_description,
     update_facet_entity_identity,
 };
-pub use trust_lock::{
-    FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test,
-};
 #[cfg(any(test, feature = "test-hooks"))]
 pub use store::{
     block_journal_entity_with_hook, delete_created_entity_if_unreferenced_with_hook,
     delete_journal_entity_with_hook,
+};
+pub use trust_lock::{
+    FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test,
 };
 
 #[cfg(test)]

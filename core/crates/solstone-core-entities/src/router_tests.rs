@@ -4346,7 +4346,12 @@ async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
     async fn drive(root: &Path, kind: &str) -> (u16, Value) {
         match kind {
             "delete_detected" => {
-                delete_json(root, "/app/entities/api/work/detected", json!({"name":"Alice"})).await
+                delete_json(
+                    root,
+                    "/app/entities/api/work/detected",
+                    json!({"name":"Alice"}),
+                )
+                .await
             }
             "detach_entity" => delete(root, "/app/entities/api/work/entity/a").await,
             "detect_entity_route" => {

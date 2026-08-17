@@ -54,12 +54,7 @@ impl DeferredDeleteRegistry {
     }
 
     #[cfg(test)]
-    pub(crate) fn commit_if_pending(
-        &self,
-        journal_root: &Path,
-        entity_id: &str,
-        pending_id: &str,
-    ) {
+    pub(crate) fn commit_if_pending(&self, journal_root: &Path, entity_id: &str, pending_id: &str) {
         Self::commit_if_still_scheduled(&self.handles, journal_root, entity_id, pending_id);
     }
 

@@ -228,5 +228,4 @@ mod tests {
         assert!(Path::new("/dev/fd").join(descriptor.to_string()).exists());
         nix::unistd::close(descriptor).expect("close duplicate");
     }
-
 }

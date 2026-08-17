@@ -774,5 +774,4 @@ mod tests {
         assert!(write_bytes_exclusive(&target, b"other", AtomicWriteOptions::default()).is_err());
         assert_eq!(fs::read(&target).unwrap().len(), 1024 * 1024);
     }
-
 }
