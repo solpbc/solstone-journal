@@ -3711,11 +3711,11 @@ id = "solstone-core-generate-wire::confidential_transport"
 package = "solstone-core-generate-wire"
 target = "confidential_transport"
 set = "component"
-areas = ["cognition"]
+areas = ["trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 required_features = ["test-hooks"]
 runtime = "none"
 
