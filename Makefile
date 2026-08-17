@@ -1582,18 +1582,16 @@ contract:
 
 # No .installed: both recipes are cargo-only now that the verb is native, and
 # the prerequisite was the last thing dragging a Python venv bootstrap into a
-# target that needs no interpreter. check-contract-parity keeps it -- that one
-# really does run the reference.
+# target that needs no interpreter.
+#
+# check-contract-parity is gone with the reference it compared against. It ran
+# solstone.think.contract.journal beside the native builder and diffed the two
+# renderings; that module was deleted with the rest of the Python tree, so the
+# target had one side left and could only ever fail. Nothing invoked it -- no
+# gate, no suite, no other recipe -- which is why it survived its own oracle.
 check-contract:
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract check
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build --check
-
-check-contract-parity: .installed
-	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; cp -R solstone "$$scratch/solstone"; \
-	cp -R core/payload/solstone/. "$$scratch/solstone/"; \
-	$(VENV_BIN)/python -c 'from pathlib import Path; import sys; from solstone.think.contract.journal import build_bundle, render_bundle_json; print(render_bundle_json(build_bundle(Path(sys.argv[1]))), end="")' "$$scratch" > "$$scratch/python.json"; \
-	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build --root "$$scratch" >/dev/null; \
-	cmp "$$scratch/python.json" "$$scratch/solstone/talent/journal/contract/bundle.json"
 
 core-fixtures:
 	$(VENV_BIN)/python scripts/generate_observe_category_registry.py
