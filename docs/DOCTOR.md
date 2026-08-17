@@ -46,7 +46,6 @@ completed health failures should compute `failed - errors`.
 
 | Check | Severity | Notes |
 |-------|----------|-------|
-| `host_dependencies` | blocker | Journal-host Python dependencies are installed. |
 | `disk_space` | advisory | Free-space warning. |
 | `config_dir_readable` | blocker | Home and service config directory permissions. |
 | `journal_dir_writable` | blocker | Journal directory writability when the local journal exists. |
@@ -54,21 +53,15 @@ completed health failures should compute `failed - errors`.
 | `service_identity` | blocker | Installed service points at this install. |
 | `service_running` | blocker | Service installed/running/crash-loop diagnosis. |
 | `journal_sync` | blocker | Concurrent-writer conflict check. |
-| `stale_alias_symlink` | blocker | Checks only the `journal` wrapper; stale aliases warn, never block, and `journal setup` repairs them. |
 | `launchd_stale_plist` | advisory | macOS only; stale legacy service plists should be removed with `journal service uninstall`, then repaired with `journal service install` only on a confirmed headless host. |
 | `default_stt_ready` / `parakeet_cpp_stt_ready` | advisory | Linux Parakeet artifacts, binary loader readiness, model, and running server. A missing `libgomp.so.1` is reported as “OpenMP runtime unavailable” with the distro install command, before the supervisor can collapse it to a generic process exit. |
-| `feature:pdf-import`, `feature:pdf-export`, `feature:whisper` | advisory | Optional extras with exact install commands. |
-
-`host_dependencies` fix guidance is: Reinstall the journal host stack:
-`pip install --upgrade solstone-journal`  |  `uv tool install --upgrade solstone-journal`  |  `pipx install --force solstone-journal`. On an NVIDIA host use `solstone-journal-cuda` instead — never install both.
 
 `journal doctor` is role-aware. If there is no local journal directory or no
 installed service, folder and service checks emit `skip` (`no local journal` or
 `no local journal service`) rather than failing. Invalid service config, service
 identity mismatch, crash loops, systemd failed state, and journal-sync conflicts
 are blocker failures. An installed service with no supervisor socket is a
-warning when the OS unit is not failed. Host dependency and feature checks report
-missing journal-host packaging pieces directly.
+warning when the OS unit is not failed.
 
 On Linux, Parakeet uses the host's GCC OpenMP runtime. Install it with
 `sudo apt install libgomp1` on Ubuntu/Debian, `sudo dnf install libgomp` on
@@ -88,14 +81,11 @@ deletion advice with the conflict fix. If the topology or foreign-launcher scan
 is incomplete rather than proven, only service lifecycle actions are withheld
 until it can be determined.
 
-`journal setup` step 1 runs `journal doctor --readiness`: the client readiness
-checks (`python_version`, `sol_importable`, `local_bin_sol_reachable`,
-`stale_alias_symlink`, `disk_space`, `journal_dir_writable`) plus
-`host_dependencies`, `default_stt_ready`, `parakeet_cpp_stt_ready`,
-`speakers_analyze_installation`, `feature:pdf-import`, `feature:pdf-export`, and `feature:whisper`.
+`journal setup` step 1 runs `journal doctor --readiness`: `local_bin_sol_reachable`,
+`disk_space`, `journal_dir_writable`, `default_stt_ready`,
+`parakeet_cpp_stt_ready`, and `speakers_analyze_installation`.
 It does not run runtime service, sync, config-dir, or launchd checks. A blocker
-failure still stops setup early; feature advisories stay advisory and include
-the exact extra-install command. An execution error in any readiness check also
+failure still stops setup early. An execution error in any readiness check also
 stops setup early, even when that check is advisory.
 
 `make preflight` runs `scripts/preflight.py`, the stdlib-only source-checkout

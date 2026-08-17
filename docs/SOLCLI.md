@@ -249,10 +249,8 @@ service checks emit `skip` (`no local journal` / `no local journal service`)
 instead of false failures. Its battery is:
 
 - `disk_space` — advisory.
-- `host_dependencies`, `config_dir_readable`, `journal_dir_writable`,
-  `service_identity`, `service_running`, `journal_sync`,
-  `stale_alias_symlink` — blockers.
-  Stale `journal` aliases warn, never block, and `journal setup` repairs them.
+- `config_dir_readable`, `journal_dir_writable`, `service_identity`,
+  `service_running`, `journal_sync` — blockers.
 - `supervisor_conflict` — blocker; macOS only; fails when `journal.app` and the
   legacy LaunchAgent are both supervising one journal, or when a foreign
   persistent LaunchAgent relaunches `/Applications/solstone.app`. Proven-conflict
@@ -263,16 +261,11 @@ instead of false failures. Its battery is:
 - `launchd_stale_plist` — advisory on macOS; skipped on Linux. It advises
   removing the legacy service first and reinstalling the headless service only
   as a separate step.
-- `feature:pdf-import`, `feature:pdf-export`, `feature:whisper` — advisories with the exact extra-install
-  command when missing.
-
-`host_dependencies` fix guidance is: Reinstall the journal host stack:
-`pip install --upgrade solstone-journal`  |  `uv tool install --upgrade solstone-journal`  |  `pipx install --force solstone-journal`. On an NVIDIA host use `solstone-journal-cuda` instead — never install both.
 
 Journal-host blocker failures include invalid service config, service identity
 mismatch, crash loops, systemd failed state, and journal-sync conflicts. An
 installed service with no supervisor socket is a warning when the OS unit is not
-failed. `--feature <name>` runs a single feature advisory.
+failed.
 
 Use `journal doctor` for “why is this journal host unhealthy?”, `make preflight`
 for the stdlib-only fresh-clone check before `.venv`/`uv` exist, and `journal
