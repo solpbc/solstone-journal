@@ -2537,7 +2537,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         entry_type: "http",
         operation_id: "journal.retention.list",
         method: Some("POST"),
-        route: Some("/app/settings/api/storage/purge"),
+        route: Some("/app/settings/api/storage/list"),
         contract_operation_id: None,
         handler: "retention_list",
         resident: false,

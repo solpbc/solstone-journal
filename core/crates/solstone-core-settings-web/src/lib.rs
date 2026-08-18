@@ -196,7 +196,7 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
             }),
         )
         .route(
-            "/app/settings/api/storage/purge",
+            "/app/settings/api/storage/list",
             post(move |body| retention::purge(purge_root.clone(), body)),
         )
         .route(

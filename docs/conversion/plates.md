@@ -58,7 +58,7 @@ decides against — failure exhaustion, re-entry eligibility, and terminal proof
 
 🔴 **It is its own boundary because four plates read it for four different purposes, and two
 of those decide irreversible deletion.** `P-segment-sense` writes it and re-enters on it ·
-`P-journal-retention` purges raw media on it · `P-device-ingest` proves to a device that its
+`P-journal-retention` marks raw media on it for removal · `P-device-ingest` proves to a device that its
 upload was consumed so the device may drop its local copy · `P-web` and `P-index` derive
 displayed and clustered state from it. Leaving it as a field of a storage format made it
 nobody's contract while being everybody's decision input.
@@ -656,7 +656,7 @@ substitutes defaults for settings that are sitting right there.
 
 ## `P-journal-retention`
 
-The logic that decides what raw media is retained, and what logs are retained for how long. `think/retention.py` (709 lines) **irreversibly deletes owner raw media**; `log_retention.py` (1,006) prunes logs.
+The logic that decides what raw media is retained, and what logs are retained for how long. Policy and marking live in `core/crates/solstone-core-retention/` (`policy.rs`, `marks.rs`); the settings-web HTTP handler and `retention_executor.rs` drive that surface. A proposal is not a removal — the owner approves marked identities before anything is released.
 
 🆕 🔴 **Widened 2026-08-05 by operator ruling: this plate EXECUTES every removal of owner media, and it is the only plate that does.** Other plates **request**; retention removes. Three consequences that are not local to retention:
 

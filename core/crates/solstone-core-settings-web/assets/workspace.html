@@ -6488,7 +6488,7 @@ async function runCleanupMark() {
   previewDiv.style.display = '';
 
   try {
-    const response = await fetch('api/storage/purge', {
+    const response = await fetch('api/storage/list', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

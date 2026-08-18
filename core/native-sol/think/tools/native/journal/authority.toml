@@ -165,7 +165,7 @@ help="List original media ready for removal."
 operation_id="journal.retention.list"
 entry_type="http"
 method="POST"
-route="/app/settings/api/storage/purge"
+route="/app/settings/api/storage/list"
 handler="retention_list"
 params=[{name="stream",kind="option",type="text",required=false,nargs=1,multiple=false,options=["--stream"],secondary=[],hidden=false,is_flag=false,count=false}]
 

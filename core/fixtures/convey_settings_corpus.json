@@ -21132,7 +21132,7 @@
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "journal_logs": {
           "days": 14,
@@ -21161,7 +21161,7 @@
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "journal_logs": {
           "days": 14,
@@ -21190,7 +21190,7 @@
         "reason_code": "invalid_request_value"
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "journal_logs": {
           "days": 14,
@@ -21221,7 +21221,7 @@
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "journal_logs": {
           "days": 14,
@@ -21286,7 +21286,7 @@
         "unreadable_days": []
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "per_stream": {},
         "raw_media": "days",
@@ -21344,7 +21344,7 @@
         "unreadable_days": []
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "per_stream": {},
         "raw_media": "days",
@@ -21383,7 +21383,7 @@
         "unreadable_days": []
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "empty_audio": "keep",
         "per_stream": {},
@@ -21423,7 +21423,7 @@
         "unreadable_days": []
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "empty_audio": "keep",
         "per_stream": {},
@@ -21460,7 +21460,7 @@
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "per_stream": {},
         "raw_media": "days",
@@ -21496,7 +21496,7 @@
         "reason_code": "settings_operation_failed"
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "per_stream": {},
         "raw_media": "days",
@@ -21554,7 +21554,7 @@
         "unreadable_days": []
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "per_stream": {
           "tmux": {
@@ -21598,7 +21598,7 @@
         "unreadable_days": []
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "empty_audio": "keep",
         "per_stream": {},
@@ -21638,7 +21638,7 @@
         "unreadable_days": []
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "empty_audio": "keep",
         "per_stream": {},
@@ -21699,7 +21699,7 @@
         "unreadable_days": []
       },
       "normalized_paths": [],
-      "path": "/app/settings/api/storage/purge",
+      "path": "/app/settings/api/storage/list",
       "retention_config": {
         "per_stream": {},
         "raw_media": "processed",

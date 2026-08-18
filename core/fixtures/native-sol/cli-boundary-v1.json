@@ -137,7 +137,7 @@
         {
           "path": "call journal retention list",
           "bindings": [
-            {"method": "POST", "route": "/app/settings/api/storage/purge"}
+            {"method": "POST", "route": "/app/settings/api/storage/list"}
           ]
         },
         {

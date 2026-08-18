@@ -343,7 +343,7 @@ fn ac4_stubbed_purge_never_marks_on_a_non_releasing_policy() {
                 run_async(send(
                     harness.router(),
                     "POST",
-                    "/app/settings/api/storage/purge",
+                    "/app/settings/api/storage/list",
                     Some(&record["sent"]),
                 ))
             },
@@ -396,7 +396,7 @@ fn ac10_stubbed_purge_replays_recorded_status_and_digest() {
                 run_async(send(
                     harness.router(),
                     "POST",
-                    "/app/settings/api/storage/purge",
+                    "/app/settings/api/storage/list",
                     Some(&record["sent"]),
                 ))
             },
@@ -430,7 +430,7 @@ fn ac5_releasing_policy_argv_is_semantically_equal_to_the_corpus() {
                 run_async(send(
                     harness.router(),
                     "POST",
-                    "/app/settings/api/storage/purge",
+                    "/app/settings/api/storage/list",
                     Some(&record["sent"]),
                 ));
             },
@@ -488,7 +488,7 @@ fn ac7_and_ac11_successful_purge_keeps_media_and_drops_unknown_skip_reasons() {
                 run_async(send(
                     harness.router(),
                     "POST",
-                    "/app/settings/api/storage/purge",
+                    "/app/settings/api/storage/list",
                     Some(&record["sent"]),
                 ))
             },
@@ -523,7 +523,7 @@ fn ac9_refused_stub_receipts_preserve_media_and_carry_the_refusal_summary() {
                 run_async(send(
                     harness.router(),
                     "POST",
-                    "/app/settings/api/storage/purge",
+                    "/app/settings/api/storage/list",
                     Some(&record["sent"]),
                 ))
             },
@@ -550,7 +550,7 @@ fn ac3_purge_without_an_executor_matches_refusal_records() {
                 run_async(send(
                     harness.router(),
                     "POST",
-                    "/app/settings/api/storage/purge",
+                    "/app/settings/api/storage/list",
                     sent,
                 ))
             });
@@ -588,7 +588,7 @@ fn ac14_true_days_releases_with_period_one() {
             run_async(send(
                 harness.router(),
                 "POST",
-                "/app/settings/api/storage/purge",
+                "/app/settings/api/storage/list",
                 Some(&record["sent"]),
             ));
         },
@@ -650,7 +650,7 @@ fn ac8_prune_unavailable_is_generic_while_purge_carries_the_tool_detail() {
                 let purge = send(
                     harness.router(),
                     "POST",
-                    "/app/settings/api/storage/purge",
+                    "/app/settings/api/storage/list",
                     Some(&purge_record["sent"]),
                 )
                 .await;

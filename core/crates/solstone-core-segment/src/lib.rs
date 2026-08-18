@@ -103,6 +103,7 @@ mod architecture_tests {
         StreamRepair,
         StreamRecord,
         Supervisor,
+        Tombstone,
         Write,
     }
 
@@ -126,6 +127,7 @@ mod architecture_tests {
         (Source::StreamRepair, include_str!("stream_repair.rs")),
         (Source::StreamRecord, include_str!("stream_record.rs")),
         (Source::Supervisor, include_str!("supervisor.rs")),
+        (Source::Tombstone, include_str!("tombstone.rs")),
         (Source::Write, include_str!("write.rs")),
     ];
 
@@ -151,7 +153,7 @@ mod architecture_tests {
     fn sidecar_write_surface_is_closed() {
         for (kind, source) in SOURCES {
             match kind {
-                Source::Write => {
+                Source::Write | Source::Tombstone => {
                     assert!(source.contains("write_bytes_exclusive"));
                 }
                 Source::Device => {

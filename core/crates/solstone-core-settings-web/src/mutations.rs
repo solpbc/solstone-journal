@@ -37,7 +37,7 @@ const MUTATION_PAIRS: [(&str, &str); 19] = [
     ),
     ("PUT", "/app/settings/api/sync"),
     ("PUT", "/app/settings/api/storage"),
-    ("POST", "/app/settings/api/storage/purge"),
+    ("POST", "/app/settings/api/storage/list"),
     ("POST", "/app/settings/api/storage/prune-logs"),
 ];
 

@@ -856,7 +856,7 @@ mod tests {
             ),
             (
                 "call journal retention list",
-                &["POST /app/settings/api/storage/purge"],
+                &["POST /app/settings/api/storage/list"],
             ),
             ("call journal search", &["GET /app/search/api/search"]),
             (
