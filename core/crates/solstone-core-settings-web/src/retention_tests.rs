@@ -846,6 +846,8 @@ fn ordinary_raw_media_save_leaves_empty_audio_keep() {
         &fs::read(root.path().join("config/journal.json")).expect("config after"),
     )
     .expect("config JSON");
+    assert_eq!(config["retention"]["raw_media"], "days");
+    assert_eq!(config["retention"]["raw_media_days"], 30);
     assert_eq!(config["retention"]["empty_audio"], "keep");
     assert_eq!(config["retention"]["empty_audio_days"], Value::Null);
 }

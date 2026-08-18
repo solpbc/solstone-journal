@@ -44,7 +44,7 @@ pub(crate) struct InputFacts {
     pub(crate) input_size: u64,
 }
 
-/// Capture the input's byte count before any terminal branch can remove it.
+/// Capture the input's byte count so the processing record names these bytes.
 pub(crate) fn capture_input_facts(path: &Path) -> Result<InputFacts, TranscribeError> {
     let input_size = fs::metadata(path)
         .map_err(|error| TranscribeError::InputMetadata {
