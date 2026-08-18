@@ -397,13 +397,18 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             }
         }
         "capture_health" => {
+            let now = context.now.timestamp_millis();
             if ok {
-                observer(&context, "phone", context.now.timestamp_millis() - 1);
+                write_observer(
+                    &context,
+                    "abcdefgh",
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":now-1,"last_segment_received_at":now-1}),
+                );
             } else {
                 write_observer(
                     &context,
                     "abcdefgh",
-                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":context.now.timestamp_millis()-31_000,"health":{"ingest_rejection":{"active_count":1}}}),
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":now-1,"last_segment_received_at":now-86_400_001}),
                 );
             }
         }
@@ -419,12 +424,25 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             }
         }
         "observer_delivery_stall" => {
-            let upload_age = if ok { 1_000 } else { 21_600_001 };
-            write_observer(
-                &context,
-                "abcdefgh",
-                serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":context.now.timestamp_millis()-1_000,"last_segment_received_at":context.now.timestamp_millis()-upload_age}),
-            );
+            let now = context.now.timestamp_millis();
+            if ok {
+                write_observer(
+                    &context,
+                    "abcdefgh",
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":now-1_000,"last_segment_received_at":now-1_000}),
+                );
+            } else {
+                write_observer(
+                    &context,
+                    "abcdefgh",
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"last_seen":now-1_000,"last_segment_received_at":now-1_000}),
+                );
+                write_observer(
+                    &context,
+                    "ijklmnop",
+                    serde_json::json!({"key":"ijklmnop-key","name":"tablet","enabled":true,"created_at":1,"last_seen":now-1_000,"last_segment_received_at":now-21_600_001}),
+                );
+            }
         }
         "observer_ingest_health" => {
             observer(&context, "phone", context.now.timestamp_millis() - 1);
@@ -649,6 +667,196 @@ fn no_enabled_observers_skip_observer_trio() {
     ] {
         assert_eq!(status(name, &c), Status::Skip);
     }
+}
+
+fn write_device(
+    context: &CheckContext,
+    prefix: &str,
+    name: &str,
+    last_seen: i64,
+    last_sent: Option<i64>,
+) {
+    let mut value = serde_json::json!({
+        "key": format!("{prefix}-key"),
+        "name": name,
+        "enabled": true,
+        "created_at": 1,
+        "last_seen": last_seen,
+    });
+    if let Some(stamp) = last_sent {
+        value["last_segment_received_at"] = serde_json::json!(stamp);
+    }
+    write_observer(context, prefix, value);
+}
+
+#[test]
+fn lone_long_stop_warns_both_checks() {
+    let hour = 3_600_000;
+    for (sent_age, seen_age) in [(89 * hour, 1_000), (25 * hour, 25 * hour)] {
+        let c = fixture();
+        let now = c.now.timestamp_millis();
+        write_device(
+            &c,
+            "abcdefgh",
+            "phone",
+            now - seen_age,
+            Some(now - sent_age),
+        );
+        let capture = result("capture_health", &c);
+        let stall = result("observer_delivery_stall", &c);
+        assert_eq!(capture.status, Status::Warn);
+        assert!(capture.detail.contains("rollup=attention"));
+        assert!(capture.detail.contains("phone"));
+        assert_eq!(stall.status, Status::Warn);
+        assert!(stall.detail.contains("phone"));
+    }
+}
+
+#[test]
+fn peer_makes_six_hour_and_long_stop_stale() {
+    let hour = 3_600_000;
+    for sent_age in [7 * hour, 25 * hour] {
+        let c = fixture();
+        let now = c.now.timestamp_millis();
+        write_device(&c, "abcdefgh", "alpha", now - 1_000, Some(now - 120_000));
+        write_device(&c, "ijklmnop", "bravo", now - 1_000, Some(now - sent_age));
+        let capture = result("capture_health", &c);
+        let stall = result("observer_delivery_stall", &c);
+        assert_eq!(capture.status, Status::Warn);
+        assert!(capture.detail.contains("bravo"));
+        assert!(!capture.detail.contains("alpha"));
+        assert_eq!(stall.status, Status::Warn);
+        assert!(stall.detail.contains("bravo"));
+    }
+}
+
+#[test]
+fn overnight_quiet_is_ok() {
+    let c = fixture();
+    let now = c.now.timestamp_millis();
+    let eight = 8 * 3_600_000;
+    write_device(&c, "abcdefgh", "alpha", now - eight, Some(now - eight));
+    write_device(&c, "ijklmnop", "bravo", now - eight, Some(now - eight));
+    assert_eq!(status("capture_health", &c), Status::Ok);
+    assert_eq!(status("observer_delivery_stall", &c), Status::Ok);
+}
+
+#[test]
+fn fleet_long_stop_stall_is_warn() {
+    let c = fixture();
+    let now = c.now.timestamp_millis();
+    for (index, prefix) in ["abcdefgh", "ijklmnop", "qrstuvwx", "yzabcdef"]
+        .into_iter()
+        .enumerate()
+    {
+        write_device(
+            &c,
+            prefix,
+            &format!("d{index}"),
+            now - 200_000,
+            Some(now - 41 * 3_600_000),
+        );
+    }
+    assert_eq!(status("observer_delivery_stall", &c), Status::Warn);
+}
+
+#[test]
+fn no_assessed_skips_both_checks() {
+    let c = fixture();
+    observer(&c, "phone", c.now.timestamp_millis() - 1);
+    assert_eq!(status("capture_health", &c), Status::Skip);
+    assert_eq!(status("observer_delivery_stall", &c), Status::Skip);
+    assert!(
+        result("capture_health", &c)
+            .detail
+            .contains("rollup=no_senders")
+    );
+}
+
+#[test]
+fn unassessed_residue_does_not_drag() {
+    let c = fixture();
+    let now = c.now.timestamp_millis();
+    observer(&c, "residue", now - 1);
+    write_device(&c, "ijklmnop", "peer", now - 1, Some(now - 1_000));
+    assert_eq!(status("capture_health", &c), Status::Ok);
+    assert_eq!(status("observer_delivery_stall", &c), Status::Ok);
+}
+
+#[test]
+fn lone_six_hour_gap_is_ok() {
+    let c = fixture();
+    let now = c.now.timestamp_millis();
+    write_device(&c, "abcdefgh", "phone", now - 1_000, Some(now - 21_600_001));
+    assert_eq!(status("observer_delivery_stall", &c), Status::Ok);
+    assert_eq!(status("capture_health", &c), Status::Ok);
+}
+
+#[test]
+fn rejection_without_last_sent_warns_capture() {
+    let alone = fixture();
+    write_observer(
+        &alone,
+        "abcdefgh",
+        serde_json::json!({
+            "key":"abcdefgh-key","name":"rej","enabled":true,"created_at":1,
+            "last_seen": alone.now.timestamp_millis() - 1,
+            "health":{"ingest_rejection":{"active_count":1}}
+        }),
+    );
+    assert_eq!(status("capture_health", &alone), Status::Warn);
+    assert_ne!(status("observer_delivery_stall", &alone), Status::Skip);
+    assert_eq!(status("observer_delivery_stall", &alone), Status::Ok);
+
+    let with_peer = fixture();
+    let now = with_peer.now.timestamp_millis();
+    write_observer(
+        &with_peer,
+        "abcdefgh",
+        serde_json::json!({
+            "key":"abcdefgh-key","name":"rej","enabled":true,"created_at":1,
+            "last_seen": now - 1,
+            "health":{"ingest_rejection":{"active_count":1}}
+        }),
+    );
+    write_device(&with_peer, "ijklmnop", "peer", now - 1, Some(now - 1_000));
+    assert_eq!(status("capture_health", &with_peer), Status::Warn);
+}
+
+#[test]
+fn rejection_with_recent_delivery_warns_capture() {
+    let c = fixture();
+    let now = c.now.timestamp_millis();
+    write_observer(
+        &c,
+        "abcdefgh",
+        serde_json::json!({
+            "key":"abcdefgh-key","name":"rej","enabled":true,"created_at":1,
+            "last_seen": now - 1,
+            "last_segment_received_at": now - 120_000,
+            "health":{"ingest_rejection":{"active_count":1}}
+        }),
+    );
+    assert_eq!(status("capture_health", &c), Status::Warn);
+}
+
+#[test]
+fn unreadable_skip_is_not_never_sent() {
+    let check = |name| registry::lookup(Battery::Journal, name).unwrap().check;
+    let err = Err(solstone_core_observer::store::reload::ReloadError::Directory("injected".into()));
+    let capture =
+        crate::checks::capture_health::result_from_assessment(err, check("capture_health"));
+    let stall = crate::checks::observer_delivery_stall::result_from_assessment(
+        Err(solstone_core_observer::store::reload::ReloadError::Directory("injected".into())),
+        check("observer_delivery_stall"),
+    );
+    assert_eq!(capture.status, Status::Skip);
+    assert_eq!(stall.status, Status::Skip);
+    assert!(capture.detail.contains("rollup=unknown"));
+    assert_ne!(
+        stall.detail,
+        "sol hasn't added anything to your journal yet"
+    );
 }
 
 #[test]
@@ -1074,40 +1282,24 @@ fn speakers_installation_uses_injected_resolvers() {
 }
 
 #[test]
-fn observer_delivery_stall_clause_escalation() {
-    let stage = |value: serde_json::Value| {
-        let context = fixture();
-        write_observer(&context, "abcdefgh", value);
-        result("observer_delivery_stall", &context)
-    };
-    let now = fixture().now.timestamp_millis();
-    let base = |name: &str| {
+fn stall_warn_omits_duplicate_and_queue_clauses() {
+    let context = fixture();
+    let now = context.now.timestamp_millis();
+    write_observer(
+        &context,
+        "abcdefgh",
         serde_json::json!({
-            "key":"abcdefgh-key", "name":name, "enabled":true, "created_at":1,
-            "last_seen":now - 1_000,
-            "last_segment_received_at":now - 21_600_001
-        })
-    };
-    let mut duplicate = base("duplicate");
-    duplicate["stats"] = serde_json::json!({"duplicates_rejected":2});
-    let row = stage(duplicate);
-    assert_eq!(row.status, Status::Warn);
-    assert!(row.detail.ends_with(
-        "prior duplicate responses=2, so repeated uploads may be landing without a newer upload"
-    ));
-
-    let mut beacon = base("beacon");
-    beacon["health"] = serde_json::json!({"beacon":{"pending_queue_depth":4}});
-    let row = stage(beacon);
-    assert_eq!(row.status, Status::Warn);
-    assert!(
-        row.detail
-            .ends_with("pending queue depth 4, so uploads may not be landing")
+            "key":"abcdefgh-key", "name":"phone", "enabled":true, "created_at":1,
+            "last_seen": now - 1_000,
+            "last_segment_received_at": now - 86_400_001,
+            "stats": {"duplicates_rejected": 793866},
+            "health": {"beacon": {"pending_queue_depth": 4}}
+        }),
     );
-
-    let row = stage(base("generic"));
+    let row = result("observer_delivery_stall", &context);
     assert_eq!(row.status, Status::Warn);
-    assert!(row.detail.ends_with("uploads may not be landing"));
+    assert!(!row.detail.contains("duplicate"));
+    assert!(!row.detail.contains("pending queue"));
 }
 
 #[test]

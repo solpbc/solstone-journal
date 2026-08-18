@@ -3,73 +3,78 @@
 use crate::{
     checks::common,
     context::CheckContext,
-    vocabulary::{Check, RunnerResult, Status, make_result, truncate},
+    vocabulary::{Check, CheckResult, RunnerResult, Status, make_result, truncate},
 };
+use solstone_core_observer::store::reload::ReloadError;
+use solstone_core_observer::{DeliveryAssessment, OwnerState};
+
+const HOUR_MS: i64 = 3_600_000;
+
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
-    let records = match common::observers(context) {
-        Ok(records) => records,
+    Ok(result_from_assessment(
+        common::inspect_context(context),
+        check,
+    ))
+}
+
+pub(crate) fn result_from_assessment(
+    assessed: Result<Vec<DeliveryAssessment>, ReloadError>,
+    check: Check,
+) -> CheckResult {
+    let assessed = match assessed {
+        Ok(assessed) => assessed,
         Err(_) => {
-            return Ok(make_result(
+            return make_result(
                 check,
                 Status::Skip,
-                "rollup=unknown; observer records unavailable",
+                "rollup=unknown; device list unavailable",
                 None::<String>,
-            ));
+            );
         }
     };
-    let records = common::enabled(records);
-    if records.is_empty() {
-        return Ok(make_result(
+    if assessed.is_empty() {
+        return make_result(
             check,
             Status::Skip,
-            "rollup=no_observers; no registered observers",
+            "rollup=no_senders; sol hasn't added anything to your journal yet",
             None::<String>,
-        ));
+        );
     }
-    let mut states = Vec::new();
-    for record in &records {
-        let age = record
-            .last_seen()
-            .map(|value| context.now.timestamp_millis() - value);
-        let state = if record.ingest_rejection().is_some() {
-            "degraded"
-        } else if age.is_some_and(|age| age < 30_000) {
-            "active"
-        } else if age.is_some_and(|age| age < 120_000) {
-            "stale"
-        } else {
-            "offline"
-        };
-        states.push((record.name().unwrap_or("unknown"), state));
-    }
-    if states.iter().any(|(_, state)| *state == "active")
-        && !states.iter().any(|(_, state)| *state == "degraded")
-    {
-        return Ok(make_result(
+    if assessed.iter().all(|row| row.state == OwnerState::Active) {
+        return make_result(
             check,
             Status::Ok,
-            "rollup=active; observers reaching the journal",
+            "rollup=active; sol on every device that has added to your journal is current",
             None::<String>,
-        ));
+        );
     }
-    let rollup = if states.iter().any(|(_, state)| *state == "degraded") {
-        "degraded"
-    } else if states.iter().any(|(_, state)| *state == "stale") {
-        "stale"
-    } else {
-        "offline"
-    };
-    let summary = states
+    let clauses: Vec<String> = assessed
         .iter()
-        .take(3)
-        .map(|(name, state)| format!("{name}={state}"))
-        .chain((states.len() > 3).then(|| format!("+{} more", states.len() - 3)))
-        .collect::<Vec<_>>()
-        .join(", ");
-    Ok(make_result(
+        .filter(|row| row.state != OwnerState::Active)
+        .map(capture_clause)
+        .collect();
+    let detail = format!("rollup=attention; {}", join_capped(&clauses));
+    make_result(
         check,
         Status::Warn,
-        truncate(&format!("rollup={rollup}; observers: {summary}"), 400),
-        Some("open /app/health to inspect observer health"),
-    ))
+        truncate(&detail, 400),
+        Some("open /app/health to inspect each device"),
+    )
+}
+
+fn capture_clause(row: &DeliveryAssessment) -> String {
+    match row.last_segment_received_age_ms {
+        Some(age) => format!("sol on {} last added {}h ago", row.name, age / HOUR_MS),
+        None => format!("sol on {} is having trouble adding", row.name),
+    }
+}
+
+fn join_capped(clauses: &[String]) -> String {
+    let named = clauses.iter().take(3).cloned().collect::<Vec<_>>();
+    let extra = clauses.len().saturating_sub(3);
+    if extra == 0 {
+        named.join(", ")
+    } else {
+        format!("{}, +{extra} more", named.join(", "))
+    }
 }

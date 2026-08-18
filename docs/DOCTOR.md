@@ -144,8 +144,7 @@ Health uses a **fail-fast model**: observers exit if they detect problems, and s
 when the journal has recorded an active observer ingest rejection, but never
 blocks. Remediation is to update or restart the observer, then confirm a valid
 upload clears the active rejection.
-`journal doctor` also reports `capture_health` reachability rollups and
-`observer_delivery_stall` when an observer keeps reaching the journal but uploads stop landing.
+`journal doctor` reports `capture_health` and `observer_delivery_stall` from whether sol on each device is still adding to the journal, not from whether a process recently checked in.
 
 | Signal | Healthy when | Stale when |
 |--------|--------------|------------|
