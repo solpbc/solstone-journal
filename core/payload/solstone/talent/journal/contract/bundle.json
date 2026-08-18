@@ -513,7 +513,7 @@
           "write_discipline": "atomic JSON replace"
         }
       },
-      "source": "core/crates/solstone-core/src/contract/schemas/ingest.schema.json"
+      "source": "solstone/apps/devices/ingest.schema.json"
     },
     "screen-jsonl": {
       "schema": {

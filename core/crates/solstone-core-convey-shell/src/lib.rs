@@ -517,12 +517,9 @@ pub fn router(journal_root: PathBuf) -> Router {
         )
         .route("/app/devices/api/{key_prefix}/key", get(devices::key))
         .route("/app/devices/api/create", post(devices::create_retired))
+        .route("/app/devices/callosum", get(devices::observer_wire_refusal))
         .route(
-            "/app/observer/callosum",
-            get(devices::observer_wire_refusal),
-        )
-        .route(
-            "/app/observer/ingest/{*tail}",
+            "/app/devices/ingest/{*tail}",
             get(devices::observer_wire_refusal),
         )
         .route("/app/speakers/", get(speakers::shell))

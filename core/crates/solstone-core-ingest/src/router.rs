@@ -51,13 +51,13 @@ fn router_with_notifier(
     notifier: Arc<dyn IngestNotifier>,
 ) -> Router {
     Router::new()
-        .route("/app/observer/ingest", post(ingest_upload))
-        .route("/app/observer/ingest/manifest", get(ingest_manifest))
+        .route("/app/devices/ingest", post(ingest_upload))
+        .route("/app/devices/ingest/manifest", get(ingest_manifest))
         .route(
-            "/app/observer/ingest/manifest/{day}",
+            "/app/devices/ingest/manifest/{day}",
             get(ingest_manifest_day),
         )
-        .route("/app/observer/ingest/segments/{day}", get(ingest_segments))
+        .route("/app/devices/ingest/segments/{day}", get(ingest_segments))
         .layer(DefaultBodyLimit::max(128 * 1024 * 1024))
         .layer(RequestBodyLimitLayer::new(128 * 1024 * 1024))
         .with_state(IngestState {
@@ -810,7 +810,7 @@ mod tests {
         call(
             app,
             "POST",
-            "/app/observer/ingest",
+            "/app/devices/ingest",
             Some(content_type),
             body,
             basis(DID_A),
@@ -952,7 +952,7 @@ mod tests {
         let (_, manifest) = call(
             &app,
             "GET",
-            "/app/observer/ingest/manifest",
+            "/app/devices/ingest/manifest",
             None,
             Vec::new(),
             basis(DID_A),
@@ -964,7 +964,7 @@ mod tests {
         let (_, day) = call(
             &app,
             "GET",
-            "/app/observer/ingest/manifest/20260804",
+            "/app/devices/ingest/manifest/20260804",
             None,
             Vec::new(),
             basis(DID_A),
@@ -980,7 +980,7 @@ mod tests {
         let (_, segments) = call(
             &app,
             "GET",
-            "/app/observer/ingest/segments/20260804",
+            "/app/devices/ingest/segments/20260804",
             None,
             Vec::new(),
             basis(DID_A),
@@ -1195,6 +1195,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn observer_ingest_prefix_is_not_aliased_after_the_devices_rename() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let app = router(&root);
+        for path in [
+            "/app/observer/ingest",
+            "/app/observer/ingest/manifest",
+            "/app/observer/ingest/manifest/20260804",
+            "/app/observer/ingest/segments/20260804",
+        ] {
+            let method = if path == "/app/observer/ingest" {
+                "POST"
+            } else {
+                "GET"
+            };
+            let (status, _) = call(
+                &app,
+                method,
+                path,
+                None,
+                Vec::new(),
+                basis(DID_A),
+                Some("3"),
+                &[],
+            )
+            .await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{method} {path}");
+        }
+    }
+
+    #[tokio::test]
     async fn oversized_multipart_part_has_its_own_refusal() {
         let dir = root();
         let root = dir.path().to_path_buf();
@@ -1210,7 +1241,7 @@ mod tests {
             call(
                 &app,
                 "POST",
-                "/app/observer/ingest",
+                "/app/devices/ingest",
                 Some(content_type),
                 body,
                 basis(DID_A),
@@ -1251,7 +1282,7 @@ mod tests {
             call(
                 &app,
                 "POST",
-                "/app/observer/ingest",
+                "/app/devices/ingest",
                 Some(content_type),
                 body,
                 basis(DID_A),
@@ -1299,7 +1330,7 @@ mod tests {
             call(
                 &app,
                 "POST",
-                "/app/observer/ingest",
+                "/app/devices/ingest",
                 Some(content_type),
                 body,
                 basis(DID_A),
@@ -1327,7 +1358,7 @@ mod tests {
             call(
                 &app,
                 "POST",
-                "/app/observer/ingest",
+                "/app/devices/ingest",
                 Some(content_type),
                 body,
                 basis(DID_A),
@@ -1355,7 +1386,7 @@ mod tests {
             call(
                 &app,
                 "POST",
-                "/app/observer/ingest",
+                "/app/devices/ingest",
                 Some(content_type),
                 body,
                 basis(DID_A),
@@ -1422,7 +1453,7 @@ mod tests {
         let (_, day) = call(
             &app,
             "GET",
-            "/app/observer/ingest/manifest/20260804",
+            "/app/devices/ingest/manifest/20260804",
             None,
             Vec::new(),
             basis(DID_A),
@@ -1434,7 +1465,7 @@ mod tests {
         let (_, segments) = call(
             &app,
             "GET",
-            "/app/observer/ingest/segments/20260804",
+            "/app/devices/ingest/segments/20260804",
             None,
             Vec::new(),
             basis(DID_A),
@@ -1471,7 +1502,7 @@ mod tests {
             call(
                 &app,
                 "POST",
-                "/app/observer/ingest",
+                "/app/devices/ingest",
                 Some(content_type),
                 body,
                 basis(DID_A),
@@ -1491,7 +1522,7 @@ mod tests {
         let (status, body) = call(
             &app,
             "POST",
-            "/app/observer/ingest",
+            "/app/devices/ingest",
             Some(content_type),
             body,
             basis(DID_A),
@@ -1514,7 +1545,7 @@ mod tests {
         let (status, body) = call(
             &app,
             "POST",
-            "/app/observer/ingest",
+            "/app/devices/ingest",
             Some(content_type),
             body,
             AccessBasis::Localhost,
@@ -1528,7 +1559,7 @@ mod tests {
         let (status, body) = call(
             &app,
             "POST",
-            "/app/observer/ingest",
+            "/app/devices/ingest",
             Some(content_type),
             body,
             basis(DID_A),
@@ -1550,7 +1581,7 @@ mod tests {
         let (_, read_body) = call(
             &app,
             "GET",
-            "/app/observer/ingest/manifest",
+            "/app/devices/ingest/manifest",
             None,
             Vec::new(),
             AccessBasis::Localhost,
@@ -1602,7 +1633,7 @@ mod tests {
             let (actual, body) = call(
                 &app,
                 "POST",
-                "/app/observer/ingest",
+                "/app/devices/ingest",
                 Some(content_type),
                 body,
                 basis(DID_A),
@@ -1630,7 +1661,7 @@ mod tests {
                 call(
                     &app,
                     "POST",
-                    "/app/observer/ingest",
+                    "/app/devices/ingest",
                     Some(content_type),
                     body,
                     basis(did),
@@ -1671,7 +1702,7 @@ mod tests {
         let (_, manifest) = call(
             &app,
             "GET",
-            "/app/observer/ingest/manifest",
+            "/app/devices/ingest/manifest",
             None,
             Vec::new(),
             basis(DID_A),
@@ -1683,7 +1714,7 @@ mod tests {
         let (_, day) = call(
             &app,
             "GET",
-            "/app/observer/ingest/manifest/20260804",
+            "/app/devices/ingest/manifest/20260804",
             None,
             Vec::new(),
             basis(DID_A),
@@ -1705,7 +1736,7 @@ mod tests {
         let (_, segments) = call(
             &app,
             "GET",
-            "/app/observer/ingest/segments/20260804",
+            "/app/devices/ingest/segments/20260804",
             None,
             Vec::new(),
             basis(DID_A),
@@ -1717,7 +1748,7 @@ mod tests {
         let (status, refusal) = call(
             &app,
             "GET",
-            "/app/observer/ingest/segments/20260804",
+            "/app/devices/ingest/segments/20260804",
             None,
             Vec::new(),
             basis(DID_A),
@@ -1749,7 +1780,7 @@ mod tests {
         let (status, body) = call(
             &app,
             "GET",
-            "/app/observer/ingest/manifest",
+            "/app/devices/ingest/manifest",
             None,
             Vec::new(),
             basis(DID_A),
@@ -1772,7 +1803,7 @@ mod tests {
                 .unwrap();
         });
         let request = format!(
-            "POST /app/observer/ingest HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            "POST /app/devices/ingest HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
             REQUEST_BODY_LIMIT + 1
         );
         client.write_all(request.as_bytes()).await.unwrap();

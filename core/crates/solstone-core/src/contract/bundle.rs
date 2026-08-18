@@ -14,7 +14,6 @@ const CONTRACT_META: &str = "x-journal-contract";
 const REQUIRED_SOURCES: &[&str] = &[
     "core/crates/solstone-core/src/contract/schemas/audio.schema.json",
     "core/crates/solstone-core/src/contract/schemas/browser.schema.json",
-    "core/crates/solstone-core/src/contract/schemas/ingest.schema.json",
     "core/crates/solstone-core/src/contract/schemas/protocol.schema.json",
     "core/crates/solstone-core/src/contract/schemas/screen.schema.json",
     "core/crates/solstone-core/src/contract/schemas/streams.schema.json",

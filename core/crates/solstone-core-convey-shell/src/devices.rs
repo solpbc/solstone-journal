@@ -151,7 +151,7 @@ pub(crate) async fn key(
     Json(json!({
         "key": record.key(),
         "name": name,
-        "ingest_url": "/app/observer/ingest",
+        "ingest_url": "/app/devices/ingest",
         "protocol_version": OBSERVER_PROTOCOL_VERSION,
     }))
     .into_response()
@@ -168,7 +168,7 @@ pub(crate) async fn create_retired() -> Response {
 
 // Temporary death-condition routes: remove these explicit observer wire
 // refusals, and this comment, when the real native handlers are mounted. Do
-// not replace them with a blanket observer wildcard. Bare `/app/observer/ingest`
+// not replace them with a blanket observer wildcard. Bare `/app/devices/ingest`
 // is deliberately excluded: its reference endpoint is POST-only, so there is
 // no GET refusal to preserve.
 pub(crate) async fn observer_wire_refusal() -> Response {
@@ -556,7 +556,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(key["ingest_url"], "/app/observer/ingest");
+        assert_eq!(key["ingest_url"], "/app/devices/ingest");
         assert_eq!(key["protocol_version"], OBSERVER_PROTOCOL_VERSION);
         let actions = fs::read_dir(journal.0.path().join("config/actions"))
             .expect("key view action directory")
@@ -729,10 +729,10 @@ mod tests {
         let app = crate::router(journal.0.path().to_path_buf());
         let expected = serde_json::to_vec(&AppNotConverted::new("observer")).expect("refusal");
         for path in [
-            "/app/observer/callosum",
-            "/app/observer/ingest/manifest",
-            "/app/observer/ingest/segments/20260101",
-            "/app/observer/ingest/other",
+            "/app/devices/callosum",
+            "/app/devices/ingest/manifest",
+            "/app/devices/ingest/segments/20260101",
+            "/app/devices/ingest/other",
         ] {
             let response = app
                 .clone()
@@ -753,13 +753,22 @@ mod tests {
         let bare_ingest = app
             .clone()
             .oneshot(
-                Request::get("/app/observer/ingest")
+                Request::get("/app/devices/ingest")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .expect("bare ingest response");
         assert_eq!(bare_ingest.status(), StatusCode::NOT_FOUND);
+
+        for path in ["/app/observer/callosum", "/app/observer/ingest/other"] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .expect("retired observer wire");
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        }
 
         let unestablished = EstablishedJournal::unestablished();
         let app = crate::router(unestablished.0.path().to_path_buf());
