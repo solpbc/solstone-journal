@@ -192,6 +192,9 @@ fn observer_json(record: &ObserverRecord, now_ms: i64) -> Value {
             None => display_name.to_owned(),
         },
     );
+    // Replace this null when a native live-connection source is mounted
+    // and can determine device liveness. Freshness verdicts return with it.
+    let live = Value::Null;
     let mut value = Map::from_iter([
         ("prefix".to_owned(), json!(record.prefix())),
         ("name".to_owned(), json!(presented_name)),
@@ -219,18 +222,32 @@ fn observer_json(record: &ObserverRecord, now_ms: i64) -> Value {
             "stats".to_owned(),
             json!(record.stats().cloned().unwrap_or_default()),
         ),
-        // Replace these nulls when a native live-connection source is mounted
-        // and can determine device liveness.
-        ("live".to_owned(), Value::Null),
+        ("live".to_owned(), live.clone()),
         ("last_chat_request_at".to_owned(), Value::Null),
-        ("state".to_owned(), json!(freshness.state)),
-        ("group".to_owned(), json!(freshness.group)),
+        (
+            "state".to_owned(),
+            freshness_field(record, &live, &freshness, |row| json!(row.state)),
+        ),
+        (
+            "group".to_owned(),
+            freshness_field(record, &live, &freshness, |row| json!(row.group)),
+        ),
         (
             "elapsed_ms".to_owned(),
-            freshness.elapsed_ms.map_or(Value::Null, Value::from),
+            freshness_field(record, &live, &freshness, |row| {
+                row.elapsed_ms.map_or(Value::Null, Value::from)
+            }),
         ),
-        ("clock_skew".to_owned(), json!(freshness.clock_skew)),
-        ("label".to_owned(), json!(state_label(freshness.state))),
+        (
+            "clock_skew".to_owned(),
+            freshness_field(record, &live, &freshness, |row| json!(row.clock_skew)),
+        ),
+        (
+            "label".to_owned(),
+            freshness_field(record, &live, &freshness, |row| {
+                json!(state_label(row.state))
+            }),
+        ),
         ("failing".to_owned(), json!(failing)),
     ]);
     debug_assert_eq!(value.len(), OBSERVER_ENTRY_FIELDS.len());
@@ -298,6 +315,22 @@ struct Freshness {
     group: &'static str,
     elapsed_ms: Option<i64>,
     clock_skew: bool,
+}
+
+/// Freshness verdicts are inferred from `last_seen`. Emit them only when a
+/// source that can advance `last_seen` is mounted (`live` is not null), or
+/// when `revoked` is a stored fact rather than a time derivation.
+fn freshness_field(
+    record: &ObserverRecord,
+    live: &Value,
+    freshness: &Freshness,
+    present: impl Fn(&Freshness) -> Value,
+) -> Value {
+    if record.revoked() || !live.is_null() {
+        present(freshness)
+    } else {
+        Value::Null
+    }
 }
 
 fn freshness(last_seen: Option<i64>, revoked: bool, now_ms: i64) -> Freshness {
@@ -632,10 +665,14 @@ mod tests {
             observer_json(&record("eeee0000-key", None, true), now),
         ];
         rows.sort_by_key(observer_sort_key);
+        assert!(rows[0]["state"].is_null());
+        assert_eq!(rows[1]["state"], "revoked");
+        assert!(rows[2]["label"].is_null());
+        assert_eq!(rows[4]["state"], "revoked");
         assert_eq!(
             rows.map(|row| row["prefix"].as_str().unwrap().to_owned()),
-            ["aaaa0000", "dddd0000", "bbbb0000", "cccc0000", "eeee0000"],
-            "the two revoked rows stay on opposite sides of the offline row"
+            ["aaaa0000", "bbbb0000", "dddd0000", "cccc0000", "eeee0000"],
+            "without a last-seen source, unrevoked rows have no group and sort by last_seen"
         );
     }
 
@@ -829,6 +866,11 @@ mod tests {
             std::str::from_utf8(&body)
                 .unwrap()
                 .contains("live connection status unavailable")
+        );
+        assert!(
+            std::str::from_utf8(&body)
+                .unwrap()
+                .contains("function verdictAvailable")
         );
     }
 

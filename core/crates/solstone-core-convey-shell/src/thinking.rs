@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use axum::Router;
 use axum::body::{Body, Bytes};
-use axum::extract::{Extension, Query};
+use axum::extract::{Extension, Path as UrlPath, Query};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -176,8 +176,7 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
         .route("/app/thinking/", get(shell))
         .route("/app/thinking", get(shell_redirect))
         .route("/app/thinking/workspace", get(workspace))
-        .route("/app/thinking/static/thinking.js", get(script))
-        .route("/app/thinking/static/{*rest}", get(static_not_found))
+        .route("/app/thinking/static/{*rest}", get(thinking_static))
         .route("/app/thinking/background", get(background_not_found))
         .route("/app/thinking/api/state", get(state))
         .route("/app/thinking/api/providers", get(providers))
@@ -313,16 +312,16 @@ async fn shell_redirect() -> Response {
 async fn workspace() -> Response {
     asset_response("/app/thinking/workspace")
 }
-async fn script() -> Response {
-    asset_response("/app/thinking/static/thinking.js")
-}
-/// Everything under `/app/thinking/static/` except `thinking.js` itself --
-/// the literal route above always wins for that exact path, so this
-/// wildcard only ever serves refusals. It never reads a file from the
-/// captured segment, so a `..`-laden request has nothing to traverse into;
-/// no separate guard is needed.
-async fn static_not_found() -> Response {
-    not_found_response()
+async fn thinking_static(UrlPath(rest): UrlPath<String>) -> Response {
+    if rest.is_empty()
+        || rest.contains('\0')
+        || Path::new(&rest)
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return not_found_response();
+    }
+    asset_response(&format!("/app/thinking/static/{rest}"))
 }
 /// `/background` is a fragment route Flask injects per-app only when that
 /// app ships a background template (`solstone/apps/__init__.py`'s

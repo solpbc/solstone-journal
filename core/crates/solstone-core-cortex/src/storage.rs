@@ -161,8 +161,12 @@ impl CortexStore {
         let day = request
             .get("day")
             .and_then(Value::as_str)
+            .filter(|day| is_day_key(day))
             .map(str::to_owned)
             .unwrap_or_else(|| day_from_use_id(use_id));
+        if !is_day_key(&day) {
+            return;
+        }
         let start_ts = request.get("ts").and_then(Value::as_i64).unwrap_or(0);
         let mut thinking_count = 0_u64;
         let mut tool_count = 0_u64;
@@ -335,7 +339,19 @@ fn derived_output_path(day_dir: &Path, request: &Map<String, Value>) -> Option<P
 }
 
 pub(crate) fn safe_name(name: &str) -> String {
-    name.replace(':', "--")
+    let candidate = name.replace(':', "--").replace(['/', '\\'], "-");
+    if candidate.is_empty()
+        || Path::new(&candidate)
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return "_invalid".to_owned();
+    }
+    candidate
+}
+
+fn is_day_key(day: &str) -> bool {
+    day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 pub(crate) fn atomic_symlink(path: &Path, target: &str) {
@@ -781,5 +797,28 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn safe_name_cannot_escape_the_talents_directory() {
+        assert_eq!(safe_name("chat"), "chat");
+        assert_eq!(safe_name("app:name"), "app--name");
+        assert_eq!(safe_name("foo/../etc"), "foo-..-etc");
+        assert_eq!(safe_name(".."), "_invalid");
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let escaped = store.active_path("foo/../../outside", "one");
+        assert!(escaped.starts_with(store.talents()));
+    }
+
+    #[test]
+    fn day_index_ignores_a_path_shaped_day() {
+        let directory = tempdir().unwrap();
+        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+        let mut request = request();
+        request.insert("day".into(), Value::String("../outside".into()));
+        store.append_day_index("1000", &request, Path::new("/missing"));
+        assert!(!directory.path().join("outside.jsonl").exists());
+        assert!(!store.talents().join("../outside.jsonl").exists());
     }
 }

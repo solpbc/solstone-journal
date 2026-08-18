@@ -17,8 +17,8 @@ use std::process::Command;
 
 use solstone_core_cli::{
     CHECK_HELP, CHECK_USAGE, HEALTH_HELP, HEALTH_LOGS_USAGE, INSTALL_MODELS_HELP,
-    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, START_HELP, START_USAGE,
-    SUPERVISOR_HELP, SUPERVISOR_USAGE,
+    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, SPL_HELP, START_HELP,
+    START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE,
 };
 use tempfile::tempdir;
 
@@ -241,6 +241,17 @@ fn malformed_check_invocation_exits_2_with_its_own_usage() {
         String::from_utf8(output.stderr).expect("UTF-8 stderr"),
         expected_usage_error(CHECK_USAGE, "journal check")
     );
+}
+
+#[test]
+fn spl_help_is_the_spl_help_text_not_an_invalid_choice() {
+    for args in [
+        ["spl", "--help"].as_slice(),
+        ["spl", "-h"].as_slice(),
+        ["spl", "service", "--help"].as_slice(),
+    ] {
+        assert_help(args, SPL_HELP);
+    }
 }
 
 #[test]

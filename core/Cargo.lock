@@ -3428,6 +3428,7 @@ dependencies = [
  "glob",
  "pulldown-cmark",
  "serde_json",
+ "solstone-core-talent-config",
 ]
 
 [[package]]

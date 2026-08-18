@@ -8,6 +8,13 @@ use solstone_core_depict::{DepictError, USAGE, error_json_line, parse_args, run}
 
 fn main() {
     let args: Vec<_> = env::args_os().skip(1).collect();
+    if args
+        .iter()
+        .any(|argument| argument == "--help" || argument == "-h")
+    {
+        print!("{}", solstone_core_depict::USAGE);
+        return;
+    }
     match parse_args(&args).and_then(run) {
         Ok(_) => {}
         Err(DepictError::Help) => print!("{USAGE}"),

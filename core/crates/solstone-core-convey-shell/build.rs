@@ -286,7 +286,12 @@ fn main() {
     let devices_workspace = manifest.join("assets/devices/workspace.html");
     let thinking_root = manifest.join("assets/thinking");
     let thinking_workspace = thinking_root.join("workspace.html");
-    let thinking_static = thinking_root.join("thinking.js");
+    let mut thinking_static_files = Vec::new();
+    collect_files(&thinking_root, &mut thinking_static_files);
+    thinking_static_files.retain(|path| {
+        path.file_name()
+            .is_some_and(|name| name != "workspace.html")
+    });
     let network_root = manifest.join("assets/network");
     let network_workspace = network_root.join("workspace.html");
     let network_static = network_root.join("network.js");
@@ -305,7 +310,6 @@ fn main() {
         &devices_workspace,
         &entities_workspace,
         &thinking_workspace,
-        &thinking_static,
         &network_workspace,
         &network_static,
     ] {
@@ -331,10 +335,13 @@ fn main() {
         speakers_static,
     ));
     assets.push(("/app/thinking/workspace".to_owned(), thinking_workspace));
-    assets.push((
-        "/app/thinking/static/thinking.js".to_owned(),
-        thinking_static,
-    ));
+    for path in thinking_static_files {
+        let name = path
+            .file_name()
+            .expect("thinking static file has a name")
+            .to_string_lossy();
+        assets.push((format!("/app/thinking/static/{name}"), path));
+    }
     assets.push(("/app/network/workspace".to_owned(), network_workspace));
     assets.push(("/app/network/static/network.js".to_owned(), network_static));
     assets.sort_by(|left, right| left.0.cmp(&right.0));

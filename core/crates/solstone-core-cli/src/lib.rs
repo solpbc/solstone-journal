@@ -734,7 +734,16 @@ pub const SCHEDULE_HELP: &str = concat!(
 pub const SCHEDULE_USAGE: &str = "usage: journal schedule [-h] [-v] [-d]\n";
 
 /// The parse-error usage for `journal spl`.
-pub const SPL_USAGE: &str = "usage: journal spl [-v] [-d]\n";
+pub const SPL_USAGE: &str = "usage: journal spl [-h] [-v] [-d]\n";
+
+pub const SPL_HELP: &str = concat!(
+    "usage: journal spl [-h] [-v] [-d]\n",
+    "\n",
+    "options:\n",
+    "  -h, --help     show this help message and exit\n",
+    "  -v, --verbose  Enable verbose output\n",
+    "  -d, --debug    Enable debug logging\n",
+);
 
 pub const TALENT_USAGE: &str =
     "usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...\n";
@@ -837,6 +846,7 @@ pub enum Command {
     Grab(GrabCommand),
     Spl(SplCommand),
     SplUsage(SplUsageError),
+    SplHelp,
     Sense(SenseOptions),
     SenseUsage,
     SenseHelp,
@@ -1710,10 +1720,18 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("grab") => {
             Ok(Command::Grab(parse_grab(rest)))
         }
-        [command, rest @ ..] if command == OsStr::new("spl") => match parse_spl(rest) {
-            Ok(command) => Ok(Command::Spl(command)),
-            Err(error) => Ok(Command::SplUsage(error)),
-        },
+        [command, rest @ ..] if command == OsStr::new("spl") => {
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                return Ok(Command::SplHelp);
+            }
+            match parse_spl(rest) {
+                Ok(command) => Ok(Command::Spl(command)),
+                Err(error) => Ok(Command::SplUsage(error)),
+            }
+        }
         [command, rest @ ..] if command == OsStr::new("sense") => match parse_sense(rest) {
             Ok(SenseParse::Run(options)) => Ok(Command::Sense(options)),
             Ok(SenseParse::Help) => Ok(Command::SenseHelp),
@@ -6808,6 +6826,22 @@ mod tests {
         for values in [&["spl"][..], &["spl", "unknown"][..]] {
             assert!(
                 matches!(evaluate_args(&args(values)), Ok(Command::SplUsage(_))),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn spl_help_flag_is_help_not_an_invalid_choice() {
+        for values in [
+            &["spl", "--help"][..],
+            &["spl", "-h"][..],
+            &["spl", "service", "--help"][..],
+            &["spl", "service", "-h"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::SplHelp),
                 "{values:?}"
             );
         }

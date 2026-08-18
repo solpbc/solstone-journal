@@ -701,7 +701,8 @@ pub fn parse_sol_sources(text: &str) -> Vec<Value> {
         let url = if parts.len() == 4 && parts[0] == "facets" && is_day(parts[3]) {
             match parts[2] {
                 "news" => Some(format!("/app/news/{}/{}", parts[1], parts[3])),
-                "reflections" => Some(format!("/app/reflections/{}", parts[3])),
+                // The reflections app is gone. Keep the citation; do not invent a URL.
+                "reflections" => None,
                 _ => None,
             }
         } else if parts.first().is_some_and(|part| is_day(part)) {

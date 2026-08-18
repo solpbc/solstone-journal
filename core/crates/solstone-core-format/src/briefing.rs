@@ -33,6 +33,8 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use solstone_core_talent_config::get_output_path;
+
 use crate::content::JsonObject;
 use crate::paths::CHRONICLE_DIR;
 use crate::segment::is_date_key;
@@ -46,16 +48,16 @@ const REQUIRED_ROOT_KEYS: [&str; 6] = [
     "reading",
 ];
 
-const TALENTS_DIR: &str = "talents";
-const MORNING_BRIEFING_FILE: &str = "morning_briefing.json";
-
 /// Load one day's morning briefing when it has the required root shape.
 pub fn load_morning_briefing(journal: &Path, day: &str) -> Option<JsonObject> {
-    let path = journal
-        .join(CHRONICLE_DIR)
-        .join(day)
-        .join(TALENTS_DIR)
-        .join(MORNING_BRIEFING_FILE);
+    let path = get_output_path(
+        &journal.join(CHRONICLE_DIR).join(day),
+        "morning_briefing",
+        None,
+        Some("json"),
+        None,
+        None,
+    );
     let text = fs::read_to_string(path).ok()?;
     let value = serde_json::from_str::<Value>(&text).ok()?;
     let Value::Object(briefing) = value else {
@@ -125,10 +127,14 @@ mod tests {
     }
 
     fn briefing_path(root: &Path, day: &str) -> PathBuf {
-        root.join(CHRONICLE_DIR)
-            .join(day)
-            .join(TALENTS_DIR)
-            .join(MORNING_BRIEFING_FILE)
+        get_output_path(
+            &root.join(CHRONICLE_DIR).join(day),
+            "morning_briefing",
+            None,
+            Some("json"),
+            None,
+            None,
+        )
     }
 
     #[test]
@@ -144,11 +150,14 @@ mod tests {
 
         let noncanonical = TempDir::new("briefing-noncanonical");
         write(
-            &noncanonical
-                .path
-                .join("20260717")
-                .join(TALENTS_DIR)
-                .join(MORNING_BRIEFING_FILE),
+            &get_output_path(
+                &noncanonical.path.join("20260717"),
+                "morning_briefing",
+                None,
+                Some("json"),
+                None,
+                None,
+            ),
             COMPLETE_BRIEFING,
         );
         assert_eq!(load_morning_briefing(&noncanonical.path, "20260717"), None);

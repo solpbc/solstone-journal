@@ -26,9 +26,7 @@ impl<'a> EventEmitter<'a> {
     fn send(&self, tract: &str, event: &str, mut fields: Map<String, Value>) {
         fields.insert("tract".to_owned(), json!(tract));
         fields.insert("event".to_owned(), json!(event));
-        if let Some(revision) = self.revision {
-            fields.insert("rev".to_owned(), json!(revision));
-        }
+        let _ = self.revision;
         let Ok(line) = serde_json::to_string(&fields) else {
             return;
         };

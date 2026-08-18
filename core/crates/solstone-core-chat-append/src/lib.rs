@@ -11,7 +11,7 @@ use std::sync::{Mutex, OnceLock};
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Local, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta, TimeZone};
 use regex::Regex;
 use serde_json::{Map, Value};
 use solstone_core_indexer_store::scan::rescan_file;
@@ -429,16 +429,26 @@ fn segment_start_timestamp(day: &str, segment: &str) -> Result<i64, ChatAppendEr
             segment: segment.to_owned(),
         }
     })?;
-    Local
-        .from_local_datetime(&NaiveDateTime::new(date, time))
-        // Intentional adaptation: choose the earlier fall-back offset like Python fold=0;
-        // a spring-forward gap still errors here where Python resolves it.
-        .earliest()
+    resolve_local_datetime(NaiveDateTime::new(date, time))
         .map(|time| time.timestamp_millis())
         .ok_or_else(|| ChatAppendError::InvalidSegmentKey {
             day: day.to_owned(),
             segment: segment.to_owned(),
         })
+}
+
+/// Map a naive local wall time the way the reference does: earlier offset on a
+/// fall-back overlap, and skip forward through a spring-forward gap.
+fn resolve_local_datetime(naive: NaiveDateTime) -> Option<DateTime<Local>> {
+    let mut candidate = naive;
+    for _ in 0..180 {
+        match Local.from_local_datetime(&candidate) {
+            MappedLocalTime::Single(time) => return Some(time),
+            MappedLocalTime::Ambiguous(earliest, _) => return Some(earliest),
+            MappedLocalTime::None => candidate += TimeDelta::minutes(1),
+        }
+    }
+    None
 }
 
 fn read_events_file(path: &Path) -> Result<Vec<Value>, ChatAppendError> {
@@ -510,7 +520,7 @@ mod tests {
     use super::{
         CHAT_LOCK_DEPTH, CHAT_STREAM, ChatAppendError, PAUSE_HOOK, append_chat_event_at,
         append_support_draft, append_validated_chat_event_at_local_time, record_draft_captured,
-        resolve_draft_day, support_draft_index_path,
+        resolve_draft_day, resolve_local_datetime, support_draft_index_path,
     };
 
     static NEXT_JOURNAL: AtomicU64 = AtomicU64::new(0);
@@ -535,6 +545,23 @@ mod tests {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.path).expect("remove test journal");
         }
+    }
+
+    #[test]
+    fn spring_forward_gap_resolves_instead_of_erroring() {
+        use chrono::MappedLocalTime;
+        let naive = NaiveDate::from_ymd_opt(2026, 3, 8)
+            .expect("date")
+            .and_hms_opt(2, 30, 0)
+            .expect("time");
+        let resolved = resolve_local_datetime(naive).expect("gap or ordinary local time resolves");
+        assert!(
+            !matches!(
+                Local.from_local_datetime(&resolved.naive_local()),
+                MappedLocalTime::None
+            ),
+            "resolved time must be a valid local wall time"
+        );
     }
 
     fn local_at(
