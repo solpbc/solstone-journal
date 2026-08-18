@@ -187,9 +187,11 @@ fn run_import(options: Options, journal_path: &Path) -> CliOutcome {
         ResolutionOutcome::Skipped {
             reason: solstone_core_import::SkipReason::TimestampRequired,
             detected_timestamp: Some(timestamp),
-        } => rendered(success(cli_render::timestamp_confirmation(
-            timestamp.as_str(),
-        ))),
+        } => rendered(failure(
+            "",
+            &cli_render::timestamp_confirmation(timestamp.as_str()),
+            1,
+        )),
         ResolutionOutcome::Skipped { reason, .. } => rendered(success(
             cli_render::resolution_skipped(&format!("{reason:?}")),
         )),
@@ -202,13 +204,7 @@ fn run_import(options: Options, journal_path: &Path) -> CliOutcome {
             source: ResolvedSource::GenericText,
             timestamp,
             stream,
-        } => rendered(run_text(
-            media,
-            &options,
-            journal_path,
-            timestamp.as_str(),
-            &stream,
-        )),
+        } => rendered(run_text(media, &options, journal_path, &timestamp, &stream)),
         ResolutionOutcome::Resolved {
             source: ResolvedSource::Registry(source),
             timestamp,
@@ -274,7 +270,7 @@ fn run_text(
     media: &str,
     options: &Options,
     journal_path: &Path,
-    timestamp: &str,
+    timestamp: &solstone_core_import::Timestamp,
     stream: &str,
 ) -> CliRun {
     if options.dry_run {
@@ -284,15 +280,19 @@ fn run_text(
             1,
         );
     }
-    let day_dir = journal_path.join("chronicle").join(&timestamp[..8]);
+    let day_dir = journal_path.join("chronicle").join(timestamp.day());
     if let Err(error) = fs::create_dir_all(&day_dir) {
         return failure("", &format!("{error}\n"), 1);
     }
+    // process_transcript's start_time is a transcript clock (`HH:MM:SS`), not
+    // the stamp half (`HHMMSS`). Convert at this seam; do not teach the
+    // transcript parser a second format.
+    let clock = timestamp.clock();
     match solstone_core_import::process_transcript(
         Path::new(media),
         &day_dir,
-        &timestamp[9..],
-        timestamp,
+        &clock,
+        timestamp.as_str(),
         stream,
         options.facet.as_deref(),
         options.setting.as_deref(),

@@ -307,8 +307,8 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
                 },
                 Case {
                     args: vec![path(&inputs.text)],
-                    exit: 0,
-                    stream: Stream::Stdout,
+                    exit: 1,
+                    stream: Stream::Stderr,
                     contains: "detected timestamp",
                 },
                 Case {

@@ -16,6 +16,22 @@ impl Timestamp {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Calendar-day half of the stamp (`YYYYMMDD`).
+    #[must_use]
+    pub fn day(&self) -> &str {
+        &self.0[..8]
+    }
+
+    /// Time-of-day half in the `HH:MM:SS` form transcript import expects.
+    ///
+    /// The stamp itself stays `YYYYMMDD_HHMMSS`. Segment and entry clocks are a
+    /// different contract; callers convert here rather than teaching the
+    /// transcript parser a second format.
+    #[must_use]
+    pub fn clock(&self) -> String {
+        format!("{}:{}:{}", &self.0[9..11], &self.0[11..13], &self.0[13..15])
+    }
 }
 
 /// A deterministic or model detector's timestamp answer.

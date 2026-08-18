@@ -116,8 +116,8 @@ const MODE_CASES: &[ModeCase] = &[
             (
                 Invocation::GenericAutoTimestamp,
                 Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
+                    exit: 1,
+                    stream: Stream::Stderr,
                     identifies: "detected timestamp",
                 },
             ),

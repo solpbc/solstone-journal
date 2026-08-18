@@ -382,6 +382,28 @@ fn ac7_recording_wire_receives_the_two_generate_request_shapes() {
 }
 
 #[test]
+fn stamp_half_is_not_a_transcript_clock() {
+    let (_temporary, source, day) = setup();
+    let wire = RecordingWire::new(vec![refused(), refused()]);
+    let error = process_transcript_with_wire(
+        &source,
+        &day,
+        "062652",
+        "20260818_062652",
+        "import.text",
+        None,
+        None,
+        None,
+        &wire,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        TextImportError::InvalidTime { value } if value == "062652"
+    ));
+}
+
+#[test]
 fn ac8_unsupported_extension_is_rejected() {
     let (temporary, _source, day) = setup();
     let source = temporary.path().join("t.pdf");

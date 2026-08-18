@@ -50,3 +50,11 @@ fn ac11b_unicode_digits_reach_calendar_validation() {
     assert!(matches!(error, TimestampError::Calendar { .. }));
     assert!(error.to_string().starts_with("time data '"));
 }
+
+#[test]
+fn stamp_clock_is_colon_separated_not_the_raw_half() {
+    let stamp = validate_timestamp("20260818_062652").unwrap();
+    assert_eq!(stamp.as_str(), "20260818_062652");
+    assert_eq!(stamp.day(), "20260818");
+    assert_eq!(stamp.clock(), "06:26:52");
+}
