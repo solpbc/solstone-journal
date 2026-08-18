@@ -68,8 +68,8 @@ pub use solstone_core_journal_io::{
 };
 pub use stream_record::{
     BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord,
-    UnboundStreamAdvanceError, advance_bound_stream, advance_unbound_stream, bind_stream,
-    lookup_stream, resolve_stream,
+    UnboundStreamAdvanceError, advance_bound_stream, advance_unbound_stream, bind_named_stream,
+    bind_stream, has_unattributed_stream_record, lookup_stream, resolve_stream,
 };
 pub use stream_repair::{
     MarkerTail, RepairOutcome, StreamBackfillReport, StreamBackfillSignal, StreamClassification,

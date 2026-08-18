@@ -14,7 +14,7 @@ use solstone_core_journal_io::{
 
 use crate::device::validate_did;
 use crate::projection::name_with_ordinal;
-use crate::{Kind, SegmentDir, SegmentError, project_stream_name};
+use crate::{Kind, SegmentDir, SegmentError, is_safe_stream_component, project_stream_name};
 
 const REGISTRY_LOCK_NAME: &str = ".registry";
 
@@ -94,10 +94,11 @@ pub struct ResolvedStream {
 
 /// A (did, source)-bound stream identity, not yet advanced.
 ///
-/// Produced by `bind_stream`, which resolves identity but performs no chain
-/// mutation. This lets a caller search several segment-key candidates against
-/// the same bound identity — e.g. retrying past a content collision — without
-/// minting a chain link for every candidate it tries.
+/// Produced by `bind_stream` or `bind_named_stream`, which resolve identity
+/// but perform no chain mutation. This lets a caller search several
+/// segment-key candidates against the same bound identity — e.g. retrying
+/// past a content collision — without minting a chain link for every
+/// candidate it tries.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BoundStream {
     pub stream: String,
@@ -157,6 +158,98 @@ pub fn bind_stream(
             }
         }
     }
+}
+
+/// Bind a device-owned stream at a caller-supplied name, without advancing
+/// its chain. Unlike `bind_stream`, this does not project a label or walk
+/// ordinals: it attributes an existing unattributed record, reuses a matching
+/// binding, creates exactly `name` when absent, or refuses a foreign binding.
+pub fn bind_named_stream(
+    journal: &Path,
+    day: &str,
+    segment: &str,
+    name: &str,
+    did: &str,
+    source: &str,
+    hints: &StreamHints,
+) -> Result<BoundStream, SegmentError> {
+    validate_did(did)?;
+    if !is_safe_stream_component(name) {
+        return Err(SegmentError::StreamInput(
+            "stream must be a plain path component",
+        ));
+    }
+    let binding = StreamBinding { did, source };
+    let registry_target = journal.join("streams").join(REGISTRY_LOCK_NAME);
+    let _registry_lock = hold_lock(registry_target, LockOptions::default())?;
+    let state_path = stream_record_path(journal, name);
+    let _record_lock = hold_lock(&state_path, LockOptions::default())?;
+    if let Some((found, _)) = read_registry_records(journal)?
+        .iter()
+        .find(|(_, record)| binding_matches(record, binding))
+    {
+        let stream = found.clone();
+        return Ok(BoundStream {
+            stream: stream.clone(),
+            segment: SegmentDir::resolve(journal, day, segment, &stream)?,
+        });
+    }
+    match read_typed_stream_record(&state_path)? {
+        Some(record) if is_unattributed(&record) => {
+            let mut attributed = record;
+            attributed.did = Some(binding.did.to_owned());
+            attributed.source = Some(binding.source.to_owned());
+            write_stream_record(&state_path, &attributed)?;
+        }
+        Some(_) => {
+            return Err(SegmentError::StreamBindingConflict {
+                name: name.to_owned(),
+            });
+        }
+        None => {
+            let record = reservation_record(name.to_owned(), binding, hints)?;
+            let bytes =
+                serde_json::to_vec(&record).map_err(|source| SegmentError::Serialization {
+                    path: state_path.clone(),
+                    source,
+                })?;
+            match write_bytes_exclusive(&state_path, &bytes, AtomicWriteOptions::default()) {
+                Ok(()) => {}
+                Err(AtomicWriteError::Io { source, .. })
+                    if source.kind() == std::io::ErrorKind::AlreadyExists =>
+                {
+                    match read_typed_stream_record(&state_path)? {
+                        Some(record) if binding_matches(&record, binding) => {}
+                        Some(record) if is_unattributed(&record) => {
+                            let mut attributed = record;
+                            attributed.did = Some(binding.did.to_owned());
+                            attributed.source = Some(binding.source.to_owned());
+                            write_stream_record(&state_path, &attributed)?;
+                        }
+                        Some(_) => {
+                            return Err(SegmentError::StreamBindingConflict {
+                                name: name.to_owned(),
+                            });
+                        }
+                        None => {
+                            return Err(SegmentError::Io {
+                                path: state_path,
+                                source: std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "empty stream record",
+                                ),
+                            });
+                        }
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+    Ok(BoundStream {
+        stream: name.to_owned(),
+        segment: SegmentDir::resolve(journal, day, segment, name)?,
+    })
 }
 
 /// Advance a stream previously bound by `bind_stream`, for the segment
@@ -246,6 +339,13 @@ pub fn lookup_stream(
         .iter()
         .find(|(_, record)| binding_matches(record, binding))
         .map(|(name, _)| name.clone()))
+}
+
+/// Whether any stream record is missing a complete `(did, source)` binding.
+pub fn has_unattributed_stream_record(journal: &Path) -> Result<bool, SegmentError> {
+    Ok(read_registry_records(journal)?
+        .values()
+        .any(is_unattributed))
 }
 
 /// Resolve a device-owned stream by authenticated identity, then advance it.
@@ -621,6 +721,10 @@ fn update_unbound_record(
 
 fn binding_matches(record: &StreamRecord, binding: StreamBinding<'_>) -> bool {
     record.did.as_deref() == Some(binding.did) && record.source.as_deref() == Some(binding.source)
+}
+
+fn is_unattributed(record: &StreamRecord) -> bool {
+    record.did.is_none() || record.source.is_none()
 }
 
 fn now_unix_seconds() -> Result<u64, SegmentError> {
@@ -1425,5 +1529,171 @@ mod tests {
                 SegmentDir::resolve(temporary.path(), "20260804", "120000_60", invalid).is_err()
             );
         }
+    }
+
+    #[test]
+    fn bind_named_stream_creates_exactly_the_caller_name() {
+        let temporary = TempDir::new();
+        let bound = bind_named_stream(
+            temporary.path(),
+            "20260804",
+            "120000_60",
+            "desk",
+            DID_A,
+            "",
+            &hints(),
+        )
+        .unwrap();
+        assert_eq!(bound.stream, "desk");
+        let created: StreamRecord = serde_json::from_slice(
+            &fs::read(stream_record_path(temporary.path(), "desk")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(created.seq, 0);
+        assert_eq!(created.did.as_deref(), Some(DID_A));
+        assert_eq!(created.source.as_deref(), Some(""));
+        assert!(!stream_record_path(temporary.path(), "desk_2").exists());
+        assert!(!stream_record_path(temporary.path(), "device").exists());
+    }
+
+    #[test]
+    fn bind_named_stream_adopts_unattributed_without_resetting_chain() {
+        let temporary = TempDir::new();
+        let mut seeded = record("desk", None, None, 4, 77);
+        seeded.last_day = Some("20260801".to_owned());
+        seeded.last_segment = Some("090000_1".to_owned());
+        write_record(temporary.path(), &seeded);
+
+        let bound = bind_named_stream(
+            temporary.path(),
+            "20260804",
+            "120000_60",
+            "desk",
+            DID_A,
+            "",
+            &hints(),
+        )
+        .unwrap();
+        assert_eq!(bound.stream, "desk");
+        let adopted: StreamRecord = serde_json::from_slice(
+            &fs::read(stream_record_path(temporary.path(), "desk")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(adopted.created_at, 77);
+        assert_eq!(adopted.seq, 4);
+        assert_eq!(adopted.last_day.as_deref(), Some("20260801"));
+        assert_eq!(adopted.last_segment.as_deref(), Some("090000_1"));
+        assert_eq!(adopted.kind, "observer");
+        assert_eq!(adopted.did.as_deref(), Some(DID_A));
+        assert_eq!(adopted.source.as_deref(), Some(""));
+        assert!(!stream_record_path(temporary.path(), "desk_2").exists());
+    }
+
+    #[test]
+    fn bind_named_stream_reuses_matching_binding_without_writing() {
+        let temporary = TempDir::new();
+        write_record(
+            temporary.path(),
+            &record("desk", Some(DID_A), Some(""), 3, 9),
+        );
+        let before = fs::read(stream_record_path(temporary.path(), "desk")).unwrap();
+        let bound = bind_named_stream(
+            temporary.path(),
+            "20260804",
+            "120000_60",
+            "desk",
+            DID_A,
+            "",
+            &hints(),
+        )
+        .unwrap();
+        assert_eq!(bound.stream, "desk");
+        assert_eq!(
+            fs::read(stream_record_path(temporary.path(), "desk")).unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn bind_named_stream_refuses_foreign_without_writing() {
+        let temporary = TempDir::new();
+        write_record(
+            temporary.path(),
+            &record("desk", Some(DID_B), Some(""), 3, 9),
+        );
+        let before = fs::read(stream_record_path(temporary.path(), "desk")).unwrap();
+        let error = bind_named_stream(
+            temporary.path(),
+            "20260804",
+            "120000_60",
+            "desk",
+            DID_A,
+            "",
+            &hints(),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            SegmentError::StreamBindingConflict { name } if name == "desk"
+        ));
+        assert_eq!(
+            fs::read(stream_record_path(temporary.path(), "desk")).unwrap(),
+            before
+        );
+        assert!(!stream_record_path(temporary.path(), "desk_2").exists());
+    }
+
+    #[test]
+    fn bind_named_stream_returns_existing_binding_at_another_name() {
+        let temporary = TempDir::new();
+        write_record(
+            temporary.path(),
+            &record("device", Some(DID_A), Some(""), 1, 5),
+        );
+        let bound = bind_named_stream(
+            temporary.path(),
+            "20260804",
+            "120000_60",
+            "desk",
+            DID_A,
+            "",
+            &hints(),
+        )
+        .unwrap();
+        assert_eq!(bound.stream, "device");
+        assert!(!stream_record_path(temporary.path(), "desk").exists());
+    }
+
+    #[test]
+    fn bind_named_stream_refuses_an_unsafe_name() {
+        let temporary = TempDir::new();
+        let error = bind_named_stream(
+            temporary.path(),
+            "20260804",
+            "120000_60",
+            "Uppercase",
+            DID_A,
+            "",
+            &hints(),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            SegmentError::StreamInput("stream must be a plain path component")
+        ));
+        assert!(!temporary.path().join("streams").exists());
+    }
+
+    #[test]
+    fn has_unattributed_stream_record_detects_incomplete_bindings() {
+        let temporary = TempDir::new();
+        assert!(!has_unattributed_stream_record(temporary.path()).unwrap());
+        write_record(
+            temporary.path(),
+            &record("device", Some(DID_A), Some(""), 1, 1),
+        );
+        assert!(!has_unattributed_stream_record(temporary.path()).unwrap());
+        write_record(temporary.path(), &record("desk", None, None, 2, 2));
+        assert!(has_unattributed_stream_record(temporary.path()).unwrap());
     }
 }
