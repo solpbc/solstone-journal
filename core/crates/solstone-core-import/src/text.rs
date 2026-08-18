@@ -71,6 +71,10 @@ pub enum TextImportError {
         path: PathBuf,
         source: AtomicWriteError,
     },
+    RawCopy {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 }
 
 impl fmt::Display for TextImportError {
@@ -104,6 +108,7 @@ impl fmt::Display for TextImportError {
                 "generic text import requires a native segmentation adapter; nothing was imported",
             ),
             Self::Write { path, source } => write!(formatter, "{}: {source}", path.display()),
+            Self::RawCopy { path, source } => write!(formatter, "{}: {source}", path.display()),
         }
     }
 }
@@ -114,6 +119,7 @@ impl Error for TextImportError {
             Self::SourceRead { source, .. } => Some(source),
             Self::SegmentDeconflict(source) => Some(source),
             Self::Write { source, .. } => Some(source),
+            Self::RawCopy { source, .. } => Some(source),
             Self::UnsupportedFormat { .. }
             | Self::RawFilename { .. }
             | Self::InvalidTime { .. }
@@ -195,6 +201,7 @@ pub fn process_transcript_with_wire(
         .ok_or_else(|| TextImportError::RawFilename {
             path: path.to_path_buf(),
         })?;
+    stage_raw_source(day_dir, import_id, path, raw_filename)?;
     let (segments, native_fallback) = match segment_transcript(wire, &text, start_time) {
         Ok(segments) => (segments, false),
         Err(ModelDetectionError::Unavailable) => (whole_file_segment(&text, start_time), true),
@@ -509,6 +516,47 @@ fn relativize_entries(entries: &mut [Value], segment_start_seconds: i64) {
             )),
         );
     }
+}
+
+/// Copy the owner's source next to the destination-independent `raw` pointer.
+///
+/// The transcript header always records `../../../imports/{id}/{filename}`.
+/// From a segment file that resolves to `{journal}/imports/{id}/{filename}`.
+/// Recording the pointer without this copy is a dangling provenance link.
+fn stage_raw_source(
+    day_dir: &Path,
+    import_id: &str,
+    source: &Path,
+    raw_filename: &str,
+) -> Result<(), TextImportError> {
+    let Some(journal_root) = day_dir.parent().and_then(Path::parent) else {
+        return Err(TextImportError::RawCopy {
+            path: day_dir.to_path_buf(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "day directory has no journal root",
+            ),
+        });
+    };
+    let dest_dir = journal_root.join("imports").join(import_id);
+    fs::create_dir_all(&dest_dir).map_err(|source| TextImportError::RawCopy {
+        path: dest_dir.clone(),
+        source,
+    })?;
+    let dest = dest_dir.join(raw_filename);
+    if dest.exists() {
+        return Ok(());
+    }
+    fs::copy(source, &dest).map_err(|source| TextImportError::RawCopy {
+        path: dest.clone(),
+        source,
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&dest, fs::Permissions::from_mode(PRIVATE_IMPORT_FILE_MODE));
+    }
+    Ok(())
 }
 
 fn jsonl_rows(

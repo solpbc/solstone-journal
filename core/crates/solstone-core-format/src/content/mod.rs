@@ -233,6 +233,11 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
         root: PatternRoot::DayRooted,
     },
     FamilyPattern {
+        pattern: "*/import.text/*/conversation_transcript.jsonl",
+        family: Family::AiChat,
+        root: PatternRoot::DayRooted,
+    },
+    FamilyPattern {
         pattern: "*/import.chatgpt/*/imported_audio.jsonl",
         family: Family::AiChat,
         root: PatternRoot::DayRooted,
@@ -1127,6 +1132,10 @@ mod tests {
                 "20260101/import.claude/thread_a/conversation_transcript.jsonl",
                 Family::AiChat,
             ),
+            (
+                "20260818/import.text/065323_5/conversation_transcript.jsonl",
+                Family::AiChat,
+            ),
             ("20260508/chat/120000_300/chat.jsonl", Family::Chat),
             (
                 "20260703/suze.browser/000141_317/browser_mail-google-com.jsonl",
@@ -1219,6 +1228,19 @@ mod tests {
                 "{path}"
             );
         }
+
+        let imported_text = "20260818/import.text/065323_5/conversation_transcript.jsonl";
+        assert!(
+            Pattern::new("*/*/*/*_transcript.jsonl")
+                .expect("valid unindexed pattern")
+                .matches_path_with(Path::new(imported_text), options),
+            "{imported_text} must genuinely collide, or this test proves nothing"
+        );
+        assert_eq!(
+            classify(imported_text),
+            ContentResolution::Indexed(Family::AiChat),
+            "{imported_text}"
+        );
 
         assert_eq!(
             classify("20260101/default/123456_300/left_audio.jsonl"),

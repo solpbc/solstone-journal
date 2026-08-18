@@ -332,6 +332,16 @@ fn ac5_raw_back_reference_is_destination_independent() {
             rows(&created[0])[0]["raw"],
             format!("../../../imports/{import_id}/t.txt")
         );
+        let staged = temporary
+            .path()
+            .join("imports")
+            .join(import_id)
+            .join("t.txt");
+        assert_eq!(
+            fs::read_to_string(&staged).unwrap(),
+            fs::read_to_string(&source).unwrap(),
+            "raw pointer must resolve to a copy of the source"
+        );
     }
 }
 

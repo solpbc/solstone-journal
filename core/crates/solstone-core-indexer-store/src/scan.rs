@@ -4470,6 +4470,41 @@ mod tests {
     }
 
     #[test]
+    fn scan_indexes_generic_text_import_transcripts() {
+        let root = temp_root("import-text");
+        write(
+            &root,
+            "chronicle/20260818/import.text/065323_5/conversation_transcript.jsonl",
+            r#"{"imported":{"id":"20260818_065323"},"raw":"../../../imports/20260818_065323/rung4.md"}
+{"start":"00:00:00","text":"The zarquon threshold for segment indexing needs a verbatim check.","source":"import"}
+"#,
+        );
+
+        let report = scan_journal(&root, true).expect("scan generic text import");
+        assert_eq!(report.indexed, 1);
+        let conn = Connection::open(db_path(&root)).expect("open db");
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM chunks WHERE path='20260818/import.text/065323_5/conversation_transcript.jsonl'"
+            ),
+            1
+        );
+        let content: String = conn
+            .query_row(
+                "SELECT content FROM chunks WHERE path='20260818/import.text/065323_5/conversation_transcript.jsonl'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("generic text import chunk");
+        assert!(
+            content.contains("zarquon threshold"),
+            "indexed chunk must carry the owner's text, got {content}"
+        );
+        fs::remove_dir_all(root).expect("cleanup generic text import root");
+    }
+
+    #[test]
     fn scan_writes_file_row_for_zero_chunk_ai_chat_import() {
         let root = temp_root("zero-ai-chat-import");
         write(
