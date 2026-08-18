@@ -41,10 +41,10 @@ use std::path::Path;
 use chrono::{DateTime, NaiveDate, Utc};
 use solstone_core_journal_io::paths::{PathOrDay, day_dirs, iter_segments};
 
-use crate::class::classify;
+use crate::class::{classify, partition_empty_audio};
 use crate::content::{HandlerRegistry, MediaClassifier};
 use crate::door::{EvidenceTally, release_raw};
-use crate::eligibility::{Blocker, ProvenRaw, RawRelease, resolve};
+use crate::eligibility::{Blocker, FoundContent, ProvenRaw, RawRelease, resolve};
 use crate::policy::{Eligibility, Policy};
 use crate::receipt::{Outcome, Target};
 use crate::scan::scan_segment;
@@ -185,53 +185,128 @@ pub fn plan(
                 continue;
             }
 
-            // Gate one: when. Cheap, and consulted first.
-            let records: Vec<Option<&serde_json::Value>> = found
-                .iter()
-                .map(|item| item.sidecar.record.as_ref())
-                .collect();
-            let age = crate::age::segment_age(&target.day, &records, today, now);
-            let class = classify(&found, registry);
-            let verdict = policy.evaluate(&target.stream, age, class);
-            if !verdict.is_eligible() {
-                built.skipped.push(Skipped {
+            let (empty, ordinary) = partition_empty_audio(found, registry);
+            let empty_side = decide_side(&empty, registry, classifier, policy, &target, today, now);
+            let ordinary_side =
+                decide_side(&ordinary, registry, classifier, policy, &target, today, now);
+            match merge_sides(empty_side, ordinary_side) {
+                SideMerge::Candidate {
+                    eligibility,
+                    proven,
+                } => built.candidates.push(Candidate {
                     target,
-                    reason: Skip::Policy(verdict),
-                });
-                continue;
-            }
-
-            // Gate two: whether there is proof.
-            match resolve(
-                registry,
-                classifier,
-                &target.day,
-                &target.stream,
-                &target.dir,
-                &found,
-            ) {
-                RawRelease::Releasable(proven) if proven.is_empty() => {
-                    // Every file was filtered out by the classifier. Nothing to do,
-                    // and reporting it as a candidate would claim a release of zero
-                    // files.
-                    built.skipped.push(Skipped {
-                        target,
-                        reason: Skip::NoMedia,
-                    });
-                }
-                RawRelease::Releasable(proven) => built.candidates.push(Candidate {
-                    target,
-                    eligibility: verdict,
+                    eligibility,
                     proven,
                 }),
-                RawRelease::Held(blockers) => built.skipped.push(Skipped {
-                    target,
-                    reason: Skip::Held(blockers),
-                }),
+                SideMerge::Skipped(reason) => built.skipped.push(Skipped { target, reason }),
             }
         }
     }
     built
+}
+
+enum SideOutcome {
+    None,
+    Policy(Eligibility),
+    Held(Vec<Blocker>),
+    Proved {
+        eligibility: Eligibility,
+        proven: Vec<ProvenRaw>,
+    },
+}
+
+enum SideMerge {
+    Candidate {
+        eligibility: Eligibility,
+        proven: Vec<ProvenRaw>,
+    },
+    Skipped(Skip),
+}
+
+fn decide_side(
+    side: &[FoundContent],
+    registry: &dyn HandlerRegistry,
+    classifier: &dyn MediaClassifier,
+    policy: &Policy,
+    target: &Target,
+    today: NaiveDate,
+    now: DateTime<Utc>,
+) -> SideOutcome {
+    if side.is_empty() {
+        return SideOutcome::None;
+    }
+    let records: Vec<Option<&serde_json::Value>> = side
+        .iter()
+        .map(|item| item.sidecar.record.as_ref())
+        .collect();
+    let age = crate::age::segment_age(&target.day, &records, today, now);
+    let class = classify(side, registry);
+    let verdict = policy.evaluate(&target.stream, age, class);
+    if !verdict.is_eligible() {
+        return SideOutcome::Policy(verdict);
+    }
+    match resolve(
+        registry,
+        classifier,
+        &target.day,
+        &target.stream,
+        &target.dir,
+        side,
+    ) {
+        RawRelease::Releasable(proven) if proven.is_empty() => SideOutcome::None,
+        RawRelease::Releasable(proven) => SideOutcome::Proved {
+            eligibility: verdict,
+            proven,
+        },
+        RawRelease::Held(blockers) => SideOutcome::Held(blockers),
+    }
+}
+
+fn merge_sides(empty: SideOutcome, ordinary: SideOutcome) -> SideMerge {
+    let (empty_eligibility, mut proven, empty_blockers, empty_policy) = take_side(empty);
+    let (ordinary_eligibility, ordinary_proven, ordinary_blockers, ordinary_policy) =
+        take_side(ordinary);
+    proven.extend(ordinary_proven);
+    let mut blockers = empty_blockers.unwrap_or_default();
+    if let Some(held) = ordinary_blockers {
+        blockers.extend(held);
+    }
+    if !proven.is_empty() {
+        let eligibility = match empty_eligibility.or(ordinary_eligibility) {
+            Some(eligibility) => eligibility,
+            None => return SideMerge::Skipped(Skip::NoMedia),
+        };
+        return SideMerge::Candidate {
+            eligibility,
+            proven,
+        };
+    }
+    if !blockers.is_empty() {
+        return SideMerge::Skipped(Skip::Held(blockers));
+    }
+    if let Some(eligibility) = empty_policy.or(ordinary_policy) {
+        return SideMerge::Skipped(Skip::Policy(eligibility));
+    }
+    SideMerge::Skipped(Skip::NoMedia)
+}
+
+fn take_side(
+    outcome: SideOutcome,
+) -> (
+    Option<Eligibility>,
+    Vec<ProvenRaw>,
+    Option<Vec<Blocker>>,
+    Option<Eligibility>,
+) {
+    match outcome {
+        SideOutcome::None => (None, Vec::new(), None, None),
+        SideOutcome::Policy(verdict) => (None, Vec::new(), None, Some(verdict)),
+        SideOutcome::Held(blockers) => (None, Vec::new(), Some(blockers), None),
+        SideOutcome::Proved {
+            eligibility,
+            proven,
+        } => (Some(eligibility), proven, None, None),
+    }
 }
 
 /// Perform a plan.

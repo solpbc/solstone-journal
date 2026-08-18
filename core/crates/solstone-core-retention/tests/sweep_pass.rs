@@ -702,33 +702,6 @@ fn empty_audio_class_exclusions() {
             expect_candidate: true,
         },
         Case {
-            name: "mixed-sibling",
-            seed: |bed| {
-                bed.empty_terminal_segment("20260701", Some("field.audio"), "070000_17", STAMP);
-                let raw = b"the owner's recording";
-                let path = bed.segment_path("20260701", Some("field.audio"), "070000_17");
-                fs::write(path.join("extra.flac"), raw).expect("sibling raw");
-                let header = serde_json::json!({
-                    "segment": "070000_17",
-                    "_solstone_processing": {
-                        "schema": vocab::SCHEMA,
-                        "state": vocab::STATE_ANALYZED,
-                        "reason_code": vocab::REASON_OK,
-                        "handler": vocab::HANDLER_TRANSCRIBE,
-                        "attempted_at": STAMP,
-                        "input_size": raw.len(),
-                    }
-                });
-                fs::write(
-                    path.join("extra.jsonl"),
-                    format!("{header}\n{{\"start\": 0.0, \"text\": \"hello\"}}\n"),
-                )
-                .expect("sibling sidecar");
-            },
-            policy: keep_journal_policy(),
-            expect_candidate: false,
-        },
-        Case {
             name: "failed",
             seed: |bed| {
                 bed.empty_terminal_file(
@@ -858,5 +831,198 @@ fn mark_pass_records_empty_audio_and_removes_nothing() {
             .values()
             .all(|mark| mark.class == RemovalClass::PolicyRawRelease)
     );
+    teardown(&bed);
+}
+
+fn write_sibling(bed: &Bed, name: &str, record: Option<Value>, analysis_row: bool) -> PathBuf {
+    let path = bed.segment_path("20260701", Some("field.audio"), "070000_17");
+    fs::create_dir_all(&path).expect("segment");
+    let raw = b"sibling";
+    let file = path.join(name);
+    fs::write(&file, raw).expect("sibling raw");
+    if let Some(record) = record {
+        let mut header = json!({"segment": "070000_17"});
+        header
+            .as_object_mut()
+            .expect("header")
+            .insert("_solstone_processing".to_owned(), record);
+        let stem = name.rsplit_once('.').expect("extension").0;
+        let body = if analysis_row {
+            format!("{header}\n{{\"start\": 0.0, \"text\": \"hello\"}}\n")
+        } else {
+            format!("{header}\n")
+        };
+        fs::write(path.join(format!("{stem}.jsonl")), body).expect("sidecar");
+    }
+    file
+}
+
+fn proven_names(plan: &Plan) -> Vec<String> {
+    plan.candidates
+        .iter()
+        .flat_map(|candidate| candidate.proven.iter().map(|item| item.name().to_owned()))
+        .collect()
+}
+
+fn analyzed_record(stamp: &str, extra: Value) -> Value {
+    let mut record = json!({
+        "schema": vocab::SCHEMA,
+        "state": vocab::STATE_ANALYZED,
+        "reason_code": vocab::REASON_OK,
+        "handler": vocab::HANDLER_TRANSCRIBE,
+        "attempted_at": stamp,
+        "input_size": 7,
+    });
+    if let Some(fields) = extra.as_object() {
+        record
+            .as_object_mut()
+            .expect("record")
+            .extend(fields.clone());
+    }
+    record
+}
+
+#[test]
+fn mixed_sibling_releases_only_the_empty_file() {
+    let bed = Bed::new("mixed-sibling");
+    bed.empty_terminal_segment(
+        "20260701",
+        Some("field.audio"),
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let extra = write_sibling(
+        &bed,
+        "extra.flac",
+        Some(analyzed_record("2026-07-01T00:00:00Z", json!({}))),
+        true,
+    );
+    let built = bed.plan(&keep_journal_policy(), "2026-08-05", "2026-08-05T00:00:00Z");
+    assert_eq!(built.candidates.len(), 1, "{built:?}");
+    assert_eq!(proven_names(&built), ["audio.flac"]);
+    match built.candidates[0].eligibility {
+        Eligibility::Eligible { anchor, period, .. } => {
+            assert_eq!(anchor, Anchor::Processed);
+            assert_eq!(period, Days(0));
+        }
+        other => panic!("expected processed-immediate eligibility, got {other:?}"),
+    }
+    assert!(extra.exists());
+    teardown(&bed);
+}
+
+#[test]
+fn empty_audio_releases_independently_of_ordinary_siblings() {
+    const STAMP: &str = "2026-07-01T00:00:00Z";
+    struct Case {
+        name: &'static str,
+        seed_sibling: fn(&Bed),
+        policy: Policy,
+    }
+    let processed = policy_from_retention(&retention_object(json!({"raw_media": "processed"})));
+    let cases = [
+        Case {
+            name: "incomplete",
+            seed_sibling: |bed| {
+                write_sibling(bed, "extra.flac", None, false);
+            },
+            policy: processed.clone(),
+        },
+        Case {
+            name: "failed",
+            seed_sibling: |bed| {
+                write_sibling(
+                    bed,
+                    "extra.flac",
+                    Some(json!({
+                        "schema": vocab::SCHEMA,
+                        "state": vocab::STATE_FAILED,
+                        "reason_code": vocab::REASON_CORRUPT_INPUT,
+                        "handler": vocab::HANDLER_TRANSCRIBE,
+                        "attempted_at": STAMP,
+                        "input_size": 7,
+                    })),
+                    false,
+                );
+            },
+            policy: processed.clone(),
+        },
+        Case {
+            name: "unprovable-image",
+            seed_sibling: |bed| {
+                write_sibling(bed, "photo.png", None, false);
+            },
+            policy: processed,
+        },
+        Case {
+            name: "kept-forever",
+            seed_sibling: |bed| {
+                write_sibling(
+                    bed,
+                    "extra.flac",
+                    Some(analyzed_record(STAMP, json!({}))),
+                    true,
+                );
+            },
+            policy: keep_journal_policy(),
+        },
+        Case {
+            name: "backfill-lookalike",
+            seed_sibling: |bed| {
+                write_sibling(
+                    bed,
+                    "extra.flac",
+                    Some(empty_record(STAMP, json!({"source": "backfill"}))),
+                    false,
+                );
+            },
+            policy: keep_journal_policy(),
+        },
+        Case {
+            name: "wrong-reason-lookalike",
+            seed_sibling: |bed| {
+                write_sibling(
+                    bed,
+                    "extra.flac",
+                    Some(empty_record(STAMP, json!({"reason_code": "ok"}))),
+                    false,
+                );
+            },
+            policy: keep_journal_policy(),
+        },
+    ];
+
+    for case in cases {
+        let bed = Bed::new(&format!("indep-{}", case.name));
+        bed.empty_terminal_segment("20260701", Some("field.audio"), "070000_17", STAMP);
+        (case.seed_sibling)(&bed);
+        let built = bed.plan(&case.policy, "2026-08-05", "2026-08-05T00:00:00Z");
+        assert_eq!(
+            proven_names(&built),
+            ["audio.flac"],
+            "{}: {built:?}",
+            case.name
+        );
+        teardown(&bed);
+    }
+}
+
+#[test]
+fn empty_audio_age_ignores_an_unstamped_ordinary_sibling() {
+    let bed = Bed::new("empty-age-unstamped");
+    bed.empty_terminal_segment(
+        "20260701",
+        Some("field.audio"),
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let mut record = analyzed_record("2026-07-01T00:00:00Z", json!({}));
+    record
+        .as_object_mut()
+        .expect("record")
+        .remove("attempted_at");
+    write_sibling(&bed, "extra.flac", Some(record), true);
+    let built = bed.plan(&keep_journal_policy(), "2026-08-05", "2026-08-05T00:00:00Z");
+    assert_eq!(proven_names(&built), ["audio.flac"], "{built:?}");
     teardown(&bed);
 }

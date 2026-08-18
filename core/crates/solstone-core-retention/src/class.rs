@@ -41,7 +41,21 @@ pub fn classify(found: &[FoundContent], registry: &dyn HandlerRegistry) -> Media
     }
 }
 
-fn is_handler_empty_audio(item: &FoundContent, registry: &dyn HandlerRegistry) -> bool {
+/// Split owner-media files into handler-empty-terminal vs everything else.
+///
+/// Exclusive and exhaustive over `found`. Callers evaluate each side
+/// independently; [`classify`] still answers only whether one given slice is
+/// homogeneously empty-terminal.
+pub(crate) fn partition_empty_audio(
+    found: Vec<FoundContent>,
+    registry: &dyn HandlerRegistry,
+) -> (Vec<FoundContent>, Vec<FoundContent>) {
+    found
+        .into_iter()
+        .partition(|item| is_handler_empty_audio(item, registry))
+}
+
+pub(crate) fn is_handler_empty_audio(item: &FoundContent, registry: &dyn HandlerRegistry) -> bool {
     let Some(record) = item
         .sidecar
         .record
@@ -75,15 +89,23 @@ mod tests {
     use crate::eligibility::SidecarFacts;
     use serde_json::json;
 
-    fn audio(record: Option<serde_json::Value>) -> FoundContent {
+    fn file(name: &str, record: Option<serde_json::Value>) -> FoundContent {
         FoundContent {
-            name: ContentName::new("audio.flac").unwrap(),
+            name: ContentName::new(name).unwrap(),
             size: 4,
             sidecar: SidecarFacts {
                 record,
                 has_analysis_row: false,
             },
         }
+    }
+
+    fn audio(record: Option<serde_json::Value>) -> FoundContent {
+        file("audio.flac", record)
+    }
+
+    fn names(found: &[FoundContent]) -> Vec<&str> {
+        found.iter().map(|item| item.name.as_str()).collect()
     }
 
     fn empty_record() -> serde_json::Value {
@@ -119,5 +141,104 @@ mod tests {
             classify(&[audio(Some(record))], &ClosedHandlerSet),
             MediaClass::Ordinary
         );
+    }
+
+    #[test]
+    fn partition_empty_audio_splits_a_mixed_list() {
+        let (empty, ordinary) = partition_empty_audio(
+            vec![
+                file("audio.flac", Some(empty_record())),
+                file(
+                    "extra.flac",
+                    Some(json!({
+                        "schema": vocab::SCHEMA,
+                        "state": vocab::STATE_ANALYZED,
+                        "reason_code": vocab::REASON_OK,
+                        "handler": vocab::HANDLER_TRANSCRIBE,
+                    })),
+                ),
+            ],
+            &ClosedHandlerSet,
+        );
+        assert_eq!(names(&empty), ["audio.flac"]);
+        assert_eq!(names(&ordinary), ["extra.flac"]);
+        assert_eq!(
+            classify(&empty, &ClosedHandlerSet),
+            MediaClass::NoDecodableAudio
+        );
+        assert_eq!(classify(&ordinary, &ClosedHandlerSet), MediaClass::Ordinary);
+    }
+
+    #[test]
+    fn partition_empty_audio_puts_lookalikes_in_the_ordinary_side() {
+        let mut backfill = empty_record();
+        backfill
+            .as_object_mut()
+            .unwrap()
+            .insert("source".to_owned(), json!("backfill"));
+        let cases = [
+            ("backfill", file("audio.flac", Some(backfill))),
+            (
+                "wrong-reason",
+                file(
+                    "audio.flac",
+                    Some(json!({
+                        "schema": vocab::SCHEMA,
+                        "state": vocab::STATE_EMPTY,
+                        "reason_code": vocab::REASON_OK,
+                        "handler": vocab::HANDLER_TRANSCRIBE,
+                    })),
+                ),
+            ),
+            (
+                "failed",
+                file(
+                    "audio.flac",
+                    Some(json!({
+                        "schema": vocab::SCHEMA,
+                        "state": vocab::STATE_FAILED,
+                        "reason_code": vocab::REASON_CORRUPT_INPUT,
+                        "handler": vocab::HANDLER_TRANSCRIBE,
+                    })),
+                ),
+            ),
+        ];
+        for (name, item) in cases {
+            let (empty, ordinary) = partition_empty_audio(vec![item], &ClosedHandlerSet);
+            assert!(empty.is_empty(), "{name} must not be independently empty");
+            assert_eq!(names(&ordinary), ["audio.flac"], "{name}");
+            assert_eq!(
+                classify(&ordinary, &ClosedHandlerSet),
+                MediaClass::Ordinary,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn partition_empty_audio_empty_input_and_homogeneous_lists() {
+        let (empty, ordinary) = partition_empty_audio(Vec::new(), &ClosedHandlerSet);
+        assert!(empty.is_empty());
+        assert!(ordinary.is_empty());
+
+        let (empty, ordinary) =
+            partition_empty_audio(vec![audio(Some(empty_record()))], &ClosedHandlerSet);
+        assert_eq!(names(&empty), ["audio.flac"]);
+        assert!(ordinary.is_empty());
+
+        let (empty, ordinary) = partition_empty_audio(
+            vec![file(
+                "extra.flac",
+                Some(json!({
+                    "schema": vocab::SCHEMA,
+                    "state": vocab::STATE_ANALYZED,
+                    "reason_code": vocab::REASON_OK,
+                    "handler": vocab::HANDLER_TRANSCRIBE,
+                })),
+            )],
+            &ClosedHandlerSet,
+        );
+        assert!(empty.is_empty());
+        assert_eq!(names(&ordinary), ["extra.flac"]);
     }
 }

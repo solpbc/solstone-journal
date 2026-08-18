@@ -3,17 +3,17 @@
 
 //! Execute approved raw-release marks after proving them again from disk.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use solstone_core_journal_io::{LockOptions, hold_lock};
 
 use crate::age::segment_age;
-use crate::class::classify;
+use crate::class::{classify, partition_empty_audio};
 use crate::content::{ClosedHandlerSet, JournalMedia};
 use crate::door::release_raw;
-use crate::eligibility::{RawRelease, resolve};
+use crate::eligibility::{Blocker, FoundContent, ProvenRaw, RawRelease, resolve};
 use crate::marks::{
     Failure, Mark, MarkId, PreflightMarks, load as load_marks, record_failure,
     resolve as resolve_mark,
@@ -102,47 +102,20 @@ fn remove_one(
             return Ok(refused(mark, NO_LONGER_ON_REMOVAL_LIST));
         }
         let found = scan_segment(&journal.join(&live), &ClosedHandlerSet, &JournalMedia);
-        let records = found
-            .iter()
-            .map(|item| item.sidecar.record.as_ref())
-            .collect::<Vec<_>>();
-        let eligibility = context.policy.evaluate(
-            &target.stream,
-            segment_age(&target.day, &records, context.today, context.now),
-            classify(&found, &ClosedHandlerSet),
-        );
-        match eligibility {
-            Eligibility::Eligible { .. } => {}
-            Eligibility::TooYoung { .. } => return Ok(refused(mark, TOO_YOUNG)),
-            Eligibility::KeptForever => return Ok(refused(mark, KEPT_FOREVER)),
-            Eligibility::AnchorMissing { .. } => return Ok(refused(mark, ANCHOR_MISSING)),
-        }
-        let ready = match resolve(
-            &ClosedHandlerSet,
-            &JournalMedia,
-            &target.day,
-            &target.stream,
-            &target.dir,
-            &found,
-        ) {
-            RawRelease::Releasable(ready) => ready,
-            RawRelease::Held(blockers) => {
-                return Ok(refused(
-                    mark,
-                    &format!(
-                        "the current processing proof no longer permits this release: {}",
-                        blockers
-                            .iter()
-                            .map(|blocker| blocker.name())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ),
-                ));
-            }
-        };
         let found_names = found
             .iter()
-            .map(|item| item.name.as_str())
+            .map(|item| item.name.as_str().to_owned())
+            .collect::<BTreeSet<_>>();
+        let (empty, ordinary) = partition_empty_audio(found, &ClosedHandlerSet);
+        let empty_side = decide_side(&empty, target, context);
+        let ordinary_side = decide_side(&ordinary, target, context);
+        let mut side_refusal = BTreeMap::new();
+        record_side_refusal(&empty, &empty_side, &mut side_refusal);
+        record_side_refusal(&ordinary, &ordinary_side, &mut side_refusal);
+        let ready = ready_union(empty_side, ordinary_side);
+        let proved_names = ready
+            .iter()
+            .map(|item| item.name().to_owned())
             .collect::<BTreeSet<_>>();
         let desired = mark
             .proposal
@@ -182,6 +155,23 @@ fn remove_one(
                         name,
                     ),
                     reason: NO_LONGER_PRESENT.to_owned(),
+                    staged: None,
+                });
+            }
+        }
+        for name in &mark.proposal.names {
+            if found_names.contains(name.as_str())
+                && !proved_names.contains(name)
+                && let Some(reason) = side_refusal.get(name)
+            {
+                row.not_removed.push(NotRemoved {
+                    entry: crate::layout::content_rel(
+                        &target.day,
+                        &target.stream,
+                        &target.dir,
+                        name,
+                    ),
+                    reason: reason.clone(),
                     staged: None,
                 });
             }
@@ -231,6 +221,86 @@ fn remove_one(
     Ok(row)
 }
 
+enum SideOutcome {
+    None,
+    Policy(Eligibility),
+    Held(Vec<Blocker>),
+    Proved(Vec<ProvenRaw>),
+}
+
+fn decide_side(
+    side: &[FoundContent],
+    target: &crate::Target,
+    context: &RemovalContext<'_>,
+) -> SideOutcome {
+    if side.is_empty() {
+        return SideOutcome::None;
+    }
+    let records = side
+        .iter()
+        .map(|item| item.sidecar.record.as_ref())
+        .collect::<Vec<_>>();
+    let verdict = context.policy.evaluate(
+        &target.stream,
+        segment_age(&target.day, &records, context.today, context.now),
+        classify(side, &ClosedHandlerSet),
+    );
+    if !verdict.is_eligible() {
+        return SideOutcome::Policy(verdict);
+    }
+    match resolve(
+        &ClosedHandlerSet,
+        &JournalMedia,
+        &target.day,
+        &target.stream,
+        &target.dir,
+        side,
+    ) {
+        RawRelease::Releasable(ready) if ready.is_empty() => SideOutcome::None,
+        RawRelease::Releasable(ready) => SideOutcome::Proved(ready),
+        RawRelease::Held(blockers) => SideOutcome::Held(blockers),
+    }
+}
+
+fn ready_union(empty: SideOutcome, ordinary: SideOutcome) -> Vec<ProvenRaw> {
+    let mut ready = match empty {
+        SideOutcome::Proved(proven) => proven,
+        _ => Vec::new(),
+    };
+    if let SideOutcome::Proved(proven) = ordinary {
+        ready.extend(proven);
+    }
+    ready
+}
+
+fn record_side_refusal(
+    side: &[FoundContent],
+    outcome: &SideOutcome,
+    side_refusal: &mut BTreeMap<String, String>,
+) {
+    let reason = match outcome {
+        SideOutcome::Policy(Eligibility::TooYoung { .. }) => TOO_YOUNG.to_owned(),
+        SideOutcome::Policy(Eligibility::KeptForever) => KEPT_FOREVER.to_owned(),
+        SideOutcome::Policy(Eligibility::AnchorMissing { .. }) => ANCHOR_MISSING.to_owned(),
+        SideOutcome::Policy(Eligibility::Eligible { .. })
+        | SideOutcome::None
+        | SideOutcome::Proved(_) => {
+            return;
+        }
+        SideOutcome::Held(blockers) => format!(
+            "the current processing proof no longer permits this release: {}",
+            blockers
+                .iter()
+                .map(|blocker| blocker.name())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    };
+    for item in side {
+        side_refusal.insert(item.name.as_str().to_owned(), reason.clone());
+    }
+}
+
 fn refused(mark: &Mark, reason: &str) -> TargetOutcome {
     TargetOutcome {
         target: mark.target.clone(),
@@ -257,11 +327,14 @@ fn refused(mark: &Mark, reason: &str) -> TargetOutcome {
 )]
 mod tests {
     use std::fs;
+    use std::path::Path;
 
     use chrono::TimeZone;
 
     use super::*;
     use crate::marks::{Proposal, RemovalClass, decline, preflight, reconcile};
+    use crate::policy::policy_from_retention;
+    use serde_json::json;
 
     #[test]
     fn a_mark_declined_after_preflight_is_not_unlinked() {
@@ -325,5 +398,179 @@ mod tests {
             outcome.targets[0].not_removed[0].reason,
             NO_LONGER_ON_REMOVAL_LIST
         );
+    }
+
+    fn target() -> crate::Target {
+        crate::Target {
+            day: "20260701".to_owned(),
+            stream: "field.audio".to_owned(),
+            dir: "070000_17".to_owned(),
+        }
+    }
+
+    fn keep_journal_product_policy() -> Policy {
+        policy_from_retention(json!({"raw_media": "keep"}).as_object().unwrap())
+    }
+
+    fn seed_empty_audio(journal: &Path, target: &crate::Target) -> std::path::PathBuf {
+        let segment = journal.join(crate::layout::segment_rel(
+            &target.day,
+            &target.stream,
+            &target.dir,
+        ));
+        fs::create_dir_all(&segment).unwrap();
+        let raw = b"raw";
+        fs::write(segment.join("audio.flac"), raw).unwrap();
+        let header = json!({
+            "segment": &target.dir,
+            "_solstone_processing": {
+                "schema": "solstone.processing.v1",
+                "state": "empty",
+                "reason_code": "no_decodable_audio",
+                "handler": "transcribe",
+                "attempted_at": "2026-07-01T00:00:00Z",
+                "input_size": raw.len(),
+            }
+        });
+        fs::write(segment.join("audio.jsonl"), format!("{header}\n")).unwrap();
+        segment
+    }
+
+    fn seed_analyzed_sibling(segment: &Path, name: &str) {
+        let raw = b"sibling";
+        fs::write(segment.join(name), raw).unwrap();
+        let stem = name.rsplit_once('.').unwrap().0;
+        let header = json!({
+            "segment": "070000_17",
+            "_solstone_processing": {
+                "schema": "solstone.processing.v1",
+                "state": "analyzed",
+                "reason_code": "ok",
+                "handler": "transcribe",
+                "attempted_at": "2026-07-01T00:00:00Z",
+                "input_size": raw.len(),
+            }
+        });
+        fs::write(
+            segment.join(format!("{stem}.jsonl")),
+            format!("{header}\n{{\"start\":0.0,\"text\":\"x\"}}\n"),
+        )
+        .unwrap();
+    }
+
+    fn approve(
+        journal: &Path,
+        names: Vec<String>,
+        policy: &Policy,
+    ) -> (crate::Outcome, Vec<String>) {
+        let target = target();
+        let proposal = Proposal {
+            bytes: 1,
+            reason: "test approval".to_owned(),
+            names,
+        };
+        let register = reconcile(
+            journal,
+            RemovalClass::PolicyRawRelease,
+            &[(target, proposal)],
+            "first",
+        )
+        .unwrap();
+        let id = register.marks.keys().next().unwrap().clone();
+        let marks = preflight(journal, std::slice::from_ref(&id)).unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 8, 6).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap();
+        let mut register_errors = Vec::new();
+        let outcome = remove_marked(
+            journal,
+            &marks,
+            policy,
+            today,
+            now,
+            "2026-08-06T00:00:00Z",
+            &mut register_errors,
+        );
+        (outcome, register_errors)
+    }
+
+    #[test]
+    fn an_unnamed_ordinary_sibling_does_not_block_or_appear_on_an_empty_audio_mark() {
+        let journal = tempfile::tempdir().unwrap();
+        let target = target();
+        let segment = seed_empty_audio(journal.path(), &target);
+        seed_analyzed_sibling(&segment, "extra.flac");
+        let audio = segment.join("audio.flac");
+        let extra = segment.join("extra.flac");
+        let policy = keep_journal_product_policy();
+        let (outcome, register_errors) =
+            approve(journal.path(), vec!["audio.flac".to_owned()], &policy);
+
+        assert!(!audio.exists());
+        assert!(extra.exists());
+        assert!(register_errors.is_empty());
+        assert_eq!(outcome.targets.len(), 1);
+        assert_eq!(outcome.targets[0].removed.len(), 1);
+        assert!(
+            outcome.targets[0].removed[0]
+                .as_str()
+                .ends_with("audio.flac")
+        );
+        assert_eq!(outcome.targets[0].not_removed, Vec::new());
+    }
+
+    #[test]
+    fn a_mark_naming_both_sides_releases_only_the_eligible_file() {
+        let journal = tempfile::tempdir().unwrap();
+        let target = target();
+        let segment = seed_empty_audio(journal.path(), &target);
+        seed_analyzed_sibling(&segment, "extra.flac");
+        let audio = segment.join("audio.flac");
+        let extra = segment.join("extra.flac");
+        let policy = keep_journal_product_policy();
+        let (outcome, register_errors) = approve(
+            journal.path(),
+            vec!["audio.flac".to_owned(), "extra.flac".to_owned()],
+            &policy,
+        );
+
+        assert!(!audio.exists());
+        assert!(extra.exists());
+        assert!(register_errors.is_empty());
+        assert_eq!(outcome.targets[0].removed.len(), 1);
+        assert!(
+            outcome.targets[0].removed[0]
+                .as_str()
+                .ends_with("audio.flac")
+        );
+        assert_eq!(outcome.targets[0].not_removed.len(), 1);
+        assert!(
+            outcome.targets[0].not_removed[0]
+                .entry
+                .ends_with("extra.flac")
+        );
+        assert_eq!(outcome.targets[0].not_removed[0].reason, KEPT_FOREVER);
+    }
+
+    #[test]
+    fn a_named_file_that_is_no_longer_empty_terminal_is_refused_per_file() {
+        let journal = tempfile::tempdir().unwrap();
+        let target = target();
+        let segment = seed_empty_audio(journal.path(), &target);
+        let audio = segment.join("audio.flac");
+        seed_analyzed_sibling(&segment, "audio.flac");
+        let policy = keep_journal_product_policy();
+        let (outcome, register_errors) =
+            approve(journal.path(), vec!["audio.flac".to_owned()], &policy);
+
+        assert!(audio.exists());
+        assert!(register_errors.is_empty());
+        assert_eq!(outcome.targets[0].removed, Vec::new());
+        assert_eq!(outcome.targets[0].not_removed.len(), 1);
+        assert!(
+            outcome.targets[0].not_removed[0]
+                .entry
+                .ends_with("audio.flac")
+        );
+        assert_eq!(outcome.targets[0].not_removed[0].reason, KEPT_FOREVER);
     }
 }

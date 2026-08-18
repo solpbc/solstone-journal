@@ -812,8 +812,7 @@ fn write_keep_journal(root: &Path, empty_audio: Option<&str>) {
     );
 }
 
-fn mark_empty_audio(binary: &Path, root: &Path) -> String {
-    let policy = keep_journal_product_policy();
+fn mark_journal(binary: &Path, root: &Path, policy: &str) -> String {
     let root = root.display().to_string();
     let marked = run_retention(
         binary,
@@ -826,7 +825,7 @@ fn mark_empty_audio(binary: &Path, root: &Path) -> String {
             "--now",
             "2026-08-06T00:00:00Z",
             "--policy",
-            &policy,
+            policy,
         ],
     );
     marked["marks"]["marks"]
@@ -836,6 +835,48 @@ fn mark_empty_audio(binary: &Path, root: &Path) -> String {
         .next()
         .expect("mark id")
         .to_owned()
+}
+
+fn mark_empty_audio(binary: &Path, root: &Path) -> String {
+    mark_journal(binary, root, &keep_journal_product_policy())
+}
+
+fn processed_policy(retention: Value) -> String {
+    serde_json::to_string(&policy_from_retention(
+        retention.as_object().expect("retention"),
+    ))
+    .expect("policy JSON")
+}
+
+fn seed_analyzed_sibling(segment: &Path, name: &str) {
+    let extra = b"sibling";
+    fs::write(segment.join(name), extra).expect("sibling raw");
+    let stem = name.rsplit_once('.').expect("extension").0;
+    let header = json!({
+        "segment": "070000_17",
+        "_solstone_processing": {
+            "schema": "solstone.processing.v1",
+            "state": "analyzed",
+            "reason_code": "ok",
+            "handler": "transcribe",
+            "attempted_at": "2026-07-01T00:00:00Z",
+            "input_size": extra.len(),
+        },
+    });
+    fs::write(
+        segment.join(format!("{stem}.jsonl")),
+        format!("{header}\n{{\"start\":0.0,\"text\":\"x\"}}\n"),
+    )
+    .expect("sibling sidecar");
+}
+
+fn approve(harness: &Harness, binary: &str, id: &str) -> (StatusCode, Value) {
+    temp_env::with_vars([("SOLSTONE_RETENTION_BIN", Some(binary))], || {
+        response(
+            harness.router(),
+            request("POST", "/app/home/api/approve", json!({"mark_ids": [id]})),
+        )
+    })
 }
 
 #[test]
@@ -858,40 +899,19 @@ fn product_keep_journal_approves_empty_audio_release() {
 }
 
 #[test]
-fn product_keep_journal_refuses_when_a_sibling_is_no_longer_empty() {
+fn product_keep_journal_approves_empty_audio_when_a_sibling_is_no_longer_empty() {
     let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
     let binary = support::retention_binary();
     let harness = Harness::new();
     write_keep_journal(harness.root.path(), None);
     let segment = seed_empty_terminal_on(harness.root.path(), "20260701");
     let id = mark_empty_audio(&binary, harness.root.path());
-    let extra = b"sibling";
-    fs::write(segment.join("extra.flac"), extra).expect("sibling raw");
-    let header = json!({
-        "segment": "070000_17",
-        "_solstone_processing": {
-            "schema": "solstone.processing.v1",
-            "state": "analyzed",
-            "reason_code": "ok",
-            "handler": "transcribe",
-            "attempted_at": "2026-07-01T00:00:00Z",
-            "input_size": extra.len(),
-        },
-    });
-    fs::write(
-        segment.join("extra.jsonl"),
-        format!("{header}\n{{\"start\":0.0,\"text\":\"x\"}}\n"),
-    )
-    .expect("sibling sidecar");
+    seed_analyzed_sibling(&segment, "extra.flac");
     let binary = binary.display().to_string();
-    let refused = temp_env::with_vars([("SOLSTONE_RETENTION_BIN", Some(binary.as_str()))], || {
-        response(
-            harness.router(),
-            request("POST", "/app/home/api/approve", json!({"mark_ids": [id]})),
-        )
-    });
-    assert_eq!(refused.1["removed_count"], 0);
-    assert!(segment.join("audio.flac").exists());
+    let approved = approve(&harness, &binary, &id);
+    assert_eq!(approved.1["state"], "approve.deleted");
+    assert_eq!(approved.1["removed_count"], 1);
+    assert!(!segment.join("audio.flac").exists());
     assert!(segment.join("extra.flac").exists());
 }
 
@@ -912,5 +932,140 @@ fn product_keep_journal_refuses_when_empty_audio_is_keep() {
         )
     });
     assert_eq!(refused.1["state"], "approve.policy_keeps");
+    assert!(segment.join("audio.flac").exists());
+}
+
+fn write_retention(root: &Path, retention: Value) {
+    write_json(
+        root,
+        "config/journal.json",
+        &json!({
+            "setup": {"completed_at": 1_700_000_000_000_i64},
+            "retention": retention,
+        }),
+    );
+}
+
+#[test]
+fn product_processed_journal_releases_ordinary_while_empty_sibling_is_too_young() {
+    let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
+    let binary = support::retention_binary();
+    let harness = Harness::new();
+    let retention = json!({
+        "raw_media": "processed",
+        "empty_audio": "days",
+        "empty_audio_days": 7,
+    });
+    write_retention(harness.root.path(), retention.clone());
+    let segment = seed_empty_terminal_on(harness.root.path(), "20260815");
+    seed_analyzed_sibling(&segment, "extra.flac");
+    let id = mark_journal(&binary, harness.root.path(), &processed_policy(retention));
+    let binary = binary.display().to_string();
+    let approved = approve(&harness, &binary, &id);
+    assert_eq!(approved.1["state"], "approve.deleted");
+    assert_eq!(approved.1["removed_count"], 1);
+    assert!(segment.join("audio.flac").exists());
+    assert!(!segment.join("extra.flac").exists());
+}
+
+#[test]
+fn product_processed_journal_releases_empty_audio_while_ordinary_hits_the_floor() {
+    let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
+    let binary = support::retention_binary();
+    let harness = Harness::new();
+    let retention = json!({
+        "raw_media": "processed",
+        "raw_media_minimum_days": 30,
+    });
+    write_retention(harness.root.path(), retention.clone());
+    let segment = harness
+        .root
+        .path()
+        .join("chronicle/20260805/field.audio/070000_17");
+    fs::create_dir_all(&segment).expect("segment");
+    let empty = b"raw";
+    fs::write(segment.join("audio.flac"), empty).expect("raw");
+    let empty_header = json!({
+        "segment": "070000_17",
+        "_solstone_processing": {
+            "schema": "solstone.processing.v1",
+            "state": "empty",
+            "reason_code": "no_decodable_audio",
+            "handler": "transcribe",
+            "attempted_at": "2026-08-05T00:00:00Z",
+            "input_size": empty.len(),
+        },
+    });
+    fs::write(segment.join("audio.jsonl"), format!("{empty_header}\n")).expect("sidecar");
+    let extra = b"sibling";
+    fs::write(segment.join("extra.flac"), extra).expect("sibling raw");
+    let extra_header = json!({
+        "segment": "070000_17",
+        "_solstone_processing": {
+            "schema": "solstone.processing.v1",
+            "state": "analyzed",
+            "reason_code": "ok",
+            "handler": "transcribe",
+            "attempted_at": "2026-08-05T00:00:00Z",
+            "input_size": extra.len(),
+        },
+    });
+    fs::write(
+        segment.join("extra.jsonl"),
+        format!("{extra_header}\n{{\"start\":0.0,\"text\":\"x\"}}\n"),
+    )
+    .expect("sibling sidecar");
+    let id = mark_journal(&binary, harness.root.path(), &processed_policy(retention));
+    let binary = binary.display().to_string();
+    let approved = approve(&harness, &binary, &id);
+    assert_eq!(approved.1["state"], "approve.deleted");
+    assert_eq!(approved.1["removed_count"], 1);
+    assert!(!segment.join("audio.flac").exists());
+    assert!(segment.join("extra.flac").exists());
+}
+
+#[test]
+fn product_processed_journal_releases_only_the_eligible_named_file_from_a_mixed_mark() {
+    let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
+    let binary = support::retention_binary();
+    let harness = Harness::new();
+    write_retention(harness.root.path(), json!({"raw_media": "processed"}));
+    let segment = seed_empty_terminal_on(harness.root.path(), "20260701");
+    seed_analyzed_sibling(&segment, "extra.flac");
+    let id = mark_journal(
+        &binary,
+        harness.root.path(),
+        &processed_policy(json!({"raw_media": "processed"})),
+    );
+    write_retention(
+        harness.root.path(),
+        json!({"raw_media": "processed", "empty_audio": "keep"}),
+    );
+    let binary = binary.display().to_string();
+    let approved = approve(&harness, &binary, &id);
+    assert_eq!(approved.1["state"], "approve.partial");
+    assert_eq!(approved.1["removed_count"], 1);
+    assert_eq!(approved.1["not_removed_count"], 1);
+    assert_eq!(approved.1["refusals"][0]["name"], "audio.flac");
+    assert!(segment.join("audio.flac").exists());
+    assert!(!segment.join("extra.flac").exists());
+}
+
+#[test]
+fn product_keep_journal_refuses_a_named_file_that_is_no_longer_empty_terminal() {
+    let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
+    let binary = support::retention_binary();
+    let harness = Harness::new();
+    write_keep_journal(harness.root.path(), None);
+    let segment = seed_empty_terminal_on(harness.root.path(), "20260701");
+    let id = mark_empty_audio(&binary, harness.root.path());
+    fs::remove_file(segment.join("audio.jsonl")).expect("drop empty sidecar");
+    seed_analyzed_sibling(&segment, "audio.flac");
+    let binary = binary.display().to_string();
+    let refused = approve(&harness, &binary, &id);
+    assert_eq!(refused.1["state"], "approve.refused_after_start");
+    assert_eq!(refused.1["removed_count"], 0);
+    assert_eq!(refused.1["not_removed_count"], 1);
+    assert_eq!(refused.1["refusals"][0]["name"], "audio.flac");
     assert!(segment.join("audio.flac").exists());
 }

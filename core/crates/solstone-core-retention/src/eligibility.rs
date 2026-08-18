@@ -428,7 +428,21 @@ mod tests {
         let registry = audio_only;
         let classifier = media_only;
         let found = vec![
-            releasable("a.flac", 104),
+            FoundContent {
+                name: ContentName::new("a.flac").unwrap(),
+                size: 104,
+                sidecar: SidecarFacts {
+                    record: Some(serde_json::json!({
+                        "schema": "solstone.processing.v1",
+                        "state": "analyzed",
+                        "reason_code": "ok",
+                        "handler": "transcribe",
+                        "attempted_at": "2026-08-05T00:00:00Z",
+                        "input_size": 104,
+                    })),
+                    has_analysis_row: true,
+                },
+            },
             // No handler in the closed set claims a still image, so nothing can prove it consumed.
             FoundContent {
                 name: ContentName::new("photo.png").unwrap(),
