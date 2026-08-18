@@ -173,9 +173,15 @@ pub fn select_local_backend(
         };
     }
 
+    let detail = match trust {
+        ArtifactTrust::Absent => "CUDA runtime artifact does not cover this GPU",
+        ArtifactTrust::Unavailable | ArtifactTrust::Trusted => {
+            "CUDA runtime is not installed locally"
+        }
+    };
     BackendChoice {
         backend: Backend::Vulkan,
-        reason: format!("{cuda_reason}; no trusted CUDA runtime artifact present"),
+        reason: format!("{cuda_reason}; {detail}"),
     }
 }
 
@@ -508,6 +514,28 @@ mod tests {
                 backend: Backend::Cuda,
                 reason: "compute_cap sm_89 covered; driver CUDA 13 >= 13".to_string(),
             }
+        );
+        assert_eq!(
+            select_local_backend(
+                &probe,
+                &CUDA_EMBEDDED_ARCH_SET,
+                CUDA_MIN_DRIVER_VERSION,
+                ArtifactTrust::Unavailable,
+                false,
+            )
+            .reason,
+            "compute_cap sm_89 covered; driver CUDA 13 >= 13; CUDA runtime is not installed locally"
+        );
+        assert_eq!(
+            select_local_backend(
+                &probe,
+                &CUDA_EMBEDDED_ARCH_SET,
+                CUDA_MIN_DRIVER_VERSION,
+                ArtifactTrust::Absent,
+                false,
+            )
+            .reason,
+            "compute_cap sm_89 covered; driver CUDA 13 >= 13; CUDA runtime artifact does not cover this GPU"
         );
     }
 }

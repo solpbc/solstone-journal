@@ -374,9 +374,14 @@ where
 
 fn mode_outcome(result: dispatch::ModeResult) -> CliRun {
     if result.failed == 0 {
+        let mut stderr = format!("journal think: {} completed\n", result.success);
+        for name in &result.success_names {
+            stderr.push_str(name);
+            stderr.push('\n');
+        }
         return CliRun {
             stdout: String::new(),
-            stderr: String::new(),
+            stderr,
             exit_code: 0,
         };
     }
@@ -873,25 +878,41 @@ mod tests {
 
     #[test]
     fn failed_mode_prints_owner_readable_names_and_exits_1() {
-        let silent_success = mode_outcome(dispatch::ModeResult::default());
-        assert_eq!(silent_success.exit_code, 0);
-        assert!(silent_success.stdout.is_empty());
-        assert!(silent_success.stderr.is_empty());
+        let reported_success = mode_outcome(dispatch::ModeResult {
+            success: 3,
+            success_names: vec![
+                "daily_schedule".to_owned(),
+                "schedule".to_owned(),
+                "morning_briefing".to_owned(),
+            ],
+            ..dispatch::ModeResult::default()
+        });
+        assert_eq!(reported_success.exit_code, 0);
+        assert!(reported_success.stdout.is_empty());
+        assert_eq!(
+            reported_success.stderr,
+            "journal think: 3 completed\ndaily_schedule\nschedule\nmorning_briefing\n"
+        );
+
+        let empty_success = mode_outcome(dispatch::ModeResult::default());
+        assert_eq!(empty_success.exit_code, 0);
+        assert_eq!(empty_success.stderr, "journal think: 0 completed\n");
 
         let reported = mode_outcome(dispatch::ModeResult {
             success: 1,
             failed: 2,
             failed_names: vec![
                 "daily_summary (send)".to_owned(),
-                "facts (error)".to_owned(),
+                "facts (gpu-unavailable)".to_owned(),
             ],
             applicable_units: BTreeSet::new(),
+            success_names: vec!["schedule".to_owned()],
         });
         assert_eq!(reported.exit_code, 1);
         assert!(reported.stdout.is_empty());
         assert_eq!(
             reported.stderr,
-            "journal think: 2 failed\ndaily_summary (send)\nfacts (error)\n"
+            "journal think: 2 failed\ndaily_summary (send)\nfacts (gpu-unavailable)\n"
         );
     }
 

@@ -609,9 +609,9 @@ pub(crate) async fn boot_and_tick(
     //   - Installed-artifact resolution: `ParakeetTruthSeam` derives pinned
     //     binary and model paths and verifies each resolves to a regular file.
     //     No bare PATH-resolved names.
-    //   - Device selection: reads `transcribe.parakeet-cpp.device` via
-    //     `configured_parakeet_device()`, resolves the backend and GPU index,
-    //     and WARNS with the configured value when one cannot be honoured.
+    //   - Device selection: `ParakeetTruthSeam::new` fills Vulkan devices from
+    //     the packaged probe, prefers hardware over software ICDs, and WARNS
+    //     when auto cannot honour a GPU. Missing Vulkan binaries stay on CPU.
     //   - Thread count: `parakeet_physical_thread_count()` — physical cores
     //     from `/proc/cpuinfo` on Linux, with a documented fallback. Not a
     //     constant.

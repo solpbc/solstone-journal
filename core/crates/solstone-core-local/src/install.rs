@@ -774,7 +774,9 @@ pub fn local_backend_choice(
 ) -> crate::BackendChoice {
     let probe = nvidia_probe.unwrap_or_else(crate::probe_nvidia_gpu);
     let key = pins::platform_key();
-    let trust = pins::cuda_pin(&key)
+    let pin = pins::cuda_pin(&key);
+    let trust = pin
+        .as_ref()
         .map(|(_, digest, _)| {
             let artifact = pins::cache_root(journal)
                 .join("cuda")
@@ -792,32 +794,53 @@ pub fn local_backend_choice(
             }
         })
         .unwrap_or(crate::ArtifactTrust::Unavailable);
-    crate::select_local_backend(
+    if let Some(rejection) = crate::hardware_backend_rejection(
         &probe,
         &crate::CUDA_EMBEDDED_ARCH_SET,
         crate::CUDA_MIN_DRIVER_VERSION,
-        trust,
-        status::read_status(journal, "local")
-            .map(|value| {
-                value.install_state == "installed"
-                    && value
-                        .target_fingerprint_json
-                        .as_deref()
-                        .is_some_and(|target| {
-                            serde_json::from_str::<Value>(target)
-                                .ok()
-                                .and_then(|target| {
-                                    target
-                                        .get("backend")
-                                        .and_then(Value::as_str)
-                                        .map(str::to_owned)
-                                })
-                                .as_deref()
-                                == Some("cuda")
-                        })
-            })
-            .unwrap_or(false),
-    )
+    ) {
+        return rejection;
+    }
+    if pin.is_none() {
+        return crate::BackendChoice {
+            backend: crate::Backend::Vulkan,
+            reason: "CUDA runtime is not published for this platform".to_owned(),
+        };
+    }
+    if trust == crate::ArtifactTrust::Absent {
+        let arch = probe
+            .arch
+            .as_deref()
+            .expect("hardware rejection checked arch");
+        let driver_cuda_major = probe
+            .driver_cuda_major
+            .expect("hardware rejection checked driver CUDA major");
+        return crate::BackendChoice {
+            backend: crate::Backend::Vulkan,
+            reason: format!(
+                "compute_cap {arch} covered; driver CUDA {driver_cuda_major} >= {}; CUDA runtime artifact does not cover this GPU",
+                crate::CUDA_MIN_DRIVER_VERSION
+            ),
+        };
+    }
+    // Hardware qualifies and a CUDA pin is published. Select CUDA so first
+    // install downloads it. Post-download `cuda_trust` still verifies the
+    // binary. Launch-time planning keeps using `select_local_backend`, which
+    // requires the artifact to be present.
+    let arch = probe
+        .arch
+        .as_deref()
+        .expect("hardware rejection checked arch");
+    let driver_cuda_major = probe
+        .driver_cuda_major
+        .expect("hardware rejection checked driver CUDA major");
+    crate::BackendChoice {
+        backend: crate::Backend::Cuda,
+        reason: format!(
+            "compute_cap {arch} covered; driver CUDA {driver_cuda_major} >= {}",
+            crate::CUDA_MIN_DRIVER_VERSION
+        ),
+    }
 }
 
 /// Mirrors Python's `parakeet_install.target_fingerprint` field-for-field:

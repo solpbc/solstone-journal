@@ -4742,6 +4742,7 @@ dependencies = [
  "log",
  "serde_json",
  "sha2",
+ "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-cli",
  "solstone-core-cortex-client",

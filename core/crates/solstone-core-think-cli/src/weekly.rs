@@ -5,7 +5,9 @@ use serde_json::{Map, Value};
 use solstone_core_talent_config::{TalentConfig, TalentFilter, load_talent_configs};
 
 use crate::context::{DispatchFailure, ThinkContext};
-use crate::dispatch::{ModeResult, PendingUse, dispatch, drain, excluded, grouped, runtime};
+use crate::dispatch::{
+    ModeResult, PendingUse, dispatch, drain, excluded, grouped, merge_mode_result, runtime,
+};
 use crate::helpers;
 use crate::run_log::RunLogWriter;
 
@@ -233,10 +235,7 @@ fn drain_if_full(
     }
 }
 fn merge(into: &mut ModeResult, from: ModeResult) {
-    into.success += from.success;
-    into.failed += from.failed;
-    into.failed_names.extend(from.failed_names);
-    into.applicable_units.extend(from.applicable_units);
+    merge_mode_result(into, from);
 }
 fn label(name: &str, facet: Option<&str>, reason: &str) -> String {
     facet.map_or_else(

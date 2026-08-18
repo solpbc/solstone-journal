@@ -1597,7 +1597,7 @@ fn assert_failed_publish_restores_the_existing_tree(name: &str) {
 }
 
 #[test]
-fn backend_choice_requires_a_trusted_cuda_artifact() {
+fn backend_choice_selects_cuda_when_hardware_qualifies_and_a_pin_exists() {
     let root = temp("backend-trust");
     let key = pins::platform_key();
     let Some((_, digest, _)) = pins::cuda_pin(&key) else {
@@ -1616,8 +1616,14 @@ fn backend_choice_requires_a_trusted_cuda_artifact() {
         "probe_error": null,
     }))
     .unwrap();
-    let absent = local_backend_choice(&root, Some(probe.clone()));
-    assert_eq!(absent.backend, crate::Backend::Vulkan);
+    // First install: pin exists, artifact not yet downloaded. Install must
+    // still select CUDA so the published runtime is fetched.
+    let unpublished_locally = local_backend_choice(&root, Some(probe.clone()));
+    assert_eq!(unpublished_locally.backend, crate::Backend::Cuda);
+    assert_eq!(
+        unpublished_locally.reason,
+        "compute_cap sm_86 covered; driver CUDA 13 >= 13"
+    );
     let artifact = pins::cache_root(&root)
         .join("cuda")
         .join(&key)
@@ -1625,8 +1631,18 @@ fn backend_choice_requires_a_trusted_cuda_artifact() {
         .join("llama-server");
     fs::create_dir_all(artifact.parent().unwrap()).unwrap();
     fs::write(&artifact, b"sm_86 sm_89 sm_120a sm_121a").unwrap();
-    let trusted = local_backend_choice(&root, Some(probe));
+    let trusted = local_backend_choice(&root, Some(probe.clone()));
     assert_eq!(trusted.backend, crate::Backend::Cuda);
+    fs::write(&artifact, b"sm_90 only").unwrap();
+    let uncovered = local_backend_choice(&root, Some(probe));
+    assert_eq!(uncovered.backend, crate::Backend::Vulkan);
+    assert!(
+        uncovered
+            .reason
+            .contains("CUDA runtime artifact does not cover this GPU"),
+        "{}",
+        uncovered.reason
+    );
     let _ = fs::remove_dir_all(root);
 }
 

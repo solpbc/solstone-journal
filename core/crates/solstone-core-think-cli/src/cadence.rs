@@ -7,7 +7,7 @@ use solstone_core_talent_config::{TalentConfig, TalentFilter, load_talent_config
 
 use crate::cadence_state::CadenceState;
 use crate::context::{DispatchFailure, ThinkContext};
-use crate::dispatch::{ModeResult, dispatch, drain, grouped, runtime};
+use crate::dispatch::{ModeResult, dispatch, drain, grouped, merge_mode_result, runtime};
 use crate::helpers;
 use crate::run_log::RunLogWriter;
 
@@ -215,7 +215,5 @@ pub(crate) fn record_clean_fire(
 }
 
 fn merge(into: &mut ModeResult, from: ModeResult) {
-    into.success += from.success;
-    into.failed += from.failed;
-    into.failed_names.extend(from.failed_names);
+    merge_mode_result(into, from);
 }

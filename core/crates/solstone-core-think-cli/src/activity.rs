@@ -9,8 +9,9 @@ use solstone_core_talent_config::{TalentFilter, get_output_name, load_talent_con
 
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
-    DEFAULT_THINK_TIMEOUT, ModeResult, PendingUse, dispatch_direct, grouped, maybe_rescan_output,
-    runtime,
+    DEFAULT_THINK_TIMEOUT, ModeResult, PendingUse, blocked_runtime_reason, dispatch_direct,
+    failure_cause, grouped, item_label, maybe_rescan_output, merge_mode_result, named_failure,
+    runtime, timeout_cause,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -372,9 +373,13 @@ fn drain_activity(
         .cortex
         .wait(runtime, &ids, Some(DEFAULT_THINK_TIMEOUT))
     else {
+        let cause =
+            blocked_runtime_reason(&context.journal).unwrap_or_else(|| "unavailable".to_owned());
         for item in pending {
             result.failed += 1;
-            result.failed_names.push(format!("{} (error)", item.name));
+            result
+                .failed_names
+                .push(named_failure(&item_label(&item.name, Some(facet)), &cause));
             log_fail(
                 log,
                 context,
@@ -388,13 +393,19 @@ fn drain_activity(
         return result;
     };
     for item in pending {
+        let label = item_label(&item.name, Some(facet));
         if let Some(timeout) = report
             .timed_out
             .iter()
             .find(|timeout| timeout.use_id() == item.use_id)
         {
             result.failed += 1;
-            result.failed_names.push(format!("{} (error)", item.name));
+            result.failed_names.push(named_failure(
+                &label,
+                blocked_runtime_reason(&context.journal)
+                    .as_deref()
+                    .unwrap_or_else(|| timeout_cause(timeout)),
+            ));
             let state = match timeout {
                 TimedOutUse::LostAtDeadline { .. } => "unknown",
                 TimedOutUse::GenuineTimeout { .. } => "running",
@@ -414,6 +425,7 @@ fn drain_activity(
             Some(completion) if completion.end_state == UseEndState::Finish => {
                 maybe_rescan_output(context, &item, completion);
                 result.success += 1;
+                result.success_names.push(label);
                 log_complete(
                     log,
                     context,
@@ -426,7 +438,14 @@ fn drain_activity(
             }
             Some(completion) => {
                 result.failed += 1;
-                result.failed_names.push(format!("{} (error)", item.name));
+                result.failed_names.push(named_failure(
+                    &label,
+                    &failure_cause(
+                        &context.journal,
+                        &item.use_id,
+                        completion.end_state.as_str(),
+                    ),
+                ));
                 log_fail(
                     log,
                     context,
@@ -439,7 +458,10 @@ fn drain_activity(
             }
             None => {
                 result.failed += 1;
-                result.failed_names.push(format!("{} (error)", item.name));
+                result.failed_names.push(named_failure(
+                    &label,
+                    &failure_cause(&context.journal, &item.use_id, "unknown"),
+                ));
                 log_fail(
                     log,
                     context,
@@ -536,9 +558,7 @@ fn log_fail(
 }
 
 fn merge(into: &mut ModeResult, from: ModeResult) {
-    into.success += from.success;
-    into.failed += from.failed;
-    into.failed_names.extend(from.failed_names);
+    merge_mode_result(into, from);
 }
 fn failed(name: &str) -> ModeResult {
     ModeResult {

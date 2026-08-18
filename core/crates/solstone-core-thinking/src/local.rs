@@ -140,7 +140,21 @@ pub fn runtime(journal: &Path) -> Value {
     let retry_record = retry_inspection.record.unwrap_or(Value::Null);
     let retry_revision = retry_record["revision"].as_u64().unwrap_or(0);
     let retry_pending = !retry_record["token_id"].is_null();
-    json!({"status":"ok","phase":phase,"reason_code":record["reason_code"],"health_revision":record["revision"],"desired_fingerprint_sha256":record["desired_fingerprint_sha256"],"retry_revision":retry_revision,"retry_pending":retry_pending,"can_retry":phase=="failed" && !record["desired_fingerprint_sha256"].is_null() && !retry_pending,"poll":poll,"updated_at":record["updated_at"]})
+    json!({"status":runtime_status_for_phase(phase),"phase":phase,"reason_code":record["reason_code"],"health_revision":record["revision"],"desired_fingerprint_sha256":record["desired_fingerprint_sha256"],"retry_revision":retry_revision,"retry_pending":retry_pending,"can_retry":phase=="failed" && !record["desired_fingerprint_sha256"].is_null() && !retry_pending,"poll":poll,"updated_at":record["updated_at"]})
+}
+
+/// `status` is whether the runtime can run, not whether the health record was readable.
+/// Inspection failures already return above. A readable blocked record is not `ok`.
+fn runtime_status_for_phase(phase: &str) -> &'static str {
+    match phase {
+        "ready" | "starting" | "warming" | "observing" | "backoff" | "retry-requested"
+        | "stop-deferred" | "stopping" => "ok",
+        "host-blocked" | "artifact-not-ready" | "not-desired" | "stopped" => "blocked",
+        "failed" | "cleanup-failed" => "failed",
+        "state-corrupt" => "corrupt",
+        "state-unavailable" | "ready-proof-unavailable" => "unavailable",
+        _ => "unknown",
+    }
 }
 
 /// Request a runtime retry token for the bundled local provider, then return
@@ -404,7 +418,10 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{BootstrapResponse, classify_bootstrap, default_model, start_bootstrap};
+    use super::{
+        BootstrapResponse, classify_bootstrap, default_model, runtime, runtime_status_for_phase,
+        start_bootstrap,
+    };
 
     fn temporary_journal(name: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!(
@@ -454,6 +471,59 @@ mod tests {
         let journal = temporary_journal("already-installed");
         let response = classify_bootstrap(&journal, &json!({"ready": true}));
         assert_eq!(response, BootstrapResponse::Installed);
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    fn write_runtime_health(journal: &std::path::Path, phase: &str, reason_code: &str) {
+        let path = journal.join("health/providers/runtime/local.json");
+        fs::create_dir_all(path.parent().expect("runtime directory")).expect("runtime directory");
+        fs::write(
+            path,
+            serde_json::to_vec(&json!({
+                "schema_version": 1,
+                "provider": "local",
+                "revision": 3,
+                "phase": phase,
+                "reason_code": reason_code,
+                "detail": {},
+                "desired_fingerprint_sha256": null,
+                "incarnation": null,
+                "generation": 0,
+                "attempt": 0,
+                "process": null,
+                "updated_at": "2026-08-18T00:00:00Z",
+                "display_deadline_at": null,
+                "owner": null
+            }))
+            .expect("health record serializes"),
+        )
+        .expect("health record writes");
+    }
+
+    #[test]
+    fn runtime_status_is_not_ok_next_to_a_blocking_phase() {
+        assert_eq!(runtime_status_for_phase("host-blocked"), "blocked");
+        assert_eq!(runtime_status_for_phase("artifact-not-ready"), "blocked");
+        assert_eq!(runtime_status_for_phase("failed"), "failed");
+        assert_eq!(runtime_status_for_phase("ready"), "ok");
+
+        let journal = temporary_journal("runtime-blocked");
+        write_runtime_health(&journal, "host-blocked", "gpu-unavailable");
+        let payload = runtime(&journal);
+        assert_eq!(payload["status"], "blocked");
+        assert_eq!(payload["phase"], "host-blocked");
+        assert_eq!(payload["reason_code"], "gpu-unavailable");
+
+        write_runtime_health(&journal, "artifact-not-ready", "artifact-missing");
+        let payload = runtime(&journal);
+        assert_eq!(payload["status"], "blocked");
+        assert_eq!(payload["phase"], "artifact-not-ready");
+        assert_eq!(payload["reason_code"], "artifact-missing");
+
+        write_runtime_health(&journal, "ready", "probe-ready");
+        let payload = runtime(&journal);
+        assert_eq!(payload["status"], "ok");
+        assert_eq!(payload["phase"], "ready");
         let _ = fs::remove_dir_all(journal);
     }
 }

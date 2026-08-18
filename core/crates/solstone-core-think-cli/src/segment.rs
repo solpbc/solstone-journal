@@ -20,7 +20,9 @@ use solstone_core_talent_config::{
 };
 
 use crate::context::{DispatchFailure, ThinkContext};
-use crate::dispatch::{ModeResult, PendingUse, dispatch_direct, drain_with_deadline, runtime};
+use crate::dispatch::{
+    ModeResult, PendingUse, dispatch_direct, drain_with_deadline, merge_mode_result, runtime,
+};
 use crate::helpers;
 use crate::run_log::RunLogWriter;
 
@@ -1093,10 +1095,7 @@ fn log_dispatch(
 }
 
 fn merge(into: &mut ModeResult, from: ModeResult) {
-    into.success += from.success;
-    into.failed += from.failed;
-    into.failed_names.extend(from.failed_names);
-    into.applicable_units.extend(from.applicable_units);
+    merge_mode_result(into, from);
 }
 
 fn log_skip(

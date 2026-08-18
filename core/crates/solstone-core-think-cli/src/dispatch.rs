@@ -3,12 +3,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use chrono::{Datelike, Duration as ChronoDuration, NaiveDate};
 use serde_json::{Map, Value};
-use solstone_core_cortex_client::{CortexRequest, UseEndState};
+use solstone_core_brain::inspect_runtime_health;
+use solstone_core_cortex_client::{CortexRequest, TimedOutUse, UseEndState, read_use_events};
 use solstone_core_talent_config::{TalentConfig, get_output_path};
 
 use crate::context::{DispatchFailure, ThinkContext};
@@ -21,7 +22,86 @@ pub(crate) struct ModeResult {
     pub(crate) success: usize,
     pub(crate) failed: usize,
     pub(crate) failed_names: Vec<String>,
+    pub(crate) success_names: Vec<String>,
     pub(crate) applicable_units: BTreeSet<(String, Option<String>)>,
+}
+
+pub(crate) fn item_label(name: &str, facet: Option<&str>) -> String {
+    facet.map_or_else(|| name.to_owned(), |facet| format!("{name}/{facet}"))
+}
+
+pub(crate) fn merge_mode_result(into: &mut ModeResult, from: ModeResult) {
+    into.success += from.success;
+    into.failed += from.failed;
+    into.failed_names.extend(from.failed_names);
+    into.success_names.extend(from.success_names);
+    into.applicable_units.extend(from.applicable_units);
+}
+
+/// Blocking local-runtime reason from the same health record the runtime API reads.
+pub(crate) fn blocked_runtime_reason(journal: &Path) -> Option<String> {
+    let inspection = inspect_runtime_health(journal);
+    if inspection.status != "ok" {
+        return inspection.reason_code;
+    }
+    let record = inspection.record?;
+    let phase = record.get("phase").and_then(Value::as_str)?;
+    matches!(
+        phase,
+        "host-blocked"
+            | "artifact-not-ready"
+            | "failed"
+            | "cleanup-failed"
+            | "state-corrupt"
+            | "state-unavailable"
+            | "ready-proof-unavailable"
+    )
+    .then(|| {
+        record
+            .get("reason_code")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    })
+    .flatten()
+}
+
+fn use_log_error(journal: &Path, use_id: &str) -> Option<String> {
+    let events = read_use_events(journal, use_id).ok()?;
+    events.into_iter().rev().find_map(|event| {
+        (event.get("event").and_then(Value::as_str) == Some("error")).then(|| {
+            event
+                .get("error")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .or_else(|| {
+                    event
+                        .get("reason_code")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
+        })?
+    })
+}
+
+pub(crate) fn timeout_cause(timeout: &TimedOutUse) -> &'static str {
+    match timeout {
+        TimedOutUse::LostAtDeadline { .. } => "lost",
+        TimedOutUse::GenuineTimeout { .. } => "timeout",
+    }
+}
+
+pub(crate) fn failure_cause(journal: &Path, use_id: &str, fallback: &str) -> String {
+    if let Some(reason) = blocked_runtime_reason(journal) {
+        return reason;
+    }
+    if let Some(error) = use_log_error(journal, use_id) {
+        return error;
+    }
+    fallback.to_owned()
+}
+
+pub(crate) fn named_failure(label: &str, cause: &str) -> String {
+    format!("{label} ({cause})")
 }
 
 pub(crate) struct PendingUse {
@@ -342,32 +422,59 @@ pub(crate) fn drain_with_deadline(
     match context.cortex.wait(runtime, &use_ids, deadline) {
         Ok(report) => {
             for item in pending {
-                let label = item.facet.as_ref().map_or_else(
-                    || item.name.clone(),
-                    |facet| format!("{}/{facet}", item.name),
-                );
+                let label = item_label(&item.name, item.facet.as_deref());
+                if let Some(timeout) = report
+                    .timed_out
+                    .iter()
+                    .find(|timeout| timeout.use_id() == item.use_id)
+                {
+                    result.failed += 1;
+                    result.failed_names.push(named_failure(
+                        &label,
+                        blocked_runtime_reason(&context.journal)
+                            .as_deref()
+                            .unwrap_or_else(|| timeout_cause(timeout)),
+                    ));
+                    continue;
+                }
                 match report.completed.get(&item.use_id) {
                     Some(completion) if completion.end_state == UseEndState::Finish => {
                         // Source-derived, not measured: thinking.py:240-242 and
                         // 1102 require both a literal changed flag and a path.
                         maybe_rescan_output(context, &item, completion);
                         result.success += 1;
+                        result.success_names.push(label);
                     }
-                    _ => {
+                    Some(completion) => {
                         result.failed += 1;
-                        result.failed_names.push(format!("{label} (error)"));
+                        result.failed_names.push(named_failure(
+                            &label,
+                            &failure_cause(
+                                &context.journal,
+                                &item.use_id,
+                                completion.end_state.as_str(),
+                            ),
+                        ));
+                    }
+                    None => {
+                        result.failed += 1;
+                        result.failed_names.push(named_failure(
+                            &label,
+                            &failure_cause(&context.journal, &item.use_id, "unknown"),
+                        ));
                     }
                 }
             }
         }
         Err(_) => {
+            let cause = blocked_runtime_reason(&context.journal)
+                .unwrap_or_else(|| "unavailable".to_owned());
             for item in pending {
                 result.failed += 1;
-                let label = item.facet.as_ref().map_or_else(
-                    || item.name.clone(),
-                    |facet| format!("{}/{facet}", item.name),
-                );
-                result.failed_names.push(format!("{label} (error)"));
+                result.failed_names.push(named_failure(
+                    &item_label(&item.name, item.facet.as_deref()),
+                    &cause,
+                ));
             }
         }
     }
@@ -395,7 +502,47 @@ pub(crate) fn maybe_rescan_output(
 
 #[cfg(test)]
 mod tests {
-    use super::runtime;
+    use std::fs;
+
+    use serde_json::json;
+
+    use super::{blocked_runtime_reason, named_failure, runtime};
+
+    #[test]
+    fn blocked_runtime_reason_reads_the_same_health_record() {
+        let journal = tempfile::tempdir().expect("journal");
+        let path = journal.path().join("health/providers/runtime/local.json");
+        fs::create_dir_all(path.parent().expect("runtime directory")).expect("runtime directory");
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({
+                "schema_version": 1,
+                "provider": "local",
+                "revision": 1,
+                "phase": "host-blocked",
+                "reason_code": "gpu-unavailable",
+                "detail": {},
+                "desired_fingerprint_sha256": null,
+                "incarnation": null,
+                "generation": 0,
+                "attempt": 0,
+                "process": null,
+                "updated_at": null,
+                "display_deadline_at": null,
+                "owner": null
+            }))
+            .expect("record"),
+        )
+        .expect("write");
+        assert_eq!(
+            blocked_runtime_reason(journal.path()).as_deref(),
+            Some("gpu-unavailable")
+        );
+        assert_eq!(
+            named_failure("daily_schedule", "gpu-unavailable"),
+            "daily_schedule (gpu-unavailable)"
+        );
+    }
 
     #[test]
     fn think_runtime_can_connect_a_unix_socket() {

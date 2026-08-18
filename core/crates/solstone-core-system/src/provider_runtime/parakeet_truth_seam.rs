@@ -6,9 +6,9 @@
 //! This is deliberately narrower than Python's readiness observation: it
 //! derives pinned paths and checks that the resolved backend binary and model
 //! are regular files, but does not yet inspect manifests, proof state, install
-//! progress, or binary host eligibility. Native Vulkan enumeration and the
-//! resulting `decide_parakeet_auto_placement` / `is_local_provider_needed`
-//! co-location branch are likewise follow-up work.
+//! progress, or binary host eligibility. Vulkan devices come from the packaged
+//! probe helper; `decide_parakeet_auto_placement` / `is_local_provider_needed`
+//! co-location remains follow-up work.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -22,6 +22,7 @@ use solstone_core_journal_config::read_journal_config;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_local::install::pins;
 use solstone_core_local::plan::VulkanDevice;
+use solstone_core_local::{detect_gpus, select_device};
 
 use super::admission::{ParakeetAdmissionInput, parakeet_stt_admission_latch};
 use super::model::{
@@ -71,7 +72,7 @@ impl ParakeetTruthSeam {
                 remote_mode,
                 platform: std::env::consts::OS.to_owned(),
                 machine: std::env::consts::ARCH.to_owned(),
-                vulkan_devices: Vec::new(),
+                vulkan_devices: detect_gpus(),
             },
         )
     }
@@ -221,8 +222,24 @@ fn observe_parakeet_truth(
     if auto_without_gpu {
         eprintln!("{}", auto_without_gpu_warning());
     }
-    let (backend, env_updates, gpu_index) = resolve_parakeet_backend(&config_device, selected_gpu);
-    let Some(paths) = resolved_parakeet_paths(&config.journal_path, &artifact_key, &backend) else {
+    let (mut backend, mut env_updates, mut gpu_index) =
+        resolve_parakeet_backend(&config_device, selected_gpu);
+    let mut paths = resolved_parakeet_paths(&config.journal_path, &artifact_key, &backend);
+    if backend == "vulkan" {
+        let vulkan_ready = paths.as_ref().is_some_and(|candidate| {
+            regular_files_exist(&candidate.binary_path, &candidate.model_path).unwrap_or(false)
+        });
+        if !vulkan_ready {
+            // A GPU is present, but the Vulkan binary is not installed. Stay
+            // on CPU rather than reporting artifact-missing for transcription.
+            let cpu = resolve_parakeet_backend("cpu", None);
+            backend = cpu.0;
+            env_updates = cpu.1;
+            gpu_index = cpu.2;
+            paths = resolved_parakeet_paths(&config.journal_path, &artifact_key, &backend);
+        }
+    }
+    let Some(paths) = paths else {
         return unavailable_observation("truth-observation-failed");
     };
     match regular_files_exist(&paths.binary_path, &paths.model_path) {
@@ -266,7 +283,7 @@ fn observe_parakeet_truth(
         boot_required: true,
         detail: Some(json!({
             "backend": backend,
-            "placement": if selected_gpu.is_some() { "gpu" } else { "cpu" },
+            "placement": if backend == "vulkan" { "gpu" } else { "cpu" },
             "stt_admission_latch": latch.to_json(),
             "target_fingerprint_json": after_json,
         })),
@@ -304,7 +321,11 @@ fn selected_gpu<'a>(
     if config_device != "auto" {
         return (None, false);
     }
-    let selected = vulkan_devices.first();
+    let selected = select_device(vulkan_devices, None).and_then(|picked| {
+        vulkan_devices
+            .iter()
+            .find(|device| device.index == picked.index)
+    });
     (selected, selected.is_none())
 }
 
@@ -536,6 +557,28 @@ mod tests {
             auto_without_gpu_warning(),
             "supervisor: WARN: transcribe.parakeet-cpp.device=\"auto\" has no Vulkan GPU available; falling back to \"cpu\""
         );
+    }
+
+    #[test]
+    fn selected_gpu_prefers_hardware_over_software() {
+        let devices = [
+            VulkanDevice {
+                index: 0,
+                name: "llvmpipe (LLVM 19.1.7, 256 bits)".to_owned(),
+                device_type: Some(4),
+                vram_mib: 31_752,
+            },
+            VulkanDevice {
+                index: 1,
+                name: "Intel(R) Graphics (RKL GT1)".to_owned(),
+                device_type: Some(1),
+                vram_mib: 15_876,
+            },
+        ];
+        let (selected, auto_without) = selected_gpu("auto", &devices);
+        assert_eq!(selected.map(|device| device.index), Some(1));
+        assert!(!auto_without);
+        assert_eq!(selected_gpu("cpu", &devices), (None, false));
     }
 
     #[test]
