@@ -335,7 +335,10 @@ where
         Err(error) => return fail_post(error),
     };
     let interpreted = match interpret_completion(&response) {
-        Err((Some(reason), _, _)) if reason == "empty_completion" => match post() {
+        CompletionInterpretation::Failed(CompletionError {
+            reason_code: Some(reason),
+            ..
+        }) if reason == "empty_completion" => match post() {
             Ok(retry) => interpret_completion(&retry),
             Err(error) => return fail_post(error),
         },
@@ -344,8 +347,15 @@ where
     drop(permit);
 
     let (parsed_response, server_fields) = match interpreted {
-        Ok(parsed) => parsed,
-        Err((reason_code, detail, server_fields)) => {
+        CompletionInterpretation::Ready {
+            parsed,
+            server_fields,
+        } => (parsed, server_fields),
+        CompletionInterpretation::Failed(CompletionError {
+            reason_code,
+            detail,
+            server_fields,
+        }) => {
             return failure_with_inference(
                 reason_code.as_deref(),
                 detail,
@@ -573,12 +583,21 @@ fn post_completion<T: GenerateTransport>(
     })
 }
 
-fn interpret_completion(
-    response: &HttpResponse,
-) -> Result<
-    (ParsedResponse, Option<ServerInference>),
-    (Option<String>, String, Option<ServerInference>),
-> {
+struct CompletionError {
+    reason_code: Option<String>,
+    detail: String,
+    server_fields: Option<ServerInference>,
+}
+
+enum CompletionInterpretation {
+    Ready {
+        parsed: ParsedResponse,
+        server_fields: Option<ServerInference>,
+    },
+    Failed(CompletionError),
+}
+
+fn interpret_completion(response: &HttpResponse) -> CompletionInterpretation {
     let parsed = serde_json::from_str::<Value>(&response.body);
     let server_fields = parsed.as_ref().ok().map(server_inference);
     if !(200..300).contains(&response.status) {
@@ -604,21 +623,32 @@ fn interpret_completion(
             Some("capacity_exhausted") => CAPACITY_EXHAUSTED_MESSAGE.into(),
             _ => format!("Local server returned HTTP {}.", response.status),
         };
-        return Err((reason_code.map(str::to_owned), detail, server_fields));
+        return CompletionInterpretation::Failed(CompletionError {
+            reason_code: reason_code.map(str::to_owned),
+            detail,
+            server_fields,
+        });
     }
     let data = match parsed {
         Ok(data) => data,
         Err(error) => {
-            return Err((
-                None,
-                format!("Local model response was not valid JSON: {error}"),
-                None,
-            ));
+            return CompletionInterpretation::Failed(CompletionError {
+                reason_code: None,
+                detail: format!("Local model response was not valid JSON: {error}"),
+                server_fields: None,
+            });
         }
     };
     match parse_response(&data) {
-        Ok(parsed_response) => Ok((parsed_response, server_fields)),
-        Err((reason_code, detail)) => Err((Some(reason_code), detail, server_fields)),
+        Ok(parsed_response) => CompletionInterpretation::Ready {
+            parsed: parsed_response,
+            server_fields,
+        },
+        Err((reason_code, detail)) => CompletionInterpretation::Failed(CompletionError {
+            reason_code: Some(reason_code),
+            detail,
+            server_fields,
+        }),
     }
 }
 
