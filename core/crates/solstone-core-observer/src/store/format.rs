@@ -8,7 +8,7 @@ use chrono::{Local, TimeZone};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{DirEntryKind, list_dir_entries};
 
-use super::history::load_history;
+use super::history::{HistoryStop, load_history};
 use super::paths::{history_dir, history_path};
 use super::record::ObserverRecord;
 
@@ -208,7 +208,8 @@ pub fn render_status_single(
         .expect("valid current time")
         .format("%Y%m%d")
         .to_string();
-    let history = load_history(&history_path(journal_root, &record.prefix(), &today)).records;
+    let today_read = load_history(&history_path(journal_root, &record.prefix(), &today));
+    let history = today_read.records;
     let upload_records = uploads(&history);
     let (received_at, day) =
         if record.last_segment_received_at().is_none() && !upload_records.is_empty() {
@@ -273,11 +274,12 @@ pub fn render_status_single(
     {
         field(&mut lines, "Duplicates:", &format!("{duplicates} rejected"));
     }
-    if !history.is_empty() {
+    if !history.is_empty() || today_read.stopped.is_some() {
         lines.push(String::new());
-        lines.push(format!(
-            "  Today ({today}): {} segment(s) synced",
-            upload_records.len()
+        lines.push(today_count_line(
+            &today,
+            upload_records.len(),
+            today_read.stopped.as_ref(),
         ));
         for upload in upload_records.iter().rev().take(5).rev() {
             let files = upload
@@ -318,11 +320,36 @@ pub fn render_status_single(
         lines.push(String::new());
         lines.push("  Recent days:".to_owned());
         for day in days {
-            let rows = load_history(&history_path(journal_root, &record.prefix(), &day)).records;
-            lines.push(format!("    {day}: {} segment(s)", uploads(&rows).len()));
+            let read = load_history(&history_path(journal_root, &record.prefix(), &day));
+            lines.push(day_count_line(
+                &day,
+                uploads(&read.records).len(),
+                read.stopped.as_ref(),
+            ));
         }
     }
     lines.join("\n")
+}
+
+fn torn_suffix(stopped: Option<&HistoryStop>) -> String {
+    match stopped {
+        Some(HistoryStop::Malformed { line }) => format!("; history torn at line {line}"),
+        Some(HistoryStop::Io) => "; history torn".to_owned(),
+        None => String::new(),
+    }
+}
+
+fn today_count_line(today: &str, count: usize, stopped: Option<&HistoryStop>) -> String {
+    let tear = torn_suffix(stopped);
+    if tear.is_empty() {
+        format!("  Today ({today}): {count} segment(s) synced")
+    } else {
+        format!("  Today ({today}): {count} segment(s){tear}")
+    }
+}
+
+fn day_count_line(day: &str, count: usize, stopped: Option<&HistoryStop>) -> String {
+    format!("    {day}: {count} segment(s){}", torn_suffix(stopped))
 }
 
 fn list_entry(record: &ObserverRecord, now_ms: i64) -> Value {
@@ -434,5 +461,31 @@ mod tests {
     fn list_uses_python_column_widths() {
         let output = render_list(&[record()], false, 2_000, TimeDisplay::Utc);
         assert_eq!(output.lines().nth(1), Some("-".repeat(118).as_str()));
+    }
+
+    #[test]
+    fn status_day_counts_surface_tear() {
+        use crate::store::paths::history_path;
+        use crate::test_support::reserve_temp_path;
+        use std::fs;
+        const NOW: i64 = 1_767_236_400_000;
+        let root = reserve_temp_path("observer-format-torn");
+        let record = record();
+        let path = history_path(&root, &record.prefix(), "20260101");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "{\"segment\":\"090000_300\",\"files\":[{\"size\":1}],\"ts\":1}\n{broken}\n{\"segment\":\"090000_301\",\"files\":[{\"size\":2}],\"ts\":2}\n",
+        )
+        .unwrap();
+        let output = render_status_single(&root, &record, false, NOW, TimeDisplay::Utc);
+        assert!(output.contains("history torn at line 2"));
+        assert!(!output.contains("segment(s) synced"), "{output}");
+        for line in output.lines() {
+            if line.contains("segment(s)") {
+                assert!(line.contains("history torn"), "{line}");
+            }
+        }
+        fs::remove_dir_all(root).ok();
     }
 }

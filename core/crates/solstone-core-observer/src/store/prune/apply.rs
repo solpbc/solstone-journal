@@ -8,9 +8,11 @@ use solstone_core_indexer_store::db::prune_by_paths;
 use solstone_core_journal_io::remove_dir_all;
 use solstone_core_segment::touch_stream_health_marker;
 
+use super::super::history::load_history;
+use super::super::paths::history_path;
 use super::attribution::observer_prefix_for_stream;
 use super::chain::{repair_stream_chain, repair_stream_registry_state};
-use super::history::append_pruned_once;
+use super::history::{append_pruned_once, torn_history_refusal};
 use super::marker::StreamMarker;
 use super::types::{PruneCandidate, PruneGroup, PruneResult, Refusal};
 
@@ -41,6 +43,27 @@ pub fn execute_plan(
         let deleted_markers = deleted_markers_by_stream
             .entry(group.stream.clone())
             .or_default();
+        let mut days: BTreeSet<String> = group
+            .candidates
+            .iter()
+            .map(|candidate| candidate.analysis.day.clone())
+            .collect();
+        days.insert(group.canonical.day.clone());
+        let mut torn = false;
+        for day in &days {
+            if load_history(&history_path(journal, &prefix, day))
+                .stopped
+                .is_some()
+            {
+                result
+                    .refusals
+                    .push(torn_history_refusal(day, &group.stream));
+                torn = true;
+            }
+        }
+        if torn {
+            continue;
+        }
         for candidate in group.candidates {
             let analysis = candidate.analysis;
             let Some(marker) = analysis.marker.clone() else {
@@ -52,7 +75,7 @@ pub fn execute_plan(
                 ));
                 break;
             };
-            append_pruned_once(
+            if let Err(refusal) = append_pruned_once(
                 journal,
                 &prefix,
                 &analysis.day,
@@ -60,7 +83,10 @@ pub fn execute_plan(
                 &analysis.segment,
                 &group.canonical.segment,
                 now_ms,
-            );
+            ) {
+                result.refusals.push(refusal);
+                break;
+            }
             let Ok(rel) = analysis.path.strip_prefix(journal) else {
                 result.refusals.push(Refusal::new(
                     analysis.label(),

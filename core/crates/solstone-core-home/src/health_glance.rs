@@ -101,13 +101,13 @@ fn unknown_backlog() -> Value {
 fn capture_issue(capture: &Value) -> Option<Value> {
     match capture.get("status").and_then(Value::as_str) {
         Some("degraded") => Some(
-            json!({"text":format_degraded_capture_line(capture).unwrap_or_else(|| "one of your devices isn't reaching your journal.".to_owned()),"severity":"red","href":"/app/health"}),
+            json!({"text":format_degraded_capture_line(capture).expect("degraded"),"severity":"red","href":"/app/health"}),
         ),
         Some("offline") => Some(
-            json!({"text":"nothing is reaching your journal.","severity":"red","href":"/app/health"}),
+            json!({"text":"sol hasn't added anything to your journal recently.","severity":"red","href":"/app/health"}),
         ),
         Some("stale") => Some(
-            json!({"text":"one of your devices hasn't reached your journal recently.","severity":"amber","href":"/app/health"}),
+            json!({"text":"sol on one of your devices has not added anything to your journal recently.","severity":"amber","href":"/app/health"}),
         ),
         _ => None,
     }

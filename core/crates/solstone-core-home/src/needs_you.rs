@@ -50,7 +50,7 @@ pub fn needs_dedup_key(item: &Value) -> String {
 
 pub fn format_degraded_capture_line(capture: &Value) -> Option<String> {
     (capture.is_object() && capture.get("status").and_then(Value::as_str) == Some("degraded"))
-        .then(|| "one of your devices isn't reaching your journal.".to_owned())
+        .then(|| "sol on one of your devices is having trouble adding to your journal.".to_owned())
 }
 
 fn classify_attention(value: &Value) -> Option<Value> {

@@ -3,6 +3,8 @@
 use crate::context::CheckContext;
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_observer::store::record::ObserverRecord;
+use solstone_core_observer::store::reload::{ReloadError, load_observers};
+use solstone_core_observer::{DeliveryAssessment, inspect_delivery};
 pub fn config_backend(context: &CheckContext) -> Result<Option<String>, String> {
     let read = read_journal_config(&context.journal_path).map_err(|error| error.to_string())?;
     Ok(read.config.and_then(|config| {
@@ -18,12 +20,28 @@ pub fn config_backend(context: &CheckContext) -> Result<Option<String>, String> 
     }))
 }
 pub fn observers(context: &CheckContext) -> Result<Vec<ObserverRecord>, String> {
-    solstone_core_observer::store::reload::load_observers(&context.journal_path)
-        .map_err(|error| error.to_string())
+    load_observers(&context.journal_path).map_err(|error| error.to_string())
+}
+
+pub(crate) fn inspect_context(
+    context: &CheckContext,
+) -> Result<Vec<DeliveryAssessment>, ReloadError> {
+    load_observers(&context.journal_path)
+        .map(|records| inspect_delivery(&records, context.now.timestamp_millis()))
 }
 pub fn enabled(records: Vec<ObserverRecord>) -> Vec<ObserverRecord> {
     records
         .into_iter()
         .filter(|record| !record.revoked() && record.enabled() != Some(false))
         .collect()
+}
+
+pub(crate) fn join_capped(clauses: &[String], separator: &str) -> String {
+    let named = clauses.iter().take(3).cloned().collect::<Vec<_>>();
+    let extra = clauses.len().saturating_sub(3);
+    if extra == 0 {
+        named.join(separator)
+    } else {
+        format!("{}{separator}+{extra} more", named.join(separator))
+    }
 }

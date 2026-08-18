@@ -7,6 +7,8 @@ mod observer_list_human;
 mod observer_list_json;
 #[path = "observer_prune_dry_run.rs"]
 mod observer_prune_dry_run;
+#[path = "observer_prune_torn.rs"]
+mod observer_prune_torn;
 #[path = "observer_reconcile.rs"]
 mod observer_reconcile;
 #[path = "observer_render_support.rs"]

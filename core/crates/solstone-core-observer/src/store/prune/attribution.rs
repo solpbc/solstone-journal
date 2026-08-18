@@ -63,8 +63,12 @@ pub fn observer_prefix_for_stream(journal: &Path, stream: &str) -> Result<String
             else {
                 continue;
             };
-            let history = load_history(&hist_dir.join(format!("{day}.jsonl"))).records;
+            let history = load_history(&hist_dir.join(format!("{day}.jsonl")));
+            if history.stopped.is_some() {
+                return Err(super::history::torn_history_refusal(day, stream));
+            }
             if history
+                .records
                 .iter()
                 .any(|record| record.get("stream").and_then(Value::as_str) == Some(stream))
             {
@@ -140,6 +144,32 @@ mod tests {
         let error = observer_prefix_for_stream(&root, "workstation").unwrap_err();
         assert_eq!(error.gate, "observer-attribution");
         assert!(error.resolution.contains("multiple active observers"));
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn torn_history_does_not_attribute() {
+        use crate::store::paths::history_path;
+        let root = root("torn-attr");
+        seed(&root, "abcdefgh1", None);
+        let path = history_path(&root, "abcdefgh", "20260101");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "{\"stream\":\"workstation\",\"segment\":\"090000_300\"}\n{broken}\n",
+        )
+        .unwrap();
+        let error = observer_prefix_for_stream(&root, "workstation").unwrap_err();
+        assert_eq!(error.gate, "sync-history");
+        fs::write(
+            &path,
+            "{\"stream\":\"workstation\",\"segment\":\"090000_300\"}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            observer_prefix_for_stream(&root, "workstation").unwrap(),
+            "abcdefgh"
+        );
         fs::remove_dir_all(&root).ok();
     }
 }

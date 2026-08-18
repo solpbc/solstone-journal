@@ -122,7 +122,10 @@ pub fn repair_stream_chain(
     deleted_markers: &BTreeMap<SegmentKey, StreamMarker>,
     dry_run: bool,
 ) -> (Vec<Refusal>, u64) {
-    let pruned = pruned_records_by_stream(journal, stream);
+    let pruned = match pruned_records_by_stream(journal, stream) {
+        Ok(map) => map,
+        Err(refusal) => return (vec![refusal], 0),
+    };
     let segments = stream_segments(journal, stream);
     let existing: BTreeSet<SegmentKey> = segments.keys().cloned().collect();
     let mut refusals = Vec::new();

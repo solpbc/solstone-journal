@@ -20,6 +20,9 @@ use solstone_core_facets::{
 use solstone_core_indexer_query::{NetworkRequest, load_entity_network};
 use solstone_core_journal_stats_cli::estimate_duration_minutes;
 use solstone_core_observer::store::load_observers;
+use solstone_core_observer::store::record::ObserverRecord;
+use solstone_core_observer::store::reload::ReloadError;
+use solstone_core_observer::{DeliveryAssessment, inspect_delivery, rollup_owner_states};
 use solstone_core_system_health::{FilesystemHealthLogSource, TerminalEvent, read_terminal_states};
 
 use crate::HomeContext;
@@ -29,8 +32,6 @@ use crate::model::{BacklogSource, BacklogValidity, FlowDocument, PulseNarrative}
 const BRIEFING_MORNING_END_HOUR: u32 = 10;
 const BRIEFING_LATENESS_THRESHOLD_HOURS: u32 = 2;
 const BRIEFING_EOD_HOUR: u32 = 20;
-const ACTIVE_MS: i64 = 30_000;
-const STALE_MS: i64 = 120_000;
 
 /// Count elapsed calendar days from the earliest valid chronicle directory.
 pub fn count_journal_age_days(context: &HomeContext) -> i64 {
@@ -854,46 +855,43 @@ pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
 
 /// Resolve the current capture-health rollup from native observer records.
 pub fn get_capture_health(context: &HomeContext) -> Value {
-    let Ok(records) = load_observers(context.journal_root()) else {
-        return json!({"status":"unknown","observers":[]});
-    };
-    let active = records
-        .into_iter()
-        .filter(|record| !record.revoked() && record.enabled() != Some(false))
-        .collect::<Vec<_>>();
-    if active.is_empty() {
+    capture_health_from_load(load_observers(context.journal_root()), context.now_ms())
+}
+
+pub(crate) fn capture_health_from_load(
+    loaded: Result<Vec<ObserverRecord>, ReloadError>,
+    now_ms: i64,
+) -> Value {
+    match loaded {
+        Err(_) => json!({"status":"unknown","observers":[]}),
+        Ok(records) => capture_health_from_records(&records, now_ms),
+    }
+}
+
+pub(crate) fn capture_health_from_records(records: &[ObserverRecord], now_ms: i64) -> Value {
+    let assessed = inspect_delivery(records, now_ms);
+    let Some(status) = rollup_owner_states(&assessed) else {
         return json!({"status":"no_observers","observers":[]});
-    }
-    let mut statuses = Vec::new();
-    let mut summaries = Vec::new();
-    for record in active {
-        let mut status = match record.last_seen() {
-            Some(last_seen) if context.now_ms() - last_seen < ACTIVE_MS => "active",
-            Some(last_seen) if context.now_ms() - last_seen < STALE_MS => "stale",
-            _ => "offline",
-        };
-        let mut summary = json!({"name": record.name().unwrap_or("unknown"), "last_seen": record.last_seen(), "status": status, "device_binding_kind": record.device_binding_kind()});
-        if let Some(rejection) = record.ingest_rejection() {
-            status = "degraded";
-            summary["status"] = status.into();
-            summary["ingest_rejection"] = Value::Object(rejection.clone());
-        }
-        if let Some(beacon) = record.health_beacon() {
-            summary["beacon"] = Value::Object(beacon.clone());
-        }
-        statuses.push(status);
-        summaries.push(summary);
-    }
-    let overall = if statuses.contains(&"degraded") {
-        "degraded"
-    } else if statuses.contains(&"active") {
-        "active"
-    } else if statuses.contains(&"stale") {
-        "stale"
-    } else {
-        "offline"
     };
-    json!({"status":overall,"observers":summaries})
+    let observers: Vec<Value> = assessed.iter().map(home_observer_row).collect();
+    json!({"status": status.as_str(), "observers": observers})
+}
+
+fn home_observer_row(row: &DeliveryAssessment) -> Value {
+    let mut summary = json!({
+        "name": row.name,
+        "last_seen": row.last_seen,
+        "status": row.state.as_str(),
+        "device_binding_kind": row.device_binding_kind,
+        "reach": row.reach.as_str(),
+    });
+    if let Some(rejection) = &row.ingest_rejection {
+        summary["ingest_rejection"] = Value::Object(rejection.clone());
+    }
+    if let Some(beacon) = &row.beacon {
+        summary["beacon"] = Value::Object(beacon.clone());
+    }
+    summary
 }
 
 /// Newest millisecond observer timestamp across enabled, non-revoked records.
@@ -1475,6 +1473,106 @@ mod tests {
         );
     }
 
+    fn rec(
+        name: &str,
+        last_seen: Option<i64>,
+        last_sent: Option<i64>,
+        rejecting: bool,
+    ) -> ObserverRecord {
+        let mut value = json!({
+            "key": format!("{name}-keyxx"),
+            "name": name,
+            "enabled": true,
+        });
+        if let Some(stamp) = last_seen {
+            value["last_seen"] = json!(stamp);
+        }
+        if let Some(stamp) = last_sent {
+            value["last_segment_received_at"] = json!(stamp);
+        }
+        if rejecting {
+            value["health"] = json!({"ingest_rejection": {"active_count": 1}});
+        }
+        ObserverRecord::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn get_capture_health_follows_delivery_states() {
+        let now = 1_000_000_000;
+        let hour = 3_600_000;
+        let seen = Some(now - 1_000);
+        let status = |records: &[ObserverRecord]| {
+            capture_health_from_records(records, now)["status"].clone()
+        };
+        assert_eq!(
+            status(&[rec("a", seen, Some(now - 89 * hour), false)]),
+            "offline"
+        );
+        assert_eq!(
+            status(&[
+                rec("a", seen, Some(now - 120_000), false),
+                rec("b", seen, Some(now - 7 * hour), false),
+            ]),
+            "stale"
+        );
+        assert_eq!(
+            status(&[
+                rec("a", seen, Some(now - 120_000), false),
+                rec("b", seen, Some(now - 25 * hour), false),
+            ]),
+            "stale"
+        );
+        assert_eq!(
+            status(&[
+                rec("a", Some(now - 8 * hour), Some(now - 8 * hour), false),
+                rec("b", Some(now - 8 * hour), Some(now - 8 * hour), false),
+            ]),
+            "active"
+        );
+        assert_eq!(
+            status(&[rec("a", seen, Some(now - 25 * hour), false)]),
+            "offline"
+        );
+        let fleet = (0..4)
+            .map(|index| {
+                rec(
+                    &format!("d{index}"),
+                    Some(now - 200_000),
+                    Some(now - 41 * hour),
+                    false,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(status(&fleet), "offline");
+        assert_eq!(status(&[rec("never", seen, None, false)]), "no_observers");
+        assert_eq!(
+            status(&[
+                rec("residue", seen, None, false),
+                rec("peer", seen, Some(now - 120_000), false),
+            ]),
+            "active"
+        );
+        assert_eq!(status(&[rec("rej", seen, None, true)]), "degraded");
+        assert_eq!(
+            status(&[rec("rej", seen, Some(now - 120_000), true)]),
+            "degraded"
+        );
+        let mixed = capture_health_from_records(
+            &[
+                rec("night", Some(now - 8 * hour), Some(now - 8 * hour), false),
+                rec("stop", Some(now - 25 * hour), Some(now - 25 * hour), false),
+            ],
+            now,
+        );
+        assert_eq!(mixed["status"], "stale");
+        assert_eq!(mixed["observers"].as_array().unwrap().len(), 2);
+        assert_eq!(mixed["observers"][0]["reach"], "offline");
+        assert_eq!(
+            capture_health_from_load(Err(ReloadError::Directory("x".into())), now)["status"],
+            "unknown"
+        );
+    }
+
     #[test]
     fn observer_reader_uses_milliseconds_and_the_29000_ms_active_window() {
         let root = TempDir::new().unwrap();
@@ -1485,15 +1583,14 @@ mod tests {
             root.path(),
             "apps/observer/observers/12345678.json",
             &format!(
-                r#"{{"key":"123456789","name":"inside-window","last_seen":{},"enabled":true}}"#,
+                r#"{{"key":"123456789","name":"inside-window","last_seen":{},"last_segment_received_at":{},"enabled":true}}"#,
+                now - 29_000,
                 now - 29_000
             ),
         );
         let health = get_capture_health(&home_context);
-        assert_eq!(
-            health["status"], "active",
-            "29,000 ms is inside the active observer window"
-        );
+        assert_eq!(health["status"], "active");
+        assert_eq!(health["observers"][0]["reach"], "active");
         assert_eq!(last_observe_relative_seconds(&home_context), Some(29));
         let seconds_root = TempDir::new().unwrap();
         let seconds_context = context(seconds_root.path());
@@ -1507,8 +1604,7 @@ mod tests {
         );
         assert_eq!(
             get_capture_health(&seconds_context)["status"],
-            "offline",
-            "seconds must not be accepted as observer milliseconds"
+            "no_observers"
         );
     }
 
@@ -1522,7 +1618,7 @@ mod tests {
             "apps/observer/observers/87654321.json",
             r#"{"key":"876543219","last_seen":"not-milliseconds","enabled":true}"#,
         );
-        assert_eq!(get_capture_health(&context)["status"], "offline");
+        assert_eq!(get_capture_health(&context)["status"], "no_observers");
         assert_eq!(last_observe_relative_seconds(&context), None);
     }
 
