@@ -157,17 +157,21 @@ record, and the process exits `0`. It is not an error. See § exit codes.
 failure class. `reason_code` is the operational classification, and may be `null` when the failure
 carries no operational code.
 
-🔴 **`reason_code` is drawn from the provider-readiness taxonomy, and the contract names it because
-five overlapping reason-code vocabularies exist in this tree** — three of them under the same
-identifier, and two spelling the same concept in different cases:
+🔴 **`reason_code` is drawn from this contract's own taxonomy.** The fixture
+`core/fixtures/generate_contract.json` is the only generate-path list. A caller
+does not map codes from any other set.
 
-| set | size | serves |
-|---|---|---|
-| `convey/provider_readiness` entries | **43** | ✅ **this contract**, owner-facing presentation, and the blocking decision |
-| `think/providers/shared.RUNTIME_REASON_CODES` | 16 | generate-path error classification — a proper subset of the 43 |
-| `think/providers/brain_state.RUNTIME_REASON_CODES` | 42 | local-runtime health records, **kebab-cased** |
-| `think/brain_cli.RUNTIME_REASON_CODES` (an alias import) | 41 | command-line presentation |
-| `think/brain_health.LOCAL_RUNTIME_REASON_CODES` | 8 | local health grouping |
+Two other reason-code lists live in this tree. They are different domains. Do not
+unify them with this contract:
+
+| set | size | case | serves |
+|---|---|---|---|
+| this fixture (`reason_codes`) | **46** | snake | ✅ **this contract**: generate refusals, with `retryable` and `blocking` on every row |
+| `KNOWN_REASON_CODES` (provider runtime) | 43 | kebab | local-provider process health |
+| `DETERMINISTIC_FAILURE_REASON_CODES` (cogitate) | 10 | snake | talent failures that have reached a known terminal class — a named subset, not a second generate list |
+
+Three names overlap after case-fold (`gpu_probe_failed`, `gpu_unavailable`,
+`ram_insufficient`). That is coincidence of concept, not a shared vocabulary.
 
 ⚠ **Two declared reasons are reachable only through the raising entry points, not through this
 boundary**, and a caller reads the evidence instead:
@@ -183,10 +187,9 @@ itself — but it means **`finish_reason` is load-bearing, not decorative**. ⚠
 the way through: an endpoint saying `length` reaches the caller as `max_tokens`, so a consumer matching
 the provider's spelling sees nothing wrong.
 
-⛔ **Wiring the 16 into a caller loses both decisions this contract exists to deliver**: 24 of the 43
-are blocking and only 4 of those are in the 16, and the sole non-retryable code — `non_responsive` —
-is in the 43 and not in the 16. The fixture carries the set this contract uses, so no caller has to
-choose.
+⛔ **Do not map `reason_code` from the kebab process-health list.** That list does
+not carry `retryable` or `blocking`. The fixture carries both answers, so no
+caller has to choose.
 
 🔴 **`retryable` and `blocking` are computed by the boundary and carried as answers, not left for each
 consumer to derive.**

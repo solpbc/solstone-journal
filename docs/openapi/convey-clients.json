@@ -243,11 +243,9 @@
     }
   },
   "info": {
-    "description": "Generated native-client contract for the Convey HTTP surface. Regenerate with `make openapi`; do not hand-edit this file.",
+    "description": "Native-client contract for the Convey HTTP surface. This file is the source. Hand-edit it. There is no generator.",
     "title": "Solstone Convey Native-Client Contract",
-    "version": "1.0.0",
-    "x-generated": true,
-    "x-generated-by": "make openapi (scripts/build_openapi_contract.py)"
+    "version": "1.0.0"
   },
   "openapi": "3.1.0",
   "paths": {

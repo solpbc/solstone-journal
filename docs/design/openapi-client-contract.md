@@ -1,6 +1,8 @@
 # Convey Native-Client OpenAPI Contract
 
-> Pinned OpenAPI IDs in `docs/openapi/convey-clients.json` still bind. The Python assembler is gone. This is not a port plan.
+> `docs/openapi/convey-clients.json` is the source. Hand-edit it. Pinned
+> operation IDs still bind. The Python assembler and `make openapi` are gone.
+> This document is the historical design, not a generation plan.
 
 
 ## 1. Fragment And Ownership Shape
@@ -367,7 +369,8 @@ OpenAPI contract conformance failed: {operationId} returned undeclared top-level
 
 ### Make Targets
 
-Add:
+Those targets were never rebuilt after the assembler was deleted. Edit
+`docs/openapi/convey-clients.json` directly. The list below is historical.
 
 - `make openapi`: regenerate `docs/openapi/convey-clients.json`, the observer
   bundle, and the `docs/CONVEY.md` generated block.

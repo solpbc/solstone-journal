@@ -36,6 +36,8 @@ pub(crate) fn request_default(name: &str) -> &'static Value {
     &contract()["request"]["defaults"][name]
 }
 
+/// True when `code` is in this contract's generate-path taxonomy.
+/// That list is not `KNOWN_REASON_CODES` (kebab process health).
 pub(crate) fn known_reason_code(code: &str) -> bool {
     contract()["reason_codes"]
         .as_array()

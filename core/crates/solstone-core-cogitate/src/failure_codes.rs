@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+/// Talent failures that have reached a known terminal class.
+/// Not the generate-path fixture and not the kebab process-health list.
 pub const DETERMINISTIC_FAILURE_REASON_CODES: [&str; 10] = [
     "agent_stuck",
     "context_window_exceeded",

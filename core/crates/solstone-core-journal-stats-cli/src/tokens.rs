@@ -60,7 +60,7 @@ pub(crate) fn scan_tokens(
                     .filter(|line| !line.is_empty())
                 {
                     match serde_json::from_str::<Value>(line) {
-                        Ok(entry) => process_entry(&entry, &mut usage),
+                        Ok(entry) => process_entry(&entry, &day, &mut usage),
                         Err(error) => diagnostics.push(format!(
                             "Invalid token JSON in {}: {error}",
                             token_file.display()
@@ -149,19 +149,15 @@ fn save_token_cache(
     }
 }
 
-fn process_entry(entry: &Value, usage: &mut TokenUsage) {
+fn process_entry(entry: &Value, day: &str, usage: &mut TokenUsage) {
     let Some(timestamp) = entry.get("timestamp").and_then(Value::as_f64) else {
         return;
     };
     if timestamp == 0.0 {
         return;
     }
-    let seconds = timestamp.floor() as i64;
-    let nanos = ((timestamp - seconds as f64) * 1_000_000_000.0).round() as u32;
-    let Some(timestamp) = DateTime::<Utc>::from_timestamp(seconds, nanos) else {
-        return;
-    };
-    let day = timestamp.format("%Y%m%d").to_string();
+    // A day is the local calendar day of the write: the filename stem.
+    // The timestamp is kept only as a presence check (drop missing / zero).
     let model = entry
         .get("model")
         .and_then(Value::as_str)
@@ -176,7 +172,7 @@ fn process_entry(entry: &Value, usage: &mut TokenUsage) {
         };
         *usage
             .by_day
-            .entry(day.clone())
+            .entry(day.to_owned())
             .or_default()
             .entry(model.clone())
             .or_default()

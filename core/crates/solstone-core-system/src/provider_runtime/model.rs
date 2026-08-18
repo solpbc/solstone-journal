@@ -159,7 +159,9 @@ pub const fn unclassified_phase_reason(phase: RuntimePhase) -> Option<&'static s
     }
 }
 
-/// All reason codes recognized by the cross-language runtime-health contract.
+/// Local-provider process-health codes (kebab). Matches
+/// `local_contract.json` `brain_state.runtime_reason_codes`.
+/// Not the generate-path `reason_code` list in `generate_contract.json`.
 pub const KNOWN_REASON_CODES: [&str; 43] = [
     "intent-disabled",
     "intent-enabled",

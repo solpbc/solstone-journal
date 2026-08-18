@@ -348,12 +348,14 @@ fn ac3_unknown_argument_has_reference_usage_error() {
 }
 
 #[test]
-fn ac4_token_miss_uses_record_utc_day_and_tolerates_bad_entries() {
+fn ac4_token_miss_uses_filename_day_and_tolerates_bad_entries() {
     let (temporary, system, apps) = setup();
     let root = temporary.path();
     let tokens = root.join("tokens");
     fs::create_dir_all(&tokens).unwrap();
-    let timestamp = now().timestamp() - 86_400;
+    // now() is 2026-01-06 12:00 UTC. A UTC re-bucket would file these under
+    // 20260106. The filename is 20260105; filename wins.
+    let timestamp = now().timestamp();
     fs::write(
         tokens.join("20260105.jsonl"),
         format!(
@@ -373,6 +375,7 @@ fn ac4_token_miss_uses_record_utc_day_and_tolerates_bad_entries() {
     );
     let document = value(writer.document());
     assert_eq!(document["tokens"]["by_day"][DAY]["model"]["input"], 3);
+    assert!(document["tokens"]["by_day"].get("20260106").is_none());
     assert!(
         document["tokens"]["by_day"][DAY]["model"]
             .get("skip")
@@ -444,11 +447,13 @@ fn ac5_token_hit_assigns_file_stem_and_soft_fails_cache_io() {
 }
 
 #[test]
-fn ac6_token_cross_stem_divergence_is_preserved() {
+fn ac6_token_cache_and_cold_scan_agree_on_filename_day() {
     let (temporary, system, apps) = setup();
     let root = temporary.path();
     let tokens = root.join("tokens");
     fs::create_dir_all(&tokens).unwrap();
+    // Timestamp UTC-buckets to 20260104. Filename is 20260105. Both runs
+    // must file under the filename so a cache hit cannot move the day.
     fs::write(
         tokens.join("20260105.jsonl"),
         format!(
@@ -465,17 +470,16 @@ fn ac6_token_cross_stem_divergence_is_preserved() {
         run_with(root, &system, &apps, &[], &reader, &first_writer).exit_code,
         0
     );
-    assert_eq!(
-        value(first_writer.document())["tokens"]["by_day"]["20260104"]["model"]["input"],
-        4
-    );
+    let first = value(first_writer.document());
+    assert_eq!(first["tokens"]["by_day"][DAY]["model"]["input"], 4);
+    assert!(first["tokens"]["by_day"].get("20260104").is_none());
     assert_eq!(
         run_with(root, &system, &apps, &[], &reader, &second_writer).exit_code,
         0
     );
     let second = value(second_writer.document());
+    assert_eq!(second["tokens"]["by_day"][DAY]["model"]["input"], 4);
     assert!(second["tokens"]["by_day"].get("20260104").is_none());
-    assert_eq!(second["tokens"]["by_day"][DAY], json!({}));
 }
 
 #[test]
