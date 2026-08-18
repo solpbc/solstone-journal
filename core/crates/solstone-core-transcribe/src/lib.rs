@@ -261,8 +261,6 @@ pub enum TranscribeError {
     TerminalWrite { detail: String },
     /// Input metadata could not be captured before processing began.
     InputMetadata { path: PathBuf, detail: String },
-    /// Raw owner media could not be removed after terminal publication succeeded.
-    RawInputRemove { path: PathBuf, detail: String },
     /// A terminal writer request could not be serialized.
     TerminalRequest { detail: String },
     /// A full transcript writer request could not be serialized.
@@ -331,7 +329,6 @@ impl TranscribeError {
             },
             Self::OrphanNpzRemove { .. }
             | Self::TerminalPayload { .. }
-            | Self::RawInputRemove { .. }
             | Self::TerminalRequest { .. }
             | Self::TranscriptRequest { .. }
             | Self::TranscriptPayload { .. }
@@ -394,13 +391,6 @@ impl std::fmt::Display for TranscribeError {
                 write!(
                     formatter,
                     "could not inspect input {}: {detail}",
-                    path.display()
-                )
-            }
-            Self::RawInputRemove { path, detail } => {
-                write!(
-                    formatter,
-                    "could not remove raw input {}: {detail}",
                     path.display()
                 )
             }
@@ -470,7 +460,6 @@ impl std::error::Error for TranscribeError {
             | Self::TerminalPayload { .. }
             | Self::TerminalWrite { .. }
             | Self::InputMetadata { .. }
-            | Self::RawInputRemove { .. }
             | Self::TerminalRequest { .. }
             | Self::TranscriptRequest { .. }
             | Self::TranscriptPayload { .. }

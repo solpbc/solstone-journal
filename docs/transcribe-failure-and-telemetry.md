@@ -14,7 +14,7 @@ event carries. Two rules govern everything here:
 
 | Exit | Meaning | Input file | Output |
 |------|---------|-----------|--------|
-| `0` | Work is done. Either a transcript was written, or the clip was silence-filtered / preserved by policy. | Consumed or preserved per policy | Transcript `.jsonl` (+ `.npz`) written, or a header-only terminal `.jsonl` record written for filtered silence before raw removal |
+| `0` | Work is done. Either a transcript was written, or the clip was an empty terminal (no decodable audio). | Preserved | Transcript `.jsonl` (+ `.npz`) written, or a header-only terminal `.jsonl` record written for empty silence. Retention owns any later raw release. |
 | `69` (`EXIT_PROVIDER_BLOCKED`) | **Honest deferral.** The STT provider, or the handler-generated native embedding payload, could not complete the work. | **Preserved on disk** | None |
 | `75` | Temporary native transcript-write failure (launch, local output, verification, or malformed response). | Preserved on disk | None or a detected partial NPZ sidecar |
 | `78` | Native writer host or installation configuration failure. | Preserved on disk | None |
@@ -135,11 +135,11 @@ instead of inventing audio-specific attestation names. `AttestationFailedError` 
 
 ## The `observe.transcribed` event
 
-One event name, five outcomes. Every attempt emits exactly one event.
+One event name, four outcomes. Every attempt emits exactly one event.
 
 | Field | Type | Present on |
 |-------|------|-----------|
-| `outcome` | `transcribed` \| `deferred` \| `failed` \| `filtered` \| `preserved` | always |
+| `outcome` | `transcribed` \| `deferred` \| `failed` \| `preserved` | always |
 | `input` | journal-relative path of the audio | always |
 | `output` | journal-relative path of the `.jsonl` | success |
 | `reason` | machine reason (table above) | deferred, failed |

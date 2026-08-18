@@ -16,13 +16,12 @@ use crate::TranscribeError;
 
 const NOISY_RMS_THRESHOLD: f64 = 0.01;
 
-/// The five terminal dispositions reported by one transcription attempt.
+/// The four terminal dispositions reported by one transcription attempt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TranscribedOutcome {
     Transcribed,
     Deferred,
     Failed,
-    Filtered,
     Preserved,
 }
 
@@ -32,7 +31,6 @@ impl TranscribedOutcome {
             Self::Transcribed => "transcribed",
             Self::Deferred => "deferred",
             Self::Failed => "failed",
-            Self::Filtered => "filtered",
             Self::Preserved => "preserved",
         }
     }
@@ -222,7 +220,6 @@ fn error_type_name(error: &TranscribeError) -> &'static str {
         TranscribeError::TerminalPayload { .. } => "TerminalPayload",
         TranscribeError::TerminalWrite { .. } => "TerminalWrite",
         TranscribeError::InputMetadata { .. } => "InputMetadata",
-        TranscribeError::RawInputRemove { .. } => "RawInputRemove",
         TranscribeError::TerminalRequest { .. } => "TerminalRequest",
         TranscribeError::TranscriptRequest { .. } => "TranscriptRequest",
         TranscribeError::TranscriptPayload { .. } => "TranscriptPayload",
@@ -302,7 +299,6 @@ mod tests {
             TranscribedOutcome::Transcribed,
             TranscribedOutcome::Deferred,
             TranscribedOutcome::Failed,
-            TranscribedOutcome::Filtered,
             TranscribedOutcome::Preserved,
         ] {
             let error = (outcome == TranscribedOutcome::Failed).then_some(&failure);
@@ -359,7 +355,7 @@ mod tests {
         timings.add_ms("decode", 5);
         timings.add_ms("vad", 8);
         let event = build_transcribed_event(input(
-            TranscribedOutcome::Filtered,
+            TranscribedOutcome::Preserved,
             &timings,
             None,
             &vad_result,
@@ -408,7 +404,7 @@ mod tests {
         let timings = Timings::default();
         let vad_result = vad();
         let event = build_transcribed_event(input(
-            TranscribedOutcome::Filtered,
+            TranscribedOutcome::Preserved,
             &timings,
             None,
             &vad_result,

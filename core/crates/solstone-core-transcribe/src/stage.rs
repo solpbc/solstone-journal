@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Terminal stage outcomes and owner-media deletion ordering.
+//! Terminal stage outcomes. Empty terminals retain the raw input.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,9 +21,7 @@ use crate::backend::{
     resolve_default_backend,
 };
 use crate::backend::{parakeet_coreml, parakeet_cpp};
-use crate::config::{
-    confidential_audio_enabled, min_speech_seconds, parakeet_cpp_device, preserve_all,
-};
+use crate::config::{confidential_audio_enabled, min_speech_seconds, parakeet_cpp_device};
 use crate::event::{
     Timings, TranscribedEvent, TranscribedOutcome, build_transcribed_event, emit_transcribed_event,
 };
@@ -63,9 +61,7 @@ pub(crate) fn capture_input_facts(path: &Path) -> Result<InputFacts, TranscribeE
 /// Terminal result that controls the transcribed event's outcome field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TerminalOutcome {
-    /// Terminal proof was written and the raw input was deleted.
-    Filtered,
-    /// Terminal proof was written but preserve-all retained the raw input.
+    /// Terminal proof was written and the raw input was retained.
     Preserved,
     /// Decode failed, terminal failure proof was written, and input was retained.
     Failed,
@@ -76,7 +72,6 @@ pub(crate) enum TerminalOutcome {
 pub(crate) enum ProcessOutcome {
     Skipped,
     Transcribed,
-    Filtered,
     Preserved,
     Failed,
 }
@@ -141,10 +136,9 @@ pub(crate) fn process_one(
 
     if !vad.has_speech {
         let write_at = Instant::now();
-        let terminal = vad_no_speech(&facts, preserve_all(config), redo, sound_tags.as_ref())?;
+        let terminal = vad_no_speech(&facts, redo, sound_tags.as_ref())?;
         timings.add_ms("write", elapsed_ms(write_at));
         let outcome = match terminal {
-            TerminalOutcome::Filtered => (ProcessOutcome::Filtered, TranscribedOutcome::Filtered),
             TerminalOutcome::Preserved => {
                 (ProcessOutcome::Preserved, TranscribedOutcome::Preserved)
             }
@@ -253,11 +247,9 @@ pub(crate) fn process_one(
 
     if transcription.words.is_empty() {
         let write_at = Instant::now();
-        let terminal =
-            stt_zero_statements(&facts, preserve_all(config), redo, sound_tags.as_ref())?;
+        let terminal = stt_zero_statements(&facts, redo, sound_tags.as_ref())?;
         timings.add_ms("write", elapsed_ms(write_at));
         let outcome = match terminal {
-            TerminalOutcome::Filtered => (ProcessOutcome::Filtered, TranscribedOutcome::Filtered),
             TerminalOutcome::Preserved => {
                 (ProcessOutcome::Preserved, TranscribedOutcome::Preserved)
             }
@@ -646,13 +638,11 @@ fn peak_rss_mib() -> u64 {
 /// Handle VAD's no-speech terminal branch.
 pub(crate) fn vad_no_speech(
     facts: &InputFacts,
-    preserve_all: bool,
     redo: bool,
     sound_tags: Option<&Value>,
 ) -> Result<TerminalOutcome, TranscribeError> {
     vad_no_speech_with(
         facts,
-        preserve_all,
         redo,
         sound_tags,
         |bytes| {
@@ -666,13 +656,11 @@ pub(crate) fn vad_no_speech(
 /// Handle STT's zero-statement terminal branch.
 pub(crate) fn stt_zero_statements(
     facts: &InputFacts,
-    preserve_all: bool,
     redo: bool,
     sound_tags: Option<&Value>,
 ) -> Result<TerminalOutcome, TranscribeError> {
     stt_zero_statements_with(
         facts,
-        preserve_all,
         redo,
         sound_tags,
         |bytes| {
@@ -709,7 +697,6 @@ pub(crate) fn transcript_paths(audio_path: &Path) -> (PathBuf, PathBuf) {
 
 fn vad_no_speech_with<W, O>(
     facts: &InputFacts,
-    preserve_all: bool,
     redo: bool,
     sound_tags: Option<&Value>,
     writer: W,
@@ -719,19 +706,11 @@ where
     W: FnOnce(&[u8]) -> Result<WriteResponse, TerminalWriteFailure>,
     O: FnOnce(&Path, &Path) -> Result<(), TranscribeError>,
 {
-    terminal_empty_then_maybe_remove(
-        facts,
-        preserve_all,
-        redo,
-        sound_tags,
-        writer,
-        orphan_remover,
-    )
+    terminal_empty(facts, redo, sound_tags, writer, orphan_remover)
 }
 
 fn stt_zero_statements_with<W, O>(
     facts: &InputFacts,
-    preserve_all: bool,
     redo: bool,
     sound_tags: Option<&Value>,
     writer: W,
@@ -741,19 +720,11 @@ where
     W: FnOnce(&[u8]) -> Result<WriteResponse, TerminalWriteFailure>,
     O: FnOnce(&Path, &Path) -> Result<(), TranscribeError>,
 {
-    terminal_empty_then_maybe_remove(
-        facts,
-        preserve_all,
-        redo,
-        sound_tags,
-        writer,
-        orphan_remover,
-    )
+    terminal_empty(facts, redo, sound_tags, writer, orphan_remover)
 }
 
-fn terminal_empty_then_maybe_remove<W, O>(
+fn terminal_empty<W, O>(
     facts: &InputFacts,
-    preserve_all: bool,
     redo: bool,
     sound_tags: Option<&Value>,
     writer: W,
@@ -777,16 +748,7 @@ where
         writer,
         orphan_remover,
     )?;
-
-    if preserve_all {
-        return Ok(TerminalOutcome::Preserved);
-    }
-
-    fs::remove_file(&facts.path).map_err(|error| TranscribeError::RawInputRemove {
-        path: facts.path.clone(),
-        detail: error.to_string(),
-    })?;
-    Ok(TerminalOutcome::Filtered)
+    Ok(TerminalOutcome::Preserved)
 }
 
 #[cfg(test)]
@@ -846,7 +808,6 @@ mod tests {
         let error = vad_no_speech_with(
             &facts,
             false,
-            false,
             None,
             typed_payload_failure,
             remove_orphan_npz,
@@ -865,15 +826,8 @@ mod tests {
         let facts = input(temporary.path());
         let (jsonl_path, npz_path) = transcript_paths(&facts.path);
 
-        let error = vad_no_speech_with(
-            &facts,
-            false,
-            false,
-            None,
-            untyped_failure,
-            remove_orphan_npz,
-        )
-        .unwrap_err();
+        let error = vad_no_speech_with(&facts, false, None, untyped_failure, remove_orphan_npz)
+            .unwrap_err();
 
         assert_eq!(error.exit_code(), 1);
         assert!(facts.path.exists());
@@ -889,7 +843,6 @@ mod tests {
 
         let error = stt_zero_statements_with(
             &facts,
-            false,
             false,
             None,
             typed_payload_failure,
@@ -909,15 +862,9 @@ mod tests {
         let facts = input(temporary.path());
         let (jsonl_path, npz_path) = transcript_paths(&facts.path);
 
-        let error = stt_zero_statements_with(
-            &facts,
-            false,
-            false,
-            None,
-            untyped_failure,
-            remove_orphan_npz,
-        )
-        .unwrap_err();
+        let error =
+            stt_zero_statements_with(&facts, false, None, untyped_failure, remove_orphan_npz)
+                .unwrap_err();
 
         assert_eq!(error.exit_code(), 1);
         assert!(facts.path.exists());
@@ -926,48 +873,24 @@ mod tests {
     }
 
     #[test]
-    fn vad_no_speech_without_preserve_all_filters_input() {
+    fn vad_no_speech_leaves_raw() {
         let temporary = tempfile::tempdir().unwrap();
         let facts = input(temporary.path());
 
         assert_eq!(
-            vad_no_speech(&facts, false, false, None).unwrap(),
-            TerminalOutcome::Filtered
-        );
-        assert!(!facts.path.exists());
-    }
-
-    #[test]
-    fn stt_zero_statements_without_preserve_all_filters_input() {
-        let temporary = tempfile::tempdir().unwrap();
-        let facts = input(temporary.path());
-
-        assert_eq!(
-            stt_zero_statements(&facts, false, false, None).unwrap(),
-            TerminalOutcome::Filtered
-        );
-        assert!(!facts.path.exists());
-    }
-
-    #[test]
-    fn vad_no_speech_with_preserve_all_preserves_input() {
-        let temporary = tempfile::tempdir().unwrap();
-        let facts = input(temporary.path());
-
-        assert_eq!(
-            vad_no_speech(&facts, true, false, None).unwrap(),
+            vad_no_speech(&facts, false, None).unwrap(),
             TerminalOutcome::Preserved
         );
         assert!(facts.path.exists());
     }
 
     #[test]
-    fn stt_zero_statements_with_preserve_all_preserves_input() {
+    fn stt_zero_statements_leaves_raw() {
         let temporary = tempfile::tempdir().unwrap();
         let facts = input(temporary.path());
 
         assert_eq!(
-            stt_zero_statements(&facts, true, false, None).unwrap(),
+            stt_zero_statements(&facts, false, None).unwrap(),
             TerminalOutcome::Preserved
         );
         assert!(facts.path.exists());
@@ -982,7 +905,6 @@ mod tests {
 
         let error = vad_no_speech_with(
             &facts,
-            false,
             false,
             None,
             |bytes| {
@@ -1022,7 +944,7 @@ mod tests {
         let (jsonl_path, _) = transcript_paths(&facts.path);
 
         assert_eq!(
-            vad_no_speech(&facts, true, false, None).unwrap(),
+            vad_no_speech(&facts, false, None).unwrap(),
             TerminalOutcome::Preserved
         );
         let header = read_header(&jsonl_path);
@@ -1052,7 +974,7 @@ mod tests {
         let sound_tags = json!({"tags": {"Music": 0.9}});
 
         assert_eq!(
-            vad_no_speech(&facts, true, false, Some(&sound_tags)).unwrap(),
+            vad_no_speech(&facts, false, Some(&sound_tags)).unwrap(),
             TerminalOutcome::Preserved
         );
 
@@ -1084,7 +1006,7 @@ mod tests {
         fs::write(&npz_path, b"orphan").unwrap();
 
         assert_eq!(
-            vad_no_speech(&facts, true, false, None).unwrap(),
+            vad_no_speech(&facts, false, None).unwrap(),
             TerminalOutcome::Preserved
         );
         assert!(!npz_path.exists());
@@ -1100,7 +1022,6 @@ mod tests {
 
         let error = vad_no_speech_with(
             &facts,
-            false,
             false,
             None,
             |_| panic!("writer must not run after orphan removal failure"),
@@ -1125,7 +1046,7 @@ mod tests {
         let facts = input(temporary.path());
         let (jsonl_path, _) = transcript_paths(&facts.path);
 
-        vad_no_speech(&facts, true, false, None).unwrap();
+        vad_no_speech(&facts, false, None).unwrap();
         let record = read_header(&jsonl_path)["_solstone_processing"].clone();
 
         assert!(record.get("attempts").is_none());

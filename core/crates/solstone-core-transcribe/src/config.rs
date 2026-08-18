@@ -38,18 +38,6 @@ pub(crate) fn min_speech_seconds(config: &JournalConfigRead) -> f64 {
         .unwrap_or(1.0)
 }
 
-/// Whether all raw audio is retained after successful processing.
-pub(crate) fn preserve_all(config: &JournalConfigRead) -> bool {
-    config
-        .config
-        .as_ref()
-        .and_then(|root| root.get("transcribe"))
-        .and_then(|transcribe| transcribe.as_object())
-        .and_then(|transcribe| transcribe.get("preserve_all"))
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false)
-}
-
 /// Optional Parakeet C++ device preference.
 pub(crate) fn parakeet_cpp_device(config: &JournalConfigRead) -> Option<String> {
     config
@@ -104,7 +92,7 @@ fn parakeet_coreml_config(
 mod tests {
     use super::{
         confidential_audio_enabled, min_speech_seconds, parakeet_coreml_model_version,
-        parakeet_coreml_timeout, parakeet_cpp_device, preserve_all, read_transcribe_config,
+        parakeet_coreml_timeout, parakeet_cpp_device, read_transcribe_config,
     };
     use solstone_core_journal_config::JournalConfigRead;
     use std::fs;
@@ -123,9 +111,9 @@ mod tests {
 
     #[test]
     fn reads_present_journal_config() {
-        let config = read_config("{\"preserve_all\":true}");
+        let config = read_config("{\"confidential_audio\":false}");
 
-        assert!(preserve_all(&config));
+        assert!(!confidential_audio_enabled(&config));
     }
 
     #[test]
@@ -146,13 +134,6 @@ mod tests {
             min_speech_seconds(&config_with("min_speech_seconds", "\"2.75\"")),
             1.0
         );
-    }
-
-    #[test]
-    fn preserve_all_defaults_false_and_rejects_invalid_values() {
-        assert!(!preserve_all(&config(None)));
-        assert!(preserve_all(&config_with("preserve_all", "true")));
-        assert!(!preserve_all(&config_with("preserve_all", "1")));
     }
 
     #[test]
