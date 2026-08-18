@@ -4,6 +4,7 @@
 //! Strict journal configuration reads and default materialization.
 
 mod defaults;
+mod name;
 pub mod parakeet_coreml;
 mod path;
 mod read;
@@ -12,6 +13,7 @@ mod read;
 mod test_support;
 
 pub use defaults::{materialized_defaults, plain_defaults};
+pub use name::is_path_shaped_name;
 pub use path::get_journal_config_path;
 pub use read::{
     ConfigLoadError, JournalConfigMutationBase, JournalConfigRead, load_mutation_base,

@@ -14,6 +14,7 @@ use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_identity::{IdentityError, ensure_identity_directory};
+use solstone_core_journal_config::is_path_shaped_name;
 use solstone_core_journal_config_write::{
     CasConfigMutationError, JournalConfigMutation, LockError, mutate_journal_config_cas,
 };
@@ -34,6 +35,9 @@ pub(crate) async fn api_set_name(
     let Some(name) = required(&body, "name") else {
         return required_field("name");
     };
+    if is_path_shaped_name(name) {
+        return invalid_config_value("agent name must not be a path");
+    }
     let status = body
         .get("status")
         .filter(|value| truthy(value))
@@ -215,6 +219,16 @@ fn truthy(value: &Value) -> bool {
 
 fn response_bio(bio: &Value) -> Value {
     if truthy(bio) { bio.clone() } else { json!("") }
+}
+
+fn invalid_config_value(detail: &str) -> Response {
+    error_envelope(
+        "invalid_config_value",
+        "I couldn't save that setting because one value was invalid.",
+        detail,
+        StatusCode::BAD_REQUEST,
+    )
+    .into_response()
 }
 
 fn missing_body(detail: &str) -> Response {

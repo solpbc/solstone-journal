@@ -173,7 +173,11 @@ fn identity(journal_root: &std::path::Path) -> (String, String) {
     let agent = config["agent"]["name"].as_str().unwrap_or("sol").trim();
     (
         if owner.is_empty() { "Owner" } else { owner }.to_owned(),
-        if agent.is_empty() { "sol" } else { agent }.to_owned(),
+        if agent.is_empty() || solstone_core_journal_config::is_path_shaped_name(agent) {
+            "sol".to_owned()
+        } else {
+            agent.to_owned()
+        },
     )
 }
 

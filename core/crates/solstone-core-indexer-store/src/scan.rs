@@ -1072,7 +1072,9 @@ fn resolve_chat_labels(journal: &Path) -> Result<ResolvedChatLabels, ConfigLoadE
         .and_then(serde_json::Value::as_object)
         .and_then(|agent| agent.get("name"))
         .and_then(serde_json::Value::as_str)
-        .filter(|value| !value.trim().is_empty())
+        .filter(|value| {
+            !value.trim().is_empty() && !solstone_core_journal_config::is_path_shaped_name(value)
+        })
         .unwrap_or("Sol")
         .trim();
     Ok(ResolvedChatLabels {
@@ -4617,6 +4619,12 @@ mod tests {
                 "Helper",
             ),
             ("absent", r#"{}"#, "Owner", "Sol"),
+            (
+                "path_shaped",
+                r#"{"identity":{"name":"Name"},"agent":{"name":"~/secret"}}"#,
+                "Name",
+                "Sol",
+            ),
         ] {
             let root = temp_root(&format!("chat-label-{name}"));
             let rel = seed_owner_chat(&root);

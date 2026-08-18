@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use axum::{body::Bytes, response::Response};
 use serde_json::{Map, Value, json};
+use solstone_core_journal_config::is_path_shaped_name;
 use solstone_core_journal_config_write::{
     JournalConfigMutation, LockError, LockOptions, mutate_journal_config,
 };
@@ -106,6 +107,14 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 return invalid_config_value(format!("transcribe.{key} must be a boolean"));
             }
         }
+    }
+    if section == "agent"
+        && data
+            .get("name")
+            .and_then(Value::as_str)
+            .is_some_and(is_path_shaped_name)
+    {
+        return invalid_config_value("agent name must not be a path");
     }
     let data_for_write = data.clone();
     let section_for_write = section.clone();
@@ -425,6 +434,58 @@ mod tests {
             body["detail"],
             "something went wrong — try again, and if it persists, check the health dashboard"
         );
+    }
+
+    async fn post_agent_name(
+        root: &std::path::Path,
+        name: &str,
+    ) -> (axum::http::StatusCode, serde_json::Value) {
+        let response = crate::test_support::shell_router(root)
+            .oneshot(
+                Request::post("/app/settings/api/config")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({"section":"agent","data":{"name":name}}))
+                            .expect("body"),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let status = response.status();
+        let body: serde_json::Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
+        (status, body)
+    }
+
+    fn agent_name(root: &std::path::Path) -> Option<String> {
+        let config: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join("config/journal.json")).expect("config"),
+        )
+        .expect("config JSON");
+        config["agent"]["name"].as_str().map(str::to_owned)
+    }
+
+    #[tokio::test]
+    async fn agent_name_refuses_a_path_shaped_value() {
+        for name in ["~/x", "a/b", "a\\b"] {
+            let root = crate::test_support::established_root();
+            let (status, body) = post_agent_name(root.path(), name).await;
+            assert_eq!(status, axum::http::StatusCode::BAD_REQUEST, "{name}");
+            assert_eq!(body["reason_code"], "invalid_config_value");
+            assert_eq!(agent_name(root.path()), None);
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_name_accepts_a_benign_value() {
+        let root = crate::test_support::established_root();
+        let (status, _) = post_agent_name(root.path(), "Ada").await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+        assert_eq!(agent_name(root.path()).as_deref(), Some("Ada"));
     }
 
     #[tokio::test]

@@ -196,6 +196,20 @@ fn chat_state_matches_the_recorded_shape_origins_and_open_request() {
 }
 
 #[tokio::test]
+async fn chat_state_uses_agent_name_or_sol_fallback() {
+    for (name, expected) in [("~/secret", "sol"), ("Ada", "Ada")] {
+        let fixture = Fixture::new("agent-name");
+        write(
+            &fixture.root.join("config/journal.json"),
+            &json!({"setup":{"completed_at":1},"agent":{"name":name}}).to_string(),
+        );
+        let value =
+            response_json(request(&fixture.root, "/app/chat/api/state?day=20260731").await).await;
+        assert_eq!(value["agent_name"], expected, "{name}");
+    }
+}
+
+#[tokio::test]
 async fn chat_state_distinguishes_corrupt_and_healthy_streams() {
     let fixture = seeded_journal();
     for (day, expected_nonempty) in [("20260731", true), ("20260916", false)] {
