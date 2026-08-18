@@ -659,10 +659,13 @@ fn attributes<R: BufRead>(
         let key = std::str::from_utf8(attribute.key.as_ref())
             .map_err(|_| source_error("xml_attribute"))?
             .to_owned();
-        let value = attribute
-            .decode_and_unescape_value(reader.decoder())
-            .map_err(|_| source_error("xml_attribute"))?
-            .into_owned();
+        let value = {
+            #[allow(deprecated)]
+            attribute
+                .decode_and_unescape_value(reader.decoder())
+                .map_err(|_| source_error("xml_attribute"))?
+                .into_owned()
+        };
         result.insert(key, value);
     }
     Ok(result)

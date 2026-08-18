@@ -928,6 +928,7 @@ fn merge_artifacts(into: &mut BTreeMap<ArtifactId, PathBuf>, from: BTreeMap<Arti
     into.extend(from);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn stage_layout(
     repo: &Path,
     inventory_path: &Path,
