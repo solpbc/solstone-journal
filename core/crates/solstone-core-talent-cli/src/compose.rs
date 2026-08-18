@@ -65,11 +65,11 @@ pub fn compose_talent(
                 journal_root,
                 focused_facet,
                 templates.get("facet_naming").map(String::as_str),
-            ),
+            )?,
             Err(_) => String::new(),
         }
     } else {
-        resolve_facets(journal_root, focused_facet, None)
+        resolve_facets(journal_root, focused_facet, None)?
     };
     let context = BTreeMap::from([("facets".to_owned(), facets)]);
     let instruction = compose_prompt_body(&config.body, journal_root, templates_dir, &context)?;

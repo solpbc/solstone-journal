@@ -828,6 +828,11 @@ mod tests {
             .join("facets/work/activities/20260101.jsonl");
         fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
         fs::write(
+            context.journal.join("facets/work/facet.json"),
+            r#"{"title":"Work"}"#,
+        )
+        .unwrap();
+        fs::write(
             &activity_path,
             "{\"id\":\"activity-1\",\"story\":{\"old\":true}}\n",
         )
@@ -1097,9 +1102,12 @@ mod tests {
 "type":"generate", "hook":{"post":"story"}, "load":{"transcripts":false}
 }"#,
         );
-        // A file in place of the facets directory makes the real story commit
-        // fail after generation, exercising execution's error propagation.
-        fs::write(context.journal.join("facets"), b"not a directory").unwrap();
+        // Prepare now requires a real named-facet declaration. Poison only the
+        // story write path so compose succeeds and commit still fails.
+        let work = context.journal.join("facets/work");
+        fs::create_dir_all(&work).unwrap();
+        fs::write(work.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+        fs::write(work.join("activities"), b"not a directory").unwrap();
         let client = OneShotClient::at_path(test_support::one_shot_stub(
             root.path(),
             r#"{"body":"body","topics":["work"],"confidence":1,"commitments":[],"closures":[],"decisions":[],"relations":[]}"#,

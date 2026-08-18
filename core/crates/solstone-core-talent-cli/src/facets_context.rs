@@ -14,10 +14,10 @@ pub(crate) fn resolve_facets(
     journal_root: &Path,
     focused_facet: Option<&str>,
     facet_naming: Option<&str>,
-) -> String {
+) -> Result<String, String> {
     match focused_facet {
-        Some(facet) => focused_summary(journal_root, facet).unwrap_or_default(),
-        None => all_summaries(journal_root, facet_naming).unwrap_or_default(),
+        Some(facet) => focused_summary(journal_root, facet),
+        None => Ok(all_summaries(journal_root, facet_naming).unwrap_or_default()),
     }
 }
 
@@ -99,16 +99,17 @@ mod tests {
             r##"{"title":"Work","description":"Projects","color":"#123"}"##,
         );
         declaration(root.path(), "muted", r#"{"title":"Muted","muted":true}"#);
-        let named = resolve_facets(root.path(), Some("work"), None);
+        let named = resolve_facets(root.path(), Some("work"), None).expect("named");
         assert!(named.contains("## Facet Focus\n# Work"));
         assert!(named.contains("![Color](#123)"));
         assert!(named.contains("**Description:** Projects"));
-        let all = resolve_facets(root.path(), None, None);
+        let all = resolve_facets(root.path(), None, None).expect("all");
         assert!(all.contains("**Work** (`work`)"));
         assert!(!all.contains("Muted"));
 
         let empty = tempfile::tempdir().expect("empty root");
-        let discovery = resolve_facets(empty.path(), None, Some("Use clear names."));
+        let discovery =
+            resolve_facets(empty.path(), None, Some("Use clear names.")).expect("discovery");
         assert!(discovery.contains("No facets are defined yet."));
         assert!(discovery.contains("Use clear names."));
     }
@@ -116,17 +117,27 @@ mod tests {
     #[test]
     fn branch_failures_are_swallowed() {
         let root = tempfile::tempdir().expect("root");
-        assert_eq!(resolve_facets(root.path(), Some("missing"), None), "");
+        assert_eq!(
+            resolve_facets(root.path(), Some("missing"), None),
+            Err("facet 'missing' not found".to_owned())
+        );
         declaration(root.path(), "bad", "{");
-        assert!(resolve_facets(root.path(), None, None).contains("No facets are defined yet."));
+        assert!(
+            resolve_facets(root.path(), None, None)
+                .expect("discovery after bad declaration")
+                .contains("No facets are defined yet.")
+        );
         declaration(root.path(), "work", r#"{"title":"Work"}"#);
-        let all = resolve_facets(root.path(), None, None);
+        let all = resolve_facets(root.path(), None, None).expect("all");
         assert!(all.contains("**Work** (`work`)"));
         assert!(!all.contains("bad"));
         let blocked = root.path().join("facets");
         fs::remove_dir_all(&blocked).expect("remove directory");
         symlink("facets", &blocked).expect("self-referential facets path");
-        assert_eq!(resolve_facets(root.path(), None, None), "");
+        assert_eq!(
+            resolve_facets(root.path(), None, None).expect("self-referential swallow"),
+            ""
+        );
     }
 
     #[test]
@@ -134,7 +145,7 @@ mod tests {
         let root = tempfile::tempdir().expect("root");
         declaration(root.path(), "bad", "{");
         declaration(root.path(), "work", r#"{"title":"Work"}"#);
-        let all = resolve_facets(root.path(), None, None);
+        let all = resolve_facets(root.path(), None, None).expect("all");
         assert!(all.contains("**Work** (`work`)"));
         assert!(!all.contains("bad"));
     }
