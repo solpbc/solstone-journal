@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 
 use crate::AppliedFile;
 
-/// Post-advance ingest notice assembled by the wire layer.
+/// Ingest notice assembled by the wire layer after a successful apply.
 pub struct IngestNotice<'a> {
     pub did: &'a str,
     pub source: &'a str,

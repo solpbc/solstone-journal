@@ -393,8 +393,9 @@ fn required_string(
 ///
 /// `solstone-core-segment` deliberately offers exclusive writes per file, not
 /// a batch transaction. A multi-file request can therefore hold earlier files
-/// before a later conflict, leaving them without an event or processing signal
-/// for that attempt. This is bounded and self-healing: resolution re-enters
+/// before a later conflict. A non-Stale apply failure still emits a
+/// `device_ingest` event scoped to the files that landed, then returns the
+/// failure response. This is bounded and self-healing: resolution re-enters
 /// exactly once when apply detects drift, so earlier idempotent writes become
 /// held files on the fresh plan. A second consecutive drift surfaces honestly
 /// as an error; it is not silently retried a third time. A transactional repair
