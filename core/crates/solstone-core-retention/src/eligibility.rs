@@ -5,9 +5,12 @@
 //!
 //! Retention does not have a predicate of its own. It consumes the
 //! media-processing boundary's terminal-proof conjunction, per content file, and
-//! holds the whole segment if any file blocks — because the derived output of one
-//! file can depend on another's raw, and a segment is the unit an owner reasons
-//! about.
+//! holds every file in the given slice if any of them blocks — because the
+//! derived output of one file can depend on another's raw. [`resolve`] decides
+//! whatever slice it is given. ⚠ Callers (the sweep planner, the owner-approval
+//! executor) may invoke it once per independently-evaluated group inside one
+//! segment — the independently-empty-terminal VAD group vs. the rest — not only
+//! once for the whole segment.
 //!
 //! # Why this is not the same predicate as the ingest path's
 //!
@@ -292,12 +295,14 @@ pub struct FoundContent {
     pub sidecar: SidecarFacts,
 }
 
-/// Decide a whole segment.
+/// Decide the files in `found`.
 ///
-/// ⛔ One blocker holds everything. The unit of the decision is the segment even
-/// though the unit of the removal is the file: screen-diff frames carry no
-/// extraction record of their own and depend on riding the segment's verdict, and
-/// a partially-released segment is a shape no reader expects.
+/// ⛔ One blocker holds everything in that slice. The unit of *this* decision is
+/// the given group even though the unit of the removal is the file: screen-diff
+/// frames carry no extraction record of their own and depend on riding the
+/// group's verdict. ⚠ A single call never partially releases the slice it was
+/// given. Callers may still release one group of a segment and hold another by
+/// invoking this once per group.
 pub fn resolve(
     registry: &dyn HandlerRegistry,
     classifier: &dyn MediaClassifier,
@@ -417,12 +422,12 @@ mod tests {
         );
     }
 
-    /// One blocked file holds the whole segment.
+    /// One blocked file holds the rest of the slice it was given.
     ///
-    /// The removal unit is the file; the decision unit is the segment. Screen-diff
-    /// frames carry no extraction record of their own and depend on riding the
-    /// segment's verdict, so a partially released segment is a shape no reader
-    /// expects.
+    /// The removal unit is the file; the decision unit is the group passed to
+    /// [`resolve`]. Screen-diff frames carry no extraction record of their own
+    /// and depend on riding that group's verdict, so one unprovable ordinary
+    /// file holds the rest of the ordinary group.
     #[test]
     fn one_blocked_file_holds_the_whole_segment() {
         let registry = audio_only;
