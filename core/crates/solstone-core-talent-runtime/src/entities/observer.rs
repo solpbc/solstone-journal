@@ -7,12 +7,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 
 use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
 use crate::{
-    ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
+    apply_template_vars, stage_error, ExecutionContext, PreparedTalent, RuntimeOutcome, StageError,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -726,5 +726,42 @@ mod tests {
         .unwrap();
         assert_eq!(sidecar["add"], 1);
         assert!(sidecar["error"].is_null());
+    }
+
+    #[test]
+    fn apply_result_writes_under_the_relationship_dir() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "blue", "💼", None)
+            .unwrap();
+        let identity = root.path().join("entities/dir-ada");
+        fs::create_dir_all(&identity).unwrap();
+        fs::write(
+            identity.join("entity.json"),
+            br#"{"id":"effective-ada","name":"Ada"}"#,
+        )
+        .unwrap();
+        let relationship = root.path().join("facets/work/entities/legacy-ada");
+        fs::create_dir_all(&relationship).unwrap();
+        fs::write(
+            relationship.join("entity.json"),
+            br#"{"entity_id":"effective-ada"}"#,
+        )
+        .unwrap();
+
+        apply_result(
+            root.path(),
+            r#"{"entities":[{"entity_id":"effective-ada","operations":[{"op":"add","content":"from apply"}]}]}"#,
+            "work",
+            "20260101",
+        )
+        .unwrap();
+        let observations =
+            solstone_core_facets::load_observations(root.path(), "work", "legacy-ada").unwrap();
+        assert_eq!(observations[0]["content"], "from apply");
+        assert!(
+            solstone_core_facets::load_observations(root.path(), "work", "effective-ada")
+                .unwrap()
+                .is_empty()
+        );
     }
 }

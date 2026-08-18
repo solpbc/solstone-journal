@@ -92,6 +92,7 @@ pub enum ObservationWriteError {
     TrustLock(FacetTrustLockError),
     Read(FacetStoreError),
     Write(FacetWriteError),
+    Resolve(FacetEntityWriteError),
 }
 
 impl fmt::Display for ObservationWriteError {
@@ -101,6 +102,7 @@ impl fmt::Display for ObservationWriteError {
             Self::TrustLock(error) => error.fmt(formatter),
             Self::Read(error) => error.fmt(formatter),
             Self::Write(error) => error.fmt(formatter),
+            Self::Resolve(error) => error.fmt(formatter),
         }
     }
 }
@@ -111,6 +113,7 @@ impl Error for ObservationWriteError {
             Self::TrustLock(error) => Some(error),
             Self::Read(error) => Some(error),
             Self::Write(error) => Some(error),
+            Self::Resolve(error) => Some(error),
             Self::EmptyContent => None,
         }
     }
@@ -139,6 +142,7 @@ impl ObservationWriteError {
         match self {
             Self::TrustLock(error) => trust_lock_is_timeout(error),
             Self::Write(FacetWriteError::TrustLock(error)) => trust_lock_is_timeout(error),
+            Self::Resolve(FacetEntityWriteError::TrustLock(error)) => trust_lock_is_timeout(error),
             _ => false,
         }
     }
@@ -148,7 +152,9 @@ impl ObservationWriteError {
             Self::TrustLock(error) => trust_lock_is_io(error),
             Self::Read(error) => store_error_is_io(error),
             Self::Write(error) => write_error_is_io(error),
-            Self::EmptyContent => false,
+            Self::Resolve(FacetEntityWriteError::TrustLock(error)) => trust_lock_is_io(error),
+            Self::Resolve(FacetEntityWriteError::Io(_)) => true,
+            Self::EmptyContent | Self::Resolve(_) => false,
         }
     }
 }

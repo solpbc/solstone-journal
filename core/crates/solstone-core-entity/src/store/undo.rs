@@ -7,14 +7,6 @@ use std::fmt;
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_journal_io::AtomicWriteOptions;
-use solstone_core_journal_io::DirEntryKind;
-use solstone_core_journal_io::JournalSnapshot;
-use solstone_core_journal_io::JsonWriteOptions;
-use solstone_core_journal_io::MalformedPolicy;
-use solstone_core_journal_io::SnapshotDirectory;
-use solstone_core_journal_io::SnapshotError;
-use solstone_core_journal_io::SnapshotFile;
 use solstone_core_journal_io::contained_path;
 use solstone_core_journal_io::list_dir_entries;
 use solstone_core_journal_io::path_lexists;
@@ -23,16 +15,24 @@ use solstone_core_journal_io::read_jsonl;
 use solstone_core_journal_io::restore_snapshot;
 use solstone_core_journal_io::write_json;
 use solstone_core_journal_io::write_jsonl;
+use solstone_core_journal_io::AtomicWriteOptions;
+use solstone_core_journal_io::DirEntryKind;
+use solstone_core_journal_io::JournalSnapshot;
+use solstone_core_journal_io::JsonWriteOptions;
+use solstone_core_journal_io::MalformedPolicy;
+use solstone_core_journal_io::SnapshotDirectory;
+use solstone_core_journal_io::SnapshotError;
+use solstone_core_journal_io::SnapshotFile;
 
 use crate::{
-    EntityOperationContext, EntityOperationKind, EntityWriteError, hold_entity_trust_lock,
-    read_entity_identity, read_visible_history, save_entity_identity,
+    hold_entity_trust_lock, read_entity_identity, read_visible_history, save_entity_identity,
+    EntityOperationContext, EntityOperationKind, EntityWriteError,
 };
 
 use super::merge_payload::{
-    MergePayloadError, list_entity_merge_payload_ids, load_entity_merge_payload,
-    move_entity_merge_payload, record_entity_merge_payload, remove_entity_merge_payload,
-    snapshot_from_payload,
+    list_entity_merge_payload_ids, load_entity_merge_payload, move_entity_merge_payload,
+    record_entity_merge_payload, remove_entity_merge_payload, snapshot_from_payload,
+    MergePayloadError,
 };
 use super::merge_rollback::MergeRollback;
 
@@ -537,8 +537,48 @@ fn undo_facets(
         let kind = entry.get("kind").and_then(Value::as_str).ok_or_else(|| {
             EntityUndoError::Refused("merge payload facet entry is missing kind".to_owned())
         })?;
-        let directory = format!("facets/{facet}/entities/{target_id}");
+        let recorded_dir = entry
+            .get("target_dir")
+            .and_then(Value::as_str)
+            .filter(|dir| !dir.is_empty())
+            .unwrap_or(target_id);
+        let directory = format!("facets/{facet}/entities/{recorded_dir}");
         match kind {
+            "relink" => {
+                let source_entity_id = entry
+                    .get("source_entity_id")
+                    .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty())
+                    .ok_or_else(|| {
+                        EntityUndoError::Refused(
+                            "merge payload facet entry is missing source_entity_id".to_owned(),
+                        )
+                    })?;
+                let path = format!("{directory}/entity.json");
+                let destination = contained_path(journal, &path)
+                    .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+                rollback.capture(journal, &path)?;
+                let mut link: Value = read_json(&destination, Value::Null, MalformedPolicy::Raise)
+                    .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+                if let Some(object) = link.as_object_mut() {
+                    object.insert(
+                        "entity_id".to_owned(),
+                        Value::String(source_entity_id.to_owned()),
+                    );
+                }
+                write_json(
+                    destination,
+                    &link,
+                    JsonWriteOptions {
+                        indent: Some(2),
+                        sort_keys: false,
+                        mode: None,
+                    },
+                )
+                .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+                inject_failure(injector, "facets", artifact_index)?;
+                artifact_index += 1;
+            }
             "move" => {
                 rollback.capture(journal, &directory)?;
                 restore_snapshot(journal, &JournalSnapshot::Missing { path: directory })?;

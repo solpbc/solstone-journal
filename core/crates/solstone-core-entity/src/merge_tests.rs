@@ -657,14 +657,15 @@ fn facets_move_relationship_and_observations() {
         1
     );
     let relationship: serde_json::Value = serde_json::from_slice(
-        &fs::read(journal.join("facets/work/entities/target/entity.json")).unwrap(),
+        &fs::read(journal.join("facets/work/entities/source/entity.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(relationship["entity_id"], "target");
     assert_eq!(
-        fs::read_to_string(journal.join("facets/work/entities/target/observations.jsonl")).unwrap(),
+        fs::read_to_string(journal.join("facets/work/entities/source/observations.jsonl")).unwrap(),
         "{\"content\":\"note\",\"observed_at\":\"x\"}\n"
     );
+    assert!(!journal.join("facets/work/entities/target").exists());
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -712,11 +713,12 @@ fn committed_merge_payload_records_facet_inverse_entries() {
         commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
     let payload = load_entity_merge_payload(&journal, "target", &report.merge_id).unwrap();
     let entries = payload["manifest"]["facets"]["entries"].as_array().unwrap();
-    assert!(
-        entries
-            .iter()
-            .any(|entry| entry == &json!({"facet": "moved", "kind": "move"}))
-    );
+    assert!(entries.iter().any(|entry| {
+        entry["facet"] == "moved"
+            && entry["kind"] == "relink"
+            && entry["source_dir"] == "source"
+            && entry["target_dir"] == "source"
+    }));
     assert!(entries.iter().any(|entry| {
         entry["facet"] == "merged"
             && entry["kind"] == "merge"
@@ -1124,7 +1126,9 @@ fn facets_phase_injection_rolls_back_and_retry_succeeds() {
     assert!(!journal.join("facets/work/entities/target").exists());
     assert!(!journal.join("facets/personal/entities/target").exists());
     commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
-    assert!(sources.iter().all(|source| !source.exists()));
+    assert!(sources.iter().all(|source| source.exists()));
+    assert!(!journal.join("facets/work/entities/target").exists());
+    assert!(!journal.join("facets/personal/entities/target").exists());
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -1872,5 +1876,76 @@ fn preview_does_not_take_trust_lock_or_touch_index() {
     preview_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
     assert!(!index.exists());
     drop(hold_entity_trust_lock(&journal).unwrap());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+fn write_divergent_identity(journal: &Path, entity_dir: &str, entity_id: &str) {
+    save_entity_identity(
+        journal,
+        entity_dir,
+        &json!({"id": entity_id, "name": entity_id, "aka": [], "emails": []}),
+        None,
+    )
+    .unwrap();
+}
+
+fn write_facet_link(journal: &Path, facet: &str, relationship_dir: &str, entity_id: &str, body: &str) {
+    let dir = journal.join(format!("facets/{facet}/entities/{relationship_dir}"));
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("entity.json"),
+        format!(r#"{{"entity_id":"{entity_id}"}}"#),
+    )
+    .unwrap();
+    fs::write(dir.join("observations.jsonl"), body).unwrap();
+}
+
+#[test]
+fn merge_facets_follows_relationship_directories() {
+    let journal = voiceprint_journal();
+    write_divergent_identity(&journal, "src-dir", "src-id");
+    write_divergent_identity(&journal, "tgt-dir", "tgt-id");
+    write_facet_link(&journal, "work", "src-rel", "src-id", "{\"content\":\"source\"}\n");
+    write_facet_link(&journal, "work", "tgt-rel", "tgt-id", "{\"content\":\"target\"}\n");
+    write_divergent_identity(&journal, "c-dir", "c-id");
+    write_facet_link(&journal, "work", "src-id", "c-id", "{\"content\":\"collision\"}\n");
+
+    let stats = merge_facets(&journal, "src-id", "tgt-id", None, None).unwrap();
+    assert_eq!(stats.merged_count, 1);
+    assert_eq!(
+        stats.removed_source_dirs,
+        vec!["facets/work/entities/src-rel".to_owned()]
+    );
+    let merged = fs::read_to_string(journal.join("facets/work/entities/tgt-rel/observations.jsonl"))
+        .unwrap();
+    assert!(merged.contains("source"));
+    assert!(merged.contains("target"));
+    assert_eq!(
+        fs::read_to_string(journal.join("facets/work/entities/src-id/observations.jsonl")).unwrap(),
+        "{\"content\":\"collision\"}\n"
+    );
+    assert!(!journal.join("facets/work/entities/tgt-id").exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn merge_facets_relinks_when_target_has_no_relationship_dir() {
+    let journal = voiceprint_journal();
+    write_divergent_identity(&journal, "src-dir", "src-id");
+    write_divergent_identity(&journal, "tgt-dir", "tgt-id");
+    write_facet_link(&journal, "work", "src-rel", "src-id", "{\"content\":\"kept\"}\n");
+
+    let stats = merge_facets(&journal, "src-id", "tgt-id", None, None).unwrap();
+    assert_eq!(stats.moved_count, 1);
+    let link: serde_json::Value = serde_json::from_slice(
+        &fs::read(journal.join("facets/work/entities/src-rel/entity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(link["entity_id"], "tgt-id");
+    assert_eq!(
+        fs::read_to_string(journal.join("facets/work/entities/src-rel/observations.jsonl")).unwrap(),
+        "{\"content\":\"kept\"}\n"
+    );
+    assert!(!journal.join("facets/work/entities/tgt-id").exists());
     fs::remove_dir_all(journal).unwrap();
 }

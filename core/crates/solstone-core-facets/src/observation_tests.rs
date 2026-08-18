@@ -9,14 +9,170 @@ use solstone_core_journal_io::{AtomicWriteError, LockError, LockTimeout};
 
 use crate::store::{retry_add_for_test, retry_record_for_test};
 use crate::store_tests::{
-    TempDir, create_test_facet, write_facet_relationship, write_journal_entity,
+    create_test_facet, write_facet_relationship, write_journal_entity, TempDir,
 };
 use crate::{
-    FacetTrustLockError, FacetWriteError, ObservationLookup, ObservationLookupError,
-    ObservationWriteError, add_observation, count_observations, load_observations,
-    load_observations_for_query, observation_day_counts, read_facet_entity_observations,
-    record_observation_ops, resolve_observation_entity_dir, save_observations,
+    add_observation, count_observations, load_observations, load_observations_for_query,
+    observation_day_counts, read_facet_entity_observations, record_observation_ops,
+    resolve_observation_entity_dir, save_observations, FacetTrustLockError, FacetWriteError,
+    ObservationLookup, ObservationLookupError, ObservationWriteError,
 };
+
+fn three_way_ada(root: &std::path::Path) {
+    create_test_facet(root, "work");
+    write_journal_entity(root, "dir-ada", Some("effective-ada"));
+    write_facet_relationship(
+        root,
+        "work",
+        "legacy-ada",
+        json!({"entity_id":"effective-ada"}),
+    );
+}
+
+#[test]
+fn record_ops_keyed_by_entity_id_write_the_relationship_dir() {
+    let temporary = TempDir::new();
+    three_way_ada(temporary.path());
+
+    let counts = record_observation_ops(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        &[json!({"op":"add","content":"from id"})],
+        None,
+    )
+    .unwrap();
+    assert_eq!(counts.add, 1);
+    assert_eq!(
+        load_observations(temporary.path(), "work", "legacy-ada").unwrap()[0]["content"],
+        "from id"
+    );
+    assert!(load_observations(temporary.path(), "work", "effective-ada")
+        .unwrap()
+        .is_empty());
+    assert!(load_observations(temporary.path(), "work", "dir-ada")
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn record_ops_keyed_by_entity_id_update_the_relationship_dir() {
+    let temporary = TempDir::new();
+    three_way_ada(temporary.path());
+    save_observations(
+        temporary.path(),
+        "work",
+        "legacy-ada",
+        &[json!({"content":"old","observed_at":1})],
+    )
+    .unwrap();
+
+    let counts = record_observation_ops(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        &[json!({"op":"update","target_index":0,"target_quote":"old","content":"new"})],
+        None,
+    )
+    .unwrap();
+    assert_eq!(counts.update, 1);
+    assert_eq!(
+        load_observations(temporary.path(), "work", "legacy-ada").unwrap()[0]["content"],
+        "new"
+    );
+    assert!(!temporary
+        .path()
+        .join("facets/work/entities/effective-ada/observations.jsonl")
+        .exists());
+}
+
+#[test]
+fn resolver_matches_entity_id_identity_dir_and_relationship_dir() {
+    let temporary = TempDir::new();
+    three_way_ada(temporary.path());
+    for query in ["effective-ada", "dir-ada", "legacy-ada"] {
+        assert_eq!(
+            resolve_observation_entity_dir(temporary.path(), "work", query).unwrap(),
+            crate::ObservationEntityResolution::Resolved {
+                entity_dir: "legacy-ada".to_owned()
+            },
+            "{query}"
+        );
+    }
+}
+
+#[test]
+fn entity_id_match_wins_when_it_equals_another_relationship_dir() {
+    let temporary = TempDir::new();
+    three_way_ada(temporary.path());
+    write_journal_entity(temporary.path(), "dir-b", Some("id-b"));
+    write_facet_relationship(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        json!({"entity_id":"id-b"}),
+    );
+    save_observations(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        &[json!({"content":"belongs to b"})],
+    )
+    .unwrap();
+
+    record_observation_ops(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        &[json!({"op":"add","content":"belongs to a"})],
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        load_observations(temporary.path(), "work", "legacy-ada").unwrap()[0]["content"],
+        "belongs to a"
+    );
+    assert_eq!(
+        load_observations(temporary.path(), "work", "effective-ada").unwrap()[0]["content"],
+        "belongs to b"
+    );
+}
+
+#[test]
+fn resolve_error_does_not_create_a_query_named_directory() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    let entities = temporary.path().join("entities");
+    fs::create_dir_all(&entities).unwrap();
+    let mut permissions = fs::metadata(&entities).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(0o000);
+        fs::set_permissions(&entities, permissions).unwrap();
+    }
+
+    let error = record_observation_ops(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        &[json!({"op":"add","content":"should not land"})],
+        None,
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut restore = fs::metadata(&entities).unwrap().permissions();
+        restore.set_mode(0o755);
+        fs::set_permissions(&entities, restore).unwrap();
+    }
+    let error = error.unwrap_err();
+    assert!(matches!(error, ObservationWriteError::Resolve(_)));
+    assert!(!temporary
+        .path()
+        .join("facets/work/entities/effective-ada")
+        .exists());
+}
 
 #[test]
 fn query_lookup_resolves_a_journal_id_to_a_divergent_relationship_directory() {
@@ -314,12 +470,10 @@ fn dropping_the_last_row_truncates_the_file_without_removing_its_directory() {
         read_facet_entity_observations(temporary.path(), "work", "person").unwrap(),
         Some(String::new())
     );
-    assert!(
-        temporary
-            .path()
-            .join("facets/work/entities/person")
-            .is_dir()
-    );
+    assert!(temporary
+        .path()
+        .join("facets/work/entities/person")
+        .is_dir());
 }
 
 #[test]

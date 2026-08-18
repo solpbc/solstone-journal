@@ -6,6 +6,12 @@ use std::fmt;
 use std::path::Path;
 
 use serde_json::Value;
+use solstone_core_journal_io::contained_path;
+use solstone_core_journal_io::list_dir_entries;
+use solstone_core_journal_io::path_lexists;
+use solstone_core_journal_io::read_json;
+use solstone_core_journal_io::restore_snapshot;
+use solstone_core_journal_io::write_json;
 use solstone_core_journal_io::AtomicWriteError;
 use solstone_core_journal_io::DirEntryKind;
 use solstone_core_journal_io::JournalSnapshot;
@@ -15,12 +21,6 @@ use solstone_core_journal_io::PathError;
 use solstone_core_journal_io::SnapshotDirectory;
 use solstone_core_journal_io::SnapshotError;
 use solstone_core_journal_io::SnapshotFile;
-use solstone_core_journal_io::contained_path;
-use solstone_core_journal_io::list_dir_entries;
-use solstone_core_journal_io::path_lexists;
-use solstone_core_journal_io::read_json;
-use solstone_core_journal_io::restore_snapshot;
-use solstone_core_journal_io::write_json;
 
 #[derive(Debug)]
 pub enum MergePayloadError {
@@ -278,7 +278,12 @@ pub(crate) fn validate_merge_payload(
             .as_object()
             .ok_or_else(|| invalid("merge payload facet entry is not an object"))?;
         let facet = required_string(entry, "facet", "manifest facet entry missing facet name")?;
-        contained_path(journal, &format!("facets/{facet}/entities/{target_id}"))
+        let directory = entry
+            .get("target_dir")
+            .and_then(Value::as_str)
+            .filter(|dir| !dir.is_empty())
+            .unwrap_or(target_id);
+        contained_path(journal, &format!("facets/{facet}/entities/{directory}"))
             .map_err(MergePayloadError::Path)?;
     }
     for section in ["segments", "activities", "observation_relations"] {

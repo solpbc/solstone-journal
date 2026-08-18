@@ -10,7 +10,7 @@ use caseless::default_case_fold_str;
 use chrono::Utc;
 use serde_json::{Map, Value};
 use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
-use solstone_core_journal_io::{AtomicWriteOptions, path_lexists, read_text, write_text};
+use solstone_core_journal_io::{path_lexists, read_text, write_text, AtomicWriteOptions};
 
 use crate::hold_facet_trust_lock;
 
@@ -58,7 +58,20 @@ pub fn resolve_observation_entity_dir(
     query: &str,
 ) -> Result<ObservationEntityResolution, FacetEntityWriteError> {
     let entities = list_scoped_facet_entities(journal_root, facet_dir, true, true)?;
+    if let Some(entity) = entities.iter().find(|entity| entity.entity_id == query) {
+        return Ok(ObservationEntityResolution::Resolved {
+            entity_dir: entity.relationship_dir.clone(),
+        });
+    }
     if let Some(entity) = entities.iter().find(|entity| entity.entity_dir == query) {
+        return Ok(ObservationEntityResolution::Resolved {
+            entity_dir: entity.relationship_dir.clone(),
+        });
+    }
+    if let Some(entity) = entities
+        .iter()
+        .find(|entity| entity.relationship_dir == query)
+    {
         return Ok(ObservationEntityResolution::Resolved {
             entity_dir: entity.relationship_dir.clone(),
         });
@@ -217,13 +230,18 @@ pub fn record_observation_ops(
     operations: &[Value],
     source_day: Option<&str>,
 ) -> Result<ObservationOperationCounts, ObservationWriteError> {
+    let resolved = match resolve_observation_entity_dir(journal_root, facet_dir, entity_dir) {
+        Ok(ObservationEntityResolution::Resolved { entity_dir }) => entity_dir,
+        Ok(ObservationEntityResolution::NoSuchEntity) => entity_dir.to_owned(),
+        Err(error) => return Err(ObservationWriteError::Resolve(error)),
+    };
     retry_record_operation(|| {
         let _trust = hold_facet_trust_lock(journal_root)?;
-        let snapshot = load_observations(journal_root, facet_dir, entity_dir)?;
+        let snapshot = load_observations(journal_root, facet_dir, &resolved)?;
         let (observations, counts, changed) =
             apply_observation_ops(&snapshot, operations, source_day);
         if changed {
-            save_observations(journal_root, facet_dir, entity_dir, &observations)?;
+            save_observations(journal_root, facet_dir, &resolved, &observations)?;
         }
         Ok(counts)
     })
