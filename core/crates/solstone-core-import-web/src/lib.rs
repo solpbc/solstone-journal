@@ -22,6 +22,7 @@ mod journal_sources;
 mod lifecycle;
 mod multipart;
 mod resolve;
+mod save_stream;
 
 #[cfg(test)]
 mod corpus;
@@ -44,7 +45,12 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route("/app/import/api/sources", get(imports::sources))
         .route("/app/import/api/list", get(imports::list))
         .route("/app/import/api/guide/{source}", get(assets::guide))
-        .route("/app/import/api/save", post(lifecycle::save))
+        .route(
+            "/app/import/api/save",
+            post(lifecycle::save).layer(DefaultBodyLimit::max(
+                solstone_core_convey_http::serve::REQUEST_BODY_LIMIT,
+            )),
+        )
         .route("/app/import/api/save-path", post(lifecycle::save_path))
         .route("/app/import/api/meta", post(lifecycle::meta))
         .route("/app/import/api/start", post(lifecycle::start))

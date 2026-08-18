@@ -12,7 +12,12 @@ use tower_http::limit::RequestBodyLimitLayer;
 use crate::identity::AccessBasis;
 
 /// Maximum request body size accepted by the transport substrate.
-pub const REQUEST_BODY_LIMIT: usize = 128 * 1024 * 1024;
+///
+/// Sized for SAVE (4 GiB + 1 MiB). Narrower routes pin their own extractor
+/// ceilings with [`STANDARD_BODY_LIMIT`].
+pub const REQUEST_BODY_LIMIT: usize = 4 * 1024 * 1024 * 1024 + 1024 * 1024;
+/// Historical 128 MiB extractor ceiling for every route except SAVE.
+pub const STANDARD_BODY_LIMIT: usize = 128 * 1024 * 1024;
 /// Maximum number of HTTP/1 request headers accepted by the parser.
 pub const MAX_HEADERS: usize = 32;
 /// Maximum HTTP/1 read/write buffer size per connection.

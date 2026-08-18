@@ -23,14 +23,15 @@ use solstone_core_import::{
     read_import_metadata, relocate_import, write_import_metadata,
 };
 use solstone_core_journal_io::{
-    AtomicWriteOptions, atomic_replace, contained_path, create_directory_with_mode,
+    AtomicWriteOptions, atomic_replace, contained_path, create_directory_with_mode, install_file,
 };
+use tempfile::NamedTempFile;
 
 use crate::{
     AppState,
     callosum::{BusError, request_required},
     http::{error, import_not_found, json as json_response},
-    multipart,
+    multipart, save_stream,
 };
 
 fn now_ms() -> i64 {
@@ -202,12 +203,9 @@ fn metadata_timestamp_from_file(path: &Path) -> Option<String> {
     }
 }
 
-fn deterministic_timestamp(bytes: &[u8], filename: &str) -> Option<String> {
-    let mut temporary = tempfile::NamedTempFile::new().ok()?;
-    temporary.as_file_mut().write_all(bytes).ok()?;
-    temporary.as_file_mut().flush().ok()?;
+fn deterministic_timestamp(path: &Path, filename: &str) -> Option<String> {
     let from_filename = filename_timestamp(filename);
-    let from_metadata = metadata_timestamp_from_file(temporary.path());
+    let from_metadata = metadata_timestamp_from_file(path);
     match (from_filename, from_metadata) {
         (Some(filename), Some(metadata)) if filename != metadata => None,
         (Some(filename), _) => Some(filename),
@@ -218,10 +216,10 @@ fn deterministic_timestamp(bytes: &[u8], filename: &str) -> Option<String> {
 
 fn timestamp_for_upload(
     data: &Value,
-    bytes: &[u8],
+    path: &Path,
     filename: &str,
 ) -> (String, &'static str, bool, Option<&'static str>) {
-    if let Some(timestamp) = deterministic_timestamp(bytes, filename) {
+    if let Some(timestamp) = deterministic_timestamp(path, filename) {
         return (timestamp, "deterministic", false, None);
     }
     if form_bool(data, "deterministic_only") {
@@ -456,15 +454,51 @@ fn contained_import_file(
     })
 }
 
-fn temporary_hash(bytes: &[u8]) -> Result<(SourceHash, bool), String> {
-    let mut temporary = tempfile::NamedTempFile::new().map_err(|error| error.to_string())?;
-    temporary
-        .write_all(bytes)
-        .map_err(|error| error.to_string())?;
-    let path = temporary.path().to_path_buf();
-    let source_hash = hash_source(&path).map_err(|error| error.to_string())?;
-    drop(temporary);
-    Ok((source_hash, !path.exists()))
+pub(crate) const SAVE_TMP_DIR: &str = ".save-tmp";
+
+fn save_tmp_dir(root: &Path) -> PathBuf {
+    root.join("imports").join(SAVE_TMP_DIR)
+}
+
+fn ensure_save_tmp(root: &Path) -> Result<PathBuf, String> {
+    let directory = save_tmp_dir(root);
+    create_directory_with_mode(&directory, 0o700).map_err(|error| error.to_string())?;
+    Ok(directory)
+}
+
+fn payload_too_large(detail: impl Into<String>) -> Response {
+    failure(
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "multipart_part_too_large",
+        "I couldn't bring in that file because it's too large.",
+        detail,
+    )
+}
+
+fn stream_error_response(error: save_stream::SaveStreamError) -> Response {
+    match error {
+        save_stream::SaveStreamError::CeilingExceeded => {
+            payload_too_large("multipart file exceeds 4 GiB")
+        }
+        save_stream::SaveStreamError::LengthLimited => {
+            payload_too_large("multipart file exceeds request limit")
+        }
+        save_stream::SaveStreamError::Read => failure(
+            StatusCode::BAD_REQUEST,
+            "ingest_no_files",
+            "I couldn't find any files to bring in.",
+            "cannot read multipart part",
+        ),
+        save_stream::SaveStreamError::Io(error) => {
+            metadata_failed(format!("Failed to stage temporary file: {error}"))
+        }
+    }
+}
+
+struct UploadedFile {
+    filename: Option<String>,
+    content_type: Option<String>,
+    counted: save_stream::CountedTemp,
 }
 
 struct StagedMetadata<'a> {
@@ -547,25 +581,89 @@ fn staged_metadata(input: StagedMetadata<'_>) -> ImportMetadata {
     ])
 }
 
-pub(crate) async fn save(State(state): State<AppState>, multipart: Multipart) -> Response {
-    let parts = match multipart::collect(multipart).await {
-        Ok(parts) => parts,
-        Err(detail) => {
+pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart) -> Response {
+    let mut fields = BTreeMap::new();
+    let mut upload = None;
+    let mut part_count = 0;
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(error) if save_stream::is_length_limit(&error) => {
+                return payload_too_large("multipart file exceeds request limit");
+            }
+            Err(_) => {
+                return failure(
+                    StatusCode::BAD_REQUEST,
+                    "ingest_no_files",
+                    "I couldn't find any files to bring in.",
+                    "invalid multipart body",
+                );
+            }
+        };
+        if part_count == multipart::MAX_PARTS {
             return failure(
                 StatusCode::BAD_REQUEST,
                 "ingest_no_files",
                 "I couldn't find any files to bring in.",
-                detail,
+                "too many multipart parts",
             );
         }
-    };
-    let mut fields = BTreeMap::new();
-    let mut upload = None;
-    for part in parts {
-        if part.name == "file" {
-            upload = Some(part);
-        } else if let Ok(value) = String::from_utf8(part.bytes) {
-            fields.insert(part.name, value);
+        part_count += 1;
+        if field.headers().len() > multipart::MAX_HEADERS {
+            return failure(
+                StatusCode::BAD_REQUEST,
+                "ingest_no_files",
+                "I couldn't find any files to bring in.",
+                "too many multipart headers",
+            );
+        }
+        let filename = field.file_name().map(ToOwned::to_owned);
+        if filename
+            .as_ref()
+            .is_some_and(|value| value.len() > multipart::MAX_FILENAME_BYTES)
+        {
+            return failure(
+                StatusCode::BAD_REQUEST,
+                "ingest_no_files",
+                "I couldn't find any files to bring in.",
+                "multipart filename is too long",
+            );
+        }
+        let name = field.name().unwrap_or_default().to_owned();
+        let content_type = field.content_type().map(ToOwned::to_owned);
+        if name == "file" {
+            let directory = match ensure_save_tmp(&state.root) {
+                Ok(directory) => directory,
+                Err(error) => return metadata_failed(error),
+            };
+            match save_stream::stream_field(field, &directory, multipart::MAX_SAVE_FILE_BYTES).await
+            {
+                Ok(counted) => {
+                    upload = Some(UploadedFile {
+                        filename,
+                        content_type,
+                        counted,
+                    });
+                }
+                Err(error) => return stream_error_response(error),
+            }
+        } else {
+            match multipart::bounded(field).await {
+                Ok(bytes) => {
+                    if let Ok(value) = String::from_utf8(bytes) {
+                        fields.insert(name, value);
+                    }
+                }
+                Err(detail) => {
+                    return failure(
+                        StatusCode::BAD_REQUEST,
+                        "ingest_no_files",
+                        "I couldn't find any files to bring in.",
+                        detail,
+                    );
+                }
+            }
         }
     }
     let data = Value::Object(
@@ -579,9 +677,24 @@ pub(crate) async fn save(State(state): State<AppState>, multipart: Multipart) ->
         return missing("Missing client_item_id");
     }
     let text = text_value(&data, "text");
-    let (filename, original_filename, mime_type, bytes) = match upload {
-        Some(part) if part.filename.is_some() => {
-            let original = part.filename.unwrap();
+    enum Incoming {
+        File {
+            filename: String,
+            original_filename: String,
+            mime_type: Option<String>,
+            counted: save_stream::CountedTemp,
+        },
+        Paste {
+            bytes: Vec<u8>,
+            temporary: NamedTempFile,
+        },
+    }
+    let incoming = match upload {
+        Some(UploadedFile {
+            filename: Some(original),
+            content_type,
+            counted,
+        }) => {
             let Some(filename) = safe_filename(&original) else {
                 return failure(
                     StatusCode::BAD_REQUEST,
@@ -590,14 +703,35 @@ pub(crate) async fn save(State(state): State<AppState>, multipart: Multipart) ->
                     "No input",
                 );
             };
-            (filename, original, part.content_type, part.bytes)
+            Incoming::File {
+                filename,
+                original_filename: original,
+                mime_type: content_type,
+                counted,
+            }
         }
-        _ if !text.is_empty() => (
-            "paste.txt".to_owned(),
-            "paste.txt".to_owned(),
-            Some("text/plain".to_owned()),
-            text.into_bytes(),
-        ),
+        _ if !text.is_empty() => {
+            let directory = match ensure_save_tmp(&state.root) {
+                Ok(directory) => directory,
+                Err(error) => return metadata_failed(error),
+            };
+            let mut temporary = match NamedTempFile::new_in(directory) {
+                Ok(temporary) => temporary,
+                Err(error) => {
+                    return metadata_failed(format!("Failed to stage temporary file: {error}"));
+                }
+            };
+            if let Err(error) = temporary
+                .write_all(text.as_bytes())
+                .and_then(|()| temporary.flush())
+            {
+                return metadata_failed(format!("Failed to stage temporary file: {error}"));
+            }
+            Incoming::Paste {
+                bytes: text.into_bytes(),
+                temporary,
+            }
+        }
         _ => {
             return failure(
                 StatusCode::BAD_REQUEST,
@@ -607,14 +741,14 @@ pub(crate) async fn save(State(state): State<AppState>, multipart: Multipart) ->
             );
         }
     };
-    let (source_hash, temporary_removed) = match temporary_hash(&bytes) {
-        Ok(result) => result,
+    let source_path = match &incoming {
+        Incoming::File { counted, .. } => counted.path().to_path_buf(),
+        Incoming::Paste { temporary, .. } => temporary.path().to_path_buf(),
+    };
+    let source_hash = match hash_source(&source_path) {
+        Ok(source_hash) => source_hash,
         Err(error) => return metadata_failed(format!("Failed to stage temporary file: {error}")),
     };
-    debug_assert!(
-        temporary_removed,
-        "request-scoped upload temporary survives"
-    );
     if let Some(existing) = staged_by_client_item(&state.root, &client_item_id) {
         if existing.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str()) {
             return json_response(StatusCode::OK, replay_summary(&existing));
@@ -629,11 +763,56 @@ pub(crate) async fn save(State(state): State<AppState>, multipart: Multipart) ->
     if let Some(existing) = staged_by_source_hash(&state.root, &source_hash) {
         return json_response(StatusCode::OK, summary(&existing));
     }
+    let original_for_timestamp = match &incoming {
+        Incoming::File {
+            original_filename, ..
+        } => original_filename.as_str(),
+        Incoming::Paste { .. } => "paste.txt",
+    };
     let (timestamp, method, model_called, no_match_reason) =
-        timestamp_for_upload(&data, &bytes, &original_filename);
-    let file_path = match stage_bytes(&state.root, &timestamp, &filename, &bytes) {
-        Ok(path) => path,
-        Err(error) => return metadata_failed(error.to_string()),
+        timestamp_for_upload(&data, &source_path, original_for_timestamp);
+    let (file_path, original_filename, mime_type, file_size) = match incoming {
+        Incoming::File {
+            filename,
+            original_filename,
+            mime_type,
+            counted,
+        } => {
+            let target = match contained_import_file(&state.root, &timestamp, &filename) {
+                Ok(target) => target,
+                Err(error) => return metadata_failed(error.to_string()),
+            };
+            let directory = target.parent().expect("import target parent").to_owned();
+            if let Err(error) = create_directory_with_mode(&directory, 0o700) {
+                return metadata_failed(error.to_string());
+            }
+            let file_size = counted.bytes();
+            let kept = match counted.keep() {
+                Ok(kept) => kept,
+                Err(error) => {
+                    return metadata_failed(format!("Failed to stage temporary file: {error}"));
+                }
+            };
+            if let Err(error) =
+                install_file(kept, &target, AtomicWriteOptions { mode: Some(0o600) })
+            {
+                return metadata_failed(error.to_string());
+            }
+            (target, original_filename, mime_type, file_size)
+        }
+        Incoming::Paste { bytes, temporary } => {
+            let file_path = match stage_bytes(&state.root, &timestamp, "paste.txt", &bytes) {
+                Ok(path) => path,
+                Err(error) => return metadata_failed(error.to_string()),
+            };
+            drop(temporary);
+            (
+                file_path,
+                "paste.txt".to_owned(),
+                Some("text/plain".to_owned()),
+                bytes.len() as u64,
+            )
+        }
     };
     let mut metadata = staged_metadata(StagedMetadata {
         timestamp: &timestamp,
@@ -647,7 +826,7 @@ pub(crate) async fn save(State(state): State<AppState>, multipart: Multipart) ->
         is_local_path: false,
         method,
     });
-    metadata.insert("file_size".to_owned(), json!(bytes.len()));
+    metadata.insert("file_size".to_owned(), json!(file_size));
     metadata.insert(
         "timestamp_detection_model_called".to_owned(),
         json!(model_called),
@@ -961,7 +1140,34 @@ mod tests {
     use tempfile::TempDir;
     use tower::ServiceExt;
 
-    use super::{BusError, command, start_with, temporary_hash};
+    use super::{BusError, SAVE_TMP_DIR, command, start_with};
+    use crate::multipart;
+
+    fn save_tmp_entries(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let directory = root.join("imports").join(SAVE_TMP_DIR);
+        if !directory.exists() {
+            return Vec::new();
+        }
+        fs::read_dir(directory)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .collect()
+    }
+
+    fn assert_save_tmp_clean(root: &std::path::Path) {
+        assert_eq!(save_tmp_entries(root), Vec::<std::path::PathBuf>::new());
+    }
+
+    fn multipart_save(body: String, boundary: &str) -> Request<Body> {
+        Request::post("/app/import/api/save")
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(Body::from(body))
+            .unwrap()
+    }
 
     fn staged(root: &std::path::Path, timestamp: &str, metadata: Value) {
         write_import_metadata(root, timestamp, &metadata.as_object().unwrap().clone()).unwrap();
@@ -1061,21 +1267,13 @@ mod tests {
             "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nupload\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.txt\"\r\nContent-Type: text/plain\r\n\r\nhello upload\r\n--{boundary}--\r\n"
         );
         let response = crate::routes(root.path().to_path_buf())
-            .oneshot(
-                Request::post("/app/import/api/save")
-                    .header(
-                        "content-type",
-                        format!("multipart/form-data; boundary={boundary}"),
-                    )
-                    .body(Body::from(body))
-                    .unwrap(),
-            )
+            .oneshot(multipart_save(body, boundary))
             .await
             .unwrap();
         let (_, body) = response_json(response).await;
         let path = std::path::PathBuf::from(body["path"].as_str().unwrap());
         assert_eq!(fs::read(&path).unwrap(), b"hello upload");
-        assert!(temporary_hash(b"temporary bytes").unwrap().1);
+        assert_save_tmp_clean(root.path());
     }
 
     #[tokio::test]
@@ -1088,15 +1286,7 @@ mod tests {
         let mut responses = Vec::new();
         for _ in 0..2 {
             let response = crate::routes(root.path().to_path_buf())
-                .oneshot(
-                    Request::post("/app/import/api/save")
-                        .header(
-                            "content-type",
-                            format!("multipart/form-data; boundary={boundary}"),
-                        )
-                        .body(Body::from(upload.clone()))
-                        .unwrap(),
-                )
+                .oneshot(multipart_save(upload.clone(), boundary))
                 .await
                 .unwrap();
             responses.push(response_json(response).await.1);
@@ -1105,13 +1295,133 @@ mod tests {
         assert_eq!(fs::read(path).unwrap(), b"owner-safe bytes");
         assert_eq!(responses[1]["replay"], true);
         assert_eq!(responses[1]["path"], responses[0]["path"]);
+        assert_save_tmp_clean(root.path());
+    }
+
+    #[tokio::test]
+    async fn save_pastes_text_field_without_a_file_part() {
+        let root = TempDir::new().unwrap();
+        let boundary = "paste";
+        let body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\npaste-id\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"text\"\r\n\r\npasted notes\r\n--{boundary}--\r\n"
+        );
+        let response = crate::routes(root.path().to_path_buf())
+            .oneshot(multipart_save(body, boundary))
+            .await
+            .unwrap();
+        let (status, body) = response_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+        let path = std::path::PathBuf::from(body["path"].as_str().unwrap());
+        assert_eq!(path.file_name().unwrap(), "paste.txt");
+        assert_eq!(fs::read(&path).unwrap(), b"pasted notes");
+        assert_save_tmp_clean(root.path());
+    }
+
+    #[tokio::test]
+    async fn save_conflict_and_already_imported_leave_no_temp() {
+        let root = TempDir::new().unwrap();
+        let boundary = "first";
+        let first = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nkeep-id\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.txt\"\r\nContent-Type: text/plain\r\n\r\nfirst bytes\r\n--{boundary}--\r\n"
+        );
+        let first = crate::routes(root.path().to_path_buf())
+            .oneshot(multipart_save(first, boundary))
+            .await
+            .unwrap();
+        let (_, first) = response_json(first).await;
+        let first_path = std::path::PathBuf::from(first["path"].as_str().unwrap());
+        let conflict = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nkeep-id\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"other.txt\"\r\nContent-Type: text/plain\r\n\r\nsecond bytes\r\n--{boundary}--\r\n"
+        );
+        let conflict = crate::routes(root.path().to_path_buf())
+            .oneshot(multipart_save(conflict, boundary))
+            .await
+            .unwrap();
+        let (status, conflict) = response_json(conflict).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(conflict["reason_code"], "invalid_operation_for_state");
+        assert_eq!(fs::read(&first_path).unwrap(), b"first bytes");
+        assert_save_tmp_clean(root.path());
+
+        let hash = read_import_metadata(root.path(), first["timestamp"].as_str().unwrap()).unwrap()
+            ["source_hash"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        write_manifest(&ManifestWriteRequest {
+            journal_root: root.path(),
+            import_id: "complete",
+            source_type: "text",
+            source_hash: &SourceHash::new(hash),
+            entry_count: 1,
+            days_affected: &[],
+            files_created: &[],
+            imported_via: "test",
+            link_id: None,
+            observer_handle: None,
+            raw_retention: None,
+        })
+        .unwrap();
+        let imported = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nnew-id\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.txt\"\r\nContent-Type: text/plain\r\n\r\nfirst bytes\r\n--{boundary}--\r\n"
+        );
+        let imported = crate::routes(root.path().to_path_buf())
+            .oneshot(multipart_save(imported, boundary))
+            .await
+            .unwrap();
+        let (_, imported) = response_json(imported).await;
+        assert_eq!(imported["reason_code"], "invalid_operation_for_state");
+        assert_save_tmp_clean(root.path());
+    }
+
+    #[tokio::test]
+    async fn save_already_staged_same_hash_leaves_no_temp() {
+        let root = TempDir::new().unwrap();
+        let boundary = "staged";
+        let first = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nfirst-id\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.txt\"\r\nContent-Type: text/plain\r\n\r\nshared bytes\r\n--{boundary}--\r\n"
+        );
+        let first = crate::routes(root.path().to_path_buf())
+            .oneshot(multipart_save(first, boundary))
+            .await
+            .unwrap();
+        let (_, first) = response_json(first).await;
+        let again = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nsecond-id\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.txt\"\r\nContent-Type: text/plain\r\n\r\nshared bytes\r\n--{boundary}--\r\n"
+        );
+        let again = crate::routes(root.path().to_path_buf())
+            .oneshot(multipart_save(again, boundary))
+            .await
+            .unwrap();
+        let (_, again) = response_json(again).await;
+        assert_eq!(again["path"], first["path"]);
+        assert_eq!(again["replay"], false);
+        assert_save_tmp_clean(root.path());
+    }
+
+    #[tokio::test]
+    async fn save_refuses_non_file_part_over_64_mib() {
+        let root = TempDir::new().unwrap();
+        let boundary = "huge";
+        let oversized = "x".repeat(multipart::MAX_PART_BYTES + 1);
+        let body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\n{oversized}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.txt\"\r\nContent-Type: text/plain\r\n\r\nhello\r\n--{boundary}--\r\n"
+        );
+        let response = crate::routes(root.path().to_path_buf())
+            .oneshot(multipart_save(body, boundary))
+            .await
+            .unwrap();
+        let (status, body) = response_json(response).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["detail"], "multipart part exceeds 64 MiB");
+        assert_save_tmp_clean(root.path());
     }
 
     #[test]
     fn upload_timestamp_prefers_a_valid_deterministic_filename_timestamp() {
         let (timestamp, method, model_called, reason) = super::timestamp_for_upload(
             &json!({"deterministic_only":"true"}),
-            b"",
+            std::path::Path::new("notes.txt"),
             "notes_20260801_120000.txt",
         );
         assert_eq!(timestamp, "20260801_120000");
@@ -1121,9 +1431,25 @@ mod tests {
     }
 
     #[test]
+    fn deterministic_filename_timestamp_wins_when_payload_is_only_on_disk() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("payload.bin");
+        fs::write(&path, b"not an image and not exif").unwrap();
+        let (timestamp, method, model_called, reason) =
+            super::timestamp_for_upload(&json!({}), &path, "notes_20260801_120000.txt");
+        assert_eq!(timestamp, "20260801_120000");
+        assert_eq!(method, "deterministic");
+        assert!(!model_called);
+        assert_eq!(reason, None);
+    }
+
+    #[test]
     fn deterministic_only_upload_does_not_claim_a_model_attempt() {
-        let (_, method, model_called, reason) =
-            super::timestamp_for_upload(&json!({"deterministic_only":"true"}), b"", "notes.txt");
+        let (_, method, model_called, reason) = super::timestamp_for_upload(
+            &json!({"deterministic_only":"true"}),
+            std::path::Path::new("notes.txt"),
+            "notes.txt",
+        );
         assert_eq!(method, "upload_fallback");
         assert!(!model_called);
         assert_eq!(reason, Some("no_deterministic_match"));
@@ -1132,8 +1458,11 @@ mod tests {
     #[test]
     fn deterministic_only_form_values_match_the_browser_contract() {
         for value in ["true", "TRUE", "1", "yes", "yEs"] {
-            let (_, method, model_called, reason) =
-                super::timestamp_for_upload(&json!({"deterministic_only":value}), b"", "notes.txt");
+            let (_, method, model_called, reason) = super::timestamp_for_upload(
+                &json!({"deterministic_only":value}),
+                std::path::Path::new("notes.txt"),
+                "notes.txt",
+            );
             assert_eq!(method, "upload_fallback", "{value}");
             assert!(!model_called, "{value}");
             assert_eq!(reason, Some("no_deterministic_match"), "{value}");

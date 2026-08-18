@@ -4,15 +4,15 @@
 use axum::extract::{Multipart, multipart::Field};
 
 pub(crate) const MAX_BODY_BYTES: usize = 128 * 1024 * 1024;
-const MAX_PART_BYTES: usize = 64 * 1024 * 1024;
-const MAX_PARTS: usize = 12;
-const MAX_HEADERS: usize = 16;
-const MAX_FILENAME_BYTES: usize = 128;
+pub(crate) const MAX_SAVE_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+pub(crate) const MAX_PART_BYTES: usize = 64 * 1024 * 1024;
+pub(crate) const MAX_PARTS: usize = 12;
+pub(crate) const MAX_HEADERS: usize = 16;
+pub(crate) const MAX_FILENAME_BYTES: usize = 128;
 
 pub(crate) struct Part {
     pub(crate) name: String,
     pub(crate) filename: Option<String>,
-    pub(crate) content_type: Option<String>,
     pub(crate) bytes: Vec<u8>,
 }
 
@@ -37,18 +37,16 @@ pub(crate) async fn collect(mut multipart: Multipart) -> Result<Vec<Part>, &'sta
             return Err("multipart filename is too long");
         }
         let name = field.name().unwrap_or_default().to_owned();
-        let content_type = field.content_type().map(ToOwned::to_owned);
         parts.push(Part {
             name,
             filename,
-            content_type,
             bytes: bounded(field).await?,
         });
     }
     Ok(parts)
 }
 
-async fn bounded(mut field: Field<'_>) -> Result<Vec<u8>, &'static str> {
+pub(crate) async fn bounded(mut field: Field<'_>) -> Result<Vec<u8>, &'static str> {
     let mut bytes = Vec::new();
     while let Some(chunk) = field
         .chunk()

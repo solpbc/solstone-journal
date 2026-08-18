@@ -31,6 +31,7 @@ use crate::validation::{
 };
 
 const MAX_PART_BYTES: usize = 64 * 1024 * 1024;
+const CONNECTION_BODY_LIMIT: usize = 128 * 1024 * 1024;
 const MAX_FILES: usize = 8;
 const MAX_PARTS: usize = 12;
 const MAX_FILENAME_BYTES: usize = 128;
@@ -58,8 +59,8 @@ fn router_with_notifier(
             get(ingest_manifest_day),
         )
         .route("/app/devices/ingest/segments/{day}", get(ingest_segments))
-        .layer(DefaultBodyLimit::max(128 * 1024 * 1024))
-        .layer(RequestBodyLimitLayer::new(128 * 1024 * 1024))
+        .layer(DefaultBodyLimit::max(CONNECTION_BODY_LIMIT))
+        .layer(RequestBodyLimitLayer::new(CONNECTION_BODY_LIMIT))
         .with_state(IngestState {
             journal_root: journal_root.as_ref().to_path_buf(),
             notifier,
@@ -688,7 +689,7 @@ mod tests {
     use serde_json::{Value, json};
     use sha2::Digest;
     use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
-    use solstone_core_convey_http::serve::{REQUEST_BODY_LIMIT, mux_builder, serve_connection};
+    use solstone_core_convey_http::serve::{mux_builder, serve_connection};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tower::ServiceExt;
 
@@ -1804,7 +1805,7 @@ mod tests {
         });
         let request = format!(
             "POST /app/devices/ingest HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            REQUEST_BODY_LIMIT + 1
+            super::CONNECTION_BODY_LIMIT + 1
         );
         client.write_all(request.as_bytes()).await.unwrap();
         let mut response = Vec::new();
