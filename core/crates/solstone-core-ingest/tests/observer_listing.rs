@@ -214,8 +214,19 @@ fn multipart(envelope: Value, name: &str, bytes: &[u8]) -> (String, Vec<u8>) {
 }
 
 async fn upload(app: &axum::Router, did: &str, segment: &str, name: &str, bytes: &[u8]) -> Value {
+    upload_on_day(app, did, DAY, segment, name, bytes).await
+}
+
+async fn upload_on_day(
+    app: &axum::Router,
+    did: &str,
+    day: &str,
+    segment: &str,
+    name: &str,
+    bytes: &[u8],
+) -> Value {
     let (content_type, body) = multipart(
-        json!({"day": DAY, "segment": segment, "files": [{"submitted": name}]}),
+        json!({"day": day, "segment": segment, "files": [{"submitted": name}]}),
         name,
         bytes,
     );
@@ -597,6 +608,34 @@ async fn ac5_history_tears_refuse_and_remain_device_scoped() {
             .iter()
             .any(|item| item["key"] == "130000_60")
     );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn ac1_all_days_manifest_degrades_a_torn_day() {
+    let root = fixture("all-days-degrade");
+    let app = router(&root);
+    upload_on_day(&app, DID_A, "20260805", "120000_60", "later.flac", b"later").await;
+    let torn = history_path(&root, "aaaaaaaa");
+    let mut contents = fs::read_to_string(&torn).expect("fixture history");
+    contents.push_str("{\n");
+    fs::write(&torn, contents).expect("torn history");
+    let (status, manifest) = request_json(&app, "GET", "/app/devices/ingest/manifest", DID_A).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        manifest["days"]["20260804"]["error"],
+        "observer_history_torn"
+    );
+    assert!(
+        manifest["days"]["20260805"]["segments"]
+            .as_u64()
+            .expect("second day")
+            >= 1
+    );
+    let (status, day) =
+        request_json(&app, "GET", "/app/devices/ingest/manifest/20260804", DID_A).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(day["reason_code"], "observer_history_torn");
     let _ = fs::remove_dir_all(root);
 }
 

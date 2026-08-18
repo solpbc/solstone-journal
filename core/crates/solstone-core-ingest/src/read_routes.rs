@@ -57,7 +57,10 @@ pub async fn ingest_manifest(
             &day,
         ) {
             Ok(listing) => listing,
-            Err(error) => return day_refusal(error),
+            Err(error) => {
+                result.insert(day, json!({"error": day_read_reason(error).as_str()}));
+                continue;
+            }
         };
         if !listing.segments.is_empty() {
             result.insert(day, json!({"segments": listing.segments.len()}));
@@ -274,6 +277,17 @@ fn day_refusal(error: DayReadError) -> Response {
     match error {
         DayReadError::Evidence(error) => evidence_refusal(error),
         DayReadError::Listing(error) => listing_refusal(error),
+    }
+}
+
+fn day_read_reason(error: DayReadError) -> ReasonCode {
+    match error {
+        DayReadError::Evidence(error) => evidence_error(error).0,
+        DayReadError::Listing(error) => match error {
+            ListingError::Malformed => ReasonCode::MalformedEvidenceRow,
+            ListingError::AmbiguousName => ReasonCode::AmbiguousSegmentFileName,
+            ListingError::JournalRead => ReasonCode::JournalReadFailed,
+        },
     }
 }
 
