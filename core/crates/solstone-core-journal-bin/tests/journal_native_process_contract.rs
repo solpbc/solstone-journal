@@ -309,6 +309,8 @@ fn install_provider_is_registered_for_native_dispatch() {
 
 const SUPERVISOR_USAGE_ANCHOR: &[u8] =
     b"usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
+const START_USAGE_ANCHOR: &[u8] =
+    b"usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
 const SERVICE_UNKNOWN_ANCHOR: &[u8] = b"Unknown subcommand: --nonsense; Available: install, uninstall, start, stop, restart, status, logs\n";
 const BACKUP_USAGE_ANCHOR: &[u8] = b"usage: journal backup <command> [options]\n";
 const MAINTENANCE_USAGE_ANCHOR: &[u8] = b"usage: journal maintenance <command> [options]\n";
@@ -485,11 +487,9 @@ const PROBES: &[Probe] = &[
     // that, with a stderr anchor. The red is resolved by proof, not by relaxing
     // the guard. `spl` now carries the same verb-level proof in its row above.
     //
-    // `supervisor` and `start` share one native invocation shape by design:
-    // `native_process_args` prefixes both with `SUPERVISOR_SERVICE = ["supervisor"]`
-    // and drops the dispatcher token. Consequently `journal start --help` is required
-    // to identify itself as `usage: journal supervisor`; the sibling cannot recover the
-    // original `start` spelling. The dedicated help assertion records that prog ceiling.
+    // `start` is the owner-facing daemon verb and keeps its own invocation token.
+    // `supervisor` remains as the internal/debug spelling. Each usage banner names
+    // the token the owner typed.
     //
     Probe {
         token: "supervisor",
@@ -501,7 +501,7 @@ const PROBES: &[Probe] = &[
         token: "start",
         argv: &["--nonsense"],
         expected_exit: 2,
-        stderr_anchor: Some(SUPERVISOR_USAGE_ANCHOR),
+        stderr_anchor: Some(START_USAGE_ANCHOR),
     },
     Probe {
         token: "grab",
@@ -2254,7 +2254,7 @@ fn native_top_registered_probe_has_exact_clean_parser_output() {
     assert!(output.stdout.is_empty());
     assert_eq!(
         output.stderr,
-        b"usage: solstone-core top [-h] [-v] [-d]\nsolstone-core top: error: invalid arguments\n"
+        b"usage: journal top [-h] [-v] [-d]\njournal top: error: invalid arguments\n"
     );
     assert!(!context.poison_marker.exists());
 }
@@ -2329,7 +2329,7 @@ fn native_top_dispatch_reaches_the_real_non_tty_body_without_python() {
     assert!(output.stdout.is_empty());
     assert_eq!(
         output.stderr,
-        b"solstone-core top: terminal failure: stdin is not a terminal\n"
+        b"journal top: terminal failure: stdin is not a terminal\n"
     );
     assert!(!context.poison_marker.exists());
 }
@@ -2569,7 +2569,7 @@ fn stderr_anchor_mismatch_is_a_guard_verdict() {
 }
 
 #[test]
-fn native_start_help_uses_supervisor_program_name() {
+fn native_start_help_uses_start_program_name() {
     let harness = Harness::new();
     let context = harness.context();
     let output = run_dispatcher_with_output(&context, "start", &["--help"])
@@ -2577,7 +2577,7 @@ fn native_start_help_uses_supervisor_program_name() {
 
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(output.stderr, b"");
-    assert!(output.stdout.starts_with(b"usage: journal supervisor"));
+    assert!(output.stdout.starts_with(b"usage: journal start"));
     assert!(!context.poison_marker.exists());
 }
 

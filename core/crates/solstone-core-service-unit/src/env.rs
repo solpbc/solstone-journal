@@ -23,7 +23,6 @@ pub fn build_service_environment(
     BTreeMap::from([
         ("HOME".to_owned(), home.to_owned()),
         ("PATH".to_owned(), parts.join(":")),
-        ("PYTHONUNBUFFERED".to_owned(), "1".to_owned()),
     ])
 }
 
@@ -42,9 +41,10 @@ mod tests {
     }
 
     #[test]
-    fn missing_path_uses_python_fallback() {
+    fn missing_path_uses_default_fallback() {
         let environment = build_service_environment("/home/sol", None, "/runtime");
         assert_eq!(environment["PATH"], "/runtime:/usr/local/bin:/usr/bin:/bin");
+        assert!(!environment.contains_key("PYTHONUNBUFFERED"));
     }
 
     #[test]

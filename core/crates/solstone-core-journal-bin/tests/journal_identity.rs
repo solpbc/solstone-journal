@@ -650,7 +650,7 @@ fn journal_identity_notify_reuses_the_native_handler_and_socket_protocol() {
         assert!(
             String::from_utf8(output.stderr)
                 .expect("notify argparse stderr should be utf-8")
-                .contains("sol notify: error:"),
+                .contains("journal notify: error:"),
             "{args:?}"
         );
     }

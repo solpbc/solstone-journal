@@ -29,7 +29,7 @@ use solstone_core_journal_io::{AtomicWriteOptions, write_jsonl};
 
 pub const ERROR_SCHEMA: &str = "solstone-depict-error-v1";
 pub const DESCRIPTION_PROMPT: &str = "Describe this image in detail. Include any visible text, people, objects, setting, and notable context. Return a concise natural-language description.";
-pub const USAGE: &str = "Usage: solstone-core-depict <image_path> [--redo]";
+pub const USAGE: &str = "usage: journal depict <image_path> [--redo]\n";
 const MAX_VLM_DIM: u32 = 1920;
 const ENGINE_NAME: &str = "rf-detr.cpp";
 const ENGINE_REF: &str = "65c0ffcc";
@@ -52,6 +52,7 @@ pub struct Arguments {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DepictError {
+    Help,
     Usage(String),
     Image(String),
     Wire {
@@ -66,7 +67,7 @@ pub enum DepictError {
 impl DepictError {
     pub fn reason(&self) -> &'static str {
         match self {
-            Self::Usage(_) => "malformed-request",
+            Self::Help | Self::Usage(_) => "malformed-request",
             Self::Image(_) => "image-invalid",
             Self::Wire { .. } => "generate-wire-failed",
             Self::Metadata(_) => "metadata-invalid",
@@ -75,12 +76,16 @@ impl DepictError {
     }
 
     pub fn exit_code(&self) -> i32 {
-        // This is the handler namespace: all failures are ordinary non-hold-raw.
-        1
+        match self {
+            Self::Help => 0,
+            // This is the handler namespace: all failures are ordinary non-hold-raw.
+            _ => 1,
+        }
     }
 
     pub fn detail(&self) -> &str {
         match self {
+            Self::Help => USAGE,
             Self::Usage(detail)
             | Self::Image(detail)
             | Self::Wire { detail, .. }
@@ -92,14 +97,18 @@ impl DepictError {
     pub fn blocking(&self) -> bool {
         match self {
             Self::Wire { blocking, .. } => *blocking,
-            Self::Usage(_) | Self::Image(_) | Self::Metadata(_) | Self::Output(_) => false,
+            Self::Help | Self::Usage(_) | Self::Image(_) | Self::Metadata(_) | Self::Output(_) => {
+                false
+            }
         }
     }
 
     pub fn reason_code(&self) -> Option<&str> {
         match self {
             Self::Wire { reason_code, .. } => reason_code.as_deref(),
-            Self::Usage(_) | Self::Image(_) | Self::Metadata(_) | Self::Output(_) => None,
+            Self::Help | Self::Usage(_) | Self::Image(_) | Self::Metadata(_) | Self::Output(_) => {
+                None
+            }
         }
     }
 }
@@ -116,6 +125,12 @@ pub fn error_json_line(error: &DepictError) -> String {
 }
 
 pub fn parse_args(args: &[OsString]) -> Result<Arguments, DepictError> {
+    if args
+        .iter()
+        .any(|argument| argument == "--help" || argument == "-h")
+    {
+        return Err(DepictError::Help);
+    }
     match args {
         [image] => Ok(Arguments {
             image_path: PathBuf::from(image),
@@ -1051,6 +1066,18 @@ mod tests {
             DepictError::Output("x".to_owned()),
         ] {
             assert_eq!(error.exit_code(), 1);
+        }
+        assert_eq!(DepictError::Help.exit_code(), 0);
+    }
+
+    #[test]
+    fn help_flags_do_not_parse_as_an_image() {
+        for args in [
+            vec![OsString::from("--help")],
+            vec![OsString::from("-h")],
+            vec![OsString::from("photo.png"), OsString::from("--help")],
+        ] {
+            assert!(matches!(parse_args(&args), Err(DepictError::Help)));
         }
     }
 }

@@ -134,16 +134,14 @@ fn path_inputs_change_only_path_construction() {
     );
     let absent = build_service_environment(HOME, None, RUNTIME_DIR);
     assert_eq!(duplicate["HOME"], baseline["HOME"]);
-    assert_eq!(duplicate["PYTHONUNBUFFERED"], baseline["PYTHONUNBUFFERED"]);
+    assert!(!duplicate.contains_key("PYTHONUNBUFFERED"));
+    assert!(!baseline.contains_key("PYTHONUNBUFFERED"));
     assert_eq!(duplicate["PATH"], "/opt/sol/bin:/usr/bin:/bin");
     assert_eq!(absent["PATH"], "/opt/sol/bin:/usr/local/bin:/usr/bin:/bin");
 
     let alternate_runtime = build_service_environment(HOME, Some(PATH), "/runtime other");
     assert_eq!(alternate_runtime["HOME"], baseline["HOME"]);
-    assert_eq!(
-        alternate_runtime["PYTHONUNBUFFERED"],
-        baseline["PYTHONUNBUFFERED"]
-    );
+    assert!(!alternate_runtime.contains_key("PYTHONUNBUFFERED"));
     assert_eq!(alternate_runtime["PATH"], "/runtime other:/usr/bin:/bin");
 
     for environment_input in [duplicate, absent, alternate_runtime] {
@@ -155,4 +153,12 @@ fn path_inputs_change_only_path_construction() {
         assert_eq!(unit.environment, environment_input);
         assert_eq!(unit.log_paths, baseline_unit.log_paths);
     }
+}
+
+#[test]
+fn default_unit_is_notify_and_does_not_export_pythonunbuffered() {
+    let environment = build_service_environment(HOME, Some(PATH), RUNTIME_DIR);
+    let unit = render_systemd_unit(&environment, LAUNCHER, PORT, JOURNAL).expect("valid render");
+    assert!(unit.contains("Type=notify\n"));
+    assert!(!unit.contains("PYTHONUNBUFFERED"));
 }

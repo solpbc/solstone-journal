@@ -134,7 +134,12 @@ impl SupervisorLifecycle {
         ready_at: f64,
         extra: serde_json::Map<String, serde_json::Value>,
     ) -> Result<(), LifecycleError> {
-        state::write_readiness(&self.journal, ready_at, extra)
+        state::write_readiness(&self.journal, ready_at, extra)?;
+        // After the readiness marker exists: convey has been waited on, and
+        // the control socket is bound. Type=notify units stay activating
+        // until this datagram arrives.
+        sd_notify("READY=1");
+        Ok(())
     }
 
     pub fn clear_ready(&self) -> Result<(), LifecycleError> {
@@ -227,6 +232,12 @@ pub fn sd_notify(state_value: &str) {
     let Ok(address) = std::env::var("NOTIFY_SOCKET") else {
         return;
     };
+    sd_notify_to(&address, state_value);
+}
+
+/// Send `state_value` to a systemd notify socket address (`@abstract` or a
+/// filesystem path). Missing or unusable sockets are ignored.
+pub fn sd_notify_to(address: &str, state_value: &str) {
     #[cfg(unix)]
     {
         use std::os::unix::net::UnixDatagram;
@@ -247,7 +258,10 @@ pub fn sd_notify(state_value: &str) {
         }
     }
     #[cfg(not(unix))]
-    let _ = state_value;
+    {
+        let _ = address;
+        let _ = state_value;
+    }
 }
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
@@ -262,5 +276,24 @@ mod tests {
         assert!(is_supervisor_up_with_start_time(&root, |_| Ok(100.0)));
         assert!(!is_supervisor_up_with_start_time(&root, |_| Ok(101.6)));
         state::remove_test_supervisor_journal(root);
+    }
+
+    #[test]
+    fn signal_ready_notifies_systemd_after_the_marker_is_written() {
+        let source = include_str!("mod.rs");
+        let signal_ready = source
+            .split("pub fn signal_ready(")
+            .nth(1)
+            .and_then(|rest| rest.split("pub fn clear_ready(").next())
+            .expect("signal_ready body");
+        assert!(
+            signal_ready.contains("sd_notify(\"READY=1\")"),
+            "Type=notify units stay activating unless signal_ready sends READY=1"
+        );
+        assert!(
+            signal_ready.find("write_readiness").expect("marker write")
+                < signal_ready.find("sd_notify(\"READY=1\")").expect("notify"),
+            "READY=1 must follow the readiness marker, not precede it"
+        );
     }
 }

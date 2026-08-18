@@ -95,8 +95,7 @@ up — useful when an install step fails and you want to poke at it.
 | `TEST_USER`  | `solstone`                    | Non-root user inside the image. Matches the Dockerfile `TEST_USER` arg. |
 | `PRIVILEGED` | `1`                           | `0` switches to the less-privileged path (cgroup-v2 host namespace + `CAP_SYS_ADMIN` + apparmor=unconfined). |
 | `KEEP`       | `0`                           | `1` leaves the container up on success for inspection.                  |
-| `SOLSTONE_WHEEL_DIR` | unset                  | Optional host `dist/` directory mounted at `/work/dist`; the latest `solstone_journal-*-py3-none-any.whl` is installed with the root `solstone-*.whl` as a direct-URL requirement; `solstone_journal_models-*.whl` must also be present. |
-| `SOLSTONE_INSTALL_TARGET` | `solstone-journal` | Package spec used when `SOLSTONE_WHEEL_DIR` is unset.                   |
+| `SOLSTONE_DIST_DIR` | unset                  | Host directory of produced `linux-x86_64` artifacts, mounted at `/artifacts`. Required for `install`, `observer-ingest`, and `legacy-upgrade`. Must contain `solstone-journal-*-linux-x86_64.deb`. |
 
 ## why `--privileged`
 

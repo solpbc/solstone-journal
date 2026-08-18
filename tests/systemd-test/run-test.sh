@@ -18,13 +18,10 @@
 #   TEST_USER   — non-root user in the image (default: solstone)
 #   PRIVILEGED  — "1" (default) for --privileged, "0" for the less-privileged path
 #   KEEP        — "1" to keep the container after the run for inspection
-#   SOLSTONE_WHEEL_DIR — optional host dist/ dir mounted read-only at /work/dist;
-#                         when present, install the latest solstone-journal leaf
-#                         wheel with the matching solstone root wheel pinned as a
-#                         direct requirement (plus solstone_journal_models from
-#                         the same dir) instead of PyPI
-#   SOLSTONE_INSTALL_TARGET — package spec when SOLSTONE_WHEEL_DIR is unset
-#                             (default: solstone-journal)
+#   SOLSTONE_DIST_DIR — host directory of produced linux-x86_64 artifacts
+#                       (solstone-journal-*-linux-x86_64.deb). Mounted read-only
+#                       at /artifacts. Required for install / observer-ingest /
+#                       legacy-upgrade. The wheel path is retired.
 #
 # Exit codes:
 #   0  test passed
@@ -43,8 +40,7 @@ CONTAINER="${CONTAINER:-solstone-systemd-test-run}"
 TEST_USER="${TEST_USER:-solstone}"
 PRIVILEGED="${PRIVILEGED:-1}"
 KEEP="${KEEP:-0}"
-SOLSTONE_WHEEL_DIR="${SOLSTONE_WHEEL_DIR:-}"
-SOLSTONE_INSTALL_TARGET="${SOLSTONE_INSTALL_TARGET:-solstone-journal}"
+SOLSTONE_DIST_DIR="${SOLSTONE_DIST_DIR:-}"
 
 mode="${1:-smoke}"
 shift || true
@@ -83,43 +79,22 @@ else
     )
 fi
 
-RUN_FLAGS=("${PRIV_FLAGS[@]}" -e "SOLSTONE_INSTALL_TARGET=$SOLSTONE_INSTALL_TARGET")
-if [ -n "$SOLSTONE_WHEEL_DIR" ]; then
-    [ -d "$SOLSTONE_WHEEL_DIR" ] || die "SOLSTONE_WHEEL_DIR is not a directory: $SOLSTONE_WHEEL_DIR"
-    compgen -G "$SOLSTONE_WHEEL_DIR/solstone-*-py3-none-any.whl" >/dev/null \
-        || die "SOLSTONE_WHEEL_DIR has no solstone-*-py3-none-any.whl: $SOLSTONE_WHEEL_DIR"
-    compgen -G "$SOLSTONE_WHEEL_DIR/solstone_journal-*-py3-none-any.whl" >/dev/null \
-        || die "SOLSTONE_WHEEL_DIR has no solstone_journal-*-py3-none-any.whl: $SOLSTONE_WHEEL_DIR"
-    compgen -G "$SOLSTONE_WHEEL_DIR/solstone_journal_models-*-py3-none-any.whl" >/dev/null \
-        || die "SOLSTONE_WHEEL_DIR has no solstone_journal_models-*-py3-none-any.whl: $SOLSTONE_WHEEL_DIR"
-    RUN_FLAGS+=(-v "$SOLSTONE_WHEEL_DIR:/work/dist:ro")
+RUN_FLAGS=("${PRIV_FLAGS[@]}")
+if [ -n "$SOLSTONE_DIST_DIR" ]; then
+    [ -d "$SOLSTONE_DIST_DIR" ] || die "SOLSTONE_DIST_DIR is not a directory: $SOLSTONE_DIST_DIR"
+    compgen -G "$SOLSTONE_DIST_DIR/solstone-journal-*-linux-x86_64.deb" >/dev/null \
+        || die "SOLSTONE_DIST_DIR has no solstone-journal-*-linux-x86_64.deb: $SOLSTONE_DIST_DIR"
+    RUN_FLAGS+=(-v "$SOLSTONE_DIST_DIR:/artifacts:ro")
+elif [ "$mode" != "smoke" ] && [ "$mode" != "shell" ]; then
+    die "SOLSTONE_DIST_DIR is required for $mode (produced linux-x86_64 .deb)"
 fi
 
 install_solstone_cmd='
 set -euo pipefail
-if compgen -G "/work/dist/solstone_journal-*-py3-none-any.whl" >/dev/null 2>&1; then
-    compgen -G "/work/dist/solstone-*-py3-none-any.whl" >/dev/null 2>&1 || {
-        echo "SOLSTONE_WHEEL_DIR must include solstone-*-py3-none-any.whl" >&2
-        exit 2
-    }
-    leaf=$(ls /work/dist/solstone_journal-*-py3-none-any.whl | sort -V | tail -1)
-    root=$(ls /work/dist/solstone-*-py3-none-any.whl | sort -V | tail -1)
-    leaf_uri=$(python3 -c "import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve().as_uri())" "$leaf")
-    root_uri=$(python3 -c "import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve().as_uri())" "$root")
-    # The leaf wheel is the install target; the root rides as a direct-URL
-    # requirement so an equal-version PyPI solstone can never shadow the local
-    # build. solstone_journal_models resolves from /work/dist via --find-links.
-    target="solstone-journal @ ${leaf_uri}"
-    echo "install target: ${target} (root: ${root_uri})"
-    uv tool install --python 3.12 \
-        --find-links /work/dist \
-        --with "solstone[journal-host] @ ${root_uri}" \
-        "$target"
-else
-    echo "install target: ${SOLSTONE_INSTALL_TARGET}"
-    uv tool install --python 3.12 \
-        "$SOLSTONE_INSTALL_TARGET"
-fi
+deb=$(ls /artifacts/solstone-journal-*-linux-x86_64.deb | sort -V | tail -1)
+echo "install target: ${deb}"
+sudo apt-get update -qq
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$deb"
 '
 
 log "starting $CONTAINER from $IMAGE (privileged=$PRIVILEGED, mode=$mode)"
@@ -216,7 +191,7 @@ UNIT
             extra=("${extra[@]:1}")
         fi
 
-        log "install: uv tool install --python 3.12"
+        log "install: apt install solstone-journal .deb"
         # Debian bookworm ships python 3.11; solstone 0.4.0+ requires >=3.12.
         # uv downloads a standalone 3.12 on the fly when requested explicitly.
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc "$install_solstone_cmd"
@@ -260,7 +235,7 @@ UNIT
         ;;
 
     observer-ingest)
-        log "observer-ingest: uv tool install --python 3.12"
+        log "observer-ingest: apt install solstone-journal .deb"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc "$install_solstone_cmd"
 
         log "observer-ingest: journal setup -y --skip-models --skip-skills"
@@ -419,7 +394,7 @@ PY
         # service_identity. A clean install classifies the alias OWNED and
         # never exercises the FOREIGN heal path, which is why the post-0.5.2
         # 5-cell clean matrix couldn't catch the wrapper/identity class.
-        log "legacy-upgrade: uv tool install --python 3.12"
+        log "legacy-upgrade: apt install solstone-journal .deb"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc "$install_solstone_cmd"
 
         log "legacy-upgrade: seed legacy non-symlink wrapper at ~/.local/bin/sol"

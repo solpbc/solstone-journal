@@ -563,7 +563,7 @@ check-rust-ci-topology:
 	@$(REQUIRE_CARGO)
 	$(SOLSTONE_CI_RUNNER) validate
 
-.PHONY: check-rust-distribution check-rust-distribution-under-poison check-rust-distribution-cleanroom
+.PHONY: check-rust-distribution check-rust-distribution-under-poison check-rust-distribution-cleanroom check-systemd-test
 check-rust-distribution:
 	$(call run-rust-gate-under-poison,check-rust-distribution-under-poison,$(DISTRIBUTION_FORBIDDEN_TOOLS))
 
@@ -574,6 +574,14 @@ check-rust-distribution:
 check-rust-distribution-cleanroom:
 	core/distribution/cleanroom.sh --self-test
 	core/distribution/cleanroom.sh "$${SOLSTONE_DISTRIBUTION_OUT:-/var/tmp/solstone-distribution-out}"
+
+# Live systemd --user install of a produced linux-x86_64 .deb. Requires
+# SOLSTONE_DIST_DIR and a working Docker/Podman daemon. This is the gate that
+# observes Type=notify READY=1 on the installed service. Explicit, not default
+# `make ci-full`: it needs artifacts and a privileged container.
+check-systemd-test:
+	@test -n "$$SOLSTONE_DIST_DIR" || { echo "check-systemd-test requires SOLSTONE_DIST_DIR (produced linux-x86_64 artifacts)" >&2; exit 2; }
+	SOLSTONE_DIST_DIR="$$SOLSTONE_DIST_DIR" $(MAKE) -C tests/systemd-test install
 
 # AR_<triple>/RANLIB_<triple> must point at zig wrappers before this recipe
 # invokes the producer: PATH poison covers `ar`, so cc/ffmpeg-sys-next/ort

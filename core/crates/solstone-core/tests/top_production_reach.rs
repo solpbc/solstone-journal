@@ -24,7 +24,7 @@ fn core_top_dispatch_reaches_top_production_entry() {
     assert_eq!(output.status.code(), Some(69));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("solstone-core top: terminal failure:"),
+        stderr.contains("journal top: terminal failure:"),
         "top parser/dispatch did not reach the production Top entry: {stderr}"
     );
 }

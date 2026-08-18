@@ -37,12 +37,12 @@ use solstone_core_cli::{
     OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
     RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
     SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
-    SETTINGS_USAGE, SPL_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
-    SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome, SettingsParseError,
-    SpeakerResolveCommand, SplCommand, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE,
-    TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferExportOptions,
-    TransferImportOptions, TransferSendOptions, USAGE, evaluate_args, render_service_diagnostic,
-    version_line,
+    SETTINGS_USAGE, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE,
+    ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions,
+    ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand, TOP_HELP,
+    TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, TranscribeOptions,
+    TransferCommand, TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE,
+    evaluate_args, render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod brain_owner;
@@ -312,6 +312,11 @@ fn main() -> ExitCode {
             print!("{SUPERVISOR_HELP}");
             ExitCode::SUCCESS
         }
+        Ok(Command::StartUsage) => render_usage_error(START_USAGE, "journal start"),
+        Ok(Command::StartHelp) => {
+            print!("{START_HELP}");
+            ExitCode::SUCCESS
+        }
         Ok(Command::SupervisorLifecycleRedirect(verb)) => {
             eprintln!(
                 "journal supervisor is the server-launch command (takes a port). \
@@ -328,11 +333,11 @@ fn main() -> ExitCode {
         Ok(Command::Top { verbose, debug }) => match solstone_core_top::run(verbose, debug) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
-                eprintln!("solstone-core top: {error}");
+                eprintln!("journal top: {error}");
                 ExitCode::from(EXIT_UNAVAILABLE)
             }
         },
-        Ok(Command::TopUsage) => render_usage_error(TOP_USAGE, "solstone-core top"),
+        Ok(Command::TopUsage) => render_usage_error(TOP_USAGE, "journal top"),
         Ok(Command::TopHelp) => {
             print!("{TOP_HELP}");
             ExitCode::SUCCESS

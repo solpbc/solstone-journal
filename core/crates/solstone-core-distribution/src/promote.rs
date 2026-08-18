@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::apple;
@@ -255,11 +256,55 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
     if request.dest.exists() {
         let displaced = request.work.join("dest.displaced");
         let _ = fs::remove_dir_all(&displaced);
-        fs::rename(&request.dest, &displaced)
-            .map_err(|error| PromoteError::new(error.to_string()))?;
+        rename_or_copy(&request.dest, &displaced)?;
     }
-    fs::rename(&partial, &request.dest).map_err(|error| PromoteError::new(error.to_string()))?;
+    rename_or_copy(&partial, &request.dest)?;
     Ok(request.dest.clone())
+}
+
+fn rename_error(src: &Path, dest: &Path, error: impl std::fmt::Display) -> PromoteError {
+    PromoteError::new(format!(
+        "could not move {} to {}: {error}. Set SOLSTONE_DISTRIBUTION_WORK to a directory on the same filesystem as the output.",
+        src.display(),
+        dest.display()
+    ))
+}
+
+fn rename_or_copy(src: &Path, dest: &Path) -> Result<(), PromoteError> {
+    match fs::rename(src, dest) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
+            copy_recursively(src, dest).map_err(|copy_error| {
+                let _ = fs::remove_dir_all(dest);
+                let _ = fs::remove_file(dest);
+                rename_error(src, dest, format!("cross-device copy failed: {copy_error}"))
+            })?;
+            if src.is_dir() {
+                fs::remove_dir_all(src).map_err(|error| rename_error(src, dest, error))?;
+            } else {
+                fs::remove_file(src).map_err(|error| rename_error(src, dest, error))?;
+            }
+            Ok(())
+        }
+        Err(error) => Err(rename_error(src, dest, error)),
+    }
+}
+
+fn copy_recursively(src: &Path, dest: &Path) -> io::Result<()> {
+    if src.is_dir() {
+        fs::create_dir_all(dest)?;
+        for entry in fs::read_dir(src)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            copy_recursively(&entry.path(), &dest.join(name))?;
+        }
+        return Ok(());
+    }
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::copy(src, dest)?;
+    Ok(())
 }
 
 /// What the producer signed, and what Apple said about it. Written beside the
@@ -411,4 +456,70 @@ fn collect(
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{copy_recursively, rename_error, rename_or_copy};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn scratch(label: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "solstone-promote-{label}-{}-{nanos}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("scratch");
+        root
+    }
+
+    #[test]
+    fn rename_error_names_both_paths_and_the_work_variable() {
+        let error = rename_error(
+            std::path::Path::new(
+                "/var/tmp/solstone-distribution-work/linux-x86_64/promote/out.partial",
+            ),
+            std::path::Path::new("/home/jer/out/linux-x86_64"),
+            "Invalid cross-device link (os error 18)",
+        );
+        let message = error.to_string();
+        assert!(
+            message
+                .contains("/var/tmp/solstone-distribution-work/linux-x86_64/promote/out.partial")
+        );
+        assert!(message.contains("/home/jer/out/linux-x86_64"));
+        assert!(message.contains("SOLSTONE_DISTRIBUTION_WORK"));
+    }
+
+    #[test]
+    fn copy_recursively_preserves_nested_files() {
+        let root = scratch("copy");
+        let src = root.join("src");
+        fs::create_dir_all(src.join("nested")).expect("src");
+        fs::write(src.join("nested/file.txt"), "payload").expect("write");
+        let dest = root.join("dest");
+        copy_recursively(&src, &dest).expect("copy");
+        assert_eq!(
+            fs::read_to_string(dest.join("nested/file.txt")).expect("read"),
+            "payload"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rename_or_copy_moves_a_directory_on_the_same_device() {
+        let root = scratch("same-device");
+        let src = root.join("src");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(src.join("marker"), "ok").expect("write");
+        let dest = root.join("dest");
+        rename_or_copy(&src, &dest).expect("rename");
+        assert!(!src.exists());
+        assert_eq!(fs::read_to_string(dest.join("marker")).expect("read"), "ok");
+        let _ = fs::remove_dir_all(root);
+    }
 }

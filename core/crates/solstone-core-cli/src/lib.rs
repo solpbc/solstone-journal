@@ -21,7 +21,7 @@ pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
     "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
-    "  solstone-core top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
+    "  journal top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
     "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
     "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
@@ -464,6 +464,13 @@ pub const SUPERVISOR_USAGE: &str = concat!(
     "                          [port]\n",
 );
 
+pub const START_USAGE: &str = concat!(
+    "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "                     [--no-convey] [--remote REMOTE] [--journal JOURNAL]\n",
+    "                     [-v] [-d]\n",
+    "                     [port]\n",
+);
+
 pub const SUPERVISOR_HELP: &str = concat!(
     "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
     "                          [--no-convey] [--remote REMOTE] [--journal JOURNAL]\n",
@@ -490,17 +497,61 @@ pub const SUPERVISOR_HELP: &str = concat!(
     "  -d, --debug        Enable debug logging\n",
 );
 
+pub const START_HELP: &str = concat!(
+    "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "                     [--no-convey] [--remote REMOTE] [--journal JOURNAL]\n",
+    "                     [-v] [-d]\n",
+    "                     [port]\n",
+    "\n",
+    "Monitor journaling health\n",
+    "\n",
+    "positional arguments:\n",
+    "  port               Convey port (0 = auto-select available port)\n",
+    "\n",
+    "options:\n",
+    "  -h, --help         show this help message and exit\n",
+    "  --no-daily         Disable daily processing run at midnight\n",
+    "  --no-cortex        Do not start the Cortex server (run it manually for\n",
+    "                     debugging)\n",
+    "  --no-spl           Do not start the spl tunnel service\n",
+    "  --no-convey        Do not start the Convey web application\n",
+    "  --remote REMOTE    Remote mode: URL for segment transfer (not yet\n",
+    "                     implemented)\n",
+    "  --journal JOURNAL  Use this path as the journal root instead of normal\n",
+    "                     journal resolution.\n",
+    "  -v, --verbose      Enable verbose output\n",
+    "  -d, --debug        Enable debug logging\n",
+);
+
 pub const HEALTH_USAGE: &str = "usage: journal health [-h] [-v] [-d]\n";
 
-pub const TOP_USAGE: &str = "usage: solstone-core top [-h] [-v] [-d]\n";
+pub const TOP_USAGE: &str = "usage: journal top [-h] [-v] [-d]\n";
 
 pub const TOP_HELP: &str = concat!(
-    "usage: solstone-core top [-h] [-v] [-d]\n",
+    "usage: journal top [-h] [-v] [-d]\n",
     "\nShow interactive service, observation, task, and brain activity.\n\n",
     "options:\n",
     "  -h, --help     show this help message and exit\n",
     "  -v, --verbose  enable verbose output\n",
     "  -d, --debug    enable debug output\n",
+);
+
+pub const UP_HELP: &str = concat!(
+    "usage: journal up [-h]\n",
+    "\n",
+    "Start the installed journal service if it is not running, then wait until it is ready.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+);
+
+pub const DOWN_HELP: &str = concat!(
+    "usage: journal down [-h]\n",
+    "\n",
+    "Stop the journal service.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
 );
 
 pub const HEALTH_HELP: &str = concat!(
@@ -795,6 +846,8 @@ pub enum Command {
     Supervisor(SupervisorOptions),
     SupervisorUsage,
     SupervisorHelp,
+    StartUsage,
+    StartHelp,
     SupervisorLifecycleRedirect(&'static str),
     Health {
         verbose: bool,
@@ -1671,21 +1724,14 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             Ok(CortexParse::Help) => Ok(Command::CortexHelp),
             Err(error) => Ok(Command::CortexUsage(error)),
         },
-        [command, rest @ ..] if command == OsStr::new("supervisor") => {
-            let help = |argument: &OsString| {
-                argument == OsStr::new("--help") || argument == OsStr::new("-h")
-            };
-            if rest.iter().any(help) {
-                return Ok(Command::SupervisorHelp);
-            }
-            Ok(match parse_supervisor(rest) {
-                Ok(options) => Command::Supervisor(options),
-                Err(_) => supervisor_lifecycle_redirect(rest).map_or(
-                    Command::SupervisorUsage,
-                    Command::SupervisorLifecycleRedirect,
-                ),
-            })
-        }
+        [command, rest @ ..] if command == OsStr::new("supervisor") => Ok(
+            parse_supervisor_invocation(rest, Command::SupervisorUsage, Command::SupervisorHelp),
+        ),
+        [command, rest @ ..] if command == OsStr::new("start") => Ok(parse_supervisor_invocation(
+            rest,
+            Command::StartUsage,
+            Command::StartHelp,
+        )),
         [command, rest @ ..] if command == OsStr::new("health") => {
             if let [first, logs @ ..] = rest
                 && first == OsStr::new("logs")
@@ -1751,32 +1797,12 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("service") => {
             Ok(Command::Service(parse_service_args(rest)))
         }
-        [command, rest @ ..] if command == OsStr::new("up") => {
-            Ok(Command::Service(if rest.is_empty() {
-                ServiceParseOutcome::Dispatch(ServiceAction::Up)
-            } else {
-                ServiceParseOutcome::Exit {
-                    code: 1,
-                    stdout: None,
-                    stderr: Some(SafeServiceDiagnostic::unknown_subcommand(
-                        rest[0].as_os_str(),
-                    )),
-                }
-            }))
-        }
-        [command, rest @ ..] if command == OsStr::new("down") => {
-            Ok(Command::Service(if rest.is_empty() {
-                ServiceParseOutcome::Dispatch(ServiceAction::Down)
-            } else {
-                ServiceParseOutcome::Exit {
-                    code: 1,
-                    stdout: None,
-                    stderr: Some(SafeServiceDiagnostic::unknown_subcommand(
-                        rest[0].as_os_str(),
-                    )),
-                }
-            }))
-        }
+        [command, rest @ ..] if command == OsStr::new("up") => Ok(Command::Service(
+            parse_up_down_alias(rest, ServiceAction::Up, UP_HELP),
+        )),
+        [command, rest @ ..] if command == OsStr::new("down") => Ok(Command::Service(
+            parse_up_down_alias(rest, ServiceAction::Down, DOWN_HELP),
+        )),
         [command, rest @ ..] if command == OsStr::new("observer") => {
             // Help is not one of the observer parser's tokens, so it must be
             // intercepted here or it degrades into a usage error -- which is
@@ -2506,6 +2532,43 @@ fn looks_like_grab_option(argument: &OsStr) -> bool {
 
 fn grab_parse_error(message: &str) -> GrabCommand {
     GrabCommand::ParseError(message.to_owned())
+}
+
+fn parse_supervisor_invocation(rest: &[OsString], usage: Command, help: Command) -> Command {
+    if rest.iter().any(is_help) {
+        return help;
+    }
+    match parse_supervisor(rest) {
+        Ok(options) => Command::Supervisor(options),
+        Err(_) => {
+            supervisor_lifecycle_redirect(rest).map_or(usage, Command::SupervisorLifecycleRedirect)
+        }
+    }
+}
+
+fn parse_up_down_alias(
+    rest: &[OsString],
+    action: ServiceAction,
+    help: &'static str,
+) -> ServiceParseOutcome {
+    if rest.iter().any(is_help) {
+        return ServiceParseOutcome::Exit {
+            code: 0,
+            stdout: Some(help),
+            stderr: None,
+        };
+    }
+    if rest.is_empty() {
+        ServiceParseOutcome::Dispatch(action)
+    } else {
+        ServiceParseOutcome::Exit {
+            code: 1,
+            stdout: None,
+            stderr: Some(SafeServiceDiagnostic::unknown_subcommand(
+                rest[0].as_os_str(),
+            )),
+        }
+    }
 }
 
 fn supervisor_lifecycle_redirect(args: &[OsString]) -> Option<&'static str> {
@@ -7532,6 +7595,42 @@ mod tests {
         assert_eq!(
             evaluate_args(&args(&["supervisor", "--wat"])),
             Ok(Command::SupervisorUsage)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["start", "--journal", "/tmp/journal"])),
+            Ok(Command::Supervisor(SupervisorOptions {
+                port: 0,
+                journal_override: Some(OsString::from("/tmp/journal")),
+                no_daily: false,
+                no_convey: false,
+                no_cortex: false,
+                no_spl: false,
+                remote: None,
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["start", "--wat"])),
+            Ok(Command::StartUsage)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["start", "--help"])),
+            Ok(Command::StartHelp)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["up", "--help"])),
+            Ok(Command::Service(ServiceParseOutcome::Exit {
+                code: 0,
+                stdout: Some(UP_HELP),
+                stderr: None,
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["down", "-h"])),
+            Ok(Command::Service(ServiceParseOutcome::Exit {
+                code: 0,
+                stdout: Some(DOWN_HELP),
+                stderr: None,
+            }))
         );
     }
 

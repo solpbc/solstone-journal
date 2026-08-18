@@ -17,8 +17,8 @@ use std::process::Command;
 
 use solstone_core_cli::{
     CHECK_HELP, CHECK_USAGE, HEALTH_HELP, HEALTH_LOGS_USAGE, INSTALL_MODELS_HELP,
-    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, SUPERVISOR_HELP,
-    SUPERVISOR_USAGE,
+    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, START_HELP, START_USAGE,
+    SUPERVISOR_HELP, SUPERVISOR_USAGE,
 };
 use tempfile::tempdir;
 
@@ -160,6 +160,24 @@ fn supervisor_help_is_byte_identical_for_both_spellings() {
         ["supervisor", "-h"].as_slice(),
     ] {
         assert_help(args, SUPERVISOR_HELP);
+    }
+}
+
+#[test]
+fn malformed_start_invocation_exits_2_with_its_own_usage() {
+    let output = run_core(&["start", "--nonsense"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, b"");
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("UTF-8 stderr"),
+        expected_usage_error(START_USAGE, "journal start")
+    );
+}
+
+#[test]
+fn start_help_is_byte_identical_for_both_spellings() {
+    for args in [["start", "--help"].as_slice(), ["start", "-h"].as_slice()] {
+        assert_help(args, START_HELP);
     }
 }
 

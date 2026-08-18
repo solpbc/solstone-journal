@@ -144,6 +144,7 @@ pub fn evaluate_args(args: &[OsString]) -> JournalCommand {
                 manifest::Primitive::Path | manifest::Primitive::Status | manifest::Primitive::Root
             )
         ) && !rest.is_empty()
+            && !(rest.len() == 1 && (rest[0] == "--help" || rest[0] == "-h"))
         {
             return JournalCommand::Unknown;
         }
@@ -182,9 +183,36 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             rest,
             verbose,
         } => match manifest::primitive_for(token) {
-            Some(manifest::Primitive::Path) => host::path(),
-            Some(manifest::Primitive::Status) => host::status(),
-            Some(manifest::Primitive::Root) => host::root(),
+            Some(manifest::Primitive::Path) => {
+                if host::is_help_only(&rest) {
+                    Outcome::LocalSuccess {
+                        stdout: host::PATH_HELP.to_owned(),
+                        stderr: String::new(),
+                    }
+                } else {
+                    host::path()
+                }
+            }
+            Some(manifest::Primitive::Status) => {
+                if host::is_help_only(&rest) {
+                    Outcome::LocalSuccess {
+                        stdout: host::STATUS_HELP.to_owned(),
+                        stderr: String::new(),
+                    }
+                } else {
+                    host::status()
+                }
+            }
+            Some(manifest::Primitive::Root) => {
+                if host::is_help_only(&rest) {
+                    Outcome::LocalSuccess {
+                        stdout: host::ROOT_HELP.to_owned(),
+                        stderr: String::new(),
+                    }
+                } else {
+                    host::root()
+                }
+            }
             Some(manifest::Primitive::Notify) => notify::notify(&rest),
             Some(manifest::Primitive::Indexer) => local_ops::dispatch("indexer", &rest),
             None => dispatch_process(token, &rest, verbose, spawner),
@@ -335,6 +363,14 @@ mod tests {
         assert_eq!(
             evaluate_args(&args(&["status", "extra"])),
             JournalCommand::Unknown
+        );
+        assert_eq!(
+            evaluate_args(&args(&["status", "--help"])),
+            JournalCommand::Known {
+                token: "status",
+                rest: args(&["--help"]),
+                verbose: false,
+            }
         );
         assert_eq!(
             evaluate_args(&args(&["solstone.think.supervisor"])),

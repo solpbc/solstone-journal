@@ -9,6 +9,15 @@ use crate::layout::{inspect_journal_days, resolve_current_journal, resolve_proje
 const EXIT_IOERR: u8 = 74;
 const EXIT_TEMPFAIL: u8 = 75;
 
+pub(crate) const PATH_HELP: &str = "usage: journal path [-h]\n\nPrint the resolved journal path.\n";
+pub(crate) const STATUS_HELP: &str =
+    "usage: journal status [-h]\n\nPrint whether the journal exists and how many days it has.\n";
+pub(crate) const ROOT_HELP: &str = "usage: journal root [-h]\n\nPrint the project root.\n";
+
+pub(crate) fn is_help_only(args: &[std::ffi::OsString]) -> bool {
+    args.len() == 1 && (args[0] == "--help" || args[0] == "-h")
+}
+
 pub(crate) fn path() -> Outcome {
     let journal = match resolve_current_journal() {
         Ok(journal) => journal,
