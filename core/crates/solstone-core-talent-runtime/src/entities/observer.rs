@@ -9,7 +9,7 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 
-use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
+use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
 use crate::{
     ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
@@ -283,6 +283,43 @@ fn merge_counts(counts: &mut Counts, source: &solstone_core_facets::ObservationO
     }
 }
 
+pub fn gate(prepared: &PreparedTalent, _: &ExecutionContext) -> Result<GateDecision, StageError> {
+    let day = prepared
+        .config
+        .get("day")
+        .and_then(Value::as_str)
+        .filter(|day| !day.is_empty());
+    if day.is_none() {
+        return Ok(GateDecision::Skip("no_day".to_owned()));
+    }
+    let facet = prepared
+        .config
+        .get("facet")
+        .and_then(Value::as_str)
+        .filter(|facet| !facet.is_empty());
+    if facet.is_none() {
+        return Ok(GateDecision::Skip("no_facet".to_owned()));
+    }
+    Ok(GateDecision::Proceed)
+}
+
+fn skip_missing_scope(prepared: &PreparedTalent) -> RuntimeOutcome {
+    let has_day = prepared
+        .config
+        .get("day")
+        .and_then(Value::as_str)
+        .is_some_and(|day| !day.is_empty());
+    RuntimeOutcome::Skipped {
+        stage: "entities:entity_observer".to_owned(),
+        talent: prepared.name.clone(),
+        reason: if has_day {
+            "no_facet".to_owned()
+        } else {
+            "no_day".to_owned()
+        },
+    }
+}
+
 pub fn build(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
@@ -300,8 +337,7 @@ pub fn build(
                 ))
             })?,
         ),
-        // Preserve solstone/apps/entities/talent/entity_observer.py:36-38: bare None leaves the prompt unchanged.
-        _ => None,
+        _ => return Err(skip_missing_scope(prepared)),
     };
     Ok(PrePostState::EntityObserver(ObserverState {
         context: observer_context,
@@ -544,13 +580,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn missing_scope_keeps_observer_placeholder() {
-        // Derived from solstone/apps/entities/talent/entity_observer.py:36-38 and entity_observer.md:30.
+    fn missing_scope_skips_the_stage() {
         let root = tempfile::tempdir().unwrap();
-        for config in [
-            Map::new(),
-            Map::from_iter([("facet".to_owned(), Value::String("work".to_owned()))]),
-        ] {
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let cases = [
+            (Map::new(), "no_day"),
+            (
+                Map::from_iter([("facet".to_owned(), Value::String("work".to_owned()))]),
+                "no_day",
+            ),
+            (
+                Map::from_iter([("day".to_owned(), Value::String("20260101".to_owned()))]),
+                "no_facet",
+            ),
+        ];
+        for (config, reason) in cases {
             let mut prepared = PreparedTalent {
                 name: "entity_observer".to_owned(),
                 config: Map::from_iter([(
@@ -561,15 +607,22 @@ mod tests {
                 .chain(config)
                 .collect(),
             };
-            let state = build(
-                &mut prepared,
-                &ExecutionContext {
-                    journal: root.path().to_owned(),
-                },
-            )
-            .unwrap();
-            apply_prompt_override(&mut prepared, &state).unwrap();
-            assert_eq!(prepared.config["prompt"], "$observer_context");
+            match gate(&prepared, &context) {
+                Ok(GateDecision::Skip(skipped)) => assert_eq!(skipped, reason),
+                other => panic!("expected skip {reason}, got {other:?}"),
+            }
+            match build(&mut prepared, &context) {
+                Err(RuntimeOutcome::Skipped {
+                    stage,
+                    talent,
+                    reason: skipped,
+                }) => {
+                    assert_eq!(stage, "entities:entity_observer");
+                    assert_eq!(talent, "entity_observer");
+                    assert_eq!(skipped, reason);
+                }
+                other => panic!("expected skipped {reason}, got {other:?}"),
+            }
         }
     }
 

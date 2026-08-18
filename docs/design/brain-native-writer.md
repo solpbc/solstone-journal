@@ -106,9 +106,9 @@ lease.  The future equivalent of Python's separate adoption proof
 Session mode is a one-request, two-phase NDJSON protocol.  Every record is one
 UTF-8 JSON object followed by `\n`; input is bounded and strict (object only,
 no unknown top-level fields).  It mirrors Generate's framing discipline:
-`_main_v2_session` reads lines until EOF and `_is_session_terminal` accepts a
-terminal schema only if its field set is exact
-(`solstone/think/generate_wire.py:306-313`, `:359-401`).
+the session loop reads lines until EOF and `decode_session_terminal_line`
+accepts a terminal schema only if its field set is exact
+(`core/crates/solstone-core-generate/src/codec.rs`).
 
 The server first performs native `begin_refresh` synchronously, keeping the
 returned `FileLease`.  Only then does it accept the request line.  The Python

@@ -314,7 +314,7 @@ pub static ENTITIES_REVIEW: StageSpec = StageSpec {
 };
 pub static ENTITY_OBSERVER: StageSpec = StageSpec {
     stage: StageId::EntityObserver,
-    gate: None,
+    gate: Some(crate::entities::observer::gate),
     build: Some(crate::entities::observer::build),
     prompt_override: Some(crate::entities::observer::apply_prompt_override),
     commit: Some(CommitSpec {

@@ -109,7 +109,7 @@ the mac build of the journal is moving to the same relocatable tree, signed and 
 journal setup
 ```
 
-this runs the setup readiness doctor battery, confirms the journal directory at `~/journal`, fetches the local transcription model (~1 GB), installs the `sol` skill for Claude Code, Codex, and Gemini, installs the journal-side `sol` and `journal` router skills so sol can tend the journal, and starts a background service — `systemd` on linux — listening on http://localhost:5015.
+this runs the setup readiness doctor battery, confirms the journal directory at `~/journal`, fetches the local transcription model (~1 GB), installs the `sol` skill for Claude Code, Codex, and Gemini, installs the journal-side `sol` and `journal` router skills so sol can tend the journal, and starts a background service — `systemd` on linux — listening on http://localhost:5015. the default port is shared across logins. a second journal on that port, including one started under another login, cannot bind it.
 
 let your human know: **open http://localhost:5015 in a browser**. the first-run wizard walks them through setting their identity and choosing how sol thinks: local by default (the local model runs right on the machine), or their own provider key if the machine can't run one.
 

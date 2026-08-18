@@ -582,7 +582,7 @@
           "exit": 0,
           "label": "template-verbose-live-stream",
           "phase": "template",
-          "stderr": "Connecting to Callosum...\nSending restart request to supervisor...\nRestarting convey service...\nConvey stopped (exit code: 0)\nConvey started (pid: 321, ref: restart-ref)\n[{time}] [OUT] fixture log\nWaiting for restart (timeout: 1.0s)...\nWaiting for Flask to bind port...\nRestarted in 1.0s\n",
+          "stderr": "Connecting to Callosum...\nSending restart request to supervisor...\nRestarting convey service...\nConvey stopped (exit code: 0)\nConvey started (pid: 321, ref: restart-ref)\n[{time}] [OUT] fixture log\nWaiting for restart (timeout: 1.0s)...\nWaiting for the journal to bind port...\nRestarted in 1.0s\n",
           "stdout": "Journal: {journal}\nTimeout: 1.0s\nConvey running at http://localhost:5015/\n"
         }
       ]

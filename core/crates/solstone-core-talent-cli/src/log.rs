@@ -68,6 +68,7 @@ fn event_detail(event: &Value, etype: &str) -> String {
             format!("{result} [{input}in/{output}out]")
         }
         "error" => string("error"),
+        "info" => string("message"),
         _ => String::new(),
     }
 }
@@ -249,6 +250,13 @@ mod tests {
                 "error"
             ),
             "synthetic failure"
+        );
+        assert_eq!(
+            event_detail(
+                &event("info", serde_json::json!({"message":"captured stdout"})),
+                "info"
+            ),
+            "captured stdout"
         );
         assert_eq!(
             event_detail(&event("other", serde_json::json!({})), "other"),

@@ -279,6 +279,7 @@ fn convey_reports_an_occupied_port() {
     let stderr = String::from_utf8(output.stderr).expect("stderr is UTF-8");
     assert!(stderr.contains(&port.to_string()));
     assert!(stderr.contains("convey may already be running"));
+    assert!(stderr.contains("shared across logins"));
 }
 
 #[test]

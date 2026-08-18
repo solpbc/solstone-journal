@@ -293,7 +293,7 @@ impl std::fmt::Display for ConveyServeError {
         match self {
             Self::LoopbackBind { port, source } => write!(
                 formatter,
-                "convey may already be running; could not bind loopback port {port}: {source}"
+                "could not bind loopback port {port}: {source}. convey may already be running, including under another login. the default port is shared across logins"
             ),
         }
     }

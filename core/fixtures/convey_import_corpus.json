@@ -673,7 +673,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "42f56c16e2e769f4cc6a192482ab5621b9c03d2065b8ac261e841570d3dcf80f",
+        "body_sha256": "94fe02fb8a980390059fc9609a6da168c982e18d900c7ed4aa6faccfd3ddd1c2",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -764,7 +764,7 @@
               "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 19v3\" /> <path d=\"M19 10v2a7 7 0 0 1-14 0v-2\" /> <rect x=\"9\" y=\"2\" width=\"6\" height=\"13\" rx=\"3\" /> </svg>",
               "input_type": "file",
               "name": "recording",
-              "upload_prompt": "upload an audio file (.m4a, .mp3, .wav)"
+              "upload_prompt": "upload an audio, video, or image file"
             },
             {
               "accept": ".pdf",
@@ -1308,7 +1308,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "42f56c16e2e769f4cc6a192482ab5621b9c03d2065b8ac261e841570d3dcf80f",
+        "body_sha256": "94fe02fb8a980390059fc9609a6da168c982e18d900c7ed4aa6faccfd3ddd1c2",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -1399,7 +1399,7 @@
               "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 19v3\" /> <path d=\"M19 10v2a7 7 0 0 1-14 0v-2\" /> <rect x=\"9\" y=\"2\" width=\"6\" height=\"13\" rx=\"3\" /> </svg>",
               "input_type": "file",
               "name": "recording",
-              "upload_prompt": "upload an audio file (.m4a, .mp3, .wav)"
+              "upload_prompt": "upload an audio, video, or image file"
             },
             {
               "accept": ".pdf",

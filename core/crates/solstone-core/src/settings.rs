@@ -26,6 +26,9 @@ use solstone_core_journal::ensure_journal_dir_with_label;
 
 use crate::{EXIT_TEMPFAIL, eprint_journal_path_error, resolve_process_journal_path};
 
+// Machine-wide default loopback port, shared across logins. A second copy on
+// this port, including one started under another login, must fail the bind
+// loudly rather than isolate per user.
 const DEFAULT_SERVICE_PORT: i64 = 5015;
 const EXIT_FAILURE: u8 = 1;
 

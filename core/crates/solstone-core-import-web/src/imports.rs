@@ -112,7 +112,7 @@ const SOURCES: &[SourceMetadata] = &[
         icon: "mic",
         description: "import audio from meetings or conversations",
         input_type: "file",
-        upload_prompt: "upload an audio file (.m4a, .mp3, .wav)",
+        upload_prompt: "upload an audio, video, or image file",
         has_guide: false,
         accept: ".flac,.gif,.heic,.heif,.jpeg,.jpg,.m4a,.mov,.mp3,.mp4,.ogg,.opus,.png,.tiff,.wav,.webm,.webp",
     },

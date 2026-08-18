@@ -115,7 +115,7 @@ pub fn restart_convey_with_transport<T: RestartTransport>(
                 if !waiting_announced {
                     stderr.push_str(&waiting_message(options.timeout));
                 }
-                stderr.push_str("Waiting for Flask to bind port...\n");
+                stderr.push_str("Waiting for the journal to bind port...\n");
                 stderr.push_str(&format!(
                     "Restarted in {:.1}s\n",
                     transport.elapsed().as_secs_f64()
