@@ -435,6 +435,28 @@ write_one_profile() {
 	rm -f "$_tmp" "${_tmp}.out"
 }
 
+report_success() {
+	_prefix=$1
+	printf 'installed %s %s at %s\n' "$PRODUCT" "$VERSION" "$_prefix"
+	printf 'current -> %s\n' "$(readlink "$_prefix/current")"
+	if [ -n "${SOLSTONE_PROFILE:-}" ]; then
+		printf 'PATH updated in %s\n' "$SOLSTONE_PROFILE"
+		printf 'open a new terminal, or: . %s\n' "$SOLSTONE_PROFILE"
+	else
+		case ${TARGET:-} in
+		macos-*)
+			printf 'PATH updated in ~/.zprofile and ~/.profile\n'
+			printf 'open a new terminal, or: . ~/.zprofile\n'
+			;;
+		*)
+			printf 'PATH updated in ~/.profile\n'
+			printf 'open a new terminal, or: . ~/.profile\n'
+			;;
+		esac
+	fi
+	printf 'then: journal --version\n'
+}
+
 detect_target
 
 TMP_ROOT=${TMPDIR:-/var/tmp}
@@ -500,6 +522,7 @@ if [ -e "$DEST" ]; then
 			# Validated no-op: re-read release, do not rewrite current.
 			validate_release "$(cat "$DEST/.release")" "$VERSION" "$TARGET"
 			write_profile "$PREFIX"
+			report_success "$PREFIX"
 			exit 0
 		fi
 	fi
@@ -537,4 +560,5 @@ if ! flip_current "$PREFIX" "$DEST"; then
 	refuse release-invalid "current flip failed"
 fi
 write_profile "$PREFIX"
+report_success "$PREFIX"
 exit 0

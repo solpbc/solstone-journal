@@ -2,7 +2,7 @@
 
 these instructions are for a coding agent and human working together. solstone is the platform: sol is the app, and the journal is the memory it keeps. sol lives on your devices, experiences your day with you, and keeps it all in your journal — always private, only yours. open source, made by sol pbc.
 
-**supported platforms:** linux. mac runs the sol app today; the mac build of the journal is not published yet. windows is not yet supported.
+**supported platforms:** linux, and macos on apple silicon. windows is not yet supported. the sol app already runs on mac; this guide is how you install the journal there too.
 
 the latest version of these instructions is at https://solstone.app/install.
 
@@ -77,7 +77,7 @@ sh install.sh --archive solstone-journal-<version>-linux-x86_64.tar.gz \
               --release solstone-journal-<version>-linux-x86_64.release
 ```
 
-with no `--prefix` it installs under `~/.local/solstone-journal`, keeps each version in its own directory, and points a `current` symlink at the live one. it adds `current/bin` to PATH by writing a block into `~/.profile` between `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`.
+with no `--prefix` it installs under `~/.local/solstone-journal`, keeps each version in its own directory, and points a `current` symlink at the live one. it adds `current/bin` to PATH by writing a block into `~/.profile` between `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`. on success it prints the version, the prefix, and how to pick up PATH.
 
 ⚠ **`~/.profile` is read by login shells.** a new terminal window on most linux desktops is not one, and zsh does not read it at all. either log out and back in, or:
 
@@ -99,9 +99,51 @@ there is no separate download for talking to a journal running elsewhere. the tr
 
 ## install the journal on mac
 
-sol on your mac installs from its own signed bundle, under [install sol on your devices](#install-sol-on-your-devices). what isn't ready yet is the journal.
+apple silicon only. `install.sh` refuses any other mac by name.
 
-the mac build of the journal is moving to the same relocatable tree, signed and notarized, and is not published yet. until it is, run the journal on linux and reach it from your mac with sol.
+⚠ **the tree is not published yet.** same origin and same bootstrap as linux, above. until the first release lands on `updates.solstone.app`, start from the files you have. `install.sh` lives in this repository at `core/distribution/install.sh`.
+
+every release names its files `solstone-journal-<version>-macos-arm64`. the two containers are a `.tar.gz` and a signed, notarized, stapled `.pkg`. each release also carries a `.sha256`, a `.manifest.json`, a `.release` record, and a `.signing.json`.
+
+### the archive
+
+this is the route to run. it does not need administrator rights and it does not write `/usr/local`:
+
+```bash
+sh core/distribution/install.sh \
+  --archive solstone-journal-<version>-macos-arm64.tar.gz \
+  --sha256 solstone-journal-<version>-macos-arm64.sha256 \
+  --release solstone-journal-<version>-macos-arm64.release
+```
+
+with no `--prefix` it installs under `~/.local/solstone-journal` and points a `current` symlink at the live version. on mac it writes the PATH block to both `~/.zprofile` (zsh, the login shell) and `~/.profile`. on success it prints the version, the prefix, and how to pick up PATH.
+
+macos logs you into zsh, which never reads `~/.profile`. open a new terminal, or:
+
+```bash
+. ~/.zprofile
+journal --version
+```
+
+**to verify the archive by hand** — `install.sh` already does this for you. macos has no `sha256sum`; use:
+
+```bash
+shasum -a 256 -c solstone-journal-<version>-macos-arm64.sha256
+```
+
+the checksum file carries one line for each container. if you only have the tarball, the extra `.pkg` line will complain; that is the sidecar, not a failed digest.
+
+### the package
+
+the `.pkg` is the `/usr/local` route: same tree, signed with Developer ID Installer, notarized, and stapled. `/usr/local/bin` is already on the default PATH via `/etc/paths`.
+
+```bash
+sudo installer -pkg solstone-journal-<version>-macos-arm64.pkg -target /
+```
+
+that writes the live system prefix. do not run it on a machine whose `/usr/local` you are not ready to change.
+
+sol on your mac still installs from its own signed bundle, under [install sol on your devices](#install-sol-on-your-devices). that is a different package from the journal.
 
 ## set up
 
@@ -109,7 +151,7 @@ the mac build of the journal is moving to the same relocatable tree, signed and 
 journal setup
 ```
 
-this runs the setup readiness doctor battery, confirms the journal directory at `~/journal`, fetches the local transcription model (~1 GB), installs the `sol` skill for Claude Code, Codex, and Gemini, installs the journal-side `sol` and `journal` router skills so sol can tend the journal, and starts a background service — `systemd` on linux — listening on http://localhost:5015. the default port is shared across logins. a second journal on that port, including one started under another login, cannot bind it.
+this runs the setup readiness doctor battery and confirms the journal directory at `~/journal`. it fetches the local transcription model (~1 GB), installs the `sol` skill for Claude Code, Codex, and Gemini, and installs the journal-side `sol` and `journal` router skills so sol can tend the journal. it then starts a background service (`systemd` on linux, `launchd` on mac at `~/Library/LaunchAgents/org.solpbc.solstone.plist`) listening on http://localhost:5015. the default port is shared across logins. a second journal on that port, including one started under another login, cannot bind it.
 
 let your human know: **open http://localhost:5015 in a browser**. the first-run wizard walks them through setting their identity and choosing how sol thinks: local by default (the local model runs right on the machine), or their own provider key if the machine can't run one.
 
@@ -203,7 +245,8 @@ with no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `
 2. optional: remove the installed `sol` agent skill: `sol skills uninstall`.
 3. remove the tree, by the route you installed it:
    - `sudo apt remove solstone-journal` or `sudo dnf remove solstone-journal`
-   - archive install: delete the prefix directory (`~/.local/solstone-journal` by default) and the PATH block `install.sh` added to `~/.profile`, marked with `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`.
+   - archive install: delete the prefix directory (`~/.local/solstone-journal` by default) and the PATH block `install.sh` added to `~/.profile` (and on mac, `~/.zprofile`), marked with `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`.
+   - mac `.pkg` install: remove the tree under `/usr/local` (`bin/journal`, `bin/sol`, `bin/solstone`, and the matching `lib/` and `share/` members).
 4. mac only: drag `/Applications/solstone.app` to Trash.
 5. mac only, optional: remove sol's app data and the Parakeet model cache:
    ```bash

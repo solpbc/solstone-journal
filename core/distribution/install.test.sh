@@ -137,11 +137,20 @@ mkdir -p "$PREFIX"
 printf 'keep\n' >"$PREFIX/unrelated"
 chmod 640 "$PREFIX/unrelated"
 
+HAPPY_OUT=$BASE/happy.out
 if ! env HOME="$HOME" SOLSTONE_PROFILE="$HOME/.profile" \
-	"$INSTALL" --prefix "$PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"; then
+	"$INSTALL" --prefix "$PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >"$HAPPY_OUT"; then
 	fail "happy-path install"
 else
 	pass "happy-path install"
+fi
+if grep -F "installed solstone-journal 1.0.22 at $PREFIX" "$HAPPY_OUT" >/dev/null \
+	&& grep -F "current ->" "$HAPPY_OUT" >/dev/null \
+	&& grep -F "PATH updated in $HOME/.profile" "$HAPPY_OUT" >/dev/null \
+	&& grep -F "then: journal --version" "$HAPPY_OUT" >/dev/null; then
+	pass "success prints version, prefix, and PATH"
+else
+	fail "success prints version, prefix, and PATH: $(cat "$HAPPY_OUT")"
 fi
 
 # temp-root resolution and cleanup

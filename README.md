@@ -6,7 +6,7 @@ a memory your agents can work from. sol, the app on your devices, experiences yo
 
 this repo is that journal, plus sol. the [sol apps](https://solstone.app) pair with a journal running on a machine you pick. sol transcribes, extracts entities, detects meetings, builds knowledge graphs, and surfaces daily insights, without you filing anything by hand. your journal is a folder of dated directories on that machine. open source, local-first. if you point sol at your own provider key, [DATA-FLOW.md](DATA-FLOW.md) says what leaves.
 
-linux. mac runs the sol app today; the mac build of the journal is not published yet. AGPL-3.0-only, maintained by [sol pbc](https://solpbc.org).
+linux, and macos on apple silicon. windows is not yet supported. AGPL-3.0-only, maintained by [sol pbc](https://solpbc.org).
 
 <img src="docs/static/screenshot-home.png" alt="solstone daily dashboard" width="800">
 
@@ -85,7 +85,7 @@ sh core/distribution/install.sh --archive solstone-journal-<version>-linux-x86_6
 journal setup
 ```
 
-debian and fedora can install the `.deb` or `.rpm` instead. one tree covers running the journal and talking to a journal that already runs elsewhere; there is no separate client download.
+on an Apple Silicon mac, the same command with `macos-arm64` in place of `linux-x86_64`. debian and fedora can install the `.deb` or `.rpm` instead. one tree covers running the journal and talking to a journal that already runs elsewhere; there is no separate client download.
 
 not sure a computer is up to running the journal? after the tree is on PATH, `sol check` gives a one-shot readiness verdict (gpu, memory, and disk) before you run setup.
 
