@@ -1649,6 +1649,57 @@ async fn pairing_window_admits_a_certless_carrier_only_for_the_pair_route() {
 }
 
 #[tokio::test]
+async fn pairing_peer_unpair_on_either_prefix_is_confined_and_does_not_mutate_the_ledger() {
+    let fixture = Fixture::established(1);
+    let ledger_path = fixture.root.join("link/authorized_clients.json");
+    let before = fs::read(&ledger_path).expect("ledger before");
+    let fingerprint = serde_json::from_slice::<serde_json::Value>(&before).expect("ledger JSON")[0]
+        ["fingerprint"]
+        .as_str()
+        .expect("fingerprint")
+        .to_owned();
+    let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let handle = bind_with_authorization(
+        options(&fixture, pairing_router(&fixture, pairing_snapshot()), 0),
+        solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+            pairing_router(&fixture, pairing_snapshot()),
+            fixture.root.clone(),
+            authorization,
+        ),
+        authorization_sender,
+    )
+    .await
+    .expect("serve");
+    open_pairing_window(&fixture, "unpair-confined");
+    let mut carrier = live_certless_carrier(door_port(handle.door_outcome()))
+        .await
+        .expect("certless TLS admission");
+    let mut decoder = FrameDecoder::new();
+    let mut ids = FrameDialer::default();
+    let tunnel_body = b"pairing tunnel may only use /app/network/pair".to_vec();
+    let body = format!(r#"{{"fingerprint":"{fingerprint}"}}"#);
+    for path in ["/app/network/unpair", "/app/link/unpair"] {
+        let response = exchange_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            ids.allocate(),
+            "POST",
+            path,
+            &[("content-type".into(), "application/json".into())],
+            body.as_bytes(),
+        )
+        .await
+        .expect("carrier response");
+        assert_eq!(response.status, 403, "{path}");
+        assert_eq!(response.body, tunnel_body, "{path}");
+    }
+    assert_eq!(fs::read(&ledger_path).expect("ledger after"), before);
+    handle.shutdown();
+}
+
+#[tokio::test]
 async fn corrupt_nonce_store_closes_certless_admission_but_a_real_open_window_admits() {
     let fixture = Fixture::established(0);
     std::fs::create_dir_all(fixture.root.join("link")).expect("link directory");

@@ -538,3 +538,17 @@ async fn disable_shape_failure_and_get_operation_are_exact() {
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(failure_root);
 }
+
+#[tokio::test]
+async fn link_prefix_write_routes_are_registered() {
+    let root = journal();
+    for path in [
+        "/app/link/host-address",
+        "/app/link/private-link/enable",
+        "/app/link/private-link/disable",
+    ] {
+        let (status, _) = post(&root, path, Body::empty()).await;
+        assert_ne!(status, StatusCode::NOT_FOUND, "{path}");
+    }
+    let _ = fs::remove_dir_all(root);
+}

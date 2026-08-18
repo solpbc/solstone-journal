@@ -500,7 +500,9 @@ async fn constrain_pair_dispatch(
     request: Request<Body>,
     next: Next,
 ) -> Response {
-    if request.uri().path() != spl_core::PAIR_PATH || request.method() != Method::POST {
+    if !crate::authorization_gate::PAIR_PATHS.contains(&request.uri().path())
+        || request.method() != Method::POST
+    {
         return next.run(request).await;
     }
     state.dispatch_pair(next.run(request)).await

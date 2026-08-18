@@ -274,3 +274,17 @@ async fn network_nonce_status_rejects_post() {
         .expect("router responds");
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
 }
+
+#[tokio::test]
+async fn link_prefix_nonce_status_rejects_post() {
+    let journal = journal_for_phase("established");
+    let response = router(journal.0.clone())
+        .oneshot(
+            Request::post("/app/link/api/pair/nonce-status?nonce=corpus-nonce")
+                .body(Body::empty())
+                .expect("request builds"),
+        )
+        .await
+        .expect("router responds");
+    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+}

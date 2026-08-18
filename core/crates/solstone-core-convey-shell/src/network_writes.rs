@@ -142,7 +142,7 @@ impl SplEnrollment for RelayEnrollment {
     }
 }
 
-pub fn router() -> axum::Router {
+pub fn router(prefix: &str) -> axum::Router {
     let runtime = SplRuntime {
         portal_base_url: std::env::var("SERVICES_PORTAL_URL")
             .unwrap_or_else(|_| DEFAULT_PORTAL_URL.to_owned())
@@ -153,15 +153,15 @@ pub fn router() -> axum::Router {
     };
     axum::Router::new()
         .route(
-            "/app/network/host-address",
+            &format!("{prefix}/host-address"),
             axum::routing::post(set_home_address),
         )
         .route(
-            "/app/network/private-link/enable",
+            &format!("{prefix}/private-link/enable"),
             axum::routing::post(private_link_enable),
         )
         .route(
-            "/app/network/private-link/disable",
+            &format!("{prefix}/private-link/disable"),
             axum::routing::post(private_link_disable),
         )
         .layer(Extension(runtime))

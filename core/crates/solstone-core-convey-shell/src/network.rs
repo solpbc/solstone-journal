@@ -9,17 +9,18 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Json;
 use axum::Router;
+use axum::body::Bytes;
 use axum::extract::{Extension, Query};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_sol_link::ledger::{
-    AuthorizationLedger, AuthorizedClientsRead, DeviceActivityRead, read_authorized_clients,
-    read_device_activity,
+    AuthorizationLedger, AuthorizedClientsLoadError, AuthorizedClientsMutationError,
+    AuthorizedClientsRead, DeviceActivityRead, read_authorized_clients, read_device_activity,
 };
 use solstone_core_sol_link::pairing::addresses::{
     PairingSnapshot, SystemInterfaceSource, SystemRouteIpv4Source, snapshot_from_sources,
@@ -61,17 +62,31 @@ pub(crate) struct PairTokenQuery {
     token: Option<String>,
 }
 
-pub fn router(journal: Arc<JournalRoot>) -> Router {
+pub(crate) const NETWORK_ROUTE_PREFIXES: &[&str] = &["/app/network", "/app/link"];
+
+pub(crate) fn direct_routes(prefix: &str) -> Router {
     Router::new()
-        .route("/app/network/", get(shell))
-        .route("/app/network/workspace", get(workspace))
-        .route("/app/network/static/network.js", get(script))
-        .route("/app/network/api/state", get(state))
-        .route("/app/network/api/status", get(status))
-        .route("/app/network/api/identity", get(identity))
-        .route("/app/network/api/private-link", get(private_link))
-        .route("/app/network/local-endpoints", get(local_endpoints))
-        .merge(network_writes::router())
+        .route(&format!("{prefix}/pair-start"), post(pair_start))
+        .route(
+            &format!("{prefix}/api/pair/nonce-status"),
+            get(nonce_status),
+        )
+        .route(&format!("{prefix}/pair"), post(pair))
+        .route(&format!("{prefix}/api/devices"), get(devices))
+}
+
+pub fn router(journal: Arc<JournalRoot>, prefix: &str) -> Router {
+    Router::new()
+        .route(&format!("{prefix}/"), get(shell))
+        .route(&format!("{prefix}/workspace"), get(workspace))
+        .route(&format!("{prefix}/static/network.js"), get(script))
+        .route(&format!("{prefix}/api/state"), get(state))
+        .route(&format!("{prefix}/api/status"), get(status))
+        .route(&format!("{prefix}/api/identity"), get(identity))
+        .route(&format!("{prefix}/api/private-link"), get(private_link))
+        .route(&format!("{prefix}/local-endpoints"), get(local_endpoints))
+        .route(&format!("{prefix}/unpair"), post(unpair))
+        .merge(network_writes::router(prefix))
         .layer(Extension(journal))
         .layer(Extension(Arc::new(OperationRegistry::default())))
 }
@@ -214,6 +229,117 @@ pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Res
         .map(|entry| network_device_json(entry, activity.as_ref()))
         .collect::<Vec<_>>();
     Json(json!({"devices": devices})).into_response()
+}
+
+pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: Bytes) -> Response {
+    let object = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    let fingerprint = object
+        .get("fingerprint")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let device_label = object
+        .get("device_label")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let target = match (fingerprint, device_label) {
+        (Some(fingerprint), _) => fingerprint.to_owned(),
+        (None, Some(label)) => match resolve_unpair_label(&root.0, label) {
+            Ok(Some(fingerprint)) => fingerprint,
+            Ok(None) => {
+                return refusal(
+                    "paired_device_not_found",
+                    "paired device not found",
+                    StatusCode::BAD_REQUEST,
+                );
+            }
+            Err(response) => return response,
+        },
+        (None, None) => {
+            return refusal(
+                "missing_required_field",
+                "fingerprint or device_label is required",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    };
+    match AuthorizationLedger::new(&root.0).remove(&target) {
+        Ok(outcome) if outcome.authorized_removed => Json(json!({
+            "unpaired": target,
+            "revoked_observers": [],
+        }))
+        .into_response(),
+        Ok(_) => refusal(
+            "paired_device_not_found",
+            "paired device not found",
+            StatusCode::BAD_REQUEST,
+        ),
+        Err(error) => unpair_mutation_refusal(error),
+    }
+}
+
+fn resolve_unpair_label(
+    journal_root: &std::path::Path,
+    label: &str,
+) -> Result<Option<String>, Response> {
+    match read_authorized_clients(&journal_root.join("link/authorized_clients.json")) {
+        AuthorizedClientsRead::Present(entries) => {
+            let matches = entries
+                .into_iter()
+                .filter(|entry| entry.display_label() == label)
+                .collect::<Vec<_>>();
+            match matches.as_slice() {
+                [] => Ok(None),
+                [entry] => Ok(Some(entry.fingerprint.clone())),
+                _ => Err(refusal(
+                    "invalid_operation_for_state",
+                    "device label matches more than one paired device",
+                    StatusCode::BAD_REQUEST,
+                )),
+            }
+        }
+        AuthorizedClientsRead::Missing => Ok(None),
+        AuthorizedClientsRead::Unreadable => Err(refusal(
+            "authorization_ledger_unreadable",
+            "authorized-client ledger could not be read",
+            StatusCode::SERVICE_UNAVAILABLE,
+        )),
+        AuthorizedClientsRead::Malformed => Err(refusal(
+            "authorization_ledger_malformed",
+            "authorized-client ledger is invalid",
+            StatusCode::SERVICE_UNAVAILABLE,
+        )),
+    }
+}
+
+fn unpair_mutation_refusal(error: AuthorizedClientsMutationError) -> Response {
+    match error {
+        AuthorizedClientsMutationError::Load(AuthorizedClientsLoadError::Unreadable { .. })
+        | AuthorizedClientsMutationError::Lock(_) => refusal(
+            "authorization_ledger_unreadable",
+            "authorized-client ledger could not be read",
+            StatusCode::SERVICE_UNAVAILABLE,
+        ),
+        AuthorizedClientsMutationError::Load(AuthorizedClientsLoadError::Malformed { .. }) => {
+            refusal(
+                "authorization_ledger_malformed",
+                "authorized-client ledger is invalid",
+                StatusCode::SERVICE_UNAVAILABLE,
+            )
+        }
+        AuthorizedClientsMutationError::Write(_)
+        | AuthorizedClientsMutationError::Device(_)
+        | AuthorizedClientsMutationError::InvalidLabel(_)
+        | AuthorizedClientsMutationError::InvalidLastSeenAt => refusal(
+            "internal_error",
+            "couldn't unpair this device",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
 }
 
 fn network_device_json(
@@ -759,37 +885,39 @@ mod tests {
         )
         .expect("activity metadata");
 
-        let response = crate::router(temporary.path().to_path_buf())
-            .oneshot(
-                Request::get("/app/network/api/devices")
-                    .body(Body::empty())
-                    .expect("request"),
-            )
-            .await
-            .expect("response");
-        assert_eq!(response.status(), StatusCode::OK);
-        let body: Value = serde_json::from_slice(
-            &to_bytes(response.into_body(), usize::MAX)
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let response = crate::router(temporary.path().to_path_buf())
+                .oneshot(
+                    Request::get(format!("{prefix}/api/devices"))
+                        .body(Body::empty())
+                        .expect("request"),
+                )
                 .await
-                .expect("body"),
-        )
-        .expect("JSON");
-        let device = &body["devices"][0];
-        let actual = device
-            .as_object()
-            .expect("device object")
-            .keys()
-            .map(String::as_str)
-            .collect::<std::collections::BTreeSet<_>>();
-        let expected = NETWORK_DEVICE_FIELDS
-            .into_iter()
-            .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(
-            actual, expected,
-            "the projection neither widens nor narrows"
-        );
-        assert_eq!(device["last_seen_at"], "2026-08-13T00:01:00Z");
-        assert_eq!(device["observer_handle"], Value::Null);
+                .expect("response");
+            assert_eq!(response.status(), StatusCode::OK, "{prefix}");
+            let body: Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("body"),
+            )
+            .expect("JSON");
+            let device = &body["devices"][0];
+            let actual = device
+                .as_object()
+                .expect("device object")
+                .keys()
+                .map(String::as_str)
+                .collect::<std::collections::BTreeSet<_>>();
+            let expected = NETWORK_DEVICE_FIELDS
+                .into_iter()
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(
+                actual, expected,
+                "{prefix}: the projection neither widens nor narrows"
+            );
+            assert_eq!(device["last_seen_at"], "2026-08-13T00:01:00Z", "{prefix}");
+            assert_eq!(device["observer_handle"], Value::Null, "{prefix}");
+        }
     }
 
     #[tokio::test]
@@ -797,36 +925,36 @@ mod tests {
         let temporary = TempDir::new();
         established_journal(temporary.path());
         let app = crate::router(temporary.path().to_path_buf());
-        for (path, content_type) in [
-            ("/app/network/", "text/html; charset=utf-8"),
-            ("/app/network/workspace", "text/html; charset=utf-8"),
-            (
-                "/app/network/static/network.js",
-                "text/javascript; charset=utf-8",
-            ),
-            ("/app/network/api/state", "application/json"),
-        ] {
-            let response = get_response(app.clone(), path).await;
-            assert_eq!(response.status(), StatusCode::OK, "{path}");
-            assert_eq!(
-                response.headers()[header::CONTENT_TYPE],
-                content_type,
-                "{path}"
-            );
-            if path == "/app/network/api/state" {
-                let body: Value = serde_json::from_slice(
-                    &to_bytes(response.into_body(), usize::MAX)
-                        .await
-                        .expect("state body reads"),
-                )
-                .expect("state is JSON");
-                assert_eq!(body["posture"], "direct");
-                assert!(
-                    body["link_copy"]
-                        .as_object()
-                        .is_some_and(|copy| !copy.is_empty()),
-                    "state has the generated copy payload"
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            for (suffix, content_type) in [
+                ("/", "text/html; charset=utf-8"),
+                ("/workspace", "text/html; charset=utf-8"),
+                ("/static/network.js", "text/javascript; charset=utf-8"),
+                ("/api/state", "application/json"),
+            ] {
+                let path = format!("{prefix}{suffix}");
+                let response = get_response(app.clone(), &path).await;
+                assert_eq!(response.status(), StatusCode::OK, "{path}");
+                assert_eq!(
+                    response.headers()[header::CONTENT_TYPE],
+                    content_type,
+                    "{path}"
                 );
+                if suffix == "/api/state" {
+                    let body: Value = serde_json::from_slice(
+                        &to_bytes(response.into_body(), usize::MAX)
+                            .await
+                            .expect("state body reads"),
+                    )
+                    .expect("state is JSON");
+                    assert_eq!(body["posture"], "direct");
+                    assert!(
+                        body["link_copy"]
+                            .as_object()
+                            .is_some_and(|copy| !copy.is_empty()),
+                        "state has the generated copy payload"
+                    );
+                }
             }
         }
     }
@@ -843,7 +971,7 @@ mod tests {
 
         let response = get_response(
             crate::router(temporary.path().to_path_buf()),
-            "/app/network/api/state",
+            "/app/link/api/state",
         )
         .await;
         let body: Value = serde_json::from_slice(
@@ -873,7 +1001,12 @@ mod tests {
                 }
                 _ => unreachable!("known phase"),
             }
-            for path in ["/app/network/workspace", "/app/network/static/network.js"] {
+            for path in [
+                "/app/network/workspace",
+                "/app/network/static/network.js",
+                "/app/link/workspace",
+                "/app/link/static/network.js",
+            ] {
                 let response =
                     get_response(crate::router(temporary.path().to_path_buf()), path).await;
                 match phase {
@@ -902,7 +1035,7 @@ mod tests {
         let _merged = Router::new()
             .route("/x", get(|| async { StatusCode::OK }))
             .fallback(|| async { StatusCode::NOT_FOUND })
-            .merge(super::router(root));
+            .merge(super::router(root, "/app/network"));
         let _shell = crate::router(temporary.path().to_path_buf());
     }
 
@@ -1126,6 +1259,405 @@ mod tests {
                 !NETWORK_SCRIPT.contains(forbidden),
                 "unexpected {forbidden}"
             );
+        }
+    }
+
+    async fn post_json(app: Router, path: &str, body: Value) -> (StatusCode, Value) {
+        let response = app
+            .oneshot(
+                Request::post(path)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let status = response.status();
+        let parsed = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .unwrap_or(Value::Null);
+        (status, parsed)
+    }
+
+    fn write_authorized_clients(root: &Path, entries: Value) {
+        fs::create_dir_all(root.join("link")).expect("link directory");
+        fs::write(
+            root.join("link/authorized_clients.json"),
+            entries.to_string(),
+        )
+        .expect("authorization ledger");
+    }
+
+    fn one_client() -> Value {
+        json!([{
+            "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "device_label": "phone",
+            "paired_at": "2026-08-13T00:00:00Z",
+            "instance_id": "device-instance",
+            "role": "peer",
+            "kind": "cert",
+        }])
+    }
+
+    #[tokio::test]
+    async fn aliased_network_routes_are_registered_on_both_prefixes() {
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        write_authorized_clients(temporary.path(), one_client());
+        committed_identity(temporary.path());
+        let app = crate::router(temporary.path().to_path_buf());
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            for path in [
+                format!("{prefix}/"),
+                format!("{prefix}/workspace"),
+                format!("{prefix}/static/network.js"),
+                format!("{prefix}/api/state"),
+                format!("{prefix}/api/status"),
+                format!("{prefix}/api/identity"),
+                format!("{prefix}/api/private-link"),
+                format!("{prefix}/api/devices"),
+            ] {
+                let response = get_response(app.clone(), &path).await;
+                assert_ne!(response.status(), StatusCode::NOT_FOUND, "{path}");
+            }
+            let mut local = Request::get(format!("{prefix}/local-endpoints"))
+                .body(Body::empty())
+                .expect("request");
+            local.extensions_mut().insert(AccessBasis::Localhost);
+            let response = app.clone().oneshot(local).await.expect("response");
+            assert_ne!(
+                response.status(),
+                StatusCode::NOT_FOUND,
+                "{prefix}/local-endpoints"
+            );
+            for (path, body) in [
+                (
+                    format!("{prefix}/pair-start"),
+                    json!({"device_label": "phone"}),
+                ),
+                (format!("{prefix}/unpair"), json!({})),
+                (format!("{prefix}/host-address"), json!({})),
+                (format!("{prefix}/private-link/enable"), json!({})),
+                (format!("{prefix}/private-link/disable"), json!({})),
+            ] {
+                let mut request = Request::post(&path)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .expect("request");
+                request.extensions_mut().insert(AccessBasis::Localhost);
+                let response = app.clone().oneshot(request).await.expect("response");
+                assert_ne!(response.status(), StatusCode::NOT_FOUND, "{path}");
+            }
+            let mut nonce = Request::get(format!("{prefix}/api/pair/nonce-status?nonce=x"))
+                .body(Body::empty())
+                .expect("request");
+            nonce.extensions_mut().insert(AccessBasis::Localhost);
+            let response = app.clone().oneshot(nonce).await.expect("response");
+            assert_ne!(
+                response.status(),
+                StatusCode::NOT_FOUND,
+                "{prefix}/api/pair/nonce-status"
+            );
+            let mut pair = Request::post(format!("{prefix}/pair"))
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"csr":"x","device_label":"phone"}"#))
+                .expect("request");
+            pair.extensions_mut().insert(AccessBasis::PairingPeer {
+                carrier: Carrier::Direct,
+            });
+            let response = app.clone().oneshot(pair).await.expect("response");
+            assert_ne!(response.status(), StatusCode::NOT_FOUND, "{prefix}/pair");
+        }
+    }
+
+    #[tokio::test]
+    async fn unpair_follows_the_fingerprint_and_label_decision_table() {
+        let fingerprint = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        write_authorized_clients(temporary.path(), one_client());
+        let app = crate::router(temporary.path().to_path_buf());
+
+        let (status, body) = post_json(app.clone(), "/app/network/unpair", json!({})).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["reason_code"], "missing_required_field");
+
+        let (status, body) = post_json(
+            app.clone(),
+            "/app/link/unpair",
+            json!({"fingerprint": "sha256:missing"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["reason_code"], "paired_device_not_found");
+
+        let (status, body) = post_json(
+            app.clone(),
+            "/app/network/unpair",
+            json!({"device_label": "nope"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["reason_code"], "paired_device_not_found");
+        assert_eq!(
+            fs::read_to_string(temporary.path().join("link/authorized_clients.json")).unwrap(),
+            one_client().to_string()
+        );
+
+        let (status, body) =
+            post_json(app, "/app/link/unpair", json!({"device_label": "phone"})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body,
+            json!({"unpaired": fingerprint, "revoked_observers": []})
+        );
+
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        write_authorized_clients(temporary.path(), one_client());
+        let (status, body) = post_json(
+            crate::router(temporary.path().to_path_buf()),
+            "/app/network/unpair",
+            json!({"fingerprint": fingerprint, "device_label": "ignored"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["unpaired"], fingerprint);
+        assert_eq!(body["revoked_observers"], json!([]));
+
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        write_authorized_clients(
+            temporary.path(),
+            json!([
+                {
+                    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "device_label": "phone",
+                    "paired_at": "2026-08-13T00:00:00Z",
+                    "instance_id": "a",
+                    "kind": "cert",
+                },
+                {
+                    "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "device_label": "phone",
+                    "paired_at": "2026-08-13T00:00:01Z",
+                    "instance_id": "b",
+                    "kind": "cert",
+                }
+            ]),
+        );
+        let before = fs::read(temporary.path().join("link/authorized_clients.json")).unwrap();
+        let (status, body) = post_json(
+            crate::router(temporary.path().to_path_buf()),
+            "/app/network/unpair",
+            json!({"device_label": "phone"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["reason_code"], "invalid_operation_for_state");
+        assert_eq!(
+            fs::read(temporary.path().join("link/authorized_clients.json")).unwrap(),
+            before
+        );
+
+        let unreadable = TempDir::new();
+        established_journal(unreadable.path());
+        fs::create_dir_all(unreadable.path().join("link/authorized_clients.json"))
+            .expect("unreadable ledger");
+        let (status, body) = post_json(
+            crate::router(unreadable.path().to_path_buf()),
+            "/app/link/unpair",
+            json!({"device_label": "phone"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["reason_code"], "authorization_ledger_unreadable");
+
+        let malformed = TempDir::new();
+        established_journal(malformed.path());
+        fs::create_dir_all(malformed.path().join("link")).expect("link directory");
+        fs::write(
+            malformed.path().join("link/authorized_clients.json"),
+            "{not json",
+        )
+        .expect("malformed ledger");
+        let (status, body) = post_json(
+            crate::router(malformed.path().to_path_buf()),
+            "/app/network/unpair",
+            json!({"fingerprint": fingerprint}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["reason_code"], "authorization_ledger_malformed");
+    }
+
+    fn ledger_path(root: &Path) -> std::path::PathBuf {
+        root.join("link/authorized_clients.json")
+    }
+
+    fn ledger_fingerprints(root: &Path) -> Vec<String> {
+        serde_json::from_slice::<Value>(&fs::read(ledger_path(root)).expect("ledger reads"))
+            .expect("ledger JSON")
+            .as_array()
+            .expect("ledger array")
+            .iter()
+            .map(|entry| {
+                entry["fingerprint"]
+                    .as_str()
+                    .expect("fingerprint")
+                    .to_owned()
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn unpair_removes_only_the_targeted_client_and_refuses_a_second_unpair() {
+        let client_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let client_b = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        write_authorized_clients(
+            temporary.path(),
+            json!([
+                {
+                    "fingerprint": client_a,
+                    "device_label": "phone",
+                    "paired_at": "2026-08-13T00:00:00Z",
+                    "instance_id": "a",
+                    "kind": "cert",
+                },
+                {
+                    "fingerprint": client_b,
+                    "device_label": "laptop",
+                    "paired_at": "2026-08-13T00:00:01Z",
+                    "instance_id": "b",
+                    "kind": "cert",
+                }
+            ]),
+        );
+        let app = crate::router(temporary.path().to_path_buf());
+
+        let (status, body) = post_json(
+            app.clone(),
+            "/app/network/unpair",
+            json!({"fingerprint": client_a}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, json!({"unpaired": client_a, "revoked_observers": []}));
+        assert_eq!(ledger_fingerprints(temporary.path()), [client_b]);
+
+        let after_first = fs::read(ledger_path(temporary.path())).expect("ledger after first");
+        let (status, body) =
+            post_json(app, "/app/network/unpair", json!({"fingerprint": client_a})).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_ne!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["reason_code"], "paired_device_not_found");
+        assert_eq!(
+            fs::read(ledger_path(temporary.path())).expect("ledger after second"),
+            after_first
+        );
+        assert_eq!(ledger_fingerprints(temporary.path()), [client_b]);
+    }
+
+    #[tokio::test]
+    async fn unpair_matches_computed_display_label_not_the_raw_field() {
+        let ordinal = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        write_authorized_clients(
+            temporary.path(),
+            json!([{
+                "fingerprint": ordinal,
+                "device_label": "iPhone",
+                "label_ordinal": 2,
+                "paired_at": "2026-08-13T00:00:00Z",
+                "instance_id": "c",
+                "kind": "cert",
+            }]),
+        );
+        let (status, body) = post_json(
+            crate::router(temporary.path().to_path_buf()),
+            "/app/link/unpair",
+            json!({"device_label": "iPhone (2)"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, json!({"unpaired": ordinal, "revoked_observers": []}));
+        assert!(ledger_fingerprints(temporary.path()).is_empty());
+
+        let raw = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        let computed = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        write_authorized_clients(
+            temporary.path(),
+            json!([
+                {
+                    "fingerprint": raw,
+                    "device_label": "iPhone (2)",
+                    "label_ordinal": 1,
+                    "paired_at": "2026-08-13T00:00:00Z",
+                    "instance_id": "d",
+                    "kind": "cert",
+                },
+                {
+                    "fingerprint": computed,
+                    "device_label": "iPhone",
+                    "label_ordinal": 2,
+                    "paired_at": "2026-08-13T00:00:01Z",
+                    "instance_id": "e",
+                    "kind": "cert",
+                }
+            ]),
+        );
+        let before = fs::read(ledger_path(temporary.path())).expect("ledger before collision");
+        let (status, body) = post_json(
+            crate::router(temporary.path().to_path_buf()),
+            "/app/network/unpair",
+            json!({"device_label": "iPhone (2)"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["reason_code"], "invalid_operation_for_state");
+        assert_eq!(
+            fs::read(ledger_path(temporary.path())).expect("ledger after collision"),
+            before
+        );
+    }
+
+    #[tokio::test]
+    async fn unpair_missing_ledger_file_is_not_found_and_does_not_create_one() {
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        let path = ledger_path(temporary.path());
+        assert!(!path.exists());
+        let (status, body) = post_json(
+            crate::router(temporary.path().to_path_buf()),
+            "/app/network/unpair",
+            json!({"fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_ne!(status, StatusCode::NOT_FOUND);
+        assert_ne!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["reason_code"], "paired_device_not_found");
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn init_is_reachable_on_the_shared_router_when_unestablished() {
+        let temporary = TempDir::new();
+        let app = crate::router(temporary.path().to_path_buf());
+        for path in ["/init", "/init/api/state", "/init/mark"] {
+            let mut request = Request::get(path).body(Body::empty()).expect("request");
+            request.extensions_mut().insert(AccessBasis::Localhost);
+            let response = app.clone().oneshot(request).await.expect("response");
+            assert_ne!(response.status(), StatusCode::FOUND, "{path}");
+            assert_ne!(response.status(), StatusCode::NOT_FOUND, "{path}");
         }
     }
 }

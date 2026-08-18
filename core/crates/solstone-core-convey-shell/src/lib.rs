@@ -494,20 +494,19 @@ pub fn router(journal_root: PathBuf) -> Router {
     solstone_core_convey_body::warm_trends(journal_root.clone());
     let shell = Arc::new(shell_payload());
     let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
-    let routes = Router::new()
+    let mut routes = Router::new()
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))
         .route("/static/{*path}", get(static_asset))
         .route("/api/shell", get(shell_api))
         .route("/api/system/status", get(system::status))
-        .route("/sse/events", get(sse::events))
-        .route("/app/network/pair-start", post(network::pair_start))
-        .route(
-            "/app/network/api/pair/nonce-status",
-            get(network::nonce_status),
-        )
-        .route(spl_core::PAIR_PATH, post(network::pair))
-        .route("/app/network/api/devices", get(network::devices))
+        .route("/sse/events", get(sse::events));
+    for prefix in network::NETWORK_ROUTE_PREFIXES {
+        routes = routes
+            .merge(network::direct_routes(prefix))
+            .merge(network::router(route_journal_root.clone(), prefix));
+    }
+    let routes = routes
         .route("/app/devices/", get(devices::shell))
         .route("/app/devices/workspace", get(devices::workspace))
         .route("/app/devices/api/list", get(devices::list))
@@ -749,7 +748,6 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/app/{app}/{*tail}", get(app_nested))
         .merge(solstone_core_records_web::api_router(journal_root.clone()))
         .merge(thinking::router(route_journal_root.clone()))
-        .merge(network::router(route_journal_root.clone()))
         .merge(solstone_core_sol_link::http::init_router(
             journal_root.clone(),
         ))

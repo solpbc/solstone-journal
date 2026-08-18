@@ -51,6 +51,8 @@ pub const AUTHORIZATION_GATE_EXEMPTIONS: &[AuthorizationExemption] = &[
     AuthorizationExemption::Favicon,
     AuthorizationExemption::TopLevelStatic,
 ];
+
+pub(crate) const PAIR_PATHS: &[&str] = &[spl_core::PAIR_PATH, "/app/link/pair"];
 // [check] Only boot assets bypass request authorization. APIs, app paths, and
 // `/sse/events` remain gated: this gate refuses a new SSE request, while
 // carrier-level revocation closes an already-open device stream.
@@ -154,7 +156,7 @@ async fn require_pairing_confinement(
     if decoded.as_deref().ok() != Some(raw_path) {
         return pairing_confinement_response("pairing tunnel may only use /app/network/pair");
     }
-    if raw_path != spl_core::PAIR_PATH || request.method() != Method::POST {
+    if !PAIR_PATHS.contains(&raw_path) || request.method() != Method::POST {
         return pairing_confinement_response("pairing tunnel may only use /app/network/pair");
     }
     next.run(request).await
@@ -295,7 +297,13 @@ mod tests {
             AuthorizedClientsRead::Missing,
         ));
         let app = authorized_router_with_router(
-            Router::new().route(spl_core::PAIR_PATH, post(|| async { StatusCode::OK })),
+            Router::new()
+                .route(spl_core::PAIR_PATH, post(|| async { StatusCode::OK }))
+                .route("/app/link/pair", post(|| async { StatusCode::OK }))
+                .route("/app/network/pair-start", post(|| async { StatusCode::OK }))
+                .route("/app/link/pair-start", post(|| async { StatusCode::OK }))
+                .route("/app/network/unpair", post(|| async { StatusCode::OK }))
+                .route("/app/link/unpair", post(|| async { StatusCode::OK })),
             temporary.path().to_path_buf(),
             authorization,
         )
@@ -319,11 +327,14 @@ mod tests {
                     .to_vec(),
             )
         }
-        let closed = response(app.clone(), Method::POST, spl_core::PAIR_PATH).await;
-        assert_eq!(
-            closed,
-            (StatusCode::FORBIDDEN, b"pairing window closed".to_vec())
-        );
+        for path in super::PAIR_PATHS {
+            let closed = response(app.clone(), Method::POST, path).await;
+            assert_eq!(
+                closed,
+                (StatusCode::FORBIDDEN, b"pairing window closed".to_vec()),
+                "{path}"
+            );
+        }
         let store = solstone_core_sol_link::pairing::nonces::NonceStore::new(temporary.path());
         store
             .add(
@@ -334,24 +345,35 @@ mod tests {
                 2_200_000_000,
             )
             .expect("open window");
-        assert_eq!(
-            response(app.clone(), Method::POST, spl_core::PAIR_PATH)
-                .await
-                .0,
-            StatusCode::OK
-        );
+        for path in super::PAIR_PATHS {
+            assert_eq!(
+                response(app.clone(), Method::POST, path).await.0,
+                StatusCode::OK,
+                "{path}"
+            );
+        }
         let path_body = b"pairing tunnel may only use /app/network/pair".to_vec();
-        assert_eq!(
-            response(app.clone(), Method::GET, spl_core::PAIR_PATH).await,
-            (StatusCode::FORBIDDEN, path_body.clone())
-        );
-        assert_eq!(
-            response(app.clone(), Method::POST, "/app/network/%70air").await,
-            (StatusCode::FORBIDDEN, path_body.clone())
-        );
-        assert_eq!(
-            response(app, Method::POST, "/__door_test/pairing-probe").await,
-            (StatusCode::FORBIDDEN, path_body)
-        );
+        for path in [
+            spl_core::PAIR_PATH,
+            "/app/link/pair",
+            "/app/network/%70air",
+            "/app/link/%70air",
+            "/app/network/pair-start",
+            "/app/link/pair-start",
+            "/app/network/unpair",
+            "/app/link/unpair",
+            "/__door_test/pairing-probe",
+        ] {
+            let method = if path.ends_with("/pair") {
+                Method::GET
+            } else {
+                Method::POST
+            };
+            assert_eq!(
+                response(app.clone(), method, path).await,
+                (StatusCode::FORBIDDEN, path_body.clone()),
+                "{path}"
+            );
+        }
     }
 }
