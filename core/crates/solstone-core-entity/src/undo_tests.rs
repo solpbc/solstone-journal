@@ -9,15 +9,15 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use serde_json::{json, Value};
-use solstone_core_journal_io::{write_json, write_jsonl, AtomicWriteOptions, JsonWriteOptions};
+use serde_json::{Value, json};
+use solstone_core_journal_io::{AtomicWriteOptions, JsonWriteOptions, write_json, write_jsonl};
 
 use super::store::undo_entity_merge_with_injector;
 use super::store::voiceprints::write_voiceprints_npz as write_voiceprints_npz_with_envelope;
 use crate::{
+    EncoderIdentity, EntityMergeError, EntityMergeOptions,
     commit_entity_merge as commit_entity_merge_with_encoder, guard_restore_does_not_cross_merge,
     read_entity_identity, read_visible_history, save_entity_identity, undo_entity_merge,
-    EncoderIdentity, EntityMergeError, EntityMergeOptions,
 };
 
 static NEXT_UNDO_DIRECTORY: AtomicU64 = AtomicU64::new(0);
@@ -159,12 +159,14 @@ fn undo_reverts_target_identity_restores_source_and_removes_payload() {
     );
     assert!(journal.join("entities/source/entity.json").exists());
     assert!(read_entity_identity(&journal, "source").unwrap().is_some());
-    assert!(!journal
-        .join(format!(
-            "entities/target/history/private/{}.json",
-            merge.merge_id
-        ))
-        .exists());
+    assert!(
+        !journal
+            .join(format!(
+                "entities/target/history/private/{}.json",
+                merge.merge_id
+            ))
+            .exists()
+    );
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -238,12 +240,14 @@ fn undo_refuses_invalid_active_sibling_payload_without_mutation() {
         solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap(),
         index_before
     );
-    assert!(journal
-        .join(format!(
-            "entities/target/history/private/{}.json",
-            first.merge_id
-        ))
-        .exists());
+    assert!(
+        journal
+            .join(format!(
+                "entities/target/history/private/{}.json",
+                first.merge_id
+            ))
+            .exists()
+    );
     fs::remove_dir_all(journal).unwrap();
 }
 
@@ -516,10 +520,12 @@ fn undo_rebase_chain_restores_intermediate_target() {
         .unwrap(),
     )
     .unwrap();
-    assert!(parent_payload["manifest"]["rebased_merge_ids"]
-        .as_array()
-        .unwrap()
-        .contains(&Value::String(child.merge_id.clone())));
+    assert!(
+        parent_payload["manifest"]["rebased_merge_ids"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::String(child.merge_id.clone()))
+    );
     assert!(!child_path.exists());
 
     undo_entity_merge(&journal, &parent.merge_id, Value::Null).unwrap();
@@ -843,13 +849,15 @@ fn observations_undo_injection_rolls_back_and_retry_succeeds() {
         commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
     let first_after_merge = fs::read(&first).unwrap();
     let second_after_merge = fs::read(&second).unwrap();
-    assert!(undo_entity_merge_with_injector(
-        &journal,
-        &merge.merge_id,
-        Value::Null,
-        Some(&|phase, artifact_index| phase == "observations" && artifact_index == 0),
-    )
-    .is_err());
+    assert!(
+        undo_entity_merge_with_injector(
+            &journal,
+            &merge.merge_id,
+            Value::Null,
+            Some(&|phase, artifact_index| phase == "observations" && artifact_index == 0),
+        )
+        .is_err()
+    );
     assert_eq!(fs::read(&first).unwrap(), first_after_merge);
     assert_eq!(fs::read(&second).unwrap(), second_after_merge);
 
@@ -884,13 +892,15 @@ fn segments_undo_injection_rolls_back_and_retry_succeeds() {
         commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
     let first_after_merge = fs::read(&first).unwrap();
     let second_after_merge = fs::read(&second).unwrap();
-    assert!(undo_entity_merge_with_injector(
-        &journal,
-        &merge.merge_id,
-        Value::Null,
-        Some(&|phase, artifact_index| phase == "segments" && artifact_index == 0),
-    )
-    .is_err());
+    assert!(
+        undo_entity_merge_with_injector(
+            &journal,
+            &merge.merge_id,
+            Value::Null,
+            Some(&|phase, artifact_index| phase == "segments" && artifact_index == 0),
+        )
+        .is_err()
+    );
     assert_eq!(fs::read(&first).unwrap(), first_after_merge);
     assert_eq!(fs::read(&second).unwrap(), second_after_merge);
 
@@ -929,13 +939,15 @@ fn activities_undo_injection_rolls_back_and_retry_succeeds() {
         commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
     let first_after_merge = fs::read(&first).unwrap();
     let second_after_merge = fs::read(&second).unwrap();
-    assert!(undo_entity_merge_with_injector(
-        &journal,
-        &merge.merge_id,
-        Value::Null,
-        Some(&|phase, artifact_index| phase == "activities" && artifact_index == 0),
-    )
-    .is_err());
+    assert!(
+        undo_entity_merge_with_injector(
+            &journal,
+            &merge.merge_id,
+            Value::Null,
+            Some(&|phase, artifact_index| phase == "activities" && artifact_index == 0),
+        )
+        .is_err()
+    );
     assert_eq!(fs::read(&first).unwrap(), first_after_merge);
     assert_eq!(fs::read(&second).unwrap(), second_after_merge);
 
@@ -1044,5 +1056,66 @@ fn undo_relink_restores_source_entity_id() {
         "{\"content\":\"kept\"}\n"
     );
     assert!(!journal.join("facets/work/entities/tgt-id").exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+fn seed_identity_at(journal: &std::path::Path, directory: &str, effective_id: &str) {
+    let path = journal.join(format!("entities/{directory}/entity.json"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, format!(r#"{{"id":"{effective_id}"}}"#)).unwrap();
+}
+
+#[test]
+fn undo_entity_merge_restores_remapped_source_and_target_directories() {
+    let journal = undo_journal();
+    seed_identity_at(&journal, "dir-s", "source");
+    seed_identity_at(&journal, "dir-t", "target");
+    let source_voice = write_voiceprints_npz(
+        &[2.0; 256],
+        &[r#"{"day":"d","segment_key":"s","source":"x","sentence_id":"S"}"#.to_owned()],
+    )
+    .unwrap();
+    let target_voice = write_voiceprints_npz(
+        &[3.0; 256],
+        &[r#"{"day":"d","segment_key":"s","source":"x","sentence_id":"U"}"#.to_owned()],
+    )
+    .unwrap();
+    fs::write(
+        journal.join("entities/dir-s/voiceprints.npz"),
+        &source_voice,
+    )
+    .unwrap();
+    fs::write(
+        journal.join("entities/dir-t/voiceprints.npz"),
+        &target_voice,
+    )
+    .unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    assert!(!journal.join("entities/dir-s").exists());
+    let report = undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    assert_eq!(report.target_id, "target");
+    assert_eq!(report.source_id, "source");
+
+    assert!(journal.join("entities/dir-s/entity.json").is_file());
+    assert_eq!(
+        fs::read(journal.join("entities/dir-s/voiceprints.npz")).unwrap(),
+        source_voice
+    );
+    assert_eq!(
+        fs::read(journal.join("entities/dir-t/voiceprints.npz")).unwrap(),
+        target_voice
+    );
+    assert!(
+        !journal
+            .join(format!(
+                "entities/dir-t/history/private/{}.json",
+                merge.merge_id
+            ))
+            .exists()
+    );
+    assert!(!journal.join("entities/source").exists());
+    assert!(!journal.join("entities/target").exists());
     fs::remove_dir_all(journal).unwrap();
 }

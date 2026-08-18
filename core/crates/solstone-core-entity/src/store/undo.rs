@@ -7,14 +7,6 @@ use std::fmt;
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_journal_io::contained_path;
-use solstone_core_journal_io::list_dir_entries;
-use solstone_core_journal_io::path_lexists;
-use solstone_core_journal_io::read_json;
-use solstone_core_journal_io::read_jsonl;
-use solstone_core_journal_io::restore_snapshot;
-use solstone_core_journal_io::write_json;
-use solstone_core_journal_io::write_jsonl;
 use solstone_core_journal_io::AtomicWriteOptions;
 use solstone_core_journal_io::DirEntryKind;
 use solstone_core_journal_io::JournalSnapshot;
@@ -23,16 +15,25 @@ use solstone_core_journal_io::MalformedPolicy;
 use solstone_core_journal_io::SnapshotDirectory;
 use solstone_core_journal_io::SnapshotError;
 use solstone_core_journal_io::SnapshotFile;
+use solstone_core_journal_io::contained_path;
+use solstone_core_journal_io::list_dir_entries;
+use solstone_core_journal_io::path_lexists;
+use solstone_core_journal_io::read_json;
+use solstone_core_journal_io::read_jsonl;
+use solstone_core_journal_io::restore_snapshot;
+use solstone_core_journal_io::write_json;
+use solstone_core_journal_io::write_jsonl;
 
 use crate::{
-    hold_entity_trust_lock, read_entity_identity, read_visible_history, save_entity_identity,
-    EntityOperationContext, EntityOperationKind, EntityWriteError,
+    EntityOperationContext, EntityOperationKind, EntityWriteError, hold_entity_trust_lock,
+    read_entity_identity, read_visible_history, save_entity_identity,
 };
 
+use super::lifecycle::resolve_entity_dir;
 use super::merge_payload::{
-    list_entity_merge_payload_ids, load_entity_merge_payload, move_entity_merge_payload,
-    record_entity_merge_payload, remove_entity_merge_payload, snapshot_from_payload,
-    MergePayloadError,
+    MergePayloadError, list_entity_merge_payload_ids, load_entity_merge_payload,
+    move_entity_merge_payload, record_entity_merge_payload, remove_entity_merge_payload,
+    snapshot_from_payload,
 };
 use super::merge_rollback::MergeRollback;
 
@@ -119,8 +120,10 @@ pub(crate) fn undo_entity_merge_with_injector(
     injector: Option<&FailureInjector>,
 ) -> Result<EntityUndoReport, EntityUndoError> {
     let target_id = find_payload_holder(journal, merge_id)?;
-    let payload = load_entity_merge_payload(journal, &target_id, merge_id)?;
-    let active_payloads = load_active_sibling_payloads(journal, &target_id, merge_id)?;
+    let target_dir = resolve_entity_dir(journal, &target_id)
+        .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+    let payload = load_entity_merge_payload(journal, &target_dir, merge_id)?;
+    let active_payloads = load_active_sibling_payloads(journal, &target_dir, merge_id)?;
     let source_id = payload
         .get("source_id")
         .and_then(Value::as_str)
@@ -142,11 +145,7 @@ pub(crate) fn undo_entity_merge_with_injector(
     let mut rollback = MergeRollback::default();
     let mut phase = "snapshot";
     let result: Result<(), EntityUndoError> = (|| {
-        let mut paths = HashSet::from([
-            format!("entities/{target_id}"),
-            format!("entities/{source_id}"),
-            "indexer".to_owned(),
-        ]);
+        let mut paths = HashSet::from([format!("entities/{target_dir}"), "indexer".to_owned()]);
         paths.extend(source_snapshots.iter().map(snapshot_path));
         for path in paths {
             rollback.capture(journal, &path)?;
@@ -156,7 +155,7 @@ pub(crate) fn undo_entity_merge_with_injector(
             restore_snapshot(journal, snapshot)?;
         }
         phase = "voiceprints";
-        undo_voiceprints(journal, &target_id, &payload, &mut rollback)?;
+        undo_voiceprints(journal, &target_dir, &payload, &mut rollback)?;
         phase = "segments";
         undo_segments(journal, &payload, &mut rollback, injector)?;
         phase = "activities";
@@ -166,10 +165,19 @@ pub(crate) fn undo_entity_merge_with_injector(
         phase = "facets";
         undo_facets(journal, &target_id, &payload, &mut rollback, injector)?;
         phase = "lineage";
-        undo_rebased_payloads(journal, &source_id, &target_id, &payload, &mut rollback)?;
+        let source_dir = resolve_entity_dir(journal, &source_id)
+            .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+        undo_rebased_payloads(
+            journal,
+            &target_dir,
+            &source_dir,
+            &source_id,
+            &payload,
+            &mut rollback,
+        )?;
         phase = "identity";
         let target_after_undo =
-            replay_target_identity(journal, &target_id, &payload, &active_payloads)?;
+            replay_target_identity(journal, &target_dir, &payload, &active_payloads)?;
         save_entity_identity(
             journal,
             &target_id,
@@ -186,7 +194,7 @@ pub(crate) fn undo_entity_merge_with_injector(
             }),
         )?;
         phase = "private_payload";
-        remove_entity_merge_payload(journal, &target_id, merge_id)?;
+        remove_entity_merge_payload(journal, &target_dir, merge_id)?;
         phase = "edges";
         solstone_core_indexer_store::merge::rebuild_edges_for_recorded_merge_undo(journal)
             .map_err(EntityUndoError::Index)?;
@@ -208,15 +216,15 @@ pub(crate) fn undo_entity_merge_with_injector(
 
 fn load_active_sibling_payloads(
     journal: &Path,
-    target_id: &str,
+    target_dir: &str,
     merge_id: &str,
 ) -> Result<Vec<Value>, EntityUndoError> {
     let mut payloads = Vec::new();
-    for sibling_id in list_entity_merge_payload_ids(journal, target_id)? {
+    for sibling_id in list_entity_merge_payload_ids(journal, target_dir)? {
         if sibling_id == merge_id {
             continue;
         }
-        let payload = load_entity_merge_payload(journal, target_id, &sibling_id).map_err(|error| {
+        let payload = load_entity_merge_payload(journal, target_dir, &sibling_id).map_err(|error| {
             EntityUndoError::Refused(format!(
                 "cannot undo recorded merge {merge_id}: active merge payload {sibling_id} is invalid: {error}"
             ))
@@ -228,13 +236,13 @@ fn load_active_sibling_payloads(
 
 fn replay_target_identity(
     journal: &Path,
-    target_id: &str,
+    target_dir: &str,
     payload: &Value,
     active_payloads: &[Value],
 ) -> Result<Value, EntityUndoError> {
-    let mut current = read_entity_identity(journal, target_id)
+    let mut current = read_entity_identity(journal, target_dir)
         .map_err(|error| EntityUndoError::Refused(error.to_string()))?
-        .ok_or_else(|| EntityUndoError::Refused(format!("target entity not found: {target_id}")))?
+        .ok_or_else(|| EntityUndoError::Refused(format!("target entity not found: {target_dir}")))?
         .value()
         .clone();
     let identity = payload
@@ -247,7 +255,7 @@ fn replay_target_identity(
     let merge_seq = payload_sequence(payload);
     remove_supported_set_values(
         journal,
-        target_id,
+        target_dir,
         &mut current,
         "aka",
         identity.get("aka_support"),
@@ -256,7 +264,7 @@ fn replay_target_identity(
     )?;
     remove_supported_set_values(
         journal,
-        target_id,
+        target_dir,
         &mut current,
         "emails",
         identity.get("email_support"),
@@ -265,7 +273,7 @@ fn replay_target_identity(
     )?;
     replay_supported_scalars(
         journal,
-        target_id,
+        target_dir,
         &mut current,
         identity.get("scalar_support"),
         active_payloads,
@@ -276,7 +284,7 @@ fn replay_target_identity(
 
 fn remove_supported_set_values(
     journal: &Path,
-    target_id: &str,
+    target_dir: &str,
     current: &mut Value,
     field: &str,
     support: Option<&Value>,
@@ -301,7 +309,7 @@ fn remove_supported_set_values(
             ))
         })?;
         if other_payload_supports(field, key, active_payloads)
-            || later_owner_event_introduced(journal, target_id, field, key, merge_seq)?
+            || later_owner_event_introduced(journal, target_dir, field, key, merge_seq)?
         {
             continue;
         }
@@ -322,7 +330,7 @@ fn remove_supported_set_values(
 
 fn replay_supported_scalars(
     journal: &Path,
-    target_id: &str,
+    target_dir: &str,
     current: &mut Value,
     support: Option<&Value>,
     active_payloads: &[Value],
@@ -331,14 +339,14 @@ fn replay_supported_scalars(
     let entries = support.and_then(Value::as_array).ok_or_else(|| {
         EntityUndoError::Refused("merge payload identity scalar_support is missing".to_owned())
     })?;
-    let object = current
-        .as_object_mut()
-        .ok_or_else(|| EntityUndoError::Refused(format!("target entity not found: {target_id}")))?;
+    let object = current.as_object_mut().ok_or_else(|| {
+        EntityUndoError::Refused(format!("target entity not found: {target_dir}"))
+    })?;
     for entry in entries {
         let key = entry.get("key").and_then(Value::as_str).ok_or_else(|| {
             EntityUndoError::Refused("merge payload scalar support entry is missing key".to_owned())
         })?;
-        if later_owner_scalar_changed(journal, target_id, key, merge_seq)? {
+        if later_owner_scalar_changed(journal, target_dir, key, merge_seq)? {
             continue;
         }
         let mut missing = entry
@@ -399,12 +407,12 @@ fn other_payload_supports(field: &str, key: &str, payloads: &[Value]) -> bool {
 
 fn later_owner_event_introduced(
     journal: &Path,
-    target_id: &str,
+    target_dir: &str,
     field: &str,
     key: &str,
     merge_seq: i128,
 ) -> Result<bool, EntityUndoError> {
-    for event in read_visible_history(journal, target_id)
+    for event in read_visible_history(journal, target_dir)
         .map_err(|error| EntityUndoError::Refused(error.to_string()))?
     {
         let event = event.value();
@@ -428,11 +436,11 @@ fn later_owner_event_introduced(
 
 fn later_owner_scalar_changed(
     journal: &Path,
-    target_id: &str,
+    target_dir: &str,
     key: &str,
     merge_seq: i128,
 ) -> Result<bool, EntityUndoError> {
-    for event in read_visible_history(journal, target_id)
+    for event in read_visible_history(journal, target_dir)
         .map_err(|error| EntityUndoError::Refused(error.to_string()))?
     {
         let event = event.value();
@@ -732,7 +740,7 @@ fn undo_observation_relations(
 
 fn undo_voiceprints(
     journal: &Path,
-    target_id: &str,
+    target_dir: &str,
     payload: &Value,
     rollback: &mut MergeRollback,
 ) -> Result<(), EntityUndoError> {
@@ -744,7 +752,7 @@ fn undo_voiceprints(
             EntityUndoError::Refused("merge payload voiceprints missing target_before".to_owned())
         })?;
     let snapshot = snapshot_from_payload(snapshot)?;
-    let path = format!("entities/{target_id}/voiceprints.npz");
+    let path = format!("entities/{target_dir}/voiceprints.npz");
     if snapshot_path(&snapshot) != path {
         return Err(EntityUndoError::Refused(
             "merge payload voiceprints snapshot path does not match target".to_owned(),
@@ -757,8 +765,9 @@ fn undo_voiceprints(
 
 fn undo_rebased_payloads(
     journal: &Path,
-    source_id: &str,
-    target_id: &str,
+    current_dir: &str,
+    restore_dir: &str,
+    restore_id: &str,
     payload: &Value,
     rollback: &mut MergeRollback,
 ) -> Result<(), EntityUndoError> {
@@ -775,15 +784,21 @@ fn undo_rebased_payloads(
         })?;
         rollback.capture(
             journal,
-            &format!("entities/{target_id}/history/private/{merge_id}.json"),
+            &format!("entities/{current_dir}/history/private/{merge_id}.json"),
         )?;
-        let (mut descendant, _) =
-            move_entity_merge_payload(journal, target_id, source_id, merge_id, None)?;
+        let (mut descendant, _) = move_entity_merge_payload(
+            journal,
+            current_dir,
+            restore_dir,
+            restore_id,
+            merge_id,
+            None,
+        )?;
         descendant
             .as_object_mut()
             .expect("validated merge payload")
             .remove("rebased_from_entity_id");
-        record_entity_merge_payload(journal, source_id, merge_id, &descendant)?;
+        record_entity_merge_payload(journal, restore_dir, merge_id, &descendant)?;
     }
     Ok(())
 }
@@ -948,14 +963,21 @@ fn find_payload_holder(journal: &Path, merge_id: &str) -> Result<String, EntityU
         if entry.kind != DirEntryKind::Directory {
             continue;
         }
-        let entity_id = entry.name.to_string_lossy().into_owned();
+        let entity_dir = entry.name.to_string_lossy().into_owned();
         let path = contained_path(
             journal,
-            &format!("entities/{entity_id}/history/private/{merge_id}.json"),
+            &format!("entities/{entity_dir}/history/private/{merge_id}.json"),
         )
         .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
         if path_lexists(&path).map_err(|error| EntityUndoError::Refused(error.to_string()))? {
-            return Ok(entity_id);
+            let identity = read_entity_identity(journal, &entity_dir)
+                .map_err(|error| EntityUndoError::Refused(error.to_string()))?
+                .ok_or_else(|| {
+                    EntityUndoError::Refused(format!(
+                        "entity identity missing for merge payload holder: {entity_dir}"
+                    ))
+                })?;
+            return Ok(identity.entity_id().to_owned());
         }
     }
     Err(EntityUndoError::Refused(format!(

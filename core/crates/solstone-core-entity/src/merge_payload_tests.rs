@@ -406,9 +406,15 @@ fn move_rebases_and_removes_only_a_distinct_source() {
     let directory = TempDir::new();
     let value = payload();
     record_entity_merge_payload(&directory.0, "source", "em_1", &value).unwrap();
-    let (moved, rel) =
-        move_entity_merge_payload(&directory.0, "source", "target", "em_1", Some("ancestor"))
-            .unwrap();
+    let (moved, rel) = move_entity_merge_payload(
+        &directory.0,
+        "source",
+        "target",
+        "target",
+        "em_1",
+        Some("ancestor"),
+    )
+    .unwrap();
     assert_eq!(rel, "entities/target/history/private/em_1.json");
     assert_eq!(moved["target_id"], "target");
     assert_eq!(moved["rebased_from_entity_id"], "ancestor");
@@ -424,12 +430,15 @@ fn move_rebases_and_removes_only_a_distinct_source() {
             .join("entities/target/history/private/em_1.json")
             .is_file()
     );
-    let (_, _) = move_entity_merge_payload(&directory.0, "target", "target", "em_1", None).unwrap();
+    let (_, _) =
+        move_entity_merge_payload(&directory.0, "target", "target", "target", "em_1", None)
+            .unwrap();
     let same = load_entity_merge_payload(&directory.0, "target", "em_1").unwrap();
     assert!(same.get("rebased_from_entity_id").is_some());
     record_entity_merge_payload(&directory.0, "target", "em_2", &payload()).unwrap();
     let (same, _) =
-        move_entity_merge_payload(&directory.0, "target", "target", "em_2", None).unwrap();
+        move_entity_merge_payload(&directory.0, "target", "target", "target", "em_2", None)
+            .unwrap();
     assert!(same.get("rebased_from_entity_id").is_none());
     assert!(
         directory

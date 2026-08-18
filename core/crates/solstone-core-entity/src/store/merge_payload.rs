@@ -6,12 +6,6 @@ use std::fmt;
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_journal_io::contained_path;
-use solstone_core_journal_io::list_dir_entries;
-use solstone_core_journal_io::path_lexists;
-use solstone_core_journal_io::read_json;
-use solstone_core_journal_io::restore_snapshot;
-use solstone_core_journal_io::write_json;
 use solstone_core_journal_io::AtomicWriteError;
 use solstone_core_journal_io::DirEntryKind;
 use solstone_core_journal_io::JournalSnapshot;
@@ -21,6 +15,12 @@ use solstone_core_journal_io::PathError;
 use solstone_core_journal_io::SnapshotDirectory;
 use solstone_core_journal_io::SnapshotError;
 use solstone_core_journal_io::SnapshotFile;
+use solstone_core_journal_io::contained_path;
+use solstone_core_journal_io::list_dir_entries;
+use solstone_core_journal_io::path_lexists;
+use solstone_core_journal_io::read_json;
+use solstone_core_journal_io::restore_snapshot;
+use solstone_core_journal_io::write_json;
 
 #[derive(Debug)]
 pub enum MergePayloadError {
@@ -46,12 +46,12 @@ impl Error for MergePayloadError {}
 
 pub(crate) fn record_entity_merge_payload(
     journal: &Path,
-    entity_id: &str,
+    entity_dir: &str,
     merge_id: &str,
     payload: &Value,
 ) -> Result<String, MergePayloadError> {
     validate_merge_payload(journal, payload)?;
-    let path = payload_path(journal, entity_id, merge_id)?;
+    let path = payload_path(journal, entity_dir, merge_id)?;
     write_json(
         &path,
         payload,
@@ -62,18 +62,18 @@ pub(crate) fn record_entity_merge_payload(
         },
     )
     .map_err(MergePayloadError::Write)?;
-    Ok(payload_relative_path(entity_id, merge_id))
+    Ok(payload_relative_path(entity_dir, merge_id))
 }
 
 pub(crate) fn load_entity_merge_payload(
     journal: &Path,
-    entity_id: &str,
+    entity_dir: &str,
     merge_id: &str,
 ) -> Result<Value, MergePayloadError> {
-    let path = payload_path(journal, entity_id, merge_id)?;
+    let path = payload_path(journal, entity_dir, merge_id)?;
     if !path_lexists(&path).map_err(MergePayloadError::Path)? {
         return Err(invalid(&format!(
-            "missing private merge payload for {entity_id}: {merge_id}"
+            "missing private merge payload for {entity_dir}: {merge_id}"
         )));
     }
     let payload =
@@ -86,7 +86,7 @@ pub(crate) fn load_entity_merge_payload(
     }
     validate_merge_payload(journal, &payload).map_err(|error| {
         MergePayloadError::Invalid(format!(
-            "invalid private merge payload for {entity_id}:{merge_id}: {error}"
+            "invalid private merge payload for {entity_dir}:{merge_id}: {error}"
         ))
     })?;
     Ok(payload)
@@ -94,12 +94,13 @@ pub(crate) fn load_entity_merge_payload(
 
 pub(crate) fn move_entity_merge_payload(
     journal: &Path,
-    source_id: &str,
+    source_dir: &str,
+    target_dir: &str,
     target_id: &str,
     merge_id: &str,
     rebased_from_entity_id: Option<&str>,
 ) -> Result<(Value, String), MergePayloadError> {
-    let mut payload = load_entity_merge_payload(journal, source_id, merge_id)?;
+    let mut payload = load_entity_merge_payload(journal, source_dir, merge_id)?;
     payload
         .as_object_mut()
         .ok_or_else(|| MergePayloadError::Invalid("merge payload is not an object".to_owned()))?
@@ -110,24 +111,24 @@ pub(crate) fn move_entity_merge_payload(
             Value::String(rebased_from_entity_id.to_owned()),
         );
     }
-    let target_rel = record_entity_merge_payload(journal, target_id, merge_id, &payload)?;
-    if source_id != target_id {
-        remove_entity_merge_payload(journal, source_id, merge_id)?;
+    let target_rel = record_entity_merge_payload(journal, target_dir, merge_id, &payload)?;
+    if source_dir != target_dir {
+        remove_entity_merge_payload(journal, source_dir, merge_id)?;
     }
     Ok((payload, target_rel))
 }
 
 pub(crate) fn remove_entity_merge_payload(
     journal: &Path,
-    entity_id: &str,
+    entity_dir: &str,
     merge_id: &str,
 ) -> Result<(), MergePayloadError> {
-    let path = payload_path(journal, entity_id, merge_id)?;
+    let path = payload_path(journal, entity_dir, merge_id)?;
     if path_lexists(&path).map_err(MergePayloadError::Path)? {
         restore_snapshot(
             journal,
             &JournalSnapshot::Missing {
-                path: payload_relative_path(entity_id, merge_id),
+                path: payload_relative_path(entity_dir, merge_id),
             },
         )
         .map_err(MergePayloadError::Snapshot)?;
@@ -137,25 +138,25 @@ pub(crate) fn remove_entity_merge_payload(
 
 fn payload_path(
     journal: &Path,
-    entity_id: &str,
+    entity_dir: &str,
     merge_id: &str,
 ) -> Result<std::path::PathBuf, MergePayloadError> {
     contained_path(
         journal,
-        &format!("entities/{entity_id}/history/private/{merge_id}.json"),
+        &format!("entities/{entity_dir}/history/private/{merge_id}.json"),
     )
     .map_err(MergePayloadError::Path)
 }
 
-fn payload_relative_path(entity_id: &str, merge_id: &str) -> String {
-    format!("entities/{entity_id}/history/private/{merge_id}.json")
+fn payload_relative_path(entity_dir: &str, merge_id: &str) -> String {
+    format!("entities/{entity_dir}/history/private/{merge_id}.json")
 }
 
 pub(crate) fn list_entity_merge_payload_ids(
     journal: &Path,
-    entity_id: &str,
+    entity_dir: &str,
 ) -> Result<Vec<String>, MergePayloadError> {
-    let directory = contained_path(journal, &format!("entities/{entity_id}/history/private"))
+    let directory = contained_path(journal, &format!("entities/{entity_dir}/history/private"))
         .map_err(MergePayloadError::Path)?;
     Ok(list_dir_entries(&directory)
         .map_err(MergePayloadError::Path)?
