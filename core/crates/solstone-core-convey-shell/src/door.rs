@@ -16,7 +16,7 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{Method, Request, StatusCode};
 use axum::middleware::{self, Next};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::{Extension, Router};
 use rustls::pki_types::{CertificateDer, UnixTime};
 use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
@@ -76,6 +76,206 @@ pub(super) struct DoorStart {
     pub accept_task: Option<tokio::task::JoinHandle<()>>,
     pub pairing_reaper_task: Option<tokio::task::JoinHandle<()>>,
     pub pairing_cap_refusals: Option<Arc<AtomicU64>>,
+}
+
+impl DoorStart {
+    fn abort(&self) {
+        if let Some(task) = &self.refresh_task {
+            task.abort();
+        }
+        if let Some(task) = &self.accept_task {
+            task.abort();
+        }
+        if let Some(task) = &self.pairing_reaper_task {
+            task.abort();
+        }
+    }
+}
+
+/// Starts the paired-device door at process boot and again after first-run
+/// finalize. Python starts the listener from `/init/finalize`; native used to
+/// try only at serve() and then leave a withheld door down for the life of
+/// the process.
+pub(super) struct DoorLifecycle {
+    parts: DoorStartParts,
+    running: Mutex<Option<DoorStart>>,
+}
+
+struct DoorStartParts {
+    journal_root: PathBuf,
+    port: u16,
+    handshake_timeout: Duration,
+    stream_stall_timeout: Duration,
+    router: Router,
+    carrier_loop_iterations: Arc<AtomicU64>,
+    handshake_authorization_read_ticks: Arc<AtomicU64>,
+    authorization_sender: watch::Sender<DeviceDoorAuthorization>,
+}
+
+impl DoorStartParts {
+    fn from_options(options: DoorStartOptions) -> Self {
+        Self {
+            journal_root: options.journal_root,
+            port: options.port,
+            handshake_timeout: options.handshake_timeout,
+            stream_stall_timeout: options.stream_stall_timeout,
+            router: options.router,
+            carrier_loop_iterations: options.carrier_loop_iterations,
+            handshake_authorization_read_ticks: options.handshake_authorization_read_ticks,
+            authorization_sender: options.authorization_sender,
+        }
+    }
+
+    fn to_options(&self) -> DoorStartOptions {
+        DoorStartOptions {
+            journal_root: self.journal_root.clone(),
+            port: self.port,
+            handshake_timeout: self.handshake_timeout,
+            stream_stall_timeout: self.stream_stall_timeout,
+            router: self.router.clone(),
+            carrier_loop_iterations: self.carrier_loop_iterations.clone(),
+            handshake_authorization_read_ticks: self.handshake_authorization_read_ticks.clone(),
+            authorization_sender: self.authorization_sender.clone(),
+        }
+    }
+}
+
+impl DoorLifecycle {
+    pub(super) fn new(options: DoorStartOptions) -> Self {
+        Self {
+            parts: DoorStartParts::from_options(options),
+            running: Mutex::new(None),
+        }
+    }
+
+    pub(super) async fn ensure_started(&self) -> bool {
+        if self.is_bound() {
+            return true;
+        }
+        let started = start(self.parts.to_options()).await;
+        let mut running = self.running.lock().expect("door lifecycle lock");
+        if running
+            .as_ref()
+            .is_some_and(|current| matches!(current.outcome, DoorOutcome::Bound(_)))
+        {
+            started.abort();
+            return true;
+        }
+        let ok = matches!(started.outcome, DoorOutcome::Bound(_));
+        if ok || running.is_none() {
+            if let Some(previous) = running.take() {
+                previous.abort();
+            }
+            *running = Some(started);
+            ok
+        } else {
+            started.abort();
+            false
+        }
+    }
+
+    pub(super) fn is_bound(&self) -> bool {
+        self.bound_addr().is_some()
+    }
+
+    pub(super) fn bound_addr(&self) -> Option<SocketAddr> {
+        let running = self.running.lock().expect("door lifecycle lock");
+        match running.as_ref().map(|current| &current.outcome) {
+            Some(DoorOutcome::Bound(address)) => Some(*address),
+            _ => None,
+        }
+    }
+
+    pub(super) fn clone_outcome(&self) -> Option<DoorOutcome> {
+        let running = self.running.lock().expect("door lifecycle lock");
+        running
+            .as_ref()
+            .map(|current| clone_outcome(&current.outcome))
+    }
+
+    pub(super) fn pairing_cap_refusals(&self) -> u64 {
+        let running = self.running.lock().expect("door lifecycle lock");
+        running
+            .as_ref()
+            .and_then(|current| current.pairing_cap_refusals.as_ref())
+            .map_or(0, |counter| counter.load(Ordering::Acquire))
+    }
+
+    pub(super) async fn stop_authorization_refresh(&self) {
+        let task = {
+            let mut running = self.running.lock().expect("door lifecycle lock");
+            running
+                .as_mut()
+                .and_then(|current| current.refresh_task.take())
+        };
+        let Some(task) = task else {
+            return;
+        };
+        task.abort();
+        match task.await {
+            Ok(()) | Err(_) => {}
+        }
+    }
+
+    pub(super) async fn stop_pairing_reaper(&self) {
+        let task = {
+            let mut running = self.running.lock().expect("door lifecycle lock");
+            running
+                .as_mut()
+                .and_then(|current| current.pairing_reaper_task.take())
+        };
+        let Some(task) = task else {
+            return;
+        };
+        task.abort();
+        match task.await {
+            Ok(()) | Err(_) => {}
+        }
+    }
+
+    pub(super) fn shutdown(&self) {
+        let running = self.running.lock().expect("door lifecycle lock");
+        if let Some(current) = running.as_ref() {
+            current.abort();
+        }
+    }
+}
+
+fn clone_outcome(outcome: &DoorOutcome) -> DoorOutcome {
+    match outcome {
+        DoorOutcome::Bound(address) => DoorOutcome::Bound(*address),
+        DoorOutcome::Withheld(reason) => DoorOutcome::Withheld(reason.clone()),
+        DoorOutcome::BindFailed { port, source } => DoorOutcome::BindFailed {
+            port: *port,
+            source: std::io::Error::new(source.kind(), format!("{source}")),
+        },
+    }
+}
+
+/// After a successful `/init/finalize`, start the door that boot withheld.
+pub(super) async fn open_after_finalize(
+    axum::extract::State(door): axum::extract::State<Arc<DoorLifecycle>>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let is_finalize = request.method() == Method::POST && request.uri().path() == "/init/finalize";
+    let response = next.run(request).await;
+    if !is_finalize || !response.status().is_success() {
+        return response;
+    }
+    if door.ensure_started().await {
+        if let Some(address) = door.bound_addr() {
+            eprintln!("convey: paired-device door listening on {address}");
+        }
+        return response;
+    }
+    solstone_core_convey_http::envelope::error_envelope(
+        "convey_operation_failed",
+        "Setup was saved, but secure network access did not start.",
+        "the paired-device door did not start",
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+    .into_response()
 }
 
 trait PairingDelay: Send + Sync {

@@ -218,12 +218,9 @@ pub struct ConveyServeHandle {
     loopback_ipv4: SocketAddr,
     loopback_ipv6: SocketAddr,
     door_outcome: DoorOutcome,
+    door: Arc<door::DoorLifecycle>,
     loopback_task: tokio::task::JoinHandle<()>,
-    refresh_task: Option<tokio::task::JoinHandle<()>>,
-    accept_task: Option<tokio::task::JoinHandle<()>>,
-    pairing_reaper_task: Option<tokio::task::JoinHandle<()>>,
     link_health_task: tokio::task::JoinHandle<()>,
-    pairing_cap_refusals: Option<Arc<AtomicU64>>,
 }
 
 #[cfg(feature = "host")]
@@ -237,44 +234,26 @@ impl ConveyServeHandle {
     pub fn door_outcome(&self) -> &DoorOutcome {
         &self.door_outcome
     }
+    /// Latest door bind, including a door that opened after first-run finalize.
+    pub fn live_door_addr(&self) -> Option<SocketAddr> {
+        self.door.bound_addr()
+    }
     pub fn shutdown(&self) {
         self.loopback_task.abort();
-        if let Some(task) = &self.refresh_task {
-            task.abort();
-        }
-        if let Some(task) = &self.accept_task {
-            task.abort();
-        }
-        if let Some(task) = &self.pairing_reaper_task {
-            task.abort();
-        }
+        self.door.shutdown();
         self.link_health_task.abort();
     }
     pub async fn stop_authorization_refresh(&mut self) {
-        let Some(task) = self.refresh_task.take() else {
-            return;
-        };
-        task.abort();
-        match task.await {
-            Ok(()) | Err(_) => {}
-        }
+        self.door.stop_authorization_refresh().await;
     }
     /// Testable lifecycle control for proving request-level confinement does
     /// not depend on the background pairing reaper.
     pub async fn stop_pairing_reaper(&mut self) {
-        let Some(task) = self.pairing_reaper_task.take() else {
-            return;
-        };
-        task.abort();
-        match task.await {
-            Ok(()) | Err(_) => {}
-        }
+        self.door.stop_pairing_reaper().await;
     }
     /// Test-visible equivalent of the cap-refusal log line.
     pub fn pairing_cap_refusals(&self) -> u64 {
-        self.pairing_cap_refusals
-            .as_ref()
-            .map_or(0, |counter| counter.load(Ordering::Acquire))
+        self.door.pairing_cap_refusals()
     }
     pub async fn await_forever(self) -> ! {
         std::future::pending().await
@@ -347,33 +326,37 @@ pub async fn bind_with_authorization(
         options.journal_root.clone(),
         link_health_cache.clone(),
     ));
-    let loopback_router = options
-        .router
-        .clone()
-        .layer(Extension(link_health_cache.clone()));
-    let loopback_task =
-        tokio::spawn(async move { serve_loopback(listeners, loopback_router).await });
-    let door_start = door::start(door::DoorStartOptions {
+    let door = Arc::new(door::DoorLifecycle::new(door::DoorStartOptions {
         journal_root: options.journal_root,
         port: options.door_port,
         handshake_timeout: options.handshake_timeout,
         stream_stall_timeout: options.stream_stall_timeout,
-        router: door_router.into_inner().layer(Extension(link_health_cache)),
+        router: door_router
+            .into_inner()
+            .layer(Extension(link_health_cache.clone())),
         carrier_loop_iterations: options.carrier_loop_iterations,
         handshake_authorization_read_ticks: options.handshake_authorization_read_ticks,
         authorization_sender,
-    })
-    .await;
+    }));
+    let loopback_router = options
+        .router
+        .clone()
+        .layer(Extension(link_health_cache))
+        .layer(axum::middleware::from_fn_with_state(
+            door.clone(),
+            door::open_after_finalize,
+        ));
+    let loopback_task =
+        tokio::spawn(async move { serve_loopback(listeners, loopback_router).await });
+    let _ = door.ensure_started().await;
+    let door_outcome = door.clone_outcome().expect("door start records an outcome");
     Ok(ConveyServeHandle {
         loopback_ipv4,
         loopback_ipv6,
-        door_outcome: door_start.outcome,
+        door_outcome,
+        door,
         loopback_task,
-        refresh_task: door_start.refresh_task,
-        accept_task: door_start.accept_task,
-        pairing_reaper_task: door_start.pairing_reaper_task,
         link_health_task,
-        pairing_cap_refusals: door_start.pairing_cap_refusals,
     })
 }
 

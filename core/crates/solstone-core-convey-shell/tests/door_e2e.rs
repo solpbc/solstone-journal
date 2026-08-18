@@ -567,6 +567,30 @@ async fn request(
     .expect("door request")
 }
 
+async fn loopback_post(address: SocketAddr, path: &str, body: &[u8]) -> u16 {
+    let mut stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("loopback connects");
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nhost: localhost\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+        body.len()
+    );
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("request headers write");
+    stream.write_all(body).await.expect("request body writes");
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await.expect("response");
+    std::str::from_utf8(&response)
+        .expect("response is text")
+        .split_whitespace()
+        .nth(1)
+        .expect("status token")
+        .parse()
+        .expect("status parses")
+}
+
 async fn loopback_status(address: SocketAddr) -> std::io::Result<u16> {
     let mut stream = tokio::net::TcpStream::connect(address).await?;
     stream
@@ -1048,6 +1072,83 @@ async fn ac3_stop_authorization_refresh_is_noop_when_door_is_withheld() {
     handle.stop_authorization_refresh().await;
     handle.shutdown();
     std::fs::remove_dir_all(root).expect("temporary root removes");
+}
+
+#[tokio::test]
+async fn finalize_starts_the_door_boot_withheld_for_an_unestablished_journal() {
+    let root = std::env::temp_dir().join(format!(
+        "solstone-door-finalize-opens-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("config")).expect("config");
+    let handle = serve(ConveyServeOptions {
+        journal_root: root.clone(),
+        loopback_port: 0,
+        door_port: 0,
+        handshake_timeout: Duration::from_secs(2),
+        stream_stall_timeout: Duration::from_secs(2),
+        router: solstone_core_sol_link::http::init_router(root.clone()),
+        carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+        handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
+    })
+    .await
+    .expect("loopback");
+    assert!(matches!(
+        handle.door_outcome(),
+        DoorOutcome::Withheld(DoorWithheldReason::Unestablished)
+    ));
+    assert!(handle.live_door_addr().is_none());
+
+    let loopback = handle.loopback_ipv4_addr();
+    assert_eq!(
+        loopback_post(loopback, "/init/mark/regenerate", b"{}").await,
+        200,
+        "wizard mark regenerate"
+    );
+    assert_eq!(
+        loopback_post(loopback, "/init/mark/lock", b"{}").await,
+        200,
+        "wizard mark lock"
+    );
+    assert!(
+        handle.live_door_addr().is_none(),
+        "locking the journal id does not start the door"
+    );
+    assert_eq!(
+        loopback_post(loopback, "/init/finalize", b"{}").await,
+        200,
+        "wizard finalize"
+    );
+    let address = handle
+        .live_door_addr()
+        .expect("finalize starts the withheld door");
+    let peer_root = std::env::temp_dir().join(format!(
+        "solstone-door-finalize-peer-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&peer_root);
+    fs::create_dir_all(peer_root.join("config")).expect("peer config");
+    let peer = serve(ConveyServeOptions {
+        journal_root: peer_root.clone(),
+        loopback_port: 0,
+        door_port: 0,
+        handshake_timeout: Duration::from_secs(2),
+        stream_stall_timeout: Duration::from_secs(2),
+        router: Router::new(),
+        carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+        handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
+    })
+    .await
+    .expect("peer loopback");
+    assert!(
+        tokio::net::TcpStream::connect(address).await.is_ok(),
+        "the second journal can reach the home door"
+    );
+    peer.shutdown();
+    handle.shutdown();
+    fs::remove_dir_all(peer_root).expect("peer root removes");
+    fs::remove_dir_all(root).expect("temporary root removes");
 }
 
 #[tokio::test]
