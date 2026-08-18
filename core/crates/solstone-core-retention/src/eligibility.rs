@@ -429,7 +429,7 @@ mod tests {
         let classifier = media_only;
         let found = vec![
             releasable("a.flac", 104),
-            // No handler claims a still image, so nothing can prove it consumed.
+            // No handler in the closed set claims a still image, so nothing can prove it consumed.
             FoundContent {
                 name: ContentName::new("photo.png").unwrap(),
                 size: 12,
