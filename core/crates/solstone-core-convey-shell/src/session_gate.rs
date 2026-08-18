@@ -22,6 +22,7 @@ pub struct SessionGateState {
 pub enum SessionExemption {
     Favicon,
     TopLevelStatic,
+    InitSetup,
     UnknownAppPrefix,
     ImportDoor,
     UnmatchedFallback,
@@ -30,6 +31,7 @@ pub enum SessionExemption {
 pub const SESSION_GATE_EXEMPTIONS: &[SessionExemption] = &[
     SessionExemption::Favicon,
     SessionExemption::TopLevelStatic,
+    SessionExemption::InitSetup,
     SessionExemption::UnknownAppPrefix,
     SessionExemption::ImportDoor,
     SessionExemption::UnmatchedFallback,
@@ -48,12 +50,15 @@ fn is_exempt(path: &str) -> bool {
         .any(|exemption| match exemption {
             SessionExemption::Favicon => path == "/favicon.ico",
             SessionExemption::TopLevelStatic => path.starts_with("/static/"),
+            SessionExemption::InitSetup => path == "/init" || path.starts_with("/init/"),
             SessionExemption::UnknownAppPrefix => {
                 let mut segments = path.trim_start_matches('/').split('/');
                 matches!(segments.next(), Some("app"))
-                    && segments
-                        .next()
-                        .is_some_and(|name| known_app(name).is_none())
+                    && segments.next().is_some_and(|name| {
+                        // `/app/link` aliases `/app/network` and is not an app
+                        // registry entry; it must stay session-gated.
+                        name != "link" && known_app(name).is_none()
+                    })
             }
             SessionExemption::ImportDoor => {
                 let segments = path.trim_matches('/').split('/').collect::<Vec<_>>();
@@ -163,11 +168,22 @@ mod tests {
             [
                 SessionExemption::Favicon,
                 SessionExemption::TopLevelStatic,
+                SessionExemption::InitSetup,
                 SessionExemption::UnknownAppPrefix,
                 SessionExemption::ImportDoor,
                 SessionExemption::UnmatchedFallback,
             ]
         );
+    }
+
+    #[test]
+    fn init_setup_exemption_is_the_init_prefix_only() {
+        assert!(is_exempt("/init"));
+        assert!(is_exempt("/init/"));
+        assert!(is_exempt("/init/mark"));
+        assert!(is_exempt("/init/api/state"));
+        assert!(!is_exempt("/initfoo"));
+        assert!(!is_exempt("/app/link/workspace"));
     }
 
     #[test]

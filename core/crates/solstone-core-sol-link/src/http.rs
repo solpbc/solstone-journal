@@ -102,14 +102,12 @@ struct FinalizeResponse {
     warnings: [String; 0],
 }
 
-/// Build the complete link HTTP surface. The caller remains responsible for serving it.
-pub fn router(journal_root: impl AsRef<Path>) -> Router {
+/// First-run setup routes only. Fallback-free so a convey-shell merge keeps the HTML 404.
+pub fn init_router(journal_root: impl AsRef<Path>) -> Router {
     let state = LinkHttpState {
         journal_root: journal_root.as_ref().to_path_buf(),
     };
     Router::new()
-        .route("/app/network/api/devices", get(devices))
-        .route("/app/network/api/identity", get(identity))
         .route("/init/api/state", get(init_state))
         .route("/init/api/local-capability", get(init_local_capability))
         .route("/init", get(init))
@@ -117,8 +115,23 @@ pub fn router(journal_root: impl AsRef<Path>) -> Router {
         .route("/init/mark/regenerate", post(init_mark_regenerate))
         .route("/init/mark/lock", post(init_mark_lock))
         .route("/init/finalize", post(init_finalize))
-        .fallback(not_found_fallback)
         .with_state(state)
+}
+
+/// Build the complete link HTTP surface. The caller remains responsible for serving it.
+pub fn router(journal_root: impl AsRef<Path>) -> Router {
+    let journal_root = journal_root.as_ref();
+    let state = LinkHttpState {
+        journal_root: journal_root.to_path_buf(),
+    };
+    init_router(journal_root)
+        .merge(
+            Router::new()
+                .route("/app/network/api/devices", get(devices))
+                .route("/app/network/api/identity", get(identity))
+                .with_state(state),
+        )
+        .fallback(not_found_fallback)
 }
 
 async fn devices(State(state): State<LinkHttpState>) -> Response {
