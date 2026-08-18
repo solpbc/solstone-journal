@@ -29,7 +29,7 @@ const MAX_ATTEMPTS: u64 = 5;
 
 #[derive(Debug)]
 pub enum RunError {
-    Blocked,
+    Blocked(Option<String>),
     Internal(String),
 }
 
@@ -779,7 +779,7 @@ fn blocked(
     context: Option<&str>,
 ) -> RunError {
     notify::blocked(journal, work_key, code, provider, context);
-    RunError::Blocked
+    RunError::Blocked(code.map(str::to_owned))
 }
 
 fn send_described(options: &DescribeOptions<'_>, output: &Path, start: Instant) {

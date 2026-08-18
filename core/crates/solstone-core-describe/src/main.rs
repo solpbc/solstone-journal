@@ -42,7 +42,10 @@ fn main() -> ExitCode {
             eprintln!("{message}");
             ExitCode::from(EXIT_DECODE_FAILURE)
         }
-        Err(CliError::Blocked) => ExitCode::from(EXIT_PROVIDER_BLOCKED),
+        Err(CliError::Blocked(reason)) => {
+            eprintln!("{}", describe_deferred_message(reason.as_deref()));
+            ExitCode::from(EXIT_PROVIDER_BLOCKED)
+        }
         Err(CliError::Internal(message)) => {
             eprintln!("{message}");
             ExitCode::FAILURE
@@ -133,7 +136,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
                 category_overrides: config.category_overrides,
             })
             .map_err(|error| match error {
-                pipeline::RunError::Blocked => CliError::Blocked,
+                pipeline::RunError::Blocked(reason) => CliError::Blocked(reason),
                 pipeline::RunError::Internal(message) => CliError::Internal(message),
             })
         }
@@ -167,8 +170,15 @@ enum CliError {
     Usage(String),
     Config(String),
     Decode(String),
-    Blocked,
+    Blocked(Option<String>),
     Internal(String),
+}
+
+fn describe_deferred_message(reason: Option<&str>) -> String {
+    match reason {
+        Some(token) if !token.is_empty() => format!("describe deferred: {token}"),
+        _ => "describe deferred".to_string(),
+    }
 }
 
 fn parse_arguments(arguments: impl IntoIterator<Item = OsString>) -> Result<Command, CliError> {
@@ -453,5 +463,18 @@ mod tests {
         if std::env::var("RUST_LOG").is_err() {
             assert!(log::max_level() >= log::LevelFilter::Warn);
         }
+    }
+
+    #[test]
+    fn describe_deferred_message_omits_empty_tokens() {
+        assert_eq!(super::describe_deferred_message(None), "describe deferred");
+        assert_eq!(
+            super::describe_deferred_message(Some("")),
+            "describe deferred"
+        );
+        assert_eq!(
+            super::describe_deferred_message(Some("binary_missing")),
+            "describe deferred: binary_missing"
+        );
     }
 }

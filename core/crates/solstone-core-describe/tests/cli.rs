@@ -157,6 +157,18 @@ fn detector_requests(path: &Path) -> Vec<serde_json::Value> {
     read_jsonl(path)
 }
 
+fn assert_stderr_deferred(output: &std::process::Output, expected_token: Option<&str>) {
+    let expected = match expected_token {
+        Some(token) if !token.is_empty() => format!("describe deferred: {token}"),
+        _ => "describe deferred".to_owned(),
+    };
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.lines().any(|line| line.trim() == expected),
+        "expected stderr line {expected:?}, got {stderr:?}"
+    );
+}
+
 fn no_temp_files(root: &Path) -> bool {
     fs::read_dir(root).expect("read root").all(|entry| {
         !entry
@@ -391,6 +403,12 @@ fn blocking_or_unknown_refusals_abort_without_an_artifact() {
             .output()
             .expect("run describe binary");
         assert_eq!(output.status.code(), Some(69), "{mode}");
+        let expected_token = match mode {
+            "blocking_retryable" => Some("binary_missing"),
+            "unknown_code" => Some("future_code"),
+            _ => unreachable!("blocking or unknown mode"),
+        };
+        assert_stderr_deferred(&output, expected_token);
         assert!(!video.with_extension("jsonl").exists(), "{mode}");
         assert!(no_temp_files(&root), "{mode}");
         let first_frame = fixture_case("mixed_vp8_screen.webm").frames[0].frame_id;
@@ -441,6 +459,7 @@ fn launch_failure_is_blocked_not_empty() {
         .output()
         .expect("run describe binary");
     assert_eq!(output.status.code(), Some(69));
+    assert_stderr_deferred(&output, None);
     assert!(!video.with_extension("jsonl").exists());
     assert!(no_temp_files(&root));
     fs::remove_dir_all(root).expect("remove temporary root");
@@ -520,6 +539,7 @@ fn no_engine_and_session_child_failures_abort_without_artifacts() {
             "{mode}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        assert_stderr_deferred(&output, None);
         assert!(!video.with_extension("jsonl").exists(), "{mode}");
         assert!(no_temp_files(&root), "{mode}");
         fs::remove_dir_all(root).expect("remove temporary root");
@@ -734,6 +754,12 @@ fn selection_blocking_and_unknown_refusals_abort_after_one_selection_request() {
             .output()
             .expect("run describe binary");
         assert_eq!(output.status.code(), Some(69), "{mode}");
+        let expected_token = match mode {
+            "selection_blocking_refusal" => Some("binary_missing"),
+            "selection_unknown_code" => Some("future_code"),
+            _ => unreachable!("selection blocked mode"),
+        };
+        assert_stderr_deferred(&output, expected_token);
         assert_eq!(selection_requests(&request_log).len(), 1, "{mode}");
         assert!(!video.with_extension("jsonl").exists(), "{mode}");
         assert!(no_temp_files(&root), "{mode}");
@@ -920,6 +946,7 @@ fn extraction_exhaustion_fails_and_blocking_refusal_aborts() {
         .output()
         .expect("describe");
     assert_eq!(output.status.code(), Some(69));
+    assert_stderr_deferred(&output, Some("binary_missing"));
     assert!(!video.with_extension("jsonl").exists());
     assert!(no_temp_files(&root));
     fs::remove_dir_all(root).expect("remove root");
@@ -1288,6 +1315,12 @@ fn blocking_and_session_abort_notifications_have_distinct_flat_shapes() {
             .output()
             .expect("run describe binary");
         assert_eq!(output.status.code(), Some(69), "{mode}");
+        let expected_token = if is_refusal {
+            Some("binary_missing")
+        } else {
+            None
+        };
+        assert_stderr_deferred(&output, expected_token);
         let row = notification(&listener);
         assert_eq!(row["tract"], "notification");
         assert_eq!(row["event"], "show");
@@ -1540,6 +1573,7 @@ fn blocked_reentry_does_not_touch_the_existing_artifact() {
         .output()
         .expect("blocked reentry");
     assert_eq!(output.status.code(), Some(69));
+    assert_stderr_deferred(&output, Some("binary_missing"));
     assert_eq!(fs::read(&artifact).expect("artifact bytes"), original);
     assert!(no_temp_files(&root));
     remove_temporary_root(&root);
