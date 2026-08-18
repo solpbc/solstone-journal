@@ -154,7 +154,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         date_nav: None,
         facets_enabled: false,
         has_background: false,
-        converted: false,
+        converted: true,
     },
     AppDefinition {
         name: "news",
@@ -376,6 +376,15 @@ mod tests {
             APP_REGISTRY
                 .iter()
                 .any(|app| app.name == "body" && app.converted)
+        );
+    }
+
+    #[test]
+    fn network_is_a_converted_native_registry_entry() {
+        assert!(
+            APP_REGISTRY
+                .iter()
+                .any(|app| app.name == "network" && app.converted)
         );
     }
 

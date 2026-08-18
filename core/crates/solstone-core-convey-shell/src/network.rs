@@ -153,13 +153,13 @@ pub(crate) async fn pair_start(
             StatusCode::BAD_REQUEST,
         );
     };
-    let Some(device_label) = object.get("device_label").and_then(Value::as_str) else {
-        return refusal(
-            "missing_required_field",
-            "device_label is required",
-            StatusCode::BAD_REQUEST,
-        );
-    };
+    // Python treats a missing or blank label as empty and still mints. The
+    // owner workspace posts `{}`; requiring the field made that path a 400.
+    let device_label = object
+        .get("device_label")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
     let role = object
         .get("role")
         .and_then(Value::as_str)
@@ -825,6 +825,7 @@ mod tests {
             );
         }
         let response = app
+            .clone()
             .oneshot(
                 Request::post("/start")
                     .header("content-type", "application/json")
@@ -834,6 +835,29 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::OK);
+        let omitted = app
+            .oneshot(
+                Request::post("/start")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(omitted.status(), StatusCode::OK);
+        let omitted: Value = serde_json::from_slice(
+            &to_bytes(omitted.into_body(), usize::MAX)
+                .await
+                .expect("omitted-label body"),
+        )
+        .expect("omitted-label JSON");
+        assert!(
+            omitted["nonce"]
+                .as_str()
+                .is_some_and(|nonce| !nonce.is_empty()),
+            "omitted device_label must still mint: {omitted}"
+        );
+        assert_eq!(omitted["device_label"], "");
         let value: Value = serde_json::from_slice(
             &to_bytes(response.into_body(), usize::MAX)
                 .await

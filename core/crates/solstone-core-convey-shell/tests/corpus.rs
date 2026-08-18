@@ -520,7 +520,10 @@ async fn an_unconverted_app_refusal_is_never_a_success_status() {
         // unconverted app's refusal is never 2xx -- only this example went
         // stale. Replaced with a still-unconverted app rather than deleted,
         // so the assertion keeps covering a background path.
-        "/app/network/background",
+        // `/app/network/background` was here until 2026-08-18, when Network
+        // flipped converted: its mint, ceremony, devices, and write routes
+        // were already native, and the 501 "not ported" body on unmounted
+        // paths was the lie. activities remains the unconverted example.
     ] {
         let (status, _content_type, _location, body) = get(router(journal.0.clone()), path).await;
         assert!(
