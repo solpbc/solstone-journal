@@ -2,6 +2,12 @@
 // Copyright (c) 2026 sol pbc
 
 //! Native private-link and home-address write routes.
+//!
+//! These three POST routes have no local-owner check. That is intentional:
+//! pairing is itself an owner act, so a paired device may rewrite the home
+//! address and enable or disable the private link. `pair-start` and
+//! `nonce-status` in `network.rs` do require a local owner, because those mint
+//! and inspect enrollment windows. Do not add a local-owner gate here.
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;

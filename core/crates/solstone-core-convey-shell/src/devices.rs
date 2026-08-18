@@ -18,7 +18,6 @@ use solstone_core_observer::{ObserverCommand, ObserverError, execute, system_now
 
 use crate::JournalRoot;
 use crate::asset_response;
-use crate::refusal::AppNotConverted;
 
 const ACTIVE_THRESHOLD_MS: i64 = 30_000;
 const STALE_THRESHOLD_MS: i64 = 120_000;
@@ -164,19 +163,6 @@ pub(crate) async fn create_retired() -> Response {
         "I couldn't finish because that action is no longer available.",
         "Devices are no longer created by hand. A device registers itself when you pair it.",
     )
-}
-
-// Temporary death-condition routes: remove these explicit observer wire
-// refusals, and this comment, when the real native handlers are mounted. Do
-// not replace them with a blanket observer wildcard. Bare `/app/devices/ingest`
-// is deliberately excluded: its reference endpoint is POST-only, so there is
-// no GET refusal to preserve.
-pub(crate) async fn observer_wire_refusal() -> Response {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(AppNotConverted::new("observer")),
-    )
-        .into_response()
 }
 
 fn observer_json(record: &ObserverRecord, now_ms: i64) -> Value {
@@ -761,30 +747,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn observer_wire_refusals_keep_the_json_contract_and_devices_stays_gated() {
+    async fn retired_observer_wire_is_gone_and_devices_stays_gated() {
         let journal = EstablishedJournal::new();
         let app = crate::router(journal.0.path().to_path_buf());
-        let expected = serde_json::to_vec(&AppNotConverted::new("observer")).expect("refusal");
+
         for path in [
             "/app/devices/callosum",
-            "/app/devices/ingest/manifest",
-            "/app/devices/ingest/segments/20260101",
             "/app/devices/ingest/other",
+            "/app/observer/ingest/manifest",
         ] {
             let response = app
                 .clone()
                 .oneshot(Request::get(path).body(Body::empty()).unwrap())
                 .await
-                .expect("wire refusal");
-            assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED, "{path}");
-            assert_eq!(
-                to_bytes(response.into_body(), usize::MAX)
-                    .await
-                    .unwrap()
-                    .as_ref(),
-                expected.as_slice(),
-                "{path}"
-            );
+                .expect("leftover wire");
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
         }
 
         let bare_ingest = app
@@ -796,7 +773,7 @@ mod tests {
             )
             .await
             .expect("bare ingest response");
-        assert_eq!(bare_ingest.status(), StatusCode::NOT_FOUND);
+        assert_eq!(bare_ingest.status(), StatusCode::METHOD_NOT_ALLOWED);
 
         for path in ["/app/observer/callosum", "/app/observer/ingest/other"] {
             let response = app

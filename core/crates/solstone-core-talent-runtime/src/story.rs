@@ -18,6 +18,9 @@ pub(crate) const RELATIONS: &[&str] = &[
     "other",
 ];
 
+/// Empty body or topics is a parse error, not a silent merge.
+/// `generate_and_write` turns a Story parse error into
+/// `Finished`/`RejectedNoMutation` rather than `StageFailed`.
 pub fn parse(
     output: &str,
     prepared: &PreparedTalent,

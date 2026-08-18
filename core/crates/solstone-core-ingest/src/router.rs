@@ -51,19 +51,19 @@ fn wall_clock_ms() -> Arc<dyn Fn() -> i64 + Send + Sync> {
     Arc::new(system_now_ms)
 }
 
-/// Build the four linked-device segment-arrival routes.
-pub fn router(journal_root: impl AsRef<Path>) -> Router {
-    router_with_notifier(journal_root, Arc::new(LoggingIngestNotifier))
+/// Build the mergeable linked-device segment-arrival routes.
+pub fn api_router(journal_root: impl AsRef<Path>) -> Router {
+    api_router_with_notifier(journal_root, Arc::new(LoggingIngestNotifier))
 }
 
-fn router_with_notifier(
+fn api_router_with_notifier(
     journal_root: impl AsRef<Path>,
     notifier: Arc<dyn IngestNotifier>,
 ) -> Router {
-    router_with(journal_root, notifier, wall_clock_ms())
+    api_router_with(journal_root, notifier, wall_clock_ms())
 }
 
-fn router_with(
+fn api_router_with(
     journal_root: impl AsRef<Path>,
     notifier: Arc<dyn IngestNotifier>,
     now_ms: Arc<dyn Fn() -> i64 + Send + Sync>,
@@ -83,7 +83,12 @@ fn router_with(
             notifier,
             now_ms,
         })
-        .fallback(not_found_fallback)
+}
+
+// Crate-local: a public fallback would swallow the shell's unmatched surface on merge.
+#[allow(dead_code)]
+pub(crate) fn router(journal_root: impl AsRef<Path>) -> Router {
+    api_router(journal_root).fallback(not_found_fallback)
 }
 
 pub(crate) fn refusal(code: ReasonCode, status: StatusCode, detail: impl Into<String>) -> Response {
@@ -848,8 +853,8 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        ApplyPhase, IngestState, MAX_PART_BYTES, clear_before_apply_hook, resolve_and_apply,
-        router, router_with, router_with_notifier, set_before_apply_hook, wall_clock_ms,
+        ApplyPhase, IngestState, MAX_PART_BYTES, api_router_with, api_router_with_notifier,
+        clear_before_apply_hook, resolve_and_apply, router, set_before_apply_hook, wall_clock_ms,
     };
 
     const DID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -1429,7 +1434,7 @@ mod tests {
         seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
         let spy = SpyNotifier::fail_next();
         let (now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = router_with(&root, spy.clone(), clock);
+        let app = api_router_with(&root, spy.clone(), clock);
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -1467,7 +1472,7 @@ mod tests {
         seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
         let spy = SpyNotifier::succeeding();
         let (now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = router_with(&root, spy.clone(), clock);
+        let app = api_router_with(&root, spy.clone(), clock);
         let observers = root.join("apps/observer/observers");
         fs::set_permissions(&observers, fs::Permissions::from_mode(0o555)).unwrap();
         if save_probe_succeeds(&observers) {
@@ -1518,7 +1523,7 @@ mod tests {
         );
         let spy = SpyNotifier::succeeding();
         let (_now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = router_with(&root, spy, clock);
+        let app = api_router_with(&root, spy, clock);
         let (status, body) = call_upload(
             &app,
             envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}])),
@@ -1543,7 +1548,7 @@ mod tests {
         seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
         let spy = SpyNotifier::succeeding();
         let (now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = router_with(&root, spy, clock);
+        let app = api_router_with(&root, spy, clock);
         let (status, body) = call_upload(
             &app,
             envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}])),
@@ -1583,7 +1588,7 @@ mod tests {
         seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
         let spy = SpyNotifier::succeeding();
         let (now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = router_with(&root, spy, clock);
+        let app = api_router_with(&root, spy, clock);
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::OK);
@@ -1620,7 +1625,7 @@ mod tests {
         );
         let spy = SpyNotifier::succeeding();
         let (now, clock) = frozen_clock(FROZEN_NOW_MS);
-        let app = router_with(&root, spy, clock);
+        let app = api_router_with(&root, spy, clock);
         let observers = root.join("apps/observer/observers");
         fs::set_permissions(&observers, fs::Permissions::from_mode(0o555)).unwrap();
         if save_probe_succeeds(&observers) {
@@ -1667,7 +1672,7 @@ mod tests {
         let dir = root();
         let root = dir.path().to_path_buf();
         let spy = SpyNotifier::succeeding();
-        let app = router_with_notifier(&root, spy.clone());
+        let app = api_router_with_notifier(&root, spy.clone());
         set_before_apply_hook(|plan| {
             fs::create_dir_all(plan.segment.path().join("notes.json")).unwrap();
         });
@@ -1740,7 +1745,7 @@ mod tests {
         let dir = root();
         let root = dir.path().to_path_buf();
         let spy = SpyNotifier::succeeding();
-        let app = router_with_notifier(&root, spy.clone());
+        let app = api_router_with_notifier(&root, spy.clone());
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::OK);
@@ -1761,7 +1766,7 @@ mod tests {
             fs::write(directory.join("audio.flac"), b"old").unwrap();
         }
         let spy = SpyNotifier::succeeding();
-        let app = router_with_notifier(&root, spy.clone());
+        let app = api_router_with_notifier(&root, spy.clone());
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         let (status, body) = call_upload(&app, request, "audio.flac", b"new").await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -1790,7 +1795,7 @@ mod tests {
         let segment = root.join("chronicle/20260804/device/120000_1");
         fs::create_dir_all(segment.join("events.jsonl")).unwrap();
         let spy = SpyNotifier::succeeding();
-        let app = router_with_notifier(&root, spy.clone());
+        let app = api_router_with_notifier(&root, spy.clone());
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
