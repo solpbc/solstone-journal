@@ -8,6 +8,8 @@ mod support;
 mod calendar_routes;
 #[path = "corpus.rs"]
 mod corpus;
+#[path = "devices_ingest_mount.rs"]
+mod devices_ingest_mount;
 #[path = "discovery_routes.rs"]
 mod discovery_routes;
 #[path = "media_routes.rs"]

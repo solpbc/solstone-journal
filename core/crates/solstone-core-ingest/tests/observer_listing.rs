@@ -14,7 +14,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use serde_json::{Value, json};
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
-use solstone_core_ingest::router;
+use solstone_core_ingest::api_router;
 use tower::ServiceExt;
 
 const DAY: &str = "20260804";
@@ -369,7 +369,7 @@ fn provenance_gate_walks_every_event_log() {
 async fn ac1_ac2_ac11_ac12_certificate_selects_fixture_material_on_all_routes() {
     let root = fixture("identity");
     assert_python_era_provenance(&root).expect("seeded fixture provenance");
-    let app = router(&root);
+    let app = api_router(&root);
     let headers = [
         ("Authorization", "Bearer bbbbbbbb-observer-handle"),
         ("X-Solstone-Observer", "bbbbbbbb-observer-handle"),
@@ -489,7 +489,7 @@ async fn ac3_rejecting_observer_shapes_are_omitted() {
             json!({"segment":segment,"stream":stream,"files":[{"submitted":"wrong.flac","written":"wrong.flac","size":4,"sha256":"x","disposition":"written"}]}),
         );
     }
-    let app = router(&root);
+    let app = api_router(&root);
     let (_, body) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     for key in ["140000_60", "140100_60", "140200_60", "140300_60"] {
         assert!(
@@ -506,7 +506,7 @@ async fn ac3_rejecting_observer_shapes_are_omitted() {
 #[tokio::test]
 async fn ac4_zero_one_and_many_observers_have_distinct_outcomes() {
     let root = root("zero-observer");
-    let app = router(&root);
+    let app = api_router(&root);
     upload(&app, DID_A, "150000_60", "native.flac", b"native").await;
     let (status, zero) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
@@ -572,7 +572,7 @@ async fn ac11_named_refusal_reaches_every_read_route() {
         json!("other"),
         false,
     );
-    let app = router(&root);
+    let app = api_router(&root);
     for route in [
         "/app/devices/ingest/manifest",
         "/app/devices/ingest/manifest/20260804",
@@ -592,7 +592,7 @@ async fn ac5_history_tears_refuse_and_remain_device_scoped() {
     let mut contents = fs::read_to_string(&torn).expect("fixture history");
     contents.push_str("{\n");
     fs::write(&torn, contents).expect("torn history");
-    let app = router(&root);
+    let app = api_router(&root);
     let (status, torn) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -614,7 +614,7 @@ async fn ac5_history_tears_refuse_and_remain_device_scoped() {
 #[tokio::test]
 async fn ac1_all_days_manifest_degrades_a_torn_day() {
     let root = fixture("all-days-degrade");
-    let app = router(&root);
+    let app = api_router(&root);
     upload_on_day(&app, DID_A, "20260805", "120000_60", "later.flac", b"later").await;
     let torn = history_path(&root, "aaaaaaaa");
     let mut contents = fs::read_to_string(&torn).expect("fixture history");
@@ -648,7 +648,7 @@ async fn ac5_existing_unreadable_history_refuses_loudly() {
     if std::fs::File::open(&history).is_ok() {
         panic!("requires a non-root runner");
     }
-    let app = router(&root);
+    let app = api_router(&root);
     let (status, body) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -660,7 +660,7 @@ async fn ac5_existing_unreadable_history_refuses_loudly() {
 #[tokio::test]
 async fn ac6_unions_history_and_all_native_events_with_one_schema() {
     let root = fixture("merge");
-    let app = router(&root);
+    let app = api_router(&root);
     let first = upload(&app, DID_A, "160000_60", "native.flac", b"native").await;
     let landed = first["segment"]
         .as_str()
@@ -762,7 +762,7 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
 #[tokio::test]
 async fn native_write_conflicting_with_history_attestation_refuses_ambiguous() {
     let root = fixture("history-sha-conflict");
-    let app = router(&root);
+    let app = api_router(&root);
     upload(&app, DID_A, "120200_60", "gone.flac", b"conflicting-bytes").await;
     let (status, body) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
@@ -827,7 +827,7 @@ async fn ac6d_and_ac7_history_selection_rules_are_route_visible() {
     for name in ["same.flac", "left.flac", "right.flac", "real.flac"] {
         create_media(&root, "laptop", "120600_60", name, b"held");
     }
-    let app = router(&root);
+    let app = api_router(&root);
     let (_, body) = request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     assert_eq!(item(&body, "120000_60")["observed"], true);
     assert_eq!(item(&body, "120300_60")["observed"], false);
@@ -871,7 +871,7 @@ async fn ac6d_and_ac7_history_selection_rules_are_route_visible() {
             {"submitted":"same.flac","written":"same.flac","size":4,"sha256":"two","disposition":"written"}
         ]}),
     );
-    let app = router(&root);
+    let app = api_router(&root);
     let (status, body) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -901,7 +901,7 @@ async fn ac7v_fallback_streams_and_ac8_statuses_refuse_bad_evidence() {
             .exists(),
         "only the locked fallback path holds this file"
     );
-    let app = router(&root);
+    let app = api_router(&root);
     let (_, locked) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     assert_eq!(
@@ -979,7 +979,7 @@ async fn ac7v_fallback_streams_and_ac8_statuses_refuse_bad_evidence() {
     ] {
         let root = fixture(label);
         append_history(&root, "aaaaaaaa", row);
-        let app = router(&root);
+        let app = api_router(&root);
         let (status, body) =
             request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
         assert_eq!(status, StatusCode::CONFLICT);
@@ -989,7 +989,7 @@ async fn ac7v_fallback_streams_and_ac8_statuses_refuse_bad_evidence() {
 
     let root = fixture("non-string-stream");
     fs::write(observer_path(&root, "aaaaaaaa"), json!({"key":"aaaaaaaa-observer-handle","name":"Laptop.local","stream":{},"created_at":1,"revoked":false,"device_binding":{"device":DID_A,"kind":"cert"}}).to_string()).expect("malformed observer");
-    let app = router(&root);
+    let app = api_router(&root);
     let (status, body) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -1006,7 +1006,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
     if fs::read_dir(&registry).is_ok() {
         panic!("requires a non-root runner");
     }
-    let app = router(&root);
+    let app = api_router(&root);
     let (status, unreadable) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -1016,7 +1016,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
 
     let root = fixture("record-unreadable");
     fs::write(observer_path(&root, "brokenxx"), "{").expect("broken regular json");
-    let app = router(&root);
+    let app = api_router(&root);
     let (status, skipped) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -1026,7 +1026,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
     let fixture_root = fixture("json-directory");
     fs::create_dir(fixture_root.join("apps/observer/observers/x.json"))
         .expect("json-named directory");
-    let app = router(&fixture_root);
+    let app = api_router(&fixture_root);
     let (status, normal) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     assert_eq!(
@@ -1038,7 +1038,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
     let _ = fs::remove_dir_all(fixture_root);
 
     let zero_root = self::root("registry-zero");
-    let zero_app = router(&zero_root);
+    let zero_app = api_router(&zero_root);
     let (_, zero) = request_json(
         &zero_app,
         "GET",
@@ -1056,7 +1056,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
         json!("many"),
         false,
     );
-    let many_app = router(&many_root);
+    let many_app = api_router(&many_root);
     let (_, many) = request_json(
         &many_app,
         "GET",
@@ -1074,7 +1074,7 @@ async fn ac9_registry_failures_and_denominator_are_distinct() {
 #[tokio::test]
 async fn ac10_new_reasons_are_distinct_and_journal_read_remains_reachable() {
     async fn code(root: &Path) -> String {
-        let app = router(root);
+        let app = api_router(root);
         let (_, body) =
             request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
         body["reason_code"]
@@ -1164,7 +1164,7 @@ async fn ac10_new_reasons_are_distinct_and_journal_read_remains_reachable() {
     if fs::read_dir(&chronicle).is_ok() {
         panic!("requires a non-root runner");
     }
-    let app = router(&root);
+    let app = api_router(&root);
     let (status, body) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);

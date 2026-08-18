@@ -31,7 +31,7 @@ mod router;
 mod stream_identity;
 mod validation;
 
-pub use router::router;
+pub use router::api_router;
 
 #[cfg(test)]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
@@ -106,5 +106,75 @@ mod architecture_tests {
             let line = line.trim_start();
             line.starts_with("pub fn ") || line.starts_with("pub async fn ")
         })
+    }
+
+    #[test]
+    fn public_function_bodies_do_not_install_a_fallback() {
+        for (_, source) in SOURCES {
+            let source = source.split("#[cfg(test)]").next().unwrap_or(source);
+            for body in public_function_bodies(source) {
+                assert!(
+                    !body.contains(".fallback("),
+                    "public function installs a fallback:\n{body}"
+                );
+            }
+        }
+    }
+
+    fn public_function_bodies(source: &str) -> Vec<&str> {
+        let mut bodies = Vec::new();
+        let lines: Vec<&str> = source.lines().collect();
+        let mut index = 0;
+        while index < lines.len() {
+            let trimmed = lines[index].trim_start();
+            if trimmed.starts_with("pub fn ") || trimmed.starts_with("pub async fn ") {
+                let mut cursor = index;
+                let mut open_at = None;
+                while cursor < lines.len() {
+                    if let Some(offset) = lines[cursor].find('{') {
+                        open_at = Some((cursor, offset));
+                        break;
+                    }
+                    cursor += 1;
+                }
+                let Some((start_line, start_col)) = open_at else {
+                    index += 1;
+                    continue;
+                };
+                let start = line_offset(source, start_line) + start_col;
+                let mut depth = 0;
+                let bytes = source.as_bytes();
+                let mut end = start;
+                for (offset, byte) in bytes.iter().enumerate().skip(start) {
+                    match byte {
+                        b'{' => depth += 1,
+                        b'}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = offset + 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                bodies.push(&source[start..end]);
+                index = start_line + 1;
+                continue;
+            }
+            index += 1;
+        }
+        bodies
+    }
+
+    fn line_offset(source: &str, line_index: usize) -> usize {
+        if line_index == 0 {
+            return 0;
+        }
+        source
+            .match_indices('\n')
+            .nth(line_index - 1)
+            .map(|(offset, _)| offset + 1)
+            .unwrap_or(source.len())
     }
 }

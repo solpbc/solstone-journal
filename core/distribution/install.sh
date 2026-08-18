@@ -42,7 +42,7 @@ refuse() {
 }
 
 usage() {
-	printf '%s\n' "usage: install.sh [--prefix DIR] [--version VER] [--origin URL] [--archive FILE] [--sha256 FILE] [--release FILE]"
+	printf '%s\n' "usage: install.sh [--prefix DIR] [--version VER] [--origin URL] [--archive FILE] [--sha256 FILE] [--release FILE] [--no-path]"
 }
 
 PREFIX=
@@ -51,6 +51,7 @@ ORIGIN=
 ARCHIVE=
 SHA256_FILE=
 RELEASE_FILE=
+NO_PATH=0
 while [ "$#" -gt 0 ]; do
 	case $1 in
 	--prefix)
@@ -76,6 +77,10 @@ while [ "$#" -gt 0 ]; do
 	--release)
 		RELEASE_FILE=$2
 		shift 2
+		;;
+	--no-path)
+		NO_PATH=1
+		shift
 		;;
 	--help | -h)
 		usage
@@ -439,7 +444,9 @@ report_success() {
 	_prefix=$1
 	printf 'installed %s %s at %s\n' "$PRODUCT" "$VERSION" "$_prefix"
 	printf 'current -> %s\n' "$(readlink "$_prefix/current")"
-	if [ -n "${SOLSTONE_PROFILE:-}" ]; then
+	if [ "$NO_PATH" -eq 1 ]; then
+		printf 'PATH not updated (--no-path)\n'
+	elif [ -n "${SOLSTONE_PROFILE:-}" ]; then
 		printf 'PATH updated in %s\n' "$SOLSTONE_PROFILE"
 		printf 'open a new terminal, or: . %s\n' "$SOLSTONE_PROFILE"
 	else
@@ -521,7 +528,9 @@ if [ -e "$DEST" ]; then
 		if [ "$_now" = "$_want" ]; then
 			# Validated no-op: re-read release, do not rewrite current.
 			validate_release "$(cat "$DEST/.release")" "$VERSION" "$TARGET"
-			write_profile "$PREFIX"
+			if [ "$NO_PATH" -eq 0 ]; then
+				write_profile "$PREFIX"
+			fi
 			report_success "$PREFIX"
 			exit 0
 		fi
@@ -559,6 +568,8 @@ if ! flip_current "$PREFIX" "$DEST"; then
 	fi
 	refuse release-invalid "current flip failed"
 fi
-write_profile "$PREFIX"
+if [ "$NO_PATH" -eq 0 ]; then
+	write_profile "$PREFIX"
+fi
 report_success "$PREFIX"
 exit 0

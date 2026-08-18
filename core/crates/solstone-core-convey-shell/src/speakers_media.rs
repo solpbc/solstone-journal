@@ -48,6 +48,8 @@ pub async fn people_search(
         })
         .filter(|(_, _, _, entity)| person_search_strings(entity).iter().any(|value| value.to_lowercase().contains(&folded_query)))
         .map(|(_, entity_id, name, _)| {
+            // Read-only presence badge. Merge bookkeeping resolves through
+            // entity_memory_path; this listing does not write.
             json!({
                 "entity_id": entity_id,
                 "name": name,

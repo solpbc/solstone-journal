@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use solstone_core_cli::ServiceAction;
 use solstone_core_journal_io::{
-    DetailedAtomicOutcome, acquire_existing_parent_lock, atomic_replace_detailed,
+    acquire_existing_parent_lock, atomic_replace_detailed, DetailedAtomicOutcome,
 };
 use solstone_core_service_unit::{
     build_service_environment, render_launchd_plist, render_systemd_unit,
@@ -111,6 +111,9 @@ fn platform() -> Result<Platform, String> {
     }
 }
 
+/// Per-user unit path (`systemd --user` / LaunchAgents). The loopback port the
+/// unit starts is machine-wide and shared across logins; do not derive a
+/// per-user port from this.
 fn unit_path(platform: Platform, home: &Path) -> PathBuf {
     match platform {
         Platform::Linux => home.join(".config/systemd/user").join(UNIT),
@@ -1234,9 +1237,9 @@ fn classify_launchd_runtime(
     }
     match field(text, "state") {
         Some("running") => Ok(RuntimeTruth::Managed { active: true }),
-        Some("not running") => Ok(RuntimeTruth::Managed { active: false }),
-        _ => Ok(RuntimeTruth::Unknown(
-            "unrecognized launchd runtime state".to_owned(),
+        Some(_) => Ok(RuntimeTruth::Managed { active: false }),
+        None => Ok(RuntimeTruth::Unknown(
+            "launchd omitted the runtime state".to_owned(),
         )),
     }
 }
@@ -1282,7 +1285,9 @@ fn wait_launchd_absent(
     loop {
         match observe_launchd_registration(label, target, launchers, program_only)? {
             RuntimeTruth::Absent => return Ok(()),
-            RuntimeTruth::Managed { .. } if Instant::now() < deadline => {
+            RuntimeTruth::Managed { .. } | RuntimeTruth::Unknown(_)
+                if Instant::now() < deadline =>
+            {
                 thread::sleep(POLL_INTERVAL);
             }
             RuntimeTruth::Managed { .. } => {
@@ -1301,7 +1306,9 @@ fn wait_runtime_absent(platform: Platform, target: &Path) -> Result<(), String> 
     loop {
         match observe_runtime(platform, target)? {
             RuntimeTruth::Absent => return Ok(()),
-            RuntimeTruth::Managed { .. } if Instant::now() < deadline => {
+            RuntimeTruth::Managed { .. } | RuntimeTruth::Unknown(_)
+                if Instant::now() < deadline =>
+            {
                 thread::sleep(POLL_INTERVAL);
             }
             RuntimeTruth::Managed { .. } => {
@@ -1762,10 +1769,11 @@ mod tests {
             bytes: Vec::new(),
         });
         assert!(!stop_requires_manager(&managed_unit, RuntimeTruth::Absent).unwrap());
-        assert!(
-            !stop_requires_manager(&UnitTruth::Absent, RuntimeTruth::Managed { active: false },)
-                .unwrap()
-        );
+        assert!(!stop_requires_manager(
+            &UnitTruth::Absent,
+            RuntimeTruth::Managed { active: false },
+        )
+        .unwrap());
         assert!(
             stop_requires_manager(&UnitTruth::Absent, RuntimeTruth::Managed { active: true },)
                 .unwrap()
@@ -1809,6 +1817,17 @@ mod tests {
         assert_eq!(
             classify_launchd_runtime(&foreign, LABEL, canonical, &launchers, 501, false).unwrap(),
             RuntimeTruth::Foreign
+        );
+        let pending = CommandResult {
+            code: 0,
+            stdout: stdout
+                .replace("\tstate = running\n", "\tstate = pending\n")
+                .into_bytes(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(
+            classify_launchd_runtime(&pending, LABEL, canonical, &launchers, 501, false).unwrap(),
+            RuntimeTruth::Managed { active: false }
         );
     }
 

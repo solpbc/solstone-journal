@@ -143,6 +143,9 @@ fn flatten_identity(identity: &Map<String, Value>) -> BTreeMap<String, String> {
                 vars.insert(python_capitalize(&name), python_capitalize(&value));
             }
         } else if let Some(value) = python_string(value) {
+            // Only name/preferred are owner display labels. Timezone is IANA
+            // (`America/Denver`) and is slash-containing by design; bio is
+            // prompt prose; aliases is a list and never enters this branch.
             if matches!(key.as_str(), "name" | "preferred")
                 && (value.trim().is_empty() || is_path_shaped_name(&value))
             {

@@ -296,6 +296,40 @@ else
 	fail "profile block count $_count -> $_count2"
 fi
 
+_help=$("$INSTALL" --help)
+case $_help in
+*--no-path*) pass "usage names --no-path" ;;
+*) fail "usage names --no-path: $_help" ;;
+esac
+
+NO_PATH_HOME=$BASE/nopath-home
+mkdir -p "$NO_PATH_HOME"
+printf 'keep-profile\n' >"$NO_PATH_HOME/.profile"
+NO_PATH_PREFIX=$BASE/nopath-prefix
+if env HOME="$NO_PATH_HOME" \
+	"$INSTALL" --no-path --prefix "$NO_PATH_PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" \
+	>"$BASE/nopath.out" 2>&1; then
+	if [ -x "$NO_PATH_PREFIX/current/bin/journal" ]; then
+		pass "no-path install tree"
+	else
+		fail "no-path install tree"
+	fi
+	if grep -q 'BEGIN solstone-journal PATH' "$NO_PATH_HOME/.profile"; then
+		fail "no-path left PATH block"
+	elif [ "$(cat "$NO_PATH_HOME/.profile")" = "keep-profile" ]; then
+		pass "no-path preserves profile"
+	else
+		fail "no-path mutated profile"
+	fi
+	if grep -q 'PATH not updated (--no-path)' "$BASE/nopath.out"; then
+		pass "no-path reports skip"
+	else
+		fail "no-path reports skip: $(cat "$BASE/nopath.out")"
+	fi
+else
+	fail "no-path install: $(cat "$BASE/nopath.out")"
+fi
+
 # digest-mismatch
 printf '%s\n' "0000000000000000000000000000000000000000000000000000000000000000  good.tar.gz" >"$BASE/bad.sha256"
 expect_refuse digest-mismatch digest-bad \

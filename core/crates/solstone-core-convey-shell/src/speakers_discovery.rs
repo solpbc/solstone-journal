@@ -566,6 +566,8 @@ fn presence_candidate(
     if entity.get("blocked").is_some_and(value_truthy) {
         return None;
     }
+    // Read-only presence badge. Merge bookkeeping resolves through
+    // entity_memory_path; this listing does not write.
     Some(json!({
         "entity_id": entity_id,
         "name": entity.get("name").cloned().unwrap_or_else(|| json!(entity_id)),

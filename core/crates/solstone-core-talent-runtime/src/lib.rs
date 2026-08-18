@@ -393,6 +393,11 @@ fn generate_and_write(
             let parsed = match (commit.parse)(&response, prepared, &state) {
                 Ok(parsed) => parsed,
                 Err(_) if matches!(stage.stage, contract::StageId::Story) => {
+                    // Empty body/topics (and other parse refusals) do not
+                    // mutate the activity. This is a finish with
+                    // RejectedNoMutation, not StageFailed, so think-cli
+                    // records talent.complete and health/fail-rate that key
+                    // on talent.fail do not see it.
                     return RuntimeOutcome::Finished {
                         output: response,
                         disposition: CommitDisposition::RejectedNoMutation,

@@ -191,7 +191,7 @@ is the behavior; the goal is fewer binaries, not relabeling integration tests.
 
 ### Service management (systemd / launchd)
 
-`.venv/bin/journal setup` is the source-checkout runtime install path after `make install`; it installs or refreshes the source-checkout wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/sol` and `~/.local/bin/journal` let you use `sol` and `journal` from anywhere. Use `journal service <install|start|stop|restart|status|logs>` for manual service operations.
+`journal setup` is the runtime install path once you have a `journal` binary, from a tree install or from `cargo build` in this checkout. `make install` is retired. It installs or refreshes the managed wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/sol` and `~/.local/bin/journal` let you use `sol` and `journal` from anywhere. Use `journal service <install|start|stop|restart|status|logs>` for manual service operations.
 
 | Target | When to use |
 |--------|-------------|
