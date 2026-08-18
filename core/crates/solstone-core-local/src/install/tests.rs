@@ -2135,7 +2135,11 @@ fn registry_path_fixtures_keep_directory_and_manifest_filename_distinct() {
     );
     assert_eq!(
         local_readiness["artifacts"]["model_path"],
-        "/journal/cache/providers/local/models/local__qwen3.5-4b"
+        "/journal/cache/providers/local/models/local__qwen3.5-4b/Qwen3.5-4B-Q4_K_M.gguf"
+    );
+    assert_eq!(
+        local_readiness["artifacts"]["projector_path"],
+        "/journal/cache/providers/local/models/local__qwen3.5-4b/mmproj-F16.gguf"
     );
     // `install_model` joins each pin filename inline immediately before its
     // network fetch; `pins::paths` above is its production root derivation.

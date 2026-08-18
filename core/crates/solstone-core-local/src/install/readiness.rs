@@ -53,11 +53,20 @@ pub fn inspect_local(input: Map<String, Value>) -> Value {
     let binary_root = binary_root.unwrap_or_else(|| root.join("missing"));
     let identity = identity.unwrap_or(Value::Null);
     let model_root = root.join("models").join(model_id.replace('/', "__"));
+    let model_identity = pins::model_identity(model_id).unwrap_or(Value::Null);
+    let model_file = model_identity
+        .get("filename")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let projector_file = model_identity
+        .get("mmproj_filename")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let binary_proof =
         manifest::prove_manifest(&manifest::artifact_manifest_path(&binary_root), &identity);
     let model_proof = manifest::prove_manifest(
         &manifest::artifact_manifest_path(&model_root),
-        &pins::model_identity(model_id).unwrap_or(Value::Null),
+        &model_identity,
     );
     let proofs = [binary_proof.clone(), model_proof.clone()];
     let proof_unavailable = proofs
@@ -82,7 +91,7 @@ pub fn inspect_local(input: Map<String, Value>) -> Value {
     let install = status::read_status(&journal, "local")
         .map(|value| serde_json::to_value(value).unwrap())
         .unwrap_or(Value::Null);
-    json!({"provider":"local","ready":state=="ready","status":state,"reason_code":reason,"target":{"model_id":model_id,"target_fingerprint_json":install["target_fingerprint_json"],"target_fingerprint_sha256":install["target_fingerprint_sha256"]},"install":install,"host":{"platform_supported":platform_supported,"backend":backend,"backend_reason":choice.reason,"vulkan_observation":input.get("vulkan_observation").cloned().unwrap_or(Value::Null)},"artifacts":{"model_id":model_id,"binary_installed":binary_proof["status"]=="ready","model_installed":model_proof["status"]=="ready","binary_path":binary_root.join("llama-server"),"model_path":model_root},"proof":{"binary":binary_proof,"model":model_proof}})
+    json!({"provider":"local","ready":state=="ready","status":state,"reason_code":reason,"target":{"model_id":model_id,"target_fingerprint_json":install["target_fingerprint_json"],"target_fingerprint_sha256":install["target_fingerprint_sha256"]},"install":install,"host":{"platform_supported":platform_supported,"backend":backend,"backend_reason":choice.reason,"vulkan_observation":input.get("vulkan_observation").cloned().unwrap_or(Value::Null)},"artifacts":{"model_id":model_id,"binary_installed":binary_proof["status"]=="ready","model_installed":model_proof["status"]=="ready","binary_path":binary_root.join("llama-server"),"model_path":model_root.join(model_file),"projector_path":model_root.join(projector_file)},"proof":{"binary":binary_proof,"model":model_proof}})
 }
 
 pub fn inspect_parakeet(input: Map<String, Value>) -> Value {
