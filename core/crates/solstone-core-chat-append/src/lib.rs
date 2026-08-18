@@ -15,7 +15,9 @@ use chrono::{DateTime, Local, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDel
 use regex::Regex;
 use serde_json::{Map, Value};
 use solstone_core_indexer_store::scan::rescan_file;
-use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, write_jsonl};
+use solstone_core_journal_io::{
+    AtomicWriteError, AtomicWriteOptions, atomic_replace, write_bytes_exclusive, write_jsonl,
+};
 use solstone_core_segment::{Kind, SegmentDir, StreamHints, advance_unbound_stream};
 use thiserror::Error;
 
@@ -169,6 +171,100 @@ pub fn resolve_draft_day(
         .map(ToOwned::to_owned))
 }
 
+/// Load the captured support-draft event for `draft_id`, if the locator and event exist.
+///
+/// Resolution is bounded to the locator's captured day. Invalid ids, a missing
+/// locator, and a day with no matching event all return `Ok(None)`.
+pub fn load_draft_event(journal: &Path, draft_id: &str) -> Result<Option<Value>, ChatAppendError> {
+    let Some(day) = resolve_draft_day(journal, draft_id)? else {
+        return Ok(None);
+    };
+    for segment in chat_segments(journal, &day)? {
+        let path = journal
+            .join("chronicle")
+            .join(&day)
+            .join(CHAT_STREAM)
+            .join(segment)
+            .join("chat.jsonl");
+        for event in read_events_file(&path)? {
+            if event.get("kind").and_then(Value::as_str) == Some(SUPPORT_DRAFT)
+                && event.get("draft_id").and_then(Value::as_str) == Some(draft_id)
+            {
+                return Ok(Some(event));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Read the terminal mark for one support draft, if present.
+///
+/// Soft-fails like [`resolve_draft_day`]: an invalid id, missing file, or
+/// malformed payload returns `Ok(None)` rather than an error.
+pub fn resolve_draft_outcome(
+    journal: &Path,
+    draft_id: &str,
+) -> Result<Option<String>, ChatAppendError> {
+    if validate_draft_id(draft_id).is_err() {
+        return Ok(None);
+    }
+    let path = support_draft_outcome_path(journal, draft_id);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(_) => return Ok(None),
+    };
+    let payload: Value = match serde_json::from_str(&contents) {
+        Ok(payload) => payload,
+        Err(_) => return Ok(None),
+    };
+    Ok(payload
+        .as_object()
+        .and_then(|object| object.get("outcome"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned))
+}
+
+/// Record that a support draft was submitted.
+///
+/// Create-only. If the mark file already exists — this verb or the other —
+/// this returns `Ok(())` without rewriting it. Callers that need to know which
+/// outcome actually won must re-read [`resolve_draft_outcome`] after this returns.
+pub fn mark_draft_submitted(journal: &Path, draft_id: &str) -> Result<(), ChatAppendError> {
+    mark_draft_outcome(journal, draft_id, "submitted")
+}
+
+/// Record that a support draft was cancelled.
+///
+/// Create-only. If the mark file already exists — this verb or the other —
+/// this returns `Ok(())` without rewriting it. Callers that need to know which
+/// outcome actually won must re-read [`resolve_draft_outcome`] after this returns.
+pub fn mark_draft_cancelled(journal: &Path, draft_id: &str) -> Result<(), ChatAppendError> {
+    mark_draft_outcome(journal, draft_id, "cancelled")
+}
+
+fn mark_draft_outcome(
+    journal: &Path,
+    draft_id: &str,
+    outcome: &str,
+) -> Result<(), ChatAppendError> {
+    validate_draft_id(draft_id)?;
+    require_journal_root(journal)?;
+    let path = support_draft_outcome_path(journal, draft_id);
+    let contents = format!("{{\"outcome\":\"{outcome}\"}}\n");
+    match write_bytes_exclusive(&path, contents.as_bytes(), AtomicWriteOptions::default()) {
+        Ok(()) => Ok(()),
+        Err(AtomicWriteError::Io { source, .. })
+            if source.kind() == io::ErrorKind::AlreadyExists =>
+        {
+            Ok(())
+        }
+        Err(source) => Err(ChatAppendError::AtomicWrite { path, source }),
+    }
+}
+
 fn append_chat_event_at(
     journal: &Path,
     kind: &str,
@@ -308,6 +404,14 @@ fn support_draft_index_path(journal: &Path, draft_id: &str) -> PathBuf {
         .join("health")
         .join("support-drafts")
         .join(format!("{draft_id}.json"))
+}
+
+fn support_draft_outcome_path(journal: &Path, draft_id: &str) -> PathBuf {
+    journal
+        .join("chronicle")
+        .join("health")
+        .join("support-drafts")
+        .join(format!("{draft_id}.outcome.json"))
 }
 
 fn current_segment_key(
@@ -519,8 +623,10 @@ mod tests {
 
     use super::{
         CHAT_LOCK_DEPTH, CHAT_STREAM, ChatAppendError, PAUSE_HOOK, append_chat_event_at,
-        append_support_draft, append_validated_chat_event_at_local_time, record_draft_captured,
-        resolve_draft_day, resolve_local_datetime, support_draft_index_path,
+        append_support_draft, append_validated_chat_event_at_local_time, load_draft_event,
+        mark_draft_cancelled, mark_draft_submitted, record_draft_captured, resolve_draft_day,
+        resolve_draft_outcome, resolve_local_datetime, support_draft_index_path,
+        support_draft_outcome_path,
     };
 
     static NEXT_JOURNAL: AtomicU64 = AtomicU64::new(0);
@@ -1238,5 +1344,147 @@ mod tests {
             now,
         )
         .expect("append second");
+    }
+
+    fn write_draft_event(journal: &Path, day: &str, segment: &str, draft_id: &str, extra: Value) {
+        let path = chat_path(journal, day, segment);
+        let mut event = route_event(1);
+        event.insert("draft_id".to_owned(), json!(draft_id));
+        event.insert("captured_day".to_owned(), json!(day));
+        if let Value::Object(fields) = extra {
+            event.extend(fields);
+        }
+        let mut stored = Map::new();
+        stored.insert("kind".to_owned(), json!("support_draft"));
+        stored.extend(event);
+        write_chat(&path, &format!("{}\n", Value::Object(stored)));
+    }
+
+    #[test]
+    fn ac14_load_draft_event_finds_event_in_only_segment() {
+        let journal = TestJournal::new();
+        record_draft_captured(&journal.path, "a1b2c3d4", "20260815").expect("locator");
+        write_draft_event(
+            &journal.path,
+            "20260815",
+            "100347_300",
+            "a1b2c3d4",
+            json!({}),
+        );
+        let loaded = load_draft_event(&journal.path, "a1b2c3d4")
+            .expect("load")
+            .expect("found");
+        assert_eq!(loaded["kind"], "support_draft");
+        assert_eq!(loaded["draft_id"], "a1b2c3d4");
+        assert_eq!(loaded["captured_day"], "20260815");
+    }
+
+    #[test]
+    fn ac15_load_draft_event_finds_event_in_later_segment() {
+        let journal = TestJournal::new();
+        record_draft_captured(&journal.path, "later-id", "20260815").expect("locator");
+        write_draft_event(
+            &journal.path,
+            "20260815",
+            "100000_300",
+            "other-id",
+            json!({"payload": {"body": "other"}}),
+        );
+        write_draft_event(
+            &journal.path,
+            "20260815",
+            "100347_300",
+            "later-id",
+            json!({"payload": {"body": "later"}}),
+        );
+        let loaded = load_draft_event(&journal.path, "later-id")
+            .expect("load")
+            .expect("found");
+        assert_eq!(loaded["draft_id"], "later-id");
+        assert_eq!(loaded["payload"]["body"], "later");
+    }
+
+    #[test]
+    fn ac16_load_draft_event_returns_none_without_locator_or_match() {
+        let journal = TestJournal::new();
+        assert_eq!(
+            load_draft_event(&journal.path, "missing").expect("no locator"),
+            None
+        );
+        record_draft_captured(&journal.path, "a1b2c3d4", "20260815").expect("locator");
+        write_draft_event(
+            &journal.path,
+            "20260815",
+            "100347_300",
+            "other-id",
+            json!({}),
+        );
+        write_draft_event(
+            &journal.path,
+            "20260816",
+            "100347_300",
+            "a1b2c3d4",
+            json!({}),
+        );
+        assert_eq!(
+            load_draft_event(&journal.path, "a1b2c3d4").expect("wrong day only"),
+            None
+        );
+    }
+
+    #[test]
+    fn ac17_draft_outcome_soft_fails_and_round_trips_marks() {
+        let journal = TestJournal::new();
+        assert_eq!(
+            resolve_draft_outcome(&journal.path, "a1b2c3d4").expect("absent"),
+            None
+        );
+        record_draft_captured(&journal.path, "a1b2c3d4", "20260815").expect("locator");
+        assert_eq!(
+            resolve_draft_outcome(&journal.path, "a1b2c3d4").expect("unmarked"),
+            None
+        );
+        mark_draft_submitted(&journal.path, "a1b2c3d4").expect("submit");
+        assert_eq!(
+            resolve_draft_outcome(&journal.path, "a1b2c3d4").expect("submitted"),
+            Some("submitted".to_owned())
+        );
+        let cancelled = TestJournal::new();
+        mark_draft_cancelled(&cancelled.path, "a1b2c3d4").expect("cancel");
+        assert_eq!(
+            resolve_draft_outcome(&cancelled.path, "a1b2c3d4").expect("cancelled"),
+            Some("cancelled".to_owned())
+        );
+        let malformed = support_draft_outcome_path(&journal.path, "bad-json");
+        fs::create_dir_all(malformed.parent().expect("outcome parent")).expect("parent");
+        fs::write(&malformed, "{").expect("malformed mark");
+        assert_eq!(
+            resolve_draft_outcome(&journal.path, "bad-json").expect("malformed"),
+            None
+        );
+    }
+
+    #[test]
+    fn ac18_mark_is_create_only_and_leaves_locator_untouched() {
+        let journal = TestJournal::new();
+        record_draft_captured(&journal.path, "a1b2c3d4", "20260815").expect("locator");
+        let locator = support_draft_index_path(&journal.path, "a1b2c3d4");
+        let before = fs::read(&locator).expect("read locator");
+        mark_draft_submitted(&journal.path, "a1b2c3d4").expect("first mark");
+        let mark = support_draft_outcome_path(&journal.path, "a1b2c3d4");
+        let submitted = fs::read(&mark).expect("read submitted mark");
+        assert_eq!(submitted, b"{\"outcome\":\"submitted\"}\n");
+        mark_draft_submitted(&journal.path, "a1b2c3d4").expect("repeat same verb");
+        assert_eq!(fs::read(&mark).expect("unchanged after repeat"), submitted);
+        mark_draft_cancelled(&journal.path, "a1b2c3d4").expect("other verb after win");
+        assert_eq!(
+            fs::read(&mark).expect("unchanged after other verb"),
+            submitted
+        );
+        assert_eq!(
+            resolve_draft_outcome(&journal.path, "a1b2c3d4").expect("winner"),
+            Some("submitted".to_owned())
+        );
+        assert_eq!(fs::read(locator).expect("locator untouched"), before);
     }
 }

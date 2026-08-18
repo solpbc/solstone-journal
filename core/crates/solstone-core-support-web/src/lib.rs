@@ -18,7 +18,10 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{Local, Utc};
 use serde_json::{Map, Value, json};
-use solstone_core_chat_append::{append_support_draft, record_draft_captured};
+use solstone_core_chat_append::{
+    append_support_draft, load_draft_event, mark_draft_cancelled, mark_draft_submitted,
+    record_draft_captured, resolve_draft_outcome,
+};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_support_portal::{
     OperationError, PortalClient, PortalClientError, PortalOperationError, collect_all, is_enabled,
@@ -53,6 +56,8 @@ pub fn routes(journal_root: PathBuf) -> Router {
     let confirm_root = layer_root.clone();
     let still_need_help_root = layer_root.clone();
     let feedback_root = layer_root.clone();
+    let draft_confirm_root = layer_root.clone();
+    let draft_cancel_root = layer_root.clone();
     Router::new()
         .route(
             "/app/support",
@@ -102,6 +107,14 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route(
             "/app/support/api/draft",
             post(move |request| capture_draft(draft_root.clone(), request)),
+        )
+        .route(
+            "/app/support/api/draft/confirm",
+            post(move |payload| confirm_draft(draft_confirm_root.clone(), payload)),
+        )
+        .route(
+            "/app/support/api/draft/cancel",
+            post(move |payload| cancel_draft(draft_cancel_root.clone(), payload)),
         )
         .route(
             "/app/support/api/register",
@@ -632,6 +645,226 @@ async fn capture_draft(root: PathBuf, request: Request) -> Response {
             .cloned()
             .unwrap_or(Value::Null),
     )
+}
+
+enum DraftLookup {
+    NotFound,
+    AlreadyTerminal(String),
+    Ready(Value),
+}
+
+fn resolve_draft(root: &FsPath, draft_id: &str) -> Result<DraftLookup, String> {
+    match resolve_draft_outcome(root, draft_id) {
+        Ok(Some(status)) => return Ok(DraftLookup::AlreadyTerminal(status)),
+        Ok(None) => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    match load_draft_event(root, draft_id) {
+        Ok(Some(event)) => Ok(DraftLookup::Ready(event)),
+        Ok(None) => Ok(DraftLookup::NotFound),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn draft_outcome_response(outcome: &str, ticket_id: Option<i64>) -> Response {
+    let mut body = json!({"ok": true, "outcome": outcome});
+    if let Some(id) = ticket_id {
+        body["ticket_id"] = json!(id);
+    }
+    json_response(body)
+}
+
+fn as_ticket_id(value: &Value) -> Option<i64> {
+    value
+        .as_i64()
+        .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
+}
+
+fn required_draft_id(payload: &Value) -> Option<&str> {
+    object_text(payload, "draft_id").filter(|value| !value.is_empty())
+}
+
+fn terminal_draft_response(status: &str) -> Response {
+    draft_outcome_response(
+        if status == "submitted" {
+            "already_submitted"
+        } else {
+            "cancelled"
+        },
+        None,
+    )
+}
+
+fn dispatch_error(error: PortalOperationError) -> Response {
+    match error {
+        PortalOperationError::Operation(error) => operation_error_response(error),
+        PortalOperationError::Portal(error) => portal_failed(&error.to_string()),
+    }
+}
+
+async fn confirm_draft(root: PathBuf, Json(payload): Json<Value>) -> Response {
+    if let Some(response) = disabled(&root, false) {
+        return response;
+    }
+    let Some(draft_id) = required_draft_id(&payload) else {
+        return missing_required("draft_id is required");
+    };
+    let draft_id = draft_id.to_owned();
+    match resolve_draft(&root, &draft_id) {
+        Err(error) => portal_failed(&error),
+        Ok(DraftLookup::NotFound) => draft_outcome_response("not_found", None),
+        Ok(DraftLookup::AlreadyTerminal(status)) => terminal_draft_response(&status),
+        Ok(DraftLookup::Ready(event)) => confirm_ready_draft(&root, &draft_id, event),
+    }
+}
+
+fn confirm_ready_draft(root: &FsPath, draft_id: &str, event: Value) -> Response {
+    let event_payload = event.get("payload").cloned().unwrap_or(Value::Null);
+    let user_context = event
+        .get("diagnostics_snapshot")
+        .filter(|value| !value.is_null())
+        .cloned()
+        .or_else(|| event_payload.get("user_context").cloned());
+    let anonymous = event_payload
+        .get("anonymous")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let verb = event.get("verb").and_then(Value::as_str).unwrap_or("");
+    let dispatched = match verb {
+        "create" => with_mutation_client(root, anonymous, |client| {
+            client.create_ticket(
+                object_text(&event_payload, "product").unwrap_or("solstone"),
+                object_text(&event_payload, "subject").unwrap_or_default(),
+                object_text(&event_payload, "description").unwrap_or_default(),
+                object_text(&event_payload, "severity").unwrap_or("medium"),
+                object_text(&event_payload, "category"),
+                object_text(&event_payload, "user_email"),
+                user_context.clone(),
+                draft_id,
+            )
+        }),
+        "feedback" => with_mutation_client(root, anonymous, |client| {
+            client.submit_feedback(
+                object_text(&event_payload, "body").unwrap_or_default(),
+                object_text(&event_payload, "product").unwrap_or("solstone"),
+                object_text(&event_payload, "user_email"),
+                user_context.clone(),
+                draft_id,
+            )
+        }),
+        "reply" => {
+            let Some(ticket_id) = event_payload.get("ticket_id").and_then(as_ticket_id) else {
+                return invalid_value("ticket_id must be an integer");
+            };
+            with_mutation_client(root, anonymous, |client| {
+                client.reply_to_ticket(
+                    ticket_id,
+                    object_text(&event_payload, "content").unwrap_or_default(),
+                    draft_id,
+                )
+            })
+        }
+        "attach" => {
+            let Some(ticket_id) = event_payload.get("ticket_id").and_then(as_ticket_id) else {
+                return invalid_value("ticket_id must be an integer");
+            };
+            let Some(bytes) = event_payload
+                .get("content_b64")
+                .and_then(Value::as_str)
+                .and_then(|value| STANDARD.decode(value).ok())
+            else {
+                return invalid_value("content_b64 must be valid base64");
+            };
+            let filename = object_text(&event_payload, "filename").unwrap_or_default();
+            let suffix = FsPath::new(filename)
+                .extension()
+                .and_then(|suffix| suffix.to_str())
+                .map_or_else(String::new, |suffix| {
+                    format!(".{}", suffix.to_ascii_lowercase())
+                });
+            let mut temp = match Builder::new().suffix(&suffix).tempfile() {
+                Ok(temp) => temp,
+                Err(error) => return portal_failed(&error.to_string()),
+            };
+            #[cfg(unix)]
+            if let Err(error) = {
+                use std::os::unix::fs::PermissionsExt;
+                temp.as_file()
+                    .set_permissions(std::fs::Permissions::from_mode(0o600))
+            } {
+                return portal_failed(&error.to_string());
+            }
+            if let Err(error) = temp.write_all(&bytes).and_then(|()| temp.flush()) {
+                return portal_failed(&error.to_string());
+            }
+            with_mutation_client(root, anonymous, |client| {
+                client.attach_file(
+                    ticket_id,
+                    temp.path(),
+                    draft_id,
+                    0,
+                    object_text(&event_payload, "filename"),
+                    object_text(&event_payload, "content_type"),
+                )
+            })
+        }
+        "close" | "resolved" | "still_need_help" => {
+            let Some(ticket_id) = event_payload.get("ticket_id").and_then(as_ticket_id) else {
+                return invalid_value("ticket_id must be an integer");
+            };
+            with_mutation_client(root, anonymous, |client| match verb {
+                "close" => client.close_ticket(ticket_id, draft_id),
+                "resolved" => client.confirm_resolution(ticket_id, draft_id),
+                _ => client.still_need_help(ticket_id, draft_id),
+            })
+        }
+        _ => return invalid_value("unknown draft verb"),
+    };
+    let value = match dispatched {
+        Ok(value) => value,
+        Err(error) => return dispatch_error(error),
+    };
+    let ticket_id = value
+        .get("ticket_id")
+        .and_then(as_ticket_id)
+        .or_else(|| event_payload.get("ticket_id").and_then(as_ticket_id));
+    if let Err(error) = mark_draft_submitted(root, draft_id) {
+        return portal_failed(&error.to_string());
+    }
+    match resolve_draft_outcome(root, draft_id) {
+        Ok(Some(status)) if status == "submitted" => draft_outcome_response("submitted", ticket_id),
+        Ok(Some(status)) => draft_outcome_response(&status, None),
+        Ok(None) => portal_failed("support draft mark is missing after write"),
+        Err(error) => portal_failed(&error.to_string()),
+    }
+}
+
+async fn cancel_draft(root: PathBuf, Json(payload): Json<Value>) -> Response {
+    if let Some(response) = disabled(&root, false) {
+        return response;
+    }
+    let Some(draft_id) = required_draft_id(&payload) else {
+        return missing_required("draft_id is required");
+    };
+    let draft_id = draft_id.to_owned();
+    match resolve_draft(&root, &draft_id) {
+        Err(error) => portal_failed(&error),
+        Ok(DraftLookup::NotFound) => draft_outcome_response("not_found", None),
+        Ok(DraftLookup::AlreadyTerminal(status)) => terminal_draft_response(&status),
+        Ok(DraftLookup::Ready(_)) => {
+            if let Err(error) = mark_draft_cancelled(&root, &draft_id) {
+                return portal_failed(&error.to_string());
+            }
+            match resolve_draft_outcome(&root, &draft_id) {
+                Ok(Some(status)) if status == "submitted" => {
+                    draft_outcome_response("already_submitted", None)
+                }
+                Ok(Some(status)) => draft_outcome_response(&status, None),
+                Ok(None) => portal_failed("support draft mark is missing after write"),
+                Err(error) => portal_failed(&error.to_string()),
+            }
+        }
+    }
 }
 
 async fn register(root: PathBuf) -> Response {

@@ -11,10 +11,11 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use solstone_core_chat_append::resolve_draft_outcome;
 use solstone_core_support_portal::test_support::{RoutePortal, RouteReply};
 use solstone_core_support_portal::{Ledger, PortalClient};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -1148,7 +1149,7 @@ async fn replay_case(
         .log()
         .into_iter()
         .map(|request| {
-            serde_json::json!({"method":request.method,"path":request.path,"had_idempotency_key":request.had_idempotency_key,"had_authorization":request.had_authorization,"had_dpop":request.had_dpop})
+            serde_json::json!({"method":request.method,"path":request.path,"had_idempotency_key":request.idempotency_key.is_some(),"had_authorization":request.had_authorization,"had_dpop":request.had_dpop})
         })
         .collect::<Vec<_>>();
     assert_eq!(
@@ -2397,7 +2398,7 @@ async fn unregistered_read_and_page_cases_register_for_every_portal_read() {
             .log()
             .into_iter()
             .map(|request| {
-                serde_json::json!({"method":request.method,"path":request.path,"had_idempotency_key":request.had_idempotency_key,"had_authorization":request.had_authorization,"had_dpop":request.had_dpop})
+                serde_json::json!({"method":request.method,"path":request.path,"had_idempotency_key":request.idempotency_key.is_some(),"had_authorization":request.had_authorization,"had_dpop":request.had_dpop})
             })
             .collect::<Vec<_>>();
         if local_only.contains(&name) {
@@ -2694,6 +2695,537 @@ async fn gate_phase_ticket_id_divergences_are_named_and_recorded() {
             response.status().as_u16(),
             native_status,
             "{phase} {case_name}: fixture {fixture_status}, native {native_status}"
+        );
+    }
+}
+
+fn confirm_request(draft_id: &str) -> Request<Body> {
+    json_request(
+        "/app/support/api/draft/confirm",
+        serde_json::json!({"draft_id": draft_id}),
+    )
+}
+
+fn cancel_request(draft_id: &str) -> Request<Body> {
+    json_request(
+        "/app/support/api/draft/cancel",
+        serde_json::json!({"draft_id": draft_id}),
+    )
+}
+
+fn write_locator(root: &Path, draft_id: &str, day: &str) {
+    let path = root
+        .join("chronicle/health/support-drafts")
+        .join(format!("{draft_id}.json"));
+    std::fs::create_dir_all(path.parent().expect("locator parent")).expect("locator parent");
+    std::fs::write(path, format!("{{\"captured_day\":\"{day}\"}}\n")).expect("write locator");
+}
+
+fn write_chat_event(root: &Path, day: &str, segment: &str, event: &Value) {
+    let path = root
+        .join("chronicle")
+        .join(day)
+        .join("chat")
+        .join(segment)
+        .join("chat.jsonl");
+    std::fs::create_dir_all(path.parent().expect("chat parent")).expect("chat parent");
+    let mut contents = std::fs::read_to_string(&path).unwrap_or_default();
+    contents.push_str(&event.to_string());
+    contents.push('\n');
+    std::fs::write(path, contents).expect("write chat");
+}
+
+fn support_draft_line(draft_id: &str, day: &str, verb: &str, payload: Value) -> Value {
+    serde_json::json!({
+        "kind": "support_draft",
+        "ts": 1,
+        "draft_id": draft_id,
+        "captured_day": day,
+        "verb": verb,
+        "payload": payload,
+        "diagnostics_snapshot": null,
+    })
+}
+
+fn outcome_mark_path(root: &Path, draft_id: &str) -> PathBuf {
+    root.join("chronicle/health/support-drafts")
+        .join(format!("{draft_id}.outcome.json"))
+}
+
+fn chat_file_for_draft(root: &Path, draft_id: &str) -> PathBuf {
+    let event = draft_event(root, draft_id);
+    let day = event["captured_day"].as_str().expect("captured day");
+    let chat = root.join("chronicle").join(day).join("chat");
+    for segment in std::fs::read_dir(chat).expect("chat segments").flatten() {
+        let path = segment.path().join("chat.jsonl");
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if contents.lines().any(|line| {
+            serde_json::from_str::<Value>(line)
+                .ok()
+                .is_some_and(|event| event["draft_id"] == draft_id)
+        }) {
+            return path;
+        }
+    }
+    panic!("chat file for {draft_id}");
+}
+
+fn mutation_keys(portal: &RoutePortal) -> Vec<String> {
+    portal
+        .log()
+        .into_iter()
+        .filter(|request| request.method == "POST" && request.path != "/api/idempotency/ack")
+        .filter_map(|request| request.idempotency_key)
+        .collect()
+}
+
+async fn capture_create(root: &Path, payload: Value) -> String {
+    let (status, body) = shell_response(
+        root,
+        json_request(
+            "/app/support/api/draft",
+            serde_json::json!({
+                "verb": "create",
+                "payload": payload,
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, 200);
+    body["draft_id"].as_str().expect("draft id").to_owned()
+}
+
+#[tokio::test]
+async fn confirm_create_submits_and_old_chat_paths_are_gone() {
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
+    portal.clear_log();
+    let draft_id = capture_create(
+        root.path(),
+        serde_json::json!({"subject":"draft subject","description":"draft body"}),
+    )
+    .await;
+    assert!(
+        portal
+            .log()
+            .iter()
+            .all(|request| request.method != "POST" || request.path == "/api/idempotency/ack"),
+        "capture stays local"
+    );
+
+    portal.clear_log();
+    portal.clear_bodies();
+    let (status, body) = shell_response(root.path(), confirm_request(&draft_id)).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["outcome"], "submitted");
+    assert_eq!(body["ticket_id"], 101);
+    let tickets = portal
+        .log()
+        .into_iter()
+        .filter(|request| request.method == "POST" && request.path == "/api/tickets")
+        .collect::<Vec<_>>();
+    assert_eq!(tickets.len(), 1);
+    assert!(tickets[0].idempotency_key.is_some());
+
+    for path in [
+        "/api/chat/support/draft/confirm",
+        "/api/chat/support/draft/cancel",
+    ] {
+        let response = super::routes(root.path().to_path_buf())
+            .oneshot(json_request(path, serde_json::json!({})))
+            .await
+            .expect("old path response");
+        assert_eq!(response.status().as_u16(), 404, "{path}");
+    }
+}
+
+#[tokio::test]
+async fn confirm_lookup_walks_only_the_locator_day() {
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
+
+    let (status, body) = shell_response(root.path(), confirm_request("missing")).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["outcome"], "not_found");
+
+    write_locator(root.path(), "locator-only", "20260815");
+    let (status, body) = shell_response(root.path(), confirm_request("locator-only")).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["outcome"], "not_found");
+
+    write_locator(root.path(), "no-match", "20260815");
+    write_chat_event(
+        root.path(),
+        "20260815",
+        "100000_300",
+        &support_draft_line(
+            "other-id",
+            "20260815",
+            "create",
+            serde_json::json!({"subject":"other","description":"other"}),
+        ),
+    );
+    let (status, body) = shell_response(root.path(), confirm_request("no-match")).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["outcome"], "not_found");
+
+    write_locator(root.path(), "first-id", "20260816");
+    write_locator(root.path(), "second-id", "20260816");
+    write_chat_event(
+        root.path(),
+        "20260816",
+        "100000_300",
+        &support_draft_line(
+            "first-id",
+            "20260816",
+            "create",
+            serde_json::json!({"subject":"first subject","description":"first"}),
+        ),
+    );
+    write_chat_event(
+        root.path(),
+        "20260816",
+        "100000_300",
+        &support_draft_line(
+            "second-id",
+            "20260816",
+            "create",
+            serde_json::json!({"subject":"second subject","description":"second"}),
+        ),
+    );
+    portal.clear_log();
+    portal.clear_bodies();
+    let (status, body) = shell_response(root.path(), confirm_request("second-id")).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["outcome"], "submitted");
+    let create = portal
+        .log()
+        .into_iter()
+        .position(|request| request.method == "POST" && request.path == "/api/tickets")
+        .expect("second draft reached portal");
+    let sent: Value = serde_json::from_slice(&portal.bodies()[create]).expect("create body");
+    assert_eq!(sent["subject"], "second subject");
+}
+
+#[tokio::test]
+async fn confirm_and_cancel_marks_are_durable_and_replay_the_same_key() {
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
+
+    let submitted = capture_create(
+        root.path(),
+        serde_json::json!({"subject":"once","description":"once"}),
+    )
+    .await;
+    portal.clear_log();
+    let (status, first) = shell_response(root.path(), confirm_request(&submitted)).await;
+    assert_eq!(status, 200);
+    assert_eq!(first["outcome"], "submitted");
+    let first_keys = mutation_keys(&portal);
+    assert_eq!(first_keys.len(), 1);
+
+    let (status, again) = shell_response(root.path(), confirm_request(&submitted)).await;
+    assert_eq!(status, 200);
+    assert_eq!(again["outcome"], "already_submitted");
+    assert_eq!(mutation_keys(&portal), first_keys);
+
+    std::fs::remove_file(outcome_mark_path(root.path(), &submitted)).expect("delete mark");
+    let (status, replay) = shell_response(root.path(), confirm_request(&submitted)).await;
+    assert_eq!(status, 200);
+    assert_eq!(replay["outcome"], "submitted");
+    assert_eq!(replay["ticket_id"], first["ticket_id"]);
+    let replay_keys = mutation_keys(&portal);
+    assert_eq!(replay_keys.len(), 2);
+    assert_eq!(replay_keys[0], replay_keys[1]);
+
+    let other = capture_create(
+        root.path(),
+        serde_json::json!({"subject":"other","description":"other"}),
+    )
+    .await;
+    let (status, _) = shell_response(root.path(), confirm_request(&other)).await;
+    assert_eq!(status, 200);
+    let keys = mutation_keys(&portal);
+    assert_ne!(keys[0], keys[keys.len() - 1]);
+
+    let cancelled = capture_create(
+        root.path(),
+        serde_json::json!({"subject":"cancel","description":"cancel"}),
+    )
+    .await;
+    portal.clear_log();
+    let (status, body) = shell_response(root.path(), cancel_request(&cancelled)).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["outcome"], "cancelled");
+    assert!(mutation_keys(&portal).is_empty());
+    let (status, body) = shell_response(root.path(), cancel_request(&cancelled)).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["outcome"], "cancelled");
+    assert!(mutation_keys(&portal).is_empty());
+
+    portal.clear_log();
+    let (status, body) = shell_response(root.path(), cancel_request(&submitted)).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["outcome"], "already_submitted");
+    assert!(mutation_keys(&portal).is_empty());
+}
+
+#[tokio::test]
+async fn confirm_dispatches_each_verb_from_the_stored_payload() {
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
+
+    portal.clear_log();
+    portal.clear_bodies();
+    let first = capture_create(
+        root.path(),
+        serde_json::json!({
+            "subject": "alpha",
+            "description": "one",
+            "auto_context": false,
+            "user_context": {"only": "alpha"},
+        }),
+    )
+    .await;
+    let second = capture_create(
+        root.path(),
+        serde_json::json!({
+            "subject": "beta",
+            "description": "two",
+            "auto_context": false,
+            "user_context": {"only": "beta"},
+            "anonymous": true,
+        }),
+    )
+    .await;
+    let (status, _) = shell_response(root.path(), confirm_request(&first)).await;
+    assert_eq!(status, 200);
+    let (status, _) = shell_response(root.path(), confirm_request(&second)).await;
+    assert_eq!(status, 200);
+    let creates = portal
+        .log()
+        .into_iter()
+        .enumerate()
+        .filter(|(_, request)| request.method == "POST" && request.path == "/api/tickets")
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    assert_eq!(creates.len(), 2);
+    let alpha: Value = serde_json::from_slice(&portal.bodies()[creates[0]]).expect("alpha");
+    let beta: Value = serde_json::from_slice(&portal.bodies()[creates[1]]).expect("beta");
+    assert_eq!(alpha["user_context"], serde_json::json!({"only":"alpha"}));
+    assert_eq!(beta["user_context"], serde_json::json!({"only":"beta"}));
+    assert!(alpha.get("platform").is_none());
+    assert!(alpha.get("recent_errors").is_none());
+    assert!(beta.get("version").is_none());
+    assert_ne!(
+        mutation_keys(&portal)[0],
+        mutation_keys(&portal)[mutation_keys(&portal).len() - 1]
+    );
+
+    let (status, body) = shell_response(
+        root.path(),
+        json_request(
+            "/app/support/api/draft",
+            serde_json::json!({"verb":"feedback","payload":{"body":"the flow"}}),
+        ),
+    )
+    .await;
+    assert_eq!(status, 200);
+    portal.clear_log();
+    let (status, _) = shell_response(
+        root.path(),
+        confirm_request(body["draft_id"].as_str().expect("feedback id")),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(
+        portal
+            .log()
+            .iter()
+            .any(|request| request.method == "POST" && request.path == "/api/tickets")
+    );
+
+    for (verb, path) in [
+        ("reply", "/api/tickets/7/messages"),
+        ("close", "/api/tickets/7/close"),
+        ("resolved", "/api/tickets/7/resolution/confirm"),
+        (
+            "still_need_help",
+            "/api/tickets/7/resolution/still-need-help",
+        ),
+    ] {
+        let payload = if verb == "reply" {
+            serde_json::json!({"ticket_id":7,"content":format!("reply {verb}")})
+        } else {
+            serde_json::json!({"ticket_id":7})
+        };
+        let (status, body) = shell_response(
+            root.path(),
+            json_request(
+                "/app/support/api/draft",
+                serde_json::json!({"verb":verb,"payload":payload}),
+            ),
+        )
+        .await;
+        assert_eq!(status, 200, "{verb}");
+        portal.clear_log();
+        let (status, _) = shell_response(
+            root.path(),
+            confirm_request(body["draft_id"].as_str().expect("id")),
+        )
+        .await;
+        assert_eq!(status, 200, "{verb}");
+        assert!(
+            portal
+                .log()
+                .iter()
+                .any(|request| request.method == "POST" && request.path == path),
+            "{verb} {path}"
+        );
+    }
+
+    let bytes_a = b"attach-a";
+    let bytes_b = b"attach-b-different";
+    for bytes in [bytes_a.as_slice(), bytes_b.as_slice()] {
+        let (status, body) = shell_response(
+            root.path(),
+            multipart_request(
+                "/app/support/api/draft",
+                None,
+                &[("verb", "attach"), ("ticket_id", "7")],
+                Some((Some("draft.txt"), bytes, "text/plain")),
+            ),
+        )
+        .await;
+        assert_eq!(status, 200);
+        portal.clear_log();
+        let (status, _) = shell_response(
+            root.path(),
+            confirm_request(body["draft_id"].as_str().expect("attach id")),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(portal.log().iter().any(
+            |request| request.method == "POST" && request.path == "/api/tickets/7/attachments"
+        ));
+    }
+}
+
+#[tokio::test]
+async fn confirm_portal_failure_leaves_the_draft_open() {
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
+    let draft_id = capture_create(
+        root.path(),
+        serde_json::json!({"subject":"fail","description":"fail"}),
+    )
+    .await;
+    portal.override_route(
+        "POST",
+        "/api/tickets",
+        vec![RouteReply {
+            status: 500,
+            body: "broken".to_owned(),
+            content_type: "text/plain".to_owned(),
+        }],
+    );
+    let (status, body) = shell_response(root.path(), confirm_request(&draft_id)).await;
+    assert_eq!(status, 500);
+    assert_ne!(body["outcome"], "submitted");
+    assert_eq!(
+        resolve_draft_outcome(root.path(), &draft_id).expect("outcome"),
+        None
+    );
+    assert!(!outcome_mark_path(root.path(), &draft_id).exists());
+}
+
+#[tokio::test]
+async fn confirm_and_cancel_validate_without_an_idempotency_header() {
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
+    for path in [
+        "/app/support/api/draft/confirm",
+        "/app/support/api/draft/cancel",
+    ] {
+        let (status, body) =
+            shell_response(root.path(), json_request(path, serde_json::json!({}))).await;
+        assert_eq!(status, 400, "{path}");
+        assert_eq!(body["reason_code"], "missing_required_field", "{path}");
+    }
+    let draft_id = capture_create(
+        root.path(),
+        serde_json::json!({"subject":"headerless","description":"headerless"}),
+    )
+    .await;
+    let (status, body) = shell_response(root.path(), confirm_request(&draft_id)).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["outcome"], "submitted");
+}
+
+#[tokio::test]
+async fn confirm_and_cancel_do_not_append_chat_events() {
+    let portal = corpus_route_portal();
+    let root = phase_root("established", Some(&portal));
+    let _guard = install_route_portal(&portal);
+    let confirm_id = capture_create(
+        root.path(),
+        serde_json::json!({"subject":"keep","description":"keep"}),
+    )
+    .await;
+    let confirm_path = chat_file_for_draft(root.path(), &confirm_id);
+    let before = std::fs::read(&confirm_path).expect("snapshot");
+    let (status, _) = shell_response(root.path(), confirm_request(&confirm_id)).await;
+    assert_eq!(status, 200);
+    assert_eq!(std::fs::read(&confirm_path).expect("after confirm"), before);
+
+    let cancel_id = capture_create(
+        root.path(),
+        serde_json::json!({"subject":"drop","description":"drop"}),
+    )
+    .await;
+    let cancel_path = chat_file_for_draft(root.path(), &cancel_id);
+    let before = std::fs::read(&cancel_path).expect("cancel snapshot");
+    let (status, _) = shell_response(root.path(), cancel_request(&cancel_id)).await;
+    assert_eq!(status, 200);
+    assert_eq!(std::fs::read(cancel_path).expect("after cancel"), before);
+}
+
+#[tokio::test]
+async fn disabled_and_unestablished_reject_confirm_and_cancel() {
+    let portal = corpus_route_portal();
+    let root = phase_root("disabled", Some(&portal));
+    let _guard = install_route_portal(&portal);
+    portal.clear_log();
+    for request in [confirm_request("any"), cancel_request("any")] {
+        let (status, body) = shell_response(root.path(), request).await;
+        assert_eq!(status, 403);
+        assert_eq!(body["reason_code"], "feature_unavailable");
+    }
+    assert!(portal.log().is_empty());
+
+    let unestablished = phase_root("unestablished", None);
+    for path in [
+        "/app/support/api/draft/confirm",
+        "/app/support/api/draft/cancel",
+    ] {
+        let response = solstone_core_convey_shell::router(unestablished.path().to_path_buf())
+            .oneshot(json_request(path, serde_json::json!({"draft_id":"any"})))
+            .await
+            .expect("shell response");
+        assert_eq!(response.status().as_u16(), 302, "{path}");
+        assert_eq!(
+            response.headers().get("location").unwrap(),
+            "/init",
+            "{path}"
         );
     }
 }

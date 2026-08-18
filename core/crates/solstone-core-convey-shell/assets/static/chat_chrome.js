@@ -270,7 +270,8 @@
     "support draft ambiguous": { state: 'ambiguous', icon: '?' },
     "support draft in_progress": { state: 'in_progress', icon: '…' },
     "support draft re_consent_required": { state: 're_consent_required', icon: '!' },
-    "support draft cancelled": { state: 'cancelled', icon: '–' }
+    "support draft cancelled": { state: 'cancelled', icon: '–' },
+    "support draft not_found": { state: 'not_found', icon: '!' }
   };
 
   function formatAttachmentSize(size) {
@@ -542,7 +543,7 @@
     }
     resultEl.appendChild(strip);
     resultEl.hidden = false;
-    if (outcome.state === 'submitted' || outcome.state === 'cancelled') {
+    if (outcome.state === 'submitted' || outcome.state === 'cancelled' || outcome.state === 'not_found') {
       hideSupportDraft();
     } else {
       reenableSupportDraft();
@@ -1529,9 +1530,22 @@
         body: JSON.stringify({ draft_id: draftId })
       }).then(function(resp) {
         const outcome = resp && resp.outcome;
-        if (outcome === 'not_found' || outcome === 'already_submitted' || outcome === 'superseded') {
+        if (outcome === 'already_submitted') {
           hideSupportDraft();
+          return resp;
         }
+        if (outcome === 'submitted' || outcome === 'cancelled' || outcome === 'not_found') {
+          const copy = window.solChatCopy || {};
+          const text = outcome === 'submitted'
+            ? copy.CHAT_RESULT_DRAFT_SUBMITTED
+            : outcome === 'cancelled'
+              ? copy.CHAT_RESULT_DRAFT_CANCELLED
+              : copy.CHAT_RESULT_DRAFT_NOT_FOUND;
+          renderSupportOutcome({ notes: 'support draft ' + outcome, text: text || '' });
+          return resp;
+        }
+        if (draftSubmitBtn) draftSubmitBtn.disabled = false;
+        if (draftCancelBtn) draftCancelBtn.disabled = false;
         return resp;
       }).catch(function(err) {
         if (window.logError) window.logError(err, { context: 'chat-support-draft' });
@@ -1542,12 +1556,12 @@
     }
     if (draftSubmitBtn) {
       draftSubmitBtn.addEventListener('click', function() {
-        submitDraftAction('/api/chat/support/draft/confirm');
+        submitDraftAction('/app/support/api/draft/confirm');
       });
     }
     if (draftCancelBtn) {
       draftCancelBtn.addEventListener('click', function() {
-        submitDraftAction('/api/chat/support/draft/cancel');
+        submitDraftAction('/app/support/api/draft/cancel');
       });
     }
 

@@ -77,7 +77,8 @@
       "support draft ambiguous": { state: 'ambiguous', icon: '?' },
       "support draft in_progress": { state: 'in_progress', icon: '…' },
       "support draft re_consent_required": { state: 're_consent_required', icon: '!' },
-      "support draft cancelled": { state: 'cancelled', icon: '–' }
+      "support draft cancelled": { state: 'cancelled', icon: '–' },
+      "support draft not_found": { state: 'not_found', icon: '!' }
     };
 
     function report(name, ok, detail) {
@@ -359,7 +360,7 @@
       }
       resultEl.appendChild(strip);
       resultEl.hidden = false;
-      if (outcome.state === 'submitted' || outcome.state === 'cancelled') {
+      if (outcome.state === 'submitted' || outcome.state === 'cancelled' || outcome.state === 'not_found') {
         hideSupportDraft();
       } else {
         reenableSupportDraft();

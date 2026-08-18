@@ -751,182 +751,6 @@
         ]
       }
     },
-    "/api/chat/support/draft/cancel": {
-      "post": {
-        "description": "Cancel a captured support draft without submitting it.",
-        "operationId": "chat.supportDraftCancel",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "draft_id": "draft-1781803200000"
-              },
-              "schema": {
-                "additionalProperties": true,
-                "properties": {
-                  "draft_id": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "draft_id"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "ok": true,
-                  "outcome": "cancelled"
-                },
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    },
-                    "outcome": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "ok",
-                    "outcome"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Support draft cancellation result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Draft identifier was missing.",
-            "x-reason-codes": [
-              "missing_required_field"
-            ]
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Access gate rejected a revoked paired-link identity.",
-            "x-reason-codes": [
-              "pl_revoked"
-            ]
-          }
-        },
-        "summary": "Cancel support draft",
-        "tags": [
-          "chat"
-        ]
-      }
-    },
-    "/api/chat/support/draft/confirm": {
-      "post": {
-        "description": "Submit a captured support draft.",
-        "operationId": "chat.supportDraftConfirm",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "draft_id": "draft-1781803200000"
-              },
-              "schema": {
-                "additionalProperties": true,
-                "properties": {
-                  "draft_id": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "draft_id"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "ok": true,
-                  "outcome": "submitted",
-                  "ticket_id": "12345"
-                },
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    },
-                    "outcome": {
-                      "type": "string"
-                    },
-                    "ticket_id": {}
-                  },
-                  "required": [
-                    "ok",
-                    "outcome"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Support draft confirmation result."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Draft identifier was missing.",
-            "x-reason-codes": [
-              "missing_required_field"
-            ]
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Access gate rejected a revoked paired-link identity.",
-            "x-reason-codes": [
-              "pl_revoked"
-            ]
-          }
-        },
-        "summary": "Confirm support draft",
-        "tags": [
-          "chat"
-        ]
-      }
-    },
     "/api/health/full": {
       "get": {
         "description": "Return the full journal-data trust report for one day.",
@@ -9780,6 +9604,239 @@
           }
         },
         "summary": "Capture a support draft",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/app/support/api/draft/cancel": {
+      "post": {
+        "description": "Cancel a captured support draft without submitting it.",
+        "operationId": "support.draftCancel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "draft_id": "draft-1781803200000"
+              },
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "draft_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "draft_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true,
+                  "outcome": "cancelled"
+                },
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "outcome": {
+                      "type": "string"
+                    },
+                    "ticket_id": {}
+                  },
+                  "required": [
+                    "ok",
+                    "outcome"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Support draft cancellation result."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The draft identifier was missing.",
+            "x-reason-codes": [
+              "missing_required_field"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support agent is disabled.",
+            "x-reason-codes": [
+              "feature_unavailable"
+            ]
+          }
+        },
+        "summary": "Cancel a support draft",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/app/support/api/draft/confirm": {
+      "post": {
+        "description": "Submit a captured support draft.",
+        "operationId": "support.draftConfirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "draft_id": "draft-1781803200000"
+              },
+              "schema": {
+                "additionalProperties": true,
+                "properties": {
+                  "draft_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "draft_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true,
+                  "outcome": "submitted",
+                  "ticket_id": 101
+                },
+                "schema": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "outcome": {
+                      "type": "string"
+                    },
+                    "ticket_id": {}
+                  },
+                  "required": [
+                    "ok",
+                    "outcome"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Support draft confirmation result."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The draft identifier was missing or a stored ticket id was invalid.",
+            "x-reason-codes": [
+              "invalid_request_value",
+              "missing_required_field"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Support terms require re-consent.",
+            "x-reason-codes": [
+              "tos_changed"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support agent is disabled.",
+            "x-reason-codes": [
+              "feature_unavailable"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation conflicts with its current state.",
+            "x-reason-codes": [
+              "idempotency_conflict",
+              "invalid_state",
+              "operation_in_progress"
+            ]
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support operation is no longer available.",
+            "x-reason-codes": [
+              "operation_erased",
+              "operation_retired"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The support portal request failed.",
+            "x-reason-codes": [
+              "support_portal_failed"
+            ]
+          }
+        },
+        "summary": "Confirm a support draft",
         "tags": [
           "support"
         ]

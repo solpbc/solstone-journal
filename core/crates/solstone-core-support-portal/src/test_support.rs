@@ -133,7 +133,7 @@ pub struct RouteRequest {
     pub method: String,
     pub path: String,
     pub query: Option<String>,
-    pub had_idempotency_key: bool,
+    pub idempotency_key: Option<String>,
     pub had_authorization: bool,
     pub had_dpop: bool,
     pub body: Option<Vec<u8>>,
@@ -315,7 +315,7 @@ impl PortalTransport for RoutePortal {
             method: method.to_owned(),
             path: path.clone(),
             query,
-            had_idempotency_key: header_present(headers, "idempotency-key"),
+            idempotency_key: header_value(headers, "idempotency-key"),
             had_authorization: header_present(headers, "authorization"),
             had_dpop: header_present(headers, "dpop"),
             body: json_body,
@@ -342,7 +342,14 @@ impl PortalTransport for RoutePortal {
 }
 
 fn header_present(headers: &[(String, String)], name: &str) -> bool {
-    headers
-        .iter()
-        .any(|(header, _)| header.eq_ignore_ascii_case(name))
+    header_value(headers, name).is_some()
+}
+
+fn header_value(headers: &[(String, String)], name: &str) -> Option<String> {
+    headers.iter().find_map(|(header, value)| {
+        header
+            .eq_ignore_ascii_case(name)
+            .then(|| value.to_owned())
+            .filter(|value| !value.is_empty())
+    })
 }
