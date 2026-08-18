@@ -257,14 +257,14 @@ assert_notarized() {
 # rung that uses it passes on a developer's Mac and dies on a clean one with
 # `command not found`. Bound the run by hand instead.
 #
-# ⚠ And stdin must be closed: three of the eight binaries speak a JSON request
+# ⚠ And stdin must be closed: three of the nine binaries speak a JSON request
 # protocol on stdin, so an unbounded probe with an open stdin hangs forever and
 # reads as a wedge rather than as a passing binary.
 # ⛔ Do NOT poll `kill -0 "$pid"` to decide whether a background child is still
 # running. A child that has already exited stays a ZOMBIE until it is reaped, and
 # `kill -0` on a zombie SUCCEEDS — so the loop runs to its limit and reports a
 # timeout on a command that finished in one second. That is exactly what this
-# rung did on its first run: it declared eight signed, notarized binaries hung
+# rung did on its first run: it declared nine signed, notarized binaries hung
 # while each of them was returning promptly, which reads as a product failure and
 # is a harness failure. The sentinel file is written by the thing that did the
 # work, so it is the only honest signal.
@@ -353,7 +353,7 @@ gatekeeper_rung() {
 		# Signed and assessed is still not started. Run it.
 		assert_starts "$path"
 	done
-	[ "$count" -eq 8 ] || refuse "expected exactly 8 executables in the tree, found $count"
+	[ "$count" -eq 9 ] || refuse "expected exactly 9 executables in the tree, found $count"
 	printf 'gatekeeper half 1: %s executables signed, notarized, accepted and started\n' "$count"
 
 	payloads=0

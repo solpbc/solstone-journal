@@ -349,6 +349,21 @@ pub fn stage_from_bytes(spec: &TargetSpec, archive: &[u8]) -> Result<StagedRunti
     })
 }
 
+pub fn write_staged_library(
+    spec: &TargetSpec,
+    staged: &StagedRuntime,
+    dest_dir: &Path,
+) -> Result<(), StageError> {
+    std::fs::create_dir_all(dest_dir).map_err(|error| StageError::new(error.to_string()))?;
+    crate::stage::write_staged_file_mode(dest_dir, spec.library_name, &staged.library, LIB_MODE)
+        .map_err(|error| StageError::new(error.to_string()))?;
+    for (name, bytes) in &staged.notices {
+        crate::stage::write_staged_file_mode(dest_dir, name, bytes, NOTICE_MODE)
+            .map_err(|error| StageError::new(error.to_string()))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

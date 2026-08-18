@@ -340,6 +340,52 @@ speakers_rung() {
 	printf 'rung=speakers ok\n'
 }
 
+pdf_rung() {
+	install_tar
+	assert_launchers
+	[ -x /tree/bin/solstone-core-pdf ] || refuse "solstone-core-pdf missing from the extracted tree"
+	[ -f /tree/lib/solstone-core-pdf/libpdfium.so ] \
+		|| refuse "libpdfium.so missing from the extracted tree"
+	journal=/journal
+	mkdir -p "$journal/config" /work
+	printf '%s\n' '{"setup":{"completed_at":1}}' >"$journal/config/journal.json"
+	export SOLSTONE_JOURNAL=$journal
+	export SOL_SKIP_SUPERVISOR_CHECK=1
+	[ -f /fixture.pdf ] || refuse "real PDF fixture was not mounted"
+	journal importer --source document --timestamp 20260311_120000 --dry-run /fixture.pdf \
+		>"$journal/preview.out" 2>"$journal/preview.err" || {
+		cat "$journal/preview.out" "$journal/preview.err" >&2 || true
+		refuse "document preview failed"
+	}
+	grep -F '1 PDF documents, 2 total pages' "$journal/preview.out" >/dev/null \
+		|| {
+			cat "$journal/preview.out" "$journal/preview.err" >&2 || true
+			refuse "document preview did not report the fixture PDF"
+		}
+	! grep -F 'worker spawn failed' "$journal/preview.out" "$journal/preview.err" >/dev/null \
+		|| refuse "document preview still failed to spawn the PDF worker"
+	/tree/bin/solstone-core-pdf extract /fixture.pdf > /work/extract.json
+	grep -F '"schema":"sol-pdf/1"' /work/extract.json >/dev/null \
+		|| refuse "PDF extract missing sol-pdf/1 schema"
+	grep -F 'SOLPDF_SENTINEL_PAGE_2' /work/extract.json >/dev/null \
+		|| refuse "PDF extract lost the fixture sentinel"
+	grep -F '0a5c0aef0776024b3fa4ca8f29a7d12dbc9df56c2157c5ae6474dc6fa68479c6' /work/extract.json \
+		>/dev/null || refuse "PDF extract digest mismatch"
+	library=/tree/lib/solstone-core-pdf/libpdfium.so
+	mv "$library" "$library.missing"
+	if /tree/bin/solstone-core-pdf extract /fixture.pdf >/work/missing.out 2>/work/missing.err; then
+		refuse "pdf rung survived a missing libpdfium.so"
+	fi
+	grep -E 'libpdfium|PDFium|pdfium' /work/missing.out /work/missing.err >/dev/null \
+		|| {
+			cat /work/missing.out /work/missing.err >&2 || true
+			refuse "pdfium negative did not name libpdfium"
+		}
+	mv "$library.missing" "$library"
+	scan_zero
+	printf 'rung=pdf ok\n'
+}
+
 inside_main() {
 	role=${1:-}
 	trap cleanup_inside 0 1 2 15
@@ -376,6 +422,10 @@ inside_main() {
 	speakers)
 		scan_zero
 		speakers_rung
+		;;
+	pdf)
+		scan_zero
+		pdf_rung
 		;;
 	*) refuse "unknown inside role: $role" ;;
 	esac
@@ -483,6 +533,7 @@ run_subject() {
 		-v "$INSTALL_SH:/install.sh:ro" \
 		-v "$SCAN_SH:/scan-python.sh:ro" \
 		-v "$BIN:/producer:ro" \
+		-v "$ROOT/core/fixtures/pdf_corpus/text.pdf:/fixture.pdf:ro" \
 		"$ref" sh /cleanroom.sh --inside "$role"
 	printf 'rung=%s subject=%s digest=%s\n' "$role" "$id" "$digest" >>"$RECEIPT_PARTIAL"
 }
@@ -534,6 +585,7 @@ host_main() {
 	run_subject fedora-42-no-python bootstrap
 	run_subject debian-bookworm-no-python talent
 	run_subject debian-bookworm-no-python speakers
+	run_subject debian-bookworm-no-python pdf
 	if [ -e "$receipt" ]; then
 		cmp -s "$RECEIPT_PARTIAL" "$receipt" || refuse "receipt conflict: $receipt"
 		rm -f "$RECEIPT_PARTIAL"
@@ -608,7 +660,8 @@ deb
 rpm
 bootstrap
 talent
-speakers" ] || refuse "fake runtime did not see the exact rung order"
+speakers
+pdf" ] || refuse "fake runtime did not see the exact rung order"
 	: >"$FAKE_LOG"
 	rm -f "$test_root/receipt"
 	if FAKE_FAIL_ROLE=deb SOLSTONE_CONTAINER_RUNTIME=$test_root/runtime \

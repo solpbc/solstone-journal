@@ -323,7 +323,7 @@ the wrappers.
 
 ### Doctor pass-through
 
-`journal setup --jsonl` runs `journal doctor --readiness --jsonl` for the doctor step and forwards `doctor.started`, `check.completed`, and `doctor.completed` lines verbatim. The readiness battery is the client readiness checks (`python_version`, `sol_importable`, `local_bin_sol_reachable`, `stale_alias_symlink`, `disk_space`, `journal_dir_writable`) plus `host_dependencies`, `default_stt_ready`, `feature:pdf-import`, `feature:pdf-export`, and `feature:whisper`; it does not run runtime service, sync, config-dir, or launchd checks. Advisory doctor checks are also translated into setup-level `step.warning` events so consumers can handle setup warnings uniformly. Execution-error doctor failures remain `doctor_failed` step failures, not warnings.
+`journal setup --jsonl` runs `journal doctor --readiness --jsonl` for the doctor step and forwards `doctor.started`, `check.completed`, and `doctor.completed` lines verbatim. The readiness battery is the client readiness checks (`python_version`, `sol_importable`, `local_bin_sol_reachable`, `stale_alias_symlink`, `disk_space`, `journal_dir_writable`) plus `host_dependencies`, `default_stt_ready`, `feature:pdf-import`, and `feature:whisper`; it does not run runtime service, sync, config-dir, or launchd checks. Advisory doctor checks are also translated into setup-level `step.warning` events so consumers can handle setup warnings uniformly. Execution-error doctor failures remain `doctor_failed` step failures, not warnings.
 
 Example stream excerpt for setup readiness:
 

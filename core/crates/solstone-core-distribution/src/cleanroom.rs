@@ -507,6 +507,7 @@ mod tests {
             BTreeSet::from_iter([
                 "bootstrap".to_owned(),
                 "deb".to_owned(),
+                "pdf".to_owned(),
                 "python-control".to_owned(),
                 "rpm".to_owned(),
                 "speakers".to_owned(),

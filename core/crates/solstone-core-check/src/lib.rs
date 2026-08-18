@@ -374,16 +374,11 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
     checks.push(gpu(inputs));
     checks.push(ram(&inputs.memory));
     checks.push(disk(inputs));
-    let package = if inputs.platform.arch == "x86_64" && inputs.nvidia.detected {
-        "solstone-journal-cuda"
-    } else {
-        "solstone-journal"
-    };
     CheckReport {
         platform,
         overall: overall(&checks),
         checks,
-        recommended_package: Some(package),
+        recommended_package: Some("solstone-journal"),
         version: inputs.version.clone(),
     }
 }
@@ -658,6 +653,41 @@ pub fn human_output(report: &CheckReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nvidia_linux_still_recommends_the_cpu_journal_package() {
+        let inputs = CheckInputs {
+            platform: PlatformInput {
+                os: "Linux".into(),
+                os_version: "x".into(),
+                arch: "x86_64".into(),
+            },
+            memory: MemoryInput {
+                total_bytes: Some(16 * GIB),
+                available_bytes: Some(16 * GIB),
+            },
+            disk: DiskInput::Ok {
+                free_bytes: 20 * GIB,
+            },
+            journal_path: "/journal".into(),
+            nvidia: NvidiaInput {
+                detected: true,
+                vram_mib: Some(8192),
+                tiering_memory_mib: Some(8192),
+                memory_source: "nvidia_vram".into(),
+            },
+            vulkan: VulkanInput {
+                probe_ok: true,
+                devices: vec![],
+            },
+            render_nodes_present_but_inaccessible: false,
+            gpu_evaluation_error: None,
+            version: "x".into(),
+        };
+        let report = build_check_report(&inputs);
+        assert_eq!(report.recommended_package, Some("solstone-journal"));
+        assert_ne!(report.recommended_package, Some("solstone-journal-cuda"));
+    }
 
     #[test]
     fn json_platform_python_is_null() {

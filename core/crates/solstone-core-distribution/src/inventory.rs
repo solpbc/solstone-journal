@@ -268,6 +268,11 @@ pub enum Entry {
         mode: u32,
         targets: Vec<String>,
     },
+    Pdfium {
+        dest_dir: String,
+        mode: u32,
+        targets: Vec<String>,
+    },
     Copy {
         source: String,
         dest: String,
@@ -633,6 +638,9 @@ fn entry_fields(entry: &Entry) -> (Vec<&str>, &Vec<String>, Option<&String>) {
         | Entry::Copy { dest, targets, .. } => (vec![dest.as_str()], targets, None),
         Entry::OnnxRuntime {
             dest_dir, targets, ..
+        }
+        | Entry::Pdfium {
+            dest_dir, targets, ..
         } => (vec![dest_dir.as_str()], targets, None),
     }
 }
@@ -724,6 +732,28 @@ mod tests {
             linux.triple_for_lane("zig-gnu-2.27"),
             "x86_64-unknown-linux-gnu"
         );
+    }
+
+    #[test]
+    fn the_admitted_binary_count_is_nine_and_names_the_pdf_helper() {
+        let inventory = committed();
+        let bins = inventory.required_bins();
+        assert_eq!(
+            bins.len(),
+            9,
+            "admitted-binary count must move with the inventory, not widen"
+        );
+        assert!(bins.contains("solstone-core-pdf"));
+        assert!(!inventory.forbidden_bins().contains("solstone-core-pdf"));
+        assert!(inventory.entry.iter().any(|entry| {
+            matches!(
+                entry,
+                Entry::Pdfium {
+                    dest_dir,
+                    ..
+                } if dest_dir == "lib/solstone-core-pdf"
+            )
+        }));
     }
 
     #[test]

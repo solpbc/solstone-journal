@@ -147,6 +147,15 @@ lane = "zig-gnu-2.27"
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
+kind = "bin"
+package = "solstone-core-pdf"
+bin = "solstone-core-pdf"
+dest = "bin/solstone-core-pdf"
+mode = 0o755
+lane = "zig-gnu-2.27"
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+[[entry]]
 kind = "launcher"
 source = "scripts/root-launchers/sol"
 dest = "bin/sol"
@@ -198,6 +207,12 @@ mode = 0o755
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
+kind = "pdfium"
+dest_dir = "lib/solstone-core-pdf"
+mode = 0o755
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+[[entry]]
 kind = "copy"
 source = "LICENSE"
 dest = "share/LICENSE"
@@ -206,19 +221,15 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[deny]]
 bin = "solstone-transcribe"
-reason = "product-ish helper; not in the admitted eight; inventory allow-list decides"
+reason = "product-ish helper; not in the admitted nine; inventory allow-list decides"
 
 [[deny]]
 bin = "solstone-brain"
-reason = "product-ish helper; not in the admitted eight"
-
-[[deny]]
-bin = "solstone-core-pdf"
-reason = "product-ish helper; not in the admitted eight; Linux pdfium leaf stays off this tree"
+reason = "product-ish helper; not in the admitted nine"
 
 [[deny]]
 bin = "solstone-core-vad-analyze"
-reason = "product-ish helper; not in the admitted eight; VAD ships inside transcribe/speakers, not this tree"
+reason = "product-ish helper; not in the admitted nine; VAD ships inside transcribe/speakers, not this tree"
 
 [[deny]]
 bin = "setup-fixture-journal"
@@ -311,12 +322,12 @@ digest = "sha256:362e64223cc0da95422b3b13c045186fc0a81250e765d31c025fbddf257f614
 network = "none"
 python = false
 control = false
-roles = ["tar", "deb", "talent", "speakers"]
+roles = ["tar", "deb", "talent", "speakers", "pdf"]
 required_tools = ["sh", "tar", "sha256sum", "dpkg", "dd", "od"]
 forbidden_tools = ["python", "python3", "pip", "maturin"]
-mounts = ["artifacts:ro", "cleanroom.sh:ro", "scan-python.sh:ro", "producer:ro"]
+mounts = ["artifacts:ro", "cleanroom.sh:ro", "scan-python.sh:ro", "producer:ro", "fixture.pdf:ro"]
 entry_command = "sh /cleanroom.sh --inside <role>"
-expected = ["fresh-journal-loop", "daily_schedule-output", "speaker-response", "python-scan-zero"]
+expected = ["fresh-journal-loop", "daily_schedule-output", "speaker-response", "pdf-import-output", "python-scan-zero"]
 
 [[cleanroom.subject]]
 id = "fedora-42-no-python"

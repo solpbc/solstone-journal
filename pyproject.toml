@@ -56,10 +56,9 @@ dependencies = [
 # [journal] and [journal-cuda] are retired tombstones that fail loudly and point
 # old installs at the new leaf packages. They no longer install the journal.
 #
-# [journal-host], [pdf-import], [pdf-export], and [pdf] remain internal
-# building blocks. The leaf packages compose [journal-host] with either the CPU
-# ONNX runtime or the NVIDIA CUDA runtime; [pdf] is a convenience composite of
-# [pdf-import] and [pdf-export], while the split extras back focused feature hints.
+# [journal-host], [pdf-import], and [pdf] remain internal building blocks.
+# The leaf packages compose [journal-host] with the CPU ONNX runtime.
+# PDF export is dropped. [pdf] is the import extra.
 #
 # Base solstone owns the public POSIX launchers. The platform-native
 # `solstone-core` executable is installed as the launcher sibling. Install exactly
@@ -71,13 +70,8 @@ pdf-import = [
     "Pillow>=11.0.0",
 ]
 
-pdf-export = [
-    "weasyprint>=60.0",
-]
-
 pdf = [
     "solstone[pdf-import]",
-    "solstone[pdf-export]",
 ]
 
 # The full journal-host stack EXCEPT the ONNX runtime package (which is the

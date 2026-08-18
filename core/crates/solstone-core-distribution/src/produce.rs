@@ -17,6 +17,7 @@ use crate::inventory::{
 use crate::lanes::{self, write_wrappers};
 use crate::macho;
 use crate::onnx_runtime;
+use crate::pdfium;
 use crate::promote::{PromoteRequest, isolated_target_dir, promote};
 use crate::provenance::{self, Provenance, bind_cargo_json, lock_digest};
 use crate::select::{self, ArtifactId};
@@ -25,6 +26,7 @@ use crate::stage;
 pub const ZIG_OVERRIDE: &str = "SOLSTONE_ZIG";
 pub const ONNX_ARCHIVE_OVERRIDE: &str = "SOLSTONE_DISTRIBUTION_ONNX_ARCHIVE";
 pub const ONNX_ARCHIVE_DIR: &str = "SOLSTONE_DISTRIBUTION_ONNX_ARCHIVE_DIR";
+pub const PDFIUM_ARCHIVE_OVERRIDE: &str = "SOLSTONE_DISTRIBUTION_PDFIUM_ARCHIVE";
 pub const OFFLINE: &str = "SOLSTONE_DISTRIBUTION_OFFLINE";
 
 #[derive(Debug)]
@@ -117,6 +119,43 @@ fn stage_onnx_input(
         OnnxInput::PinnedUrl => onnx_runtime::stage_from_url(spec),
     }
     .map_err(|error| ProduceError::new(error.to_string()))
+}
+
+fn stage_pdfium_input(
+    repo: &Path,
+    target_id: &str,
+    offline: bool,
+) -> Result<(&'static pdfium::TargetSpec, pdfium::StagedRuntime), ProduceError> {
+    let spec = pdfium::spec_for(target_id).ok_or_else(|| {
+        ProduceError::new(format!("missing required:\n  pdfium runtime {target_id}"))
+    })?;
+    let archive = if let Some(value) = env::var_os(PDFIUM_ARCHIVE_OVERRIDE) {
+        if value.is_empty() {
+            return Err(ProduceError::new(format!(
+                "missing required:\n  {PDFIUM_ARCHIVE_OVERRIDE} for {target_id}"
+            )));
+        }
+        PathBuf::from(value)
+    } else {
+        repo.join("target/pdfium-runtime-cache")
+            .join(spec.archive_name)
+    };
+    if !archive.is_file() {
+        if offline {
+            return Err(ProduceError::new(format!(
+                "missing required:\n  pdfium archive {} (run solstone-distribution acquire pdfium --target {target_id})",
+                archive.display()
+            )));
+        }
+        return Err(ProduceError::new(format!(
+            "missing required:\n  pdfium archive {} (run solstone-distribution acquire pdfium --target {target_id})",
+            archive.display()
+        )));
+    }
+    let bytes = fs::read(&archive)?;
+    let staged = pdfium::stage_from_bytes(spec, &bytes)
+        .map_err(|error| ProduceError::new(error.to_string()))?;
+    Ok((spec, staged))
 }
 
 pub fn resolve_zig_binary(
@@ -346,6 +385,8 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         let staged_runtime = stage_onnx_input(spec, &onnx_input)?;
         onnx_runtime::write_staged_runtime(spec, &staged_runtime, &onnx_dir)
             .map_err(|error| ProduceError::new(error.to_string()))?;
+        let (pdfium_spec, staged_pdfium) =
+            stage_pdfium_input(repo, &args.target_id, env::var_os(OFFLINE).is_some())?;
 
         let remap_for = |sysroot: &str| {
             [
@@ -383,6 +424,8 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 work: &work,
                 spec,
                 staged_runtime: &staged_runtime,
+                pdfium_spec,
+                staged_pdfium: &staged_pdfium,
                 artifacts: &artifacts,
                 version: &version,
                 commit: &commit,
@@ -505,6 +548,8 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             work: &work,
             spec,
             staged_runtime: &staged_runtime,
+            pdfium_spec,
+            staged_pdfium: &staged_pdfium,
             artifacts: &artifacts,
             version: &version,
             commit: &commit,
@@ -573,6 +618,8 @@ struct FinishProduce<'a> {
     work: &'a Path,
     spec: &'a onnx_runtime::TargetSpec,
     staged_runtime: &'a onnx_runtime::StagedRuntime,
+    pdfium_spec: &'a pdfium::TargetSpec,
+    staged_pdfium: &'a pdfium::StagedRuntime,
     artifacts: &'a BTreeMap<ArtifactId, PathBuf>,
     version: &'a str,
     commit: &'a str,
@@ -593,6 +640,8 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         work,
         spec,
         staged_runtime,
+        pdfium_spec,
+        staged_pdfium,
         artifacts,
         version,
         commit,
@@ -642,6 +691,8 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         &args.target_id,
         spec,
         staged_runtime,
+        pdfium_spec,
+        staged_pdfium,
         &stage,
     )?;
 
@@ -730,7 +781,17 @@ fn inspect_macos_payloads(stage: &Path, target: &Target) -> Result<(), ProduceEr
         ));
     }
     for member in payloads {
-        macho::inspect_payload_dylib(&member.info, cputype, ceiling, macho::HELPER_INSTALL_NAME)
+        let install_name = if member.relative.contains("libpdfium") {
+            member.info.install_name.as_deref().ok_or_else(|| {
+                ProduceError::new(format!(
+                    "missing required:\n  LC_ID_DYLIB {}",
+                    member.relative
+                ))
+            })?
+        } else {
+            macho::HELPER_INSTALL_NAME
+        };
+        macho::inspect_payload_dylib(&member.info, cputype, ceiling, install_name)
             .map_err(|error| ProduceError::new(format!("{}: {error}", member.relative)))?;
     }
     Ok(())
@@ -874,6 +935,8 @@ fn stage_layout(
     target_id: &str,
     spec: &onnx_runtime::TargetSpec,
     runtime: &onnx_runtime::StagedRuntime,
+    pdfium_spec: &pdfium::TargetSpec,
+    pdfium_runtime: &pdfium::StagedRuntime,
     stage: &Path,
 ) -> Result<(), ProduceError> {
     for entry in &inventory.entry {
@@ -934,6 +997,17 @@ fn stage_layout(
                     continue;
                 }
                 onnx_runtime::write_staged_runtime(spec, runtime, &stage.join(dest_dir))
+                    .map_err(|error| ProduceError::new(error.to_string()))?;
+            }
+            Entry::Pdfium {
+                dest_dir,
+                mode: _,
+                targets,
+            } => {
+                if !targets.iter().any(|item| item == target_id) {
+                    continue;
+                }
+                pdfium::write_staged_library(pdfium_spec, pdfium_runtime, &stage.join(dest_dir))
                     .map_err(|error| ProduceError::new(error.to_string()))?;
             }
         }
