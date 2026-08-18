@@ -10,16 +10,19 @@ use super::store::merge::{dedupe_akas, dedupe_emails, dedupe_observations};
 use super::store::merge_payload::{list_entity_merge_payload_ids, load_entity_merge_payload};
 use super::store::voiceprints::{read_voiceprints_npz, write_voiceprints_npz};
 use crate::{
-    EncoderIdentity, EntityMergeError, EntityMergeOptions,
+    EncoderIdentity, EntityLifecycleError, EntityMergeError, EntityMergeOptions,
+    EntityTrustLockError, EntityWriteError, LockError,
     commit_entity_merge as commit_entity_merge_with_encoder, guard_restore_does_not_cross_merge,
     hold_entity_trust_lock, preview_entity_merge, read_entity_identity, read_visible_history,
     save_entity_identity,
 };
 use serde_json::json;
+use solstone_core_journal_io::{LockOptions, hold_lock};
 use std::fs;
 use std::io::{Cursor, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -39,7 +42,13 @@ fn merge_voiceprints(
     source_id: &str,
     target_id: &str,
 ) -> Result<super::store::merge::VoiceprintMergeStats, EntityMergeError> {
-    merge_voiceprints_with_encoder(journal, source_id, target_id, &test_encoder())
+    merge_voiceprints_with_encoder(
+        journal,
+        source_id,
+        target_id,
+        &test_encoder(),
+        LockOptions::default(),
+    )
 }
 
 fn commit_entity_merge(
@@ -92,6 +101,35 @@ fn write_voiceprints(
     write_voiceprints_with_identity(journal, id, rows, metadata, &test_encoder(), true);
 }
 
+fn seed_self_resolving_identity(journal: &Path, id: &str) {
+    let path = journal.join(format!("entities/{id}/entity.json"));
+    if path.exists() {
+        return;
+    }
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, format!(r#"{{"id":"{id}"}}"#)).unwrap();
+}
+
+fn write_voiceprints_at(
+    journal: &Path,
+    directory: &str,
+    rows: Vec<Vec<f32>>,
+    metadata: Vec<String>,
+    identity: &EncoderIdentity,
+) {
+    let path = journal.join(format!("entities/{directory}/voiceprints.npz"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let embeddings = rows.into_iter().flatten().collect::<Vec<_>>();
+    let bytes = write_voiceprints_npz(
+        &embeddings,
+        &metadata,
+        &super::store::voiceprints::VoiceprintEnvelope::default(),
+        identity,
+    )
+    .unwrap();
+    fs::write(path, bytes).unwrap();
+}
+
 fn write_voiceprints_with_identity(
     journal: &std::path::Path,
     id: &str,
@@ -100,6 +138,7 @@ fn write_voiceprints_with_identity(
     identity: &EncoderIdentity,
     legacy: bool,
 ) {
+    seed_self_resolving_identity(journal, id);
     let path = journal.join(format!("entities/{id}/voiceprints.npz"));
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     let embeddings = rows.into_iter().flatten().collect::<Vec<_>>();
@@ -184,6 +223,7 @@ fn read_rows(journal: &std::path::Path, id: &str) -> super::store::voiceprints::
 fn voiceprints_copy_source_when_target_is_missing() {
     let journal = voiceprint_journal();
     write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("1")]);
+    seed_self_resolving_identity(&journal, "target");
     assert_eq!(
         merge_voiceprints(&journal, "source", "target")
             .unwrap()
@@ -323,6 +363,7 @@ fn commit_preflights_voiceprint_encoder_mismatch() {
 fn voiceprint_merge_refuses_unknown_or_future_members_and_merges_negative_twin() {
     let journal = voiceprint_journal();
     write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("1")]);
+    seed_self_resolving_identity(&journal, "target");
     let source_path = journal.join("entities/source/voiceprints.npz");
     let unknown = rewrite_member(&fs::read(&source_path).unwrap(), "future.npy", Some(b"x"));
     fs::write(&source_path, unknown).unwrap();
@@ -334,6 +375,7 @@ fn voiceprint_merge_refuses_unknown_or_future_members_and_merges_negative_twin()
 
     let journal = voiceprint_journal();
     write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("1")]);
+    seed_self_resolving_identity(&journal, "target");
     let source_path = journal.join("entities/source/voiceprints.npz");
     let future = rewrite_member(
         &fs::read(&source_path).unwrap(),
@@ -349,6 +391,7 @@ fn voiceprint_merge_refuses_unknown_or_future_members_and_merges_negative_twin()
 
     let journal = voiceprint_journal();
     write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("1")]);
+    seed_self_resolving_identity(&journal, "target");
     assert_eq!(
         merge_voiceprints(&journal, "source", "target")
             .unwrap()
@@ -392,6 +435,7 @@ fn voiceprints_skip_shared_target_key() {
 #[test]
 fn voiceprints_skip_internal_duplicate_key() {
     let journal = voiceprint_journal();
+    seed_self_resolving_identity(&journal, "target");
     write_voiceprints(
         &journal,
         "source",
@@ -406,6 +450,7 @@ fn voiceprints_skip_internal_duplicate_key() {
 #[test]
 fn voiceprints_do_nothing_without_source_file() {
     let journal = voiceprint_journal();
+    seed_self_resolving_identity(&journal, "source");
     write_voiceprints(&journal, "target", vec![row(3.0)], vec![metadata("1")]);
     assert_eq!(
         merge_voiceprints(&journal, "source", "target")
@@ -421,12 +466,172 @@ fn voiceprints_do_nothing_without_source_file() {
 fn voiceprints_skip_degenerate_rows_without_duplicate_count() {
     let journal = voiceprint_journal();
     write_voiceprints(&journal, "source", vec![row(0.0)], vec![metadata("1")]);
+    seed_self_resolving_identity(&journal, "target");
     let stats = merge_voiceprints(&journal, "source", "target").unwrap();
     assert_eq!(
         (stats.added, stats.skipped_duplicate, stats.target_total),
         (0, 0, 0)
     );
     assert!(!journal.join("entities/target/voiceprints.npz").exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+fn seed_identity_at(journal: &Path, directory: &str, effective_id: &str) {
+    let path = journal.join(format!("entities/{directory}/entity.json"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, format!(r#"{{"id":"{effective_id}"}}"#)).unwrap();
+}
+
+fn short_lock_options(timeout: Duration) -> LockOptions {
+    LockOptions {
+        timeout,
+        ..LockOptions::default()
+    }
+}
+
+#[test]
+fn merge_voiceprints_reads_remapped_source_archive() {
+    let journal = voiceprint_journal();
+    seed_identity_at(&journal, "dir-s", "source");
+    write_voiceprints_at(
+        &journal,
+        "dir-s",
+        vec![row(2.0)],
+        vec![metadata("1")],
+        &test_encoder(),
+    );
+    seed_self_resolving_identity(&journal, "target");
+    assert_eq!(
+        merge_voiceprints(&journal, "source", "target")
+            .unwrap()
+            .added,
+        1
+    );
+    assert_eq!(read_rows(&journal, "target").metadata, vec![metadata("1")]);
+    assert!(!journal.join("entities/source/voiceprints.npz").exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn merge_voiceprints_writes_remapped_target_archive() {
+    let journal = voiceprint_journal();
+    write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("S")]);
+    seed_identity_at(&journal, "dir-t", "target");
+    write_voiceprints_at(
+        &journal,
+        "dir-t",
+        vec![row(3.0)],
+        vec![metadata("U")],
+        &test_encoder(),
+    );
+    let resolved = journal.join("entities/dir-t/voiceprints.npz");
+    let unresolved = journal.join("entities/target/voiceprints.npz");
+    assert!(!unresolved.exists());
+    let stats = merge_voiceprints(&journal, "source", "target").unwrap();
+    assert_eq!(stats.added, 1);
+    let archive = read_voiceprints_npz(&fs::read(&resolved).unwrap()).unwrap();
+    assert_eq!(archive.metadata, vec![metadata("U"), metadata("S")]);
+    assert!(archive.embeddings[..256].iter().all(|value| *value == 3.0));
+    assert!(!unresolved.exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn merge_voiceprints_times_out_on_resolved_target_lock() {
+    let journal = voiceprint_journal();
+    write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("S")]);
+    seed_identity_at(&journal, "dir-t", "target");
+    write_voiceprints_at(
+        &journal,
+        "dir-t",
+        vec![row(3.0)],
+        vec![metadata("U")],
+        &test_encoder(),
+    );
+    let resolved = journal.join("entities/dir-t/voiceprints.npz");
+    let before = fs::read(&resolved).unwrap();
+    let _lock = hold_lock(&resolved, short_lock_options(Duration::from_millis(100))).unwrap();
+    let error = merge_voiceprints_with_encoder(
+        &journal,
+        "source",
+        "target",
+        &test_encoder(),
+        short_lock_options(Duration::from_millis(200)),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        EntityMergeError::Write(EntityWriteError::TrustLock(EntityTrustLockError::Lock(
+            LockError::Timeout(_)
+        )))
+    ));
+    assert_eq!(fs::read(&resolved).unwrap(), before);
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn merge_voiceprints_ignores_unresolved_target_lock() {
+    let journal = voiceprint_journal();
+    write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("S")]);
+    seed_identity_at(&journal, "dir-t", "target");
+    write_voiceprints_at(
+        &journal,
+        "dir-t",
+        vec![row(3.0)],
+        vec![metadata("U")],
+        &test_encoder(),
+    );
+    let unresolved = journal.join("entities/target/voiceprints.npz");
+    let _lock = hold_lock(&unresolved, LockOptions::default()).unwrap();
+    assert_eq!(
+        merge_voiceprints(&journal, "source", "target")
+            .unwrap()
+            .added,
+        1
+    );
+    let archive =
+        read_voiceprints_npz(&fs::read(journal.join("entities/dir-t/voiceprints.npz")).unwrap())
+            .unwrap();
+    assert_eq!(archive.metadata, vec![metadata("U"), metadata("S")]);
+    assert!(!unresolved.exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn merge_voiceprints_requires_identity_map_entry() {
+    let journal = voiceprint_journal();
+    write_voiceprints_at(
+        &journal,
+        "source",
+        vec![row(2.0)],
+        vec![metadata("1")],
+        &test_encoder(),
+    );
+    let error = merge_voiceprints(&journal, "source", "target").unwrap_err();
+    assert!(matches!(
+        error,
+        EntityMergeError::Lifecycle(EntityLifecycleError::EntityNotFound { entity_id, .. })
+            if entity_id == "source"
+    ));
+    assert!(!journal.join("entities/target/voiceprints.npz").exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn merge_voiceprints_takes_lock_before_skipping_write() {
+    let journal = voiceprint_journal();
+    write_voiceprints(&journal, "source", vec![row(2.0)], vec![metadata("1")]);
+    write_voiceprints(&journal, "target", vec![row(3.0)], vec![metadata("1")]);
+    let target_path = journal.join("entities/target/voiceprints.npz");
+    let before = fs::read(&target_path).unwrap();
+    let stats = merge_voiceprints(&journal, "source", "target").unwrap();
+    assert_eq!(stats.added, 0);
+    assert_eq!(fs::read(&target_path).unwrap(), before);
+    assert!(
+        journal
+            .join("entities/target/voiceprints.npz.lock")
+            .exists()
+    );
     fs::remove_dir_all(journal).unwrap();
 }
 

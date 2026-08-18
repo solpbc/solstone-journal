@@ -12,6 +12,7 @@ use solstone_core_journal_io::AtomicWriteOptions;
 use solstone_core_journal_io::DirEntryKind;
 use solstone_core_journal_io::JournalSnapshot;
 use solstone_core_journal_io::JsonWriteOptions;
+use solstone_core_journal_io::LockOptions;
 use solstone_core_journal_io::MalformedPolicy;
 use solstone_core_journal_io::PathOrDay;
 use solstone_core_journal_io::SnapshotError;
@@ -20,6 +21,7 @@ use solstone_core_journal_io::atomic_replace;
 use solstone_core_journal_io::capture_snapshot;
 use solstone_core_journal_io::contained_path;
 use solstone_core_journal_io::day_dirs;
+use solstone_core_journal_io::hold_lock;
 use solstone_core_journal_io::iter_segments;
 use solstone_core_journal_io::list_dir_entries;
 use solstone_core_journal_io::path_lexists;
@@ -31,8 +33,8 @@ use solstone_core_journal_io::write_json;
 use solstone_core_journal_io::write_jsonl;
 
 use crate::{
-    EntityOperationContext, EntityOperationKind, EntityStoreError, EntityWriteError,
-    hold_entity_trust_lock, read_entity_identity, save_entity_identity,
+    EntityLifecycleError, EntityOperationContext, EntityOperationKind, EntityStoreError,
+    EntityWriteError, hold_entity_trust_lock, read_entity_identity, save_entity_identity,
 };
 
 use super::merge_payload::{
@@ -41,8 +43,8 @@ use super::merge_payload::{
 };
 use super::merge_rollback::MergeRollback;
 use super::voiceprints::{
-    EncoderIdentity, VoiceprintArchive, VoiceprintEnvelope, read_voiceprints_npz,
-    write_voiceprints_npz,
+    EMBEDDING_WIDTH, EncoderIdentity, VoiceprintArchive, VoiceprintEnvelope, read_voiceprints_npz,
+    resolve_voiceprint_path, write_voiceprints_npz,
 };
 
 const PHASES: [&str; 11] = [
@@ -142,6 +144,7 @@ pub enum EntityMergeError {
     },
     Read(EntityStoreError),
     Write(EntityWriteError),
+    Lifecycle(EntityLifecycleError),
     Payload(MergePayloadError),
     Snapshot(SnapshotError),
     Index(solstone_core_indexer_store::StoreError),
@@ -167,6 +170,7 @@ impl fmt::Display for EntityMergeError {
             ),
             Self::Read(error) => error.fmt(f),
             Self::Write(error) => error.fmt(f),
+            Self::Lifecycle(error) => error.fmt(f),
             Self::Payload(error) => error.fmt(f),
             Self::Snapshot(error) => error.fmt(f),
             Self::Index(error) => error.fmt(f),
@@ -193,6 +197,11 @@ impl From<EntityStoreError> for EntityMergeError {
 impl From<EntityWriteError> for EntityMergeError {
     fn from(error: EntityWriteError) -> Self {
         Self::Write(error)
+    }
+}
+impl From<EntityLifecycleError> for EntityMergeError {
+    fn from(error: EntityLifecycleError) -> Self {
+        Self::Lifecycle(error)
     }
 }
 impl From<MergePayloadError> for EntityMergeError {
@@ -281,7 +290,7 @@ pub(crate) fn commit_entity_merge_with_injector(
     for phase in PHASES {
         let result = match phase {
             "private_payload" => record_entity_merge_payload(journal, target_id, &merge_id, &payload).map(|_| ()).map_err(Into::into),
-            "voiceprints" => merge_voiceprints(journal, source_id, target_id, fallback_encoder).map(|result| { stats.voiceprints_added=result.added; stats.voiceprints_skipped_duplicate=result.skipped_duplicate; stats.voiceprints_target_total=result.target_total; payload["manifest"]["voiceprints"]["support"] = Value::Array(result.support); }),
+            "voiceprints" => merge_voiceprints(journal, source_id, target_id, fallback_encoder, LockOptions::default()).map(|result| { stats.voiceprints_added=result.added; stats.voiceprints_skipped_duplicate=result.skipped_duplicate; stats.voiceprints_target_total=result.target_total; payload["manifest"]["voiceprints"]["support"] = Value::Array(result.support); }),
             "facets" => merge_facets(journal, source_id, target_id, Some(&mut rollback), injector).map(|result| { stats.facets_moved=result.moved_count; stats.facets_merged=result.merged_count; stats.facets_observations_appended=result.observations_appended; touched_facets = result.touched_facets; payload["manifest"]["facets"]["entries"] = Value::Array(result.entries); }),
             "history" => save_entity_identity(journal, target_id, &plan.target_after, Some(&EntityOperationContext { kind: EntityOperationKind::Merge, caller: Value::Null, actor: Value::Null, metadata: json!({"merge_id": merge_id, "source_id": source_id, "target_id": target_id}) })).map_err(EntityMergeError::Write).and_then(|saved| { let sequence = saved.event.and_then(|event| event.get("seq").cloned()).ok_or_else(|| EntityMergeError::Refused("merge history event was not written".to_owned()))?; payload["commit_seq"] = sequence; record_entity_merge_payload(journal, target_id, &merge_id, &payload)?; Ok(()) }),
             "cleanup" => cleanup_merge(journal, source_id, &touched_facets, Some(&mut rollback)),
@@ -934,10 +943,15 @@ pub(crate) fn merge_voiceprints(
     source_id: &str,
     target_id: &str,
     fallback_encoder: &EncoderIdentity,
+    lock_options: LockOptions,
 ) -> Result<VoiceprintMergeStats, EntityMergeError> {
-    let (source, target) = ensure_voiceprint_merge_compatible(journal, source_id, target_id)?;
-    let target_path = contained_path(journal, &format!("entities/{target_id}/voiceprints.npz"))
-        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+    let (_source_dir, source_path) = resolve_voiceprint_path(journal, source_id, false)?;
+    let (_target_dir, target_path) = resolve_voiceprint_path(journal, target_id, false)?;
+    let _lock = hold_lock(&target_path, lock_options)
+        .map_err(|error| EntityWriteError::TrustLock(error.into()))?;
+    let source = load_voiceprints(&source_path)?;
+    let target = load_voiceprints(&target_path)?;
+    ensure_loaded_archives_merge_compatible(source_id, target_id, &source, &target)?;
     let Some(source) = source else {
         let target_total = target.map_or(0, |archive| archive.rows);
         return Ok(VoiceprintMergeStats {
@@ -965,7 +979,11 @@ pub(crate) fn merge_voiceprints(
         .collect::<Result<HashSet<_>, _>>()?;
     let target_existing = existing.clone();
     let mut stats = VoiceprintMergeStats::default();
-    for (embedding, metadata) in source.embeddings.chunks_exact(256).zip(&source.metadata) {
+    for (embedding, metadata) in source
+        .embeddings
+        .chunks_exact(EMBEDDING_WIDTH)
+        .zip(&source.metadata)
+    {
         let key = voiceprint_key(metadata)?;
         let target_preexisting = target_existing.contains(&key);
         if !existing.insert(key.clone()) {
@@ -1022,10 +1040,20 @@ fn ensure_voiceprint_merge_compatible(
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
     let source = load_voiceprints(&source_path)?;
     let target = load_voiceprints(&target_path)?;
-    if let Some(archive) = &source {
+    ensure_loaded_archives_merge_compatible(source_id, target_id, &source, &target)?;
+    Ok((source, target))
+}
+
+fn ensure_loaded_archives_merge_compatible(
+    source_id: &str,
+    target_id: &str,
+    source: &Option<VoiceprintArchive>,
+    target: &Option<VoiceprintArchive>,
+) -> Result<(), EntityMergeError> {
+    if let Some(archive) = source {
         ensure_merge_archive_allowed(archive)?;
     }
-    if let Some(archive) = &target {
+    if let Some(archive) = target {
         ensure_merge_archive_allowed(archive)?;
     }
     if let (Some(source_encoder), Some(target_encoder)) = (
@@ -1044,7 +1072,7 @@ fn ensure_voiceprint_merge_compatible(
             target_encoder_id: target_encoder.id.clone(),
         });
     }
-    Ok((source, target))
+    Ok(())
 }
 
 fn ensure_merge_archive_allowed(archive: &VoiceprintArchive) -> Result<(), EntityMergeError> {

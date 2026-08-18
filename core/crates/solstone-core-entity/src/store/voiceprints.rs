@@ -28,7 +28,7 @@ use super::entity_paths::entity_memory_path;
 use super::lifecycle::EntityLifecycleError;
 use super::reconcile::{float_to_integer, integer_value, python_optional_json_equal};
 
-const EMBEDDING_WIDTH: usize = 256;
+pub(crate) const EMBEDDING_WIDTH: usize = 256;
 const EMBEDDINGS_MEMBER: &str = "embeddings.npy";
 const METADATA_MEMBER: &str = "metadata.npy";
 const ENVELOPE_MEMBER: &str = "envelope.npy";
@@ -507,7 +507,7 @@ pub(crate) fn voiceprint_removal_key(
     key_from_metadata_value(&value)
 }
 
-fn resolve_voiceprint_path(
+pub(crate) fn resolve_voiceprint_path(
     journal_root: &Path,
     entity_id: &str,
     create: bool,
