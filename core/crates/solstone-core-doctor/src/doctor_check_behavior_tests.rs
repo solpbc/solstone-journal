@@ -877,7 +877,7 @@ fn observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
     assert_eq!(row.status, Status::Warn);
     assert_eq!(
         row.detail,
-        "observer dated (v1.2) failing ingest: bad payload, 2x since 2026-01-01"
+        "device dated (v1.2) failing ingest: bad payload, 2x since 2026-01-01"
     );
 
     let unknown = fixture();
@@ -895,7 +895,7 @@ fn observer_ingest_health_formats_rejection_date_and_unknown_fallback() {
     assert_eq!(row.status, Status::Warn);
     assert_eq!(
         row.detail,
-        "observer unknown (v1.2) failing ingest: bad payload, 2x since unknown"
+        "device unknown (v1.2) failing ingest: bad payload, 2x since unknown"
     );
 }
 

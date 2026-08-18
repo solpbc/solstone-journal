@@ -199,7 +199,7 @@ fn observer_list_and_prune_run_natively_without_touching_the_poisoned_interprete
         "observer prune invoked a poisoned Python interpreter"
     );
     assert!(
-        String::from_utf8_lossy(&prune.stdout).contains("observer prune dry-run"),
+        String::from_utf8_lossy(&prune.stdout).contains("device prune dry-run"),
         "native observer prune must return the real dry-run report"
     );
 }

@@ -84,10 +84,20 @@ async fn accept_subscriber(listener: &UnixListener) -> tokio::net::UnixStream {
         .0
 }
 
-async fn send_health(peer: &mut tokio::net::UnixStream, envelope: &CallosumEnvelope) {
+async fn accept_subscribers(listener: &UnixListener, count: usize) -> Vec<tokio::net::UnixStream> {
+    let mut peers = Vec::with_capacity(count);
+    for _ in 0..count {
+        peers.push(accept_subscriber(listener).await);
+    }
+    peers
+}
+
+async fn send_health(peers: &mut [tokio::net::UnixStream], envelope: &CallosumEnvelope) {
     let mut line = serde_json::to_vec(envelope).expect("envelope serializes");
     line.push(b'\n');
-    peer.write_all(&line).await.expect("health writes");
+    for peer in peers {
+        peer.write_all(&line).await.expect("health writes");
+    }
 }
 
 async fn status_for_generation(address: std::net::SocketAddr, generation: u64) -> Value {
@@ -166,10 +176,10 @@ async fn relay_health_subscriber_starts_late_and_drives_live_status() {
     .await
     .expect("Convey binds");
 
-    let mut peer = accept_subscriber(&listener).await;
+    let mut peers = accept_subscribers(&listener, 2).await;
     let now = current_epoch_millis();
     send_health(
-        &mut peer,
+        &mut peers,
         &health_envelope(
             now,
             "connected",
@@ -199,7 +209,7 @@ async fn relay_health_subscriber_starts_late_and_drives_live_status() {
     assert_eq!(status["relay_state"], "parked");
 
     send_health(
-        &mut peer,
+        &mut peers,
         &health_envelope(now - 90_001, "connected", 591, None, None, Some(590)),
     )
     .await;

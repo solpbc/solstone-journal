@@ -109,7 +109,7 @@ pub fn render_list(
         .expect("JSON values serialize");
     }
     if records.is_empty() {
-        return "No observers registered.".to_owned();
+        return "No devices registered.".to_owned();
     }
     let mut lines = vec![
         format!(
@@ -142,7 +142,7 @@ pub fn render_status_all(
     zone: TimeDisplay,
 ) -> String {
     if !json_output && records.is_empty() {
-        return "No observers registered.".to_owned();
+        return "No devices registered.".to_owned();
     }
     let labels: Vec<_> = records
         .iter()
@@ -166,7 +166,7 @@ pub fn render_status_all(
         return serde_json::to_string(&json!({"total":records.len(),"connected":connected,"disconnected":disconnected,"revoked":revoked,"total_segments":number_value(total_segments),"total_bytes":number_value(total_bytes),"observers":records.iter().map(|record| status_entry(record, now_ms)).collect::<Vec<_>>() })).expect("JSON values serialize");
     }
     let mut lines = vec![
-        format!("Observers: {} total", records.len()),
+        format!("Devices: {} total", records.len()),
         format!("  Connected:    {connected}"),
         format!("  Disconnected: {disconnected}"),
         format!("  Revoked:      {revoked}"),
@@ -235,7 +235,7 @@ pub fn render_status_single(
         .filter(|day| !day.is_empty())
         .map(|day| format!("{age} ({day})"))
         .unwrap_or(age);
-    let mut lines = vec![format!("Observer: {}", record.name().unwrap_or_default())];
+    let mut lines = vec![format!("Device: {}", record.name().unwrap_or_default())];
     field(&mut lines, "Prefix:", &record.prefix());
     field(&mut lines, "Status:", status_label(record, now_ms));
     field(
@@ -448,12 +448,12 @@ mod tests {
     fn empty_registry_has_all_four_render_forms() {
         assert_eq!(
             render_list(&[], false, 0, TimeDisplay::Utc),
-            "No observers registered."
+            "No devices registered."
         );
         assert_eq!(render_list(&[], true, 0, TimeDisplay::Utc), "[]");
         assert_eq!(
             render_status_all(&[], false, 0, TimeDisplay::Utc),
-            "No observers registered."
+            "No devices registered."
         );
         assert!(render_status_all(&[], true, 0, TimeDisplay::Utc).contains("\"total\":0"));
     }

@@ -20,5 +20,6 @@ pub use store::delivery::{
     rollup_owner_states,
 };
 pub use store::{
-    RemoteObserverMigrationError, RemoteObserverMigrationReport, migrate_remote_observer_storage,
+    RemoteObserverMigrationError, RemoteObserverMigrationReport, SyncEventKind, SyncPersistResult,
+    migrate_remote_observer_storage, persist_sync,
 };

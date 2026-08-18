@@ -13,10 +13,10 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         .map(|record| record.name().unwrap_or("unknown"))
         .collect::<Vec<_>>();
     let detail = if unbound.is_empty() {
-        format!("active observer records={}; unbound=0", records.len())
+        format!("active device records={}; unbound=0", records.len())
     } else {
         format!(
-            "active observer records={}; unbound={}; streams={}",
+            "active device records={}; unbound={}; streams={}",
             records.len(),
             unbound.len(),
             unbound.join(", ")

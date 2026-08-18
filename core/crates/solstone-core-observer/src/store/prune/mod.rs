@@ -155,9 +155,9 @@ pub fn format_result(result: &PruneResult) -> String {
         .collect();
     let mut lines = vec![
         if result.execute {
-            "observer prune execute".to_owned()
+            "device prune execute".to_owned()
         } else {
-            "observer prune dry-run".to_owned()
+            "device prune dry-run".to_owned()
         },
         format!("groups: {}", result.groups.len()),
         format!("candidates: {}", candidates.len()),

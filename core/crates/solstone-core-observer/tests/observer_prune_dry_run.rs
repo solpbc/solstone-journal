@@ -9,7 +9,7 @@ const DAY: &str = "20260101";
 const STREAM: &str = "workstation";
 
 const EXPECTED_DRY_RUN: &str = "\
-observer prune dry-run
+device prune dry-run
 groups: 1
 candidates: 1
 deleted: 0
@@ -20,7 +20,7 @@ group 20260101/workstation/090000_*: canonical=090000_300 candidates=1
 ";
 
 const EXPECTED_LAST_PHYSICAL_COPY: &str = "\
-observer prune dry-run
+device prune dry-run
 groups: 1
 candidates: 1
 deleted: 0

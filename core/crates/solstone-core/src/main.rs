@@ -1308,7 +1308,7 @@ fn run_observer(command: ObserverCommand) -> ExitCode {
                 || stdout.write_all(b"\n").is_err()
                 || stdout.flush().is_err()
             {
-                eprintln!("observer failed: stdout I/O error");
+                eprintln!("device failed: stdout I/O error");
                 ExitCode::from(EXIT_IOERR)
             } else {
                 ExitCode::SUCCESS
@@ -1355,7 +1355,7 @@ fn run_observer_prune(
         solstone_core_observer::PruneOutcome::Report { text, exit_code } => {
             let mut stdout = io::stdout().lock();
             if stdout.write_all(text.as_bytes()).is_err() || stdout.flush().is_err() {
-                eprintln!("observer prune failed: stdout I/O error");
+                eprintln!("device prune failed: stdout I/O error");
                 return ExitCode::from(EXIT_IOERR);
             }
             ExitCode::from(exit_code as u8)

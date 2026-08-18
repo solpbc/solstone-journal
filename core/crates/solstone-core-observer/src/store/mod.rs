@@ -10,6 +10,7 @@ pub mod reconcile;
 pub mod record;
 pub mod reload;
 pub mod remote_migration;
+pub mod sync_persist;
 pub mod write;
 
 pub use history::{HistoryRead, HistoryStop, history_days, load_history};
@@ -19,3 +20,4 @@ pub use reload::{ObserverLoad, ReloadError, load_observers, load_observers_with_
 pub use remote_migration::{
     RemoteObserverMigrationError, RemoteObserverMigrationReport, migrate_remote_observer_storage,
 };
+pub use sync_persist::{SyncEventKind, SyncPersistResult, persist_sync};

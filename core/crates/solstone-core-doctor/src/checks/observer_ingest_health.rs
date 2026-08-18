@@ -23,7 +23,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             return Ok(make_result(
                 check,
                 Status::Skip,
-                format!("observer records unavailable: {error}"),
+                format!("device records unavailable: {error}"),
                 None::<String>,
             ));
         }
@@ -32,7 +32,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "no registered observers",
+            "no registered devices",
             None::<String>,
         ));
     }
@@ -46,7 +46,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                     .map(|value| format!("v{value}"))
                     .unwrap_or_else(|| "version unknown".into());
                 format!(
-                    "observer {} ({version}) failing ingest: {}, {}x since {}",
+                    "device {} ({version}) failing ingest: {}, {}x since {}",
                     record.name().unwrap_or("unknown"),
                     rejection
                         .get("summary")
@@ -65,7 +65,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Ok(make_result(
             check,
             Status::Ok,
-            "no observers failing ingest",
+            "no devices failing ingest",
             None::<String>,
         ))
     } else {
@@ -73,9 +73,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             check,
             Status::Warn,
             truncate(&failures.join("; "), 400),
-            Some(
-                "update or restart the observer, then confirm a valid upload clears the rejection",
-            ),
+            Some("update or restart the device, then confirm a valid upload clears the rejection"),
         ))
     }
 }

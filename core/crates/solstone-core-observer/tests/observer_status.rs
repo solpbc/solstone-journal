@@ -7,7 +7,7 @@ use solstone_core_observer::store::format::{TimeDisplay, render_status_all, rend
 use solstone_core_observer::store::reload::load_observers;
 
 const EXPECTED_STATUS_ALL_HUMAN: &str = "\
-Observers: 1 total
+Devices: 1 total
   Connected:    1
   Disconnected: 0
   Revoked:      0
@@ -20,7 +20,7 @@ history-office       abcdefgh           connected      unbound    2026-01-01 02:
 ";
 
 const EXPECTED_STATUS_SINGLE_HUMAN: &str = "\
-Observer: history-office
+Device: history-office
   Prefix:       abcdefgh
   Status:       connected
   Binding:      unbound

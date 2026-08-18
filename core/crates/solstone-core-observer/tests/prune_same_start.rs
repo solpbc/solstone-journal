@@ -226,7 +226,7 @@ fn execute_deletes_the_duplicate_appends_history_and_deletes_index_rows() {
     assert!(history.contains("\"duplicate_of\":\"090000_300\""));
 
     let output = format_result(&result);
-    assert!(output.starts_with("observer prune execute\n"));
+    assert!(output.starts_with("device prune execute\n"));
     assert!(output.contains("deleted: 1"));
 
     assert!(

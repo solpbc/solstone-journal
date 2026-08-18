@@ -39,7 +39,7 @@ pub fn observer_prefix_for_stream(journal: &Path, stream: &str) -> Result<String
             stream,
             "observer-attribution",
             Some("apps/observer/observers".to_owned()),
-            "multiple active observers own this locked stream; reconcile observers first",
+            "multiple active devices own this locked stream; reconcile devices first",
         ));
     }
     let mut prefixes = std::collections::BTreeSet::new();
@@ -85,14 +85,14 @@ pub fn observer_prefix_for_stream(journal: &Path, stream: &str) -> Result<String
             stream,
             "observer-attribution",
             Some("apps/observer/observers".to_owned()),
-            "no observer owns or references this stream; create an unambiguous observer history first",
+            "no device owns or references this stream; create an unambiguous device history first",
         ));
     }
     Err(Refusal::new(
         stream,
         "observer-attribution",
         Some("apps/observer/observers/*/hist".to_owned()),
-        "multiple observer histories reference this stream; reconcile ownership first",
+        "multiple device histories reference this stream; reconcile ownership first",
     ))
 }
 
@@ -143,7 +143,7 @@ mod tests {
         seed(&root, "ijklmnop2", Some("workstation"));
         let error = observer_prefix_for_stream(&root, "workstation").unwrap_err();
         assert_eq!(error.gate, "observer-attribution");
-        assert!(error.resolution.contains("multiple active observers"));
+        assert!(error.resolution.contains("multiple active devices"));
         fs::remove_dir_all(&root).ok();
     }
 

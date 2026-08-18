@@ -17,7 +17,7 @@ use crate::store::record::ObserverRecord;
 use crate::store::reload::{find_observer, load_observers};
 use crate::store::write::save_observer;
 
-pub const CREATE_RETIRED_MESSAGE: &str = "journal observer create is retired. observers register themselves: from this machine directly, or from a paired device.\nfor a remote device, pair it first:  sol call link pair --device-label <name>\nif a device was re-paired and its stream is stuck, clear the old observer first:\n  journal observer revoke <name>\n";
+pub const CREATE_RETIRED_MESSAGE: &str = "journal observer create is retired. devices register themselves: from this machine directly, or from a paired device.\nfor a remote device, pair it first:  sol call link pair --device-label <name>\nif a device was re-paired and its sync is stuck, clear the old device first:\n  journal observer revoke <name>\n";
 
 #[derive(Debug)]
 pub enum ObserverError {
@@ -45,11 +45,11 @@ impl ObserverError {
 impl std::fmt::Display for ObserverError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotFound(identifier) => write!(f, "Error: observer '{identifier}' not found"),
-            Self::AlreadyRevoked(name) => write!(f, "Observer '{name}' is already revoked."),
-            Self::NameExists(name) => write!(f, "Error: observer '{name}' already exists"),
-            Self::AlreadyNamed(name) => write!(f, "Observer is already named '{name}'."),
-            Self::InvalidIdentifier => f.write_str("Error: invalid observer identifier"),
+            Self::NotFound(identifier) => write!(f, "Error: device '{identifier}' not found"),
+            Self::AlreadyRevoked(name) => write!(f, "Device '{name}' is already revoked."),
+            Self::NameExists(name) => write!(f, "Error: device '{name}' already exists"),
+            Self::AlreadyNamed(name) => write!(f, "Device is already named '{name}'."),
+            Self::InvalidIdentifier => f.write_str("Error: invalid device identifier"),
             Self::Internal(message) => f.write_str(message),
         }
     }
@@ -190,7 +190,7 @@ fn rename(root: &Path, old: &str, new: String, json_output: bool) -> Result<Stri
     let prefix = observer.prefix();
     observer.set_name(new.clone());
     save_observer(root, &observer)
-        .map_err(|_| ObserverError::Internal("Error: failed to save observer".to_owned()))?;
+        .map_err(|_| ObserverError::Internal("Error: failed to save device".to_owned()))?;
     append_action_log(
         root,
         None,
@@ -207,7 +207,7 @@ fn rename(root: &Path, old: &str, new: String, json_output: bool) -> Result<Stri
         )
     } else {
         Ok(format!(
-            "Renamed observer '{old_name}' -> '{new}' ({prefix})\n  Future segments will use stream: {new}\n  Existing segments remain under stream: {old_name}"
+            "Renamed device '{old_name}' -> '{new}' ({prefix})\n  Future segments will use stream: {new}\n  Existing segments remain under stream: {old_name}"
         ))
     }
 }
@@ -227,7 +227,7 @@ fn revoke(
                 .expect("JSON values serialize"),
         )
     } else {
-        Ok(format!("Revoked observer '{name}' ({prefix})"))
+        Ok(format!("Revoked device '{name}' ({prefix})"))
     }
 }
 
@@ -246,7 +246,7 @@ fn revoke_record(
     observer.set_revoked(true);
     observer.set_revoked_at(now_ms);
     save_observer(root, &observer)
-        .map_err(|_| ObserverError::Internal("Error: failed to save observer".to_owned()))?;
+        .map_err(|_| ObserverError::Internal("Error: failed to save device".to_owned()))?;
     append_action_log(
         root,
         None,
@@ -288,7 +288,7 @@ fn reconcile(
         );
     }
     if plan.is_empty() {
-        return Ok("No duplicate observer streams to reconcile.".to_owned());
+        return Ok("No duplicate devices to reconcile.".to_owned());
     }
     Ok(plan
         .iter()
@@ -363,7 +363,7 @@ mod tests {
             )
             .expect_err("missing")
             .to_string(),
-            "Error: observer 'missing' not found"
+            "Error: device 'missing' not found"
         );
         seed(&root, "abcdefghx", "one", 1);
         seed(&root, "ijklmnopy", "two", 2);
@@ -379,7 +379,7 @@ mod tests {
             )
             .expect_err("same")
             .to_string(),
-            "Observer is already named 'one'."
+            "Device is already named 'one'."
         );
         assert_eq!(
             execute(
@@ -393,7 +393,7 @@ mod tests {
             )
             .expect_err("collision")
             .to_string(),
-            "Error: observer 'two' already exists"
+            "Error: device 'two' already exists"
         );
         let mut revoked = ObserverRecord::from_value(
             json!({"key":"qrstuvwxz","name":"gone","revoked":true,"stats":{}}),
@@ -412,7 +412,7 @@ mod tests {
             )
             .expect_err("already revoked")
             .to_string(),
-            "Observer 'gone' is already revoked."
+            "Device 'gone' is already revoked."
         );
         fs::remove_dir_all(root).expect("cleanup");
     }
