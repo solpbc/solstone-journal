@@ -75,7 +75,7 @@ pub(crate) fn direct_routes(prefix: &str) -> Router {
         .route(&format!("{prefix}/api/devices"), get(devices))
 }
 
-pub fn router(journal: Arc<JournalRoot>, prefix: &str) -> Router {
+pub fn router(journal: Arc<JournalRoot>, prefix: &str, registry: Arc<OperationRegistry>) -> Router {
     Router::new()
         .route(&format!("{prefix}/"), get(shell))
         .route(&format!("{prefix}/workspace"), get(workspace))
@@ -88,7 +88,7 @@ pub fn router(journal: Arc<JournalRoot>, prefix: &str) -> Router {
         .route(&format!("{prefix}/unpair"), post(unpair))
         .merge(network_writes::router(prefix))
         .layer(Extension(journal))
-        .layer(Extension(Arc::new(OperationRegistry::default())))
+        .layer(Extension(registry))
 }
 
 async fn shell() -> Response {
@@ -257,7 +257,7 @@ pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: B
                     StatusCode::BAD_REQUEST,
                 );
             }
-            Err(response) => return response,
+            Err(error) => return unpair_label_refusal(error),
         },
         (None, None) => {
             return refusal(
@@ -270,6 +270,7 @@ pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: B
     match AuthorizationLedger::new(&root.0).remove(&target) {
         Ok(outcome) if outcome.authorized_removed => Json(json!({
             "unpaired": target,
+            // Observer revoke is by name, not fingerprint; no mapping exists yet.
             "revoked_observers": [],
         }))
         .into_response(),
@@ -282,10 +283,16 @@ pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: B
     }
 }
 
+enum UnpairLabelError {
+    Unreadable,
+    Malformed,
+    Ambiguous,
+}
+
 fn resolve_unpair_label(
     journal_root: &std::path::Path,
     label: &str,
-) -> Result<Option<String>, Response> {
+) -> Result<Option<String>, UnpairLabelError> {
     match read_authorized_clients(&journal_root.join("link/authorized_clients.json")) {
         AuthorizedClientsRead::Present(entries) => {
             let matches = entries
@@ -295,24 +302,32 @@ fn resolve_unpair_label(
             match matches.as_slice() {
                 [] => Ok(None),
                 [entry] => Ok(Some(entry.fingerprint.clone())),
-                _ => Err(refusal(
-                    "invalid_operation_for_state",
-                    "device label matches more than one paired device",
-                    StatusCode::BAD_REQUEST,
-                )),
+                _ => Err(UnpairLabelError::Ambiguous),
             }
         }
         AuthorizedClientsRead::Missing => Ok(None),
-        AuthorizedClientsRead::Unreadable => Err(refusal(
+        AuthorizedClientsRead::Unreadable => Err(UnpairLabelError::Unreadable),
+        AuthorizedClientsRead::Malformed => Err(UnpairLabelError::Malformed),
+    }
+}
+
+fn unpair_label_refusal(error: UnpairLabelError) -> Response {
+    match error {
+        UnpairLabelError::Unreadable => refusal(
             "authorization_ledger_unreadable",
             "authorized-client ledger could not be read",
             StatusCode::SERVICE_UNAVAILABLE,
-        )),
-        AuthorizedClientsRead::Malformed => Err(refusal(
+        ),
+        UnpairLabelError::Malformed => refusal(
             "authorization_ledger_malformed",
             "authorized-client ledger is invalid",
             StatusCode::SERVICE_UNAVAILABLE,
-        )),
+        ),
+        UnpairLabelError::Ambiguous => refusal(
+            "invalid_operation_for_state",
+            "device label matches more than one paired device",
+            StatusCode::BAD_REQUEST,
+        ),
     }
 }
 
@@ -1035,7 +1050,11 @@ mod tests {
         let _merged = Router::new()
             .route("/x", get(|| async { StatusCode::OK }))
             .fallback(|| async { StatusCode::NOT_FOUND })
-            .merge(super::router(root, "/app/network"));
+            .merge(super::router(
+                root,
+                "/app/network",
+                Arc::new(OperationRegistry::default()),
+            ));
         let _shell = crate::router(temporary.path().to_path_buf());
     }
 

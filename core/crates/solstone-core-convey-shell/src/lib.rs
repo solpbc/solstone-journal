@@ -103,6 +103,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 #[cfg(feature = "host")]
 use solstone_core_sol_link::DeviceDoorAuthorization;
+#[cfg(feature = "host")]
+use solstone_core_thinking::confidential::OperationRegistry;
 
 mod assets;
 #[cfg(feature = "host")]
@@ -494,6 +496,7 @@ pub fn router(journal_root: PathBuf) -> Router {
     solstone_core_convey_body::warm_trends(journal_root.clone());
     let shell = Arc::new(shell_payload());
     let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
+    let operation_registry = Arc::new(OperationRegistry::default());
     let mut routes = Router::new()
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))
@@ -504,7 +507,11 @@ pub fn router(journal_root: PathBuf) -> Router {
     for prefix in network::NETWORK_ROUTE_PREFIXES {
         routes = routes
             .merge(network::direct_routes(prefix))
-            .merge(network::router(route_journal_root.clone(), prefix));
+            .merge(network::router(
+                route_journal_root.clone(),
+                prefix,
+                operation_registry.clone(),
+            ));
     }
     let routes = routes
         .route("/app/devices/", get(devices::shell))
