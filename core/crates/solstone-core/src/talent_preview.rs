@@ -212,6 +212,20 @@ mod tests {
     }
 
     #[test]
+    fn criterion_1_day_with_sources_runs_prepare() {
+        let root = root();
+        write_talent(
+            &root,
+            "sense",
+            "{\n\"type\": \"generate\",\n\"load\": {\"transcripts\": true}\n}\nbody that compose-only would print",
+        );
+        let output = run(&root, &["show", "sense", "--prompt", "--day", "20260101"]);
+        assert_eq!(output.exit_code, 1, "{}", output.stderr);
+        assert_eq!(output.stdout, "This talent would not run: no_input\n");
+        assert!(!output.stdout.contains("body that compose-only would print"));
+    }
+
+    #[test]
     fn criterion_6_preview_pulse_reads_previous_without_writes() {
         let root = root();
         write_talent(
@@ -286,6 +300,11 @@ mod tests {
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
         assert!(!root.path().join("identity/health.md").exists());
         assert!(output.stdout.contains("  INSTRUCTION\n"));
+        assert!(
+            !output.stdout.contains("$health_state"),
+            "steward preview must substitute $health_state, got:\n{}",
+            output.stdout
+        );
     }
 
     #[test]
