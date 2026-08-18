@@ -89,10 +89,9 @@ impl PlatformApplicability {
     }
 }
 
-// parakeet-helper is intentionally excluded: it is a macOS base-wheel package member under
-// site-packages, not a maturin bindings="bin" leaf or a sibling of solstone-core's current
-// executable. Locating it requires Python-package layout resolution outside this binary's
-// ownership.
+// parakeet-helper is intentionally excluded: it is a macOS Swift helper resolved
+// by solstone-core-transcribe (sibling binary, then bin/ and lib/parakeet-helper/),
+// not a warm inventory leaf.
 const INVENTORY: [InventoryRow; 10] = [
     InventoryRow {
         binary_name: "solstone-core",

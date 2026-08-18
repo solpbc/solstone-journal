@@ -985,12 +985,12 @@ install-models:
 
 # Build the parakeet helper binary (macOS/arm64 only, requires Xcode CLT)
 parakeet-helper:
-	cd solstone/observe/transcribe/parakeet_helper && swift build -c release
-	@echo "built: $$(pwd)/solstone/observe/transcribe/parakeet_helper/.build/release/parakeet-helper"
+	cd core/crates/solstone-core-transcribe/parakeet-helper && swift build -c release
+	@echo "built: $$(pwd)/core/crates/solstone-core-transcribe/parakeet-helper/.build/release/parakeet-helper"
 
 # Remove parakeet helper build artifacts
 parakeet-helper-clean:
-	rm -rf solstone/observe/transcribe/parakeet_helper/.build solstone/observe/transcribe/parakeet_helper/.swiftpm solstone/observe/transcribe/parakeet_helper/Package.resolved
+	rm -rf core/crates/solstone-core-transcribe/parakeet-helper/.build core/crates/solstone-core-transcribe/parakeet-helper/.swiftpm core/crates/solstone-core-transcribe/parakeet-helper/Package.resolved
 
 # Build a signed/notarized macOS Apple Silicon platform wheel
 # (Darwin/arm64 only; requires Xcode CLT, Developer ID cert, and the

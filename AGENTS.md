@@ -4,8 +4,8 @@ This file is the **developer guide** for the solstone repository. Read it before
 
 > ⚠️ **§7 has not caught up with the Rust conversion, and §7 is the section this guide calls required
 > reading.** The Python under `solstone/` was removed from `main`; the directory now holds only the
-> `detect_created` spec and the Swift helper (licence notices live next to the
-> vendored mark assets). `authority.toml` lives under `core/native-sol/`. `scripts/`
+> `detect_created` spec. The Swift helper lives next to `solstone-core-transcribe`.
+> `authority.toml` lives under `core/native-sol/`. `scripts/`
 > still holds working tooling. But **§7's L2 table names a write-owning module per domain, and every one of
 > the 64 Python modules it names is gone** — not most of them, all of them. Its crate rows do still
 > resolve and are the current owners, so read that table for the domains and their rules, and trust its

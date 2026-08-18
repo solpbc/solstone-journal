@@ -21,7 +21,7 @@ use crate::backend::parakeet_cpp::{ModelInfo, TranscriptionResponse, Transcripti
 use crate::config::{parakeet_coreml_model_version, parakeet_coreml_timeout};
 
 const HELPER_ENV_KEY: &str = "SOLSTONE_PARAKEET_HELPER";
-const HELPER_RELATIVE: &str = "solstone/observe/transcribe/parakeet_helper";
+const HELPER_RELATIVE: &str = "parakeet-helper";
 const HELPER_NAME: &str = "parakeet-helper";
 const HELPER_SPAWN_RETRIES: usize = 3;
 const HELPER_SPAWN_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -144,9 +144,8 @@ fn resolve_helper_path() -> PathBuf {
     {
         return path;
     }
-    if let Some(path) = installed_helper_paths()
+    if let Some(path) = installed_helper_binaries()
         .into_iter()
-        .map(|directory| directory.join("_bin").join(HELPER_NAME))
         .find(|path| path.exists())
     {
         return path;
@@ -184,34 +183,19 @@ fn source_helper_directories(manifest_directory: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-fn installed_helper_paths() -> Vec<PathBuf> {
+fn installed_helper_binaries() -> Vec<PathBuf> {
     let Ok(executable) = std::env::current_exe() else {
         return Vec::new();
     };
-    executable
-        .parent()
-        .into_iter()
-        .flat_map(Path::ancestors)
-        .flat_map(|root| python_helper_directories(&root.join("lib")))
-        .collect()
-}
-
-fn python_helper_directories(library_directory: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(library_directory) else {
+    let Some(parent) = executable.parent() else {
         return Vec::new();
     };
-    entries
-        .filter_map(Result::ok)
-        .filter(|entry| {
-            entry.file_type().ok().is_some_and(|kind| kind.is_dir())
-                && entry.file_name().to_string_lossy().starts_with("python3.")
-        })
-        .map(|entry| {
-            entry
-                .path()
-                .join("site-packages/solstone/observe/transcribe/parakeet_helper")
-        })
-        .collect()
+    let mut paths = vec![parent.join(HELPER_NAME)];
+    for ancestor in parent.ancestors() {
+        paths.push(ancestor.join("bin").join(HELPER_NAME));
+        paths.push(ancestor.join("lib").join(HELPER_RELATIVE).join(HELPER_NAME));
+    }
+    paths
 }
 
 fn transcribe_helper_arguments(
@@ -729,8 +713,8 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        CoremlResponseError, HELPER_SPAWN_RETRY_DELAY, HelperOutput, HelperRunError,
-        HelperSupervisor, conclude_helper, kill_helper_group, map_helper_exit,
+        CoremlResponseError, HELPER_RELATIVE, HELPER_SPAWN_RETRY_DELAY, HelperOutput,
+        HelperRunError, HelperSupervisor, conclude_helper, kill_helper_group, map_helper_exit,
         map_helper_run_error, parse_coreml_response, parse_version_response, read_child_stream,
         retry_busy_spawn, transcribe_helper_arguments, transcribe_with_helper,
     };
@@ -738,6 +722,18 @@ mod tests {
 
     const SUCCESS: &str = r#"{"transcript":"hello world!","audio_sec":1.0,"transcribe_ms":2,"rtfx":3.0,"token_timings":[{"token":"▁hel","token_id":1,"start":0.0,"end":0.1,"confidence":0.9},{"token":"lo","token_id":2,"start":0.1,"end":0.2,"confidence":0.6},{"token":"▁world","token_id":3,"start":0.2,"end":0.4,"confidence":0.8},{"token":"!","token_id":4,"start":0.4,"end":0.5,"confidence":0.7}]}"#;
     const VERSION: &str = r#"{"fluidaudio_version":"0.14.0","model_version_default":"v3","swift_version":"Swift","hardware":"M4","macos_version":"26"}"#;
+
+    #[test]
+    fn helper_package_lives_next_to_this_crate() {
+        let package = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(HELPER_RELATIVE)
+            .join("Package.swift");
+        assert!(
+            package.is_file(),
+            "helper Package.swift must sit at {package}",
+            package = package.display()
+        );
+    }
 
     #[test]
     fn missing_helper_defers() {

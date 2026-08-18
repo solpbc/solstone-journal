@@ -6,7 +6,7 @@
 core/crates/                 # Native crates (convey-shell, *-web, observe, think)
 core/native-sol/             # sol call authority
 core/payload/solstone/talent/  # Agent/generator configs + sol/journal router skills
-solstone/                    # detect_created spec + Swift helper only
+solstone/                    # detect_created spec only
 docs/                        # Longform documentation
 AGENTS.md                    # Development guidelines
 README.md                    # Project overview

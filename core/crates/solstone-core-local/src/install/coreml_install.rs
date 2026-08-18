@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn fluidaudio_version_matches_the_helper_package_declaration() {
         let package = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../solstone/observe/transcribe/parakeet_helper/Package.swift");
+            .join("../solstone-core-transcribe/parakeet-helper/Package.swift");
         let contents = fs::read_to_string(&package)
             .unwrap_or_else(|error| panic!("read {}: {error}", package.display()));
         let version = contents

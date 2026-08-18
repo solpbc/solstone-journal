@@ -94,6 +94,6 @@ Non-zero exits emit one UTF-8 JSON object followed by `\n`:
 
 ```bash
 say "The quick brown fox jumps over the lazy dog." -o /tmp/parakeet_sample.aiff
-afconvert -f WAVE -d LEI16@16000 /tmp/parakeet_sample.aiff solstone/observe/transcribe/_fixtures/parakeet_sample.wav
+afconvert -f WAVE -d LEI16@16000 /tmp/parakeet_sample.aiff core/fixtures/parakeet_sample.wav
 rm /tmp/parakeet_sample.aiff
 ```

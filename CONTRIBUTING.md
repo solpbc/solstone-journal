@@ -166,10 +166,10 @@ make parakeet-helper
 The built binary lives at:
 
 ```text
-solstone/observe/transcribe/parakeet_helper/.build/release/parakeet-helper
+core/crates/solstone-core-transcribe/parakeet-helper/.build/release/parakeet-helper
 ```
 
-If you change the helper source, rebuild it before testing the CoreML parakeet path. Note that the runtime resolver prefers `solstone/observe/transcribe/parakeet_helper/_bin/parakeet-helper` (the location populated by `make wheel-macos` for platform-wheel packaging) over the `.build/release/` path; if you previously ran `make wheel-macos`, run `make wheel-macos-clean` to clear the `_bin/` copy so your local rebuild takes effect.
+If you change the helper source, rebuild it before testing the CoreML parakeet path. The runtime resolver prefers a `_bin/parakeet-helper` next to the package (a locally staged signed copy) over `.build/release/`. Installed trees look next to the running `solstone-core` binary, then `bin/parakeet-helper` and `lib/parakeet-helper/parakeet-helper`. Override with `SOLSTONE_PARAKEET_HELPER`.
 
 ### Skills and talents
 

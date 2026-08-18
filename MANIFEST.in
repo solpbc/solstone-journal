@@ -16,11 +16,5 @@ global-exclude .gitignore
 recursive-exclude solstone *.rs
 recursive-exclude solstone authority.toml
 
-# Drop the parakeet-helper Swift build tree. `make wheel-macos` builds the helper
-# into .build/ then stages the signed+notarized binary into _bin/parakeet-helper
-# (which graft still ships, and which the runtime resolver prefers). Without this
-# prune, `graft solstone` swept the entire .build/ tree — SwiftPM ModuleCache,
-# the FluidAudio git checkout pack, dSYM (~765 MB) — into the macosx_14_0_arm64
-# wheel, blowing past PyPI's per-file size limit. .build/ never exists on the
-# Linux/sdist build, so this is a no-op there.
-prune solstone/observe/transcribe/parakeet_helper/.build
+# The Swift helper lives under core/crates/solstone-core-transcribe/parakeet-helper
+# and is not part of the Python graft.
