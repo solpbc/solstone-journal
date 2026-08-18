@@ -83,11 +83,7 @@ pub fn assemble_prompt_preview(
                         error: error.to_string(),
                     };
                 }
-                Err(outcome) => {
-                    return PromptPreview::Failed {
-                        error: format!("{outcome:?}"),
-                    };
-                }
+                Err(_) => unreachable!("a BuildFn can only return Skipped or StageFailed"),
             },
             None => crate::contract::PrePostState::None,
         };

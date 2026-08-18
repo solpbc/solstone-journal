@@ -452,7 +452,7 @@ fn schema_validation_failed(validation: Option<&Value>) -> bool {
     })
 }
 
-pub fn generate_contents(prepared: &PreparedTalent) -> Vec<ContentPart> {
+pub(crate) fn generate_contents(prepared: &PreparedTalent) -> Vec<ContentPart> {
     let contents: Vec<ContentPart> = prepared
         .config
         .get("messages")
