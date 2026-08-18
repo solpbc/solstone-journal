@@ -21,10 +21,13 @@ use solstone_core_ingest_resolve::{
     IngestNotice, IngestNotifier, LoggingIngestNotifier, Resolution, apply_plan, quarantine_failed,
     resolve_ingest,
 };
-use solstone_core_segment::{ContentName, Kind, StreamHints, advance_bound_stream};
+use solstone_core_observer::store::write::save_observer;
+use solstone_core_observer::system_now_ms;
+use solstone_core_segment::{ContentName, Kind, SegmentDir, StreamHints, advance_bound_stream};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::model::{IncomingFile, ReasonCode};
+use crate::observer_evidence::resolve_device_observer;
 use crate::read_routes::{ingest_manifest, ingest_manifest_day, ingest_segments};
 use crate::stream_identity::bind_ingest_stream;
 use crate::validation::{
@@ -41,6 +44,11 @@ const MAX_HEADERS: usize = 16;
 pub(crate) struct IngestState {
     pub(crate) journal_root: PathBuf,
     pub(crate) notifier: Arc<dyn IngestNotifier>,
+    pub(crate) now_ms: Arc<dyn Fn() -> i64 + Send + Sync>,
+}
+
+fn wall_clock_ms() -> Arc<dyn Fn() -> i64 + Send + Sync> {
+    Arc::new(system_now_ms)
 }
 
 /// Build the four linked-device segment-arrival routes.
@@ -51,6 +59,14 @@ pub fn router(journal_root: impl AsRef<Path>) -> Router {
 fn router_with_notifier(
     journal_root: impl AsRef<Path>,
     notifier: Arc<dyn IngestNotifier>,
+) -> Router {
+    router_with(journal_root, notifier, wall_clock_ms())
+}
+
+fn router_with(
+    journal_root: impl AsRef<Path>,
+    notifier: Arc<dyn IngestNotifier>,
+    now_ms: Arc<dyn Fn() -> i64 + Send + Sync>,
 ) -> Router {
     Router::new()
         .route("/app/devices/ingest", post(ingest_upload))
@@ -65,6 +81,7 @@ fn router_with_notifier(
         .with_state(IngestState {
             journal_root: journal_root.as_ref().to_path_buf(),
             notifier,
+            now_ms,
         })
         .fallback(not_found_fallback)
 }
@@ -471,6 +488,9 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
                 "segment allocation attempts exhausted",
             );
         }
+        Ok(ApplyPhase::Partial(partial)) => {
+            return append_partial_and_fail(did, &envelope, &bound.stream, partial);
+        }
         Err(_) => {
             return outcome_error(
                 "failed",
@@ -486,26 +506,21 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
         solstone_core_ingest_resolve::PlanStatus::Collision => "collision",
         solstone_core_ingest_resolve::PlanStatus::Duplicate => "duplicate",
     };
-    let event = DeviceIngestEvent {
-        record_type: "device_ingest".to_owned(),
-        record_version: 1,
-        outcome: if outcome == "duplicate" {
-            "duplicate".to_owned()
+    if append_device_ingest(
+        applied.segment.path(),
+        did,
+        &envelope,
+        &bound.stream,
+        &applied.landed_segment,
+        descriptors.clone(),
+        if outcome == "duplicate" {
+            "duplicate"
         } else {
-            "accepted".to_owned()
+            "accepted"
         },
-        protocol_version: 3,
-        did: did.to_owned(),
-        source: envelope.source.clone(),
-        stream: bound.stream.clone(),
-        day: envelope.day.clone(),
-        segment: applied.landed_segment.clone(),
-        files: descriptors.clone(),
-        meta: envelope.meta.clone(),
-        extra: Map::new(),
-    };
-    let durable_event = DurableEvent::DeviceIngest(event);
-    if append_durable_event(applied.segment.path(), &durable_event).is_err() {
+    )
+    .is_err()
+    {
         return outcome_error(
             "failed",
             ReasonCode::EventAppendFailed,
@@ -513,8 +528,8 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
             "cannot append ingest event",
         );
     }
-    let advance_error = if applied.should_advance {
-        advance_bound_stream(
+    if applied.should_advance
+        && advance_bound_stream(
             &bound.stream,
             &envelope.day,
             &applied.landed_segment,
@@ -523,32 +538,34 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
             did,
             &envelope.source,
         )
-        .err()
-    } else {
-        None
-    };
-    // Notification deliberately follows stream advancement, matching the
-    // Python route order even though today's payload needs no advance data.
-    if applied.should_advance {
-        let notice = IngestNotice {
-            did,
-            source: &envelope.source,
-            day: &envelope.day,
-            stream: &bound.stream,
-            segment: &applied.landed_segment,
-            files: &applied.files,
-            meta: &envelope.meta,
-        };
-        if let Err(error) = state.notifier.notify(&notice) {
-            log::warn!("observer ingest notification degraded: {error}");
-        }
-    }
-    if advance_error.is_some() {
+        .is_err()
+    {
         return outcome_error(
             "failed",
             ReasonCode::StreamAdvanceFailed,
             StatusCode::INTERNAL_SERVER_ERROR,
             "cannot advance stream",
+        );
+    }
+    if let Err(response) = stamp_observer(state, did, &envelope.day, &applied.landed_segment) {
+        return response;
+    }
+    let notice = IngestNotice {
+        did,
+        source: &envelope.source,
+        day: &envelope.day,
+        stream: &bound.stream,
+        segment: &applied.landed_segment,
+        files: &applied.files,
+        meta: &envelope.meta,
+    };
+    if let Err(error) = state.notifier.notify(&notice) {
+        log::warn!("observer ingest notification failed: {error}");
+        return outcome_error(
+            "failed",
+            ReasonCode::NotifyFailed,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "cannot notify ingest listeners",
         );
     }
     let written_names: Vec<String> = descriptors
@@ -573,6 +590,139 @@ enum ApplyPhase {
     Applied(ApplyResult),
     Conflict(ConflictPlan),
     Failed(FailedPlan),
+    Partial(PartialApply),
+}
+
+struct PartialApply {
+    applied: Vec<AppliedFile>,
+    landed_segment: String,
+    segment: SegmentDir,
+}
+
+fn append_partial_and_fail(
+    did: &str,
+    envelope: &Envelope,
+    stream: &str,
+    partial: PartialApply,
+) -> Response {
+    let descriptors = written_descriptors(&partial.applied);
+    if append_device_ingest(
+        partial.segment.path(),
+        did,
+        envelope,
+        stream,
+        &partial.landed_segment,
+        descriptors,
+        "accepted",
+    )
+    .is_err()
+    {
+        return outcome_error(
+            "failed",
+            ReasonCode::EventAppendFailed,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "cannot append ingest event",
+        );
+    }
+    outcome_error(
+        "failed",
+        ReasonCode::JournalWriteFailed,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "cannot resolve or write journal content",
+    )
+}
+
+fn append_device_ingest(
+    segment_path: &Path,
+    did: &str,
+    envelope: &Envelope,
+    stream: &str,
+    landed_segment: &str,
+    files: Vec<FileDescriptor>,
+    outcome: &str,
+) -> Result<(), ()> {
+    let event = DeviceIngestEvent {
+        record_type: "device_ingest".to_owned(),
+        record_version: 1,
+        outcome: outcome.to_owned(),
+        protocol_version: 3,
+        did: did.to_owned(),
+        source: envelope.source.clone(),
+        stream: stream.to_owned(),
+        day: envelope.day.clone(),
+        segment: landed_segment.to_owned(),
+        files,
+        meta: envelope.meta.clone(),
+        extra: Map::new(),
+    };
+    append_durable_event(segment_path, &DurableEvent::DeviceIngest(event)).map_err(|_| ())
+}
+
+fn stamp_observer(
+    state: &IngestState,
+    did: &str,
+    day: &str,
+    landed_segment: &str,
+) -> Result<(), Response> {
+    let mut observer = match resolve_device_observer(&state.journal_root, did) {
+        Ok(None) => return Ok(()),
+        Ok(Some(observer)) => observer,
+        Err(_) => {
+            return Err(outcome_error(
+                "failed",
+                ReasonCode::ObserverStampFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot stamp observer receipt",
+            ));
+        }
+    };
+    let mut dirty = false;
+    if observer.record.last_segment().is_none() {
+        observer.record.set_last_segment(landed_segment.to_owned());
+        dirty = true;
+    }
+    if observer.record.last_segment_day().is_none() {
+        observer.record.set_last_segment_day(day.to_owned());
+        dirty = true;
+    }
+    if observer.record.last_segment_received_at().is_none() {
+        observer
+            .record
+            .set_last_segment_received_at((state.now_ms)());
+        dirty = true;
+    }
+    if !dirty {
+        return Ok(());
+    }
+    save_observer(&state.journal_root, &observer.record).map_err(|_| {
+        outcome_error(
+            "failed",
+            ReasonCode::ObserverStampFailed,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "cannot stamp observer receipt",
+        )
+    })
+}
+
+fn written_descriptors(applied: &[AppliedFile]) -> Vec<FileDescriptor> {
+    applied
+        .iter()
+        .filter(|file| file.disposition == AppliedDisposition::Written)
+        .map(|file| {
+            let mut extra = Map::new();
+            extra.insert(
+                "disposition".to_owned(),
+                Value::String("written".to_owned()),
+            );
+            FileDescriptor {
+                submitted: file.name.as_str().to_owned(),
+                written: file.name.as_str().to_owned(),
+                size: file.size,
+                sha256: file.sha256.clone(),
+                extra,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -627,8 +777,20 @@ fn resolve_and_apply(
             run_before_apply_hook(&plan);
             match apply_plan(&plan, files) {
                 Ok(result) => Ok(ApplyPhase::Applied(result)),
-                Err(ApplyError::Stale) if retry_stale => {
+                Err(failure) if matches!(failure.error, ApplyError::Stale) && retry_stale => {
                     resolve_and_apply(state, day, stream, requested_segment, files, false)
+                }
+                Err(failure)
+                    if failure
+                        .applied
+                        .iter()
+                        .any(|file| file.disposition == AppliedDisposition::Written) =>
+                {
+                    Ok(ApplyPhase::Partial(PartialApply {
+                        applied: failure.applied,
+                        landed_segment: plan.landed_segment,
+                        segment: plan.segment,
+                    }))
                 }
                 Err(_) => Err(()),
             }
@@ -676,7 +838,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode, header};
@@ -689,7 +851,7 @@ mod tests {
 
     use super::{
         ApplyPhase, IngestState, MAX_PART_BYTES, clear_before_apply_hook, resolve_and_apply,
-        router, router_with_notifier, set_before_apply_hook,
+        router, router_with, router_with_notifier, set_before_apply_hook, wall_clock_ms,
     };
 
     const DID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -697,7 +859,23 @@ mod tests {
 
     struct SpyNotifier {
         calls: AtomicUsize,
-        fails: bool,
+        fail_next: AtomicBool,
+    }
+
+    impl SpyNotifier {
+        fn succeeding() -> Arc<Self> {
+            Arc::new(Self {
+                calls: AtomicUsize::new(0),
+                fail_next: AtomicBool::new(false),
+            })
+        }
+
+        fn fail_next() -> Arc<Self> {
+            Arc::new(Self {
+                calls: AtomicUsize::new(0),
+                fail_next: AtomicBool::new(true),
+            })
+        }
     }
 
     impl solstone_core_ingest_resolve::IngestNotifier for SpyNotifier {
@@ -706,7 +884,7 @@ mod tests {
             _notice: &solstone_core_ingest_resolve::IngestNotice<'_>,
         ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             self.calls.fetch_add(1, Ordering::SeqCst);
-            if self.fails {
+            if self.fail_next.swap(false, Ordering::SeqCst) {
                 Err(Box::new(std::io::Error::other("bus unavailable")))
             } else {
                 Ok(())
@@ -911,6 +1089,50 @@ mod tests {
         .unwrap()
     }
 
+    fn observer_record(root: &Path, prefix: &str) -> Value {
+        serde_json::from_str(
+            &fs::read_to_string(
+                root.join("apps/observer/observers")
+                    .join(format!("{prefix}.json")),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    fn frozen_clock(start: i64) -> (Arc<AtomicI64>, Arc<dyn Fn() -> i64 + Send + Sync>) {
+        let now = Arc::new(AtomicI64::new(start));
+        let clock_now = now.clone();
+        (now, Arc::new(move || clock_now.load(Ordering::SeqCst)))
+    }
+
+    async fn call_upload_files(
+        app: &axum::Router,
+        envelope: Value,
+        files: &[(&str, &[u8])],
+    ) -> (StatusCode, Value) {
+        let envelope = envelope.to_string();
+        let mut parts: Vec<(&str, Option<&str>, &[u8], usize)> =
+            vec![("envelope", None, envelope.as_bytes(), 0)];
+        parts.extend(
+            files
+                .iter()
+                .map(|(name, bytes)| ("files", Some(*name), *bytes, 1)),
+        );
+        let (content_type, body) = multipart_parts(&parts);
+        call(
+            app,
+            "POST",
+            "/app/devices/ingest",
+            Some(content_type),
+            body,
+            basis(DID_A),
+            Some("3"),
+            &[],
+        )
+        .await
+    }
+
     #[test]
     fn resolve_and_apply_reenters_once_after_stale_drift() {
         let dir = root();
@@ -918,6 +1140,7 @@ mod tests {
         let state = IngestState {
             journal_root: root.clone(),
             notifier: Arc::new(solstone_core_ingest_resolve::LoggingIngestNotifier),
+            now_ms: wall_clock_ms(),
         };
         let files = [solstone_core_ingest_resolve::IngestFile {
             name: solstone_core_segment::ContentName::new("audio.flac").unwrap(),
@@ -961,6 +1184,7 @@ mod tests {
         let state = IngestState {
             journal_root: root.clone(),
             notifier: Arc::new(solstone_core_ingest_resolve::LoggingIngestNotifier),
+            now_ms: wall_clock_ms(),
         };
         let files = [solstone_core_ingest_resolve::IngestFile {
             name: solstone_core_segment::ContentName::new("audio.flac").unwrap(),
@@ -1168,26 +1392,178 @@ mod tests {
         assert_eq!(state()["last_segment"], "120000_62");
     }
 
+    const FROZEN_NOW_MS: i64 = 1_700_000_000_000;
+
     #[tokio::test]
-    async fn notification_is_once_for_success_and_never_breaks_durability() {
-        for fails in [false, true] {
-            let dir = root();
-            let root = dir.path().to_path_buf();
-            let spy = Arc::new(SpyNotifier {
-                calls: AtomicUsize::new(0),
-                fails,
-            });
-            let app = router_with_notifier(&root, spy.clone());
-            let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
-            let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
-            assert_eq!(status, StatusCode::OK);
-            assert_eq!(body["status"], "ok");
-            assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
-            assert!(
-                root.join("chronicle/20260804/device/120000_1/events.jsonl")
-                    .exists()
-            );
+    async fn notification_failure_is_5xx_and_leaves_durable_writes() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        let spy = SpyNotifier::fail_next();
+        let (now, clock) = frozen_clock(FROZEN_NOW_MS);
+        let app = router_with(&root, spy.clone(), clock);
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "notify_failed");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        assert!(
+            root.join("chronicle/20260804/desk/120000_1/events.jsonl")
+                .exists()
+        );
+        let first = observer_record(&root, "aaaaaaaa");
+        let stamp = first["last_segment_received_at"].as_i64().expect("stamp");
+        assert!(stamp > 1_000_000_000_000);
+        assert!((stamp - FROZEN_NOW_MS).abs() < 60_000);
+        assert_eq!(first["last_segment_day"], "20260804");
+        assert_eq!(first["last_segment"], "120000_1");
+        assert_eq!(stream_record(&root, "desk")["seq"], 1);
+
+        now.store(FROZEN_NOW_MS + 60_000, Ordering::SeqCst);
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 2);
+        let retry = observer_record(&root, "aaaaaaaa");
+        assert_eq!(retry["last_segment_received_at"], stamp);
+        assert_eq!(stream_record(&root, "desk")["seq"], 1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stamp_failure_is_5xx_then_duplicate_fills_absent_fields() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        let spy = SpyNotifier::succeeding();
+        let (now, clock) = frozen_clock(FROZEN_NOW_MS);
+        let app = router_with(&root, spy.clone(), clock);
+        let observers = root.join("apps/observer/observers");
+        fs::set_permissions(&observers, fs::Permissions::from_mode(0o555)).unwrap();
+        if save_probe_succeeds(&observers) {
+            fs::set_permissions(&observers, fs::Permissions::from_mode(0o755)).unwrap();
+            panic!("requires a non-root runner");
         }
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "observer_stamp_failed");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(stream_record(&root, "desk")["seq"], 1);
+        let first = observer_record(&root, "aaaaaaaa");
+        assert!(
+            first
+                .get("last_segment_received_at")
+                .is_none_or(Value::is_null)
+        );
+        assert!(first.get("last_segment_day").is_none_or(Value::is_null));
+        assert!(first.get("last_segment").is_none_or(Value::is_null));
+
+        fs::set_permissions(&observers, fs::Permissions::from_mode(0o755)).unwrap();
+        now.store(FROZEN_NOW_MS + 60_000, Ordering::SeqCst);
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(stream_record(&root, "desk")["seq"], 1);
+        let retry = observer_record(&root, "aaaaaaaa");
+        assert_eq!(retry["last_segment_received_at"], FROZEN_NOW_MS + 60_000);
+        assert_eq!(retry["last_segment_day"], "20260804");
+        assert_eq!(retry["last_segment"], "120000_1");
+    }
+
+    #[cfg(unix)]
+    fn save_probe_succeeds(observers: &Path) -> bool {
+        fs::write(observers.join(".stamp-probe"), b"x").is_ok()
+    }
+
+    #[tokio::test]
+    async fn partial_apply_appends_event_for_written_file_only() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let spy = SpyNotifier::succeeding();
+        let app = router_with_notifier(&root, spy.clone());
+        set_before_apply_hook(|plan| {
+            fs::create_dir_all(plan.segment.path().join("notes.json")).unwrap();
+        });
+        let request = envelope(
+            "20260804",
+            "120000_1",
+            json!([{"submitted":"audio.flac"},{"submitted":"notes.json"}]),
+        );
+        let (status, body) = call_upload_files(
+            &app,
+            request,
+            &[
+                ("audio.flac", b"sound".as_slice()),
+                ("notes.json", b"notes"),
+            ],
+        )
+        .await;
+        clear_before_apply_hook();
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "journal_write_failed");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 0);
+        let events =
+            fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
+                .unwrap();
+        let event: Value = serde_json::from_str(events.lines().next().unwrap()).unwrap();
+        assert_eq!(event["record_type"], "device_ingest");
+        let names: Vec<&str> = event["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| file["written"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["audio.flac"]);
+        let (_, listing) = call(
+            &app,
+            "GET",
+            "/app/devices/ingest/segments/20260804",
+            None,
+            Vec::new(),
+            basis(DID_A),
+            Some("3"),
+            &[],
+        )
+        .await;
+        let item = listing["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["key"] == "120000_1")
+            .expect("landed segment");
+        let listed: Vec<&str> = item["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| file["name"].as_str().unwrap())
+            .collect();
+        assert!(listed.contains(&"audio.flac"));
+        assert!(!listed.contains(&"notes.json"));
+        let audio = item["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|file| file["name"] == "audio.flac")
+            .unwrap();
+        assert_eq!(audio["status"], "present");
+    }
+
+    #[tokio::test]
+    async fn no_observer_skips_stamp_and_still_notifies() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let spy = SpyNotifier::succeeding();
+        let app = router_with_notifier(&root, spy.clone());
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        assert_eq!(spy.calls.load(Ordering::SeqCst), 1);
+        assert!(!root.join("apps/observer/observers").exists());
     }
 
     #[tokio::test]
@@ -1201,10 +1577,7 @@ mod tests {
             fs::create_dir_all(&directory).unwrap();
             fs::write(directory.join("audio.flac"), b"old").unwrap();
         }
-        let spy = Arc::new(SpyNotifier {
-            calls: AtomicUsize::new(0),
-            fails: false,
-        });
+        let spy = SpyNotifier::succeeding();
         let app = router_with_notifier(&root, spy.clone());
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         let (status, body) = call_upload(&app, request, "audio.flac", b"new").await;
@@ -1233,10 +1606,7 @@ mod tests {
         let root = dir.path().to_path_buf();
         let segment = root.join("chronicle/20260804/device/120000_1");
         fs::create_dir_all(segment.join("events.jsonl")).unwrap();
-        let spy = Arc::new(SpyNotifier {
-            calls: AtomicUsize::new(0),
-            fails: false,
-        });
+        let spy = SpyNotifier::succeeding();
         let app = router_with_notifier(&root, spy.clone());
         let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
         let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;

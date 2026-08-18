@@ -18,7 +18,10 @@ pub struct IngestNotice<'a> {
     pub meta: &'a Map<String, Value>,
 }
 
-/// Best-effort bus seam. Its failures must never invalidate journal durability.
+/// Post-durability bus seam. A notify failure must never roll back or
+/// invalidate already-durable journal writes (event, advance, stamp). The
+/// caller surfaces a non-ok HTTP response when notify fails; on-disk state
+/// is unaffected.
 pub trait IngestNotifier: Send + Sync {
     fn notify(&self, notice: &IngestNotice<'_>) -> Result<(), Box<dyn Error + Send + Sync>>;
 }

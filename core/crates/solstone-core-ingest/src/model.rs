@@ -39,6 +39,8 @@ pub enum ReasonCode {
     JournalWriteFailed,
     EventAppendFailed,
     StreamAdvanceFailed,
+    NotifyFailed,
+    ObserverStampFailed,
     JournalReadFailed,
     MalformedEvidenceRow,
     AmbiguousDeviceObserver,
@@ -53,7 +55,7 @@ pub enum ReasonCode {
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 43] = [
+    const ALL: [Self; 45] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -87,6 +89,8 @@ impl ReasonCode {
         Self::JournalWriteFailed,
         Self::EventAppendFailed,
         Self::StreamAdvanceFailed,
+        Self::NotifyFailed,
+        Self::ObserverStampFailed,
         Self::JournalReadFailed,
         Self::MalformedEvidenceRow,
         Self::AmbiguousDeviceObserver,
@@ -134,6 +138,8 @@ impl ReasonCode {
             Self::JournalWriteFailed => "journal_write_failed",
             Self::EventAppendFailed => "event_append_failed",
             Self::StreamAdvanceFailed => "stream_advance_failed",
+            Self::NotifyFailed => "notify_failed",
+            Self::ObserverStampFailed => "observer_stamp_failed",
             Self::JournalReadFailed => "journal_read_failed",
             Self::MalformedEvidenceRow => "malformed_evidence_row",
             Self::AmbiguousDeviceObserver => "ambiguous_device_observer",
