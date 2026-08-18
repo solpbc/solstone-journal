@@ -217,7 +217,7 @@ fn files_value(files: &[ListingFile]) -> Value {
     )
 }
 
-fn evidence_error(error: ObserverEvidenceError) -> (ReasonCode, StatusCode, String) {
+pub(crate) fn evidence_error(error: ObserverEvidenceError) -> (ReasonCode, StatusCode, String) {
     match error {
         ObserverEvidenceError::RegistryUnreadable => (
             ReasonCode::ObserverRegistryUnreadable,

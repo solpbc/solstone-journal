@@ -28,6 +28,7 @@ mod model;
 mod observer_evidence;
 mod read_routes;
 mod router;
+mod stream_identity;
 mod validation;
 
 pub use router::router;
@@ -44,6 +45,7 @@ mod architecture_tests {
         ("observer_evidence.rs", include_str!("observer_evidence.rs")),
         ("read_routes.rs", include_str!("read_routes.rs")),
         ("router.rs", include_str!("router.rs")),
+        ("stream_identity.rs", include_str!("stream_identity.rs")),
         ("validation.rs", include_str!("validation.rs")),
     ];
 

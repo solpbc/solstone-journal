@@ -47,11 +47,13 @@ pub enum ReasonCode {
     ObserverRegistryUnreadable,
     ObserverRecordUnreadable,
     AmbiguousSegmentFileName,
+    ForeignStreamBinding,
+    UnattributedStreamBlocksMint,
 }
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 41] = [
+    const ALL: [Self; 43] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -93,6 +95,8 @@ impl ReasonCode {
         Self::ObserverRegistryUnreadable,
         Self::ObserverRecordUnreadable,
         Self::AmbiguousSegmentFileName,
+        Self::ForeignStreamBinding,
+        Self::UnattributedStreamBlocksMint,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -138,6 +142,8 @@ impl ReasonCode {
             Self::ObserverRegistryUnreadable => "observer_registry_unreadable",
             Self::ObserverRecordUnreadable => "observer_record_unreadable",
             Self::AmbiguousSegmentFileName => "ambiguous_segment_file_name",
+            Self::ForeignStreamBinding => "foreign_stream_binding",
+            Self::UnattributedStreamBlocksMint => "unattributed_stream_blocks_mint",
         }
     }
 }

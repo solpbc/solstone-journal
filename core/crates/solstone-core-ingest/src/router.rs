@@ -21,11 +21,12 @@ use solstone_core_ingest_resolve::{
     IngestNotice, IngestNotifier, LoggingIngestNotifier, Resolution, apply_plan, quarantine_failed,
     resolve_ingest,
 };
-use solstone_core_segment::{ContentName, Kind, StreamHints, advance_bound_stream, bind_stream};
+use solstone_core_segment::{ContentName, Kind, StreamHints, advance_bound_stream};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::model::{IncomingFile, ReasonCode};
 use crate::read_routes::{ingest_manifest, ingest_manifest_day, ingest_segments};
+use crate::stream_identity::bind_ingest_stream;
 use crate::validation::{
     validate_access, validate_day, validate_protocol, validate_segment, validate_source,
 };
@@ -371,11 +372,6 @@ fn required_string(
     }
 }
 
-/// The device display label is not carried on the wire at this protocol
-/// version. An empty label lets `bind_stream` fall back to its own default,
-/// disambiguated per (did, source) exactly like any other label.
-const STREAM_LABEL: &str = "";
-
 /// Write one multipart envelope through the resolve/apply segment boundary.
 ///
 /// `solstone-core-segment` deliberately offers exclusive writes per file, not
@@ -402,23 +398,20 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
     // Bind the (did, source)-owned stream identity once, up front. The chain
     // is advanced separately, below, only once we know which segment key the
     // content actually landed under — never once per collision-retry attempt.
-    let bound = match bind_stream(
+    let bound = match bind_ingest_stream(
         &state.journal_root,
         &envelope.day,
         &envelope.segment,
-        STREAM_LABEL,
         did,
         &envelope.source,
         &hints,
     ) {
         Ok(bound) => bound,
-        Err(_) => {
-            return outcome_error(
-                "failed",
-                ReasonCode::JournalWriteFailed,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "cannot resolve journal stream",
-            );
+        Err((code, status, detail)) if status.is_client_error() => {
+            return refusal(code, status, detail);
+        }
+        Err((code, status, detail)) => {
+            return outcome_error("failed", code, status, &detail);
         }
     };
     let requested = envelope.segment.clone();
@@ -681,6 +674,7 @@ fn outcome_error(outcome: &str, code: ReasonCode, status: StatusCode, detail: &s
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::fs;
+    use std::path::Path;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -807,6 +801,16 @@ mod tests {
         name: &str,
         bytes: &[u8],
     ) -> (StatusCode, Value) {
+        call_upload_as(app, DID_A, envelope, name, bytes).await
+    }
+
+    async fn call_upload_as(
+        app: &axum::Router,
+        did: &str,
+        envelope: Value,
+        name: &str,
+        bytes: &[u8],
+    ) -> (StatusCode, Value) {
         let (content_type, body) = multipart(envelope, name, bytes);
         call(
             app,
@@ -814,7 +818,7 @@ mod tests {
             "/app/devices/ingest",
             Some(content_type),
             body,
-            basis(DID_A),
+            basis(did),
             Some("3"),
             &[],
         )
@@ -823,6 +827,88 @@ mod tests {
 
     fn envelope(day: &str, segment: &str, files: Value) -> Value {
         json!({"day": day, "segment": segment, "files": files})
+    }
+
+    fn seed_observer(root: &Path, prefix: &str, name: &str, did: &str, stream: &str) {
+        let directory = root.join("apps/observer/observers");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join(format!("{prefix}.json")),
+            json!({
+                "key": format!("{prefix}-test-handle"),
+                "name": name,
+                "stream": stream,
+                "created_at": 4,
+                "revoked": false,
+                "device_binding": {"device": did, "kind": "cert"},
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    fn seed_unattributed_stream(
+        root: &Path,
+        name: &str,
+        created_at: u64,
+        last_day: &str,
+        last_segment: &str,
+        seq: u64,
+    ) {
+        let directory = root.join("streams");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join(format!("{name}.json")),
+            json!({
+                "name": name,
+                "kind": "observer",
+                "host": null,
+                "platform": null,
+                "created_at": created_at,
+                "last_day": last_day,
+                "last_segment": last_segment,
+                "seq": seq,
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    fn seed_attributed_stream(
+        root: &Path,
+        name: &str,
+        did: &str,
+        created_at: u64,
+        last_day: &str,
+        last_segment: &str,
+        seq: u64,
+    ) {
+        let directory = root.join("streams");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join(format!("{name}.json")),
+            json!({
+                "name": name,
+                "kind": "observer",
+                "host": null,
+                "platform": null,
+                "created_at": created_at,
+                "last_day": last_day,
+                "last_segment": last_segment,
+                "seq": seq,
+                "did": did,
+                "source": "",
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    fn stream_record(root: &Path, name: &str) -> Value {
+        serde_json::from_str(
+            &fs::read_to_string(root.join("streams").join(format!("{name}.json"))).unwrap(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -1816,5 +1902,177 @@ mod tests {
                 .unwrap()
                 .starts_with("HTTP/1.1 413")
         );
+    }
+
+    const SEEDED_CREATED_AT: u64 = 1_700_000_000;
+    const SEEDED_LAST_DAY: &str = "20260801";
+    const SEEDED_LAST_SEGMENT: &str = "090000_1";
+    const SEEDED_SEQ: u64 = 2;
+
+    #[tokio::test]
+    async fn ac1_adopts_unattributed_listing_stream() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        seed_unattributed_stream(
+            &root,
+            "desk",
+            SEEDED_CREATED_AT,
+            SEEDED_LAST_DAY,
+            SEEDED_LAST_SEGMENT,
+            SEEDED_SEQ,
+        );
+        let app = router(&root);
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        assert!(
+            !root.join("streams/device.json").exists(),
+            "must not mint device beside the listing-resolved stream"
+        );
+        assert!(!root.join("streams/desk_2.json").exists());
+        let record = stream_record(&root, "desk");
+        assert_eq!(record["created_at"], SEEDED_CREATED_AT);
+        assert_eq!(record["seq"], SEEDED_SEQ + 1);
+        assert_eq!(record["last_day"], "20260804");
+        assert_eq!(record["last_segment"], body["segment"]);
+        assert_eq!(record["did"], DID_A);
+        assert_eq!(record["source"], "");
+        let landed = body["segment"].as_str().unwrap();
+        let marker: Value = serde_json::from_str(
+            &fs::read_to_string(
+                root.join("chronicle/20260804/desk")
+                    .join(landed)
+                    .join("stream.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(marker["stream"], "desk");
+        assert_eq!(marker["prev_day"], SEEDED_LAST_DAY);
+        assert_eq!(marker["prev_segment"], SEEDED_LAST_SEGMENT);
+        assert_eq!(marker["seq"], SEEDED_SEQ + 1);
+    }
+
+    #[tokio::test]
+    async fn ac2_duplicate_does_not_advance_attributed_listing_stream() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        seed_unattributed_stream(
+            &root,
+            "desk",
+            SEEDED_CREATED_AT,
+            SEEDED_LAST_DAY,
+            SEEDED_LAST_SEGMENT,
+            SEEDED_SEQ,
+        );
+        let app = router(&root);
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        assert_eq!(
+            call_upload(&app, request.clone(), "audio.flac", b"sound")
+                .await
+                .1["status"],
+            "ok"
+        );
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        assert!(!root.join("streams/device.json").exists());
+        let record = stream_record(&root, "desk");
+        assert_eq!(record["seq"], SEEDED_SEQ + 1);
+        assert_eq!(record["did"], DID_A);
+    }
+
+    #[tokio::test]
+    async fn ac3_second_did_naming_the_same_stream_is_refused() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        seed_observer(&root, "bbbbbbbb", "Desk", DID_B, "desk");
+        seed_attributed_stream(
+            &root,
+            "desk",
+            DID_A,
+            SEEDED_CREATED_AT,
+            SEEDED_LAST_DAY,
+            SEEDED_LAST_SEGMENT,
+            SEEDED_SEQ,
+        );
+        let before = fs::read(root.join("streams/desk.json")).unwrap();
+        let app = router(&root);
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload_as(&app, DID_B, request, "audio.flac", b"other").await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "foreign_stream_binding");
+        assert_eq!(fs::read(root.join("streams/desk.json")).unwrap(), before);
+        assert!(!root.join("streams/device.json").exists());
+        assert!(!root.join("streams/desk_2.json").exists());
+    }
+
+    #[tokio::test]
+    async fn ac4_ambiguous_observers_refuse_the_write() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_observer(&root, "aaaaaaaa", "One", DID_A, "one");
+        seed_observer(&root, "cccccccc", "Many", DID_A, "many");
+        let app = router(&root);
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "ambiguous_device_observer");
+        assert!(!root.join("streams/device.json").exists());
+    }
+
+    #[tokio::test]
+    async fn ac5_foreign_did_on_named_stream_is_refused() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_observer(&root, "bbbbbbbb", "Desk", DID_B, "desk");
+        seed_attributed_stream(
+            &root,
+            "desk",
+            DID_A,
+            SEEDED_CREATED_AT,
+            SEEDED_LAST_DAY,
+            SEEDED_LAST_SEGMENT,
+            SEEDED_SEQ,
+        );
+        let before = fs::read(root.join("streams/desk.json")).unwrap();
+        let app = router(&root);
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload_as(&app, DID_B, request, "audio.flac", b"other").await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "foreign_stream_binding");
+        assert_eq!(fs::read(root.join("streams/desk.json")).unwrap(), before);
+        assert!(!root.join("streams/device.json").exists());
+        assert!(!root.join("streams/desk_2.json").exists());
+    }
+
+    #[tokio::test]
+    async fn ac6_no_observer_refuses_when_any_unattributed_record_exists() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_unattributed_stream(
+            &root,
+            "desk",
+            SEEDED_CREATED_AT,
+            SEEDED_LAST_DAY,
+            SEEDED_LAST_SEGMENT,
+            SEEDED_SEQ,
+        );
+        let before = fs::read(root.join("streams/desk.json")).unwrap();
+        let app = router(&root);
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert!(
+            !root.join("streams/device.json").exists(),
+            "must not mint device beside an unattributed record"
+        );
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "unattributed_stream_blocks_mint");
+        assert_eq!(fs::read(root.join("streams/desk.json")).unwrap(), before);
+        assert!(!root.join("streams/desk_2.json").exists());
     }
 }

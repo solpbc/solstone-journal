@@ -635,7 +635,7 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
     );
     append_device_ingest_event(
         &root,
-        "device",
+        "laptop",
         &landed,
         "client-name.flac",
         "stored-name.flac",
@@ -690,8 +690,11 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
         );
         assert!(!object.contains_key("written") && !object.contains_key("submitted"));
     }
-    // The re-uploaded history key lands in a native stream; per-entry held-wins
-    // makes the next listing converge instead of preserving history key ownership.
+    assert_eq!(
+        file(&body, "120200_60", "gone.flac")["status"],
+        "missing",
+        "history attestation is missing before the device re-sends it"
+    );
     upload(&app, DID_A, "120200_60", "gone.flac", b"replacement").await;
     let (_, converged) =
         request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
@@ -703,7 +706,7 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
     let disk = root
         .join("chronicle")
         .join(DAY)
-        .join("device")
+        .join("laptop")
         .join(&landed)
         .join("native.flac");
     fs::write(disk, b"drifted native bytes").expect("mutate event media");
@@ -714,6 +717,18 @@ async fn ac6_unions_history_and_all_native_events_with_one_schema() {
         "present",
         "event status is stat-only"
     );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn native_write_conflicting_with_history_attestation_refuses_ambiguous() {
+    let root = fixture("history-sha-conflict");
+    let app = router(&root);
+    upload(&app, DID_A, "120200_60", "gone.flac", b"conflicting-bytes").await;
+    let (status, body) =
+        request_json(&app, "GET", "/app/devices/ingest/segments/20260804", DID_A).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["reason_code"], "ambiguous_segment_file_name");
     let _ = fs::remove_dir_all(root);
 }
 
