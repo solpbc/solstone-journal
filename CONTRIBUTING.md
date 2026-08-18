@@ -111,9 +111,9 @@ If you want a journal seeded with public-domain audio and screen media instead o
 
 ## Repo layout
 
-Start with [AGENTS.md](AGENTS.md) or [CLAUDE.md](CLAUDE.md) for the developer-facing repo map, layer hygiene rules, make targets, and coding invariants. Most implementation work lives in `solstone/think/`, `solstone/observe/`, `solstone/convey/`, `solstone/apps/`, `core/payload/solstone/talent/`, and `tests/`.
+Start with [AGENTS.md](AGENTS.md) or [CLAUDE.md](CLAUDE.md) for the developer-facing repo map, layer hygiene rules, make targets, and coding invariants. Most implementation work lives in `core/crates/`, `core/payload/solstone/talent/`, and `core/native-sol/`.
 
-For app work, read [docs/APPS.md](docs/APPS.md) before changing `solstone/apps/`. For provider work, read [docs/PROVIDERS.md](docs/PROVIDERS.md). For journal layout, use `core/payload/solstone/talent/journal/SKILL.md`.
+For app work, read [docs/APPS.md](docs/APPS.md) before changing convey-shell or a `*-web` crate. For provider work, read [docs/PROVIDERS.md](docs/PROVIDERS.md). For journal layout, use `core/payload/solstone/talent/journal/SKILL.md`.
 
 ## Running the test suite
 

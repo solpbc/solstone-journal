@@ -3,20 +3,14 @@
 ## Directory Layout
 
 ```text
-solstone/
-├── observe/        # Multimodal capture & AI analysis
-├── think/          # Data post-processing, AI agents & orchestration
-├── convey/         # Web app frontend & backend
-├── solstone/apps/           # Convey app extensions (see docs/APPS.md)
-├── talent/           # Agent/generator configs + sol/journal router skills
-├── tests/          # Pytest test suites + test fixtures under tests/fixtures/
-├── docs/           # All documentation (*.md files)
-├── AGENTS.md       # Development guidelines (this file)
-├── CLAUDE.md       # Symlink to AGENTS.md for Claude Code
-└── README.md       # Project overview
+core/crates/                 # Native crates (convey-shell, *-web, observe, think)
+core/native-sol/             # sol call authority
+core/payload/solstone/talent/  # Agent/generator configs + sol/journal router skills
+solstone/                    # detect_created spec + Swift helper only
+docs/                        # Longform documentation
+AGENTS.md                    # Development guidelines
+README.md                    # Project overview
 ```
-
-Each package has a README.md symlink pointing to its documentation in `docs/`.
 
 ## Package Organization
 
@@ -40,7 +34,7 @@ The public `sol` / `solstone` launchers exec `solstone-core-sol`, which reaches 
 - **Entry Points**: `core/crates/solstone-core-sol/` and `core/crates/solstone-core-journal-cli/`
 - **Test Fixtures**: `tests/fixtures/journal/` - complete mock journal
 - **Live Logs**: `journal/health/<service>.log`
-- **Agent Personas**: `core/payload/solstone/talent/*.md` (apps can add their own talent files under `core/payload/solstone/apps/*/talent/`, see [docs/APPS.md](docs/APPS.md))
-- **Generator Templates**: `core/payload/solstone/talent/*.md` (apps can add their own talent files under `core/payload/solstone/apps/*/talent/`, see [docs/APPS.md](docs/APPS.md))
+- **Agent Personas**: `core/payload/solstone/talent/*.md`
+- **Generator Templates**: `core/payload/solstone/talent/*.md`
 - **Agent Skills**: `core/payload/solstone/talent/{sol,journal}/SKILL.md` - the two router skills installed into `journal/.agents/skills/` and `journal/.claude/skills/`; app `SKILL.md` fragments feed generated references via `make skills` (`scripts/build_skill_references.py`)
 - **Scratch Space**: `scratch/` - git-ignored local workspace

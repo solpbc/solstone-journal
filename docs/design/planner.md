@@ -1,3 +1,9 @@
+# Planner prompt (not loaded)
+
+Nothing in the tree loads this file. It is the surviving prompt for
+`planner.generate`, parked so the text is not lost with the Python package.
+Do not add it to `core/payload/solstone/talent/` unless it becomes a live talent.
+
 ---
 context: planner.generate
 label: Agent Prompt Generation

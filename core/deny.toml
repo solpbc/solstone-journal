@@ -4,8 +4,13 @@
 # decided, not open: rsa is one-time RSA-4096 keygen in
 # solstone-core-support-portal; every attacker-observable RS256 signature uses
 # ring. The workspace `rsa` pin in Cargo.toml carries the same rationale.
+# RUSTSEC-2026-0192 is the same shape: ttf-parser is unmaintained, there is no
+# safe upgrade, and the only reach is pdf-extract as a facets-web
+# dev-dependency that extracts text from PDFs this crate generated. No
+# production path loads it.
 ignore = [
     { id = "RUSTSEC-2023-0071", reason = "rsa is used only for one-time key generation; ring signs every attacker-observable RS256 path" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is reached only through pdf-extract, a facets-web dev-dependency that extracts text from PDFs this crate generated; no production reach and no safe upgrade" },
 ]
 
 [licenses]

@@ -3,9 +3,10 @@
 This file is the **developer guide** for the solstone repository. Read it before writing code.
 
 > ⚠️ **§7 has not caught up with the Rust conversion, and §7 is the section this guide calls required
-> reading.** The Python under `solstone/` was removed from `main`; the directory still carries live
-> schemas, `app.json` manifests, and `authority.toml`, which you do still edit, and `scripts/` still
-> holds working tooling. But **§7's L2 table names a write-owning module per domain, and every one of
+> reading.** The Python under `solstone/` was removed from `main`; the directory now holds only the
+> `detect_created` spec and the Swift helper (licence notices live next to the
+> vendored mark assets). `authority.toml` lives under `core/native-sol/`. `scripts/`
+> still holds working tooling. But **§7's L2 table names a write-owning module per domain, and every one of
 > the 64 Python modules it names is gone** — not most of them, all of them. Its crate rows do still
 > resolve and are the current owners, so read that table for the domains and their rules, and trust its
 > `core/crates/` entries over its `.py` ones.
@@ -23,7 +24,7 @@ This file is the **developer guide** for the solstone repository. Read it before
 
 Audience:
 
-- **Coders** (cwd = repo root, editing `solstone/observe/`, `solstone/think/`, `solstone/convey/`, `solstone/apps/`, `core/payload/solstone/talent/`, `tests/`) — you're in the right place.
+- **Coders** (cwd = repo root, editing `core/crates/`, `core/native-sol/`, `core/payload/solstone/talent/`) — you're in the right place.
 - **Cogitate talents** (cwd = `journal/`, running inside the live system) — your journal-side entry is `core/payload/solstone/talent/journal/SKILL.md`, installed into `journal/.claude/skills/journal/` and `journal/.agents/skills/journal/` alongside the `sol` router skill. The runtime contract you operate under — tools, reads vs writes, finalization, access tiers, and what is *not* in your context — is `docs/COGITATE.md`.
 - **Operators** debugging a running system — see `docs/DOCTOR.md`.
 
@@ -39,10 +40,10 @@ Read, in order, when you enter the repo for a coding task:
 2. **`docs/SOLCLI.md`** — the CLI routing map. `sol` and `journal` are separate native Rust executables with different authority.
 3. ⛔ **`solstone/think/top.py` is gone** — it was the interactive TUI, and reading it was the "oh, this is how it connects" moment because it tied callosum, supervisor, and service status together in one vantage point. Nothing has replaced it as a single reading target; the equivalent orientation is now spread across the callosum, supervisor, and system crates under `core/crates/`.
 4. **The area you're about to touch:**
-   - User-visible feature or `sol call <app> <verb>` → `core/native-sol/apps/<name>/native/{authority.toml,command.rs}` + `solstone/apps/<name>/routes.py` + `solstone/apps/<name>/templates/`.
-   - Think pipeline → `solstone/think/<module>.py` + its tests.
-   - AI talent prompt or behavior → `core/payload/solstone/talent/<name>.md` (+ optional `.py` post-hook at `solstone/talent/<name>.py`).
-   - Capture / observe → `solstone/observe/<module>.py`.
+   - User-visible feature or `sol call <app> <verb>` → `core/native-sol/apps/<name>/` + the matching `*-web` crate or `convey-shell/assets/<name>/`. See `docs/APPS.md`.
+   - Think pipeline → the matching crate under `core/crates/solstone-core-*`.
+   - AI talent prompt or behavior → `core/payload/solstone/talent/<name>.md`.
+   - Capture / observe → `solstone-core-ingest`, `solstone-core-transcribe`, `solstone-core-describe`.
 5. **Run `sol`** (no args) — prints the static grouped command list. Orients you to the public CLI surface.
 6. **`make dev`** or **`make sandbox`** when you need a running stack to iterate against.
 
@@ -53,17 +54,17 @@ Read, in order, when you enter the repo for a coding task:
 | Dir | Purpose | Go here when | Depth doc |
 |-----|---------|--------------|-----------|
 | `core/crates/solstone-core-journal-cli/` | Owns native journal parsing, local authorities, and the closed service-process table | adding a `journal <cmd>` or same-device authority | `docs/SOLCLI.md` |
-| `solstone/observe/` | Multimodal capture — screen, audio, transcribe, describe, sense, transfer | capture-side bugs, new input modalities | `docs/OBSERVE.md` |
-| `solstone/think/` | Post-processing core — cortex, talent, callosum, indexer, entities, facets, activities, scheduler, heartbeat, supervisor | anything downstream of capture; most coder work lives here | `docs/THINK.md`, `docs/CORTEX.md`, `docs/COGITATE.md`, `docs/CALLOSUM.md` |
-| `solstone/convey/` | Web app framework — app discovery, routing, bridge | layout / framework-level UI changes | `docs/CONVEY.md` |
-| `solstone/apps/` | Convey apps — each self-contained (`native/` authority + Rust command, `routes.py`, `templates/`) | adding a user-facing feature, a `sol call <app>` verb, a UI surface | `docs/APPS.md` (required reading before modifying `solstone/apps/`) |
+| `core/crates/solstone-core-{ingest,transcribe,describe}/` | Multimodal capture — ingest, transcribe, describe, sense | capture-side bugs, new input modalities | `docs/OBSERVE.md` |
+| `core/crates/solstone-core-*/` | Post-processing core — cortex, talent, callosum, indexer, entities, facets, activities, scheduler, heartbeat, supervisor | anything downstream of capture; most coder work lives here | `docs/THINK.md`, `docs/CORTEX.md`, `docs/COGITATE.md`, `docs/CALLOSUM.md` |
+| `core/crates/solstone-core-convey-shell/` | Web app framework — shell, session gate, app registry | layout / framework-level UI changes | `docs/CONVEY.md` |
+| `core/crates/solstone-core-*-web/` + `convey-shell/assets/` | Convey apps — registered in `APP_REGISTRY`, served by a `*-web` crate or shell assets | adding a user-facing feature, a `sol call <app>` verb, a UI surface | `docs/APPS.md` |
 | `core/payload/solstone/talent/` | AI talent configs (markdown prompts) + installed router skills (`sol`, `journal`); app fragments feed generated router references. **The `.py` post-hooks are not here** — they are not shipped data and stay at `solstone/talent/` | defining or tuning a talent; updating router guidance | `core/payload/solstone/talent/journal/SKILL.md`, `docs/PROMPT_TEMPLATES.md` |
 | `core/` | Rust workspace — thin `solstone-core` bin plus library-first adapter crates | Rust scaffold, gates, or Python→Rust porting doctrine | `docs/PORTING.md` |
 | `scripts/` | Repo maintenance scripts. ⚠ Reduced with the Python reference cut — anything whose oracle was the Python implementation is gone, so treat a script here as build tooling, not as a source of truth about behaviour | tooling that guards the codebase; reached by `make install-checks`, never by `make ci` | channel adapters: `docs/CHANNEL_ADAPTERS.md` |
 | `tests/` | `tests/fixtures/journal/` mock journal. ⚠ **No Python suites remain** — the pytest tree went with the reference cut, and Rust tests live beside their crates under `core/crates/*/tests/` | `make dev` / `make sandbox` use the fixtures as the journal | `docs/testing.md` |
 | `tests/js/` | JavaScript harnesses driven by Python node tests | testing browser scripts without a real browser | `docs/testing.md` |
 | `docs/` | All longform documentation | reference lookups; never your first stop | §10 below |
-| `journal/` | The live journal (user data). Git-ignored content; checked-in template (`AGENTS.md`, skills symlinks) | **rarely as a coder** — modify `solstone/think/`, `solstone/apps/`, or `core/payload/solstone/talent/`, not journal data | `core/payload/solstone/talent/journal/SKILL.md` |
+| `journal/` | The live journal (user data). Git-ignored content; checked-in template (`AGENTS.md`, skills symlinks) | **rarely as a coder** — modify `core/crates/` or `core/payload/solstone/talent/`, not journal data | `core/payload/solstone/talent/journal/SKILL.md` |
 
 Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `tmp/`, `observers/`, `routines/`, `skills/` — not active coder surfaces.
 
@@ -410,7 +411,7 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 
 | Doc | When to read |
 |-----|--------------|
-| `docs/APPS.md` | **Required before modifying `solstone/apps/`** — pattern catalog for Convey apps, hook-idempotency guidance, Typer sub-app conventions |
+| `docs/APPS.md` | **Required before adding or moving a Convey app** — native registry, `*-web` crates, journal `solstone/apps/` storage |
 | `docs/THINK.md` | Understanding the think-layer pipeline (importers, indexer, segment/stream processing) |
 | `docs/CORTEX.md` | Modifying talent execution, cortex lifecycle, talent process management |
 | `docs/COGITATE.md` | The cogitate talent runtime contract — cwd/workspace, the `sol`-CLI-authoritative journal access, raw-read bound, access tiers, finalization, disallowed assumptions, and the in-context preamble constant. Read before authoring/editing a talent prompt. |

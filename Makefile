@@ -1447,9 +1447,10 @@ check-contract:
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract check
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build --check
 
+# category_registry.json is retired. Native describe-categories is the source;
+# the Python generator wrote a file nothing reads.
 core-fixtures:
-	$(VENV_BIN)/python scripts/generate_observe_category_registry.py
+	@echo "category registry is native (solstone-core-describe-categories); nothing to generate." >&2
 
 check-core-fixtures: .installed
-	$(VENV_BIN)/python scripts/generate_observe_category_registry.py --check
 	$(VENV_BIN)/python scripts/check_service_runtime_reference.py

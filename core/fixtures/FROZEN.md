@@ -10,3 +10,6 @@ which is gone. They are **frozen regression pins**, not regenerable goldens.
 This applies to every file under `core/fixtures/` that a test treats as an
 oracle — the top-level `*.json` corpora, the nested `native-sol/`,
 `body-source/`, `pdf_corpus/`, and journal trees included.
+
+`mark_derivation_contract.json` is the same class: its generator
+(`scripts/build_mark_derivation_contract.py`) is gone. Do not regenerate it.

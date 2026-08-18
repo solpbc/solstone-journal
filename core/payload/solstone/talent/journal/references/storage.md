@@ -10,7 +10,7 @@ This document describes the layout of a **journal** directory where all captures
 | `entities/` | Journal-level entity identity records (`<id>/entity.json`) |
 | `facets/` | Facet-specific data: activities, entity relationships, historical events, news, action logs |
 | `talents/` | Talent run logs in per-talent subdirectories (`<name>/<id>.jsonl`), day indexes (`<day>.jsonl`), and latest-run symlinks (`<name>.log`) |
-| `solstone/apps/` | App-specific storage (distinct from codebase `solstone/apps/`) |
+| `solstone/apps/` | App-specific journal storage (not a codebase path) |
 | `streams/` | Per-stream state files (`<name>.json`) tracking segment chains and sequence numbers |
 | `imports/` | Imported audio files and processing artifacts |
 | `tokens/` | Token usage logs from AI model calls, organized by day |
@@ -29,9 +29,7 @@ This document describes the layout of a **journal** directory where all captures
 
 ## App Storage
 
-The `solstone/apps/` directory provides storage space for Convey apps to persist configuration, data, and artifacts specific to this journal. Each app has its own directory at `solstone/apps/<app_name>/` where it can maintain app-specific state independent of the application codebase.
-
-Apps typically use `config.json` for journal-specific settings and create subdirectories for data storage (e.g., `cache/`, `data/`, `logs/`). This is distinct from the app metadata file (`solstone/apps/<app>/app.json` in the codebase) which defines icon, label, and facet support across all journals. See [APPS.md](../../../docs/APPS.md) for storage utilities (`get_app_storage_path`, `load_app_config`, `save_app_config`).
+The `solstone/apps/` directory provides storage space for Convey apps to persist configuration, data, and artifacts specific to this journal. Each app has its own directory at `solstone/apps/<app_name>/` where it can maintain app-specific state independent of the application codebase. That path is journal data. App metadata (icon, label, facets) lives in the convey-shell `APP_REGISTRY`, not in a codebase `app.json`. See [APPS.md](../../../docs/APPS.md).
 
 ## Search Index
 

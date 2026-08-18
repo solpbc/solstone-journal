@@ -214,7 +214,27 @@ returns a dictionary keyed by generator name. Each entry contains:
 
 The `hook` field enables output processing by invoking named hooks like `"schedule"`.
 The `load` key controls transcript/percept/agent source filtering for generators.
-See [APPS.md](APPS.md#prompt-context-configuration) for the full schema.
+
+### Prompt Context Configuration
+
+Both generators and agents support an optional `load` key for configuring source data dependencies:
+
+```json
+{
+  "load": {"transcripts": true, "percepts": false, "talents": {"screen": true}}
+}
+```
+
+- `load` controls which source types are clustered before generator execution. Values can be:
+  - `false` - don't load this source type
+  - `true` - load if available
+  - `"required"` - load, and skip generation if no content found (useful for generators that only make sense with specific input types, e.g., `"audio": "required"` for speaker detection)
+  - For `agents` only: a dict for selective filtering, e.g., `{"entities": true, "meetings": "required", "flow": false}`. Keys are agent names (system) or `"app:agent"` (app-namespaced). An empty dict `{}` means no agents.
+
+Context is provided inline in the `.md` body via template variables:
+
+- `$facets` - focused facet context or all available facets
+- `$activity_context` - activity metadata, segment state, and analysis focus sections
 
 ## Cortex API
 
@@ -290,7 +310,7 @@ JSON metadata supports `title`, `provider`, `model`, `tools`, `schedule`, `prior
 
 **Important:** The `priority` field is **required** for all prompts with a `schedule`. Prompts without explicit priority will fail validation. See the [Unified Priority Execution](#unified-priority-execution) section for priority bands.
 
-See [APPS.md](APPS.md#prompt-context-configuration) for the `load` schema and inline template variables that control source filtering and prompt context.
+See [Prompt Context Configuration](#prompt-context-configuration) for the `load` schema and inline template variables that control source filtering and prompt context.
 
 ## Documentation
 

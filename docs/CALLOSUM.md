@@ -207,7 +207,7 @@ callosum_send("observe", "described", day="20251102", segment="143045_300")
 - `convey.emit()` - Non-blocking emission from route handlers (uses shared bridge connection)
 - `apps.events` - Server-side event handlers via `@on_event` decorator
 
-See [APPS.md](APPS.md) for app event handler patterns.
+See [APPS.md](APPS.md) for where a native app surface lives.
 
 ## Common Patterns
 
