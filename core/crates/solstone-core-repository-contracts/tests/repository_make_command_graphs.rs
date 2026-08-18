@@ -395,11 +395,11 @@ fn onnx_stage_repairs_then_independently_validates_every_link() {
         write_host_makefile(&temp.path, "Linux", "x86_64");
         let shims = temp.path.join("shims");
         fs::create_dir(&shims).expect("create shims");
-        let python_log = temp.path.join("python.log");
-        write_executable(
-            &shims.join("python3"),
+        let acquire_log = temp.path.join("acquire.log");
+        write_acquire_shim(
+            &shims.join("cargo"),
             &format!(
-                "#!/bin/sh\nset -eu\nprintf '%s\\0' \"$@\" > \"$SOLSTONE_PYTHON_LOG\"\ndir=target/speakers-analyze-runtime-link/linux-x86_64\nmkdir -p \"$dir\"\n: > \"$dir/libonnxruntime.so.1.25.0\"\n: > \"$dir/libonnxruntime.so.1\"\n: > \"$dir/libonnxruntime.so\"\n{}\n",
+                "    dir=target/speakers-analyze-runtime-link/linux-x86_64\n    mkdir -p \"$dir\"\n    : > \"$dir/libonnxruntime.so.1.25.0\"\n    : > \"$dir/libonnxruntime.so.1\"\n    : > \"$dir/libonnxruntime.so\"\n    {}\n    exit 0\n",
                 if post_state == "missing" {
                     format!("rm -f \"$dir/{victim}\"")
                 } else {
@@ -411,7 +411,7 @@ fn onnx_stage_repairs_then_independently_validates_every_link() {
             .arg("check-rust-onnx-stage")
             .current_dir(&temp.path)
             .env("PATH", fixture_path(&shims))
-            .env("SOLSTONE_PYTHON_LOG", &python_log)
+            .env("SOLSTONE_ACQUIRE_LOG", &acquire_log)
             .output()
             .expect("run staging postcondition negative");
         assert!(!output.status.success());
@@ -421,14 +421,14 @@ fn onnx_stage_repairs_then_independently_validates_every_link() {
             "postvalidation omitted {victim}: {stderr}"
         );
         assert!(stderr.contains("make check-rust-onnx-stage"));
-        let python_argv = nul_argv(&python_log);
+        let acquire_argv = nul_argv(&acquire_log);
         assert_eq!(
-            python_argv.iter().filter(|arg| *arg == "--target").count(),
+            acquire_argv.iter().filter(|arg| *arg == "--target").count(),
             1,
-            "repair must invoke the staging script exactly once"
+            "repair must invoke acquire onnx exactly once"
         );
         assert!(
-            python_argv
+            acquire_argv
                 .windows(2)
                 .any(|pair| pair == ["--target", "linux-x86_64"])
         );
@@ -441,9 +441,9 @@ fn onnx_stage_preserves_a_failed_staging_status_even_if_files_were_repaired() {
     write_host_makefile(&temp.path, "Linux", "x86_64");
     let shims = temp.path.join("shims");
     fs::create_dir(&shims).expect("create shims");
-    write_executable(
-        &shims.join("python3"),
-        "#!/bin/sh\nset -eu\ndir=target/speakers-analyze-runtime-link/linux-x86_64\nmkdir -p \"$dir\"\n: > \"$dir/libonnxruntime.so.1.25.0\"\n: > \"$dir/libonnxruntime.so.1\"\n: > \"$dir/libonnxruntime.so\"\nexit 23\n",
+    write_acquire_shim(
+        &shims.join("cargo"),
+        "    dir=target/speakers-analyze-runtime-link/linux-x86_64\n    mkdir -p \"$dir\"\n    : > \"$dir/libonnxruntime.so.1.25.0\"\n    : > \"$dir/libonnxruntime.so.1\"\n    : > \"$dir/libonnxruntime.so\"\n    exit 23\n",
     );
     let output = Command::new("make")
         .arg("check-rust-onnx-stage")
@@ -622,17 +622,17 @@ fn checksum_input_failure_is_not_misreported_as_a_broken_verifier() {
     ];
     seed_runtime(&temp.path, "linux-x86_64", &names, &[]);
     let hash_log = temp.path.join("hash.log");
-    let python_sentinel = temp.path.join("python-ran");
-    write_executable(
-        &shims.join("python3"),
-        "#!/bin/sh\n: > \"$SOLSTONE_PYTHON_SENTINEL\"\nexit 97\n",
+    let acquire_sentinel = temp.path.join("acquire-ran");
+    write_acquire_shim(
+        &shims.join("cargo"),
+        "    : > \"$SOLSTONE_ACQUIRE_SENTINEL\"\n    exit 97\n",
     );
     let output = Command::new("make")
         .arg("check-rust-onnx-stage")
         .current_dir(&temp.path)
         .env("PATH", fixture_path(&shims))
         .env("SOLSTONE_HASH_LOG", &hash_log)
-        .env("SOLSTONE_PYTHON_SENTINEL", &python_sentinel)
+        .env("SOLSTONE_ACQUIRE_SENTINEL", &acquire_sentinel)
         .output()
         .expect("run checksum input failure fixture");
     assert!(!output.status.success());
@@ -647,7 +647,7 @@ fn checksum_input_failure_is_not_misreported_as_a_broken_verifier() {
     assert!(stderr.contains("make check-rust-onnx-stage"));
     assert!(!stderr.contains("install or repair that verifier"));
     assert!(
-        python_sentinel.exists(),
+        acquire_sentinel.exists(),
         "repairable input failure skipped staging"
     );
 }

@@ -228,6 +228,15 @@ fn fixture_path(shims: &Path) -> String {
     )
 }
 
+fn write_acquire_shim(path: &Path, body: &str) {
+    write_executable(
+        path,
+        &format!(
+            "#!/bin/sh\nset -eu\nif [ -n \"${{SOLSTONE_ACQUIRE_LOG:-}}\" ]; then\nprintf '%s\\0' \"$@\" > \"$SOLSTONE_ACQUIRE_LOG\"\nfi\ncase \" $* \" in\n  *\" acquire \"*)\n{body}\n    ;;\nesac\nexit 97\n"
+        ),
+    );
+}
+
 fn nul_argv(path: &Path) -> Vec<String> {
     fs::read(path)
         .expect("read NUL argv log")
