@@ -56,7 +56,7 @@ pub(crate) fn result_from_assessment(
     make_result(
         check,
         Status::Warn,
-        truncate(&join_capped(&clauses), 400),
+        truncate(&common::join_capped(&clauses, " | "), 400),
         Some("restart sol on that device, then confirm something new is in your journal"),
     )
 }
@@ -69,15 +69,5 @@ fn stall_clause(row: &DeliveryAssessment) -> String {
     match row.last_seen_age_ms {
         Some(age) => format!("{body}; last contact {}m ago", age / MINUTE_MS),
         None => body,
-    }
-}
-
-fn join_capped(clauses: &[String]) -> String {
-    let named = clauses.iter().take(3).cloned().collect::<Vec<_>>();
-    let extra = clauses.len().saturating_sub(3);
-    if extra == 0 {
-        named.join(" | ")
-    } else {
-        format!("{} | +{extra} more", named.join(" | "))
     }
 }

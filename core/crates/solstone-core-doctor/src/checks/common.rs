@@ -35,3 +35,13 @@ pub fn enabled(records: Vec<ObserverRecord>) -> Vec<ObserverRecord> {
         .filter(|record| !record.revoked() && record.enabled() != Some(false))
         .collect()
 }
+
+pub(crate) fn join_capped(clauses: &[String], separator: &str) -> String {
+    let named = clauses.iter().take(3).cloned().collect::<Vec<_>>();
+    let extra = clauses.len().saturating_sub(3);
+    if extra == 0 {
+        named.join(separator)
+    } else {
+        format!("{}{separator}+{extra} more", named.join(separator))
+    }
+}

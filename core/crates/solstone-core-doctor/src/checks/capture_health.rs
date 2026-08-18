@@ -53,7 +53,7 @@ pub(crate) fn result_from_assessment(
         .filter(|row| row.state != OwnerState::Active)
         .map(capture_clause)
         .collect();
-    let detail = format!("rollup=attention; {}", join_capped(&clauses));
+    let detail = format!("rollup=attention; {}", common::join_capped(&clauses, ", "));
     make_result(
         check,
         Status::Warn,
@@ -66,15 +66,5 @@ fn capture_clause(row: &DeliveryAssessment) -> String {
     match row.last_segment_received_age_ms {
         Some(age) => format!("sol on {} last added {}h ago", row.name, age / HOUR_MS),
         None => format!("sol on {} is having trouble adding", row.name),
-    }
-}
-
-fn join_capped(clauses: &[String]) -> String {
-    let named = clauses.iter().take(3).cloned().collect::<Vec<_>>();
-    let extra = clauses.len().saturating_sub(3);
-    if extra == 0 {
-        named.join(", ")
-    } else {
-        format!("{}, +{extra} more", named.join(", "))
     }
 }

@@ -53,7 +53,6 @@ pub struct DeliveryAssessment {
     pub last_seen_age_ms: Option<i64>,
     pub reach: Reach,
     pub last_segment_received_age_ms: Option<i64>,
-    pub rejecting: bool,
     pub state: OwnerState,
     pub device_binding_kind: Option<String>,
     pub ingest_rejection: Option<Map<String, Value>>,
@@ -109,7 +108,6 @@ pub fn inspect_delivery(records: &[ObserverRecord], now_ms: i64) -> Vec<Delivery
                 last_seen_age_ms,
                 reach,
                 last_segment_received_age_ms,
-                rejecting,
                 state,
                 device_binding_kind: record.device_binding_kind().map(str::to_owned),
                 ingest_rejection: record.ingest_rejection().cloned(),
@@ -329,7 +327,8 @@ mod tests {
             rows.iter().map(|row| row.name.as_str()).collect::<Vec<_>>(),
             vec!["rej"]
         );
-        assert!(rows[0].rejecting);
+        assert_eq!(rows[0].state, OwnerState::Degraded);
+        assert!(rows[0].ingest_rejection.is_some());
     }
 
     #[test]
