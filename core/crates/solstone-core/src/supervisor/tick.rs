@@ -817,9 +817,8 @@ fn handle_supervisor_request(state: &mut SupervisorState, message: &CallosumEnve
             .map(str::to_owned),
         queue_if_active_cmd_differs: false,
     };
-    match state.queue.submit(ExecutionRequest::Bus(request)) {
-        SubmitOutcome::Rejected => eprintln!("supervisor: request rejected"),
-        _ => {}
+    if state.queue.submit(ExecutionRequest::Bus(request)) == SubmitOutcome::Rejected {
+        eprintln!("supervisor: request rejected");
     }
 }
 
