@@ -66,12 +66,18 @@
 //!
 //! ## D5: request bounds — standard layer plus HTTP/1 parser limits
 //!
-//! Every per-connection router clone will use
-//! `tower_http::limit::RequestBodyLimitLayer::new(128 * 1024 * 1024)`, a 128 MiB
-//! default. It immediately returns 413 for an oversized `Content-Length` and
-//! wraps streamed bodies with the same limit; a future route may deliberately
-//! choose a narrower limit. For a chunked body with no `Content-Length`, the
-//! consuming handler must map the wrapped body's `LengthLimitError` to 413;
+//! Every per-connection router clone uses
+//! `tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT)`,
+//! where `REQUEST_BODY_LIMIT` is 4 GiB + 1 MiB. That layer is not path-aware:
+//! it immediately returns 413 for an oversized `Content-Length` and wraps
+//! streamed bodies with the same limit. It is the SAVE transport ceiling.
+//! Narrower caps are enforced after dispatch: import-web’s router-level
+//! `DefaultBodyLimit` (128 MiB) and 64 MiB per-part collector on every
+//! import route except SAVE; SAVE’s MethodRouter `DefaultBodyLimit` matches
+//! this connection ceiling and its counted `file`-field writer refuses at
+//! 4 GiB; Support pins 128 MiB on its extractor layer and on draft
+//! `to_bytes`. For a chunked body with no `Content-Length`, the consuming
+//! handler must map the wrapped body's `LengthLimitError` to 413;
 //! the fallback does not consume a body, so acceptance coverage uses the
 //! immediate oversized-`Content-Length` path and implementation must not claim
 //! that the layer alone emits a streamed-body response. The HTTP/1 builder will
@@ -124,8 +130,12 @@
 //!    via `convey_shell::serve`.
 //! 5. `serve.rs::tests::configured_body_header_and_buffer_bounds_are_enforced`
 //!    exercises `serve::tcp_builder`, `serve::mux_builder`, and the
-//!    `RequestBodyLimitLayer` path for 128 MiB bodies, 32 headers, and the
-//!    64 KiB HTTP/1 buffer bound.
+//!    `RequestBodyLimitLayer` path for `REQUEST_BODY_LIMIT` (4 GiB + 1 MiB)
+//!    declared bodies, 32 headers, and the 64 KiB HTTP/1 buffer bound.
+//!    SAVE’s 4 GiB field ceiling, other import routes’ 64 MiB / 128 MiB
+//!    caps, and Support’s restored 128 MiB cap are owned by
+//!    `solstone-core-import-web` and `solstone-core-support-web` tests, not
+//!    this crate.
 //! 6. `identity.rs::tests::access_basis_variants_remain_exhaustive` uses
 //!    exhaustive matches over `AccessBasis` and `Carrier`, so adding a future
 //!    `AccessBasis` variant is a compile-time test failure.

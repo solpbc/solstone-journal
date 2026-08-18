@@ -135,7 +135,9 @@ pub fn routes(journal_root: PathBuf) -> Router {
             "/app/support/api/feedback",
             post(move |headers, payload| submit_feedback(feedback_root.clone(), headers, payload)),
         )
-        .layer(DefaultBodyLimit::disable())
+        .layer(DefaultBodyLimit::max(
+            solstone_core_convey_http::serve::STANDARD_BODY_LIMIT,
+        ))
         .layer(middleware::from_fn(move |request, next| {
             drain_before_and_after(layer_root.clone(), request, next)
         }))
@@ -409,6 +411,16 @@ fn invalid_value(detail: impl Into<String>) -> Response {
     )
 }
 
+fn payload_too_large(detail: impl Into<String>) -> Response {
+    error_envelope(
+        "payload_too_large",
+        "I couldn't accept that request because it's too large.",
+        detail.into(),
+        StatusCode::PAYLOAD_TOO_LARGE,
+    )
+    .into_response()
+}
+
 fn action_id(headers: &axum::http::HeaderMap) -> Option<String> {
     headers
         .get("Idempotency-Key")
@@ -507,9 +519,16 @@ async fn capture_draft(root: PathBuf, request: Request) -> Response {
         .get("content-type")
         .and_then(|value| value.to_str().ok())
         .is_some_and(|value| value.starts_with("multipart/form-data"));
-    let body = match to_bytes(body, usize::MAX).await {
+    let body = match to_bytes(body, solstone_core_convey_http::serve::STANDARD_BODY_LIMIT).await {
         Ok(body) => body,
-        Err(error) => return invalid_value(error.to_string()),
+        Err(error) => {
+            let is_length_limit = std::error::Error::source(&error)
+                .is_some_and(|source| source.is::<http_body_util::LengthLimitError>());
+            if is_length_limit {
+                return payload_too_large(error.to_string());
+            }
+            return invalid_value(error.to_string());
+        }
     };
     if multipart {
         let request = Request::from_parts(parts, Body::from(body.clone()));
