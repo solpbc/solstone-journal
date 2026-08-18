@@ -155,6 +155,18 @@ impl ObserverRecord {
     pub fn set_stats(&mut self, stats: Map<String, Value>) {
         self.map.insert("stats".to_owned(), Value::Object(stats));
     }
+    pub fn set_last_segment(&mut self, value: String) {
+        self.map
+            .insert("last_segment".to_owned(), Value::String(value));
+    }
+    pub fn set_last_segment_received_at(&mut self, value: i64) {
+        self.map
+            .insert("last_segment_received_at".to_owned(), Value::from(value));
+    }
+    pub fn set_last_segment_day(&mut self, value: String) {
+        self.map
+            .insert("last_segment_day".to_owned(), Value::String(value));
+    }
 
     fn string(&self, key: &str) -> Option<&str> {
         self.map.get(key).and_then(Value::as_str)
@@ -216,10 +228,16 @@ mod tests {
         record.set_name("renamed".to_owned());
         record.set_revoked(true);
         record.set_revoked_at(4);
+        record.set_last_segment("t".to_owned());
+        record.set_last_segment_received_at(5);
+        record.set_last_segment_day("20260102".to_owned());
         assert_eq!(record.value()["platform"], "linux");
         assert_eq!(record.value()["stream"]["retained"], true);
         assert_eq!(record.value()["name"], "renamed");
         assert_eq!(record.value()["revoked_at"], 4);
+        assert_eq!(record.value()["last_segment"], "t");
+        assert_eq!(record.value()["last_segment_received_at"], 5);
+        assert_eq!(record.value()["last_segment_day"], "20260102");
     }
 
     #[test]
