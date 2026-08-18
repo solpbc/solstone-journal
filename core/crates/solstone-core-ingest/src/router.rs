@@ -548,7 +548,15 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
             "cannot advance stream",
         );
     }
-    if stamp_observer(state, did, &envelope.day, &applied.landed_segment).is_err() {
+    if stamp_observer(
+        state,
+        did,
+        &envelope.day,
+        &applied.landed_segment,
+        applied.status,
+    )
+    .is_err()
+    {
         return outcome_error(
             "failed",
             ReasonCode::ObserverStampFailed,
@@ -669,30 +677,28 @@ fn stamp_observer(
     did: &str,
     day: &str,
     landed_segment: &str,
+    status: solstone_core_ingest_resolve::PlanStatus,
 ) -> Result<(), ()> {
     let mut observer = match resolve_device_observer(&state.journal_root, did) {
         Ok(None) => return Ok(()),
         Ok(Some(observer)) => observer,
         Err(_) => return Err(()),
     };
-    let mut dirty = false;
-    if observer.record.last_segment().is_none() {
-        observer.record.set_last_segment(landed_segment.to_owned());
-        dirty = true;
-    }
-    if observer.record.last_segment_day().is_none() {
-        observer.record.set_last_segment_day(day.to_owned());
-        dirty = true;
-    }
-    if observer.record.last_segment_received_at().is_none() {
-        observer
-            .record
-            .set_last_segment_received_at((state.now_ms)());
-        dirty = true;
-    }
-    if !dirty {
+    let refresh = match status {
+        solstone_core_ingest_resolve::PlanStatus::Duplicate => {
+            observer.record.last_segment() != Some(landed_segment)
+        }
+        solstone_core_ingest_resolve::PlanStatus::Ok
+        | solstone_core_ingest_resolve::PlanStatus::Collision => true,
+    };
+    if !refresh {
         return Ok(());
     }
+    observer.record.set_last_segment(landed_segment.to_owned());
+    observer.record.set_last_segment_day(day.to_owned());
+    observer
+        .record
+        .set_last_segment_received_at((state.now_ms)());
     save_observer(&state.journal_root, &observer.record).map_err(|_| ())
 }
 
@@ -1011,6 +1017,36 @@ mod tests {
                 "created_at": 4,
                 "revoked": false,
                 "device_binding": {"device": did, "kind": "cert"},
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    fn seed_observer_stamped(
+        root: &Path,
+        prefix: &str,
+        name: &str,
+        did: &str,
+        stream: &str,
+        last_segment: &str,
+        last_segment_day: &str,
+        last_segment_received_at: i64,
+    ) {
+        let directory = root.join("apps/observer/observers");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join(format!("{prefix}.json")),
+            json!({
+                "key": format!("{prefix}-test-handle"),
+                "name": name,
+                "stream": stream,
+                "created_at": 4,
+                "revoked": false,
+                "device_binding": {"device": did, "kind": "cert"},
+                "last_segment": last_segment,
+                "last_segment_day": last_segment_day,
+                "last_segment_received_at": last_segment_received_at,
             })
             .to_string(),
         )
@@ -1464,6 +1500,161 @@ mod tests {
         assert_eq!(retry["last_segment_received_at"], FROZEN_NOW_MS + 60_000);
         assert_eq!(retry["last_segment_day"], "20260804");
         assert_eq!(retry["last_segment"], "120000_1");
+    }
+
+    #[tokio::test]
+    async fn second_mint_refreshes_already_present_stamp() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_observer_stamped(
+            &root,
+            "aaaaaaaa",
+            "Desk",
+            DID_A,
+            "desk",
+            "090000_1",
+            "20260803",
+            FROZEN_NOW_MS - 3_600_000,
+        );
+        let spy = SpyNotifier::succeeding();
+        let (_now, clock) = frozen_clock(FROZEN_NOW_MS);
+        let app = router_with(&root, spy, clock);
+        let (status, body) = call_upload(
+            &app,
+            envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}])),
+            "audio.flac",
+            b"sound",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        let record = observer_record(&root, "aaaaaaaa");
+        let stamp = record["last_segment_received_at"].as_i64().expect("stamp");
+        assert!(stamp > 1_000_000_000_000);
+        assert!((stamp - FROZEN_NOW_MS).abs() < 60_000);
+        assert_eq!(record["last_segment_day"], "20260804");
+        assert_eq!(record["last_segment"], "120000_1");
+    }
+
+    #[tokio::test]
+    async fn heal_refreshes_stamp_without_changing_landed_segment() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        let spy = SpyNotifier::succeeding();
+        let (now, clock) = frozen_clock(FROZEN_NOW_MS);
+        let app = router_with(&root, spy, clock);
+        let (status, body) = call_upload(
+            &app,
+            envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}])),
+            "audio.flac",
+            b"sound",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        let first = observer_record(&root, "aaaaaaaa");
+        let first_stamp = first["last_segment_received_at"].as_i64().expect("stamp");
+        assert!((first_stamp - FROZEN_NOW_MS).abs() < 60_000);
+        assert_eq!(first["last_segment_day"], "20260804");
+        assert_eq!(first["last_segment"], "120000_1");
+
+        now.store(FROZEN_NOW_MS + 3_600_000, Ordering::SeqCst);
+        let (status, body) = call_upload(
+            &app,
+            envelope("20260804", "120000_1", json!([{"submitted":"notes.json"}])),
+            "notes.json",
+            b"notes",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        let record = observer_record(&root, "aaaaaaaa");
+        let stamp = record["last_segment_received_at"].as_i64().expect("stamp");
+        assert!((stamp - (FROZEN_NOW_MS + 3_600_000)).abs() < 60_000);
+        assert_eq!(record["last_segment_day"], "20260804");
+        assert_eq!(record["last_segment"], "120000_1");
+    }
+
+    #[tokio::test]
+    async fn duplicate_of_already_stamped_segment_does_not_refresh() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_observer(&root, "aaaaaaaa", "Desk", DID_A, "desk");
+        let spy = SpyNotifier::succeeding();
+        let (now, clock) = frozen_clock(FROZEN_NOW_MS);
+        let app = router_with(&root, spy, clock);
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        let first = observer_record(&root, "aaaaaaaa");
+        let stamp = first["last_segment_received_at"].as_i64().expect("stamp");
+
+        now.store(FROZEN_NOW_MS + 3_600_000, Ordering::SeqCst);
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        let retry = observer_record(&root, "aaaaaaaa");
+        assert_eq!(retry["last_segment_received_at"], stamp);
+        assert_eq!(retry["last_segment"], "120000_1");
+        assert_eq!(retry["last_segment_day"], "20260804");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn duplicate_recovers_stale_stamp_then_stops_refreshing() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        seed_observer_stamped(
+            &root,
+            "aaaaaaaa",
+            "Desk",
+            DID_A,
+            "desk",
+            "090000_1",
+            "20260803",
+            FROZEN_NOW_MS - 3_600_000,
+        );
+        let spy = SpyNotifier::succeeding();
+        let (now, clock) = frozen_clock(FROZEN_NOW_MS);
+        let app = router_with(&root, spy, clock);
+        let observers = root.join("apps/observer/observers");
+        fs::set_permissions(&observers, fs::Permissions::from_mode(0o555)).unwrap();
+        if save_probe_succeeds(&observers) {
+            fs::set_permissions(&observers, fs::Permissions::from_mode(0o755)).unwrap();
+            panic!("requires a non-root runner");
+        }
+        let request = envelope("20260804", "120000_1", json!([{"submitted":"audio.flac"}]));
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "observer_stamp_failed");
+        let first = observer_record(&root, "aaaaaaaa");
+        assert_eq!(first["last_segment"], "090000_1");
+        assert_eq!(first["last_segment_day"], "20260803");
+        assert_eq!(first["last_segment_received_at"], FROZEN_NOW_MS - 3_600_000);
+
+        fs::set_permissions(&observers, fs::Permissions::from_mode(0o755)).unwrap();
+        now.store(FROZEN_NOW_MS + 60_000, Ordering::SeqCst);
+        let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        let recovered = observer_record(&root, "aaaaaaaa");
+        let recovered_stamp = recovered["last_segment_received_at"]
+            .as_i64()
+            .expect("recovered stamp");
+        assert!((recovered_stamp - (FROZEN_NOW_MS + 60_000)).abs() < 60_000);
+        assert_eq!(recovered["last_segment_day"], "20260804");
+        assert_eq!(recovered["last_segment"], "120000_1");
+
+        now.store(FROZEN_NOW_MS + 120_000, Ordering::SeqCst);
+        let (status, body) = call_upload(&app, request, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        let retry = observer_record(&root, "aaaaaaaa");
+        assert_eq!(retry["last_segment_received_at"], recovered_stamp);
     }
 
     #[cfg(unix)]
