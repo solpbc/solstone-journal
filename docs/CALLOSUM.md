@@ -35,19 +35,19 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 > **Note:** This registry is kept intentionally high-level. For detailed field schemas and current implementation, always refer to the source files listed - they are the authoritative reference.
 
 ### `cortex` - Agent execution events
-**Source:** `solstone/think/cortex.py`
+**Source:** `solstone-core-cortex`
 **Events:** `request`, `start`, `thinking`, `tool_start`, `tool_end`, `finish`, `error`, `talent_updated`, `info`, `status`, `cancel`, `dry_run`, `progress`, `text_delta`, `tool_budget_exhausted`, `warning`, `budget_escalation`
 **Details:** See [CORTEX.md](CORTEX.md) for agent lifecycle, configuration, and event schemas
 
 **`info` note:** `info` remains the correct vocabulary for cortex telemetry. The current non-JSON stdout fallback in `_monitor_stdout()` writes an `info` record to the durable use-log through `_append_use_event()`; it does not broadcast that fallback record to Callosum. This is a bus-wiring gap, not a naming mismatch.
 
 ### `chat` - Owner and assistant conversation events
-**Source:** `solstone/convey/chat_stream.py`
+**Source:** `solstone-core-convey-shell` (chat)
 **Events:** `owner_message`, `sol_message`, `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`, `reflection_ready`, `chat_queue_depth`, `chat_error`, `sol_chat_request`, `sol_chat_request_superseded`, `owner_chat_open`, `owner_chat_dismissed`, `support_draft`, `result`, `support_submit_claim`
 **Purpose:** Record the closed chat-event vocabulary in the journal's chat stream, then broadcast each finalized event on the `chat` tract for real-time consumers.
 
 ### `supervisor` - Process lifecycle management
-**Source:** `solstone/think/supervisor.py`
+**Source:** `solstone-core-system` (supervisor)
 **Events:** `started`, `stopped`, `restarting`, `status`, `queue`, `request`, `restart`, `drain`, `skipped`, `sync_conflict`
 **Listens for:** `request` (task spawn), `restart` (service restart), `drain` (catchup work)
 **Key fields:** `ref` (instance ID), `service` (name), `pid`, `exit_code`
@@ -70,7 +70,7 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 ```
 
 ### `logs` - Process output streaming
-**Source:** `solstone/think/runner.py`
+**Source:** `solstone-core-think-cli`
 **Events:** `exec`, `line`, `exit`
 **Key fields:** `ref` (correlates with supervisor), `name`, `stream` (stdout/stderr), `line`
 **Purpose:** Real-time stdout/stderr streaming and process exit events
@@ -106,26 +106,26 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 **Event Log:** Observe, think, and activity tract events with `day` + `segment` are logged to `<day>/<segment>/events.jsonl` by supervisor
 
 ### `importer` - Media import processing
-**Source:** `solstone/think/importers/cli.py`
+**Source:** `solstone-core-import`
 **Events:** `started`, `status`, `completed`, `error`, `file_imported`, `enrichment_ready`
 **Key fields:** `import_id` (correlates all events), `stage`, `segments` (created segment keys), `stream` (stream name, e.g., `"import.apple"`)
 **Stages:** `initialization`, `segmenting`, `transcribing`, `summarizing`
 **Purpose:** Track media file import from upload through transcription to segment creation
 
 ### `link` - Secure listener and device-link events
-**Sources:** `solstone/apps/network/routes.py`, `core/crates/solstone-core-convey-shell/src/network.rs`, `solstone/convey/secure_listener/runtime.py`, `solstone/convey/secure_listener/accept.py`
+**Source:** `solstone-core-convey-shell` (`network.rs`) and `solstone-core-sol-link`
 **Events:** `pair_complete`, `last_seen`, `stream_reset`
 **Purpose:** Report device pairing, secure-listener handshake activity, and stream-reset diagnostics. `pair_complete` is emitted directly by the network route. The secure-listener runtime supplies a `link`-tract callback that relays the `last_seen` and `stream_reset` events emitted by its accept loop.
 
 ### `think` - Generator and agent processing
-**Source:** `solstone/think/thinking.py`
+**Source:** `solstone-core-thinking`
 **Events:** `started`, `status`, `group_started`, `group_completed`, `talent_started`, `talent_completed`, `completed`, `segments_started`, `segments_completed`, `memory_throttle_started`, `memory_throttle_completed`, `daily_complete`
 **Key fields:** `mode` ("daily"/"segment"/"activity"/"flush"), `day`, `segment` (when mode="segment" or "flush"), `activity` and `facet` (when mode="activity")
 **Purpose:** Track think processing from generators through scheduled agents
 **`status`** - Periodic progress (every ~5s). Fields: `mode`, `day`, `segment`, `stream`, `agents_completed`, `agents_total`, `current_group_priority`, `current_agents` (list of running agent names). In `--segments` batch mode, also includes `segments_completed`, `segments_total`. In activity mode, includes `activity`, `facet`.
 
 ### `activity` - Activity lifecycle events
-**Sources:** `solstone/talent/activity_state.py` (post-hook), `solstone/talent/activities.py` (post-hook)
+**Source:** `solstone-core-talent-runtime` (activity hooks)
 **Events:** `live`, `recorded`
 **Event Log:** Logged to `<day>/<segment>/events.jsonl` by supervisor
 
@@ -136,12 +136,12 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 **Key fields:** `facet`, `day`, `segment`, `id`, `activity` (type), `segments` (full span), `level_avg`, `description`, `active_entities`
 
 ### `storage` - Storage health warnings
-**Sources:** `solstone/think/supervisor.py` catchup-backoff checks and `solstone/think/thinking.py` storage-health checks
+**Sources:** `solstone-core-system` (supervisor) and `solstone-core-thinking`
 **Events:** `warning`
 **Purpose:** Surface storage conditions that need attention while retaining a shared notification path for owner-facing alerts.
 
 ### `support` - Proactive support suggestions
-**Source:** `solstone/apps/support/events.py`
+**Source:** `solstone-core-support-web`
 **Events:** `proactive_suggestion`
 **Purpose:** Signal a support suggestion when the support event handler identifies a qualifying condition.
 
@@ -152,13 +152,8 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 **Defaults:** `app` → "system", `icon` → "mailbox", `title` → "Notification" (applied by `AppServices.notifications.show()`)
 **Purpose:** Forward Callosum events directly to the browser notification UI — any service can trigger an in-app notification card by emitting to this tract
 
-**Example:**
-```python
-callosum_send("notification", "show", title="Import Complete", message="3 segments imported", icon="mailbox", autoDismiss=5000)
-```
-
 ### `navigate` - Browser navigation control
-**Source:** `solstone/think/tools/navigate.py` (`journal navigate`)
+**Source:** `journal navigate` (`solstone-core-journal-cli`)
 **Events:** `request`
 **Key fields:** `path` (string, URL path), `facet` (string, facet name) — at least one required
 **Consumer:** `core/crates/solstone-core-convey-shell/assets/static/websocket.js` (built-in listener)
@@ -179,35 +174,13 @@ callosum_send("notification", "show", title="Import Complete", message="3 segmen
 
 ## Implementation
 
-**Source:** `solstone/think/callosum.py`
+The bus is `solstone-core-callosum`. The socket is
+`journal/health/callosum.sock`. Messages are one JSON object per line with
+`tract`, `event`, `ts`, plus event fields.
 
-### Client APIs
-
-**`CallosumConnection`** - Long-lived bidirectional connection with background thread
-```python
-from solstone.think.callosum import CallosumConnection
-
-conn = CallosumConnection()
-conn.start(callback=handle_message)  # Start with optional message handler
-conn.emit("tract", "event", field1="value")  # Queue message for send
-conn.stop()  # Clean shutdown
-```
-
-**`callosum_send()`** - One-shot fire-and-forget for simple cases
-```python
-from solstone.think.callosum import callosum_send
-
-callosum_send("observe", "described", day="20251102", segment="143045_300")
-```
-
-**`CallosumServer`** - Broadcast server (started in-process by supervisor)
-
-### Convey Integration
-
-- `convey.emit()` - Non-blocking emission from route handlers (uses shared bridge connection)
-- `apps.events` - Server-side event handlers via `@on_event` decorator
-
-See [APPS.md](APPS.md) for where a native app surface lives.
+Convey emits through the shell bridge. Native crates use the callosum client
+in `solstone-core-callosum`. There is no Python `CallosumConnection` and no
+`@on_event` app handler.
 
 ## Common Patterns
 
@@ -225,7 +198,7 @@ observe.described / observe.transcribed (processing complete)
 observe.observed (segment fully processed)
     ↓ supervisor triggers think, tracks flush timer
 think.completed
-    ↓ solstone/apps/entities/events.py updates entity activity
+    ↓ solstone-core-entity / talent-runtime updates entity activity
 activity.recorded (activity span completed)
     ↓ supervisor queues per-activity think
 think --activity (runs schedule="activity" agents)
@@ -235,7 +208,7 @@ think --activity (runs schedule="activity" agents)
 think --flush (runs hook.flush agents to close dangling state)
 ```
 
-See `solstone/think/supervisor.py:_handle_segment_observed()` for the observe→think trigger and `_handle_activity_recorded()` for activity→think.
+See `solstone-core-system` for the observe→think trigger and the activity→think queue.
 
 **Activity-scheduled agents** declare `schedule: "activity"` with a required `activities` list (activity types to match, or `["*"]` for all). They receive the activity's segment span as transcript source and `$activity_*` template variables in their prompts.
 
@@ -248,16 +221,6 @@ Long-running services emit `status` events every 5 seconds for health monitoring
 
 ### Request/Response via Callosum
 
-For async task dispatch, use supervisor's request handling:
-```python
-from convey import emit
-emit("supervisor", "request", ref=task_id, cmd=["sol", "import", path])
-```
-
-For agent requests, use the cortex client:
-```python
-from solstone.think.cortex_client import cortex_request
-use_id = cortex_request(prompt="...", name="default")
-```
-
-See `solstone/think/cortex_client.py` for the full API.
+For async task dispatch, emit `supervisor` / `request` on Callosum. For
+talent requests, emit `cortex` / `request` (see [CORTEX.md](CORTEX.md)).
+The native client is `solstone-core-cortex-client`.

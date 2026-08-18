@@ -15,7 +15,7 @@ This file is the **developer guide** for the solstone repository. Read it before
 > path anywhere below as where a responsibility used to live — **and assume nothing annotates it for
 > you**, including in §1's reading list. Its current home is a crate under `core/crates/`, and the
 > reliable way to find it is to search `core/crates/` for the behavior rather than to follow a path from
-> this document. `docs/PORTING.md` carries the conversion doctrine.
+> this document. `docs/PORTING.md` is the remaining Rust workspace rules.
 >
 > Most of a hundred-odd repository paths cited below no longer resolve, and nearly all of those are in
 > §7. ⛔ **No exact count is given here on purpose**: this tree moved twice under a reviewer measuring
@@ -59,7 +59,7 @@ Read, in order, when you enter the repo for a coding task:
 | `core/crates/solstone-core-convey-shell/` | Web app framework — shell, session gate, app registry | layout / framework-level UI changes | `docs/CONVEY.md` |
 | `core/crates/solstone-core-*-web/` + `convey-shell/assets/` | Convey apps — registered in `APP_REGISTRY`, served by a `*-web` crate or shell assets | adding a user-facing feature, a `sol call <app>` verb, a UI surface | `docs/APPS.md` |
 | `core/payload/solstone/talent/` | AI talent configs (markdown prompts) + installed router skills (`sol`, `journal`); app fragments feed generated router references. **The `.py` post-hooks are not here** — they are not shipped data and stay at `solstone/talent/` | defining or tuning a talent; updating router guidance | `core/payload/solstone/talent/journal/SKILL.md`, `docs/PROMPT_TEMPLATES.md` |
-| `core/` | Rust workspace — thin `solstone-core` bin plus library-first adapter crates | Rust scaffold, gates, or Python→Rust porting doctrine | `docs/PORTING.md` |
+| `core/` | Rust workspace — thin `solstone-core` bin plus library-first adapter crates | Rust scaffold, gates, workspace rules | `docs/PORTING.md` |
 | `scripts/` | Repo maintenance scripts. ⚠ Reduced with the Python reference cut — anything whose oracle was the Python implementation is gone, so treat a script here as build tooling, not as a source of truth about behaviour | tooling that guards the codebase; reached by `make install-checks`, never by `make ci` | channel adapters: `docs/CHANNEL_ADAPTERS.md` |
 | `tests/` | `tests/fixtures/journal/` mock journal. ⚠ **No Python suites remain** — the pytest tree went with the reference cut, and Rust tests live beside their crates under `core/crates/*/tests/` | `make dev` / `make sandbox` use the fixtures as the journal | `docs/testing.md` |
 | `tests/js/` | JavaScript harnesses driven by Python node tests | testing browser scripts without a real browser | `docs/testing.md` |
@@ -76,7 +76,7 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 
 **Key concepts, priority-ordered:**
 
-- **Journal** — the on-disk record rooted at `journal/` in the repo. Every day is a `journal/chronicle/YYYYMMDD/` directory. Segments (timestamped capture windows) are anchored to creation/modification time, not content "about" time. `get_journal()` from `solstone.think.utils` is the single source of truth for journal path resolution; trust it unconditionally. Source-checkout installs inherit `SOLSTONE_JOURNAL` from the managed bash wrapper at `~/.local/bin/sol`; a tree install puts `sol` and `journal` on PATH (see `INSTALL.md`) and relies on `get_journal()` to resolve the default journal location; tests use the autouse fixture; sandboxes set it explicitly. Application code must not set it itself (see §8).
+- **Journal** — the on-disk record rooted at `journal/` in the repo. Every day is a `journal/chronicle/YYYYMMDD/` directory. Segments (timestamped capture windows) are anchored to creation/modification time, not content "about" time. `solstone-core-journal::resolve_journal_path` is the resolver. Source-checkout installs inherit `SOLSTONE_JOURNAL` from the managed wrapper at `~/.local/bin/sol`; a tree install puts `sol` and `journal` on PATH (see `INSTALL.md`). Tests and sandboxes set the env explicitly. Application code must not set it itself. See `docs/environment.md`.
 - **Talents** — AI processors (markdown prompt + optional Python post-hook). Each has a config in `core/payload/solstone/talent/<name>.md` with frontmatter that declares hooks, priority, model, and output. Cortex spawns them as subprocesses.
 - **Callosum** — Unix-socket JSON message bus at `journal/health/callosum.sock`. Real-time event distribution across services (`tract` + `event` + payload). If components need to talk asynchronously, they talk through callosum.
 - **Cortex** — process manager for talent runs. Listens on callosum (`tract="cortex"`, `event="request"`), resolves the sibling `solstone-core` binary and spawns it with `__talent-worker`, writes `<talent>/<ts>_active.jsonl` then renames to `<talent>/<ts>.jsonl` on completion, broadcasts all events back through callosum. Read `docs/CORTEX.md` before modifying talent execution.
@@ -132,13 +132,7 @@ Verified against `Makefile`. Grouped by use.
 | `make format` | Format the Rust workspace with Cargo fmt; modifies Rust source. |
 | `make format-check` | Cargo fmt dry-run (`cargo fmt --all -- --check`); one of the Rust-only CI checks. |
 | `make test` | Alias for `make check-rust-test`: Rust workspace tests only, excluding the three host-native helper packages covered by the default `onnx-host-tests` full-gate leg. |
-| `make test-cov` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
-| `make test-integration` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
-| `make test-performance` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
-| `make test-app APP=<name>` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
-| `make test-only TEST=<path-or-pattern>` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
-| `make coverage` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
-| `make watch` | Frozen for the Rust-conversion effort; fails immediately. See `docs/PORTING.md#rust-conversion-freeze`. |
+| `make test-cov` / `test-integration` / `test-performance` / `test-app` / `test-only` / `coverage` / `watch` | Gone with the Python suite. Use `make ci` or `make ci-full`. |
 | `make ci` | Efficient Rust-only routine gate: formatting, topology validation, library/binary Clippy, and serialized library/binary unit tests. It does not run Cargo integration-test targets or heavyweight native/platform/policy legs. |
 | `make ci-full` | Registry-driven full operator gate. It runs selected entries independently, continues after failures, applies per-entry timeouts, and writes a revision-bound receipt. Run it on the exact final-tree SHA after `make ci-full-prep`. |
 | `make verify` | Alias for `make ci` during the Rust-conversion freeze. |
@@ -212,11 +206,9 @@ is the behavior; the goal is fewer binaries, not relabeling integration tests.
 
 ### Release and transparency
 
-The legacy Python wheel/release targets, `scripts/release.sh`, and
-transparency-publishing commands have been removed during the Rust
-conversion. They are not frozen entry points and cannot be invoked. See
-[`docs/PORTING.md`](docs/PORTING.md#rust-conversion-freeze) for the current
-validation and release-adjacent command contract.
+The Python wheel/release targets and `scripts/release.sh` are gone. See
+[`docs/PORTING.md`](docs/PORTING.md) and
+[`docs/release-evidence-contract.md`](docs/release-evidence-contract.md).
 
 ### Don't use
 
@@ -375,12 +367,12 @@ Any function that handles a callosum event, a scheduled tick, or a supervisor-st
 The rules above govern *where* code lives. The rules below govern *how* code behaves. They exist because we got burned.
 
 - **No backwards-compatibility shims.** All code that depends on this project lives in this repository — never add fallback aliases, re-exports for moved symbols, deprecated-parameter handling, or legacy support code. When renaming or removing something, update every usage directly. For journal data-format changes, update the owning writer; do not add a compatibility layer. One-time `journal maint` migrations are retired — new journals are clean installs. Cogitate agents default to adding shims; resist this.
-- **Trust `get_journal()` unconditionally.** `get_journal()` from `solstone.think.utils` is the single source of truth for journal path resolution. For source-checkout installs, the managed bash wrappers at `~/.local/bin/sol` and `~/.local/bin/journal` set `SOLSTONE_JOURNAL` before invoking the matching venv binary; a tree install (see `INSTALL.md`) relies on `get_journal()` for default-journal resolution; tests use the autouse fixture; Makefile sandboxes set it explicitly. Application code, agent prompts, subprocess environments, and service files must not set `SOLSTONE_JOURNAL` themselves. To rewrite the wrapper's embedded path use `journal config journal <path>`. See `docs/environment.md`.
-- **SPDX header on every source file.** All Python (and other source) files begin with:
+- **Trust journal resolution.** `solstone-core-journal::resolve_journal_path` is the resolver. Application code, agent prompts, subprocess environments, and service files must not set `SOLSTONE_JOURNAL`. Use `journal config journal <path>` to rewrite the wrapper path. See `docs/environment.md`.
+- **SPDX header on every source file.** Rust files begin with:
 
-  ```python
-  # SPDX-License-Identifier: AGPL-3.0-only
-  # Copyright (c) 2026 sol pbc
+  ```
+  // SPDX-License-Identifier: AGPL-3.0-only
+  // Copyright (c) 2026 sol pbc
   ```
 
   (`//` for JavaScript.) Markdown, text, and prompt files don't need it.
@@ -393,10 +385,7 @@ Generic software principles (DRY, KISS, YAGNI, single responsibility, small focu
 
 - **SPDX header** as above — mandatory on source code files.
 - **Naming:** modules / functions / variables `snake_case`; classes `PascalCase`; constants `UPPER_SNAKE_CASE`; private members `_leading_underscore`. Full table in `docs/coding-standards.md`.
-- **Imports:** prefer absolute (`from solstone.think.utils import get_journal`), grouped stdlib → third-party → local, one per line.
-- **Type hints** on function signatures.
-- **Dependencies:** managed by [uv](https://docs.astral.sh/uv/). `pyproject.toml` is authoritative; `uv.lock` is committed; `make install` syncs; `make update` refreshes.
-- **Python 3.12+.**
+- **Dependencies:** workspace crates inherit from `core/Cargo.toml`. `make install` is retired.
 
 ## 10. Commit hygiene
 
@@ -420,7 +409,7 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/CONVEY.md` | Framework-level web changes (as opposed to an individual app) |
 | `docs/OBSERVE.md` | Capture-side work: new modalities, transcription, sensing |
 | `docs/SOLCLI.md` | Adding a new `sol <cmd>` or `sol call <app> <verb>` |
-| `docs/PORTING.md` | Python→Rust porting doctrine, Rust workspace layering, and workspace lockstep/gate rules |
+| `docs/PORTING.md` | Rust workspace rules: edition, iOS canary, native-dep proof |
 | `docs/PROMPT_TEMPLATES.md` | Modifying talent prompt format or frontmatter |
 | `docs/PROVIDERS.md` | Three-lane provider architecture: active-brain resolution, local/BYO/confidential lanes, and honest no-fallback failure semantics |
 | `docs/testing.md` | Test structure, fixtures, debugging test isolation |
@@ -440,7 +429,7 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 
 The live journal also carries `journal/AGENTS.md` as its runtime-facing breadcrumb.
 
-`docs/BACKLOG.md` and `docs/ROADMAP.md` are product-planning docs — not coder reading.
+`docs/BACKLOG.md` and `docs/ROADMAP.md` are not the product SOT.
 
 ## 12. What this file is NOT
 

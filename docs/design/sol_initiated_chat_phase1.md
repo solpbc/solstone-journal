@@ -1,5 +1,8 @@
 # Sol-Initiated Chat Phase 1 Design
 
+> Partial. `sol` `chat.start` exists; there is no Rust `/api/chat/start` handler. Ignore Python paths.
+
+
 ## Scope
 This change adds the producer-side primitive for sol-initiated chat starts:
 `sol call chat start`, four new chat-stream event kinds, prompt-context support

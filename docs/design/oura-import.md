@@ -1,5 +1,8 @@
 # Oura API Lane — Design
 
+> OAuth/sync/rebuild shipped in `solstone-core-body-ingest`. File-import save and webhooks are still open. Python paths in this file are dead.
+
+
 - **Date:** 2026-07-05 (overnight lane, owner-authorized)
 - **Repo:** `solstone`, branch `health-imports-phase1`
 - **Companion skeleton:** `solstone/think/importers/oura.py` + `tests/test_oura_importer.py` + synthetic fixtures under `tests/fixtures/importers/health/oura_synthetic/` (landed with this doc; see §9)

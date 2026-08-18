@@ -1,5 +1,8 @@
 # Sol-Initiated Chat Phase 2 Design
 
+> Partial. Client chrome exists; the `/api/chat` server is not in convey-shell. Ignore Python paths.
+
+
 ## Overview
 
 This change adds the consumer-side surface for sol-initiated chat requests. Phase 1

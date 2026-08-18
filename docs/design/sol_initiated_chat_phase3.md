@@ -1,5 +1,8 @@
 # Sol-Initiated Chat Phase 3 Design
 
+> Partial. `sol_voice` settings API exists; APNs/portal_dispatch is not shipped. Ignore Python paths.
+
+
 ## Goals
 
 This change makes sol-initiated chat visible, configurable, and deliverable:

@@ -22,7 +22,7 @@ For the broader pipeline, see `docs/THINK.md`.
 }
 ```
 
-`solstone/think/models.py::resolve_provider()` is the only runtime resolver.
+The native thinking / talent runtime is the only resolver.
 The `generate` and `cogitate` arguments identify the interface being invoked,
 but both resolve the same `providers.active` profile. A missing profile is an
 explicit no-brain state. Key presence and local readiness never choose a
@@ -56,25 +56,16 @@ Managed personal cloud keys remain journal-local:
 
 ## Dispatch
 
-`solstone/think/providers/__init__.py` has a deliberately small registry:
-
-- `google`, `openai`, and `anthropic` all map to
-  `solstone/think/cogitate_client.py`.
-- `local` maps to `solstone/think/providers/local.py`.
-
-The registry exists for cogitate execution and settings validation. All four
-entries expose `run_cogitate()`; the three cloud entries also use the native
-generate client for key/model probes. Single-shot generation does not dispatch
-through this registry: `solstone.think.generate_client` encodes the native
-generate request and invokes `solstone-core generate --one-shot`.
+Cloud (`google`, `openai`, `anthropic`) and `local` are the four dispatch
+lanes. Cogitate runs as `solstone-core cogitate --one-shot`. Single-shot
+generation is `solstone-core generate --one-shot`. There is no Python
+provider registry.
 
 ### Personal cloud
 
-`cogitate_client.py` is the cloud transport. It serializes the prepared talent
-configuration, invokes `solstone-core cogitate --one-shot`, and relays native
-NDJSON events. The native runtime composes the system instruction, applies the
-talent contract and command policy, performs the tool loop, and emits usage and
-terminal events.
+The native cogitate runtime serializes the prepared talent configuration,
+composes the system instruction, applies the talent contract and command
+policy, performs the tool loop, and emits usage and terminal events.
 
 Key/model validation sends a bounded native generate probe through
 `generate_client.generate_with_result`, so validation can incur a small
@@ -83,9 +74,9 @@ there is no enterprise-provider configuration or credential path.
 
 ### Local and arbitrary endpoints
 
-`local.py` remains a thin product-policy wrapper rather than a second general
-cloud adapter. It owns guarantees around the native runtime that cloud providers
-do not require:
+The local lane is a product-policy wrapper around the native runtime, not a
+second general cloud adapter. It owns guarantees cloud providers do not
+require:
 
 - bundled runtime installation and manifest-backed readiness;
 - context-budget fitting and local schema preparation;
@@ -105,9 +96,8 @@ and the affirmative proof cache. A configured endpoint uses:
 - `providers.local.parallel_slots` (optional)
 
 The configured logical provider remains `local`, so the same readiness and
-safety boundary applies without maintaining vendor-specific adapters. Native
-generate owns endpoint requests; `local.py` adds governed local admission around
-native cogitate execution.
+safety boundary applies without maintaining vendor-specific adapters. Native generate owns endpoint requests; the local lane adds governed admission
+around native cogitate execution.
 
 ## Local Admission
 

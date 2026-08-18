@@ -1,5 +1,8 @@
 # Convey Native-Client OpenAPI Contract
 
+> Pinned OpenAPI IDs in `docs/openapi/convey-clients.json` still bind. The Python assembler is gone. This is not a port plan.
+
+
 ## 1. Fragment And Ownership Shape
 
 The contract framework will live under `solstone/convey/contract/`:

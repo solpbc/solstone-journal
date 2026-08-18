@@ -7,7 +7,7 @@ For details on the Callosum protocol and message format, see [CALLOSUM.md](CALLO
 ## Architecture
 
 ### Event Flow
-1. **Request Creation**: Client calls `cortex_request()` which broadcasts to Callosum (`tract="cortex"`, `event="request"`)
+1. **Request Creation**: A client (Convey, `journal talent`, or `solstone-core-cortex-client`) broadcasts to Callosum (`tract="cortex"`, `event="request"`)
 2. **Request Reception**: Cortex receives message via Callosum callback and creates `<name>/<timestamp>_active.jsonl`
 3. **Talent Spawning**: Cortex resolves the sibling `solstone-core` binary and spawns `solstone-core __talent-worker` with the raw request
 4. **Event Emission**: Talents write JSON events to stdout (captured by Cortex)
@@ -31,7 +31,7 @@ For details on the Callosum protocol and message format, see [CALLOSUM.md](CALLO
 
 ## Request Format
 
-Requests are created via `cortex_request()` from `think.cortex_client`, which broadcasts to Callosum. The request message follows this format:
+Requests are Callosum messages on the `cortex` tract. The request message follows this format:
 
 ```json
 {
@@ -54,9 +54,10 @@ Requests are created via `cortex_request()` from `think.cortex_client`, which br
 }
 ```
 
-The model is resolved from the active interface brain in
-`solstone/think/models.py`. Request-time provider/model pins may be supplied, but
-there is no tier-based fallback or backup-provider routing.
+The model is resolved from the active brain in `config/journal.json`
+(`providers.active`). Request-time provider/model pins may be supplied, but
+there is no tier-based fallback or backup-provider routing. See
+[PROVIDERS.md](PROVIDERS.md).
 
 ## Generator Request Format
 

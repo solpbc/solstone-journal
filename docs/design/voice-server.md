@@ -1,5 +1,8 @@
 # Voice server design
 
+> Not shipped. `/api/voice/*` is OpenAPI-only. Treat this as an unbuilt spec; ignore Python paths.
+
+
 ## 1. Summary
 
 This design ships a root-level voice API for the existing Convey server: `POST /api/voice/session`, `POST /api/voice/connect`, `POST /api/voice/refresh-brain`, and `GET /api/voice/status`, all mounted from a new `solstone/convey/voice.py` blueprint at `/api/voice/*`. The implementation reuses existing journal, ledger, entity, briefing, and anticipated-activity read surfaces, keeps all voice-owned writes inside `journal/health/voice-brain-session*`, and treats the bridge contract in the scope as canonical when it conflicts with older prose (`solstone/convey/__init__.py:126-155`, `solstone/convey/system.py:18`, `solstone/apps/home/routes.py:149-198`, `solstone/think/surfaces/ledger.py:441-529`, `solstone/think/indexer/journal.py:1865-1948`).

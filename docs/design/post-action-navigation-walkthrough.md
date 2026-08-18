@@ -1,5 +1,8 @@
 # Post-Action Navigation Walkthrough
 
+> Facet detail at `/app/settings/facets/{slug}` shipped in `solstone-core-settings-web`. `make test-app` and Python routes are gone.
+
+
 Use this recipe on a fresh or sandbox journal to verify the facet-detail and Needs You post-action paths end to end.
 
 ## Facet Creation Path

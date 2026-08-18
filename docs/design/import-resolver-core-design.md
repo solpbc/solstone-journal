@@ -1,8 +1,13 @@
-# this resolver design Import Resolver Design
+# Import Resolver Design
+
+> The resolver shipped in `solstone-core-import`. Python `importers/cli.py`
+> is gone. What remains unbuilt is `detect_created` (filename/Exif created
+> time); see `solstone/think/detect_created.md`. Do not treat the rest of this
+> file as a port plan.
 
 ## Purpose and boundary
 
-this resolver design ports the resolution half of `journal importer` into library crates only:
+The resolution half of `journal importer` lives in library crates:
 
 - `solstone-core-import`: detection orchestration, timestamp validation and
   resolution, generic-source hashing/deduplication, and import stream naming.

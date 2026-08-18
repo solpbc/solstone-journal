@@ -1,10 +1,12 @@
 # The conversion dictionary — plates, strands, cables
 
-**The canonical definitions of the journal's conversion boundaries.** If two pieces of work need to agree on what a boundary is called, what it holds, or which side owns its contract, it is defined here.
+**The canonical names of the journal's boundaries.** If two pieces of work need to agree on what a boundary is called, what it holds, or which end owns its contract, it is defined here.
 
-This directory is **definitional and present-tense**. It says what the boundaries *are*. It deliberately carries no schedule, no status, no ownership of work, and no record of who decided what — those live outside this repo, and anything of that kind appearing here is a defect.
+The Python→Rust conversion is closed. These files are still the map of the
+running system. They carry no schedule and no work status.
 
-**Companion:** [`../PORTING.md`](../PORTING.md) is the porting *doctrine* — how to port, layering, error mapping, data boundaries, JSON and hashing, version lockstep. This directory is the *map*. Read `PORTING.md` for how, read here for what and where.
+**Companion:** [`../PORTING.md`](../PORTING.md) is the remaining Rust workspace
+rules (edition, iOS canary, native-dep proof). This directory is the *map*.
 
 ## The files
 

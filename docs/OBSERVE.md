@@ -34,7 +34,7 @@ journal observer revoke <name>
 |---------|---------|
 | `journal observer` | Manage observer registrations (see "Managing observers" above) |
 | `journal observer prune` | Dry-run or execute safe cleanup of duplicate observer segments |
-| `journal transcribe` | Audio transcription with faster-whisper |
+| `journal transcribe` | Audio transcription (native STT + speaker embeddings) |
 | `journal describe` | Visual analysis of screen recordings |
 | `journal grab` | Walk available screen frames and optionally write frame images |
 | `journal sense` | Unified observation coordination |
@@ -60,10 +60,11 @@ client) live in the per-platform observer repos (`solstone-linux`,
 `solstone-macos`, `solstone-tmux`) — see the Observer Architecture table above.
 What remains in this package is the home-side ingest-and-processing pipeline:
 
-- **sense.py** — File watcher that dispatches transcription and description jobs
-- **transcribe/** — Audio transcription with native speaker-analysis embeddings. Exit-code contract, retry/deferral semantics, and the `observe.transcribed` field table: [transcribe-failure-and-telemetry.md](transcribe-failure-and-telemetry.md)
-- **solstone-core-describe** — Native vision analysis helper reached via `journal describe`; the Python reference is retired
-- **categories/** — Category-specific prompts for screen content (see [SCREEN_CATEGORIES.md](SCREEN_CATEGORIES.md))
+- **solstone-core-sense** — File watcher that dispatches transcription and description jobs (`journal sense`)
+- **solstone-core-transcribe** — Audio transcription with native speaker-analysis embeddings. Exit-code contract: [transcribe-failure-and-telemetry.md](transcribe-failure-and-telemetry.md)
+- **solstone-core-describe** — Vision analysis (`journal describe`)
+- **solstone-core-describe-categories** — Category prompts (see [SCREEN_CATEGORIES.md](SCREEN_CATEGORIES.md))
+- **solstone-core-ingest** — `POST /app/observer/ingest`
 
 ### Vision input sizing
 
@@ -194,10 +195,12 @@ validation, clears the active rejection.
 
 ## Output Formats
 
-See [captures.md](../talent/journal/references/captures.md) for detailed extract schemas:
+See [captures.md](../core/payload/solstone/talent/journal/references/captures.md) for detailed extract schemas:
 - Audio transcripts: `audio.jsonl` with timestamps (speaker detection not included)
 - Screen analysis: `screen.jsonl` with frame-by-frame categorization
 
 ## Configuration
 
-Requires the journal directory at project root. API keys for transcription/vision services configured in `.env`.
+Requires a resolved journal (see [environment.md](environment.md)). Vision and
+STT use the active brain and bundled local runtimes; owner cloud keys live in
+`config/journal.json`.

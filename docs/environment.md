@@ -2,70 +2,41 @@
 
 ## Journal Path
 
-`get_journal()` / `get_journal_info()` in `solstone.think.utils` are the canonical journal resolvers. Trust them unconditionally.
+`solstone-core-journal::resolve_journal_path` is the resolver. Do not set
+`SOLSTONE_JOURNAL` from application code.
 
-Resolver order (with the source label `get_journal_info()` returns):
+Order:
 
-1. `SOLSTONE_JOURNAL` env var, when set and non-empty → `"env"`
-2. `~/.config/solstone/config.toml`, when it has a non-empty `journal = "..."` key → `"config"`
-3. source-tree fallback: `<project_root>/journal` when both `<project_root>/pyproject.toml` and `<project_root>/.git` exist → `"source"`
-4. built-in default: `~/journal` → `"default"`
+1. `SOLSTONE_JOURNAL` when set and non-empty → `env`
+2. `~/.config/solstone/config.toml` `journal = "..."` → `config`
+3. checkout root `journal/` when the process knows it is in a source tree → `source`
+4. `~/journal` → `default`
 
-`get_journal_info()` no longer raises — there is always a resolved path. `get_journal()` raises `SolstoneNotConfigured` only when `os.makedirs` on the resolved path fails.
+Who may set `SOLSTONE_JOURNAL`:
 
-Who sets `SOLSTONE_JOURNAL`:
+- the installed `~/.local/bin/sol` / `journal` wrapper
+- a test, explicitly
+- `make sandbox` / `make dev`, explicitly
 
-- Installed runs: the managed wrapper at `~/.local/bin/sol`
-- Unit tests: the `set_test_journal_path` autouse fixture in `tests/conftest.py`
-- Makefile sandboxes: explicit per-command env injection in `make sandbox` / verify targets
-
-Who must **not** set it:
-
-- application code
-- service files
-- agent prompts
-- ad hoc subprocess environments spawned by app code
-
-If you think you need to set `SOLSTONE_JOURNAL` from application code, fix the actual resolution problem instead.
-
-## Service Installation
-
-There are two install paths and they handle journal resolution differently. For a fresh source checkout, `.venv/bin/journal setup` installs managed bash wrappers at `~/.local/bin/sol` and `~/.local/bin/journal`, then installs solstone as a systemd user service (Linux) or launchd agent (macOS) with convey on port 5015. For a tree install (see [INSTALL.md](../INSTALL.md)), `journal setup` points those same commands at the tree's `bin/` and starts the service. After setup, `sol` and `journal` work from anywhere; override with `.venv/bin/journal setup --port 8000` on the first source-checkout run or `journal setup --port 8000` after the tree is on PATH. If an existing alias is owned by another install, setup copies it to `/tmp/<binary>.old-symlink-<timestamp>` before atomically replacing both wrappers. Wrapper provisioning failures are non-fatal warnings so a later `journal setup` can retry. Both paths install the service.
-
-Installed services invoke `journal` from PATH. They do **not** write `SOLSTONE_JOURNAL` into the service env block; the tree launcher or source-checkout wrapper exports it before execing the journal binary.
+Who must not: application code, service files, agent prompts, ad hoc
+subprocesses spawned by app code.
 
 Use:
 
-- `journal config show` to display the resolved journal path, user-facing source label, and wrapper status
-- `journal config journal <path>` to atomically rewrite the wrapper's embedded journal path
-- `journal service <install|start|stop|restart|status|logs>` for service lifecycle management
+- `journal config show` — resolved path and source
+- `journal config journal <path>` — rewrite the wrapper's embedded path
+- `journal service <install|start|stop|restart|status|logs>` — service lifecycle
+
+## Service Installation
+
+`journal setup` installs the `sol` and `journal` wrappers and the host service
+(systemd user on Linux, launchd on macOS). Convey listens on port 5015.
+Installed services invoke `journal` from PATH. They do not write
+`SOLSTONE_JOURNAL` into the service env block; the wrapper exports it.
+
+See [INSTALL.md](../INSTALL.md).
 
 ## API Keys
 
-Store API keys in `.env` file, never commit to repository.
-
-## Error Handling & Logging
-
-- Raise specific exceptions with clear messages
-- Use logging module, not print statements
-- Validate all external inputs (paths, owner data)
-- Fail fast with clear errors - avoid silent failures
-
-## Documentation
-
-- Update README files for new functionality
-- Code comments explain "why" not "what"
-- Function signatures should include type hints; highlight gaps when touching older modules
-- **All docs in `docs/` plus journal references in `core/payload/solstone/talent/journal/`**: Browse `core/payload/solstone/talent/journal/SKILL.md`, APPS.md, CORTEX.md, CALLOSUM.md, THINK.md, and more
-- **App/UI work**: [docs/APPS.md](docs/APPS.md) is required reading before modifying convey-shell or a `*-web` crate
-
-## Git Practices
-
-- **Git**: Small focused commits, descriptive branch names. Run git commands directly (not `git -C`) since you're already in the repo.
-
-## Getting Help
-
-- Run `sol` for status and CLI command list
-- Check [docs/DOCTOR.md](docs/DOCTOR.md) for debugging and diagnostics
-- Browse `docs/` for all subsystem documentation
-- Review test files in `tests/` for usage examples
+Owner cloud keys live in `config/journal.json` under `env`. Do not commit
+keys. There is no required `.env` file for the native journal.

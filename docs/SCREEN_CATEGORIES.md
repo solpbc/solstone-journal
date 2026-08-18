@@ -1,10 +1,13 @@
 # Screen Description Categories
 
-This directory contains category definitions for vision analysis of screencast frames.
+Category definitions for vision analysis of screencast frames live in
+`core/crates/solstone-core-describe-categories/assets/categories/`.
+`solstone-core-describe-categories` embeds them.
 
 ## Adding a New Category
 
-Each category requires a `.md` file with metadata in JSON frontmatter. The file can optionally include extraction prompt content.
+Add a `.md` file in that crate's `assets/categories/` with JSON frontmatter
+and an optional extraction prompt. Register it in the crate's `SOURCES` table.
 
 ### 1. `<category>.md` (required)
 
@@ -43,37 +46,13 @@ JSON category schemas must satisfy the following. ⚠ The checker that enforced 
 - Every object must list all properties in `required`
 - Do not use `oneOf`; express nullability with type lists such as `["string", "null"]`
 
-### 3. `<category>.py` (optional)
-
-Custom formatter for rich markdown output. If not provided, default formatting applies:
-- Markdown content: displayed with category header
-- JSON content: displayed in a code block
-
-To add a custom formatter, create a `format` function:
-
-```python
-def format(content: Any, context: dict) -> str:
-    """Format category content to markdown.
-
-    Args:
-        content: The category content (str for markdown, dict for JSON)
-        context: Dict with:
-            - frame: Full frame dict from JSONL
-            - file_path: Path to JSONL file
-            - timestamp_str: Formatted time like "14:30:22"
-
-    Returns:
-        Formatted markdown string (empty string to skip)
-    """
-    # Your formatting logic here
-    return "**Header:**\n\nFormatted content..."
-```
+There is no per-category Python formatter. Default formatting applies:
+markdown with a category header, JSON in a code block.
 
 ## How It Works
 
-1. `solstone-core-describe-categories` is the source of category metadata (embedded markdown + schemas in that crate)
+1. `solstone-core-describe-categories` is the source of category metadata
 2. **Phase 1 (Categorization)**: All frames get initial category analysis (primary/secondary)
-3. **Phase 2 (Selection)**: AI or fallback logic selects which frames get detailed extraction (configurable via `describe.max_extractions`)
-4. **Phase 3 (Extraction)**: Selected frames with extractable categories (those with extraction prompts in their `.md` files) get detailed content extraction
-5. Results are stored in JSONL with `enhanced: true/false` indicating extraction status
-6. `solstone/observe/screen.py` formats JSONL to markdown, using custom formatters when available
+3. **Phase 2 (Selection)**: Which frames get detailed extraction (`describe.max_extractions`)
+4. **Phase 3 (Extraction)**: Selected extractable categories get detailed content extraction
+5. Results are stored in JSONL with `enhanced: true/false`

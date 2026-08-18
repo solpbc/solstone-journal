@@ -1,5 +1,8 @@
 # Push Registry And Relay
 
+> Not shipped. No crate route. Treat this as an unbuilt spec; ignore Python paths.
+
+
 ## Summary
 
 The journal's push role is deliberately narrow:

@@ -19,14 +19,10 @@ The CLI has two tiers with distinct purposes:
 
 **Interactive entry points** (`sol chat`, `sol help`, `journal engage`) are top-level for discoverability even though they're user-facing. Agents don't invoke these.
 
-Console scripts are split across distributions. The base `solstone` package
-ships the public POSIX `sol` and `solstone` launchers and depends on
-`solstone-core-sol`, whose binary has API transport but no journal filesystem
-authority. The `solstone-journal` / `solstone-journal-cuda` distributions ship
-the host-only `journal` launcher and depend on `solstone-core-journal`, whose
-separate binary owns same-device journal operations. Installing only the base
-`solstone` distribution does not install the `journal` launcher or
-`solstone-core-journal` binary.
+Launchers are split. `sol` / `solstone` exec `solstone-core-sol` (API
+transport, no journal filesystem authority). `journal` execs
+`solstone-core-journal` (same-device journal operations). There is no CUDA
+package. Installing only `sol` does not install `journal`.
 
 ## Top-Level Commands (`sol <cmd>`)
 
@@ -35,9 +31,7 @@ separate binary owns same-device journal operations. Installing only the base
 The public `sol` / `solstone` commands are top-level launchers that exec the
 sibling native `solstone-core-sol` binary. Authority declarations live under
 `core/native-sol/think/native/<command>/authority.toml`. Rust handlers live under
-`core/crates/solstone-core-sol-client/native/think/<command>/command.rs` —
-the shared-client vocab scan is `src/`-only, and `solstone/` must stay
-deletable from the cargo build.
+`core/crates/solstone-core-sol-client/native/think/<command>/command.rs`.
 
 The public API-root commands are `sol call`, `sol chat`, `sol import`, and
 `sol status`. `sol status` queries journal network status through the native
@@ -47,8 +41,8 @@ journal state.
 `journal` is a separate launcher for `solstone-core-journal`. Its command
 grammar and local operations live in `solstone-core-journal-cli`; its closed
 process census maps every retained service name to its historical owner module.
-An explicit native dispatch table replaces Python only after the complete
-owner-facing grammar has landed:
+The native dispatch table in `processes.rs` maps retained service names to
+sibling binaries:
 
 ```rust
 NativeProcessSpec {
@@ -59,14 +53,11 @@ NativeProcessSpec {
 ```
 
 `NATIVE_PROCESS_SPECS` in
-`core/crates/solstone-core-journal-cli/src/processes.rs` maps `grab`, `spl`, and `depict`
-to sibling native binaries. The journal uses the same process-replacing runner
-for those binaries, while retained Python services use their module name and
-fixed bootstrap code. Owner arguments are forwarded only after fixed
-positions. `journal_native_dispatch.rs` runs the compiled journal binary with
-poisoned sibling interpreters and verifies each native program and argument
-list. Local writers (`archive`, `facet`, and `news`) remain entirely in Rust.
-Fixed aliases provide `journal up` and `journal down`.
+`core/crates/solstone-core-journal-cli/src/processes.rs` maps retained
+services to sibling native binaries. Owner arguments are forwarded only after
+fixed positions. Local writers (`archive`, `facet`, and `news`) are Rust.
+Fixed aliases provide `journal up` and `journal down`. There are no retained
+Python services.
 
 ### Adding a top-level public `sol` command
 
@@ -103,8 +94,9 @@ journal mutations in Rust under `local_ops.rs` and the relevant owner crate.
 ### How they work
 
 Native `sol call` commands are declared by `authority.toml` files under
-`solstone/apps/*/native/` and `solstone/think/tools/native/`. Rust handlers
-live under `core/crates/solstone-core-sol-client/native/{apps,tools}/`.
+`core/native-sol/apps/*/native/` and `core/native-sol/think/tools/native/`.
+Rust handlers live under
+`core/crates/solstone-core-sol-client/native/{apps,tools}/`.
 The production aggregate inventory is generated into
 `core/crates/solstone-core-sol-client/src/generated/inventory.rs`.
 
@@ -162,12 +154,11 @@ List items for a day.
 ### Local-only think tools
 
 Use a top-level `journal <cmd>` entry when the command is meaningful only on
-the journal host and depends heavily on `solstone/think/` internals.
+the journal host.
 
-1. **Create the owner module** with a `main()` entry when the retained service still runs in Python.
-2. **Register its fixed token and module** in `core/crates/solstone-core-journal-cli/src/processes.rs`.
-3. **When the full grammar is native, add an explicit `NativeProcessSpec`** and package its sibling binary with both journal distributions.
-4. **Optionally update a router skill reference** if the command needs agent-facing guidance.
+1. **Implement the owner crate** and its binary.
+2. **Register a `NativeProcessSpec`** in `core/crates/solstone-core-journal-cli/src/processes.rs`.
+3. **Optionally update a router skill reference** if agents need the command.
 
 ### Files to maintain for a new call command
 
@@ -184,62 +175,28 @@ the journal host and depends heavily on `solstone/think/` internals.
 
 ### Environment defaults
 
-Commands that take `--day` or `--facet` should respect `SOL_DAY` and `SOL_FACET` environment variables as defaults. Use the helpers:
-
-```python
-from solstone.think.utils import resolve_sol_day, resolve_sol_facet
-
-day = resolve_sol_day(day_arg)    # Falls back to SOL_DAY env
-facet = resolve_sol_facet(facet_arg)  # Falls back to SOL_FACET env
-```
+Commands that take `--day` or `--facet` should respect `SOL_DAY` and `SOL_FACET`
+as defaults.
 
 ### Action logging
 
-All mutating `sol call` commands should log their actions for audit:
-
-```python
-from solstone.think.facets import log_call_action
-
-log_call_action(
-    facet=facet,
-    action="myapp_create",
-    params={"key": "value"},
-    day=day,
-)
-```
-
-This writes to `facets/{facet}/logs/{day}.jsonl` (or `config/actions/{day}.jsonl` if facet is None).
+Mutating `sol call` commands log to `facets/{facet}/logs/{day}.jsonl`
+(or `config/actions/{day}.jsonl` when there is no facet).
 
 ### The `--consent` flag
 
-Commands that agents invoke proactively (without the user explicitly asking) should accept a `--consent` flag:
-
-```python
-consent: bool = typer.Option(
-    False,
-    "--consent",
-    help="Assert that explicit user approval was obtained before calling this command (agent audit trail).",
-)
-```
-
-This is for audit trail — it records that the agent confirmed user consent before acting.
+Commands agents invoke proactively accept `--consent` as an audit trail that
+the owner approved the call.
 
 ### Output patterns
 
-- **JSON output**: Use `--json` flag for machine-readable output. Default to human-friendly text.
-- **Errors**: Write to stderr via `typer.echo(..., err=True)` and `raise typer.Exit(1)`.
-- **Confirmations**: Use `--yes` to skip interactive confirmation for destructive operations.
-- **Pagination**: Use `--limit` / `--cursor` for list commands.
+- `--json` for machine-readable output. Default to human-friendly text.
+- Errors on stderr, non-zero exit.
+- `--yes` skips confirmation on destructive operations.
+- `--limit` / `--cursor` for lists.
 
-### Typer command naming
-
-```python
-@app.command("list")      # Verb as command name
-@app.command("show")      # Singular operations
-@app.command("create")    # CRUD verbs
-```
-
-Use lowercase, single-word names. Hyphenated names for multi-word (`list-nudges-due`, `set-name`).
+Command names are lowercase single words, or hyphenated multi-word
+(`list-nudges-due`, `set-name`).
 
 ## Journal Doctor
 
@@ -359,37 +316,16 @@ proc.wait()
 ## Directory Structure
 
 ```
-solstone/
-├── think/
-│   ├── tools/
-│   │   ├── native/journal/          # native sol call journal authority/handler
-│   │   ├── navigate.py             # journal navigate (built-in)
-│   │   └── sol.py                  # journal identity (built-in)
-│   └── *.py                        # Top-level command modules
-├── solstone/apps/
-│   ├── activities/
-│   │   ├── native/                 # sol call activities native authority/handler
-│   │   └── talent/activities/SKILL.md # builder source for generated router refs
-│   ├── entities/native/
-│   ├── speakers/native/
-│   ├── support/native/
-│   ├── transcripts/native/
-│   ├── awareness/native/
-│   └── ...
-├── talent/
-│   ├── sol/SKILL.md                # installed sol router skill
-│   ├── journal/SKILL.md            # installed journal router skill
-│   ├── sol/references/commands.md  # generated app command inventory
-│   ├── journal/references/commands.md # generated journal-host command guidance
-│   └── *.md                        # Agent prompt files
-├── journal/.agents/skills/          # sol + journal router symlinks
-└── AGENTS.md                        # Developer guide
+core/native-sol/apps/<name>/native/   # sol call authority
+core/native-sol/think/native/<cmd>/   # top-level sol command authority
+core/native-sol/think/tools/native/   # journal-side tool authority
+core/crates/solstone-core-sol-client/native/  # handlers
+core/payload/solstone/talent/         # prompts + sol/journal router skills
+core/payload/solstone/apps/<name>/talent/  # app command fragments
 ```
 
-### The `solstone/apps/` dual role
-
-`solstone/apps/` contains convey web routes and, when an app exposes agent-facing
-CLI commands, a native `native/authority.toml` plus `native/command.rs`.
+Journal-side `solstone/apps/<name>/` is per-app *data* in a running journal,
+not the codebase. See [APPS.md](APPS.md).
 
 ## Current Command Inventory
 
@@ -403,15 +339,15 @@ CLI commands, a native `native/authority.toml` plus `native/command.rs`.
 | Talent (AI agents) | `agents`, `cortex`, `talent`, `call`, `engage`, `providers` |
 | Convey (web UI) | `convey`, `restart-convey`, `maint` |
 | Schedule (read-only) | `schedule` |
-| Specialized | `config`, `skills`, `streams`, `journal-stats`, `reprocess`, `formatter`, `detect-created` |
+| Specialized | `config`, `skills`, `streams`, `journal-stats`, `reprocess`, `formatter` |
 | Installation | `doctor` |
 | Help | `help`, `chat` |
 
-`solstone-core install-provider local` and `solstone-core install-provider parakeet` are native beside the existing Python-backed `journal install-provider` route; all remain live during cutover.
+`journal install-provider local` and `journal install-provider parakeet` are native.
 
 `reprocess` is the on-demand reprocess command: process-now by default; `--from-scratch` re-runs already-complete units and, with `--through`, can queue an inclusive past-day range.
 
-`journal maintenance list|sync|run <app:name> [-- args]` manages app-owned recurring routines discovered from `apps/*/maintenance.py`.
+`journal maintenance list|sync|run <name>` runs native maintenance (`solstone-core-maintenance`).
 
 ### Call (`sol call <app> <cmd>`)
 
