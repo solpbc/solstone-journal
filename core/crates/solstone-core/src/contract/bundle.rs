@@ -12,12 +12,12 @@ use super::validate::validate_schema;
 
 const CONTRACT_META: &str = "x-journal-contract";
 const REQUIRED_SOURCES: &[&str] = &[
-    "solstone/apps/observer/ingest.schema.json",
-    "solstone/observe/protocol.schema.json",
-    "solstone/observe/screen.schema.json",
-    "solstone/observe/transcribe/audio.schema.json",
-    "solstone/think/browser.schema.json",
-    "solstone/think/streams.schema.json",
+    "core/crates/solstone-core/src/contract/schemas/audio.schema.json",
+    "core/crates/solstone-core/src/contract/schemas/browser.schema.json",
+    "core/crates/solstone-core/src/contract/schemas/ingest.schema.json",
+    "core/crates/solstone-core/src/contract/schemas/protocol.schema.json",
+    "core/crates/solstone-core/src/contract/schemas/screen.schema.json",
+    "core/crates/solstone-core/src/contract/schemas/streams.schema.json",
 ];
 
 pub(crate) fn build_bundle(paths: &ContractPaths) -> Result<Value, String> {
@@ -85,6 +85,9 @@ pub(crate) fn build_bundle(paths: &ContractPaths) -> Result<Value, String> {
 /// bad source must fail visibly rather than yielding a misleading bundle.
 fn discover_schema_sources(paths: &ContractPaths) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
+    if paths.sources.is_dir() {
+        walk_schema_files(&paths.sources, &mut files)?;
+    }
     walk_schema_files(&paths.solstone, &mut files)?;
     files.retain(|path| !path.starts_with(paths.solstone.join("talent/journal/contract")));
     files.sort_by_key(|path| repo_relative(path, &paths.root));
@@ -333,14 +336,18 @@ mod tests {
     #[test]
     fn discovery_failures_name_source_or_root() {
         let (_temp, paths) = scratch();
-        fs::write(paths.root.join("solstone/think/streams.schema.json"), "{}").unwrap();
+        let required = paths
+            .root
+            .join("core/crates/solstone-core/src/contract/schemas/streams.schema.json");
+        fs::create_dir_all(required.parent().unwrap()).unwrap();
+        fs::write(&required, "{}").unwrap();
         assert!(
             build_bundle(&paths)
                 .unwrap_err()
                 .contains("streams.schema.json")
         );
         fs::remove_file(paths.root.join("solstone/think/first.schema.json")).unwrap();
-        fs::remove_file(paths.root.join("solstone/think/streams.schema.json")).unwrap();
+        fs::remove_file(&required).unwrap();
         assert!(
             build_bundle(&paths)
                 .unwrap_err()

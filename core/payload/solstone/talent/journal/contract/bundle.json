@@ -218,7 +218,7 @@
           "write_discipline": "headered_jsonl atomic whole-file replace"
         }
       },
-      "source": "solstone/observe/transcribe/audio.schema.json"
+      "source": "core/crates/solstone-core/src/contract/schemas/audio.schema.json"
     },
     "browser-jsonl": {
       "schema": {
@@ -345,7 +345,7 @@
           "write_discipline": "append-only JSONL via observer ingest"
         }
       },
-      "source": "solstone/think/browser.schema.json"
+      "source": "core/crates/solstone-core/src/contract/schemas/browser.schema.json"
     },
     "observer-ingest-envelope": {
       "schema": {
@@ -444,12 +444,12 @@
           "producer_write_paths": [
             "POST /app/observer/ingest"
           ],
-          "reference_writer": "solstone.apps.observer.routes.ingest_upload",
+          "reference_writer": "solstone-core-ingest",
           "schema_owner": "observe.protocol",
           "write_discipline": "multipart envelope validated before segment write"
         }
       },
-      "source": "solstone/observe/protocol.schema.json"
+      "source": "core/crates/solstone-core/src/contract/schemas/protocol.schema.json"
     },
     "observer-ingest-json": {
       "schema": {
@@ -508,12 +508,12 @@
           "producer_write_paths": [
             "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/ingest.json"
           ],
-          "reference_writer": "solstone.apps.observer.utils.write_ingest_manifest",
+          "reference_writer": "solstone-core-ingest-resolve",
           "schema_owner": "apps.observer",
           "write_discipline": "atomic JSON replace"
         }
       },
-      "source": "solstone/apps/observer/ingest.schema.json"
+      "source": "core/crates/solstone-core/src/contract/schemas/ingest.schema.json"
     },
     "screen-jsonl": {
       "schema": {
@@ -620,7 +620,7 @@
           "write_discipline": "headered_jsonl temp line-write plus atomic promote"
         }
       },
-      "source": "solstone/observe/screen.schema.json"
+      "source": "core/crates/solstone-core/src/contract/schemas/screen.schema.json"
     },
     "stream-json": {
       "schema": {
@@ -673,12 +673,12 @@
           "producer_write_paths": [
             "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/stream.json"
           ],
-          "reference_writer": "solstone.think.streams.write_segment_stream",
+          "reference_writer": "solstone-core-segment",
           "schema_owner": "think.streams",
           "write_discipline": "atomic JSON replace"
         }
       },
-      "source": "solstone/think/streams.schema.json"
+      "source": "core/crates/solstone-core/src/contract/schemas/streams.schema.json"
     }
   }
 }

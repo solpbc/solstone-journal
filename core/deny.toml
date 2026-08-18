@@ -1,3 +1,13 @@
+[advisories]
+# cargo-deny here is `make audit`, not `make ci` / `ci-full`. The weekly fleet
+# audit is the only place this section is evaluated. RUSTSEC-2023-0071 is
+# decided, not open: rsa is one-time RSA-4096 keygen in
+# solstone-core-support-portal; every attacker-observable RS256 signature uses
+# ring. The workspace `rsa` pin in Cargo.toml carries the same rationale.
+ignore = [
+    { id = "RUSTSEC-2023-0071", reason = "rsa is used only for one-time key generation; ring signs every attacker-observable RS256 path" },
+]
+
 [licenses]
 # Protects Rust crates from unreviewed license drift while allowing approved licenses.
 allow = [
