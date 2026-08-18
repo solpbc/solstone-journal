@@ -850,7 +850,7 @@ async fn facet_route(
         for entity in entities {
             let mut value = entity.identity;
             let observations =
-                solstone_core_facets::load_observations(&root, &f, &entity.entity_dir)
+                solstone_core_facets::load_observations(&root, &f, &entity.relationship_dir)
                     .unwrap_or_default();
             let voiceprint =
                 solstone_core_entity::entity_memory_path(&root, &entity.entity_id, false)
@@ -2645,9 +2645,17 @@ fn facet_observation_entity_dir(
     facet: &str,
     name: &str,
 ) -> Result<String, solstone_core_facets::FacetEntityWriteError> {
-    let entities =
+    let attached =
         solstone_core_facets::list_scoped_facet_entities(journal_root, facet, false, false)?;
-    if let Some(entity) = entities
+    if let Some(entity) = attached
+        .iter()
+        .find(|entity| entity.identity.get("name").and_then(Value::as_str) == Some(name))
+    {
+        return Ok(entity.relationship_dir.clone());
+    }
+    let inclusive =
+        solstone_core_facets::list_scoped_facet_entities(journal_root, facet, true, true)?;
+    if let Some(entity) = inclusive
         .iter()
         .find(|entity| entity.identity.get("name").and_then(Value::as_str) == Some(name))
     {
@@ -3422,7 +3430,7 @@ async fn entity_detail_route(
             .map_err(|error| error.to_string())?;
         if let Some(row) = rows.into_iter().find(|row| row.entity_id == id) {
             let observations =
-                solstone_core_facets::load_observations(&root, &facet, &row.entity_dir)
+                solstone_core_facets::load_observations(&root, &facet, &row.relationship_dir)
                     .unwrap_or_default();
             let mut entity = row.identity;
             let voiceprint = solstone_core_entity::entity_memory_path(&root, &row.entity_id, false)
@@ -3467,7 +3475,7 @@ async fn grid_route(
                 .map(|identity| identity.map(|_| std::collections::BTreeMap::new()))
                 .map_err(|error| error.to_string());
         };
-        solstone_core_facets::observation_day_counts(&root, &facet, &row.entity_dir)
+        solstone_core_facets::observation_day_counts(&root, &facet, &row.relationship_dir)
             .map(Some)
             .map_err(|error| error.to_string())
     })

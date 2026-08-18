@@ -69,6 +69,21 @@ fn seed_facet_entity(root: &Path, facet: &str, id: &str) {
         json!({"entity_id":id}),
     );
 }
+fn seed_divergent(root: &Path, relationship: Value, identity: Value) {
+    write(root, "entities/dir-b/entity.json", identity);
+    write(root, "facets/work/entities/rel-c/entity.json", relationship);
+}
+fn seed_divergent_observation(root: &Path) {
+    write_raw(
+        root,
+        "facets/work/entities/rel-c/observations.jsonl",
+        br#"{"content":"seen","source_day":"20260810"}
+"#,
+    );
+}
+fn divergent_identity() -> Value {
+    json!({"id":"id-a","name":"Ada Lovelace","type":"Person"})
+}
 fn seed_facet_candidate(root: &Path, name_key: &str, name: &str, status: &str) {
     write(
         root,
@@ -1727,6 +1742,148 @@ async fn observe_uses_the_stored_facet_directory_after_a_rename() {
             .is_file()
     );
     assert!(!j.path().join("facets/work/entities/alicia").exists());
+}
+
+#[tokio::test]
+async fn facet_list_counts_observations_from_the_relationship_dir() {
+    let j = Journal::new();
+    seed_divergent(j.path(), json!({"entity_id":"id-a"}), divergent_identity());
+    seed_divergent_observation(j.path());
+    let (_, v) = call(j.path(), "/app/entities/api/work").await;
+    assert_eq!(v["attached"][0]["observation_count"], 1);
+}
+
+#[tokio::test]
+async fn entity_detail_loads_observations_from_the_relationship_dir() {
+    let j = Journal::new();
+    seed_divergent(j.path(), json!({"entity_id":"id-a"}), divergent_identity());
+    seed_divergent_observation(j.path());
+    let (_, v) = call(j.path(), "/app/entities/api/work/entity/id-a").await;
+    assert_eq!(v["entity"]["observation_count"], 1);
+    assert_eq!(
+        v["observations"],
+        json!([{"content":"seen","source_day":"20260810"}])
+    );
+}
+
+#[tokio::test]
+async fn observations_and_observe_use_the_relationship_dir() {
+    let j = Journal::new();
+    seed_divergent(j.path(), json!({"entity_id":"id-a"}), divergent_identity());
+    seed_divergent_observation(j.path());
+    let (status, observations) = call(
+        j.path(),
+        "/app/entities/api/work/observations?name=Ada%20Lovelace",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(observations["total"], 1);
+
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/work/observe",
+        json!({"name":"Ada Lovelace","content":"new"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(
+        j.path()
+            .join("facets/work/entities/rel-c/observations.jsonl")
+            .is_file()
+    );
+    assert!(!j.path().join("facets/work/entities/ada_lovelace").exists());
+    assert_eq!(response["result"]["count"], 2);
+}
+
+#[tokio::test]
+async fn observations_query_reads_detached_and_blocked_relationship_dirs() {
+    for relationship in [
+        json!({"entity_id":"id-a","detached":true}),
+        json!({"entity_id":"id-a"}),
+    ] {
+        let j = Journal::new();
+        let mut identity = divergent_identity();
+        if relationship.get("detached").is_none() {
+            identity["blocked"] = json!(true);
+        }
+        seed_divergent(j.path(), relationship, identity);
+        seed_divergent_observation(j.path());
+        let (status, observations) = call(
+            j.path(),
+            "/app/entities/api/work/observations?name=Ada%20Lovelace",
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(observations["total"], 1);
+    }
+}
+
+#[tokio::test]
+async fn observe_prefers_an_attached_name_over_a_detached_duplicate() {
+    let j = Journal::new();
+    seed_divergent(j.path(), json!({"entity_id":"id-a"}), divergent_identity());
+    write(
+        j.path(),
+        "entities/dir-d/entity.json",
+        json!({"id":"id-d","name":"Ada Lovelace","type":"Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/aaa-det/entity.json",
+        json!({"entity_id":"id-d","detached":true}),
+    );
+    let (status, _) = post(
+        j.path(),
+        "/app/entities/api/work/observe",
+        json!({"name":"Ada Lovelace","content":"new"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(
+        j.path()
+            .join("facets/work/entities/rel-c/observations.jsonl")
+            .is_file()
+    );
+    assert!(
+        !j.path()
+            .join("facets/work/entities/aaa-det/observations.jsonl")
+            .exists()
+    );
+}
+
+#[tokio::test]
+async fn observe_falls_back_to_the_entity_slug_for_an_unknown_name() {
+    let j = Journal::new();
+    seed_divergent(j.path(), json!({"entity_id":"id-a"}), divergent_identity());
+    seed_divergent_observation(j.path());
+    let (status, _) = post(
+        j.path(),
+        "/app/entities/api/work/observe",
+        json!({"name":"Ada Lovelace Missing","content":"gone"}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(
+        j.path()
+            .join("facets/work/entities/ada_lovelace_missing/observations.jsonl")
+            .is_file()
+    );
+    let original = fs::read_to_string(
+        j.path()
+            .join("facets/work/entities/rel-c/observations.jsonl"),
+    )
+    .unwrap();
+    assert_eq!(original.matches("20260810").count(), 1);
+    assert!(!original.contains("gone"));
+}
+
+#[tokio::test]
+async fn grid_counts_observation_days_from_the_relationship_dir() {
+    let j = Journal::new();
+    seed_divergent(j.path(), json!({"entity_id":"id-a"}), divergent_identity());
+    seed_divergent_observation(j.path());
+    let (_, v) = call(j.path(), "/app/entities/api/work/entity/id-a/grid").await;
+    assert_eq!(v["days"]["20260810"], 1);
 }
 
 #[tokio::test]
