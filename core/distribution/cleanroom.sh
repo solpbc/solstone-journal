@@ -470,10 +470,12 @@ run_subject() {
 	ref=$image@$digest
 	# Inventory pins the registry manifest digest. Docker's image Id is a
 	# different hash, so inspect-by-Id cannot see a pulled pin. RepoDigests
-	# is the axis the pin lives on.
+	# is the axis the pin lives on. Docker may store the pin as
+	# `python@sha256:...` even when the inventory names
+	# `python:3.12-slim-bookworm`, so match on the digest suffix.
 	digests=$($RUNTIME image inspect --format '{{join .RepoDigests "\n"}}' "$ref") \
 		|| refuse "subject is not preloaded: $id $ref"
-	printf '%s\n' "$digests" | grep -Fx "$ref" >/dev/null \
+	printf '%s\n' "$digests" | grep -F "@$digest" >/dev/null \
 		|| refuse "subject digest mismatch: $id expected=$ref actual=$(printf '%s' "$digests" | tr '\n' ' ')"
 	$RUNTIME run --rm --pull=never --network=none \
 		-v "$ARTIFACTS:/artifacts:ro" \
