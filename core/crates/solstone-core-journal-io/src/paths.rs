@@ -65,22 +65,23 @@ pub use solstone_core_journal::resolve_journal_path as resolve_configured_journa
 
 /// Resolve a Python-compatible journal-relative path against `journal`.
 pub fn resolve_journal_path(journal: &Path, rel: &str) -> Result<PathBuf, PathError> {
-    if rel.trim().is_empty() {
+    let normalized = normalize_rel(rel);
+    if normalized.trim().is_empty() {
         return Err(invalid(rel, "journal path must not be empty"));
     }
-    if Path::new(rel).is_absolute() {
+    if Path::new(&normalized).is_absolute() {
         return Err(invalid(rel, "journal path must be relative"));
     }
-    if rel.contains('\\') {
+    if normalized.contains('\\') {
         return Err(invalid(rel, "journal path must use forward slashes"));
     }
-    if rel
+    if normalized
         .split('/')
         .any(|part| part.is_empty() || matches!(part, "." | ".."))
     {
         return Err(invalid(rel, "journal path contains invalid component"));
     }
-    let relative = Path::new(rel);
+    let relative = Path::new(&normalized);
     let mut components = relative.components();
     let resolved = match components
         .next()
@@ -90,6 +91,21 @@ pub fn resolve_journal_path(journal: &Path, rel: &str) -> Result<PathBuf, PathEr
         _ => journal.join(relative),
     };
     Ok(resolved)
+}
+
+/// Drop trailing slashes, repeated separators, and `.` the way pathlib parts do.
+fn normalize_rel(rel: &str) -> String {
+    if rel.contains('\\') || Path::new(rel).is_absolute() {
+        return rel.to_owned();
+    }
+    let parts: Vec<&str> = rel
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect();
+    if parts.is_empty() {
+        return rel.to_owned();
+    }
+    parts.join("/")
 }
 
 /// Return whether `path` exists, including a dangling symlink.
@@ -404,6 +420,63 @@ mod tests {
 
     use super::*;
     use crate::test_support::TempDir;
+
+    fn invalid_kind(journal: &Path, rel: &str) -> &'static str {
+        match resolve_journal_path(journal, rel) {
+            Err(PathError::InvalidRelativePath { message, .. }) => message,
+            other => panic!("{rel:?}: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn normalises_trailing_slashes_dots_and_repeated_separators() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        assert_eq!(
+            resolve_journal_path(&journal, "chronicle/").unwrap(),
+            journal.join("chronicle")
+        );
+        assert_eq!(
+            resolve_journal_path(&journal, "./facets/x").unwrap(),
+            journal.join("facets/x")
+        );
+        assert_eq!(
+            resolve_journal_path(&journal, "facets//x").unwrap(),
+            journal.join("facets/x")
+        );
+        assert_eq!(
+            resolve_journal_path(&journal, "20240101/").unwrap(),
+            journal.join("chronicle/20240101")
+        );
+        assert_eq!(
+            contained_path(&journal, "chronicle/").unwrap(),
+            journal.join("chronicle")
+        );
+    }
+
+    #[test]
+    fn still_rejects_empty_dot_parent_absolute_and_backslash() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        assert!(matches!(
+            resolve_journal_path(&journal, ""),
+            Err(PathError::InvalidRelativePath { .. })
+        ));
+        assert_eq!(invalid_kind(&journal, ""), invalid_kind(&journal, "   "));
+        assert_eq!(invalid_kind(&journal, "."), invalid_kind(&journal, ".."));
+        assert_eq!(invalid_kind(&journal, "./"), invalid_kind(&journal, ".."));
+        assert_eq!(invalid_kind(&journal, "//"), invalid_kind(&journal, "/abs"));
+        assert!(matches!(
+            resolve_journal_path(&journal, "a\\b"),
+            Err(PathError::InvalidRelativePath { .. })
+        ));
+        match resolve_journal_path(&journal, "chronicle/../x") {
+            Err(PathError::InvalidRelativePath { rel, .. }) => {
+                assert_eq!(rel, "chronicle/../x");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
 
     #[test]
     fn contained_path_rejects_a_symlink_escape() {

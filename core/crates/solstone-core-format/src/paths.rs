@@ -32,13 +32,29 @@ impl fmt::Display for JournalPathError {
 impl std::error::Error for JournalPathError {}
 
 pub fn resolve_journal_path(journal: &Path, rel: &str) -> Result<PathBuf, JournalPathError> {
-    validate_rel(rel)?;
+    let rel = normalize_rel(rel);
+    validate_rel(&rel)?;
     let first = rel.split('/').next().unwrap_or("");
     if is_date_key(first) {
         Ok(journal.join(CHRONICLE_DIR).join(rel))
     } else {
         Ok(journal.join(rel))
     }
+}
+
+/// Drop trailing slashes, repeated separators, and `.` the way pathlib parts do.
+fn normalize_rel(rel: &str) -> String {
+    if rel.contains('\\') || Path::new(rel).is_absolute() {
+        return rel.to_owned();
+    }
+    let parts: Vec<&str> = rel
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect();
+    if parts.is_empty() {
+        return rel.to_owned();
+    }
+    parts.join("/")
 }
 
 pub fn relative_to_journal(journal: &Path, abs_path: &Path) -> Option<String> {
@@ -90,6 +106,60 @@ mod tests {
         assert_eq!(
             resolve_journal_path(journal, "facets/work/news/20240101.md").unwrap(),
             PathBuf::from("/tmp/journal/facets/work/news/20240101.md")
+        );
+    }
+
+    #[test]
+    fn normalises_trailing_slashes_dots_and_repeated_separators() {
+        let journal = Path::new("/tmp/journal");
+        assert_eq!(
+            resolve_journal_path(journal, "chronicle/").unwrap(),
+            PathBuf::from("/tmp/journal/chronicle")
+        );
+        assert_eq!(
+            resolve_journal_path(journal, "./facets/x").unwrap(),
+            PathBuf::from("/tmp/journal/facets/x")
+        );
+        assert_eq!(
+            resolve_journal_path(journal, "facets//x").unwrap(),
+            PathBuf::from("/tmp/journal/facets/x")
+        );
+        assert_eq!(
+            resolve_journal_path(journal, "20240101/").unwrap(),
+            PathBuf::from("/tmp/journal/chronicle/20240101")
+        );
+    }
+
+    #[test]
+    fn still_rejects_empty_dot_parent_absolute_and_backslash() {
+        let journal = Path::new("/tmp/journal");
+        assert_eq!(
+            resolve_journal_path(journal, "").unwrap_err(),
+            JournalPathError::Empty
+        );
+        assert_eq!(
+            resolve_journal_path(journal, ".").unwrap_err(),
+            JournalPathError::InvalidComponent
+        );
+        assert_eq!(
+            resolve_journal_path(journal, "./").unwrap_err(),
+            JournalPathError::InvalidComponent
+        );
+        assert_eq!(
+            resolve_journal_path(journal, "//").unwrap_err(),
+            JournalPathError::Absolute
+        );
+        assert_eq!(
+            resolve_journal_path(journal, "..").unwrap_err(),
+            JournalPathError::InvalidComponent
+        );
+        assert_eq!(
+            resolve_journal_path(journal, "/abs").unwrap_err(),
+            JournalPathError::Absolute
+        );
+        assert_eq!(
+            resolve_journal_path(journal, "a\\b").unwrap_err(),
+            JournalPathError::Backslash
         );
     }
 }
