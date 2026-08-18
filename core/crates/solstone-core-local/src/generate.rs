@@ -306,89 +306,48 @@ where
     let admission_slot = permit.slot_index;
     let queue_wait_ms = permit.queue_wait_ms;
     let inference_context = context_for(Some(admission_slot), queue_wait_ms, false);
-    // The reference releases the permit immediately after POSTing, before it
-    // checks status or parses the reply. Keep this scope deliberately narrow.
-    let response = match remaining_timeout(started, timeout).and_then(|remaining| {
-        transport
-            .post_json(
-                &server.base_url,
-                "/v1/chat/completions",
-                &prepared.body,
-                remaining,
-            )
-            .map_err(RemainingTimeout::PostError)
-    }) {
+    // Hold the permit through interpret and at most one empty_completion retry
+    // POST, then release before returning the result.
+    let mut post = || {
+        post_completion(
+            transport,
+            &server.base_url,
+            &prepared.body,
+            started,
+            timeout,
+        )
+    };
+    let fail_post = |error: RemainingTimeout| match error {
+        RemainingTimeout::AdmissionTimeout => failure_with_inference(
+            Some("admission_timeout"),
+            "Local inference request exceeded its deadline before posting.".into(),
+            context_for(Some(admission_slot), queue_wait_ms, true),
+            "error",
+            None,
+            None,
+        ),
+        RemainingTimeout::PostError(detail) | RemainingTimeout::AdmissionError(detail) => {
+            failure_with_inference(None, detail, inference_context, "error", None, None)
+        }
+    };
+    let response = match post() {
         Ok(response) => response,
-        Err(RemainingTimeout::AdmissionTimeout) => {
-            return failure_with_inference(
-                Some("admission_timeout"),
-                "Local inference request exceeded its deadline before posting.".into(),
-                context_for(Some(admission_slot), queue_wait_ms, true),
-                "error",
-                None,
-                None,
-            );
-        }
-        Err(RemainingTimeout::PostError(detail))
-        | Err(RemainingTimeout::AdmissionError(detail)) => {
-            return failure_with_inference(None, detail, inference_context, "error", None, None);
-        }
+        Err(error) => return fail_post(error),
+    };
+    let interpreted = match interpret_completion(&response) {
+        Err((Some(reason), _, _)) if reason == "empty_completion" => match post() {
+            Ok(retry) => interpret_completion(&retry),
+            Err(error) => return fail_post(error),
+        },
+        other => other,
     };
     drop(permit);
 
-    let parsed = serde_json::from_str::<Value>(&response.body);
-    let server_fields = parsed.as_ref().ok().map(server_inference);
-    if !(200..300).contains(&response.status) {
-        let body_lower = response.body.to_ascii_lowercase();
-        let reason_code = if contains_context_pattern(&body_lower) {
-            if parsed
-                .as_ref()
-                .ok()
-                .and_then(bundled_error_type)
-                .is_some_and(|kind| kind == "exceed_context_size_error")
-            {
-                Some("context_server_overflow")
-            } else {
-                Some("capacity_exhausted")
-            }
-        } else {
-            None
-        };
-        let detail = match reason_code {
-            Some("context_server_overflow") => {
-                "Local request exceeded the model context window after fitting.".into()
-            }
-            Some("capacity_exhausted") => CAPACITY_EXHAUSTED_MESSAGE.into(),
-            _ => format!("Local server returned HTTP {}.", response.status),
-        };
-        return failure_with_inference(
-            reason_code,
-            detail,
-            inference_context,
-            "error",
-            None,
-            server_fields,
-        );
-    }
-
-    let data = match parsed {
-        Ok(data) => data,
-        Err(error) => {
+    let (parsed_response, server_fields) = match interpreted {
+        Ok(parsed) => parsed,
+        Err((reason_code, detail, server_fields)) => {
             return failure_with_inference(
-                None,
-                format!("Local model response was not valid JSON: {error}"),
-                inference_context,
-                "error",
-                None,
-                None,
-            );
-        }
-    };
-    let parsed_response = match parse_response(&data) {
-        Ok(parsed_response) => parsed_response,
-        Err((reason_code, detail)) => {
-            return failure_with_inference(
-                Some(&reason_code),
+                reason_code.as_deref(),
                 detail,
                 inference_context,
                 "error",
@@ -600,12 +559,77 @@ fn prepare_schema_node(node: &mut Value) {
     }
 }
 
+fn post_completion<T: GenerateTransport>(
+    transport: &mut T,
+    base_url: &str,
+    body: &Value,
+    started: Instant,
+    timeout: Duration,
+) -> Result<HttpResponse, RemainingTimeout> {
+    remaining_timeout(started, timeout).and_then(|remaining| {
+        transport
+            .post_json(base_url, "/v1/chat/completions", body, remaining)
+            .map_err(RemainingTimeout::PostError)
+    })
+}
+
+fn interpret_completion(
+    response: &HttpResponse,
+) -> Result<
+    (ParsedResponse, Option<ServerInference>),
+    (Option<String>, String, Option<ServerInference>),
+> {
+    let parsed = serde_json::from_str::<Value>(&response.body);
+    let server_fields = parsed.as_ref().ok().map(server_inference);
+    if !(200..300).contains(&response.status) {
+        let body_lower = response.body.to_ascii_lowercase();
+        let reason_code = if contains_context_pattern(&body_lower) {
+            if parsed
+                .as_ref()
+                .ok()
+                .and_then(bundled_error_type)
+                .is_some_and(|kind| kind == "exceed_context_size_error")
+            {
+                Some("context_server_overflow")
+            } else {
+                Some("capacity_exhausted")
+            }
+        } else {
+            None
+        };
+        let detail = match reason_code {
+            Some("context_server_overflow") => {
+                "Local request exceeded the model context window after fitting.".into()
+            }
+            Some("capacity_exhausted") => CAPACITY_EXHAUSTED_MESSAGE.into(),
+            _ => format!("Local server returned HTTP {}.", response.status),
+        };
+        return Err((reason_code.map(str::to_owned), detail, server_fields));
+    }
+    let data = match parsed {
+        Ok(data) => data,
+        Err(error) => {
+            return Err((
+                None,
+                format!("Local model response was not valid JSON: {error}"),
+                None,
+            ));
+        }
+    };
+    match parse_response(&data) {
+        Ok(parsed_response) => Ok((parsed_response, server_fields)),
+        Err((reason_code, detail)) => Err((Some(reason_code), detail, server_fields)),
+    }
+}
+
 pub fn parse_response(data: &Value) -> Result<ParsedResponse, (String, String)> {
     let choices = data
         .get("choices")
         .and_then(Value::as_array)
-        .filter(|choices| !choices.is_empty())
         .ok_or_else(|| ("response_invalid".into(), "No response from model.".into()))?;
+    if choices.is_empty() {
+        return Err(("empty_completion".into(), "No response from model.".into()));
+    }
     let choice = choices[0].as_object().ok_or_else(|| {
         (
             "response_invalid".into(),
@@ -1492,5 +1516,113 @@ mod tests {
             matches!(parse_response(&json!({"choices":"bad"})), Err((reason, _)) if reason == "response_invalid")
         );
         assert!(serde_json::from_str::<Value>("not json").is_err());
+    }
+
+    #[test]
+    fn empty_choices_array_is_empty_completion() {
+        assert_eq!(
+            parse_response(&json!({"choices": []})),
+            Err(("empty_completion".into(), "No response from model.".into()))
+        );
+    }
+
+    struct ScriptedTransport {
+        completions: std::collections::VecDeque<Result<HttpResponse, String>>,
+        completion_posts: usize,
+    }
+
+    impl ScriptedTransport {
+        fn new(completions: impl IntoIterator<Item = Result<HttpResponse, String>>) -> Self {
+            Self {
+                completions: completions.into_iter().collect(),
+                completion_posts: 0,
+            }
+        }
+    }
+
+    impl GenerateTransport for ScriptedTransport {
+        fn get(
+            &mut self,
+            _base_url: &str,
+            _path: &str,
+            _timeout: Duration,
+        ) -> Result<HttpResponse, String> {
+            Err("scripted transport has no /props".into())
+        }
+
+        fn post_json(
+            &mut self,
+            _base_url: &str,
+            path: &str,
+            _body: &Value,
+            _timeout: Duration,
+        ) -> Result<HttpResponse, String> {
+            if path != "/v1/chat/completions" {
+                return Err("scripted transport has no tokenize".into());
+            }
+            self.completion_posts += 1;
+            self.completions
+                .pop_front()
+                .unwrap_or_else(|| Err("no more scripted completion posts".into()))
+        }
+    }
+
+    fn ok_http(body: Value) -> Result<HttpResponse, String> {
+        Ok(HttpResponse {
+            status: 200,
+            body: body.to_string(),
+        })
+    }
+
+    fn generate_against(
+        completions: impl IntoIterator<Item = Result<HttpResponse, String>>,
+    ) -> (GenerateResult, usize) {
+        let root = tempfile::tempdir().expect("journal");
+        let mut request = input(json!("Hello"));
+        request.journal_path = root.path().to_str().expect("utf-8 journal path").to_owned();
+        let mut transport = ScriptedTransport::new(completions);
+        let result = generate_with(request, &mut transport, |_| ConnectOutcome::Ready {
+            server: server(),
+        });
+        (result, transport.completion_posts)
+    }
+
+    #[test]
+    fn empty_completion_retries_once_and_can_succeed() {
+        let (result, posts) = generate_against([
+            ok_http(json!({"choices": []})),
+            ok_http(json!({
+                "choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}]
+            })),
+        ]);
+        let GenerateResult::Success(success) = result else {
+            panic!("expected success after retry, got {result:?}");
+        };
+        assert_eq!(success.text, "hello");
+        assert_eq!(success.finish_reason, "stop");
+        assert_eq!(posts, 2);
+    }
+
+    #[test]
+    fn empty_completion_retry_that_is_also_empty_is_final() {
+        let (result, posts) = generate_against([
+            ok_http(json!({"choices": []})),
+            ok_http(json!({"choices": []})),
+        ]);
+        let GenerateResult::Failure(failure) = result else {
+            panic!("expected failure after two empty completions, got {result:?}");
+        };
+        assert_eq!(failure.reason_code.as_deref(), Some("empty_completion"));
+        assert_eq!(posts, 2);
+    }
+
+    #[test]
+    fn non_array_choices_does_not_retry() {
+        let (result, posts) = generate_against([ok_http(json!({"choices": "bad"}))]);
+        let GenerateResult::Failure(failure) = result else {
+            panic!("expected response_invalid without retry, got {result:?}");
+        };
+        assert_eq!(failure.reason_code.as_deref(), Some("response_invalid"));
+        assert_eq!(posts, 1);
     }
 }

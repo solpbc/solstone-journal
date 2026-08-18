@@ -1141,7 +1141,8 @@
       "context_server_overflow": "context_budget_exceeded",
       "model_loading": "local_model_loading",
       "model_not_ready": "local_model_not_ready",
-      "response_invalid": "provider_response_invalid"
+      "response_invalid": "provider_response_invalid",
+      "empty_completion": "no_output"
     },
     "reference_sources": [
       "solstone/think/providers/local.py",
