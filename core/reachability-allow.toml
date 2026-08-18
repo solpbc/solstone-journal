@@ -6,6 +6,5 @@
 # normal or build edge. dev-dependencies never confer reachability.
 
 [allow]
-solstone-core-ingest = "native device-ingest router, complete and tested; not mounted until the capture-client /app/observer wire rename lands (a dependency here would be the mount)"
 solstone-core-origin = "repository origin-artifact verify/mirror tooling; no shipped product path depends on it"
 solstone-core-talents = "talent-layout and run-log migration library; no shipped path calls it (talent-runtime and talent-cli are separate crates)"
