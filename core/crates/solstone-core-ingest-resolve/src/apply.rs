@@ -84,20 +84,40 @@ impl Error for ApplyError {
     }
 }
 
+/// An apply failure that still reports every file that already landed.
+#[derive(Debug)]
+pub struct ApplyFailure {
+    pub error: ApplyError,
+    pub applied: Vec<AppliedFile>,
+}
+
+impl fmt::Display for ApplyFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.error.fmt(formatter)
+    }
+}
+
+impl Error for ApplyFailure {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.error)
+    }
+}
+
 /// Apply one previously resolved plan without retrying stale state internally.
-pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyResult, ApplyError> {
+pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyResult, ApplyFailure> {
     if !matches_plan(plan, files) {
-        return Err(ApplyError::PlanInputMismatch);
+        return Err(ApplyFailure {
+            error: ApplyError::PlanInputMismatch,
+            applied: Vec::new(),
+        });
     }
     let mut applied = Vec::with_capacity(plan.files.len());
     let mut bytes_written = 0;
     for (planned, file) in plan.files.iter().zip(files) {
         match planned.disposition {
             FileDisposition::NeedsWrite { .. } => {
-                match write_content(&plan.segment, file.name.clone(), file.bytes)
-                    .map_err(ApplyError::Segment)?
-                {
-                    ContentWriteOutcome::Written(content) => {
+                match write_content(&plan.segment, file.name.clone(), file.bytes) {
+                    Ok(ContentWriteOutcome::Written(content)) => {
                         bytes_written += content.size;
                         applied.push(applied_file(
                             content.name,
@@ -106,7 +126,7 @@ pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyRes
                             AppliedDisposition::Written,
                         ));
                     }
-                    ContentWriteOutcome::AlreadyHeld(content) => {
+                    Ok(ContentWriteOutcome::AlreadyHeld(content)) => {
                         applied.push(applied_file(
                             content.name,
                             content.sha256,
@@ -114,7 +134,18 @@ pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyRes
                             AppliedDisposition::AlreadyHeld,
                         ));
                     }
-                    ContentWriteOutcome::Conflict { .. } => return Err(ApplyError::Stale),
+                    Ok(ContentWriteOutcome::Conflict { .. }) => {
+                        return Err(ApplyFailure {
+                            error: ApplyError::Stale,
+                            applied,
+                        });
+                    }
+                    Err(error) => {
+                        return Err(ApplyFailure {
+                            error: ApplyError::Segment(error),
+                            applied,
+                        });
+                    }
                 }
             }
             FileDisposition::Held { .. } => {
@@ -136,16 +167,30 @@ pub fn apply_plan(plan: &ApplyPlan, files: &[IngestFile<'_>]) -> Result<ApplyRes
         }
     }
     for (planned, file) in plan.files.iter().zip(files) {
-        if matches!(planned.disposition, FileDisposition::Held { .. })
-            && !is_currently_held(&plan.segment, file).map_err(|source| ApplyError::Io {
-                path: plan.segment.path().join(file.name.as_str()),
-                source,
-            })?
-        {
-            return Err(ApplyError::Stale);
+        if matches!(planned.disposition, FileDisposition::Held { .. }) {
+            match is_currently_held(&plan.segment, file) {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Err(ApplyFailure {
+                        error: ApplyError::Stale,
+                        applied,
+                    });
+                }
+                Err(source) => {
+                    return Err(ApplyFailure {
+                        error: ApplyError::Io {
+                            path: plan.segment.path().join(file.name.as_str()),
+                            source,
+                        },
+                        applied,
+                    });
+                }
+            }
         }
     }
-    write_ingest_manifest(&plan.segment, &plan.requested_segment, &applied)?;
+    if let Err(error) = write_ingest_manifest(&plan.segment, &plan.requested_segment, &applied) {
+        return Err(ApplyFailure { error, applied });
+    }
     Ok(ApplyResult {
         status: plan.status,
         landed_segment: plan.landed_segment.clone(),
@@ -197,9 +242,9 @@ mod tests {
         tempfile::TempDir::new().unwrap()
     }
 
-    fn file<'a>(bytes: &'a [u8]) -> IngestFile<'a> {
+    fn file<'a>(name: &str, bytes: &'a [u8]) -> IngestFile<'a> {
         IngestFile {
-            name: ContentName::new("audio.flac").unwrap(),
+            name: ContentName::new(name).unwrap(),
             bytes,
         }
     }
@@ -211,7 +256,7 @@ mod tests {
         let segment = root.join("chronicle/20260804/device/120000_1");
         fs::create_dir_all(&segment).unwrap();
         fs::write(segment.join("audio.flac"), b"same").unwrap();
-        let files = [file(b"same")];
+        let files = [file("audio.flac", b"same")];
         let Resolution::Apply(plan) =
             resolve_ingest(&root, "20260804", "device", "120000_1", &files).unwrap()
         else {
@@ -219,15 +264,57 @@ mod tests {
         };
 
         fs::write(segment.join("audio.flac"), b"drift").unwrap();
-        assert!(matches!(apply_plan(&plan, &files), Err(ApplyError::Stale)));
+        let failure = apply_plan(&plan, &files).unwrap_err();
+        assert!(matches!(failure.error, ApplyError::Stale));
         assert!(!segment.join("ingest.json").exists());
+    }
+
+    #[test]
+    fn mid_loop_write_failure_returns_already_written_files() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let files = [file("audio.flac", b"sound"), file("notes.json", b"notes")];
+        let Resolution::Apply(plan) =
+            resolve_ingest(&root, "20260804", "device", "120000_1", &files).unwrap()
+        else {
+            panic!("expected apply plan");
+        };
+        fs::create_dir_all(plan.segment.path().join("notes.json")).unwrap();
+        let failure = apply_plan(&plan, &files).unwrap_err();
+        assert!(matches!(failure.error, ApplyError::Segment(_)));
+        assert_eq!(failure.applied.len(), 1);
+        assert_eq!(failure.applied[0].name.as_str(), "audio.flac");
+        assert_eq!(failure.applied[0].disposition, AppliedDisposition::Written);
+        assert!(plan.segment.path().join("audio.flac").is_file());
+        assert!(!plan.segment.path().join("ingest.json").exists());
+    }
+
+    #[test]
+    fn manifest_write_failure_returns_already_written_files() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let files = [file("audio.flac", b"sound")];
+        let Resolution::Apply(plan) =
+            resolve_ingest(&root, "20260804", "device", "120000_1", &files).unwrap()
+        else {
+            panic!("expected apply plan");
+        };
+        fs::create_dir_all(plan.segment.path().join("ingest.json")).unwrap();
+        let failure = apply_plan(&plan, &files).unwrap_err();
+        assert!(matches!(
+            failure.error,
+            ApplyError::Lock(_) | ApplyError::Atomic(_)
+        ));
+        assert_eq!(failure.applied.len(), 1);
+        assert_eq!(failure.applied[0].disposition, AppliedDisposition::Written);
+        assert!(plan.segment.path().join("audio.flac").is_file());
     }
 
     #[test]
     fn manifest_records_written_and_held_files_with_original_request() {
         let dir = root();
         let root = dir.path().to_path_buf();
-        let files = [file(b"sound")];
+        let files = [file("audio.flac", b"sound")];
         let Resolution::Apply(plan) =
             resolve_ingest(&root, "20260804", "device", "120000_1", &files).unwrap()
         else {

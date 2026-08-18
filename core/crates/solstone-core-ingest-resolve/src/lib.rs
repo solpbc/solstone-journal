@@ -15,7 +15,9 @@ mod quarantine;
 mod resolve;
 mod terminal_proof;
 
-pub use apply::{AppliedDisposition, AppliedFile, ApplyError, ApplyResult, apply_plan};
+pub use apply::{
+    AppliedDisposition, AppliedFile, ApplyError, ApplyFailure, ApplyResult, apply_plan,
+};
 pub use manifest::write_ingest_manifest;
 pub use notify::{IngestNotice, IngestNotifier, LoggingIngestNotifier};
 pub use quarantine::{QuarantineReceipt, quarantine_failed};
