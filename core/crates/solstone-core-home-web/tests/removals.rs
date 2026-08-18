@@ -1280,6 +1280,7 @@ fn recover_maps_receipt_shapes_without_consulting_policy() {
     assert_eq!(unknown.1["state"], "outcome.unknown");
 
     let records = action_records(harness.root.path());
+    assert_eq!(records.len(), 6);
     assert!(
         records
             .iter()

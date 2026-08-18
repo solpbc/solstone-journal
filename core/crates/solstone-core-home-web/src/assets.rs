@@ -215,6 +215,7 @@ mod tests {
         assert!(failed.contains("copy(\"failed.body\""));
         assert!(!failed.contains("row.what") && !failed.contains("row.origin_"));
         assert!(!failed.contains("data-removal-select"));
+        assert!(!failed.contains("data-removal-action"));
 
         let (_, outcomes) = source
             .split_once("function showOutcome")
