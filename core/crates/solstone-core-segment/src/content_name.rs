@@ -4,13 +4,14 @@
 use std::fmt;
 
 /// Filenames reserved for journal-authored segment metadata.
-pub const RESERVED_SEGMENT_FILENAMES: [&str; 6] = [
+pub const RESERVED_SEGMENT_FILENAMES: [&str; 7] = [
     "stream.json",
     "ingest.json",
     "ingest.json.lock",
     "device.json",
     "events.jsonl",
     "tombstone.json",
+    "shape.json",
 ];
 
 /// Return whether `name` is a reserved sidecar name, compared case-insensitively.
@@ -135,6 +136,25 @@ mod tests {
         // A name that merely resembles one is still ordinary content.
         assert!(ContentName::new("events.jsonl.bak").is_ok());
         assert!(ContentName::new("my-tombstone.json").is_ok());
+    }
+
+    #[test]
+    fn shape_sidecar_is_a_reserved_content_name() {
+        assert!(RESERVED_SEGMENT_FILENAMES.contains(&"shape.json"));
+        assert!(matches!(
+            ContentName::new("shape.json"),
+            Err(ContentNameError::Reserved(_))
+        ));
+        assert!(matches!(
+            ContentName::new("SHAPE.JSON"),
+            Err(ContentNameError::Reserved(_))
+        ));
+        assert!(matches!(
+            ContentName::new("Shape.Json"),
+            Err(ContentNameError::Reserved(_))
+        ));
+        assert!(ContentName::new("my-shape.json").is_ok());
+        assert!(ContentName::new("shape.json.bak").is_ok());
     }
 
     #[test]

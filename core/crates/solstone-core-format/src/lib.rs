@@ -12,6 +12,7 @@ pub mod segment;
 #[cfg(test)]
 pub(crate) mod test_support;
 
+pub use content::SHAPE_SIDECAR_BASENAME;
 pub use json::{ensure_ascii, json_compact_ascii, json_compact_utf8};
 
 #[cfg(test)]

@@ -241,3 +241,34 @@ pub fn analyze_segment(
         unknown_files: unknown,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::reserve_temp_path;
+    use solstone_core_segment::ContentName;
+
+    fn no_proof(_: &ContentName, _: u64) -> bool {
+        false
+    }
+
+    #[test]
+    fn shape_json_is_not_an_unknown_file() {
+        let root = reserve_temp_path("observer-prune-identity-shape");
+        let segment = SegmentDir::resolve(&root, "20260804", "120000_60", "workstation").unwrap();
+        fs::create_dir_all(segment.path()).unwrap();
+        fs::write(segment.path().join("audio.flac"), b"legacy media").unwrap();
+        fs::write(
+            segment.path().join("shape.json"),
+            r#"{"audio.flac":"Chat"}"#,
+        )
+        .unwrap();
+        fs::write(segment.path().join("notes.txt"), b"unknown").unwrap();
+
+        let identity = load_content_identity(&segment, &no_proof).unwrap();
+        let unknown = unknown_files(segment.path(), &identity);
+        assert!(unknown.contains(&"notes.txt".to_string()));
+        assert!(!unknown.iter().any(|name| name == "shape.json"));
+        fs::remove_dir_all(root).unwrap();
+    }
+}

@@ -9,7 +9,7 @@ use std::time::UNIX_EPOCH;
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, params};
 use solstone_core_format::content::{
-    ChatLabels, ContentResolution, Family, classify, produce_chunks,
+    ChatLabels, ContentResolution, Family, classify, produce_chunks, resolve_content_shape,
 };
 use solstone_core_format::paths::{relative_to_journal, resolve_journal_path};
 use solstone_core_format::segment::{day_of, time_bucket};
@@ -142,7 +142,7 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
     }
 
     for (rel, path, mtime) in &to_index {
-        let family = match classify(rel) {
+        let family = match resolve_content_shape(path, rel) {
             ContentResolution::Indexed(family) => family,
             ContentResolution::Unrecognized => {
                 report.skipped += 1;
@@ -282,7 +282,7 @@ fn run_bounded_merge(conn: &mut Connection) -> (usize, Option<String>) {
 
 pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, StoreError> {
     let (rel, path) = resolve_rescan_target(journal, input)?;
-    let resolution = classify(&rel);
+    let resolution = resolve_content_shape(&path, &rel);
     let edge_source = edge_source_for_rel(&rel)?;
     let family = match resolution {
         ContentResolution::Indexed(family) => Some(family),
@@ -5590,5 +5590,131 @@ not json
         );
         assert_sqlite_and_fts_integrity(&conn);
         fs::remove_dir_all(root).expect("cleanup reset root");
+    }
+
+    const CHAT_BROWSER_LINE: &str = r#"{"kind":"owner_message","text":"Need a diff","t":"segment_start","title":"Inbox - Gmail","ts":1}
+"#;
+    const CHAT_REL: &str = "20260804/chat/120000_60/chat.jsonl";
+
+    fn write_chat_segment(root: &Path, sidecar: Option<&str>) {
+        write_stream(root, "20260804", "chat", "120000_60");
+        write(root, &format!("chronicle/{CHAT_REL}"), CHAT_BROWSER_LINE);
+        if let Some(sidecar) = sidecar {
+            write(
+                root,
+                "chronicle/20260804/chat/120000_60/shape.json",
+                sidecar,
+            );
+        }
+    }
+
+    #[test]
+    fn scan_journal_uses_written_shape_over_path() {
+        let root = temp_root("scan-written-browser");
+        write_chat_segment(&root, Some(r#"{"chat.jsonl":"Browser"}"#));
+        let report = scan_journal(&root, true).expect("scan written browser");
+        assert_eq!(report.indexed, 1);
+        let conn = Connection::open(db_path(&root)).expect("open db");
+        assert_eq!(chunk_content(&conn, CHAT_REL), "## Inbox - Gmail");
+        let row = chunk_row(&conn, CHAT_REL);
+        assert_eq!(row.2, "browser");
+        fs::remove_dir_all(root).expect("cleanup scan written browser");
+    }
+
+    #[test]
+    fn rescan_file_uses_written_shape_over_path() {
+        let root = temp_root("rescan-written-browser");
+        write_chat_segment(&root, Some(r#"{"chat.jsonl":"Browser"}"#));
+        assert_eq!(
+            rescan_file(&root, Path::new(CHAT_REL)).expect("rescan written browser"),
+            RescanFileStatus::Indexed {
+                warnings: Vec::new()
+            }
+        );
+        let conn = Connection::open(db_path(&root)).expect("open db");
+        assert_eq!(chunk_content(&conn, CHAT_REL), "## Inbox - Gmail");
+        let row = chunk_row(&conn, CHAT_REL);
+        assert_eq!(row.2, "browser");
+        fs::remove_dir_all(root).expect("cleanup rescan written browser");
+    }
+
+    #[test]
+    fn rescan_file_still_declines_unresolvable_paths() {
+        let root = temp_root("rescan-decline-unresolvable");
+        write(&root, "notes/foo.txt", "unsupported");
+        assert_eq!(
+            rescan_file(&root, Path::new("notes/foo.txt")).expect("decline unsupported"),
+            RescanFileStatus::Declined
+        );
+        fs::remove_dir_all(root).expect("cleanup decline root");
+    }
+
+    #[test]
+    fn scan_journal_does_not_index_chat_when_sidecar_is_unusable() {
+        for (label, sidecar) in [
+            ("array", "[]"),
+            ("unknown-spelling", r#"{"chat.jsonl":"Nonsense"}"#),
+        ] {
+            let root = temp_root(&format!("scan-unusable-{label}"));
+            write_chat_segment(&root, Some(sidecar));
+            let report = scan_journal(&root, true).expect("scan unusable sidecar");
+            assert_eq!(report.indexed, 0, "{label}");
+            assert!(report.skipped >= 1, "{label}");
+            let conn = Connection::open(db_path(&root)).expect("open db");
+            assert_eq!(
+                count(
+                    &conn,
+                    &format!("SELECT count(*) FROM chunks WHERE path='{CHAT_REL}'")
+                ),
+                0,
+                "{label}"
+            );
+            assert!(
+                !chunk_contents_contain(&conn, "**Owner** Need a diff"),
+                "{label}"
+            );
+            fs::remove_dir_all(root).expect("cleanup unusable scan");
+        }
+    }
+
+    #[test]
+    fn rescan_file_indexes_written_chat_on_unindexed_audio_path() {
+        let root = temp_root("rescan-written-chat-audio");
+        write_stream(&root, "20260804", "workstation", "120000_60");
+        let rel = "20260804/workstation/120000_60/audio.jsonl";
+        write(
+            root.as_path(),
+            &format!("chronicle/{rel}"),
+            CHAT_BROWSER_LINE,
+        );
+        write(
+            &root,
+            "chronicle/20260804/workstation/120000_60/shape.json",
+            r#"{"audio.jsonl":"Chat"}"#,
+        );
+        write(
+            &root,
+            "config/journal.json",
+            r#"{"identity":{"name":"Owner"},"agent":{"name":"Sol"}}"#,
+        );
+        assert_eq!(
+            rescan_file(&root, Path::new(rel)).expect("rescan written chat on audio"),
+            RescanFileStatus::Indexed {
+                warnings: Vec::new()
+            }
+        );
+        let conn = Connection::open(db_path(&root)).expect("open db");
+        assert_eq!(chunk_content(&conn, rel), "**Owner** Need a diff");
+        let row = chunk_row(&conn, rel);
+        assert_eq!(row.2, "chat");
+        fs::remove_dir_all(root).expect("cleanup rescan written chat audio");
+    }
+
+    fn chunk_contents_contain(conn: &Connection, needle: &str) -> bool {
+        conn.prepare("SELECT content FROM chunks")
+            .expect("prepare chunk contents")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query chunk contents")
+            .any(|row| row.expect("chunk content row").contains(needle))
     }
 }

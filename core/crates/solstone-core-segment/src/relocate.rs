@@ -230,7 +230,7 @@ fn patch_successor(
 /// Sidecar names the restructure migration treats as non-content.
 ///
 /// Deliberately the three names Python's `solstone/think/segment_files.py`
-/// defines, not this crate's wider six-name [`crate::RESERVED_SEGMENT_FILENAMES`].
+/// defines, not this crate's wider seven-name [`crate::RESERVED_SEGMENT_FILENAMES`].
 /// The wider set would classify a segment holding only `device.json`,
 /// `events.jsonl`, or `tombstone.json` as empty and delete it, which the
 /// migration being ported never does.

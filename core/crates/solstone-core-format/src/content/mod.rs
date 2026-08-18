@@ -18,6 +18,7 @@ mod projections;
 mod raw_screen;
 mod screen;
 mod sense;
+mod shape;
 mod talent_projections;
 
 use serde_json::{Map, Value};
@@ -27,6 +28,7 @@ use crate::matcher::{PatternSpec, Resolver, patterns_for_root as filter_patterns
 
 pub use crate::matcher::PatternRoot;
 pub use projections::{render_browser_text, render_morning_briefing_text, render_raw_screen_text};
+pub use shape::{SHAPE_SIDECAR_BASENAME, parse_shape_name, resolve_content_shape};
 pub use talent_projections::{
     TalentTextProjection, iter_talent_text_projections, talent_projection_map,
 };
@@ -647,27 +649,6 @@ mod tests {
         super::produce_chunks(family, rel, text, &ChatLabels::default())
     }
 
-    fn family_by_name(name: &str) -> Option<Family> {
-        Some(match name {
-            "Markdown" => Family::Markdown,
-            "Event" => Family::Event,
-            "Activity" => Family::Activity,
-            "ActionLog" => Family::ActionLog,
-            "StructuredImport" => Family::StructuredImport,
-            "AiChat" => Family::AiChat,
-            "Chat" => Family::Chat,
-            "Browser" => Family::Browser,
-            "DayAccumulator" => Family::DayAccumulator,
-            "FacetEntity" => Family::FacetEntity,
-            "Observation" => Family::Observation,
-            "Documents" => Family::Documents,
-            "Screen" => Family::Screen,
-            "Sense" => Family::Sense,
-            "MorningBriefing" => Family::MorningBriefing,
-            _ => return None,
-        })
-    }
-
     /// Why a case is allowed to differ from the reference corpus.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum Divergence {
@@ -812,14 +793,6 @@ mod tests {
         value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
     }
 
-    fn raw_percept_family_by_name(name: &str) -> Option<RawPerceptFamily> {
-        Some(match name {
-            "Audio" => RawPerceptFamily::Audio,
-            "RawScreen" => RawPerceptFamily::RawScreen,
-            _ => return None,
-        })
-    }
-
     fn compare_corpus_output(
         case: &serde_json::Value,
         id: &str,
@@ -953,8 +926,10 @@ mod tests {
                 .get("pending_family")
                 .and_then(serde_json::Value::as_str)
             {
-                let family = raw_percept_family_by_name(name)
-                    .unwrap_or_else(|| panic!("{id}: unknown raw percept family {name}"));
+                let family = match parse_shape_name(name) {
+                    Some(ContentResolution::Unindexed(family)) => family,
+                    other => panic!("{id}: unknown raw percept family {name} ({other:?})"),
+                };
                 let rel = case["rel"].as_str().expect("case rel");
                 let text = case["input_text"].as_str().expect("case input_text");
                 let produced = produce_raw_percept_chunks(family, rel, text);
@@ -999,8 +974,10 @@ mod tests {
             let Some(name) = case["family"].as_str() else {
                 continue;
             };
-            let family =
-                family_by_name(name).unwrap_or_else(|| panic!("{id}: unknown family {name}"));
+            let family = match parse_shape_name(name) {
+                Some(ContentResolution::Indexed(family)) => family,
+                other => panic!("{id}: unknown family {name} ({other:?})"),
+            };
             let rel = case["rel"].as_str().expect("case rel");
             let text = case["input_text"].as_str().expect("case input_text");
 

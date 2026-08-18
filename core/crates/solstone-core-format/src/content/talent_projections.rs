@@ -7,7 +7,8 @@ use std::io;
 use std::path::{Component, Path};
 
 use super::{
-    ChatLabels, ContentResolution, classify, parse_records_for_family, produce_chunks_by_shape,
+    ChatLabels, ContentResolution, parse_records_for_family, produce_chunks_by_shape,
+    resolve_content_shape,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +52,8 @@ pub fn iter_talent_text_projections(
             .unwrap_or(&json_rel)
             .to_string();
         if json_path.is_file()
-            && let ContentResolution::Indexed(family) = classify(&classifier_rel)
+            && let ContentResolution::Indexed(family) =
+                resolve_content_shape(&json_path, &classifier_rel)
         {
             let text = fs::read_to_string(&json_path)?;
             let records = parse_records_for_family(family, &text);
@@ -275,6 +277,68 @@ mod tests {
             .map(|key| key.as_str().expect("filtered key").to_string())
             .collect::<Vec<_>>();
         assert_eq!(filtered_keys, expected_filtered_keys);
+    }
+
+    const SCREEN_SENSE_OBJECT: &str = r#"{"narrative":"09:00 Alice discussed the repo.","content_type":"meeting","activity_summary":"Reviewed launch.","entities":[{"type":"Person","name":"Alice","role":"attendee","context":"Visible"}]}"#;
+
+    #[test]
+    fn written_sense_shape_overrides_path_derived_screen() {
+        let temporary = TempDir::new("written-sense");
+        let talents_dir = temporary
+            .path
+            .join("chronicle/20260804/workstation/120000_60/talents");
+        write(&talents_dir.join("screen.json"), SCREEN_SENSE_OBJECT);
+        write(
+            &talents_dir.join("shape.json"),
+            r#"{"screen.json":"Sense"}"#,
+        );
+
+        let projections = iter_talent_text_projections(
+            &talents_dir,
+            "chronicle/20260804/workstation/120000_60/talents",
+            None,
+        )
+        .expect("walk talent projections");
+        assert_eq!(projections.len(), 1);
+        assert_eq!(projections[0].key, "screen");
+        assert!(projections[0].text.contains("## Sense: meeting"));
+        assert!(projections[0].text.contains("Reviewed launch."));
+        assert!(!projections[0].text.contains("Person: Alice (attendee)"));
+        assert!(
+            !projections[0]
+                .text
+                .contains("- Person: Alice (attendee) - Visible")
+        );
+    }
+
+    #[test]
+    fn unusable_shape_sidecar_does_not_path_render_screen() {
+        let temporary = TempDir::new("unusable-screen");
+        let talents_dir = temporary
+            .path
+            .join("chronicle/20260804/workstation/120000_60/talents");
+        write(&talents_dir.join("screen.json"), SCREEN_SENSE_OBJECT);
+        write(&talents_dir.join("shape.json"), "[]");
+        write(
+            &talents_dir.join("screen.md"),
+            "# Fallback\n\nmarkdown sibling\n",
+        );
+
+        let projections = iter_talent_text_projections(
+            &talents_dir,
+            "chronicle/20260804/workstation/120000_60/talents",
+            None,
+        )
+        .expect("walk talent projections");
+        assert!(
+            projections.iter().all(|projection| {
+                !projection.text.contains("Person: Alice (attendee)")
+                    && !projection
+                        .text
+                        .contains("- Person: Alice (attendee) - Visible")
+            }),
+            "unusable sidecar must not path-render Screen"
+        );
     }
 
     #[test]
