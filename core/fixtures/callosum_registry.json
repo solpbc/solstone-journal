@@ -3,6 +3,9 @@
   "fixture_version": 1,
   "generated_by": "make core-fixtures",
   "registry": {
+    "__solstone_internal": [
+      "connection_ready"
+    ],
     "activity": [
       "live",
       "recorded"

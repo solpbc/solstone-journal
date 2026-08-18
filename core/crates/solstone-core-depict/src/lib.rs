@@ -29,7 +29,7 @@ use solstone_core_journal_io::{AtomicWriteOptions, write_jsonl};
 
 pub const ERROR_SCHEMA: &str = "solstone-depict-error-v1";
 pub const DESCRIPTION_PROMPT: &str = "Describe this image in detail. Include any visible text, people, objects, setting, and notable context. Return a concise natural-language description.";
-pub const USAGE: &str = "Usage: solstone-core-depict <image_path> [--redo]";
+pub const USAGE: &str = "usage: journal depict [-h] [--redo] FILE\n";
 const MAX_VLM_DIM: u32 = 1920;
 const ENGINE_NAME: &str = "rf-detr.cpp";
 const ENGINE_REF: &str = "65c0ffcc";

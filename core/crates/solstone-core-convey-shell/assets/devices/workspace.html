@@ -543,14 +543,20 @@ function emptyStateHTML() {
   });
 }
 
+function verdictAvailable(observer) {
+  return Boolean(observer.revoked) || observer.live !== null;
+}
+
 function statsHTML(observer, statusClass) {
   const lastSeenBase = observer.last_seen ? `${relativeTime(Date.now() - observer.last_seen)} ago` : 'never';
   const lastSolPing = observer.last_chat_request_at ? `${relativeTime(Date.now() - observer.last_chat_request_at)} ago` : '—';
-  const lastSeen = statusClass === 'stale'
-    ? `sol on this device last reported ${lastSeenBase}`
-    : statusClass === 'disconnected'
-      ? `${lastSeenBase} — offline`
-      : lastSeenBase;
+  const lastSeen = !verdictAvailable(observer)
+    ? lastSeenBase
+    : statusClass === 'stale'
+      ? `sol on this device last reported ${lastSeenBase}`
+      : statusClass === 'disconnected'
+        ? `${lastSeenBase} — offline`
+        : lastSeenBase;
   return `<dl>
     <div><dt>last reported</dt><dd data-last-seen="${observer.last_seen || ''}" data-state="${statusClass}">${lastSeen}</dd></div>
     <div><dt>last sol-ping</dt><dd>${lastSolPing}</dd></div>
@@ -630,8 +636,9 @@ function groupHeaderHTML(group) {
 }
 
 function observerCardHTML(observer, labels = {}) {
-  const { statusClass, cardClass } = statusMeta(observer.state);
-  const label = observer.label;
+  const hasVerdict = verdictAvailable(observer);
+  const { statusClass, cardClass } = hasVerdict ? statusMeta(observer.state) : { statusClass: '', cardClass: '' };
+  const label = hasVerdict ? observer.label : '';
   const displayName = observer.display_name || observer.name;
   const sourceLabel = observer.source_label || '';
   const safeLabel = escapeHtml(label);
@@ -652,12 +659,12 @@ function observerCardHTML(observer, labels = {}) {
       <div class="observer-header">
         <span class="observer-name">${escapeHtml(displayName)}</span>
         ${sourceLabel ? `<span class="observer-source">${escapeHtml(sourceLabel)}</span>` : ''}
-        <span class="observer-status ${statusClass}">${safeLabel}</span>
+        ${hasVerdict ? `<span class="observer-status ${statusClass}">${safeLabel}</span>` : ''}
         ${livePip}${liveUnavailable}
       </div>
       <div class="observer-stats">${statsHTML(observer, statusClass)}</div>
       <div class="observer-actions">
-        ${statusClass === 'stale' && !observer.revoked ? `<button onclick="restartObserver('${observer.prefix}', this)">${window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect'}</button><span class="observer-reconnect-result" data-reconnect-result="${observer.prefix}"></span>` : ''}
+        ${hasVerdict && statusClass === 'stale' && !observer.revoked ? `<button onclick="restartObserver('${observer.prefix}', this)">${window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect'}</button><span class="observer-reconnect-result" data-reconnect-result="${observer.prefix}"></span>` : ''}
         ${observer.revoked ? '' : `<button onclick="viewObserverKey('${observer.prefix}', this)">view key</button>`}
         ${observer.revoked ? '' : `<button class="danger" onclick="revokeObserver('${observer.prefix}', this)">revoke</button>`}
       </div>
@@ -675,13 +682,18 @@ function renderObservers(observers, labels = {}) {
     stale: [],
     inactive: []
   };
+  const undecided = [];
 
   for (const observer of observers) {
+    if (!verdictAvailable(observer)) {
+      undecided.push(observer);
+      continue;
+    }
     const group = observer.group || groupFor(observer.state);
     (groups[group] || groups.inactive).push(observer);
   }
 
-  let html = '';
+  let html = undecided.map((observer) => observerCardHTML(observer, labels)).join('');
   for (const group of GROUP_ORDER) {
     if (!groups[group].length) continue;
     html += groupHeaderHTML(group);

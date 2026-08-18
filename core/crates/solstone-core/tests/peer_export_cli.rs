@@ -8,6 +8,30 @@ use std::process::{Command, Output};
 use serde_json::{Value, json};
 use stub_peer::{Fixture, PeerPlan, RequestRoute, ResponseAction, StubPeer};
 
+const DOOR_ROUTES: &str = include_str!("../../../fixtures/import_ingest_door_routes.json");
+
+fn door(method: &str, key: &str, kind: &str, area: &str) -> String {
+    let fixture: Value = serde_json::from_str(DOOR_ROUTES).expect("door fixture");
+    let suffix = format!("/{kind}/{area}");
+    fixture["rules"]
+        .as_array()
+        .expect("rules")
+        .iter()
+        .find(|rule| {
+            rule["methods"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|candidate| candidate.as_str() == Some(method))
+                && rule["rule"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with(&suffix))
+        })
+        .and_then(|rule| rule["rule"].as_str())
+        .map(|rule| rule.replace("<key_prefix>", key))
+        .unwrap_or_else(|| panic!("missing {method} {kind}/{area} door rule"))
+}
+
 fn run(fixture: &Fixture, extra: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_solstone-core"))
         .args(["export", "--to", "office"])
@@ -21,11 +45,11 @@ fn run(fixture: &Fixture, extra: &[&str]) -> Output {
 fn config_plan() -> PeerPlan {
     PeerPlan::new([
         (
-            RequestRoute::get("/app/import/journal/remote-i/manifest/config"),
+            RequestRoute::get(door("GET", "remote-i", "manifest", "config")),
             vec![ResponseAction::manifest_empty()],
         ),
         (
-            RequestRoute::post("/app/import/journal/remote-i/ingest/config"),
+            RequestRoute::post(door("POST", "remote-i", "ingest", "config")),
             vec![ResponseAction::status(
                 200,
                 json!({"staged": true}).to_string(),
@@ -75,11 +99,11 @@ fn all_areas_plan() -> PeerPlan {
             .flat_map(|area| {
                 [
                     (
-                        RequestRoute::get(format!("/app/import/journal/remote-i/manifest/{area}")),
+                        RequestRoute::get(door("GET", "remote-i", "manifest", area)),
                         vec![ResponseAction::manifest_empty()],
                     ),
                     (
-                        RequestRoute::post(format!("/app/import/journal/remote-i/ingest/{area}")),
+                        RequestRoute::post(door("POST", "remote-i", "ingest", area)),
                         vec![ResponseAction::status(
                             200,
                             json!({"staged": true}).to_string(),
@@ -128,33 +152,57 @@ fn export_all_five_areas_in_one_run() {
         requests
             .iter()
             .map(|request| (
-                request.method.as_str(),
-                request.path.as_str(),
+                request.method.clone(),
+                request.path.clone(),
                 request.body.is_empty()
             ))
             .collect::<Vec<_>>(),
         [
             (
-                "GET",
-                "/app/import/journal/remote-i/manifest/segments",
-                true
-            ),
-            ("GET", "/app/import/journal/remote-i/manifest/imports", true),
-            ("POST", "/app/import/journal/remote-i/ingest/imports", false),
-            (
-                "GET",
-                "/app/import/journal/remote-i/manifest/entities",
+                "GET".into(),
+                door("GET", "remote-i", "manifest", "segments"),
                 true
             ),
             (
-                "POST",
-                "/app/import/journal/remote-i/ingest/entities",
+                "GET".into(),
+                door("GET", "remote-i", "manifest", "imports"),
+                true
+            ),
+            (
+                "POST".into(),
+                door("POST", "remote-i", "ingest", "imports"),
                 false
             ),
-            ("GET", "/app/import/journal/remote-i/manifest/facets", true),
-            ("POST", "/app/import/journal/remote-i/ingest/facets", false),
-            ("GET", "/app/import/journal/remote-i/manifest/config", true),
-            ("POST", "/app/import/journal/remote-i/ingest/config", false),
+            (
+                "GET".into(),
+                door("GET", "remote-i", "manifest", "entities"),
+                true
+            ),
+            (
+                "POST".into(),
+                door("POST", "remote-i", "ingest", "entities"),
+                false
+            ),
+            (
+                "GET".into(),
+                door("GET", "remote-i", "manifest", "facets"),
+                true
+            ),
+            (
+                "POST".into(),
+                door("POST", "remote-i", "ingest", "facets"),
+                false
+            ),
+            (
+                "GET".into(),
+                door("GET", "remote-i", "manifest", "config"),
+                true
+            ),
+            (
+                "POST".into(),
+                door("POST", "remote-i", "ingest", "config"),
+                false
+            ),
         ]
     );
 
@@ -171,7 +219,7 @@ fn export_all_five_areas_in_one_run() {
 #[test]
 fn only_and_dry_run_limit_requests_and_never_prompt_on_non_tty() {
     let peer = StubPeer::new(PeerPlan::new([(
-        RequestRoute::get("/app/import/journal/remote-i/manifest/segments"),
+        RequestRoute::get(door("GET", "remote-i", "manifest", "segments")),
         vec![ResponseAction::manifest_empty()],
     )]));
     let fixture = peer.fixture();
@@ -195,19 +243,19 @@ fn only_and_dry_run_limit_requests_and_never_prompt_on_non_tty() {
 fn four_area_only_never_prompts_or_unpairs_on_non_tty() {
     let peer = StubPeer::new(PeerPlan::new([
         (
-            RequestRoute::get("/app/import/journal/remote-i/manifest/segments"),
+            RequestRoute::get(door("GET", "remote-i", "manifest", "segments")),
             vec![ResponseAction::manifest_empty()],
         ),
         (
-            RequestRoute::get("/app/import/journal/remote-i/manifest/imports"),
+            RequestRoute::get(door("GET", "remote-i", "manifest", "imports")),
             vec![ResponseAction::manifest_empty()],
         ),
         (
-            RequestRoute::get("/app/import/journal/remote-i/manifest/entities"),
+            RequestRoute::get(door("GET", "remote-i", "manifest", "entities")),
             vec![ResponseAction::manifest_empty()],
         ),
         (
-            RequestRoute::get("/app/import/journal/remote-i/manifest/facets"),
+            RequestRoute::get(door("GET", "remote-i", "manifest", "facets")),
             vec![ResponseAction::manifest_empty()],
         ),
     ]));
@@ -231,19 +279,19 @@ fn four_area_only_never_prompts_or_unpairs_on_non_tty() {
 fn manifest_failure_marks_one_area_failed_and_continues_others() {
     let peer = StubPeer::new(PeerPlan::new([
         (
-            RequestRoute::get("/app/import/journal/remote-i/manifest/segments"),
+            RequestRoute::get(door("GET", "remote-i", "manifest", "segments")),
             vec![ResponseAction::status(500, b"unavailable")],
         ),
         (
-            RequestRoute::get("/app/import/journal/remote-i/manifest/imports"),
+            RequestRoute::get(door("GET", "remote-i", "manifest", "imports")),
             vec![ResponseAction::manifest_empty()],
         ),
         (
-            RequestRoute::get("/app/import/journal/remote-i/manifest/entities"),
+            RequestRoute::get(door("GET", "remote-i", "manifest", "entities")),
             vec![ResponseAction::manifest_empty()],
         ),
         (
-            RequestRoute::get("/app/import/journal/remote-i/manifest/facets"),
+            RequestRoute::get(door("GET", "remote-i", "manifest", "facets")),
             vec![ResponseAction::manifest_empty()],
         ),
     ]));
@@ -265,20 +313,20 @@ fn manifest_failure_marks_one_area_failed_and_continues_others() {
         .into_iter()
         .map(|request| request.path)
         .collect::<Vec<_>>();
-    assert!(paths.contains(&"/app/import/journal/remote-i/manifest/imports".to_string()));
-    assert!(paths.contains(&"/app/import/journal/remote-i/manifest/entities".to_string()));
-    assert!(paths.contains(&"/app/import/journal/remote-i/manifest/facets".to_string()));
+    assert!(paths.contains(&door("GET", "remote-i", "manifest", "imports")));
+    assert!(paths.contains(&door("GET", "remote-i", "manifest", "entities")));
+    assert!(paths.contains(&door("GET", "remote-i", "manifest", "facets")));
 }
 
 #[test]
 fn persistent_entity_server_error_reports_retry_exhaustion() {
     let peer = StubPeer::new(PeerPlan::new([
         (
-            RequestRoute::get("/app/import/journal/remote-i/manifest/entities"),
+            RequestRoute::get(door("GET", "remote-i", "manifest", "entities")),
             vec![ResponseAction::manifest_empty()],
         ),
         (
-            RequestRoute::post("/app/import/journal/remote-i/ingest/entities"),
+            RequestRoute::post(door("POST", "remote-i", "ingest", "entities")),
             vec![
                 ResponseAction::status(500, b"unavailable"),
                 ResponseAction::status(500, b"unavailable"),
