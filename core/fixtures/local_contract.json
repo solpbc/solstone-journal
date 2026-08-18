@@ -76,6 +76,7 @@
         "runtime_reason": [
           "admission-exclusive-stop",
           "artifact-missing",
+          "manifest-missing",
           "artifact-proof-failed",
           "artifact-stale",
           "cleanup-attempt-failed",
@@ -141,6 +142,7 @@
         "runtime_reason": [
           "admission-exclusive-stop",
           "artifact-missing",
+          "manifest-missing",
           "artifact-proof-failed",
           "artifact-stale",
           "cleanup-attempt-failed",
@@ -227,6 +229,7 @@
         "runtime_reason": [
           "admission-exclusive-stop",
           "artifact-missing",
+          "manifest-missing",
           "artifact-proof-failed",
           "artifact-stale",
           "cleanup-attempt-failed",
@@ -292,6 +295,7 @@
         "runtime_reason": [
           "admission-exclusive-stop",
           "artifact-missing",
+          "manifest-missing",
           "artifact-proof-failed",
           "artifact-stale",
           "cleanup-attempt-failed",
@@ -358,6 +362,7 @@
         "runtime_reason": [
           "admission-exclusive-stop",
           "artifact-missing",
+          "manifest-missing",
           "artifact-proof-failed",
           "artifact-stale",
           "cleanup-attempt-failed",
@@ -423,6 +428,7 @@
         "runtime_reason": [
           "admission-exclusive-stop",
           "artifact-missing",
+          "manifest-missing",
           "artifact-proof-failed",
           "artifact-stale",
           "cleanup-attempt-failed",
@@ -565,6 +571,10 @@
       [
         "ready",
         "artifact-missing"
+      ],
+      [
+        "ready",
+        "manifest-missing"
       ],
       [
         "ready",
@@ -857,6 +867,7 @@
     "runtime_reason_codes": [
       "admission-exclusive-stop",
       "artifact-missing",
+      "manifest-missing",
       "artifact-proof-failed",
       "artifact-stale",
       "cleanup-attempt-failed",
@@ -900,6 +911,7 @@
     ],
     "runtime_reason_to_brain_reason": {
       "artifact-missing": "local_artifact_not_ready",
+      "manifest-missing": "local_artifact_not_ready",
       "artifact-proof-failed": "local_artifact_not_ready",
       "artifact-stale": "local_artifact_not_ready",
       "gpu-probe-failed": "local_runtime_state_unavailable",

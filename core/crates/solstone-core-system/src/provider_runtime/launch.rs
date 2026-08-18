@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{CanonicalInput, canonical_fingerprint};
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
-use solstone_core_local::install::{metal_candidate, readiness::inspect_local};
+use solstone_core_local::install::{metal_candidate, pins, readiness::inspect_local};
 use solstone_core_local::nvidia::{
     ArtifactTrust, CUDA_EMBEDDED_ARCH_SET, CUDA_MIN_DRIVER_VERSION, NvidiaProbe, probe_nvidia_gpu,
 };
@@ -414,7 +414,7 @@ impl LocalTruthSeam {
                     Platform::Linux
                 },
                 nvidia_probe: None,
-                vulkan_devices: Vec::new(),
+                vulkan_devices: solstone_core_local::detect_gpus(),
             },
         )
     }
@@ -475,8 +475,10 @@ fn observe_truth(
     // native 4B artifacts or desired fingerprint.
     let model_id = if config.platform == Platform::Darwin {
         "local/qwen3.5-4b".to_owned()
-    } else {
+    } else if pins::model_identity(&configured_model_id).is_some() {
         configured_model_id
+    } else {
+        "local/qwen3.5-4b".to_owned()
     };
     let probe = config.nvidia_probe.clone().unwrap_or_else(probe_nvidia_gpu);
     let readiness = match config.platform {
@@ -550,6 +552,10 @@ fn observe_truth(
             "manifest_pin_mismatch" | "sha256_mismatch" | "inventory_member_missing" => (
                 super::model::RuntimePhase::ArtifactNotReady,
                 "artifact-stale",
+            ),
+            "manifest_missing" => (
+                super::model::RuntimePhase::ArtifactNotReady,
+                "manifest-missing",
             ),
             _ if object.get("status").and_then(Value::as_str) == Some("proof-unavailable") => (
                 super::model::RuntimePhase::ArtifactNotReady,
@@ -628,7 +634,8 @@ fn observe_truth(
             cuda_persisted_installed_cuda_target: false,
         },
         (Platform::Linux, "vulkan") => {
-            let Some(device) = config.vulkan_devices.first().cloned() else {
+            let Some(device) = solstone_core_local::select_device(&config.vulkan_devices, None)
+            else {
                 return truth(
                     super::model::RuntimePhase::HostBlocked,
                     "gpu-unavailable",

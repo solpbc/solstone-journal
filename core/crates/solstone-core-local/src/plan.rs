@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -417,6 +419,13 @@ fn llama_plan(
             plan.extra_env
                 .insert("GGML_VK_VISIBLE_DEVICES".into(), value);
         }
+        if plan.lib_dir.is_none()
+            && let Some(binary) = plan.binary_path.as_deref()
+            && let Some(lib_dir) = discover_vulkan_lib_dir(Path::new(binary))
+        {
+            plan.extra_env
+                .insert("LD_LIBRARY_PATH".into(), lib_dir.display().to_string());
+        }
     }
     PlanOutcome::Launch(Box::new(plan))
 }
@@ -459,6 +468,27 @@ fn base_plan(
         port: input.port,
         argv,
     }
+}
+
+fn discover_vulkan_lib_dir(binary_path: &Path) -> Option<PathBuf> {
+    if !binary_path.is_file() {
+        return None;
+    }
+    let parent = binary_path.parent()?;
+    if parent.join("libllama-server-impl.so").is_file() {
+        return Some(parent.to_path_buf());
+    }
+    let mut found = None;
+    for entry in fs::read_dir(parent).ok()? {
+        let path = entry.ok()?.path();
+        if path.is_dir() && path.join("libllama-server-impl.so").is_file() {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(path);
+        }
+    }
+    found
 }
 
 fn rejected(reason: impl Into<String>) -> PlanOutcome {
@@ -858,5 +888,82 @@ mod tests {
         let first = launch(input(1));
         let second = launch(input(1));
         assert_eq!(first, second);
+    }
+
+    fn vulkan_plan_input(binary: String) -> PlanInput {
+        let mut input = input(1);
+        input.backend_override = Some(PlanBackend::Vulkan);
+        input.nvidia_probe = None;
+        input.lib_dir = None;
+        input.inherited_ld_library_path = None;
+        input.vulkan_binary_path = Some(binary);
+        input.vulkan_devices = Some(vec![VulkanDevice {
+            index: 0,
+            name: "Intel".into(),
+            device_type: Some(1),
+            vram_mib: 16_000,
+        }]);
+        input.vulkan_selected_gpu_index = Some(0);
+        input.vulkan_selected_gpu_name = Some("Intel".into());
+        input.vulkan_selected_vram_mib = Some(16_000);
+        input
+    }
+
+    fn var_tmp(name: &str) -> std::path::PathBuf {
+        let path = std::path::PathBuf::from("/var/tmp")
+            .join(format!("solstone-local-plan-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("var tmp plan tree");
+        path
+    }
+
+    #[test]
+    fn ac8_vulkan_unflattened_tree_sets_ld_library_path_when_lib_dir_unset() {
+        let root = var_tmp("ac8-unflattened");
+        let nested = root.join("llama-b10068");
+        std::fs::create_dir_all(&nested).expect("nested lib dir");
+        let binary = root.join("llama-server");
+        std::fs::write(&binary, b"#!/bin/sh\nexit 0\n").expect("vulkan binary");
+        std::fs::write(nested.join("libllama-server-impl.so"), b"library").expect("nested lib");
+        let plan = launch(vulkan_plan_input(binary.display().to_string()));
+        let ld_library_path = plan
+            .extra_env
+            .get("LD_LIBRARY_PATH")
+            .expect("unflattened Vulkan tree must set LD_LIBRARY_PATH");
+        assert!(
+            ld_library_path.contains("llama-b10068"),
+            "LD_LIBRARY_PATH={ld_library_path} must contain the nested llama-b10068 dir"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ac8_vulkan_flattened_sibling_sets_ld_library_path_to_binary_dir() {
+        let root = var_tmp("ac8-flattened");
+        let binary = root.join("llama-server");
+        std::fs::write(&binary, b"#!/bin/sh\nexit 0\n").expect("vulkan binary");
+        std::fs::write(root.join("libllama-server-impl.so"), b"library").expect("sibling lib");
+        let plan = launch(vulkan_plan_input(binary.display().to_string()));
+        let ld_library_path = plan
+            .extra_env
+            .get("LD_LIBRARY_PATH")
+            .expect("flattened sibling tree must set LD_LIBRARY_PATH to the binary directory");
+        let binary_dir = root.display().to_string();
+        assert!(
+            ld_library_path == &binary_dir || ld_library_path.contains(&binary_dir),
+            "LD_LIBRARY_PATH={ld_library_path} must contain the binary directory {binary_dir}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ac8_vulkan_missing_binary_path_launches_without_ld_library_path() {
+        let missing = std::path::PathBuf::from("/var/tmp/solstone-local-plan-missing-llama-server");
+        assert!(!missing.exists());
+        let plan = launch(vulkan_plan_input(missing.display().to_string()));
+        assert!(
+            !plan.extra_env.contains_key("LD_LIBRARY_PATH"),
+            "a vulkan_binary_path that is not on disk must still Launch with no LD_LIBRARY_PATH"
+        );
     }
 }

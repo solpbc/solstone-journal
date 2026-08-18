@@ -160,7 +160,7 @@ pub const fn unclassified_phase_reason(phase: RuntimePhase) -> Option<&'static s
 }
 
 /// All reason codes recognized by the cross-language runtime-health contract.
-pub const KNOWN_REASON_CODES: [&str; 42] = [
+pub const KNOWN_REASON_CODES: [&str; 43] = [
     "intent-disabled",
     "intent-enabled",
     "provider-not-needed",
@@ -203,6 +203,7 @@ pub const KNOWN_REASON_CODES: [&str; 42] = [
     "record-malformed",
     "record-unavailable",
     "stale-result-ignored",
+    "manifest-missing",
 ];
 
 /// A lossless runtime reason. Unknown wire values remain representable for forward compatibility.

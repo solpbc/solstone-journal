@@ -984,15 +984,18 @@ fn run_local_install(
         )
     })?;
     let final_binary = staging.join("llama-server");
-    if binary != final_binary {
-        if backend == "metal" {
-            flatten_binary_bundle(&staging, &binary)
-                .map_err(|error| failure("io", "binary_bundle_move_failed", error, 74))?;
-        } else {
-            fs::rename(&binary, &final_binary)
-                .map_err(|error| failure("io", "binary_move_failed", error, 74))?;
-        }
-    }
+    hoist_binary(&staging, &binary, backend).map_err(|error| {
+        failure(
+            "io",
+            if backend == "metal" || backend == "vulkan" {
+                "binary_bundle_move_failed"
+            } else {
+                "binary_move_failed"
+            },
+            error,
+            74,
+        )
+    })?;
     archive::make_executable(&final_binary)
         .map_err(|error| failure("io", "chmod_failed", error, 74))?;
     archive::clear_macos_quarantine(&staging)
@@ -1281,6 +1284,18 @@ fn find_file(root: &Path, name: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn hoist_binary(staging: &Path, binary: &Path, backend: &str) -> std::io::Result<()> {
+    let final_binary = staging.join("llama-server");
+    if binary == final_binary {
+        return Ok(());
+    }
+    if backend == "metal" || backend == "vulkan" {
+        flatten_binary_bundle(staging, binary)
+    } else {
+        fs::rename(binary, final_binary)
+    }
 }
 
 fn flatten_binary_bundle(staging: &Path, binary: &Path) -> std::io::Result<()> {

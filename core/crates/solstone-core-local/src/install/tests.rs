@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use super::test_hooks::{inspect_parakeet, stage_ready_parakeet};
 use super::{
     InstallVerb, archive, cleanup_legacy_cuda_oci_dirs, dispatch, download_artifact, fingerprint,
-    flatten_binary_bundle, lease, local_backend_choice, manifest, metal_candidate,
+    flatten_binary_bundle, hoist_binary, lease, local_backend_choice, manifest, metal_candidate,
     parakeet_target_for_install, pins, publish_staged_tree_with, readiness, status,
     write_parakeet_model_manifest,
 };
@@ -1480,6 +1480,65 @@ fn extraction_refuses_symlink_and_hardlink_escapes_without_parent_changes() {
         assert_eq!(archive::snapshot_tree(&root).unwrap(), before);
         let _ = fs::remove_dir_all(root);
     }
+}
+
+fn write_nested_vulkan_tar(path: &std::path::Path) {
+    let file = fs::File::create(path).unwrap();
+    let encoder = GzEncoder::new(file, Compression::default());
+    let mut builder = tar::Builder::new(encoder);
+    let mut dir_header = tar::Header::new_gnu();
+    dir_header.set_entry_type(tar::EntryType::Directory);
+    dir_header.set_size(0);
+    dir_header.set_mode(0o755);
+    dir_header.set_cksum();
+    builder
+        .append_data(&mut dir_header, "llama-b10068", std::io::empty())
+        .unwrap();
+    for (name, bytes) in [
+        ("llama-b10068/llama-server", b"binary".as_slice()),
+        (
+            "llama-b10068/libllama-server-impl.so",
+            b"library".as_slice(),
+        ),
+    ] {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append_data(&mut header, name, bytes).unwrap();
+    }
+    builder.into_inner().unwrap().finish().unwrap();
+}
+
+#[test]
+fn ac6_vulkan_nested_extract_is_flattened_by_run_local_install_hoist() {
+    let root = temp("vulkan-nested-hoist");
+    let staging = root.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+    let archive_path = staging.join("archive.tar.gz");
+    write_nested_vulkan_tar(&archive_path);
+    archive::extract_tar_gz(&archive_path, &staging).unwrap();
+    let binary = staging.join("llama-b10068").join("llama-server");
+    assert!(binary.is_file());
+    assert!(
+        staging
+            .join("llama-b10068")
+            .join("libllama-server-impl.so")
+            .is_file()
+    );
+
+    hoist_binary(&staging, &binary, "vulkan").unwrap();
+    assert_eq!(fs::read(staging.join("llama-server")).unwrap(), b"binary");
+    assert_eq!(
+        fs::read(staging.join("libllama-server-impl.so")).unwrap(),
+        b"library"
+    );
+    assert!(!fs::read(staging.join("archive.tar.gz")).unwrap().is_empty());
+    assert!(
+        !staging.join("llama-b10068").exists(),
+        "run_local_install vulkan hoist must remove the nested llama-b10068/ dir"
+    );
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
