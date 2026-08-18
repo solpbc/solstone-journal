@@ -45,3 +45,39 @@ fn ac7_python_settings_and_observer_management_surfaces_are_absent() {
         "native Devices owner is present"
     );
 }
+
+#[test]
+fn retired_python_app_json_and_merged_workspace_html_are_absent() {
+    let root = repository_root();
+    // Control: the instrument can see a file we deliberately kept.
+    assert!(
+        root.join("solstone/think/detect_created.md").exists(),
+        "control path solstone/think/detect_created.md must remain visible"
+    );
+    for path in [
+        "solstone/apps/README.md",
+        "solstone/apps/backup/app.json",
+        "solstone/apps/body/app.json",
+        "solstone/apps/chat/app.json",
+        "solstone/apps/entities/app.json",
+        "solstone/apps/health/app.json",
+        "solstone/apps/home/app.json",
+        "solstone/apps/import/app.json",
+        "solstone/apps/network/app.json",
+        "solstone/apps/search/app.json",
+        "solstone/apps/sol/app.json",
+        "solstone/apps/sol/workspace.html",
+        "solstone/apps/speakers/app.json",
+        "solstone/apps/stats/app.json",
+        "solstone/apps/support/app.json",
+        "solstone/apps/thinking/app.json",
+        "solstone/apps/tokens/app.json",
+        "solstone/apps/tokens/workspace.html",
+        "solstone/apps/transcripts/app.json",
+    ] {
+        assert!(
+            !root.join(path).exists(),
+            "retired Python web path remains: {path}"
+        );
+    }
+}

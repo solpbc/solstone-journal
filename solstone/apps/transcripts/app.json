@@ -1,6 +1,0 @@
-{
-  "icon": "📜",
-  "label": "transcripts",
-  "date_nav": {"unit": {"one": "segment", "other": "segments", "none": "no segments"}},
-  "facets": {"disabled": true}
-}

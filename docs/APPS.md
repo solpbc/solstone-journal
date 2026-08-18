@@ -157,7 +157,7 @@ Override default icon, label, and other app settings.
 and its `workspace.html` bytes at `/app/{name}/workspace`. Keep
 `workspace.html` construct-free — no `{{`, `{%`, or `{#`.
 
-**Examples:** Browse `solstone/apps/*/app.json` for reference configurations.
+**Examples:** The Python `app.json` files are gone. Native app surfaces live under `core/crates/solstone-core-*-web` or `core/crates/solstone-core-convey-shell/assets/`.
 
 ### 4. `app_bar.html` - Bottom Bar Controls
 
