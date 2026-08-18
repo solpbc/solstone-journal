@@ -517,16 +517,6 @@ mod tests {
         output
     }
 
-    async fn yield_until(predicate: impl Fn() -> bool, what: &str) {
-        for _ in 0..256 {
-            if predicate() {
-                return;
-            }
-            tokio::task::yield_now().await;
-        }
-        panic!("{what}");
-    }
-
     fn deletion_root() -> TempDir {
         let root = TempDir::new().expect("journal");
         config(root.path());
@@ -608,11 +598,10 @@ mod tests {
         assert_eq!(response["success"], true);
         let segment = root.path().join("chronicle/20260731/field/090000_300");
         let tombstone = segment.join("tombstone.json");
-        yield_until(
-            || tombstone.is_file(),
-            "deferred delete did not write tombstone.json",
-        )
-        .await;
+        assert!(
+            tombstone.is_file(),
+            "zero-delay deferred delete must commit before the delete response returns"
+        );
         let names = fs::read_dir(&segment)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().into_string().unwrap())

@@ -21,22 +21,24 @@ impl DeferredDeleteRegistry {
 
     /// Schedule one commit. The task removes its own handle before invoking the
     /// closure, so cancellation after the deadline observes it as unavailable.
+    ///
+    /// A zero delay commits on this thread before `schedule` returns. Spawning
+    /// that path made the commit a race against handle insertion and against
+    /// any caller polling with cooperative yields.
     pub(crate) fn schedule(
         &self,
         pending_id: String,
         delay: Duration,
         commit: impl FnOnce() + Send + 'static,
     ) {
+        if delay.is_zero() {
+            commit();
+            return;
+        }
         let handles = Arc::clone(&self.handles);
         let task_pending_id = pending_id.clone();
         let task = tokio::spawn(async move {
-            // A zero delay arms no timer. The timer wheel only fires once
-            // wall-clock advances, so scheduling one for an immediate commit
-            // made the commit observable only after real time passed -- which
-            // a caller polling with cooperative yields never provides.
-            if !delay.is_zero() {
-                tokio::time::sleep(delay).await;
-            }
+            tokio::time::sleep(delay).await;
             if handles
                 .lock()
                 .expect("deferred-delete registry mutex is not poisoned")
@@ -91,6 +93,18 @@ mod tests {
         tokio::task::yield_now().await;
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert!(!registry.cancel("a"));
+    }
+
+    #[test]
+    fn zero_delay_commits_before_schedule_returns() {
+        let registry = DeferredDeleteRegistry::new();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let commit_calls = Arc::clone(&calls);
+        registry.schedule("c".into(), Duration::ZERO, move || {
+            commit_calls.fetch_add(1, Ordering::SeqCst);
+        });
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(!registry.cancel("c"));
     }
 
     #[tokio::test]

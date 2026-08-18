@@ -216,6 +216,10 @@ pub fn start_bootstrap(
     } else {
         inspect_local(input)
     };
+    classify_bootstrap(journal, &readiness)
+}
+
+fn classify_bootstrap(journal: &Path, readiness: &Value) -> BootstrapResponse {
     if readiness["ready"].as_bool() == Some(true) {
         return BootstrapResponse::Installed;
     }
@@ -400,7 +404,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{BootstrapResponse, default_model, start_bootstrap};
+    use super::{BootstrapResponse, classify_bootstrap, default_model, start_bootstrap};
 
     fn temporary_journal(name: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!(
@@ -442,6 +446,14 @@ mod tests {
             ),
             "unexpected response for a fresh journal: {response:?}"
         );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn bootstrap_reports_installed_when_readiness_is_ready() {
+        let journal = temporary_journal("already-installed");
+        let response = classify_bootstrap(&journal, &json!({"ready": true}));
+        assert_eq!(response, BootstrapResponse::Installed);
         let _ = fs::remove_dir_all(journal);
     }
 }

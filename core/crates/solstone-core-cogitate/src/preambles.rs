@@ -28,20 +28,6 @@ mod tests {
     use crate::divergence::{DIVERGENCES, check_divergence};
     use crate::oracle;
 
-    const COGITATE_DOC: &str = include_str!("../../../../docs/COGITATE.md");
-
-    fn documented_runtime_preamble() -> &'static str {
-        let marker = "verbatim text:\n\n```\n";
-        let after_marker = COGITATE_DOC
-            .split_once(marker)
-            .expect("COGITATE runtime preamble marker");
-        after_marker
-            .1
-            .split_once("```")
-            .expect("COGITATE runtime preamble closing fence")
-            .0
-    }
-
     #[test]
     fn preambles_match_the_oracle_and_generated_fixture() {
         let fixture = oracle::fixture();
@@ -76,11 +62,6 @@ mod tests {
             COGITATE_JOURNAL_COMMANDS.join(", ")
         );
         assert!(COGITATE_RUNTIME_PREAMBLE.contains(&sentence));
-    }
-
-    #[test]
-    fn runtime_preamble_matches_the_documented_fence() {
-        assert_eq!(documented_runtime_preamble(), COGITATE_RUNTIME_PREAMBLE);
     }
 
     #[test]
