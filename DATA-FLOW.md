@@ -26,7 +26,9 @@ if you connect a hosted provider, solstone sends — for each task it runs — t
 
 **anything involving sol pbc is a service you switch on.** solstone offers optional services sol pbc operates. one of them, confidential processing, is a third way to run sol's thinking: while you have it turned on — and only then — the model path runs on a sol pbc endpoint, verified by attestation before anything is sent, processed in memory, and not retained. these services are off unless you enable them, and each is disclosed on its own terms at the point you turn it on. this page is about the two paths above.
 
-**what the corporation is bound to, irrevocably.** sol pbc cannot sell, license, share, or otherwise hand your data to any third party — and that holds even for aggregate, anonymized, or de-identified data, which most companies carve out and sol pbc explicitly does not. no targeted advertising. no behavioral profiling of you — ever. this is not a setting you have to find and switch off, and not a policy that can be quietly revised: it's an irrevocable covenant in sol pbc's articles of incorporation (Article 8), binding on sol pbc and any successor. it cannot be weakened by a future release, a policy update, an acquirer, or anyone.
+**what the corporation is bound to.** sol pbc can never sell, license, sublicense, or lease your data, including anonymized, aggregated, and de-identified forms. most privacy laws let companies pass "de-identified" data around freely; Article 8 closes that gap entirely. no targeted advertising. no behavioral profiling of you, ever. your data leaves sol pbc only in the three narrow ways the covenant allows: to a service provider, strictly as far as running the service you asked for requires; when you direct it yourself, for that particular thing; or when the law compels us, where we disclose the minimum required and tell you unless we are legally barred from saying so. and if any of it is ever transferred in an acquisition, the acquirer must assume covenants no less protective than Article 8 before the deal can close.
+
+this is not a setting you have to find and switch off: it's a covenant in sol pbc's articles of incorporation (Article 8), filed with the state. while the founder serves as a director, no amendment happens without his personal written consent. after he ceases to serve, it can be changed only to strengthen these protections, or to comply with mandatory law to the minimum strictly required.
 
 ## what happens to it then is governed by *your* agreement with the provider
 
@@ -47,7 +49,7 @@ solstone's job is to make the choice — and its consequences — legible. the c
 
 ## the deeper story
 
-this data-flow posture isn't a feature decision that could be reversed next quarter — it's downstream of how sol pbc is legally structured. the no-selling, no-sharing, no-targeted-advertising commitments on your data are irrevocable covenants in the articles of incorporation, binding on sol pbc and any successor. if you want the structural-trust story behind why solstone is built this way: https://solpbc.org.
+how your data moves isn't a feature decision that could be reversed next quarter. it's downstream of how sol pbc is legally structured. if you want the structural-trust story behind why solstone is built this way: <https://solpbc.org>
 
 ---
 
