@@ -143,6 +143,11 @@ fn flatten_identity(identity: &Map<String, Value>) -> BTreeMap<String, String> {
                 vars.insert(python_capitalize(&name), python_capitalize(&value));
             }
         } else if let Some(value) = python_string(value) {
+            if matches!(key.as_str(), "name" | "preferred")
+                && (value.trim().is_empty() || is_path_shaped_name(&value))
+            {
+                continue;
+            }
             vars.insert(key.clone(), value.clone());
             vars.insert(python_capitalize(key), python_capitalize(&value));
         }
@@ -423,6 +428,59 @@ mod tests {
         assert_eq!(compose_agent_name(None), "sol/Sol");
         assert_eq!(compose_agent_name(Some("")), "sol/Sol");
         assert_eq!(compose_agent_name(Some("   ")), "sol/Sol");
+    }
+
+    fn compose_identity_labels(identity: &str) -> String {
+        let root = tempfile::tempdir().expect("root");
+        fs::create_dir_all(root.path().join("config")).expect("config");
+        fs::write(
+            root.path().join("config/journal.json"),
+            format!(r#"{{"identity":{identity}}}"#),
+        )
+        .expect("config");
+        compose_prompt_body(
+            "$name/$Name|$preferred/$Preferred",
+            root.path(),
+            &root.path().join("templates"),
+            &BTreeMap::new(),
+        )
+        .expect("compose")
+    }
+
+    #[test]
+    fn path_shaped_identity_name_is_left_unsubstituted() {
+        assert_eq!(
+            compose_identity_labels(r#"{"name":"~/secret","preferred":"Ada"}"#),
+            "$name/$Name|Ada/Ada"
+        );
+    }
+
+    #[test]
+    fn path_shaped_identity_preferred_is_left_unsubstituted() {
+        assert_eq!(
+            compose_identity_labels(r#"{"name":"Rae","preferred":"a/b"}"#),
+            "Rae/Rae|$preferred/$Preferred"
+        );
+    }
+
+    #[test]
+    fn usable_identity_name_and_preferred_are_interpolated() {
+        assert_eq!(
+            compose_identity_labels(r#"{"name":"Rae","preferred":"Ada"}"#),
+            "Rae/Rae|Ada/Ada"
+        );
+    }
+
+    #[test]
+    fn missing_empty_and_whitespace_identity_labels_are_left_unsubstituted() {
+        assert_eq!(
+            compose_identity_labels("{}"),
+            "$name/$Name|$preferred/$Preferred"
+        );
+        assert_eq!(
+            compose_identity_labels(r#"{"name":"","preferred":"   "}"#),
+            "$name/$Name|$preferred/$Preferred"
+        );
     }
 
     #[test]

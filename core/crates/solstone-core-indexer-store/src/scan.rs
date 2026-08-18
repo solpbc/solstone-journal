@@ -1055,7 +1055,9 @@ fn resolve_chat_labels(journal: &Path) -> Result<ResolvedChatLabels, ConfigLoadE
     let owner = identity
         .and_then(|identity| identity.get("preferred"))
         .and_then(serde_json::Value::as_str)
-        .filter(|value| !value.trim().is_empty())
+        .filter(|value| {
+            !value.trim().is_empty() && !solstone_core_journal_config::is_path_shaped_name(value)
+        })
         .or_else(|| {
             let identity = config
                 .get("identity")
@@ -1063,7 +1065,10 @@ fn resolve_chat_labels(journal: &Path) -> Result<ResolvedChatLabels, ConfigLoadE
             identity
                 .and_then(|identity| identity.get("name"))
                 .and_then(serde_json::Value::as_str)
-                .filter(|value| !value.trim().is_empty())
+                .filter(|value| {
+                    !value.trim().is_empty()
+                        && !solstone_core_journal_config::is_path_shaped_name(value)
+                })
         })
         .unwrap_or("Owner")
         .trim();
@@ -4659,6 +4664,24 @@ mod tests {
                 r#"{"identity":{"name":"Name"},"agent":{"name":"~/secret"}}"#,
                 "Name",
                 "Sol",
+            ),
+            (
+                "path_shaped_preferred",
+                r#"{"identity":{"preferred":"~/secret","name":"Name"},"agent":{"name":"Helper"}}"#,
+                "Name",
+                "Helper",
+            ),
+            (
+                "path_shaped_name",
+                r#"{"identity":{"name":"~/secret"},"agent":{"name":"Helper"}}"#,
+                "Owner",
+                "Helper",
+            ),
+            (
+                "usable_owner",
+                r#"{"identity":{"preferred":"Ada","name":"Name"},"agent":{"name":"Helper"}}"#,
+                "Ada",
+                "Helper",
             ),
         ] {
             let root = temp_root(&format!("chat-label-{name}"));

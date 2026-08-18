@@ -112,6 +112,9 @@ pub(crate) async fn api_set_owner(
     let Some(name) = required(&body, "name") else {
         return required_field("name");
     };
+    if is_path_shaped_name(name) {
+        return invalid_config_value("owner name must not be a path");
+    }
     let bio = body.get("bio").cloned().unwrap_or(Value::Null);
 
     match mutate_journal_config_cas(&journal.0, |config| {

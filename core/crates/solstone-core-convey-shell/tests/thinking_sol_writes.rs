@@ -161,6 +161,32 @@ async fn set_name_accepts_a_benign_name() {
 }
 
 #[tokio::test]
+async fn set_owner_refuses_a_path_shaped_name() {
+    let fixture = established();
+    let before = journal_config(&fixture)["identity"]["name"].clone();
+    for name in ["~/x", "a/b", "a\\b"] {
+        let (status, value) = post(
+            "/app/thinking/api/set-owner",
+            &json!({"name": name}).to_string(),
+            &fixture,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{name}");
+        assert_eq!(value["reason_code"], json!("invalid_config_value"));
+        assert_eq!(journal_config(&fixture)["identity"]["name"], before);
+    }
+}
+
+#[tokio::test]
+async fn set_owner_accepts_a_benign_name() {
+    let fixture = established();
+    let (status, value) = post("/app/thinking/api/set-owner", r#"{"name":"Ada"}"#, &fixture).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(value["name"], json!("Ada"));
+    assert_eq!(journal_config(&fixture)["identity"]["name"], "Ada");
+}
+
+#[tokio::test]
 async fn reset_ignores_absent_malformed_and_extra_bodies() {
     for body in [
         Body::empty(),

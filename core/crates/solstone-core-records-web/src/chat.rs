@@ -167,7 +167,15 @@ fn identity(journal_root: &std::path::Path) -> (String, String) {
         .unwrap_or(Value::Null);
     let owner = config["identity"]["preferred"]
         .as_str()
-        .or_else(|| config["identity"]["name"].as_str())
+        .filter(|value| {
+            !value.trim().is_empty() && !solstone_core_journal_config::is_path_shaped_name(value)
+        })
+        .or_else(|| {
+            config["identity"]["name"].as_str().filter(|value| {
+                !value.trim().is_empty()
+                    && !solstone_core_journal_config::is_path_shaped_name(value)
+            })
+        })
         .unwrap_or("Owner")
         .trim();
     let agent = config["agent"]["name"].as_str().unwrap_or("sol").trim();
@@ -204,4 +212,86 @@ fn invalid_month() -> Response {
         StatusCode::BAD_REQUEST,
     )
     .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::identity;
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    fn write_config(identity_json: &str, agent: &str) -> PathBuf {
+        let root = PathBuf::from("/var/tmp").join(format!(
+            "solstone-records-web-chat-{}-{}",
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(root.join("config")).expect("config");
+        std::fs::write(
+            root.join("config/journal.json"),
+            format!(r#"{{"identity":{identity_json},"agent":{agent}}}"#),
+        )
+        .expect("config");
+        root
+    }
+
+    #[test]
+    fn identity_uses_journal_config_chat_labels_with_reference_precedence() {
+        for (name, identity_json, agent_json, owner, agent) in [
+            (
+                "preferred",
+                r#"{"preferred":"Preferred","name":"Name"}"#,
+                r#"{"name":"Helper"}"#,
+                "Preferred",
+                "Helper",
+            ),
+            (
+                "name",
+                r#"{"name":"Name"}"#,
+                r#"{"name":"Helper"}"#,
+                "Name",
+                "Helper",
+            ),
+            ("absent", r#"{}"#, r#"{}"#, "Owner", "sol"),
+            (
+                "path_shaped_agent",
+                r#"{"name":"Name"}"#,
+                r#"{"name":"~/secret"}"#,
+                "Name",
+                "sol",
+            ),
+            (
+                "path_shaped_preferred",
+                r#"{"preferred":"~/secret","name":"Name"}"#,
+                r#"{"name":"Helper"}"#,
+                "Name",
+                "Helper",
+            ),
+            (
+                "path_shaped_name",
+                r#"{"name":"~/secret"}"#,
+                r#"{"name":"Helper"}"#,
+                "Owner",
+                "Helper",
+            ),
+            (
+                "usable_owner",
+                r#"{"preferred":"Ada","name":"Name"}"#,
+                r#"{"name":"Helper"}"#,
+                "Ada",
+                "Helper",
+            ),
+        ] {
+            let root = write_config(identity_json, agent_json);
+            assert_eq!(
+                identity(&root),
+                (owner.to_owned(), agent.to_owned()),
+                "{name}"
+            );
+            std::fs::remove_dir_all(root).expect("cleanup");
+        }
+    }
 }

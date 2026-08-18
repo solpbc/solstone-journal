@@ -116,6 +116,15 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
     {
         return invalid_config_value("agent name must not be a path");
     }
+    if section == "identity"
+        && ["name", "preferred"].iter().any(|key| {
+            data.get(*key)
+                .and_then(Value::as_str)
+                .is_some_and(is_path_shaped_name)
+        })
+    {
+        return invalid_config_value("owner name must not be a path");
+    }
     let data_for_write = data.clone();
     let section_for_write = section.clone();
     let result = mutate_journal_config(&journal_root, lock_options, move |config| {
@@ -469,6 +478,36 @@ mod tests {
         config["agent"]["name"].as_str().map(str::to_owned)
     }
 
+    async fn post_identity(
+        root: &std::path::Path,
+        body: serde_json::Value,
+    ) -> (axum::http::StatusCode, serde_json::Value) {
+        let response = crate::test_support::shell_router(root)
+            .oneshot(
+                Request::post("/app/settings/api/config")
+                    .body(Body::from(serde_json::to_vec(&body).expect("body")))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let status = response.status();
+        let body: serde_json::Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
+        (status, body)
+    }
+
+    fn identity_field(root: &std::path::Path, key: &str) -> Option<String> {
+        let config: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join("config/journal.json")).expect("config"),
+        )
+        .expect("config JSON");
+        config["identity"][key].as_str().map(str::to_owned)
+    }
+
     #[tokio::test]
     async fn agent_name_refuses_a_path_shaped_value() {
         for name in ["~/x", "a/b", "a\\b"] {
@@ -486,6 +525,79 @@ mod tests {
         let (status, _) = post_agent_name(root.path(), "Ada").await;
         assert_eq!(status, axum::http::StatusCode::OK);
         assert_eq!(agent_name(root.path()).as_deref(), Some("Ada"));
+    }
+
+    #[tokio::test]
+    async fn identity_name_refuses_a_path_shaped_value() {
+        for name in ["~/x", "a/b", "a\\b"] {
+            let root = crate::test_support::established_root();
+            let (status, body) = post_identity(
+                root.path(),
+                json!({"section":"identity","data":{"name":name}}),
+            )
+            .await;
+            assert_eq!(status, axum::http::StatusCode::BAD_REQUEST, "{name}");
+            assert_eq!(body["reason_code"], "invalid_config_value");
+            assert_eq!(identity_field(root.path(), "name"), None);
+        }
+    }
+
+    #[tokio::test]
+    async fn identity_name_accepts_a_benign_value() {
+        let root = crate::test_support::established_root();
+        let (status, _) = post_identity(
+            root.path(),
+            json!({"section":"identity","data":{"name":"Ada"}}),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+        assert_eq!(identity_field(root.path(), "name").as_deref(), Some("Ada"));
+    }
+
+    #[tokio::test]
+    async fn identity_preferred_refuses_a_path_shaped_value() {
+        for name in ["~/x", "a/b", "a\\b"] {
+            let root = crate::test_support::established_root();
+            let (status, body) = post_identity(
+                root.path(),
+                json!({"section":"identity","data":{"preferred":name}}),
+            )
+            .await;
+            assert_eq!(status, axum::http::StatusCode::BAD_REQUEST, "{name}");
+            assert_eq!(body["reason_code"], "invalid_config_value");
+            assert_eq!(identity_field(root.path(), "preferred"), None);
+        }
+    }
+
+    #[tokio::test]
+    async fn identity_preferred_accepts_a_benign_value() {
+        let root = crate::test_support::established_root();
+        let (status, _) = post_identity(
+            root.path(),
+            json!({"section":"identity","data":{"preferred":"Ada"}}),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+        assert_eq!(
+            identity_field(root.path(), "preferred").as_deref(),
+            Some("Ada")
+        );
+    }
+
+    #[tokio::test]
+    async fn identity_path_shaped_write_is_refused_for_every_request_shape() {
+        for body in [
+            json!({"section":"identity","data":{"name":"~/x"}}),
+            json!({"section":"identity","key":"preferred","value":"a/b"}),
+            json!({"identity":{"name":"a\\b"}}),
+        ] {
+            let root = crate::test_support::established_root();
+            let (status, response) = post_identity(root.path(), body.clone()).await;
+            assert_eq!(status, axum::http::StatusCode::BAD_REQUEST, "{body}");
+            assert_eq!(response["reason_code"], "invalid_config_value");
+            assert_eq!(identity_field(root.path(), "name"), None);
+            assert_eq!(identity_field(root.path(), "preferred"), None);
+        }
     }
 
     #[tokio::test]
