@@ -752,11 +752,26 @@ fn service_busy() -> Response {
     )
 }
 
+fn brain_refresh_argv() -> Option<Vec<String>> {
+    let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    brain_refresh_argv_in(&dir)
+}
+
+fn brain_refresh_argv_in(dir: &Path) -> Option<Vec<String>> {
+    let path =
+        solstone_core_journal_cli::sibling_native_in_dir(dir, "solstone-core-journal").ok()?;
+    let path = path.to_str()?.to_owned();
+    Some(vec![path, "brain".to_owned(), "refresh".to_owned()])
+}
+
 fn send_brain_refresh_request(journal_root: &Path) -> bool {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let Some(cmd) = brain_refresh_argv() else {
+        return false;
+    };
     let mut extra = Map::new();
-    extra.insert("cmd".to_owned(), json!(["journal", "brain", "refresh"]));
+    extra.insert("cmd".to_owned(), json!(cmd));
     extra.insert(
         "ref".to_owned(),
         json!(format!(
@@ -1497,7 +1512,9 @@ mod tests {
     use solstone_core_brain::{begin_refresh, finish_refresh};
     use tower::ServiceExt;
 
-    use super::{PollOutcome, classify_portal_call_error, poll_success_body};
+    use super::{
+        PollOutcome, brain_refresh_argv_in, classify_portal_call_error, poll_success_body,
+    };
 
     #[test]
     fn portal_body_timeout_keeps_polling() {
@@ -1655,6 +1672,31 @@ mod tests {
         assert_eq!(body["generate_ready"], false);
         assert_eq!(body["cogitate_ready"], false);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn brain_refresh_argv_resolves_the_sibling_journal_binary() {
+        let root = tempfile::tempdir().expect("dir");
+        let binary = root.path().join("solstone-core-journal");
+        fs::write(&binary, "#!/bin/sh\nexit 0\n").expect("write sibling");
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).expect("chmod");
+        let argv = brain_refresh_argv_in(root.path()).expect("resolved");
+        assert_eq!(
+            argv,
+            vec![
+                binary.to_str().expect("utf-8").to_owned(),
+                "brain".to_owned(),
+                "refresh".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn brain_refresh_argv_is_none_when_the_sibling_is_missing() {
+        let root = tempfile::tempdir().expect("dir");
+        assert_eq!(brain_refresh_argv_in(root.path()), None);
     }
 
     fn temporary_journal(name: &str) -> PathBuf {

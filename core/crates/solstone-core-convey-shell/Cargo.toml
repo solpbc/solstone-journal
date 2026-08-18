@@ -118,6 +118,7 @@ solstone-core-thinking = { workspace = true, optional = true }
 solstone-core-thinking-copy = { workspace = true, optional = true }
 solstone-core-talent-cli.workspace = true
 solstone-core-talent-config.workspace = true
+solstone-core-journal-cli.workspace = true
 solstone-core-system.workspace = true
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync", "time"] }
 tower.workspace = true

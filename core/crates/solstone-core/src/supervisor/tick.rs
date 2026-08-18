@@ -34,7 +34,7 @@ use solstone_core_system::status_wire::{
 };
 use solstone_core_system::{
     catchup::{CatchupError, eligible_catchup_days},
-    queue::{TaskQueue, TaskQueueStatusSnapshot},
+    queue::{SubmitOutcome, TaskQueue, TaskQueueStatusSnapshot},
 };
 
 use super::bus::{SupervisorProviderSink, SupervisorScheduleSink, emit};
@@ -754,22 +754,48 @@ fn handle_message(state: &mut SupervisorState, message: CallosumEnvelope) {
     handle_cortex_outcome(state, &message);
 }
 
-fn handle_supervisor_request(state: &mut SupervisorState, message: &CallosumEnvelope) {
-    if message.tract != "supervisor" || message.event != "request" {
-        return;
+enum SupervisorRequestError {
+    MissingCmd,
+    NonStringElement,
+    EmptyCmd,
+}
+
+impl std::fmt::Display for SupervisorRequestError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let msg = match self {
+            Self::MissingCmd => "request missing cmd array",
+            Self::NonStringElement => "request cmd contains a non-string element",
+            Self::EmptyCmd => "request cmd is empty",
+        };
+        write!(formatter, "{msg}")
     }
+}
+
+fn decode_supervisor_cmd(message: &CallosumEnvelope) -> Result<TaskArgv, SupervisorRequestError> {
     let Some(Value::Array(command)) = message.extra.get("cmd") else {
-        return;
+        return Err(SupervisorRequestError::MissingCmd);
     };
     let Some(command) = command
         .iter()
         .map(Value::as_str)
         .collect::<Option<Vec<_>>>()
     else {
-        return;
+        return Err(SupervisorRequestError::NonStringElement);
     };
-    let Ok(cmd) = TaskArgv::from_wire(command.into_iter().map(str::to_owned).collect()) else {
+    TaskArgv::from_wire(command.into_iter().map(str::to_owned).collect())
+        .map_err(|_| SupervisorRequestError::EmptyCmd)
+}
+
+fn handle_supervisor_request(state: &mut SupervisorState, message: &CallosumEnvelope) {
+    if message.tract != "supervisor" || message.event != "request" {
         return;
+    }
+    let cmd = match decode_supervisor_cmd(message) {
+        Ok(cmd) => cmd,
+        Err(error) => {
+            eprintln!("supervisor: {error}");
+            return;
+        }
     };
     let request = BusTaskRequest {
         cmd,
@@ -791,7 +817,10 @@ fn handle_supervisor_request(state: &mut SupervisorState, message: &CallosumEnve
             .map(str::to_owned),
         queue_if_active_cmd_differs: false,
     };
-    let _ = state.queue.submit(ExecutionRequest::Bus(request));
+    match state.queue.submit(ExecutionRequest::Bus(request)) {
+        SubmitOutcome::Rejected => eprintln!("supervisor: request rejected"),
+        _ => {}
+    }
 }
 
 fn handle_supervisor_restart(state: &mut SupervisorState, message: &CallosumEnvelope) {
@@ -1721,5 +1750,56 @@ mod tests {
 
         assert_eq!(daily.last_day, Some(date(1)));
         assert_eq!(pending(&queue), 0);
+    }
+
+    fn request_with_cmd(cmd: Value) -> CallosumEnvelope {
+        CallosumEnvelope {
+            tract: "supervisor".into(),
+            event: "request".into(),
+            ts: None,
+            extra: Map::from_iter([("cmd".into(), cmd)]),
+        }
+    }
+
+    #[test]
+    fn decode_supervisor_cmd_names_malformed_requests() {
+        let missing = CallosumEnvelope {
+            tract: "supervisor".into(),
+            event: "request".into(),
+            ts: None,
+            extra: Map::new(),
+        };
+        assert!(matches!(
+            decode_supervisor_cmd(&missing),
+            Err(SupervisorRequestError::MissingCmd)
+        ));
+        assert!(matches!(
+            decode_supervisor_cmd(&request_with_cmd(json!("journal"))),
+            Err(SupervisorRequestError::MissingCmd)
+        ));
+        assert!(matches!(
+            decode_supervisor_cmd(&request_with_cmd(json!([1, "brain"]))),
+            Err(SupervisorRequestError::NonStringElement)
+        ));
+        assert!(matches!(
+            decode_supervisor_cmd(&request_with_cmd(json!([]))),
+            Err(SupervisorRequestError::EmptyCmd)
+        ));
+    }
+
+    #[test]
+    fn decode_supervisor_cmd_accepts_literal_and_resolved_journal_argv() {
+        assert!(matches!(
+            decode_supervisor_cmd(&request_with_cmd(json!(["journal", "brain", "refresh"]))),
+            Ok(TaskArgv::Brain(_))
+        ));
+        assert!(matches!(
+            decode_supervisor_cmd(&request_with_cmd(json!([
+                "/opt/sol/solstone-core-journal",
+                "brain",
+                "refresh"
+            ]))),
+            Ok(TaskArgv::Unknown { .. })
+        ));
     }
 }
