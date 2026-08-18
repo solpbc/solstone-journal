@@ -21255,7 +21255,7 @@
           "--now",
           "<VOLATILE:now>",
           "--policy",
-          "{\"default_rule\": {\"anchor\": \"captured\", \"period\": 30, \"priority\": 0}, \"per_stream\": [], \"minimum_age\": 0, \"enabled\": true}"
+          "{\"default_rule\": {\"anchor\": \"captured\", \"period\": 30, \"priority\": 0}, \"per_stream\": [], \"empty_audio_rule\": {\"anchor\": \"processed\", \"period\": 0, \"priority\": 0}, \"minimum_age\": 0, \"enabled\": true}"
         ]
       ],
       "executor_verbs": [
@@ -21313,7 +21313,7 @@
           "--now",
           "<VOLATILE:now>",
           "--policy",
-          "{\"default_rule\": {\"anchor\": \"captured\", \"period\": 1, \"priority\": 0}, \"per_stream\": [], \"minimum_age\": 0, \"enabled\": true}"
+          "{\"default_rule\": {\"anchor\": \"captured\", \"period\": 1, \"priority\": 0}, \"per_stream\": [], \"empty_audio_rule\": {\"anchor\": \"processed\", \"period\": 0, \"priority\": 0}, \"minimum_age\": 0, \"enabled\": true}"
         ]
       ],
       "executor_verbs": [
@@ -21385,6 +21385,7 @@
       "normalized_paths": [],
       "path": "/app/settings/api/storage/purge",
       "retention_config": {
+        "empty_audio": "keep",
         "per_stream": {},
         "raw_media": "days",
         "raw_media_days": "ninety"
@@ -21424,6 +21425,7 @@
       "normalized_paths": [],
       "path": "/app/settings/api/storage/purge",
       "retention_config": {
+        "empty_audio": "keep",
         "per_stream": {},
         "raw_media": "days",
         "raw_media_days": 0
@@ -21521,7 +21523,7 @@
           "--now",
           "<VOLATILE:now>",
           "--policy",
-          "{\"default_rule\": {\"anchor\": \"captured\", \"period\": null, \"priority\": 0}, \"per_stream\": [[\"tmux\", {\"anchor\": \"captured\", \"period\": 7, \"priority\": 0}]], \"minimum_age\": 0, \"enabled\": true}"
+          "{\"default_rule\": {\"anchor\": \"captured\", \"period\": null, \"priority\": 0}, \"per_stream\": [[\"tmux\", {\"anchor\": \"captured\", \"period\": 7, \"priority\": 0}]], \"empty_audio_rule\": {\"anchor\": \"processed\", \"period\": 0, \"priority\": 0}, \"minimum_age\": 0, \"enabled\": true}"
         ]
       ],
       "executor_verbs": [
@@ -21598,6 +21600,7 @@
       "normalized_paths": [],
       "path": "/app/settings/api/storage/purge",
       "retention_config": {
+        "empty_audio": "keep",
         "per_stream": {},
         "raw_media": "keep",
         "raw_media_days": null
@@ -21637,6 +21640,7 @@
       "normalized_paths": [],
       "path": "/app/settings/api/storage/purge",
       "retention_config": {
+        "empty_audio": "keep",
         "per_stream": {},
         "raw_media": "keep",
         "raw_media_days": null
@@ -21664,7 +21668,7 @@
           "--now",
           "<VOLATILE:now>",
           "--policy",
-          "{\"default_rule\": {\"anchor\": \"processed\", \"period\": 0, \"priority\": 0}, \"per_stream\": [], \"minimum_age\": 0, \"enabled\": true}"
+          "{\"default_rule\": {\"anchor\": \"processed\", \"period\": 0, \"priority\": 0}, \"per_stream\": [], \"empty_audio_rule\": {\"anchor\": \"processed\", \"period\": 0, \"priority\": 0}, \"minimum_age\": 0, \"enabled\": true}"
         ]
       ],
       "executor_verbs": [

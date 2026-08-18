@@ -117,6 +117,8 @@ const DEFAULT_CONFIG_JSON: &str = r#"
   "retention": {
     "raw_media": "keep",
     "raw_media_days": null,
+    "empty_audio": "processed",
+    "empty_audio_days": null,
     "journal_logs": {
       "enabled": true,
       "days": 30

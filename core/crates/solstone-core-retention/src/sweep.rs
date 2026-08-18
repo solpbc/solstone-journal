@@ -41,6 +41,7 @@ use std::path::Path;
 use chrono::{DateTime, NaiveDate, Utc};
 use solstone_core_journal_io::paths::{PathOrDay, day_dirs, iter_segments};
 
+use crate::class::classify;
 use crate::content::{HandlerRegistry, MediaClassifier};
 use crate::door::{EvidenceTally, release_raw};
 use crate::eligibility::{Blocker, ProvenRaw, RawRelease, resolve};
@@ -190,7 +191,8 @@ pub fn plan(
                 .map(|item| item.sidecar.record.as_ref())
                 .collect();
             let age = crate::age::segment_age(&target.day, &records, today, now);
-            let verdict = policy.evaluate(&target.stream, age);
+            let class = classify(&found, registry);
+            let verdict = policy.evaluate(&target.stream, age, class);
             if !verdict.is_eligible() {
                 built.skipped.push(Skipped {
                     target,

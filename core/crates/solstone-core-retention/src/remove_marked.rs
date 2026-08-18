@@ -10,6 +10,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use solstone_core_journal_io::{LockOptions, hold_lock};
 
 use crate::age::segment_age;
+use crate::class::classify;
 use crate::content::{ClosedHandlerSet, JournalMedia};
 use crate::door::release_raw;
 use crate::eligibility::{RawRelease, resolve};
@@ -108,6 +109,7 @@ fn remove_one(
         let eligibility = context.policy.evaluate(
             &target.stream,
             segment_age(&target.day, &records, context.today, context.now),
+            classify(&found, &ClosedHandlerSet),
         );
         match eligibility {
             Eligibility::Eligible { .. } => {}

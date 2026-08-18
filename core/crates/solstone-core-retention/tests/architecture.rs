@@ -36,6 +36,7 @@ const DOOR: &str = "door";
 
 const SOURCES: &[(&str, &str)] = &[
     ("age", include_str!("../src/age.rs")),
+    ("class", include_str!("../src/class.rs")),
     ("content", include_str!("../src/content.rs")),
     ("door", include_str!("../src/door.rs")),
     ("eligibility", include_str!("../src/eligibility.rs")),

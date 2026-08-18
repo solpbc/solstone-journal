@@ -319,6 +319,7 @@ mod composed_tests {
     fn all_routines_compose_through_parser_registry_and_schedule_without_python() {
         let journal = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(journal.path().join("config")).unwrap();
+        std::fs::create_dir_all(journal.path().join("chronicle")).unwrap();
         std::fs::write(
             journal.path().join("config/journal.json"),
             json!({
@@ -380,7 +381,7 @@ mod composed_tests {
             ("backup:prune", "backup prune:", 0),
             ("backup:verify", "backup verify:", 0),
             ("backup:offload", "backup offload:", 0),
-            ("health:mark-raw", "keep all original media", 0),
+            ("health:mark-raw", "new items: 0", 0),
             ("health:prune-logs", "prune-logs: disabled", 0),
             ("timeline:rollup-day", "no segment timeline.json", 66),
             ("timeline:rollup-master", "no day-level timeline.json", 66),

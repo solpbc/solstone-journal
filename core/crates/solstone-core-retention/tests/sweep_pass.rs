@@ -25,8 +25,12 @@ use std::path::PathBuf;
 use solstone_core_processing_record::vocab;
 
 use chrono::{DateTime, NaiveDate, Utc};
+use serde_json::{Map, Value, json};
 use solstone_core_retention::content::{ClosedHandlerSet, JournalMedia};
-use solstone_core_retention::policy::{Anchor, Days, Eligibility, Policy, Rule};
+use solstone_core_retention::marks::{Proposal, RemovalClass, load, reconcile};
+use solstone_core_retention::policy::{
+    Anchor, Days, Eligibility, Policy, Rule, policy_from_retention,
+};
 use solstone_core_retention::sweep::{Plan, Skip, execute, plan};
 
 struct Bed {
@@ -70,6 +74,52 @@ impl Bed {
         )
         .expect("sidecar");
         raw.len() as u64
+    }
+
+    fn empty_terminal_file(
+        &self,
+        day: &str,
+        stream: Option<&str>,
+        dir: &str,
+        name: &str,
+        record: Value,
+    ) -> PathBuf {
+        let path = self.segment_path(day, stream, dir);
+        fs::create_dir_all(&path).expect("a segment");
+        let raw = b"raw";
+        let file = path.join(name);
+        fs::write(&file, raw).expect("raw");
+        let mut header = json!({"segment": dir});
+        header
+            .as_object_mut()
+            .expect("header")
+            .insert("_solstone_processing".to_owned(), record);
+        let sidecar = name.rsplit_once('.').expect("extension").0;
+        fs::write(path.join(format!("{sidecar}.jsonl")), format!("{header}\n")).expect("sidecar");
+        file
+    }
+
+    fn empty_terminal_segment(
+        &self,
+        day: &str,
+        stream: Option<&str>,
+        dir: &str,
+        stamp: &str,
+    ) -> PathBuf {
+        self.empty_terminal_file(
+            day,
+            stream,
+            dir,
+            "audio.flac",
+            json!({
+                "schema": vocab::SCHEMA,
+                "state": vocab::STATE_EMPTY,
+                "reason_code": vocab::REASON_NO_DECODABLE_AUDIO,
+                "handler": vocab::HANDLER_TRANSCRIBE,
+                "attempted_at": stamp,
+                "input_size": 3,
+            }),
+        )
     }
 
     fn segment_path(&self, day: &str, stream: Option<&str>, dir: &str) -> PathBuf {
@@ -541,5 +591,272 @@ fn a_segment_holding_only_derived_output_is_reported_as_having_no_media() {
     assert!(built.candidates.is_empty());
     assert_eq!(built.examined(), 1, "reported rather than dropped");
     assert!(matches!(built.skipped[0].reason, Skip::NoMedia));
+    teardown(&bed);
+}
+
+fn retention_object(value: Value) -> Map<String, Value> {
+    value.as_object().cloned().expect("retention object")
+}
+
+fn keep_journal_policy() -> Policy {
+    policy_from_retention(&retention_object(json!({"raw_media": "keep"})))
+}
+
+fn empty_record(stamp: &str, extra: Value) -> Value {
+    let mut record = json!({
+        "schema": vocab::SCHEMA,
+        "state": vocab::STATE_EMPTY,
+        "reason_code": vocab::REASON_NO_DECODABLE_AUDIO,
+        "handler": vocab::HANDLER_TRANSCRIBE,
+        "attempted_at": stamp,
+        "input_size": 3,
+    });
+    if let Some(fields) = extra.as_object() {
+        record
+            .as_object_mut()
+            .expect("record")
+            .extend(fields.clone());
+    }
+    record
+}
+
+#[test]
+fn empty_audio_on_a_keep_journal_is_a_candidate() {
+    let bed = Bed::new("empty-keep");
+    bed.empty_terminal_segment(
+        "20260701",
+        Some("field.audio"),
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    bed.empty_terminal_file(
+        "20260701",
+        Some("field.audio"),
+        "080000_17",
+        "clip.wav",
+        empty_record("2026-07-01T00:00:00Z", json!({})),
+    );
+    bed.empty_terminal_file(
+        "20260701",
+        Some("field.audio"),
+        "080000_17",
+        "other.flac",
+        empty_record("2026-07-01T00:00:00Z", json!({})),
+    );
+
+    let built = bed.plan(&keep_journal_policy(), "2026-08-05", "2026-08-05T00:00:00Z");
+    assert_eq!(built.candidates.len(), 2, "{built:?}");
+    teardown(&bed);
+}
+
+#[test]
+fn empty_audio_class_exclusions() {
+    const STAMP: &str = "2026-07-01T00:00:00Z";
+    struct Case {
+        name: &'static str,
+        seed: fn(&Bed),
+        policy: Policy,
+        expect_candidate: bool,
+    }
+    let cases = [
+        Case {
+            name: "analyzed",
+            seed: |bed| {
+                bed.proven_segment("20260701", Some("field.audio"), "070000_17", STAMP);
+            },
+            policy: keep_journal_policy(),
+            expect_candidate: false,
+        },
+        Case {
+            name: "class-keep",
+            seed: |bed| {
+                bed.empty_terminal_segment("20260701", Some("field.audio"), "070000_17", STAMP);
+            },
+            policy: policy_from_retention(&retention_object(
+                json!({"raw_media": "keep", "empty_audio": "keep"}),
+            )),
+            expect_candidate: false,
+        },
+        Case {
+            name: "days-too-young",
+            seed: |bed| {
+                bed.empty_terminal_segment("20260804", Some("field.audio"), "070000_17", STAMP);
+            },
+            policy: policy_from_retention(&retention_object(json!({
+                "raw_media": "keep",
+                "empty_audio": "days",
+                "empty_audio_days": 7,
+            }))),
+            expect_candidate: false,
+        },
+        Case {
+            name: "days-old-enough",
+            seed: |bed| {
+                bed.empty_terminal_segment("20260701", Some("field.audio"), "070000_17", STAMP);
+            },
+            policy: policy_from_retention(&retention_object(json!({
+                "raw_media": "keep",
+                "empty_audio": "days",
+                "empty_audio_days": 7,
+            }))),
+            expect_candidate: true,
+        },
+        Case {
+            name: "mixed-sibling",
+            seed: |bed| {
+                bed.empty_terminal_segment("20260701", Some("field.audio"), "070000_17", STAMP);
+                let raw = b"the owner's recording";
+                let path = bed.segment_path("20260701", Some("field.audio"), "070000_17");
+                fs::write(path.join("extra.flac"), raw).expect("sibling raw");
+                let header = serde_json::json!({
+                    "segment": "070000_17",
+                    "_solstone_processing": {
+                        "schema": vocab::SCHEMA,
+                        "state": vocab::STATE_ANALYZED,
+                        "reason_code": vocab::REASON_OK,
+                        "handler": vocab::HANDLER_TRANSCRIBE,
+                        "attempted_at": STAMP,
+                        "input_size": raw.len(),
+                    }
+                });
+                fs::write(
+                    path.join("extra.jsonl"),
+                    format!("{header}\n{{\"start\": 0.0, \"text\": \"hello\"}}\n"),
+                )
+                .expect("sibling sidecar");
+            },
+            policy: keep_journal_policy(),
+            expect_candidate: false,
+        },
+        Case {
+            name: "failed",
+            seed: |bed| {
+                bed.empty_terminal_file(
+                    "20260701",
+                    Some("field.audio"),
+                    "070000_17",
+                    "audio.flac",
+                    json!({
+                        "schema": vocab::SCHEMA,
+                        "state": vocab::STATE_FAILED,
+                        "reason_code": vocab::REASON_CORRUPT_INPUT,
+                        "handler": vocab::HANDLER_TRANSCRIBE,
+                        "attempted_at": STAMP,
+                        "input_size": 3,
+                    }),
+                );
+            },
+            policy: keep_journal_policy(),
+            expect_candidate: false,
+        },
+        Case {
+            name: "wrong-reason",
+            seed: |bed| {
+                bed.empty_terminal_file(
+                    "20260701",
+                    Some("field.audio"),
+                    "070000_17",
+                    "audio.flac",
+                    empty_record(STAMP, json!({"reason_code": "ok"})),
+                );
+            },
+            policy: keep_journal_policy(),
+            expect_candidate: false,
+        },
+        Case {
+            name: "backfill",
+            seed: |bed| {
+                bed.empty_terminal_file(
+                    "20260701",
+                    Some("field.audio"),
+                    "070000_17",
+                    "audio.flac",
+                    empty_record(STAMP, json!({"source": "backfill"})),
+                );
+            },
+            policy: keep_journal_policy(),
+            expect_candidate: false,
+        },
+    ];
+
+    for case in cases {
+        let bed = Bed::new(&format!("excl-{}", case.name));
+        (case.seed)(&bed);
+        let built = bed.plan(&case.policy, "2026-08-05", "2026-08-05T00:00:00Z");
+        assert_eq!(
+            !built.candidates.is_empty(),
+            case.expect_candidate,
+            "{}: {built:?}",
+            case.name
+        );
+        teardown(&bed);
+    }
+}
+
+#[test]
+fn empty_audio_candidate_ignores_raw_media_minimum_days() {
+    let bed = Bed::new("empty-floor");
+    bed.empty_terminal_segment(
+        "20260803",
+        Some("field.audio"),
+        "070000_17",
+        "2026-08-03T00:00:00Z",
+    );
+    let policy = policy_from_retention(&retention_object(json!({
+        "raw_media": "keep",
+        "raw_media_minimum_days": 30,
+    })));
+    let built = bed.plan(&policy, "2026-08-05", "2026-08-05T00:00:00Z");
+    assert_eq!(built.candidates.len(), 1, "{built:?}");
+    teardown(&bed);
+}
+
+#[test]
+fn mark_pass_records_empty_audio_and_removes_nothing() {
+    let bed = Bed::new("empty-mark");
+    let raw = bed.empty_terminal_segment(
+        "20260701",
+        Some("field.audio"),
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let policy = keep_journal_policy();
+    let built = bed.plan(&policy, "2026-08-05", "2026-08-05T00:00:00Z");
+    assert_eq!(built.candidates.len(), 1, "{built:?}");
+    let proposals: Vec<_> = built
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.target.clone(),
+                Proposal {
+                    bytes: candidate.bytes(),
+                    reason: "empty-audio class".to_owned(),
+                    names: candidate
+                        .proven
+                        .iter()
+                        .map(|item| item.name().to_owned())
+                        .collect(),
+                },
+            )
+        })
+        .collect();
+    let register = reconcile(
+        &bed.root,
+        RemovalClass::PolicyRawRelease,
+        &proposals,
+        "2026-08-05T00:00:00Z",
+    )
+    .expect("reconcile");
+    assert_eq!(register.marks.len(), 1);
+    assert!(raw.exists());
+    let loaded = load(&bed.root).expect("load");
+    assert_eq!(loaded.marks.len(), 1);
+    assert!(
+        loaded
+            .marks
+            .values()
+            .all(|mark| mark.class == RemovalClass::PolicyRawRelease)
+    );
     teardown(&bed);
 }

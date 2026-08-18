@@ -50,6 +50,7 @@
 )]
 
 pub mod age;
+pub mod class;
 pub mod content;
 pub mod door;
 pub mod eligibility;
@@ -66,6 +67,7 @@ pub mod summary;
 pub mod sweep;
 pub mod tombstone;
 
+pub use class::{MediaClass, classify};
 pub use content::{ContentName, HandlerRegistry, MediaClassifier};
 pub use door::{EvidenceTally, release_raw};
 pub use eligibility::{Blocker, Evidence, FoundContent, ProvenRaw, RawRelease, SidecarFacts};

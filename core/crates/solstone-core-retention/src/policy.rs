@@ -41,6 +41,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::class::MediaClass;
+
 /// A duration in whole days. Zero means forever.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct Days(pub u32);
@@ -172,7 +174,7 @@ pub fn evaluate(rule: Rule, age: SegmentAge) -> Eligibility {
     }
 }
 
-/// The configured policy: a default, per-stream overrides, and a floor.
+/// The configured policy: a default, per-stream overrides, a class rule, and a floor.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Policy {
     /// Applies to any stream without its own rule.
@@ -180,6 +182,15 @@ pub struct Policy {
     /// Rules for named streams, highest priority first when several match.
     #[serde(default)]
     pub per_stream: Vec<(String, Rule)>,
+    /// Journal-global empty-audio class rule; `per_stream` does not name it.
+    ///
+    /// Wire omit (`--policy` JSON / `Policy::default`) is `Rule::keep()`. Journal
+    /// omit (`policy_from_retention`) is `{processed, Some(Days(0))}`. The two
+    /// defaults are opposite on purpose: a hand-written policy that does not name
+    /// the class must not start releasing; a journal that has never heard of the
+    /// class must get the product default (eligible once processed).
+    #[serde(default = "Rule::keep")]
+    pub empty_audio_rule: Rule,
     /// 🔴 No rule may release raw younger than this, whatever it says.
     ///
     /// The backstop against a misconfigured `{processed, 0}` reaching content the
@@ -200,6 +211,7 @@ impl Default for Policy {
         Self {
             default_rule: Rule::keep(),
             per_stream: Vec::new(),
+            empty_audio_rule: Rule::keep(),
             minimum_age: Days(0),
             enabled: false,
         }
@@ -221,11 +233,18 @@ impl Policy {
             .unwrap_or(self.default_rule)
     }
 
-    /// Decide a segment, floor included.
-    pub fn evaluate(&self, stream: &str, age: SegmentAge) -> Eligibility {
+    /// Decide a segment. The minimum-age floor applies only to ordinary media.
+    pub fn evaluate(&self, stream: &str, age: SegmentAge, class: MediaClass) -> Eligibility {
         if !self.enabled {
             return Eligibility::KeptForever;
         }
+        match class {
+            MediaClass::NoDecodableAudio => evaluate(self.empty_audio_rule, age),
+            MediaClass::Ordinary => self.evaluate_ordinary(stream, age),
+        }
+    }
+
+    fn evaluate_ordinary(&self, stream: &str, age: SegmentAge) -> Eligibility {
         let verdict = evaluate(self.rule_for(stream), age);
         // The floor is applied after the rule, so a rule can never undercut it.
         if let Eligibility::Eligible {
@@ -280,6 +299,7 @@ pub fn policy_from_retention(retention: &Map<String, Value>) -> Policy {
             retention.get("raw_media_days"),
         ),
         per_stream,
+        empty_audio_rule: empty_audio_rule_from_retention(retention),
         minimum_age: minimum_age(retention.get("raw_media_minimum_days")),
         enabled: true,
     }
@@ -292,6 +312,18 @@ pub fn policy_would_release(policy: &Policy) -> bool {
             .per_stream
             .iter()
             .any(|(_, rule)| rule.period.is_some())
+        || policy.empty_audio_rule.period.is_some()
+}
+
+fn empty_audio_rule_from_retention(retention: &Map<String, Value>) -> Rule {
+    match retention.get("empty_audio").and_then(Value::as_str) {
+        None => Rule {
+            anchor: Anchor::Processed,
+            period: Some(Days(0)),
+            priority: 0,
+        },
+        Some(mode) => rule_from_retention(Some(mode), retention.get("empty_audio_days")),
+    }
 }
 
 fn rule_from_retention(mode: Option<&str>, days: Option<&Value>) -> Rule {
@@ -395,6 +427,7 @@ fn parse_float_days(days: f64) -> Option<ParsedDays> {
 )]
 mod tests {
     use super::*;
+    use crate::class::MediaClass;
     use serde_json::json;
 
     fn armed(default_rule: Rule) -> Policy {
@@ -498,8 +531,13 @@ mod tests {
 
     #[test]
     fn journal_retention_projection_identifies_releasing_rules() {
-        let keep = policy_from_retention(&retention(json!({"raw_media": "keep"})));
+        let keep = policy_from_retention(&retention(
+            json!({"raw_media": "keep", "empty_audio": "keep"}),
+        ));
         assert!(!policy_would_release(&keep));
+
+        let absent_class = policy_from_retention(&retention(json!({"raw_media": "keep"})));
+        assert!(policy_would_release(&absent_class));
 
         let days = policy_from_retention(&retention(json!({
             "raw_media": "days",
@@ -512,6 +550,66 @@ mod tests {
             "per_stream": {"audio": {"raw_media": "processed"}},
         })));
         assert!(policy_would_release(&stream));
+    }
+
+    #[test]
+    fn absent_empty_audio_keys_project_to_processed_immediate() {
+        let policy = policy_from_retention(&retention(json!({"raw_media": "keep"})));
+        assert_eq!(
+            policy.empty_audio_rule,
+            Rule {
+                anchor: Anchor::Processed,
+                period: Some(Days(0)),
+                priority: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn policy_would_release_includes_empty_audio_rule() {
+        assert!(policy_would_release(&policy_from_retention(&retention(
+            json!({"raw_media": "keep"})
+        ))));
+        assert!(policy_would_release(&policy_from_retention(&retention(
+            json!({"raw_media": "keep", "empty_audio": "processed"})
+        ))));
+        assert!(policy_would_release(&policy_from_retention(&retention(
+            json!({"raw_media": "keep", "empty_audio": "days", "empty_audio_days": 7})
+        ))));
+        assert!(!policy_would_release(&policy_from_retention(&retention(
+            json!({"raw_media": "keep", "empty_audio": "keep"})
+        ))));
+        assert!(!policy_would_release(&policy_from_retention(&retention(
+            json!({"raw_media": "keep", "empty_audio": "days", "empty_audio_days": 0})
+        ))));
+    }
+
+    #[test]
+    fn empty_audio_class_skips_minimum_age_floor() {
+        let policy = Policy {
+            empty_audio_rule: Rule {
+                anchor: Anchor::Processed,
+                period: Some(Days(0)),
+                priority: 0,
+            },
+            minimum_age: Days(30),
+            enabled: true,
+            ..Policy::default()
+        };
+        let young = SegmentAge {
+            since_captured: Some(2),
+            since_processed: Some(0),
+        };
+        assert!(
+            policy
+                .evaluate("field.audio", young, MediaClass::NoDecodableAudio)
+                .is_eligible()
+        );
+        assert!(
+            !policy
+                .evaluate("field.audio", young, MediaClass::Ordinary)
+                .is_eligible()
+        );
     }
 
     #[test]
@@ -617,11 +715,15 @@ mod tests {
             ..Policy::default()
         };
         assert_eq!(
-            policy.evaluate("field.audio", old),
+            policy.evaluate("field.audio", old, MediaClass::Ordinary),
             Eligibility::KeptForever
         );
         policy.enabled = true;
-        assert!(policy.evaluate("field.audio", old).is_eligible());
+        assert!(
+            policy
+                .evaluate("field.audio", old, MediaClass::Ordinary)
+                .is_eligible()
+        );
     }
 
     /// 🔴 The floor cannot be undercut by any rule.
@@ -733,14 +835,20 @@ mod tests {
             since_processed: Some(2),
         };
         assert!(
-            !policy.evaluate("field.audio", fresh).is_eligible(),
+            !policy
+                .evaluate("field.audio", fresh, MediaClass::Ordinary)
+                .is_eligible(),
             "the floor must hold against a rule that would release immediately"
         );
         let old = SegmentAge {
             since_captured: Some(60),
             since_processed: Some(60),
         };
-        assert!(policy.evaluate("field.audio", old).is_eligible());
+        assert!(
+            policy
+                .evaluate("field.audio", old, MediaClass::Ordinary)
+                .is_eligible()
+        );
     }
 
     /// A per-stream rule shadows the default entirely.
@@ -769,11 +877,15 @@ mod tests {
             since_processed: Some(9_999),
         };
         assert_eq!(
-            policy.evaluate("field.audio", old),
+            policy.evaluate("field.audio", old, MediaClass::Ordinary),
             Eligibility::KeptForever,
             "the stream's own rule keeps it, and the default does not leak through"
         );
-        assert!(policy.evaluate("field.screen", old).is_eligible());
+        assert!(
+            policy
+                .evaluate("field.screen", old, MediaClass::Ordinary)
+                .is_eligible()
+        );
     }
 
     /// Declared priority decides, and the longer retention wins a tie of intent.
@@ -808,7 +920,7 @@ mod tests {
             since_processed: Some(9_999),
         };
         assert_eq!(
-            policy.evaluate("field.audio", old),
+            policy.evaluate("field.audio", old, MediaClass::Ordinary),
             Eligibility::KeptForever,
             "the higher-priority rule wins, and here it keeps"
         );
@@ -827,6 +939,7 @@ mod tests {
                 since_captured: Some(3),
                 since_processed: None,
             },
+            MediaClass::Ordinary,
         ) {
             Eligibility::TooYoung {
                 anchor,

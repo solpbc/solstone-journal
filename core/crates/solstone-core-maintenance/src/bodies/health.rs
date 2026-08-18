@@ -532,8 +532,9 @@ mod tests {
 
     #[test]
     fn invalid_days_keep_and_config_days_reject_bool_and_nonpositive() {
-        let policy =
-            policy_from_retention(&object(json!({"raw_media": "days", "raw_media_days": 0})));
+        let policy = policy_from_retention(&object(
+            json!({"raw_media": "days", "raw_media_days": 0, "empty_audio": "keep"}),
+        ));
         assert!(!policy_would_release(&policy));
         assert_eq!(positive_config_days(&json!(30)), Some(30));
         assert_eq!(positive_config_days(&json!(true)), None);
@@ -541,9 +542,10 @@ mod tests {
     }
 
     #[test]
-    fn keep_all_short_circuits_without_creating_a_mark_register() {
+    fn keep_journal_with_no_empty_audio_does_not_create_a_mark_register() {
         let journal = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(journal.path().join("config")).unwrap();
+        std::fs::create_dir_all(journal.path().join("chronicle")).unwrap();
         std::fs::write(
             journal.path().join("config/journal.json"),
             b"{\"retention\": {\"raw_media\": \"keep\"}}",
@@ -560,10 +562,8 @@ mod tests {
             },
         );
         assert_eq!(result.exit_code, 0);
-        assert_eq!(
-            result.stdout,
-            "mark-raw: your retention settings keep all original media.\n"
-        );
+        assert!(result.stdout.contains("new items: 0"));
+        assert!(result.stdout.contains("standing total: 0"));
         assert!(!journal.path().join("health/retention-marks.json").exists());
     }
 

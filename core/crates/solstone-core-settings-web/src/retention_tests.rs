@@ -774,15 +774,46 @@ fn ac12_malformed_retention_writes_preserve_the_reference_asymmetry() {
 #[test]
 fn ac6_policy_would_release_has_python_zero_polarity() {
     for (retention, expected) in [
-        (json!({"raw_media":"days","raw_media_days":30}), true),
-        (json!({"raw_media":"processed"}), true),
-        (json!({"raw_media":"keep"}), false),
-        (json!({"raw_media":"days","raw_media_days":0}), false),
-        (json!({"raw_media":"days","raw_media_days":"ninety"}), false),
-        (json!({"raw_media":"days","raw_media_days":-1}), false),
-        (json!({"raw_media":"days","raw_media_days":true}), true),
-        (json!({"raw_media":"days","raw_media_days":7.5}), false),
-        (json!({"raw_media":"days","raw_media_days":" 30 "}), true),
+        (
+            json!({"raw_media":"days","raw_media_days":30,"empty_audio":"keep"}),
+            true,
+        ),
+        (json!({"raw_media":"processed","empty_audio":"keep"}), true),
+        (json!({"raw_media":"keep","empty_audio":"keep"}), false),
+        (
+            json!({"raw_media":"days","raw_media_days":0,"empty_audio":"keep"}),
+            false,
+        ),
+        (
+            json!({"raw_media":"days","raw_media_days":"ninety","empty_audio":"keep"}),
+            false,
+        ),
+        (
+            json!({"raw_media":"days","raw_media_days":-1,"empty_audio":"keep"}),
+            false,
+        ),
+        (
+            json!({"raw_media":"days","raw_media_days":true,"empty_audio":"keep"}),
+            true,
+        ),
+        (
+            json!({"raw_media":"days","raw_media_days":7.5,"empty_audio":"keep"}),
+            false,
+        ),
+        (
+            json!({"raw_media":"days","raw_media_days":" 30 ","empty_audio":"keep"}),
+            true,
+        ),
+        (json!({"raw_media":"keep"}), true),
+        (json!({"raw_media":"keep","empty_audio":"processed"}), true),
+        (
+            json!({"raw_media":"keep","empty_audio":"days","empty_audio_days":7}),
+            true,
+        ),
+        (
+            json!({"raw_media":"keep","empty_audio":"days","empty_audio_days":0}),
+            false,
+        ),
     ] {
         assert_eq!(
             policy_would_release(&policy_from_retention(
@@ -791,6 +822,32 @@ fn ac6_policy_would_release_has_python_zero_polarity() {
             expected
         );
     }
+}
+
+#[test]
+fn ordinary_raw_media_save_leaves_empty_audio_keep() {
+    let root = root_from_config(&json!({
+        "setup": {"completed_at": 1_700_000_000_000_i64},
+        "retention": {
+            "raw_media": "keep",
+            "raw_media_days": null,
+            "empty_audio": "keep",
+            "empty_audio_days": null
+        }
+    }));
+    let (status, _body) = run_async(send(
+        crate::test_support::shell_router(root.path()),
+        "PUT",
+        "/app/settings/api/storage",
+        Some(&json!({"raw_media": "days", "raw_media_days": 30})),
+    ));
+    assert_eq!(status, StatusCode::OK);
+    let config: Value = serde_json::from_slice(
+        &fs::read(root.path().join("config/journal.json")).expect("config after"),
+    )
+    .expect("config JSON");
+    assert_eq!(config["retention"]["empty_audio"], "keep");
+    assert_eq!(config["retention"]["empty_audio_days"], Value::Null);
 }
 
 #[test]

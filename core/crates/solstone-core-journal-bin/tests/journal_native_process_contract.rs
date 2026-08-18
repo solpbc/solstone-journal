@@ -1389,6 +1389,7 @@ fn native_maintenance_bodies_reach_real_native_owners_without_python() {
     let context = harness.context();
     prove_poison_interpreters_live(&context);
     fs::create_dir_all(context.journal.join("config")).expect("create maintenance config parent");
+    fs::create_dir_all(context.journal.join("chronicle")).expect("create empty chronicle");
     fs::write(
         context.journal.join("config/journal.json"),
         serde_json::to_vec(&serde_json::json!({
@@ -1415,11 +1416,7 @@ fn native_maintenance_bodies_reach_real_native_owners_without_python() {
             0,
             "backup offload:",
         ),
-        (
-            ["run", "health:mark-raw"].as_slice(),
-            0,
-            "keep all original media",
-        ),
+        (["run", "health:mark-raw"].as_slice(), 0, "new items: 0"),
         (
             ["run", "health:prune-logs"].as_slice(),
             0,
