@@ -9,7 +9,14 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::{is_failure_exhausted, vocab};
+use crate::{analysis_row_key, is_failure_exhausted, vocab};
+
+/// Transcribe does not re-enter because it already treats an existing sidecar as
+/// done (`transcribe/src/args.rs:285-286` `already_processed`: `!redo &&
+/// jsonl.exists()`) and never consults this predicate.
+fn reenters_on_analysis_output(handler: &str) -> bool {
+    matches!(handler, vocab::HANDLER_DESCRIBE | vocab::HANDLER_DEPICT)
+}
 
 /// Read one bounded JSONL metadata header's processing record.
 pub fn read_processing_record_header(path: &Path) -> Option<Value> {
@@ -70,14 +77,17 @@ pub fn should_reenter_analysis_output(
 ) -> bool {
     if let Some(record) = record
         && record.get("state").and_then(Value::as_str) == Some(vocab::STATE_FAILED)
-        && record.get("handler").and_then(Value::as_str) == Some(vocab::HANDLER_DESCRIBE)
+        && record
+            .get("handler")
+            .and_then(Value::as_str)
+            .is_some_and(reenters_on_analysis_output)
         && !is_failure_exhausted(record)
     {
         return true;
     }
     record.is_none()
-        && handler == vocab::HANDLER_DESCRIBE
-        && !jsonl_has_row_with_key(output_path, vocab::SCREEN_ANALYSIS_ROW_KEY)
+        && reenters_on_analysis_output(handler)
+        && analysis_row_key(handler).is_some_and(|key| !jsonl_has_row_with_key(output_path, key))
 }
 
 #[cfg(test)]
@@ -173,6 +183,68 @@ mod tests {
             None,
             &path,
             vocab::HANDLER_TRANSCRIBE
+        ));
+        fs::remove_file(path).expect("remove sidecar");
+    }
+
+    #[test]
+    fn retryable_depict_failures_follow_the_same_bound() {
+        let path = temporary_path("depict-attempts");
+        write(&path, "{}\n");
+        let retryable = json!({
+            "state": vocab::STATE_FAILED,
+            "handler": vocab::HANDLER_DEPICT,
+            "attempts": 2,
+        });
+        assert!(should_reenter_analysis_output(
+            Some(&retryable),
+            &path,
+            vocab::HANDLER_DEPICT
+        ));
+
+        let exhausted = json!({
+            "state": vocab::STATE_FAILED,
+            "handler": vocab::HANDLER_DEPICT,
+            "attempts": 3,
+        });
+        assert!(!should_reenter_analysis_output(
+            Some(&exhausted),
+            &path,
+            vocab::HANDLER_DEPICT
+        ));
+
+        let corrupt = json!({
+            "state": vocab::STATE_FAILED,
+            "handler": vocab::HANDLER_DEPICT,
+            "reason_code": vocab::REASON_CORRUPT_INPUT,
+            "attempts": 0,
+        });
+        assert!(!should_reenter_analysis_output(
+            Some(&corrupt),
+            &path,
+            vocab::HANDLER_DEPICT
+        ));
+        fs::remove_file(path).expect("remove sidecar");
+    }
+
+    #[test]
+    fn recordless_depict_outputs_reenter_only_without_text_row() {
+        let path = temporary_path("depict-recordless");
+        write(&path, "{\"raw\":\"photo.png\",\"kind\":\"image\"}\n");
+        assert!(should_reenter_analysis_output(
+            None,
+            &path,
+            vocab::HANDLER_DEPICT
+        ));
+
+        write(
+            &path,
+            "{\"raw\":\"photo.png\",\"kind\":\"image\"}\n{\"start\":\"00:00:00\",\"text\":\"caption\"}\n",
+        );
+        assert!(!should_reenter_analysis_output(
+            None,
+            &path,
+            vocab::HANDLER_DEPICT
         ));
         fs::remove_file(path).expect("remove sidecar");
     }

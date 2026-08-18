@@ -28,12 +28,17 @@ pub const REASON_ANALYSIS_FAILED: &str = "analysis_failed";
 pub const HANDLER_DESCRIBE: &str = "describe";
 // Parity: solstone/observe/processing_record.py:45.
 pub const HANDLER_TRANSCRIBE: &str = "transcribe";
+// Rust-native: no Python parity counterpart.
+pub const HANDLER_DEPICT: &str = "depict";
 
 /// The JSONL row key proving screen (`describe`) analysis rows exist.
 pub const SCREEN_ANALYSIS_ROW_KEY: &str = "timestamp";
 
 /// The JSONL row key proving audio (`transcribe`) transcript rows exist.
 pub const AUDIO_TRANSCRIPT_ROW_KEY: &str = "start";
+
+/// The JSONL row key proving still-image (`depict`) analysis rows exist.
+pub const IMAGE_ANALYSIS_ROW_KEY: &str = "text";
 
 /// How much of a sidecar may be read to find its metadata header.
 ///

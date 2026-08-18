@@ -473,6 +473,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_depict_record_and_text_row_still_leave_an_image_unprovable() {
+        let record = serde_json::json!({
+            "schema": vocab::SCHEMA,
+            "state": vocab::STATE_ANALYZED,
+            "reason_code": vocab::REASON_OK,
+            "handler": vocab::HANDLER_DEPICT,
+            "attempted_at": "2026-08-05T00:00:00Z",
+            "input_size": 12,
+        });
+        let verdict = resolve_file(
+            &crate::content::ClosedHandlerSet,
+            "20260805",
+            "field.audio",
+            "070000_17",
+            &ContentName::new("photo.png").unwrap(),
+            12,
+            &SidecarFacts {
+                record: Some(record),
+                has_analysis_row: true,
+            },
+        );
+        assert!(
+            matches!(
+                verdict,
+                FileVerdict::Held(Blocker::Unprovable { ref name }) if name == "photo.png"
+            ),
+            "image raw must stay unprovable even with a depict record and row evidence: {verdict:?}"
+        );
+    }
+
     /// A non-media file in the segment is skipped, not blocked.
     ///
     /// Sidecars and derived outputs live beside the raw and are not candidates,

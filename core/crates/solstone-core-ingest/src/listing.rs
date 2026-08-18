@@ -316,7 +316,7 @@ mod tests {
 
     use super::{
         FileStatus, HistoryEvidence, ListingError, ListingFile, SegmentAccumulator,
-        merge_day_listing,
+        merge_day_listing, resolve_file_status,
     };
 
     fn entry(
@@ -404,5 +404,37 @@ mod tests {
             .expect("audit-only row must not make the name ambiguous");
         assert_eq!(listing.segments[0].files.len(), 1);
         assert_eq!(listing.segments[0].files[0].sha256, "held");
+    }
+
+    #[test]
+    fn on_disk_image_is_present_with_or_without_a_depict_record() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let root = dir.path();
+        let segment = root.join("chronicle/20260804/laptop/120000_60");
+        fs::create_dir_all(&segment).expect("segment directory");
+        fs::write(segment.join("photo.png"), b"image").expect("image");
+
+        assert_eq!(
+            resolve_file_status(root, "20260804", "laptop", "120000_60", "photo.png", 5)
+                .expect("status without sidecar"),
+            FileStatus::Present
+        );
+
+        fs::write(
+            segment.join("photo.jsonl"),
+            concat!(
+                r#"{"_solstone_processing":{"schema":"solstone.processing.v1","state":"analyzed","reason_code":"ok","handler":"depict","attempted_at":"2026-08-05T00:00:00Z","input_size":5}}"#,
+                "\n",
+                r#"{"text":"caption"}"#,
+                "\n",
+            ),
+        )
+        .expect("sidecar");
+
+        assert_eq!(
+            resolve_file_status(root, "20260804", "laptop", "120000_60", "photo.png", 5)
+                .expect("status with depict record"),
+            FileStatus::Present
+        );
     }
 }

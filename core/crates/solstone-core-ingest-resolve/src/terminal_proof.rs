@@ -68,3 +68,13 @@ pub(crate) fn is_media_name(name: &str) -> bool {
 fn expected_handler(name: &str) -> Option<&'static str> {
     solstone_core_processing_record::expected_handler(name.rsplit_once('.')?.1)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::is_media_name;
+
+    #[test]
+    fn image_is_not_a_media_name_for_terminal_proof() {
+        assert!(!is_media_name("photo.png"));
+    }
+}

@@ -752,6 +752,27 @@ mod tests {
     }
 
     #[test]
+    fn depict_dispatch_survives_for_a_non_import_image() {
+        assert_eq!(
+            handler_for_path(std::path::Path::new("photo.png")),
+            Some("depict")
+        );
+        let temp = tempfile::tempdir().expect("journal");
+        let path = segment(temp.path());
+        fs::write(path.join("photo.png"), b"image").expect("image");
+        let work = scan_unprocessed(
+            temp.path(),
+            &temp.path().join("chronicle/20260812"),
+            None,
+            None,
+            None,
+        )
+        .expect("scan");
+        assert_eq!(work.len(), 1);
+        assert_eq!(work[0].handler, "depict");
+    }
+
+    #[test]
     fn jobs_elevates_only_batch_describe_concurrency() {
         let config = serde_json::json!({
             "describe": {"max_concurrent": 2},

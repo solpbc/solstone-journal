@@ -26,6 +26,9 @@ use solstone_core_journal::{
     detect_checkout_root, discover_home, read_config_journal, resolve_journal_path,
 };
 use solstone_core_journal_io::{AtomicWriteOptions, write_jsonl};
+use solstone_core_processing_record::{
+    read_processing_record_header, should_reenter_analysis_output, vocab,
+};
 
 pub const ERROR_SCHEMA: &str = "solstone-depict-error-v1";
 pub const DESCRIPTION_PROMPT: &str = "Describe this image in detail. Include any visible text, people, objects, setting, and notable context. Return a concise natural-language description.";
@@ -457,8 +460,11 @@ pub fn run_with_clients(
 ) -> Result<RunOutcome, DepictError> {
     validate_image_path(image_path)?;
     let output_path = image_path.with_extension("jsonl");
-    if output_path.exists() && !redo {
-        return Ok(RunOutcome::Skipped);
+    if !redo && output_path.exists() {
+        let record = read_processing_record_header(&output_path);
+        if !should_reenter_analysis_output(record.as_ref(), &output_path, vocab::HANDLER_DEPICT) {
+            return Ok(RunOutcome::Skipped);
+        }
     }
     let source = fs::read(image_path).map_err(|error| DepictError::Image(error.to_string()))?;
     let image =
@@ -471,7 +477,18 @@ pub fn run_with_clients(
             Description::Generated(description) => description.trim().to_owned(),
             Description::NoEngine => return Ok(RunOutcome::NoEngine),
         };
-    let header = build_header(&image_path.file_name().unwrap_or_default().to_string_lossy())?;
+    let mut header = build_header(&image_path.file_name().unwrap_or_default().to_string_lossy())?;
+    header.insert(
+        "_solstone_processing".to_owned(),
+        json!({
+            "schema": vocab::SCHEMA,
+            "state": vocab::STATE_ANALYZED,
+            "reason_code": vocab::REASON_OK,
+            "handler": vocab::HANDLER_DEPICT,
+            "attempted_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "input_size": source.len() as u64,
+        }),
+    );
     let mut entry = Map::new();
     entry.insert("start".to_owned(), Value::String("00:00:00".to_owned()));
     entry.insert("text".to_owned(), Value::String(description));
@@ -969,24 +986,69 @@ mod tests {
     }
 
     #[test]
-    fn skip_redo_and_no_engine_preserve_output_rules() {
+    fn recordless_sidecar_without_text_reenters_and_writes() {
         let (_root, image) = fixture_image();
         let output = image.with_extension("jsonl");
         fs::write(&output, "old\n").unwrap();
         assert_eq!(
             run_with_clients(&image, false, &SuccessWire, &NoDetector).unwrap(),
-            RunOutcome::Skipped
-        );
-        assert_eq!(
-            run_with_clients(&image, true, &SuccessWire, &NoDetector).unwrap(),
             RunOutcome::Written
         );
-        fs::remove_file(&output).unwrap();
+    }
+
+    #[test]
+    fn sidecar_with_text_row_skips_when_not_redo() {
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
+        fs::write(
+            &output,
+            "{\"raw\":\"photo.png\",\"kind\":\"image\"}\n{\"start\":\"00:00:00\",\"text\":\"caption\"}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            run_with_clients(&image, false, &SuccessWire, &NoDetector).unwrap(),
+            RunOutcome::Skipped
+        );
+        let preserved = fs::read_to_string(&output).unwrap();
+        assert!(preserved.contains("caption"));
+    }
+
+    #[test]
+    fn no_engine_does_not_write_output() {
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
         assert_eq!(
             run_with_clients(&image, false, &NoEngineWire, &NoDetector).unwrap(),
             RunOutcome::NoEngine
         );
         assert!(!output.exists());
+    }
+
+    #[test]
+    fn successful_write_stamps_analyzed_depict_record() {
+        let (_root, image) = fixture_image();
+        let output = image.with_extension("jsonl");
+        let input_size = fs::metadata(&image).unwrap().len();
+        assert_eq!(
+            run_with_clients(&image, false, &SuccessWire, &NoDetector).unwrap(),
+            RunOutcome::Written
+        );
+        let header: Value =
+            serde_json::from_str(fs::read_to_string(&output).unwrap().lines().next().unwrap())
+                .unwrap();
+        let record = &header["_solstone_processing"];
+        assert_eq!(record["schema"], vocab::SCHEMA);
+        assert_eq!(record["state"], vocab::STATE_ANALYZED);
+        assert_eq!(record["reason_code"], vocab::REASON_OK);
+        assert_eq!(record["handler"], vocab::HANDLER_DEPICT);
+        assert_eq!(record["input_size"], input_size);
+        assert!(record.get("attempts").is_none());
+        chrono::DateTime::parse_from_rfc3339(
+            record["attempted_at"]
+                .as_str()
+                .expect("attempted_at must be a string"),
+        )
+        .expect("attempted_at must be RFC 3339");
     }
 
     #[test]

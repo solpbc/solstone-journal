@@ -15,12 +15,13 @@
 //! by a parity gate. Both the Python authority and the gate went with the
 //! reference cut, so this module is now the authority rather than a copy of one.
 //!
-//! # No handler claims a still image, and that is load-bearing
+//! # No handler in the closed set claims a still image, and that is load-bearing
 //!
-//! Images are media, and nothing in the closed set consumes them. So an image's
-//! raw is never provable and a segment holding one is held — which is *correct*
-//! (there is no derived output that could stand in for the original) and is why the
-//! set is closed rather than defaulted.
+//! Depict writes `_solstone_processing` records and re-enters like describe, but
+//! the closed set still does not claim still images: a caption is not a substitute
+//! for the original, so an image's raw stays unprovable and a segment holding one
+//! stays held. Listing already releases a device copy on `present` while the
+//! journal file exists (`ingest/src/listing.rs:231-232`).
 
 use crate::vocab;
 
@@ -93,6 +94,7 @@ pub fn analysis_row_key(handler: &str) -> Option<&'static str> {
     match handler {
         vocab::HANDLER_TRANSCRIBE => Some(vocab::AUDIO_TRANSCRIPT_ROW_KEY),
         vocab::HANDLER_DESCRIBE => Some(vocab::SCREEN_ANALYSIS_ROW_KEY),
+        vocab::HANDLER_DEPICT => Some(vocab::IMAGE_ANALYSIS_ROW_KEY),
         _ => None,
     }
 }
@@ -158,6 +160,10 @@ mod tests {
             analysis_row_key(vocab::HANDLER_DESCRIBE),
             Some(vocab::SCREEN_ANALYSIS_ROW_KEY)
         );
+        assert_eq!(
+            analysis_row_key(vocab::HANDLER_DEPICT),
+            Some(vocab::IMAGE_ANALYSIS_ROW_KEY)
+        );
         assert_eq!(analysis_row_key("nosuch"), None);
         assert_ne!(
             vocab::AUDIO_TRANSCRIPT_ROW_KEY,
@@ -165,24 +171,49 @@ mod tests {
             "two handlers sharing one marker key would let one modality's rows \
              prove the other's work"
         );
+        assert_ne!(
+            vocab::AUDIO_TRANSCRIPT_ROW_KEY,
+            vocab::IMAGE_ANALYSIS_ROW_KEY
+        );
+        assert_ne!(
+            vocab::SCREEN_ANALYSIS_ROW_KEY,
+            vocab::IMAGE_ANALYSIS_ROW_KEY
+        );
     }
 
-    /// Every handler the vocabulary declares is reachable from the map, so a new
-    /// handler cannot be added to the closed set and left unroutable.
     #[test]
-    fn every_declared_handler_is_produced_by_the_map() {
-        let produced: Vec<&str> = FORMATS
-            .iter()
-            .filter_map(|(extension, _)| expected_handler(extension))
-            .collect();
-        for handler in [vocab::HANDLER_TRANSCRIBE, vocab::HANDLER_DESCRIBE] {
-            assert!(
-                produced.contains(&handler),
-                "{handler} is declared but no extension routes to it"
-            );
+    fn every_formats_handler_has_an_analysis_row_key() {
+        for (extension, _) in FORMATS {
+            if let Some(handler) = expected_handler(extension) {
+                assert!(
+                    analysis_row_key(handler).is_some(),
+                    "{extension} routes to {handler} with no analysis row key"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_declared_handler_has_an_analysis_row_key() {
+        for handler in [
+            vocab::HANDLER_TRANSCRIBE,
+            vocab::HANDLER_DESCRIBE,
+            vocab::HANDLER_DEPICT,
+        ] {
             assert!(
                 analysis_row_key(handler).is_some(),
                 "{handler} has no analysis row key"
+            );
+        }
+    }
+
+    #[test]
+    fn no_formats_extension_produces_depict() {
+        for (extension, _) in FORMATS {
+            assert_ne!(
+                expected_handler(extension),
+                Some(vocab::HANDLER_DEPICT),
+                "{extension} must not route to depict, or image raw becomes releasable"
             );
         }
     }
