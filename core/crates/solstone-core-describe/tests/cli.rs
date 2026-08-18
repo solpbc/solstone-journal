@@ -983,6 +983,33 @@ fn extraction_unparseable_json_retries_to_its_own_ceiling() {
 }
 
 #[test]
+fn extraction_markdown_blank_retries_to_its_own_ceiling() {
+    let root = temporary_root("extraction-markdown-blank");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let request_log = root.join("requests.jsonl");
+    let output = describe(&root, &video, "extraction_markdown_blank")
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+        .output()
+        .expect("describe");
+    assert!(output.status.success());
+    assert_eq!(extraction_requests(&request_log).len(), 5);
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    assert!(rows[1].get("error").is_some());
+    assert!(
+        rows[1]
+            .get("content")
+            .and_then(|content| content.get("code"))
+            .is_none()
+    );
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "failed");
+    assert_eq!(
+        rows[0]["_solstone_processing"]["reason_code"],
+        "analysis_failed"
+    );
+    fs::remove_dir_all(root).expect("remove root");
+}
+
+#[test]
 fn journal_request_records_match_phase_one_and_category_shapes() {
     let root = temporary_root("request-record-shape");
     let video = copied_video(&root, "single_frame_vp8_screen.webm");

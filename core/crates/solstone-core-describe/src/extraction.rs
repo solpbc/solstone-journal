@@ -84,9 +84,13 @@ pub fn parse_response(
         return serde_json::from_str(text)
             .map_err(|error| format!("Invalid JSON response for {}: {error}", category.name));
     }
-    // `length` is the native truncation marker; stop/unknown/empty are clean.
+    // `length` is the native truncation marker; a "", "stop", or "unknown" finish
+    // reason is clean, but the body itself must still be non-empty (checked below).
     if !matches!(finish_reason, "" | "stop" | "unknown") {
         return Err(format!("Truncated markdown response for {}", category.name));
+    }
+    if text.trim().is_empty() {
+        return Err(format!("Empty markdown response for {}", category.name));
     }
     Ok(Value::String(bound_extraction_markdown(text)))
 }
@@ -103,8 +107,8 @@ fn find_category<'a>(categories: &'a [CategoryMeta], name: &str) -> Option<&'a C
 
 #[cfg(test)]
 mod tests {
-    use super::{categories_for_analysis, find_category};
-    use crate::categories::{CategoryMeta, OutputKind};
+    use super::{categories_for_analysis, find_category, parse_response};
+    use crate::categories::{CATEGORIES_META, CategoryMeta, OutputKind};
     use serde_json::json;
 
     #[test]
@@ -168,5 +172,31 @@ mod tests {
             schema: None,
         }];
         assert!(find_category(&categories, "empty").is_none());
+    }
+
+    #[test]
+    fn parse_response_rejects_empty_whitespace_and_truncated_markdown() {
+        let category = CATEGORIES_META
+            .iter()
+            .find(|category| category.name == "code")
+            .expect("code category");
+        assert_eq!(category.output, OutputKind::Markdown);
+        let cases = [
+            ("", "", false),
+            ("", "stop", false),
+            ("", "unknown", false),
+            ("   \n", "stop", false),
+            ("# kept", "", true),
+            ("# kept", "stop", true),
+            ("# kept", "unknown", true),
+            ("# kept", "length", false),
+        ];
+        for (text, finish, ok) in cases {
+            assert_eq!(
+                parse_response(category, text, finish).is_ok(),
+                ok,
+                "text={text:?} finish={finish:?}"
+            );
+        }
     }
 }

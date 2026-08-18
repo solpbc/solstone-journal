@@ -182,6 +182,7 @@ fn extraction_response(id: &str, mode: &str, attempt: u64) {
         }
         "extraction_markdown_empty" => generated_text_with_finish(id, "# extracted markdown", ""),
         "extraction_markdown_length" => generated_text_with_finish(id, "truncated", "length"),
+        "extraction_markdown_blank" => generated_text_with_finish(id, "   \n", "stop"),
         "extraction_json_retry_then_succeed" if attempt == 0 => generated_text(id, "not json"),
         "extraction_json_retry_then_succeed" => generated_text(id, r#"{"ok":true}"#),
         "extraction_json_unparseable" => generated_text(id, "not json"),
