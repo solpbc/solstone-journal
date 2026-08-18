@@ -172,6 +172,25 @@ pub fn decline(journal: PathBuf, mark_id: String) -> Result<Value, ClientError> 
     ])
 }
 
+/// Finish staged deletions a previous run left behind.
+///
+/// Recover is journal-wide, not keyed on a mark. `stdout_limit()` is sized from
+/// [`MAX_REMOVE_MARK_IDS`], so a journal with many staged directories can overflow
+/// it and surface as [`ClientError::OutcomeUnknown`] — that is honest, not a bug.
+pub fn recover(journal: PathBuf, at: String) -> Result<Value, ClientError> {
+    run(vec![
+        "recover".to_owned(),
+        "--journal".to_owned(),
+        journal.display().to_string(),
+        "--at".to_owned(),
+        at,
+        "--did".to_owned(),
+        "owner".to_owned(),
+        "--reason".to_owned(),
+        "owner".to_owned(),
+    ])
+}
+
 fn child_timeout() -> Duration {
     let per_target = LOCK_WAIT_SECONDS.saturating_add(PER_TARGET_OPERATION_ALLOWANCE_SECONDS);
     Duration::from_secs(per_target.saturating_mul(MAX_REMOVE_MARK_IDS as u64))

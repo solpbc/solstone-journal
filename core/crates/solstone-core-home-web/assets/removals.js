@@ -20,15 +20,26 @@
     "row.kept_many": "nothing else goes with them.",
     "row.delete": "delete originals",
     "row.keep": "keep for now",
+    "bulk.select_all": "select all",
+    "bulk.clear": "clear selection",
+    "bulk.selected_one": "1 selected",
+    "bulk.selected_many": "{n} selected",
+    "bulk.delete": "delete selected",
+    "bulk.keep": "keep selected",
     "confirm.heading_one": "delete this original?",
     "confirm.heading_many": "delete these originals?",
     "confirm.body_policy_one": "this deletes 1 original from {date} · {stream}. nothing else goes with it. it can't be undone.",
     "confirm.body_policy_many": "this deletes {n} originals from {date} · {stream}. nothing else goes with them. it can't be undone.",
     "confirm.body_offload_one": "this deletes 1 original from {date} · {stream}. your backup has a copy i can't check. nothing else goes with it. it can't be undone.",
     "confirm.body_offload_many": "this deletes {n} originals from {date} · {stream}. your backup has a copy i can't check. nothing else goes with them. it can't be undone.",
+    "confirm.body_policy_selected": "this deletes {n} originals. nothing else goes with them. it can't be undone.",
+    "confirm.body_offload_selected": "this deletes {n} originals. your backup has a copy i can't check. nothing else goes with them. it can't be undone.",
     "confirm.go_one": "delete it",
     "confirm.go_many": "delete them",
     "confirm.cancel": "cancel",
+    "confirm.recover.heading": "finish the deletions that stopped?",
+    "confirm.recover.body": "this completes every deletion that stopped partway. it writes the record that those originals are gone. it does not put anything back.",
+    "confirm.recover.go": "finish them",
     "done.clause_deleted_one": "deleted 1 original.",
     "done.clause_deleted_many": "deleted {n} originals.",
     "done.clause_not_removed_one": "i couldn't delete 1 more.",
@@ -44,13 +55,21 @@
     "done.too_many": "something went wrong. nothing was deleted.",
     "done.declined_failed": "i couldn't take it off the list, so it stays. nothing was deleted.",
     "done.declined_unknown": "nothing was deleted. i don't know whether it's still on the list.",
+    "done.recovered": "i finished the deletions that had stopped.",
+    "done.recovered_none": "there was nothing left to finish.",
+    "done.recovered_leftover": "i finished some. at least one deletion that stopped is still waiting.",
+    "done.recover_failed": "i couldn't finish them. what's left is still there.",
+    "done.recover_unknown": "finishing stopped before i could tell what happened. i don't know what was completed.",
     "failed.badge": "didn't finish",
-    "failed.body": "a deletion you started elsewhere stopped partway. i can't finish that deletion or undo it. what's left is still there, at {staged}, and you can delete it yourself."
+    "failed.body": "a deletion you started stopped partway. finishing it completes that deletion. it does not put anything back.",
+    "failed.finish": "finish the deletion"
   });
 
   const LIST_URL = '/app/home/api/removals';
   const APPROVE_URL = '/app/home/api/approve';
   const DECLINE_URL = '/app/home/api/decline';
+  const RECOVER_URL = '/app/home/api/recover';
+  const MAX_SELECTED_MARKS = 32;
 
   let card = null;
   let mountedRoot = null;
@@ -58,6 +77,7 @@
   let listState = '';
   let confirmation = null;
   let outcomeHtml = '';
+  let selected = new Set();
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -131,6 +151,13 @@
     return Number(row.count) || 0;
   }
 
+  // selection-wide originals count; for a one-row selection it equals today's rowCount(row); for a bulk selection it is never one selected row's count
+  function selectionOriginals(rows) {
+    return rows.reduce(function (total, row) {
+      return total + rowCount(row);
+    }, 0);
+  }
+
   function origin(row) {
     return row.origin === 'offload' ? 'offload' : 'policy';
   }
@@ -138,8 +165,10 @@
   function markedRow(row) {
     const count = rowCount(row);
     const rowOrigin = origin(row);
+    const checked = selected.has(row.id) ? ' checked' : '';
     return '<article class="removals-card-row" data-removal-row data-mark-id="' + escapeHtml(row.id) + '">'
       + identity(identityText(row))
+      + '<input type="checkbox" data-removal-select data-mark-id="' + escapeHtml(row.id) + '"' + checked + '>'
       + '<p class="removals-card-origin">' + copyForCount('row.origin_' + rowOrigin, count) + '</p>'
       + '<p class="removals-card-what">' + copyForCount('row.what', count, { n: count, size: row.size }) + '</p>'
       + '<p class="removals-card-kept">' + copyForCount('row.kept', count) + '</p>'
@@ -157,7 +186,7 @@
       + identity(identityText(row))
       + '<p class="removals-card-failed-badge">' + copy("failed.badge") + '</p>'
       + '<p class="removals-card-failed-body">'
-      + copy("failed.body", { staged: row.staged })
+      + copy("failed.body")
       + '</p>'
       + '</article>';
   }
@@ -165,6 +194,12 @@
   function markedRows() {
     return rows.filter(function (row) {
       return row.state === 'marked';
+    });
+  }
+
+  function selectedRows() {
+    return markedRows().filter(function (row) {
+      return selected.has(row.id);
     });
   }
 
@@ -182,18 +217,59 @@
     }, { count: 0, bytes: 0 });
   }
 
+  function toolbarHtml() {
+    if (markedRows().length === 0) return '';
+    const n = selected.size;
+    const disabled = n === 0 ? ' disabled' : '';
+    const count = n === 0 ? '' : '<span>' + copyForCount('bulk.selected', n, { n: n }) + '</span>';
+    return '<div class="removals-card-toolbar">'
+      + '<button type="button" data-removal-action="select-all">' + copy("bulk.select_all") + '</button>'
+      + '<button type="button" data-removal-action="clear-selection">' + copy("bulk.clear") + '</button>'
+      + count
+      + '<button type="button" data-removal-action="delete-selected"' + disabled + '>' + copy("bulk.delete") + '</button>'
+      + '<button type="button" data-removal-action="keep-selected"' + disabled + '>' + copy("bulk.keep") + '</button>'
+      + '</div>';
+  }
+
+  function finishHtml() {
+    if (!rows.some(function (row) { return row.state === 'failed'; })) return '';
+    return '<p class="removals-card-finish"><button type="button" data-removal-action="finish">'
+      + copy("failed.finish")
+      + '</button></p>';
+  }
+
   function confirmationHtml() {
     if (!confirmation) return '';
-    const row = confirmation.row;
-    const count = rowCount(row);
-    const stream = streamLabel(row.stream);
-    const bodyKey = 'confirm.body_' + origin(row) + '_' + cardinality(count);
-    const values = { n: count, date: row.day, stream: stream };
-    const body = stream === null ? copyWithoutDefaultStream(bodyKey, values) : copy(bodyKey, values);
+    if (confirmation.kind === 'recover') {
+      return '<section class="removals-card-confirm" role="dialog">'
+        + '<h3>' + copy("confirm.recover.heading") + '</h3>'
+        + '<p>' + copy("confirm.recover.body") + '</p>'
+        + '<button type="button" data-removal-action="confirm-finish">' + copy("confirm.recover.go") + '</button>'
+        + '<button type="button" data-removal-action="cancel">' + copy("confirm.cancel") + '</button>'
+        + '</section>';
+    }
+    const confirmRows = confirmation.rows;
+    if (confirmRows.length === 1) {
+      const row = confirmRows[0];
+      const count = rowCount(row);
+      const stream = streamLabel(row.stream);
+      const bodyKey = 'confirm.body_' + origin(row) + '_' + cardinality(count);
+      const values = { n: count, date: row.day, stream: stream };
+      const body = stream === null ? copyWithoutDefaultStream(bodyKey, values) : copy(bodyKey, values);
+      return '<section class="removals-card-confirm" role="dialog">'
+        + '<h3>' + copyForCount('confirm.heading', count) + '</h3>'
+        + '<p>' + body + '</p>'
+        + '<button type="button" data-removal-action="confirm">' + copyForCount('confirm.go', count) + '</button>'
+        + '<button type="button" data-removal-action="cancel">' + copy("confirm.cancel") + '</button>'
+        + '</section>';
+    }
+    const n = selectionOriginals(confirmRows);
+    const offload = confirmRows.some(function (row) { return origin(row) === 'offload'; });
+    const bodyKey = offload ? 'confirm.body_offload_selected' : 'confirm.body_policy_selected';
     return '<section class="removals-card-confirm" role="dialog">'
-      + '<h3>' + copyForCount('confirm.heading', count) + '</h3>'
-      + '<p>' + body + '</p>'
-      + '<button type="button" data-removal-action="confirm">' + copyForCount('confirm.go', count) + '</button>'
+      + '<h3>' + copy("confirm.heading_many") + '</h3>'
+      + '<p>' + copy(bodyKey, { n: n }) + '</p>'
+      + '<button type="button" data-removal-action="confirm">' + copy("confirm.go_many") + '</button>'
       + '<button type="button" data-removal-action="cancel">' + copy("confirm.cancel") + '</button>'
       + '</section>';
   }
@@ -209,7 +285,7 @@
       card.innerHTML = '<section class="removals-card">' + heading
         + '<p class="removals-card-total">'
         + copyForCount('card.total', totals.count, { n: totals.count, size: formatBytes(totals.bytes) })
-        + '</p>' + cardRows() + confirmationHtml() + outcomeHtml + '</section>';
+        + '</p>' + toolbarHtml() + cardRows() + finishHtml() + confirmationHtml() + outcomeHtml + '</section>';
     } else {
       card.innerHTML = '<section class="removals-card">' + heading
         + '<p>' + copy("card.unavailable") + '</p>' + outcomeHtml + '</section>';
@@ -237,13 +313,13 @@
     outcomeHtml = html ? '<section class="removals-card-outcome">' + html + '</section>' : '';
   }
 
-  function approveOutcome(response, row, items) {
+  function approveOutcome(response, rows, items) {
     const removed = Number(response.removed_count) || 0;
     const notRemoved = Number(response.not_removed_count) || 0;
     const clauses = [
       removed > 0
         ? copyForCount('done.clause_deleted', removed, { n: removed })
-        : copyForCount('done.refused_none', rowCount(row)),
+        : copyForCount('done.refused_none', selectionOriginals(rows)),
       notRemoved > 0
         ? copyForCount('done.clause_not_removed', notRemoved, { m: notRemoved })
         : '',
@@ -254,28 +330,30 @@
 
   function showOutcome(response, context) {
     const items = refusalItems(response);
-    const row = context.row;
+    const rows = context.rows;
     const decline = context.action === 'decline';
+    const originals = selectionOriginals(rows);
     const nothingRan = decline
       ? copy("done.declined_failed")
-      : copyForCount('done.refused_none', rowCount(row));
+      : copyForCount('done.refused_none', originals);
+    const anyOffload = rows.some(function (row) { return origin(row) === 'offload'; });
     switch (response.state) {
       case 'outcome.unknown':
         setOutcome('<p>' + copy(decline ? "done.declined_unknown" : "done.unknown") + '</p>');
         break;
       case 'approve.refused_before_start':
-        setOutcome('<p>' + copyForCount('done.refused_none', rowCount(row)) + '</p>');
+        setOutcome('<p>' + copyForCount('done.refused_none', originals) + '</p>');
         break;
       case 'approve.refused_after_start':
-        setOutcome('<p>' + copyForCount('done.refused_none', rowCount(row)) + '</p>' + refusalList(items));
+        setOutcome('<p>' + copyForCount('done.refused_none', originals) + '</p>' + refusalList(items));
         break;
       case 'approve.deleted':
       case 'approve.partial':
       case 'approve.halted':
-        approveOutcome(response, row, items);
+        approveOutcome(response, rows, items);
         break;
       case 'declined.done':
-        setOutcome('<p>' + copy(origin(row) === 'offload' ? "done.kept_offload" : "done.kept_policy") + '</p>');
+        setOutcome('<p>' + copy(anyOffload ? "done.kept_offload" : "done.kept_policy") + '</p>');
         break;
       case 'tool.unavailable':
       case 'approve.policy_keeps':
@@ -301,40 +379,94 @@
     return response.state;
   }
 
-  async function refresh() {
-    try {
-      const response = await request(LIST_URL);
-      listState = response.state;
-      rows = Array.isArray(response.removals) ? response.removals : [];
-    } catch (_) {
-      listState = 'list.register_unavailable';
-      rows = [];
+  function showRecoverOutcome(response, trustworthy) {
+    if (response.state === 'outcome.unknown') {
+      setOutcome('<p>' + copy("done.recover_unknown") + '</p>');
+    } else if (response.state === 'tool.unavailable') {
+      setOutcome('<p>' + copy("done.recover_failed") + '</p>');
+    } else if (!trustworthy) {
+      setOutcome('<p>' + copy("done.recover_unknown") + '</p>');
+    } else {
+      const leftover = response.state === 'recover.failed' || rows.some(function (row) {
+        return row.state === 'failed';
+      });
+      const finished = Number(response.finished_count) || 0;
+      if (leftover) {
+        setOutcome('<p>' + copy(finished > 0 ? "done.recovered_leftover" : "done.recover_failed") + '</p>');
+      } else if (response.state === 'recover.done') {
+        setOutcome('<p>' + copy("done.recovered") + '</p>');
+      } else if (response.state === 'recover.none') {
+        setOutcome('<p>' + copy("done.recovered_none") + '</p>');
+      } else {
+        setOutcome('');
+      }
     }
     render();
   }
 
-  async function submit(action, row) {
+  async function refresh() {
+    let trustworthy = false;
+    try {
+      const response = await request(LIST_URL);
+      listState = response.state;
+      rows = Array.isArray(response.removals) ? response.removals : [];
+      trustworthy = (response.state === 'list.ready' || response.state === 'list.empty')
+        && Array.isArray(response.removals);
+    } catch (_) {
+      listState = 'list.register_unavailable';
+      rows = [];
+    }
+    const markedIds = new Set(markedRows().map(function (row) { return row.id; }));
+    selected = new Set(Array.from(selected).filter(function (id) { return markedIds.has(id); }));
+    render();
+    return trustworthy;
+  }
+
+  async function submit(action, selectionRows) {
     const endpoint = action === 'approve' ? APPROVE_URL : DECLINE_URL;
     confirmation = null;
+    selected = new Set();
     try {
       const response = await request(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mark_ids: [row.id] })
+        body: JSON.stringify({ mark_ids: selectionRows.map(function (row) { return row.id; }) })
       });
       await refresh();
-      showOutcome(response, { action: action, row: row });
+      showOutcome(response, { action: action, rows: selectionRows });
     } catch (_) {
       await refresh();
       showOutcome(
         { state: action === 'decline' ? 'declined.unknown' : 'outcome.unknown' },
-        { action: action, row: row }
+        { action: action, rows: selectionRows }
       );
     }
   }
 
-  function openConfirmation(row) {
-    confirmation = { row: row };
+  async function submitRecover() {
+    confirmation = null;
+    selected = new Set();
+    let response;
+    try {
+      response = await request(RECOVER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}'
+      });
+    } catch (_) {
+      response = { state: 'outcome.unknown' };
+    }
+    const trustworthy = await refresh();
+    showRecoverOutcome(response, trustworthy);
+  }
+
+  function openDeleteConfirmation(rows) {
+    confirmation = { kind: 'delete', rows: rows };
+    render();
+  }
+
+  function tooManySelected() {
+    setOutcome('<p>' + copy("done.too_many") + '</p>');
     render();
   }
 
@@ -346,13 +478,53 @@
         const row = rows.find(function (candidate) {
           return candidate.id === control.dataset.markId;
         });
-        if (action === 'approve' && row) openConfirmation(row);
-        if (action === 'decline' && row) submit('decline', row);
+        if (action === 'approve' && row) openDeleteConfirmation([row]);
+        if (action === 'decline' && row) submit('decline', [row]);
         if (action === 'cancel') {
           confirmation = null;
           render();
         }
-        if (action === 'confirm' && confirmation) submit('approve', confirmation.row);
+        if (action === 'confirm' && confirmation && confirmation.kind === 'delete') {
+          submit('approve', confirmation.rows);
+        }
+        if (action === 'select-all') {
+          selected = new Set(markedRows().map(function (item) { return item.id; }));
+          render();
+        }
+        if (action === 'clear-selection') {
+          selected = new Set();
+          render();
+        }
+        if (action === 'delete-selected') {
+          if (selected.size === 0) return;
+          if (selected.size > MAX_SELECTED_MARKS) {
+            tooManySelected();
+            return;
+          }
+          openDeleteConfirmation(selectedRows());
+        }
+        if (action === 'keep-selected') {
+          if (selected.size === 0) return;
+          if (selected.size > MAX_SELECTED_MARKS) {
+            tooManySelected();
+            return;
+          }
+          submit('decline', selectedRows());
+        }
+        if (action === 'finish') {
+          confirmation = { kind: 'recover' };
+          render();
+        }
+        if (action === 'confirm-finish') submitRecover();
+      });
+    });
+    card.querySelectorAll('[data-removal-select]').forEach(function (control) {
+      control.addEventListener('click', function () {
+        const id = control.dataset.markId;
+        if (!id) return;
+        if (selected.has(id)) selected.delete(id);
+        else selected.add(id);
+        render();
       });
     });
   }

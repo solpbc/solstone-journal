@@ -36,7 +36,7 @@ for value in "$@"; do
   if [ "$expect_mark" = 1 ]; then id="$value"; expect_mark=0; fi
   if [ "$value" = '--mark' ]; then expect_mark=1; fi
 done
-printf '%s\n' "$1" >> "$HOME_REMOVALS_LOG"
+printf '%s\n' "$*" >> "$HOME_REMOVALS_LOG"
 case "$id" in
   a*) printf '%s' "$HOME_REMOVALS_SUCCESS"; exit 0 ;;
   *) printf '%s' "$HOME_REMOVALS_RECEIPT"; exit "$HOME_REMOVALS_EXIT" ;;
@@ -120,10 +120,15 @@ impl Harness {
     }
 
     fn invocation_count(&self) -> usize {
+        self.invocation_args().len()
+    }
+
+    fn invocation_args(&self) -> Vec<String> {
         fs::read_to_string(&self.log)
             .unwrap_or_default()
             .lines()
-            .count()
+            .map(str::to_owned)
+            .collect()
     }
 }
 
@@ -1068,4 +1073,221 @@ fn product_keep_journal_refuses_a_named_file_that_is_no_longer_empty_terminal() 
     assert_eq!(refused.1["not_removed_count"], 1);
     assert_eq!(refused.1["refusals"][0]["name"], "audio.flac");
     assert!(segment.join("audio.flac").exists());
+}
+
+fn recover_receipt(targets: Value, halted: Value) -> Value {
+    json!({
+        "ok": true,
+        "verb": "recover",
+        "outcome": {"targets": targets, "halted": halted},
+        "index": {"ok": true, "chunks": 0, "files": 0},
+        "detail": {"verb": "recover"},
+    })
+}
+
+fn recover_target(removed: &[&str], leftover: bool) -> Value {
+    json!({
+        "target": {"day": "20260101", "stream": "_default", "dir": "070000_17"},
+        "removed": removed,
+        "not_removed": if leftover {
+            json!([{
+                "entry": "chronicle/20260101/.removing_070000_17",
+                "reason": "r",
+                "staged": "chronicle/20260101/.removing_070000_17",
+            }])
+        } else {
+            json!([])
+        },
+    })
+}
+
+fn post_recover(harness: &Harness, receipt: &Value, exit: &str) -> (StatusCode, Value) {
+    harness.call(receipt, exit, &json!({}), || {
+        response(
+            harness.router(),
+            request("POST", "/app/home/api/recover", json!({})),
+        )
+    })
+}
+
+fn empty_recover_request() -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri("/app/home/api/recover")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(""))
+        .expect("request")
+}
+
+#[test]
+fn recover_invokes_the_executor_with_the_hardcoded_actor_tokens() {
+    let harness = Harness::new();
+    let response = post_recover(&harness, &recover_receipt(json!([]), Value::Null), "0");
+    assert_eq!(response.0, StatusCode::OK);
+    assert_eq!(response.1["state"], "recover.none");
+    assert_eq!(response.1["finished_count"], 0);
+    assert!(response.1.get("requested_count").is_none());
+    let line = &harness.invocation_args()[0];
+    let tokens = line.split_whitespace().collect::<Vec<_>>();
+    assert_eq!(tokens[0], "recover", "recover argv verb: {line}");
+    assert_eq!(tokens[1], "--journal");
+    assert_eq!(tokens[2], harness.root.path().display().to_string());
+    assert_eq!(tokens[3], "--at");
+    assert!(
+        tokens[4].contains('T') && tokens[4].ends_with('Z'),
+        "recover --at is RFC 3339: {}",
+        tokens[4]
+    );
+    assert_eq!(&tokens[5..], ["--did", "owner", "--reason", "owner"]);
+}
+
+#[test]
+fn recover_maps_a_missing_binary_to_tool_unavailable() {
+    let harness = Harness::new();
+    let response = harness.without_executor(|| {
+        response(
+            harness.router(),
+            request("POST", "/app/home/api/recover", json!({})),
+        )
+    });
+    assert_eq!(response.1["state"], "tool.unavailable");
+    assert_eq!(response.1["finished_count"], 0);
+    assert!(!harness.log.exists());
+}
+
+#[test]
+fn recover_accepts_empty_and_empty_object_bodies_and_rejects_the_rest() {
+    let harness = Harness::new();
+    let receipt = recover_receipt(json!([]), Value::Null);
+    let empty = harness.call(&receipt, "0", &json!({}), || {
+        response(harness.router(), empty_recover_request())
+    });
+    assert_eq!(empty.1["state"], "recover.none");
+
+    let object = post_recover(&harness, &receipt, "0");
+    assert_eq!(object.1["state"], "recover.none");
+
+    for body in [
+        json!({"mark_ids": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}),
+        json!({"did": "owner"}),
+        json!([]),
+        Value::Null,
+        json!("x"),
+    ] {
+        let refused = response(
+            harness.router(),
+            request("POST", "/app/home/api/recover", body),
+        );
+        assert_eq!(refused.0, StatusCode::BAD_REQUEST);
+        assert_eq!(refused.1["state"], "request.invalid");
+    }
+    assert_eq!(harness.invocation_count(), 2);
+}
+
+#[test]
+fn recover_maps_receipt_shapes_without_consulting_policy() {
+    let harness = Harness::new();
+    write_json(
+        harness.root.path(),
+        "config/journal.json",
+        &json!({
+            "setup": {"completed_at": 1_700_000_000_000_i64},
+            "retention": {"raw_media": "keep", "empty_audio": "keep"},
+        }),
+    );
+
+    let leftover = post_recover(
+        &harness,
+        &recover_receipt(json!([recover_target(&[], true)]), Value::Null),
+        "3",
+    );
+    assert_eq!(leftover.1["state"], "recover.failed");
+    assert_eq!(leftover.1["finished_count"], 0);
+    assert_eq!(leftover.1["not_finished_count"], 1);
+    assert_eq!(leftover.1["refusals"][0]["name"], ".removing_070000_17");
+
+    let mixed = post_recover(
+        &harness,
+        &json!({
+            "ok": false,
+            "verb": "recover",
+            "outcome": {
+                "targets": [
+                    recover_target(&["chronicle/20260101/_default/070000_17/a.flac"], false),
+                    {
+                        "target": {"day": "20260102", "stream": "_default", "dir": "080000_17"},
+                        "removed": [],
+                        "not_removed": [{
+                            "entry": "chronicle/20260102/.removing_080000_17",
+                            "reason": "r",
+                            "staged": "chronicle/20260102/.removing_080000_17",
+                        }],
+                    }
+                ],
+                "halted": null,
+            },
+            "index": {"ok": true, "chunks": 0, "files": 0},
+            "detail": {"verb": "recover"},
+        }),
+        "3",
+    );
+    assert_eq!(mixed.1["state"], "recover.failed");
+    assert_eq!(mixed.1["finished_count"], 1);
+    assert_eq!(mixed.1["not_finished_count"], 1);
+
+    let done = post_recover(
+        &harness,
+        &recover_receipt(json!([recover_target(&[], false)]), Value::Null),
+        "0",
+    );
+    assert_eq!(done.1["state"], "recover.done");
+    assert_eq!(done.1["finished_count"], 1);
+    assert_eq!(done.1["not_finished_count"], 0);
+
+    let halted = post_recover(
+        &harness,
+        &recover_receipt(json!([]), json!({"reason": "h"})),
+        "4",
+    );
+    assert_eq!(halted.1["state"], "recover.failed");
+    assert!(halted.1["halted"].as_bool().expect("halted"));
+
+    let no_outcome = harness.call(
+        &json!({"ok": false, "verb": "recover", "error": "e"}),
+        "3",
+        &json!({}),
+        || {
+            response(
+                harness.router(),
+                request("POST", "/app/home/api/recover", json!({})),
+            )
+        },
+    );
+    assert_eq!(no_outcome.1["state"], "outcome.unknown");
+    assert_eq!(no_outcome.1["finished_count"], 0);
+
+    let unknown = harness.call(
+        &recover_receipt(json!([]), Value::Null),
+        "2",
+        &json!({}),
+        || {
+            response(
+                harness.router(),
+                request("POST", "/app/home/api/recover", json!({})),
+            )
+        },
+    );
+    assert_eq!(unknown.1["state"], "outcome.unknown");
+
+    let records = action_records(harness.root.path());
+    assert!(
+        records
+            .iter()
+            .all(|record| record["action"] == "removal_recover")
+    );
+    assert!(
+        records
+            .iter()
+            .all(|record| record.get("requested_count").is_none())
+    );
 }

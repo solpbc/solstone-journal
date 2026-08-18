@@ -30,6 +30,7 @@ pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
         .route("/app/home/api/removals", get(removals::list))
         .route("/app/home/api/approve", post(removals::approve))
         .route("/app/home/api/decline", post(removals::decline))
+        .route("/app/home/api/recover", post(removals::recover))
         .route(
             "/app/home/api/pulse",
             get(move || pulse(pulse_root.clone(), pulse_clock.clone())),
@@ -128,6 +129,25 @@ mod tests {
             .expect("body")
             .to_vec();
         (status, content_type, location, body)
+    }
+
+    async fn post(router: Router, path: &str, body: &'static str) -> (StatusCode, Option<String>) {
+        let response = router
+            .oneshot(
+                Request::post(path)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let status = response.status();
+        let location = response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        (status, location)
     }
 
     #[tokio::test]
@@ -252,6 +272,15 @@ mod tests {
             let body: Value = serde_json::from_slice(&response.3).expect("corrupt API JSON");
             assert_eq!(body["reason_code"], "corrupt_config", "{path}");
         }
+    }
+
+    #[tokio::test]
+    async fn recover_write_follows_the_session_gate() {
+        let unestablished = TempDir::new().expect("temporary journal");
+        let router = shell_router(unestablished.path());
+        let (status, location) = post(router, "/app/home/api/recover", "{}").await;
+        assert_eq!(status, StatusCode::FOUND);
+        assert_eq!(location.as_deref(), Some("/init"));
     }
 
     #[tokio::test]

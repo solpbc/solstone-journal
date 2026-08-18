@@ -33,6 +33,9 @@ const DECLINED_REFUSED: &str = "declined.refused";
 const DECLINED_UNKNOWN: &str = "declined.unknown";
 const REFUSAL_ITEM_NAMED: &str = "refusal.item_named";
 const REFUSAL_ITEM_UNNAMED: &str = "refusal.item_unnamed";
+const RECOVER_DONE: &str = "recover.done";
+const RECOVER_NONE: &str = "recover.none";
+const RECOVER_FAILED: &str = "recover.failed";
 
 enum ClientCall {
     Completed(Result<Value, retention::ClientError>),
@@ -43,6 +46,14 @@ struct RemovalOutcome {
     state: &'static str,
     removed_count: usize,
     not_removed_count: usize,
+    halted: bool,
+    refusals: Vec<Value>,
+}
+
+struct RecoverOutcome {
+    state: &'static str,
+    finished_count: usize,
+    not_finished_count: usize,
     halted: bool,
     refusals: Vec<Value>,
 }
@@ -179,6 +190,33 @@ pub async fn decline(State(journal_root): State<PathBuf>, body: Bytes) -> Respon
     .into_response()
 }
 
+pub async fn recover(State(journal_root): State<PathBuf>, body: Bytes) -> Response {
+    if let Err(state) = recover_empty(body) {
+        return request_response(StatusCode::BAD_REQUEST, state);
+    }
+    let at = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let outcome = recover_from_call(call_recover(journal_root.clone(), at).await);
+    append_action(
+        &journal_root,
+        "removal_recover",
+        json!({
+            "finished_count": outcome.finished_count,
+            "not_finished_count": outcome.not_finished_count,
+            "halted": outcome.halted,
+            "refusals": outcome.refusals,
+            "outcome_state": outcome.state,
+        }),
+    );
+    Json(json!({
+        "state": outcome.state,
+        "finished_count": outcome.finished_count,
+        "not_finished_count": outcome.not_finished_count,
+        "halted": outcome.halted,
+        "refusals": outcome.refusals,
+    }))
+    .into_response()
+}
+
 fn mark_ids(body: Bytes) -> Result<Vec<String>, &'static str> {
     let Value::Object(request) =
         serde_json::from_slice::<Value>(&body).map_err(|_| REQUEST_INVALID)?
@@ -198,6 +236,16 @@ fn mark_ids(body: Bytes) -> Result<Vec<String>, &'static str> {
         .iter()
         .map(|mark_id| mark_id.as_str().map(str::to_owned).ok_or(REQUEST_INVALID))
         .collect()
+}
+
+fn recover_empty(body: Bytes) -> Result<(), &'static str> {
+    if body.is_empty() {
+        return Ok(());
+    }
+    match serde_json::from_slice::<Value>(&body) {
+        Ok(Value::Object(request)) if request.is_empty() => Ok(()),
+        _ => Err(REQUEST_INVALID),
+    }
 }
 
 fn policy(journal_root: &Path) -> retention::Policy {
@@ -239,6 +287,13 @@ async fn call_remove_marked(
 
 async fn call_decline(journal_root: PathBuf, mark_id: String) -> ClientCall {
     match tokio::task::spawn_blocking(move || retention::decline(journal_root, mark_id)).await {
+        Ok(result) => ClientCall::Completed(result),
+        Err(_) => ClientCall::Join,
+    }
+}
+
+async fn call_recover(journal_root: PathBuf, at: String) -> ClientCall {
+    match tokio::task::spawn_blocking(move || retention::recover(journal_root, at)).await {
         Ok(result) => ClientCall::Completed(result),
         Err(_) => ClientCall::Join,
     }
@@ -369,6 +424,85 @@ fn removal_outcome(receipt: &Value) -> Option<RemovalOutcome> {
         halted,
         refusals,
     })
+}
+
+fn recover_outcome(receipt: &Value) -> Option<RecoverOutcome> {
+    let outcome = receipt.get("outcome")?.as_object()?;
+    let targets = outcome.get("targets")?.as_array()?;
+    let halted = match outcome.get("halted")? {
+        Value::Null => false,
+        Value::Object(value) if value.get("reason").and_then(Value::as_str).is_some() => true,
+        _ => return None,
+    };
+    let mut finished_count = 0usize;
+    let mut not_finished_count = 0usize;
+    let mut refusals = Vec::new();
+    for target in targets {
+        let target = target.as_object()?;
+        let not_removed = target.get("not_removed")?.as_array()?;
+        if not_removed.is_empty() {
+            finished_count = finished_count.saturating_add(1);
+            continue;
+        }
+        not_finished_count = not_finished_count.saturating_add(1);
+        for item in not_removed {
+            let item = item.as_object()?;
+            let entry = item.get("entry").and_then(Value::as_str);
+            let reason = item.get("reason").and_then(Value::as_str)?;
+            refusals.push(refusal_item(entry, reason));
+        }
+    }
+    let state = if halted || not_finished_count > 0 {
+        RECOVER_FAILED
+    } else if finished_count > 0 {
+        RECOVER_DONE
+    } else {
+        RECOVER_NONE
+    };
+    Some(RecoverOutcome {
+        state,
+        finished_count,
+        not_finished_count,
+        halted,
+        refusals,
+    })
+}
+
+fn recover_from_call(call: ClientCall) -> RecoverOutcome {
+    match call {
+        ClientCall::Completed(Ok(receipt)) => {
+            recover_outcome(&receipt).unwrap_or_else(recover_unknown)
+        }
+        ClientCall::Completed(Err(retention::ClientError::Refused(refused))) => {
+            recover_outcome(refused.receipt_value()).unwrap_or_else(recover_unknown)
+        }
+        ClientCall::Completed(Err(retention::ClientError::BinaryUnavailable(_)))
+        | ClientCall::Completed(Err(retention::ClientError::RequestTooLarge(_))) => {
+            recover_unavailable()
+        }
+        ClientCall::Completed(Err(retention::ClientError::OutcomeUnknown(_)))
+        | ClientCall::Join => recover_unknown(),
+    }
+}
+
+fn recover_unknown() -> RecoverOutcome {
+    RecoverOutcome {
+        state: OUTCOME_UNKNOWN,
+        finished_count: 0,
+        not_finished_count: 0,
+        halted: false,
+        refusals: Vec::new(),
+    }
+}
+
+fn recover_unavailable() -> RecoverOutcome {
+    RecoverOutcome {
+        state: TOOL_UNAVAILABLE,
+        finished_count: 0,
+        not_finished_count: 0,
+        halted: false,
+        refusals: Vec::new(),
+    }
 }
 
 fn remove_preflight_refusal(receipt: &Value) -> bool {
@@ -506,15 +640,19 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
+    use axum::body::Bytes;
     use serde_json::{Value, json};
     use solstone_core_retention_client::RemovalClass;
 
     use super::{
         APPROVE_DELETED, APPROVE_HALTED, APPROVE_PARTIAL, APPROVE_REFUSED_AFTER_START,
-        APPROVE_REFUSED_BEFORE_START, DECLINED_DONE, DECLINED_PARTIAL, DECLINED_REFUSED,
-        DECLINED_UNKNOWN, LIST_REGISTER_UNAVAILABLE, OUTCOME_UNKNOWN, REFUSAL_ITEM_NAMED,
-        REFUSAL_ITEM_UNNAMED, TOOL_UNAVAILABLE, decline_state, decline_success, error_state,
-        marks_store_refusal, project_mark, refusal_item, removal_outcome, remove_preflight_refusal,
+        APPROVE_REFUSED_BEFORE_START, ClientCall, DECLINED_DONE, DECLINED_PARTIAL,
+        DECLINED_REFUSED, DECLINED_UNKNOWN, LIST_REGISTER_UNAVAILABLE, OUTCOME_UNKNOWN,
+        RECOVER_DONE, RECOVER_FAILED, RECOVER_NONE, REFUSAL_ITEM_NAMED, REFUSAL_ITEM_UNNAMED,
+        REQUEST_INVALID, TOOL_UNAVAILABLE, decline_state, decline_success, error_state,
+        marks_store_refusal, project_mark, recover_empty, recover_from_call, recover_outcome,
+        recover_unavailable, recover_unknown, refusal_item, removal_outcome,
+        remove_preflight_refusal,
     };
 
     fn receipt(removed: &[&str], entries: &[&str], halted: bool) -> Value {
@@ -682,5 +820,163 @@ mod tests {
         assert_eq!(failed["state"], "failed");
         assert!(failed.get("reason").is_some());
         assert_eq!(failed["staged"], Value::Null);
+    }
+
+    fn leftover(day: &str, dir: &str) -> Value {
+        json!({
+            "target": {"day": day, "stream": "_default", "dir": dir},
+            "removed": [],
+            "not_removed": [{
+                "entry": format!("chronicle/{day}/.removing_{dir}"),
+                "reason": "r",
+                "staged": format!("chronicle/{day}/.removing_{dir}"),
+            }],
+        })
+    }
+
+    fn finished(day: &str, dir: &str, removed: &[&str]) -> Value {
+        json!({
+            "target": {"day": day, "stream": "_default", "dir": dir},
+            "removed": removed,
+            "not_removed": [],
+        })
+    }
+
+    fn recover_receipt(targets: Value, halted: Value) -> Value {
+        json!({
+            "ok": true,
+            "verb": "recover",
+            "outcome": {"targets": targets, "halted": halted},
+            "index": {"ok": true, "chunks": 0, "files": 0},
+            "detail": {"verb": "recover"},
+        })
+    }
+
+    #[test]
+    fn recover_receipts_contrast_with_the_approve_table() {
+        let empty = recover_receipt(json!([]), Value::Null);
+        assert!(removal_outcome(&empty).is_none());
+        let none = recover_outcome(&empty).expect("empty recover");
+        assert_eq!(none.state, RECOVER_NONE);
+        assert_eq!(none.finished_count, 0);
+        assert_eq!(none.not_finished_count, 0);
+        assert!(!none.halted);
+
+        let leftover_only =
+            recover_receipt(json!([leftover("20260101", "070000_17")]), Value::Null);
+        assert_eq!(
+            removal_outcome(&leftover_only)
+                .expect("approve leftover")
+                .state,
+            APPROVE_REFUSED_AFTER_START
+        );
+        let failed = recover_outcome(&leftover_only).expect("recover leftover");
+        assert_eq!(failed.state, RECOVER_FAILED);
+        assert_eq!(failed.finished_count, 0);
+        assert_eq!(failed.not_finished_count, 1);
+        assert!(!failed.halted);
+
+        let mixed = recover_receipt(
+            json!([
+                finished(
+                    "20260101",
+                    "070000_17",
+                    &["chronicle/20260101/_default/070000_17/a.flac"]
+                ),
+                leftover("20260102", "080000_17"),
+            ]),
+            Value::Null,
+        );
+        assert_eq!(
+            removal_outcome(&mixed).expect("approve mixed").state,
+            APPROVE_PARTIAL
+        );
+        let mixed_out = recover_outcome(&mixed).expect("recover mixed");
+        assert_eq!(mixed_out.state, RECOVER_FAILED);
+        assert_eq!(mixed_out.finished_count, 1);
+        assert_eq!(mixed_out.not_finished_count, 1);
+
+        let both_empty =
+            recover_receipt(json!([finished("20260101", "070000_17", &[])]), Value::Null);
+        assert!(removal_outcome(&both_empty).is_none());
+        let done = recover_outcome(&both_empty).expect("finished empty removed");
+        assert_eq!(done.state, RECOVER_DONE);
+        assert_eq!(done.finished_count, 1);
+        assert_eq!(done.not_finished_count, 0);
+
+        let omitted_removed = json!({
+            "ok": true,
+            "verb": "recover",
+            "outcome": {
+                "targets": [{"not_removed": []}],
+                "halted": null,
+            },
+        });
+        assert!(removal_outcome(&omitted_removed).is_none());
+        let omitted = recover_outcome(&omitted_removed).expect("finished without removed");
+        assert_eq!(omitted.state, RECOVER_DONE);
+        assert_eq!(omitted.finished_count, 1);
+
+        let halted = recover_receipt(json!([]), json!({"reason": "h"}));
+        assert_eq!(
+            removal_outcome(&halted).expect("approve halt").state,
+            APPROVE_HALTED
+        );
+        let halted_out = recover_outcome(&halted).expect("recover halt");
+        assert_eq!(halted_out.state, RECOVER_FAILED);
+        assert!(halted_out.halted);
+        assert_eq!(halted_out.finished_count, 0);
+        assert_eq!(halted_out.not_finished_count, 0);
+
+        let no_outcome = json!({"ok": false, "verb": "recover", "error": "e"});
+        assert!(removal_outcome(&no_outcome).is_none());
+        assert!(recover_outcome(&no_outcome).is_none());
+    }
+
+    #[test]
+    fn recover_empty_accepts_only_an_empty_body() {
+        assert!(recover_empty(Bytes::new()).is_ok());
+        assert!(recover_empty(Bytes::from_static(b"{}")).is_ok());
+        assert_eq!(
+            recover_empty(Bytes::from_static(br#"{"mark_ids":[]}"#)),
+            Err(REQUEST_INVALID)
+        );
+        assert_eq!(
+            recover_empty(Bytes::from_static(b"[]")),
+            Err(REQUEST_INVALID)
+        );
+        assert_eq!(
+            recover_empty(Bytes::from_static(b"null")),
+            Err(REQUEST_INVALID)
+        );
+        assert_eq!(
+            recover_empty(Bytes::from_static(b"\"x\"")),
+            Err(REQUEST_INVALID)
+        );
+        assert_eq!(
+            recover_empty(Bytes::from_static(b"{")),
+            Err(REQUEST_INVALID)
+        );
+    }
+
+    #[test]
+    fn recover_call_dispatch_keeps_unavailable_distinct_from_unknown() {
+        let unavailable = recover_from_call(ClientCall::Completed(Err(
+            super::retention::ClientError::BinaryUnavailable("x".to_owned()),
+        )));
+        assert_eq!(unavailable.state, TOOL_UNAVAILABLE);
+        assert_eq!(unavailable.finished_count, 0);
+        assert_eq!(recover_unavailable().state, TOOL_UNAVAILABLE);
+
+        let unknown = recover_from_call(ClientCall::Completed(Err(
+            super::retention::ClientError::OutcomeUnknown("x".to_owned()),
+        )));
+        assert_eq!(unknown.state, OUTCOME_UNKNOWN);
+        assert_eq!(unknown.finished_count, 0);
+        assert_eq!(recover_unknown().state, OUTCOME_UNKNOWN);
+
+        let join = recover_from_call(ClientCall::Join);
+        assert_eq!(join.state, OUTCOME_UNKNOWN);
+        assert_eq!(join.finished_count, 0);
     }
 }

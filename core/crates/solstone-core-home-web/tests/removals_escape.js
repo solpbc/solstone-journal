@@ -21,10 +21,26 @@ class Control {
   }
 }
 
+class Select {
+  constructor(markId) {
+    this.dataset = { markId: markId || '' };
+    this.listeners = {};
+  }
+
+  addEventListener(name, listener) {
+    this.listeners[name] = listener;
+  }
+
+  click() {
+    this.listeners.click();
+  }
+}
+
 class Element {
   constructor() {
     this.children = [];
     this.controls = [];
+    this.selects = [];
     this._innerHTML = '';
   }
 
@@ -42,10 +58,15 @@ class Element {
     this.controls = Array.from(this._innerHTML.matchAll(
       /<button[^>]*data-removal-action="([^"]+)"(?:[^>]*data-mark-id="([^"]*)")?[^>]*>/g
     )).map((match) => new Control(match[1], match[2]));
+    this.selects = Array.from(this._innerHTML.matchAll(
+      /<input[^>]*data-removal-select[^>]*>/g
+    )).map((match) => new Select((match[0].match(/data-mark-id="([^"]*)"/) || [])[1]));
   }
 
   querySelectorAll(selector) {
-    return selector === '[data-removal-action]' ? this.controls : [];
+    if (selector === '[data-removal-action]') return this.controls;
+    if (selector === '[data-removal-select]') return this.selects;
+    return [];
   }
 
   setAttribute() {}
@@ -92,8 +113,10 @@ async function boot(source, lists, responses) {
   const root = new Element();
   const listResponses = Array.isArray(lists) ? lists : [lists];
   let listIndex = 0;
+  const calls = [];
   const window = {
-    apiJson(url) {
+    apiJson(url, options) {
+      calls.push({ url, options: options || null });
       if (url === '/app/home/api/removals') {
         const response = listResponses[Math.min(listIndex, listResponses.length - 1)];
         listIndex += 1;
@@ -101,6 +124,7 @@ async function boot(source, lists, responses) {
       }
       if (url === '/app/home/api/approve') return Promise.resolve(responses.approve);
       if (url === '/app/home/api/decline') return Promise.resolve(responses.decline);
+      if (url === '/app/home/api/recover') return Promise.resolve(responses.recover);
       throw new Error(`unexpected URL: ${url}`);
     }
   };
@@ -111,10 +135,11 @@ async function boot(source, lists, responses) {
     querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
   };
   window.window = window;
-  vm.runInNewContext(source, { document, Promise, setImmediate, window }, { filename: 'removals.js' });
+  vm.runInNewContext(source, { document, Promise, setImmediate, window, Set }, { filename: 'removals.js' });
   await settle();
   const card = root.children[0];
   assert(card, 'card mounted');
+  card.calls = calls;
   return card;
 }
 
@@ -124,6 +149,16 @@ function click(card, action, markId) {
   ));
   assert(control, `${action} control present`);
   control.click();
+}
+
+function clickSelect(card, markId) {
+  const control = card.selects.find((item) => item.dataset.markId === markId);
+  assert(control, `select ${markId} present`);
+  control.click();
+}
+
+function posts(card, url) {
+  return card.calls.filter((item) => item.url === url && item.options && item.options.method === 'POST');
 }
 
 async function approve(card, markId) {
@@ -197,10 +232,12 @@ async function main() {
     }
   );
   await approve(escapedCard, 'marked');
-  for (const value of [stream, staged, name, reason]) {
+  for (const value of [stream, name, reason]) {
     assert(!escapedCard.innerHTML.includes(value), `raw journal value rendered: ${value}`);
     assert(escapedCard.innerHTML.includes(escaped(value)), `escaped journal value missing: ${value}`);
   }
+  assert(!escapedCard.innerHTML.includes(staged), 'raw staged path must not render');
+  assert(escapedCard.innerHTML.includes(copy['failed.body']), 'failed.body bytes missing');
   assert(!escapedCard.innerHTML.includes('<img'), 'journal markup must not become live DOM');
 
   const confirmationRows = [
@@ -303,6 +340,257 @@ async function main() {
   assert(declineRefreshCard.innerHTML.includes(copy['card.unavailable']));
   assert(outcome(declineRefreshCard).includes(copy['done.kept_policy']));
   assertDeclineOutcomeHasNoDeletingCopy(declineRefreshCard, copy);
+
+  function confirmSection(card) {
+    return card.innerHTML.match(/<section class="removals-card-confirm"[\s\S]*?<\/section>/)?.[0] || '';
+  }
+
+  assert(escapedCard.innerHTML.includes('data-removal-select'), 'marked row is selectable');
+  assert(
+    !escapedCard.innerHTML.split('data-removal-row')[2]?.includes('data-removal-select'),
+    'failed row is not selectable'
+  );
+  assert.strictEqual(
+    (escapedCard.innerHTML.match(/data-removal-action="finish"/g) || []).length,
+    1,
+    'finish control is card-level'
+  );
+
+  const two = [
+    marked('bulk-a', 'policy', 2, 'kitchen-mic'),
+    marked('bulk-b', 'policy', 5, 'kitchen-mic')
+  ];
+  const bulkCard = await boot(
+    source,
+    { state: 'list.ready', removals: two },
+    { approve: { state: 'approve.refused_before_start', refusals: [] } }
+  );
+  clickSelect(bulkCard, 'bulk-a');
+  await settle();
+  clickSelect(bulkCard, 'bulk-b');
+  await settle();
+  click(bulkCard, 'delete-selected');
+  await settle();
+  const selectedConfirm = confirmSection(bulkCard);
+  assert(selectedConfirm.includes(copy['confirm.heading_many']));
+  assert(selectedConfirm.includes(copy['confirm.go_many']));
+  assert(selectedConfirm.includes(rendered(copy, 'confirm.body_policy_selected', { n: 7 })));
+  assert(!selectedConfirm.includes(copy['confirm.heading_one']));
+  assert(!selectedConfirm.includes('20260101'));
+  assert(!selectedConfirm.includes('kitchen-mic'));
+  click(bulkCard, 'confirm');
+  await settle();
+  assert.strictEqual(posts(bulkCard, '/app/home/api/approve').length, 1);
+  assert.strictEqual(posts(bulkCard, '/app/home/api/decline').length, 0);
+  assert.deepStrictEqual(
+    JSON.parse(posts(bulkCard, '/app/home/api/approve')[0].options.body).mark_ids,
+    ['bulk-a', 'bulk-b']
+  );
+
+  const over = Array.from({ length: 33 }, (_, index) => marked(`cap-${index}`, 'policy', 1, 'kitchen-mic'));
+  const overCard = await boot(
+    source,
+    { state: 'list.ready', removals: over },
+    { approve: { state: 'approve.deleted' } }
+  );
+  click(overCard, 'select-all');
+  await settle();
+  click(overCard, 'delete-selected');
+  await settle();
+  assert(outcome(overCard).includes(copy['done.too_many']));
+  assert.strictEqual(confirmSection(overCard), '');
+  assert.strictEqual(posts(overCard, '/app/home/api/approve').length, 0);
+
+  const failedOnly = { id: 'failed-only', state: 'failed', day: '20260101', stream: 'kitchen-mic' };
+  const recoverCard = await boot(
+    source,
+    [
+      { state: 'list.ready', removals: [failedOnly] },
+      { state: 'list.empty', removals: [] }
+    ],
+    { recover: { state: 'recover.done', finished_count: 1 } }
+  );
+  click(recoverCard, 'finish');
+  await settle();
+  assert(confirmSection(recoverCard).includes(copy['confirm.recover.heading']));
+  assert(confirmSection(recoverCard).includes(copy['confirm.recover.body']));
+  click(recoverCard, 'confirm-finish');
+  await settle();
+  assert.strictEqual(posts(recoverCard, '/app/home/api/recover').length, 1);
+  assert.strictEqual(posts(recoverCard, '/app/home/api/recover')[0].options.body, '{}');
+  assert.strictEqual(posts(recoverCard, '/app/home/api/approve').length, 0);
+  assert(outcome(recoverCard).includes(copy['done.recovered']));
+
+  const leftoverCard = await boot(
+    source,
+    [
+      { state: 'list.ready', removals: [failedOnly] },
+      { state: 'list.ready', removals: [] }
+    ],
+    { recover: { state: 'recover.failed', finished_count: 1, not_finished_count: 1 } }
+  );
+  click(leftoverCard, 'finish');
+  await settle();
+  click(leftoverCard, 'confirm-finish');
+  await settle();
+  assert(outcome(leftoverCard).includes(copy['done.recovered_leftover']));
+
+  const unknownRefresh = await boot(
+    source,
+    [
+      { state: 'list.ready', removals: [failedOnly] },
+      { state: 'outcome.unknown', removals: [] }
+    ],
+    { recover: { state: 'recover.done', finished_count: 1 } }
+  );
+  click(unknownRefresh, 'finish');
+  await settle();
+  click(unknownRefresh, 'confirm-finish');
+  await settle();
+  assert(outcome(unknownRefresh).includes(copy['done.recover_unknown']));
+  assert(!outcome(unknownRefresh).includes(copy['done.recovered']));
+
+  const noneCard = await boot(
+    source,
+    [
+      { state: 'list.ready', removals: [failedOnly] },
+      { state: 'list.empty', removals: [] }
+    ],
+    { recover: { state: 'recover.none', finished_count: 0 } }
+  );
+  click(noneCard, 'finish');
+  await settle();
+  click(noneCard, 'confirm-finish');
+  await settle();
+  assert(outcome(noneCard).includes(copy['done.recovered_none']));
+
+  const unavailableCard = await boot(
+    source,
+    [
+      { state: 'list.ready', removals: [failedOnly] },
+      { state: 'list.ready', removals: [failedOnly] }
+    ],
+    { recover: { state: 'tool.unavailable' } }
+  );
+  click(unavailableCard, 'finish');
+  await settle();
+  click(unavailableCard, 'confirm-finish');
+  await settle();
+  assert(outcome(unavailableCard).includes(copy['done.recover_failed']));
+
+  const keepRows = [
+    marked('keep-a', 'policy', 1, 'kitchen-mic'),
+    marked('keep-b', 'policy', 1, 'kitchen-mic')
+  ];
+  const keepCard = await boot(
+    source,
+    { state: 'list.ready', removals: keepRows },
+    { decline: { state: 'declined.done' } }
+  );
+  clickSelect(keepCard, 'keep-a');
+  await settle();
+  clickSelect(keepCard, 'keep-b');
+  await settle();
+  click(keepCard, 'keep-selected');
+  await settle();
+  assert.strictEqual(posts(keepCard, '/app/home/api/decline').length, 1);
+  assert.strictEqual(posts(keepCard, '/app/home/api/approve').length, 0);
+  assert.deepStrictEqual(
+    JSON.parse(posts(keepCard, '/app/home/api/decline')[0].options.body).mark_ids,
+    ['keep-a', 'keep-b']
+  );
+
+  const perRow = marked('per-row', 'policy', 1, 'kitchen-mic');
+  const perRowApprove = await boot(
+    source,
+    { state: 'list.ready', removals: [perRow] },
+    { approve: { state: 'approve.refused_before_start', refusals: [] } }
+  );
+  await approve(perRowApprove, 'per-row');
+  assert.strictEqual(posts(perRowApprove, '/app/home/api/approve').length, 1);
+  assert.deepStrictEqual(
+    JSON.parse(posts(perRowApprove, '/app/home/api/approve')[0].options.body).mark_ids,
+    ['per-row']
+  );
+  const perRowDecline = await boot(
+    source,
+    { state: 'list.ready', removals: [perRow] },
+    { decline: { state: 'declined.done' } }
+  );
+  click(perRowDecline, 'decline', 'per-row');
+  await settle();
+  assert.strictEqual(posts(perRowDecline, '/app/home/api/decline').length, 1);
+  assert.deepStrictEqual(
+    JSON.parse(posts(perRowDecline, '/app/home/api/decline')[0].options.body).mark_ids,
+    ['per-row']
+  );
+
+  const leftoverZero = await boot(
+    source,
+    [
+      { state: 'list.ready', removals: [failedOnly] },
+      { state: 'list.ready', removals: [failedOnly] }
+    ],
+    { recover: { state: 'recover.done', finished_count: 0 } }
+  );
+  click(leftoverZero, 'finish');
+  await settle();
+  click(leftoverZero, 'confirm-finish');
+  await settle();
+  assert(outcome(leftoverZero).includes(copy['done.recover_failed']));
+  assert(!outcome(leftoverZero).includes(copy['done.recovered']));
+  assert(!outcome(leftoverZero).includes(copy['done.recovered_none']));
+
+  const oneOfTwo = [
+    marked('one-select', 'policy', 1, 'kitchen-mic'),
+    marked('other-select', 'policy', 5, 'kitchen-mic')
+  ];
+  const oneSelectCard = await boot(
+    source,
+    { state: 'list.ready', removals: oneOfTwo },
+    { approve: { state: 'approve.refused_before_start', refusals: [] } }
+  );
+  clickSelect(oneSelectCard, 'one-select');
+  await settle();
+  click(oneSelectCard, 'delete-selected');
+  await settle();
+  const oneSelectConfirm = confirmSection(oneSelectCard);
+  assert(oneSelectConfirm.includes(rendered(copy, 'confirm.body_policy_one', {
+    n: 1,
+    date: '20260101',
+    stream: 'kitchen-mic'
+  })));
+  assert(!oneSelectConfirm.includes(rendered(copy, 'confirm.body_policy_selected', { n: 1 })));
+
+  const selectMix = [
+    marked('sel-a', 'policy', 1, 'kitchen-mic'),
+    marked('sel-b', 'policy', 1, 'kitchen-mic'),
+    { id: 'sel-failed', state: 'failed', day: '20260101', stream: 'kitchen-mic' }
+  ];
+  const selectCard = await boot(
+    source,
+    { state: 'list.ready', removals: selectMix },
+    { approve: { state: 'approve.deleted' }, decline: { state: 'declined.done' } }
+  );
+  click(selectCard, 'select-all');
+  await settle();
+  assert(selectCard.innerHTML.includes(rendered(copy, 'bulk.selected_many', { n: 2 })));
+  const failedArticle = selectCard.innerHTML.match(
+    /<article[^>]*data-mark-id="sel-failed"[^>]*>[\s\S]*?<\/article>/
+  )?.[0] || '';
+  assert(failedArticle, 'failed row present after select-all');
+  assert(!failedArticle.includes(' checked'), 'failed row is not checked');
+  click(selectCard, 'clear-selection');
+  await settle();
+  assert(!selectCard.innerHTML.includes(rendered(copy, 'bulk.selected_many', { n: 2 })));
+  assert(!selectCard.innerHTML.includes(copy['bulk.selected_one']));
+  click(selectCard, 'delete-selected');
+  await settle();
+  click(selectCard, 'keep-selected');
+  await settle();
+  assert.strictEqual(posts(selectCard, '/app/home/api/approve').length, 0);
+  assert.strictEqual(posts(selectCard, '/app/home/api/decline').length, 0);
+  assert.strictEqual(confirmSection(selectCard), '');
 }
 
 main().catch((error) => {
