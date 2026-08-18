@@ -548,8 +548,13 @@ fn write_envelope(state: &IngestState, did: &str, envelope: Envelope) -> Respons
             "cannot advance stream",
         );
     }
-    if let Err(response) = stamp_observer(state, did, &envelope.day, &applied.landed_segment) {
-        return response;
+    if stamp_observer(state, did, &envelope.day, &applied.landed_segment).is_err() {
+        return outcome_error(
+            "failed",
+            ReasonCode::ObserverStampFailed,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "cannot stamp observer receipt",
+        );
     }
     let notice = IngestNotice {
         did,
@@ -664,18 +669,11 @@ fn stamp_observer(
     did: &str,
     day: &str,
     landed_segment: &str,
-) -> Result<(), Response> {
+) -> Result<(), ()> {
     let mut observer = match resolve_device_observer(&state.journal_root, did) {
         Ok(None) => return Ok(()),
         Ok(Some(observer)) => observer,
-        Err(_) => {
-            return Err(outcome_error(
-                "failed",
-                ReasonCode::ObserverStampFailed,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "cannot stamp observer receipt",
-            ));
-        }
+        Err(_) => return Err(()),
     };
     let mut dirty = false;
     if observer.record.last_segment().is_none() {
@@ -695,14 +693,7 @@ fn stamp_observer(
     if !dirty {
         return Ok(());
     }
-    save_observer(&state.journal_root, &observer.record).map_err(|_| {
-        outcome_error(
-            "failed",
-            ReasonCode::ObserverStampFailed,
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "cannot stamp observer receipt",
-        )
-    })
+    save_observer(&state.journal_root, &observer.record).map_err(|_| ())
 }
 
 fn written_descriptors(applied: &[AppliedFile]) -> Vec<FileDescriptor> {
