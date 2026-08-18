@@ -31,73 +31,85 @@ const DROPPED_SEARCH_FIELDS: &[&str] = &[
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-#[tokio::test]
-async fn populated_corpus_replays_every_non_deviation_probe() {
-    let corpus = corpus();
-    let fixture = seeded_journal();
-    let today = today_day();
-    let mut asserted = 0;
-    let mut skipped = 0;
-    for app in ["chat", "search"] {
-        for probe in corpus["phases"]["populated"][app]
-            .as_array()
-            .expect("probe array")
-        {
-            let path = probe["path"].as_str().expect("probe path");
-            if app == "search" && path.starts_with("/app/search/api/day_results") {
-                skipped += 1;
-                continue;
-            }
-            let response = request(&fixture.root, &path.replace("<TODAY>", &today)).await;
-            assert_eq!(
-                response.status(),
-                probe["status"].as_u64().expect("status") as u16,
-                "{}",
-                probe["why"]
-            );
-            if app == "chat" && response.status().is_success() && probe["json"].is_object() {
-                let body = response_json(response).await;
-                assert_eq!(
-                    normalize_chat_payload(body.clone(), &today),
-                    expected_chat_payload(&probe["json"], &body, &today),
-                    "{} chat body",
-                    probe["why"]
-                );
-            } else if !response.status().is_success() && probe["json"].is_object() {
-                assert_eq!(
-                    response_json(response).await,
-                    probe["json"],
-                    "{} error body",
-                    probe["why"]
-                );
-            }
-            asserted += 1;
-        }
-    }
-    let established = Fixture::established();
-    for app in ["chat", "search"] {
-        for probe in corpus["phases"]["established"][app]
-            .as_array()
-            .expect("probe array")
-        {
-            let router = solstone_core_convey_shell::session_gate::apply_layer(
-                api_router(established.root.clone()),
-                established.root.clone(),
-            );
-            let response = router
-                .oneshot(
-                    Request::get(probe["path"].as_str().expect("path"))
-                        .body(Body::empty())
-                        .expect("request"),
-                )
-                .await
-                .expect("response");
-            assert_eq!(response.status(), StatusCode::OK);
-            asserted += 1;
-        }
-    }
-    assert!(asserted >= 38);
-    assert_eq!(skipped, 2);
+#[test]
+fn populated_corpus_replays_every_non_deviation_probe() {
+    with_utc(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(async {
+                let corpus = corpus();
+                let fixture = seeded_journal();
+                let today = today_day();
+                let mut asserted = 0;
+                let mut skipped = 0;
+                for app in ["chat", "search"] {
+                    for probe in corpus["phases"]["populated"][app]
+                        .as_array()
+                        .expect("probe array")
+                    {
+                        let path = probe["path"].as_str().expect("probe path");
+                        if app == "search" && path.starts_with("/app/search/api/day_results") {
+                            skipped += 1;
+                            continue;
+                        }
+                        let response =
+                            request(&fixture.root, &path.replace("<TODAY>", &today)).await;
+                        assert_eq!(
+                            response.status(),
+                            probe["status"].as_u64().expect("status") as u16,
+                            "{}",
+                            probe["why"]
+                        );
+                        if app == "chat"
+                            && response.status().is_success()
+                            && probe["json"].is_object()
+                        {
+                            let body = response_json(response).await;
+                            assert_eq!(
+                                normalize_chat_payload(body.clone(), &today),
+                                expected_chat_payload(&probe["json"], &body, &today),
+                                "{} chat body",
+                                probe["why"]
+                            );
+                        } else if !response.status().is_success() && probe["json"].is_object() {
+                            assert_eq!(
+                                response_json(response).await,
+                                probe["json"],
+                                "{} error body",
+                                probe["why"]
+                            );
+                        }
+                        asserted += 1;
+                    }
+                }
+                let established = Fixture::established();
+                for app in ["chat", "search"] {
+                    for probe in corpus["phases"]["established"][app]
+                        .as_array()
+                        .expect("probe array")
+                    {
+                        let router = solstone_core_convey_shell::session_gate::apply_layer(
+                            api_router(established.root.clone()),
+                            established.root.clone(),
+                        );
+                        let response = router
+                            .oneshot(
+                                Request::get(probe["path"].as_str().expect("path"))
+                                    .body(Body::empty())
+                                    .expect("request"),
+                            )
+                            .await
+                            .expect("response");
+                        assert_eq!(response.status(), StatusCode::OK);
+                        asserted += 1;
+                    }
+                }
+                assert!(asserted >= 38);
+                assert_eq!(skipped, 2);
+            });
+    });
 }
 
 #[tokio::test]
@@ -136,8 +148,14 @@ async fn established_unestablished_and_corrupt_fixture_probes_use_session_gate()
     }
 }
 
-#[tokio::test]
-async fn chat_state_matches_the_recorded_shape_origins_and_open_request() {
+#[test]
+fn chat_state_matches_the_recorded_shape_origins_and_open_request() {
+    with_utc(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime")
+            .block_on(async {
     let fixture = seeded_journal();
     let corpus = corpus();
     let today = today_day();
@@ -173,6 +191,8 @@ async fn chat_state_matches_the_recorded_shape_origins_and_open_request() {
         normalize_chat_payload(today_value.clone(), &today)["sol_message_origins"],
         expected_chat_payload(&today_probe["json"], &today_value, &today)["sol_message_origins"]
     );
+            });
+    });
 }
 
 #[tokio::test]
@@ -733,4 +753,8 @@ fn write(path: &Path, source: &str) {
 }
 fn today_day() -> String {
     chrono::Local::now().format("%Y%m%d").to_string()
+}
+
+fn with_utc<F: FnOnce()>(body: F) {
+    temp_env::with_var("TZ", Some("UTC"), body);
 }

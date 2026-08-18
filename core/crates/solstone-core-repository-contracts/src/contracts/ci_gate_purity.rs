@@ -324,6 +324,7 @@ fn make_ci_runs_only_library_and_binary_unit_harnesses() {
         "--bins",
         "--locked",
         "--offline",
+        "--no-fail-fast",
         "-- --test-threads=1",
     ] {
         assert!(

@@ -536,7 +536,7 @@ check-rust-clippy-full:
 # static compilation above and run only in the explicit full gate below.
 check-rust-unit:
 	@$(REQUIRE_CARGO)
-	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --locked --offline -- --test-threads=1
+	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --locked --offline --no-fail-fast -- --test-threads=1
 
 check-rust-doc:
 	@$(REQUIRE_CARGO)

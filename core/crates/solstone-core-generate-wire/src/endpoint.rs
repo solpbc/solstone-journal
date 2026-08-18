@@ -1745,7 +1745,7 @@ mod tests {
         drop(permit);
         assert_eq!(
             endpoint_generate_with(
-                &request(Some(0.2)),
+                &request(Some(10.0)),
                 &journal,
                 &endpoint("http://endpoint"),
                 &config,
@@ -1760,7 +1760,7 @@ mod tests {
         );
         assert!(matches!(
             endpoint_generate_with(
-                &request(Some(0.2)),
+                &request(Some(10.0)),
                 &journal,
                 &endpoint("http://endpoint"),
                 &config,
