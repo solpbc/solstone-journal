@@ -735,16 +735,22 @@ mod tests {
     }
 
     #[test]
-    fn the_admitted_binary_count_is_nine_and_names_the_pdf_helper() {
+    fn the_admitted_binary_count_is_ten_and_names_the_pdf_and_vad_helpers() {
         let inventory = committed();
         let bins = inventory.required_bins();
         assert_eq!(
             bins.len(),
-            9,
+            10,
             "admitted-binary count must move with the inventory, not widen"
         );
         assert!(bins.contains("solstone-core-pdf"));
+        assert!(bins.contains("solstone-core-vad-analyze"));
         assert!(!inventory.forbidden_bins().contains("solstone-core-pdf"));
+        assert!(
+            !inventory
+                .forbidden_bins()
+                .contains("solstone-core-vad-analyze")
+        );
         assert!(inventory.entry.iter().any(|entry| {
             matches!(
                 entry,

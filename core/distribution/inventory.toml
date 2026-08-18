@@ -139,6 +139,15 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[entry]]
 kind = "bin"
+package = "solstone-core-vad-analyze"
+bin = "solstone-core-vad-analyze"
+dest = "bin/solstone-core-vad-analyze"
+mode = 0o755
+lane = "zig-gnu-2.27"
+targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
+
+[[entry]]
+kind = "bin"
 package = "solstone-core-vulkan-probe"
 bin = "solstone-core-vulkan-probe"
 dest = "bin/solstone-core-vulkan-probe"
@@ -221,15 +230,11 @@ targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
 [[deny]]
 bin = "solstone-transcribe"
-reason = "product-ish helper; not in the admitted nine; inventory allow-list decides"
+reason = "product-ish helper; not in the admitted ten; inventory allow-list decides"
 
 [[deny]]
 bin = "solstone-brain"
-reason = "product-ish helper; not in the admitted nine"
-
-[[deny]]
-bin = "solstone-core-vad-analyze"
-reason = "product-ish helper; not in the admitted nine; VAD ships inside transcribe/speakers, not this tree"
+reason = "product-ish helper; not in the admitted ten"
 
 [[deny]]
 bin = "setup-fixture-journal"

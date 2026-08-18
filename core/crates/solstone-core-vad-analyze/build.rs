@@ -4,14 +4,14 @@
 fn main() {
     let target_os =
         std::env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS is set by cargo");
-    // Linux-only wave: the helper ships with a bundled ONNX Runtime beside the
-    // installed binary and no other target is provisioned yet.
-    // The helper ships with a bundled ONNX Runtime beside the installed binary.
-    // Each platform spells "next to me" differently: ELF uses $ORIGIN, Mach-O
-    // uses @loader_path. Both resolve against the binary itself, not the cwd.
+    // Same bundled ONNX Runtime dest as speakers-analyze. The two helpers
+    // share the pinned CPU runtime, and the producer inspects both against
+    // that one rpath. Each platform spells "next to me" differently: ELF
+    // uses $ORIGIN, Mach-O uses @loader_path. Both resolve against the
+    // binary itself, not the cwd.
     let rpath = match target_os.as_str() {
-        "linux" => "$ORIGIN/../lib/solstone-core-vad-analyze",
-        "macos" => "@loader_path/../lib/solstone-core-vad-analyze",
+        "linux" => "$ORIGIN/../lib/solstone-core-speakers-analyze",
+        "macos" => "@loader_path/../lib/solstone-core-speakers-analyze",
         other => {
             panic!(
                 "unsupported solstone-core-vad-analyze target OS {other:?}; expected linux or macos"

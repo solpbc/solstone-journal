@@ -237,12 +237,19 @@ pub fn inspect_bin(bin: &str, lane: &str, bytes: &[u8], machine: u16) -> Result<
     let info = elf::parse_elf(bytes).map_err(|error| ProduceError::new(error.to_string()))?;
     match lane {
         "musl-static" => elf::inspect_core_family(&info, machine),
-        "zig-gnu-2.27" if bin == "solstone-core-speakers-analyze" => elf::inspect_gnu_helper(
-            &info,
-            machine,
-            Some(elf::HELPER_RUNPATH),
-            &[elf::HELPER_SONAME],
-        ),
+        "zig-gnu-2.27"
+            if matches!(
+                bin,
+                "solstone-core-speakers-analyze" | "solstone-core-vad-analyze"
+            ) =>
+        {
+            elf::inspect_gnu_helper(
+                &info,
+                machine,
+                Some(elf::HELPER_RUNPATH),
+                &[elf::HELPER_SONAME],
+            )
+        }
         "zig-gnu-2.27" => elf::inspect_gnu_helper(&info, machine, None, &[]),
         other => {
             return Err(ProduceError::new(format!("unexpected:\n  lane {other}")));
@@ -266,7 +273,10 @@ pub fn inspect_macho_bin(
     }
     let info =
         macho::parse_macho(bytes).map_err(|error| ProduceError::new(format!("{bin}: {error}")))?;
-    if bin == "solstone-core-speakers-analyze" {
+    if matches!(
+        bin,
+        "solstone-core-speakers-analyze" | "solstone-core-vad-analyze"
+    ) {
         macho::inspect_helper(
             &info,
             cputype,
@@ -1230,6 +1240,13 @@ mod tests {
         );
         inspect_bin(
             "solstone-core-speakers-analyze",
+            "zig-gnu-2.27",
+            &gnu,
+            elf::machine_x86_64(),
+        )
+        .unwrap();
+        inspect_bin(
+            "solstone-core-vad-analyze",
             "zig-gnu-2.27",
             &gnu,
             elf::machine_x86_64(),

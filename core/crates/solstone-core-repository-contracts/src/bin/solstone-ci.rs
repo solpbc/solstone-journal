@@ -883,12 +883,14 @@ fn check_prerequisite(repo: &Path, prerequisite: &str) -> Result<(), String> {
             if env::consts::OS != "linux" {
                 true
             } else {
-                fs::read_dir("/usr/lib/clang")
-                    .ok()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Result::ok)
-                    .any(|entry| entry.path().join("include/limits.h").is_file())
+                ["/usr/lib/clang", "/usr/lib64/clang"].iter().any(|root| {
+                    fs::read_dir(root)
+                        .ok()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Result::ok)
+                        .any(|entry| entry.path().join("include/limits.h").is_file())
+                })
             }
         }
         "onnx-runtime" => command_status(

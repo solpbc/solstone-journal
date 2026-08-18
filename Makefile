@@ -97,7 +97,7 @@ RUST_RACE_LOAD_JOBS ?= 12
 # here and died that way on Fedora; the falsification that "proved" the target
 # worked had exported this variable in its own shell, so it measured the shell
 # rather than the recipe.
-CLANG_BUILTIN_INCLUDE := $(firstword $(wildcard /usr/lib/clang/*/include))
+CLANG_BUILTIN_INCLUDE := $(firstword $(wildcard /usr/lib/clang/*/include /usr/lib64/clang/*/include))
 ifneq ($(CLANG_BUILTIN_INCLUDE),)
 # install builds the solstone-core wheel through maturin, and solstone-core now
 # depends transitively on ffmpeg-sys-next (via solstone-core-grab), whose build
