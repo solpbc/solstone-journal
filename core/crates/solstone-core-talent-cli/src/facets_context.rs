@@ -116,13 +116,23 @@ fn render_capped_entities(
             others.push(entity);
         }
     }
+    let mut leftover_principals = principals;
     let role = if include_descriptions {
-        principals
-            .iter()
-            .find_map(|entity| principal_role_line(journal_root, entity, indent))
+        let mut role = None;
+        leftover_principals.retain(|entity| {
+            if role.is_none() {
+                if let Some(line) = principal_role_line(journal_root, entity, indent) {
+                    role = Some(line);
+                    return false;
+                }
+            }
+            true
+        });
+        role
     } else {
         None
     };
+    others.extend(leftover_principals);
     let mut ranked = others
         .into_iter()
         .map(|entity| {
@@ -727,6 +737,36 @@ mod tests {
         assert!(!list.contains("Soleil"), "{list}");
     }
 
+    #[test]
+    fn principal_without_role_line_stays_in_the_entity_list() {
+        let root = tempfile::tempdir().expect("root");
+        declaration(root.path(), "work", r#"{"title":"Work"}"#);
+        attach(
+            root.path(),
+            "work",
+            "journal_jer",
+            "link_jer",
+            r#"{"id":"jer","name":"Jer","type":"Person","is_principal":true}"#,
+            r#"{"entity_id":"jer","description":"founder"}"#,
+        );
+        attach(
+            root.path(),
+            "work",
+            "journal_ada",
+            "link_ada",
+            r#"{"id":"ada","name":"Ada","type":"Person"}"#,
+            r#"{"entity_id":"ada","description":"colleague"}"#,
+        );
+        let rendered = resolve_facets(root.path(), Some("work"), None).expect("focused");
+        let list = focused_entity_lines(&rendered).join("\n");
+        assert!(
+            !rendered.contains("'s Role"),
+            "role line should not form without a usable preferred/name: {rendered}"
+        );
+        assert!(list.contains("Jer"), "principal vanished: {list}");
+        assert!(list.contains("Ada"), "{list}");
+    }
+
     // AC9 — all-facets path is names-only and uses the same cap.
     #[test]
     fn ac9_all_facets_is_names_only_and_caps() {
@@ -814,7 +854,10 @@ mod tests {
             "principal role description leaked into names-only output: {rendered}"
         );
         assert!(rendered.contains("Ada"), "{rendered}");
-        assert!(!rendered.contains("Jer"), "{rendered}");
+        assert!(
+            rendered.contains("Jer"),
+            "principal should stay in the names-only roster when no role line is rendered: {rendered}"
+        );
     }
 
     // AC10 — line ceiling keeps the token estimate under budget.
