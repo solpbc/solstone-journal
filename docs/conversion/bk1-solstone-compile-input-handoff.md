@@ -35,7 +35,7 @@ Production / library path joins (not exhaustive of comments):
 | `solstone/talent`, `solstone/apps` | `solstone-core/src/main.rs`, `solstone-core-cortex/src/{service,process}.rs`, `solstone-core-thinking/src/generators.rs`, `solstone-core-think-cli`, `solstone-core-talent-cli/src/lib.rs`, `solstone-core-convey-shell/src/thinking_sol_reads.rs` |
 | `solstone/think/templates` | cortex process + convey-shell thinking reads |
 | `solstone/talent/chat.md`, `solstone/talent/read.md` | `solstone-core-talent-cli/src/show.rs` |
-| `solstone/apps/observer/ingest.schema.json` and other `REQUIRED_SOURCES` schemas | `solstone-core/src/contract/bundle.rs` |
+| `core/crates/solstone-core/src/contract/schemas/*.schema.json` (`REQUIRED_SOURCES`) | `solstone-core/src/contract/bundle.rs` |
 | `solstone/think/contract/layout.json` | contract builder |
 | `solstone/talent/journal/contract/bundle.json` | `solstone-core/tests/contract_process_isolation.rs` |
 | `solstone/observe/transcribe/parakeet_helper` | `solstone-core-transcribe` + `coreml_install.rs` `Package.swift` |

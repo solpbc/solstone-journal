@@ -40,7 +40,7 @@
   "x-journal-contract": {
     "format_id": "observer-ingest-envelope",
     "schema_owner": "observe.protocol",
-    "reference_writer": "solstone.apps.observer.routes.ingest_upload",
+    "reference_writer": "solstone-core-ingest",
     "allowed_producers": ["native observers", "solstone observe transfer"],
     "write_discipline": "multipart envelope validated before segment write",
     "file_kind": "ingest_envelope",

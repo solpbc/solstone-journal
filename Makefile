@@ -389,13 +389,16 @@ uv.lock: pyproject.toml
 .PHONY: hopper-install
 hopper-install: ci-full-prep-cargo
 
-# Install package in editable mode with isolated venv
-# The Python development environment. The journal itself installs from the
-# distribution tree, not from here, and Hopper lodes provision through
-# `hopper-install` instead. What survives is the tooling the remaining
-# repository-maintenance scripts need.
-install: .installed
-	@echo "Python development environment ready."
+# Retired. The journal installs from the distribution tree. Developers use
+# cargo. Hopper lodes use hopper-install. Remaining Python repo-maintenance
+# scripts still depend on `.installed` and `uv sync`; do not treat this
+# target's refusal as a regression those scripts caused.
+# A zero-byte gitignored `.installed` predating the cut makes `.installed` a
+# no-op on any machine that already ran it — `rm -f .installed` first or the
+# tree lies.
+install:
+	@echo "Error: 'make install' is retired. Install the journal from the distribution tree; develop with cargo; hopper lodes use hopper-install." >&2
+	@exit 1
 
 # Staging the shared host runtime is BUILD-TIME tooling: it shells to Python, so
 # it stays OUTSIDE both poisoned Rust gates, which cannot shell to an interpreter at
@@ -1056,7 +1059,8 @@ FORCE:
 # Clean everything and reinstall
 clean-install: clean
 	rm -rf $(VENV) .installed
-	$(MAKE) install
+	@echo "Error: 'make clean-install' is retired with 'make install'. Recreate a Python tooling venv with 'uv sync --group dev' only if a remaining script still needs it." >&2
+	@exit 1
 
 # Run continuous integration checks (what CI would run)
 install-checks: .installed

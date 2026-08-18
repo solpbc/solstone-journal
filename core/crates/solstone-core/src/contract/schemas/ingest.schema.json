@@ -33,7 +33,7 @@
   "x-journal-contract": {
     "format_id": "observer-ingest-json",
     "schema_owner": "apps.observer",
-    "reference_writer": "solstone.apps.observer.utils.write_ingest_manifest",
+    "reference_writer": "solstone-core-ingest-resolve",
     "allowed_producers": ["observer ingest journal writer"],
     "write_discipline": "atomic JSON replace",
     "file_kind": "json",
