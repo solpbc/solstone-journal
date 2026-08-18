@@ -344,8 +344,11 @@ mod tests {
     fn root(name: &str) -> std::path::PathBuf {
         reserve_temp_path(&format!("observer-service-{name}"))
     }
-    fn seed(root: &Path, key: &str, name: &str, created: i64) {
-        let mut record = ObserverRecord::from_value(json!({"key":key,"name":name,"created_at":created,"stats":{"segments_received":1,"bytes_received":2}})).expect("record");
+    fn seed(root: &Path, key: &str, name: &str, created: i64, stats: Value) {
+        let mut record = ObserverRecord::from_value(
+            json!({"key":key,"name":name,"created_at":created,"stats":stats}),
+        )
+        .expect("record");
         record.set_revoked(false);
         save_observer(root, &record).expect("save");
     }
@@ -365,8 +368,20 @@ mod tests {
             .to_string(),
             "Error: device 'missing' not found"
         );
-        seed(&root, "abcdefghx", "one", 1);
-        seed(&root, "ijklmnopy", "two", 2);
+        seed(
+            &root,
+            "abcdefghx",
+            "one",
+            1,
+            json!({"segments_received":1,"bytes_received":2}),
+        );
+        seed(
+            &root,
+            "ijklmnopy",
+            "two",
+            2,
+            json!({"segments_received":1,"bytes_received":2}),
+        );
         assert_eq!(
             execute(
                 &root,
@@ -478,7 +493,7 @@ mod tests {
             4,
             json!({"segments_received":4}),
         );
-        let before = read_record(&root, "qrstuvwx");
+        let before = read_record(&root, "yzabcdef");
         execute(
             &root,
             ObserverCommand::Reconcile {
@@ -488,12 +503,13 @@ mod tests {
             now,
         )
         .expect("reconcile");
-        assert_equal_except(before, read_record(&root, "qrstuvwx"), &["stats"]);
+        assert_equal_except(before, read_record(&root, "yzabcdef"), &["stats"]);
+        assert_eq!(read_record(&root, "qrstuvwx")["revoked"], true);
         fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
-    fn reconcile_commit_keeps_oldest_sums_stats_and_prints_truthy_duplicates() {
+    fn reconcile_commit_keeps_busiest_sums_stats_and_prints_truthy_duplicates() {
         let root = root("reconcile-commit");
         save_rich(
             &root,
@@ -520,13 +536,13 @@ mod tests {
         .expect("commit");
         assert_eq!(
             output,
-            "Reconciled stream 'stream':\n  survivor:  aaaaaaaa\n  revoking:  bbbbbbbb\n  segments:  6\n  bytes:     1000 B\n  duplicates: 5 rejected"
+            "Reconciled stream 'stream':\n  survivor:  bbbbbbbb\n  revoking:  aaaaaaaa\n  segments:  6\n  bytes:     1000 B\n  duplicates: 5 rejected"
         );
         assert_eq!(
-            read_record(&root, "aaaaaaaa")["stats"],
+            read_record(&root, "bbbbbbbb")["stats"],
             json!({"segments_received":6,"bytes_received":1000,"duplicates_rejected":5})
         );
-        assert_eq!(read_record(&root, "bbbbbbbb")["revoked"], true);
+        assert_eq!(read_record(&root, "aaaaaaaa")["revoked"], true);
         fs::remove_dir_all(root).expect("cleanup");
     }
 
@@ -558,16 +574,66 @@ mod tests {
         .expect("commit");
         assert_eq!(
             output,
-            "Reconciled stream 'plain':\n  survivor:  cccccccc\n  revoking:  dddddddd\n  segments:  9\n  bytes:     3 B"
+            "Reconciled stream 'plain':\n  survivor:  dddddddd\n  revoking:  cccccccc\n  segments:  9\n  bytes:     3 B"
         );
         assert!(!output.contains("duplicates:"));
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn ac9_unbound_commit_sums_stats_onto_survivor_and_revokes_the_rest() {
+        let root = root("reconcile-unbound-commit");
+        seed(
+            &root,
+            "aaaaaaaa1",
+            "unbound",
+            1,
+            json!({"segments_received":1,"bytes_received":100,"duplicates_rejected":3}),
+        );
+        seed(
+            &root,
+            "bbbbbbbb2",
+            "unbound",
+            2,
+            json!({"segments_received":5,"bytes_received":900,"duplicates_rejected":2}),
+        );
+        let output = execute(
+            &root,
+            ObserverCommand::Reconcile {
+                dry_run: false,
+                json: false,
+            },
+            99,
+        )
+        .expect("commit");
+        assert_eq!(
+            output,
+            "Reconciled stream 'unbound':\n  survivor:  bbbbbbbb\n  revoking:  aaaaaaaa\n  segments:  6\n  bytes:     1000 B\n  duplicates: 5 rejected"
+        );
+        assert_eq!(
+            read_record(&root, "bbbbbbbb")["stats"],
+            json!({"segments_received":6,"bytes_received":1000,"duplicates_rejected":5})
+        );
+        assert_eq!(read_record(&root, "aaaaaaaa")["revoked"], true);
         fs::remove_dir_all(root).expect("cleanup");
     }
     #[test]
     fn dry_run_does_not_modify_observer_tree() {
         let root = root("dry");
-        seed(&root, "abcdefghx", "same", 1);
-        seed(&root, "ijklmnopy", "same", 2);
+        seed(
+            &root,
+            "abcdefghx",
+            "same",
+            1,
+            json!({"segments_received":1,"bytes_received":2}),
+        );
+        seed(
+            &root,
+            "ijklmnopy",
+            "same",
+            2,
+            json!({"segments_received":1,"bytes_received":2}),
+        );
         let before = fs::read(observer_path(&root, "abcdefgh")).expect("before");
         let output = execute(
             &root,
@@ -589,8 +655,20 @@ mod tests {
     #[test]
     fn dry_run_snapshot_keeps_every_path_size_and_mtime() {
         let root = root("dry-snapshot");
-        seed(&root, "abcdefghx", "same", 1);
-        seed(&root, "ijklmnopy", "same", 2);
+        seed(
+            &root,
+            "abcdefghx",
+            "same",
+            1,
+            json!({"segments_received":1,"bytes_received":2}),
+        );
+        seed(
+            &root,
+            "ijklmnopy",
+            "same",
+            2,
+            json!({"segments_received":1,"bytes_received":2}),
+        );
         let before = snapshot(&root.join("apps/observer"));
         execute(
             &root,
@@ -608,7 +686,13 @@ mod tests {
     #[test]
     fn rename_and_revoke_json_shapes_and_action_params_match_python() {
         let root = root("actions");
-        seed(&root, "abcdefghx", "old", 1);
+        seed(
+            &root,
+            "abcdefghx",
+            "old",
+            1,
+            json!({"segments_received":1,"bytes_received":2}),
+        );
         assert_eq!(
             execute(
                 &root,

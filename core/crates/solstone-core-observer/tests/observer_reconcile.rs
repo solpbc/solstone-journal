@@ -63,14 +63,14 @@ fn reconcile_dry_run_plan_across_duplicate_edge_cases_without_writes() {
         json!([
             {
                 "name": "",
-                "survivor_prefix": "gggggggg",
-                "revoked_prefixes": ["hhhhhhhh"],
+                "survivor_prefix": "hhhhhhhh",
+                "revoked_prefixes": ["gggggggg"],
                 "stats": {"segments_received": 8, "bytes_received": 80}
             },
             {
                 "name": "triple",
-                "survivor_prefix": "aaaaaaaa",
-                "revoked_prefixes": ["cccccccc", "bbbbbbbb"],
+                "survivor_prefix": "cccccccc",
+                "revoked_prefixes": ["bbbbbbbb", "aaaaaaaa"],
                 "stats": {
                     "segments_received": 7,
                     "bytes_received": 70,
