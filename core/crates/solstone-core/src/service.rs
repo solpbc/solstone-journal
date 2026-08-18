@@ -111,6 +111,9 @@ fn platform() -> Result<Platform, String> {
     }
 }
 
+/// Per-user unit path (`systemd --user` / LaunchAgents). The loopback port the
+/// unit starts is machine-wide and shared across logins; do not derive a
+/// per-user port from this.
 fn unit_path(platform: Platform, home: &Path) -> PathBuf {
     match platform {
         Platform::Linux => home.join(".config/systemd/user").join(UNIT),

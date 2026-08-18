@@ -15,6 +15,10 @@ pub struct LoopbackListeners {
 }
 
 /// Bind separate listeners to exactly the IPv4 and IPv6 loopback addresses.
+///
+/// The port is machine-wide and shared across logins. A second copy, including
+/// one started under another login, must fail this bind rather than isolate
+/// per user. Do not derive a per-user port here.
 pub async fn bind_loopback(port: u16) -> io::Result<LoopbackListeners> {
     let ipv4 = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await?;
     let ipv6 = TcpListener::bind(SocketAddr::from((Ipv6Addr::LOCALHOST, port))).await?;

@@ -283,6 +283,10 @@ impl std::fmt::Display for ConveyServeError {
 impl std::error::Error for ConveyServeError {}
 
 /// Bind loopback and, when available, the paired-device door.
+///
+/// The loopback port is machine-wide and shared across logins. A second copy,
+/// including one started under another login, must fail this bind rather than
+/// isolate per user.
 #[cfg(feature = "host")]
 pub async fn serve(options: ConveyServeOptions) -> Result<ConveyServeHandle, ConveyServeError> {
     use solstone_core_sol_link::ledger::AuthorizedClientsRead;
