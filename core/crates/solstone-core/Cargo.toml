@@ -84,6 +84,8 @@ test = false
 
 [dependencies]
 chrono.workspace = true
+env_logger.workspace = true
+log.workspace = true
 serde.workspace = true
 serde_path_to_error = "0.1.20"
 solstone-core-cli.workspace = true

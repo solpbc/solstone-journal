@@ -21,7 +21,13 @@ const EXIT_USAGE: u8 = 2;
 const EXIT_CONFIG: u8 = 78;
 const EXIT_PROVIDER_BLOCKED: u8 = 69;
 
+fn install_logger() {
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .try_init();
+}
+
 fn main() -> ExitCode {
+    install_logger();
     match run(env::args_os().skip(1)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(CliError::Usage(message)) => {
@@ -438,5 +444,14 @@ mod tests {
             redo,
             Err(CliError::Usage(message)) if message.contains("--redo requires --describe")
         ));
+    }
+
+    #[test]
+    fn logger_install_is_idempotent_and_defaults_to_warn() {
+        super::install_logger();
+        super::install_logger();
+        if std::env::var("RUST_LOG").is_err() {
+            assert!(log::max_level() >= log::LevelFilter::Warn);
+        }
     }
 }

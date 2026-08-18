@@ -7,6 +7,8 @@ license.workspace = true
 publish = false
 
 [dependencies]
+env_logger.workspace = true
+log.workspace = true
 ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format", "software-scaling", "build"] }
 # This direct dependency only enables the shared FFmpeg source build's portable
 # baseline; decode calls stay within ffmpeg-next's safe API.

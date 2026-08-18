@@ -123,7 +123,13 @@ enum JournalPathError {
     Create(solstone_core_journal::EnsureJournalDirError),
 }
 
+fn install_logger() {
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .try_init();
+}
+
 fn main() -> ExitCode {
+    install_logger();
     let args: Vec<_> = env::args_os().skip(1).collect();
     #[cfg(feature = "test-hooks")]
     if let Some(code) = config::run_wrapper_write_test_child(&args) {
@@ -5758,5 +5764,14 @@ mod tests {
             response.thinking,
             Some(json!({"type": "thinking", "thinking": "work"}))
         );
+    }
+
+    #[test]
+    fn logger_install_is_idempotent_and_defaults_to_warn() {
+        install_logger();
+        install_logger();
+        if std::env::var("RUST_LOG").is_err() {
+            assert!(log::max_level() >= log::LevelFilter::Warn);
+        }
     }
 }
