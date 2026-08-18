@@ -143,8 +143,9 @@ mod tests {
 
     #[test]
     fn ac2_sole_binding_beats_every_other_key() {
-        // RED today (keep-oldest picks the unbound older created_at) and would
-        // also be red against most-segments-always (unbound has 99 vs bound 1).
+        // Keep-oldest would pick freekey0 (older created_at). A most-segments-always
+        // ordering would also pick freekey0 (99 segs vs the bound record's 1).
+        // Only the bound-first key selects boundkey.
         let records = vec![
             named(json!({
                 "key":"boundkey1","name":"rokid",
@@ -356,6 +357,23 @@ mod tests {
         assert_eq!(plan.len(), 1);
         assert_eq!(plan[0].survivor_prefix, "missing0");
         assert_eq!(plan[0].revoked_prefixes, vec!["zerots00"]);
+    }
+
+    #[test]
+    fn non_numeric_and_missing_segments_received_score_zero() {
+        let records = vec![
+            named(
+                json!({"key":"strkey001","name":"rokid","created_at":1,"stats":{"segments_received":"94"}}),
+            ),
+            named(json!({"key":"nostats01","name":"rokid","created_at":2})),
+            named(
+                json!({"key":"countkey1","name":"rokid","created_at":3,"stats":{"segments_received":5}}),
+            ),
+        ];
+        let plan = reconcile_plan(&records);
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].survivor_prefix, "countkey");
+        assert_eq!(plan[0].revoked_prefixes, vec!["strkey00", "nostats0"]);
     }
 
     #[test]
