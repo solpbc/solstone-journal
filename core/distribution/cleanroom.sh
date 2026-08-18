@@ -405,6 +405,11 @@ subject_digest() {
 	printf '%s\n' "$PLAN" | awk -v id="$id" '$1 == "SUBJECT" && $2 == id {print $4}'
 }
 
+subject_image() {
+	id=$1
+	printf '%s\n' "$PLAN" | awk -v id="$id" '$1 == "SUBJECT" && $2 == id {print $3}'
+}
+
 is_lower_hex() {
 	value=$1
 	want=$2
@@ -460,17 +465,23 @@ run_subject() {
 	id=$1
 	role=$2
 	digest=$(subject_digest "$id")
-	[ -n "$digest" ] || refuse "subject missing from inventory: $id"
-	actual=$($RUNTIME image inspect --format '{{.Id}}' "$digest") \
-		|| refuse "subject is not preloaded: $id $digest"
-	[ "$actual" = "$digest" ] || refuse "subject digest mismatch: $id expected=$digest actual=$actual"
+	image=$(subject_image "$id")
+	[ -n "$digest" ] && [ -n "$image" ] || refuse "subject missing from inventory: $id"
+	ref=$image@$digest
+	# Inventory pins the registry manifest digest. Docker's image Id is a
+	# different hash, so inspect-by-Id cannot see a pulled pin. RepoDigests
+	# is the axis the pin lives on.
+	digests=$($RUNTIME image inspect --format '{{join .RepoDigests "\n"}}' "$ref") \
+		|| refuse "subject is not preloaded: $id $ref"
+	printf '%s\n' "$digests" | grep -Fx "$ref" >/dev/null \
+		|| refuse "subject digest mismatch: $id expected=$ref actual=$(printf '%s' "$digests" | tr '\n' ' ')"
 	$RUNTIME run --rm --pull=never --network=none \
 		-v "$ARTIFACTS:/artifacts:ro" \
 		-v "$SELF:/cleanroom.sh:ro" \
 		-v "$INSTALL_SH:/install.sh:ro" \
 		-v "$SCAN_SH:/scan-python.sh:ro" \
 		-v "$BIN:/producer:ro" \
-		"$digest" sh /cleanroom.sh --inside "$role"
+		"$ref" sh /cleanroom.sh --inside "$role"
 	printf 'rung=%s subject=%s digest=%s\n' "$role" "$id" "$digest" >>"$RECEIPT_PARTIAL"
 }
 
