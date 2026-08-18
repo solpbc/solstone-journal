@@ -1745,12 +1745,143 @@ fn sweep_execute_still_releases_an_armed_proven_segment() {
             "2026-08-06T00:00:00Z",
             "--policy",
             &policy,
-            "--execute",
+            "--force",
             "true",
         ],
     );
+    let body = receipt(&output);
     assert_eq!(output.status.code(), Some(0));
     assert!(!segment.join("audio.flac").exists());
+    assert_eq!(body["detail"]["executed"], true);
+    assert!(body.get("outcome").is_some());
+}
+
+#[test]
+fn sweep_without_force_plans_only() {
+    let bed = Bed::new("sweep-plan-only");
+    let segment = bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let policy = armed_policy();
+    let output = bed.run(
+        "sweep",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+        ],
+    );
+    let body = receipt(&output);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(segment.join("audio.flac").exists());
+    assert_eq!(body["executed"], false);
+    assert_eq!(
+        keys(&body),
+        BTreeSet::from(["executed", "ok", "plan", "verb"])
+    );
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["verb"], "sweep");
+}
+
+#[test]
+fn sweep_refuses_execute() {
+    for (name, value, with_force) in [
+        ("true", "true", false),
+        ("1", "1", false),
+        ("yes", "yes", false),
+        ("TRUE", "TRUE", false),
+        ("true-with-force", "true", true),
+    ] {
+        let bed = Bed::new(name);
+        let segment = bed.proven_segment(
+            "20260701",
+            "field.audio",
+            "070000_17",
+            "2026-07-01T00:00:00Z",
+        );
+        let policy = armed_policy();
+        let journal = bed.journal().to_str().unwrap();
+        let mut args = vec![
+            "--journal",
+            journal,
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            &policy,
+            "--execute",
+            value,
+        ];
+        if with_force {
+            args.extend(["--force", "true"]);
+        }
+        let output = bed.run("sweep", &args);
+        let body = receipt(&output);
+        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(body["ok"], false);
+        assert!(body["error"].as_str().unwrap().contains("--force"));
+        assert!(segment.join("audio.flac").exists());
+    }
+}
+
+#[test]
+fn sweep_force_false_and_zero_plan_only() {
+    for (name, value) in [("false", "false"), ("zero", "0")] {
+        let bed = Bed::new(name);
+        let segment = bed.proven_segment(
+            "20260701",
+            "field.audio",
+            "070000_17",
+            "2026-07-01T00:00:00Z",
+        );
+        let policy = armed_policy();
+        let output = bed.run(
+            "sweep",
+            &[
+                "--journal",
+                bed.journal().to_str().unwrap(),
+                "--today",
+                "2026-08-06",
+                "--now",
+                "2026-08-06T00:00:00Z",
+                "--policy",
+                &policy,
+                "--force",
+                value,
+            ],
+        );
+        let body = receipt(&output);
+        assert_eq!(output.status.code(), Some(0));
+        assert!(segment.join("audio.flac").exists());
+        assert_ne!(body["detail"]["executed"], true);
+        assert_eq!(body["executed"], false);
+    }
+}
+
+#[test]
+fn sweep_help_names_force_and_consent() {
+    let bed = Bed::new("sweep-help");
+    let output = bed.run("--help", &[]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout
+            .contains("--force executes the sweep. Use it only with the owner's express consent.")
+    );
+    let sweep_line = stdout
+        .lines()
+        .find(|line| line.contains("sweep") && line.contains("--journal P"))
+        .expect("sweep usage line");
+    assert!(sweep_line.contains("--force"));
+    assert!(!sweep_line.contains("--execute"));
 }
 
 #[test]

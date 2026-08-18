@@ -731,6 +731,9 @@ fn log_plan_json(
 }
 
 fn run_sweep(args: &Args) -> ExitCode {
+    if args.has("--execute") {
+        return fail("unknown flag `--execute`; use --force");
+    }
     let journal = match args.required("--journal") {
         Ok(value) => PathBuf::from(value),
         Err(error) => return fail(&error),
@@ -767,7 +770,7 @@ fn run_sweep(args: &Args) -> ExitCode {
         now,
     );
     // ⛔ Planning is the default. A destructive pass must be asked for.
-    if !args.has("--execute") {
+    if !args.has("--force") {
         return emit(
             serde_json::json!({ "ok": true, "verb": "sweep", "executed": false, "plan": plan_json(&plan) }),
             EXIT_OK,
@@ -1196,7 +1199,7 @@ solstone-retention — the retention executor
 [--reason owner|policy]
   release-raw     --journal P --at ISO --segment DAY/STREAM/DIR [--segment ...]
   recover         --journal P --at ISO --did ID [--reason owner|policy]
-  sweep           --journal P --today YYYY-MM-DD --now ISO [--policy JSON] [--execute true]
+  sweep           --journal P --today YYYY-MM-DD --now ISO [--policy JSON] [--force true]
   prune-logs      --journal P --today YYYY-MM-DD --days N [--execute true]
   mark            --journal P --today YYYY-MM-DD --now ISO [--policy JSON]
   marks           --journal P
@@ -1205,6 +1208,7 @@ solstone-retention — the retention executor
   remove-marked   --journal P --today YYYY-MM-DD --now ISO [--policy JSON] --mark ID [--mark ...]
   decline         --journal P --mark ID
 
+--force executes the sweep. Use it only with the owner's express consent.
 Always prints one JSON object. Exit 0 all removed, 2 usage, 3 something refused, \
 4 run halted.
 Name the default stream `_default`; it contributes no path component.
