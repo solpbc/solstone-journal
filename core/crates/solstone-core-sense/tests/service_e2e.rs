@@ -13,7 +13,7 @@ use serde_json::{Map, json};
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
 use solstone_core_sense::{
     SenseDispatcher,
-    batch::{BatchRequest, process_day_with_fixture_program},
+    batch::{BatchError, BatchRequest, process_day_with_fixture_program},
     dispatch::Outbound,
     service::run_until,
 };
@@ -146,6 +146,61 @@ async fn batch_processing_publishes_observed_to_a_real_callosum_socket() {
     assert_eq!(observed.extra["segment"], "120000_2");
     assert!(segment.join("audio.flac.handler").is_file());
     server.stop().await;
+}
+
+async fn run_fixture_batch(files: &[&str]) -> Result<(), BatchError> {
+    let root = tempfile::tempdir().expect("journal");
+    let segment = root.path().join("chronicle/20260812/default/120000_2");
+    std::fs::create_dir_all(&segment).expect("segment");
+    for name in files {
+        std::fs::write(segment.join(name), b"audio").expect("audio");
+    }
+    let socket = root.path().join("health/callosum.sock");
+    let server = CallosumSocketServer::bind(&socket).await.expect("server");
+    let request = BatchRequest {
+        day: "20260812".into(),
+        jobs: 1,
+        reprocess: None,
+        segment: Some("120000_2".into()),
+        stream: Some("default".into()),
+        dry_run: false,
+        verbose: false,
+        debug: false,
+    };
+    let journal = root.path().to_path_buf();
+    let handler = PathBuf::from(env!("CARGO_BIN_EXE_solstone-core-sense-test-handler"));
+    let result = tokio::task::spawn_blocking(move || {
+        process_day_with_fixture_program(&journal, &request, None, handler)
+    })
+    .await
+    .expect("batch task");
+    server.stop().await;
+    result
+}
+
+#[tokio::test]
+async fn batch_nonzero_exit_returns_failed_tally() {
+    let result = run_fixture_batch(&["fail.flac"]).await;
+    assert!(
+        matches!(result, Err(BatchError::Failed { failed: 1, ran: 1 })),
+        "expected Failed {{ failed: 1, ran: 1 }}, got {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn batch_provider_blocked_exit_is_not_a_failure() {
+    run_fixture_batch(&["blocked.flac"])
+        .await
+        .expect("exit 69 is a deferral, not a batch failure");
+}
+
+#[tokio::test]
+async fn batch_mixed_ok_and_fail_returns_partial_tally() {
+    let result = run_fixture_batch(&["ok.flac", "fail.flac"]).await;
+    assert!(
+        matches!(result, Err(BatchError::Failed { failed: 1, ran: 2 })),
+        "expected Failed {{ failed: 1, ran: 2 }}, got {result:?}"
+    );
 }
 
 #[tokio::test]

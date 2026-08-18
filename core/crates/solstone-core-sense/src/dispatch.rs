@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -59,6 +60,39 @@ struct WorkerContext {
     verbose: bool,
     debug: bool,
     batch: BatchContext,
+    tally: Arc<JobTally>,
+}
+
+/// Per-run handler outcome counts. Incremented as `run_job` finishes, then
+/// read after the dispatcher is idle. Not a rolling beacon.
+pub(crate) struct JobTally {
+    ran: AtomicUsize,
+    failed: AtomicUsize,
+}
+
+impl JobTally {
+    fn new() -> Self {
+        Self {
+            ran: AtomicUsize::new(0),
+            failed: AtomicUsize::new(0),
+        }
+    }
+
+    fn success(&self) {
+        self.ran.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn failure(&self) {
+        self.ran.fetch_add(1, Ordering::SeqCst);
+        self.failed.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub(crate) fn snapshot(&self) -> (usize, usize) {
+        (
+            self.failed.load(Ordering::SeqCst),
+            self.ran.load(Ordering::SeqCst),
+        )
+    }
 }
 
 pub struct SenseDispatcher {
@@ -70,6 +104,7 @@ pub struct SenseDispatcher {
     admission: Admission,
     handler_program: Option<PathBuf>,
     batch: BatchContext,
+    pub(crate) tally: Arc<JobTally>,
 }
 
 impl SenseDispatcher {
@@ -207,6 +242,7 @@ impl SenseDispatcher {
             health: Health::default(),
             stopping: false,
         }));
+        let tally = Arc::new(JobTally::new());
         let mut pools = HashMap::new();
         let mut worker_handles = Vec::new();
         for handler in HANDLERS {
@@ -229,6 +265,7 @@ impl SenseDispatcher {
                     verbose,
                     debug,
                     batch: batch.clone(),
+                    tally: Arc::clone(&tally),
                 };
                 let worker = thread::Builder::new()
                     .name(format!("{handler}-worker"))
@@ -247,6 +284,7 @@ impl SenseDispatcher {
             admission,
             handler_program,
             batch,
+            tally,
         }
     }
 
@@ -582,6 +620,7 @@ fn run_job(
         environment,
     };
     let Ok(mut process) = ManagedProcess::spawn(command, options) else {
+        worker_context.tally.failure();
         complete(
             state,
             outbound,
@@ -614,6 +653,7 @@ fn run_job(
     };
     let outcome = match exit {
         Some(PROVIDER_BLOCKED) => {
+            worker_context.tally.success();
             complete(
                 state,
                 outbound,
@@ -627,6 +667,7 @@ fn run_job(
             return;
         }
         Some(0) => {
+            worker_context.tally.success();
             state.lock().expect("sense state").health.success();
             complete(
                 state,
@@ -656,6 +697,7 @@ fn run_job(
                     .health
                     .failure(&format!("{} exit {code}", job.item.handler));
             }
+            worker_context.tally.failure();
             format!("{} exit {code}", job.item.handler)
         }
         None => {
@@ -678,6 +720,7 @@ fn run_job(
                 "Timeout",
             );
             state.lock().expect("sense state").health.failure(&reason);
+            worker_context.tally.failure();
             reason
         }
     };

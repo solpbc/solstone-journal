@@ -79,6 +79,8 @@ pub enum BatchError {
     },
     #[error("batch callosum runtime unavailable")]
     Runtime,
+    #[error("{failed} failed of {ran} ran")]
+    Failed { failed: usize, ran: usize },
 }
 
 /// Run one finite historical-day batch.
@@ -420,7 +422,11 @@ where
             }
         })
         .collect::<Vec<_>>();
-    run_batch_dispatcher(journal, dispatcher, receiver, messages)?;
+    run_batch_dispatcher(journal, Arc::clone(&dispatcher), receiver, messages)?;
+    let (failed, ran) = dispatcher.tally.snapshot();
+    if failed > 0 {
+        return Err(BatchError::Failed { failed, ran });
+    }
     println!("Batch processing complete");
     Ok(())
 }
