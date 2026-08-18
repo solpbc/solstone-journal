@@ -14,10 +14,12 @@ mod args;
 mod compose;
 mod facets_context;
 mod inventory;
+pub mod preview;
 mod schema;
 mod templates;
 
 pub use compose::compose_talent;
+pub use preview::{PreviewRequest, PromptPreview, PromptPreviewer};
 pub use templates::safe_substitute;
 
 mod emit;

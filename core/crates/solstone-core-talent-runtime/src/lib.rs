@@ -13,6 +13,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_generate::{ContentPart, GenerateRequest, GenerateResponse, OneShotClient};
 use solstone_core_system_health::{DataState, read_segment_data_state};
 
+pub mod assemble;
 pub mod chat_context;
 pub mod contract;
 pub mod daily_schedule;
@@ -37,6 +38,10 @@ pub mod writers;
 mod test_support;
 
 use contract::{CommitDisposition, GateDecision, PrePostState, resolve_hook};
+
+/// Config key honored only by steward and speaker_attribution pre-steps.
+/// Not a general per-stage dry-run flag.
+pub(crate) const DRY_RUN_KEY: &str = "dry_run";
 
 #[derive(Clone, Debug)]
 pub struct ExecutionContext {
@@ -258,10 +263,11 @@ pub fn execute_request(
     client: &OneShotClient,
     writer: &mut impl Write,
 ) -> RuntimeOutcome {
-    let mut prepared = match prepare::prepare(request, paths, context) {
-        Ok(prepared) => prepared,
-        Err(error) => return RuntimeOutcome::PrepareFailed(error),
-    };
+    let mut prepared =
+        match prepare::prepare(request, paths, context, prepare::PrepareMode::Execute) {
+            Ok(prepared) => prepared,
+            Err(error) => return RuntimeOutcome::PrepareFailed(error),
+        };
     emit_start(writer, &prepared);
     if let Some(reason) = prepared.config.get("skip_reason").and_then(Value::as_str) {
         return RuntimeOutcome::PrepareSkipped {
@@ -446,7 +452,7 @@ fn schema_validation_failed(validation: Option<&Value>) -> bool {
     })
 }
 
-fn generate_request(prepared: &PreparedTalent) -> GenerateRequest {
+pub fn generate_contents(prepared: &PreparedTalent) -> Vec<ContentPart> {
     let contents: Vec<ContentPart> = prepared
         .config
         .get("messages")
@@ -470,16 +476,20 @@ fn generate_request(prepared: &PreparedTalent) -> GenerateRequest {
                 })
                 .collect()
         });
+    if contents.is_empty() {
+        vec![ContentPart::Text {
+            text: "No input provided.".to_owned(),
+        }]
+    } else {
+        contents
+    }
+}
+
+fn generate_request(prepared: &PreparedTalent) -> GenerateRequest {
     GenerateRequest {
         id: None,
         context: prepared.name.clone(),
-        contents: if contents.is_empty() {
-            vec![ContentPart::Text {
-                text: "No input provided.".to_owned(),
-            }]
-        } else {
-            contents
-        },
+        contents: generate_contents(prepared),
         system_instruction: None,
         temperature: prepared
             .config
@@ -955,9 +965,13 @@ mod tests {
         .as_object()
         .unwrap()
         .clone();
-        let source_prepared =
-            prepare::prepare(source_request.clone(), &source_paths, &source_context)
-                .expect("schedule source prepares");
+        let source_prepared = prepare::prepare(
+            source_request.clone(),
+            &source_paths,
+            &source_context,
+            prepare::PrepareMode::Execute,
+        )
+        .expect("schedule source prepares");
         assert!(
             source_prepared.config["transcript"]
                 .as_str()
@@ -983,6 +997,40 @@ mod tests {
         assert_eq!(source_events[0]["event"], "start");
         assert_eq!(source_events[1]["event"], "finish");
         assert_eq!(source_events[1]["output"], "generated");
+    }
+
+    #[test]
+    fn criterion_4_execute_request_still_refuses_without_a_brain() {
+        let (root, paths, context) = fixture(
+            "plain",
+            r#"{
+"type":"generate", "load":{"transcripts":false}
+}"#,
+        );
+        fs::write(
+            context.journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"none"}}}"#,
+        )
+        .unwrap();
+        let client = OneShotClient::at_path(test_support::one_shot_stub(root.path(), "generated"));
+        let mut output = Vec::new();
+        let outcome = execute_request(
+            json!({"name":"plain", "day":"20260101", "prompt":"hello"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+            &client,
+            &mut output,
+        );
+        let RuntimeOutcome::PrepareFailed(error) = outcome else {
+            panic!("expected PrepareFailed, got {outcome:?}");
+        };
+        assert_eq!(
+            error.to_string(),
+            "No thinking engine is chosen yet. Choose one in Thinking."
+        );
     }
 
     #[test]
@@ -1110,6 +1158,7 @@ mod tests {
                 .clone(),
             &paths,
             &context,
+            prepare::PrepareMode::Execute,
         )
         .unwrap();
 
@@ -1139,6 +1188,7 @@ mod tests {
                 .clone(),
             &paths,
             &context,
+            prepare::PrepareMode::Execute,
         )
         .unwrap();
 
@@ -1264,6 +1314,7 @@ mod tests {
                 .clone(),
             &paths,
             &context,
+            prepare::PrepareMode::Execute,
         )
         .unwrap();
 
@@ -1305,6 +1356,7 @@ mod tests {
                 .clone(),
             &paths,
             &context,
+            prepare::PrepareMode::Execute,
         )
         .unwrap();
 
@@ -1330,6 +1382,7 @@ mod tests {
                 .clone(),
             &paths,
             &context,
+            prepare::PrepareMode::Execute,
         )
         .unwrap();
 
@@ -1362,6 +1415,7 @@ mod tests {
                 .clone(),
             &paths,
             &context,
+            prepare::PrepareMode::Execute,
         )
         .unwrap();
 

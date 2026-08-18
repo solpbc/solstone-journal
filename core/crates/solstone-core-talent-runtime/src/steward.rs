@@ -60,9 +60,10 @@ pub fn build(
         .unwrap_or("19700101");
     let facts = crate::steward_health::gather_health_facts(&context.journal, day);
     let body = rendered_health_body(&facts);
+    // Exactly two stages honor DRY_RUN_KEY (steward, speaker_attribution); not a general per-stage dry-run flag.
     if !prepared
         .config
-        .get("dry_run")
+        .get(crate::DRY_RUN_KEY)
         .is_some_and(|value| value == &Value::Bool(true))
     {
         if let Some(reason) = crate::steward_health::validate_steward_health(&body) {
@@ -292,6 +293,19 @@ mod tests {
         );
         assert!(!root.path().join("identity/health.md").exists());
         assert!(lock.exists());
+    }
+
+    #[test]
+    fn criterion_5_build_writes_health_unless_dry_run() {
+        let root = tempfile::tempdir().unwrap();
+        let written = build(&mut prepared(false), &context(&root)).unwrap();
+        assert!(matches!(written, PrePostState::Steward(_)));
+        assert!(root.path().join("identity/health.md").is_file());
+
+        let dry_root = tempfile::tempdir().unwrap();
+        let previewed = build(&mut prepared(true), &context(&dry_root)).unwrap();
+        assert!(matches!(previewed, PrePostState::Steward(_)));
+        assert!(!dry_root.path().join("identity/health.md").exists());
     }
 
     #[test]

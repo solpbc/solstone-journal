@@ -201,6 +201,14 @@ fn accumulate_with_embeddings(
         .map_err(|error| error.to_string())
 }
 
+fn is_dry_run(prepared: &PreparedTalent) -> bool {
+    // Exactly two stages honor DRY_RUN_KEY (steward, speaker_attribution); not a general per-stage dry-run flag.
+    prepared
+        .config
+        .get(crate::DRY_RUN_KEY)
+        .is_some_and(|value| value == &Value::Bool(true))
+}
+
 pub fn build(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
@@ -208,21 +216,23 @@ pub fn build(
     let Some((day, segment, stream)) = fields(prepared) else {
         return Err(skipped(prepared, "no_segment_context"));
     };
-    // Preserve solstone/talent/speaker_attribution.py:40: this lookup creates a first-run segment.
-    let segment_dir = segment_dir(&context.journal, day, segment, stream, true)
+    let dry_run = is_dry_run(prepared);
+    // Preserve solstone/talent/speaker_attribution.py:40: this lookup creates a first-run segment
+    // unless preview/dry-run asked for a read-only pass.
+    let segment_dir = segment_dir(&context.journal, day, segment, stream, !dry_run)
         .map_err(|error| skipped(prepared, error))?;
     let resolved = match solstone_core_speaker_resolve::resolve::resolve(
         &context.journal,
         day,
         stream,
         segment,
-        false,
+        dry_run,
         Utc::now().timestamp_millis(),
     ) {
         Ok(resolved) => resolved,
         Err(error) => {
             let reason = error.to_string();
-            if has_embeddings(&segment_dir) {
+            if !dry_run && has_embeddings(&segment_dir) {
                 solstone_core_speaker_id::labels::write_stub_labels(&segment_dir, &reason)
                     .map_err(|error| skipped(prepared, error.to_string()))?;
             }
@@ -231,7 +241,7 @@ pub fn build(
     };
     let ResolveOutcome::Resolved(resolved) = resolved else {
         let reason = "no_embeddings";
-        if has_embeddings(&segment_dir) {
+        if !dry_run && has_embeddings(&segment_dir) {
             solstone_core_speaker_id::labels::write_stub_labels(&segment_dir, reason)
                 .map_err(|error| skipped(prepared, error.to_string()))?;
         }
@@ -239,7 +249,7 @@ pub fn build(
     };
     if resolved.labels.is_empty() {
         let reason = "no_embeddings";
-        if has_embeddings(&segment_dir) {
+        if !dry_run && has_embeddings(&segment_dir) {
             solstone_core_speaker_id::labels::write_stub_labels(&segment_dir, reason)
                 .map_err(|error| skipped(prepared, error.to_string()))?;
         }
@@ -247,13 +257,15 @@ pub fn build(
     }
     let state = SpeakerAttributionState { resolved };
     if state.resolved.unmatched.is_empty() {
-        solstone_core_speaker_id::labels::write_full_labels(
-            &segment_dir,
-            label_values(&state.resolved),
-            &metadata_values(&state.resolved.metadata),
-        )
-        .map_err(|error| skipped(prepared, error.to_string()))?;
-        try_accumulate(&context.journal, day, segment, stream, &state.resolved);
+        if !dry_run {
+            solstone_core_speaker_id::labels::write_full_labels(
+                &segment_dir,
+                label_values(&state.resolved),
+                &metadata_values(&state.resolved.metadata),
+            )
+            .map_err(|error| skipped(prepared, error.to_string()))?;
+            try_accumulate(&context.journal, day, segment, stream, &state.resolved);
+        }
         // Preserve solstone/talent/speaker_attribution.py:73-81: this writes from build because
         // the reference writes before it skips generation.
         return Err(skipped(prepared, "all_resolved"));
@@ -478,6 +490,49 @@ mod tests {
         assert!(!read_only.exists());
         let created = segment_dir(root.path(), "20260101", "090000_300", "main", true).unwrap();
         assert!(created.is_dir());
+    }
+
+    #[test]
+    fn criterion_7_build_writes_unless_dry_run() {
+        let root = tempfile::tempdir().unwrap();
+        let mut prepared = PreparedTalent {
+            name: "speaker_attribution".to_owned(),
+            config: Map::from_iter([
+                ("day".to_owned(), Value::String("20260101".to_owned())),
+                ("segment".to_owned(), Value::String("090000_300".to_owned())),
+                ("stream".to_owned(), Value::String("main".to_owned())),
+            ]),
+        };
+        let _ = build(
+            &mut prepared,
+            &ExecutionContext {
+                journal: root.path().to_owned(),
+            },
+        );
+        assert!(
+            root.path()
+                .join("chronicle/20260101/main/090000_300")
+                .is_dir(),
+            "a real pre-step must create the segment directory"
+        );
+
+        let preview = tempfile::tempdir().unwrap();
+        let mut dry = prepared;
+        dry.config
+            .insert(crate::DRY_RUN_KEY.to_owned(), Value::Bool(true));
+        let _ = build(
+            &mut dry,
+            &ExecutionContext {
+                journal: preview.path().to_owned(),
+            },
+        );
+        assert!(
+            !preview
+                .path()
+                .join("chronicle/20260101/main/090000_300")
+                .exists(),
+            "preview dry-run must not create the segment directory"
+        );
     }
 
     #[test]

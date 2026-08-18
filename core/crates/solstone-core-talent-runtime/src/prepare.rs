@@ -18,6 +18,12 @@ pub struct RuntimePaths {
     pub templates_dir: PathBuf,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrepareMode {
+    Execute,
+    Preview,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PrepareFailure {
     Refusal(String),
@@ -44,6 +50,7 @@ pub fn prepare(
     request: Map<String, Value>,
     paths: &RuntimePaths,
     context: &ExecutionContext,
+    mode: PrepareMode,
 ) -> Result<PreparedTalent, PrepareFailure> {
     let name = request
         .get("name")
@@ -86,7 +93,9 @@ pub fn prepare(
             Value::String(context.journal.display().to_string()),
         );
     }
-    if composed.get("provider").and_then(Value::as_str) == Some("none") {
+    if mode == PrepareMode::Execute
+        && composed.get("provider").and_then(Value::as_str) == Some("none")
+    {
         return Err(PrepareFailure::NoBrainConfigured);
     }
     if composed.get("disabled").is_some_and(is_truthy) {
@@ -448,5 +457,43 @@ mod tests {
             .unwrap_err(),
             "Invalid config: 'segment' or 'span' requires 'day'"
         );
+    }
+
+    #[test]
+    fn preview_mode_skips_only_the_no_brain_check() {
+        let root = tempfile::tempdir().unwrap();
+        let talent_root = root.path().join("talent");
+        std::fs::create_dir_all(&talent_root).unwrap();
+        std::fs::create_dir_all(root.path().join("apps")).unwrap();
+        std::fs::create_dir_all(root.path().join("templates")).unwrap();
+        std::fs::write(
+            talent_root.join("demo.md"),
+            "{\n\"type\": \"generate\"\n}\nbody",
+        )
+        .unwrap();
+        let journal = root.path().join("journal");
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+        std::fs::write(
+            journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"none"}}}"#,
+        )
+        .unwrap();
+        let paths = RuntimePaths {
+            talent_root,
+            apps_root: root.path().join("apps"),
+            templates_dir: root.path().join("templates"),
+        };
+        let context = ExecutionContext { journal };
+        let request = Map::from_iter([
+            ("name".to_owned(), json!("demo")),
+            ("prompt".to_owned(), json!("hello")),
+        ]);
+        assert!(matches!(
+            prepare(request.clone(), &paths, &context, PrepareMode::Execute),
+            Err(PrepareFailure::NoBrainConfigured)
+        ));
+        let prepared = prepare(request, &paths, &context, PrepareMode::Preview)
+            .expect("preview mode must skip the no-brain check");
+        assert_eq!(prepared.config["provider"], "none");
     }
 }
