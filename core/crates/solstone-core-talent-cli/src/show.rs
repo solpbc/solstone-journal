@@ -12,7 +12,11 @@ use crate::args::{ListOptions, ShowOptions};
 use crate::compose::compose_talent;
 use crate::emit;
 use crate::inventory;
+use crate::preview::{PreviewRequest, PromptPreview, PromptPreviewer};
 use solstone_core_talent_config::{TalentConfig, read_frontmatter};
+
+const PREVIEW_BANNER: &str = "Preview of what this talent would send. Same assembly a real run uses; the model is not called.";
+const NO_DAY_LINE: &str = "No day given, so this preview has no day's recordings in it. Pass --day YYYYMMDD to include them.";
 
 const PRIORITY_KEYS: &[&str] = &[
     "title",
@@ -33,6 +37,7 @@ pub(crate) fn run(
     apps_root: &Path,
     journal_root: &Path,
     options: &ShowOptions,
+    previewer: &dyn PromptPreviewer,
 ) -> CliRun {
     let resolved = resolve(&options.name, talent_root, apps_root);
     if !resolved.path.is_file() {
@@ -64,10 +69,62 @@ pub(crate) fn run(
             "Prompt '{}' is a hook prompt and cannot be run directly.",
             options.name
         )),
-        _ => failure(format!(
-            "Prompt context is not available for non-cogitate talents: {}",
-            options.name
-        )),
+        _ => render_generate_preview(journal_root, options, previewer),
+    }
+}
+
+fn render_generate_preview(
+    journal_root: &Path,
+    options: &ShowOptions,
+    previewer: &dyn PromptPreviewer,
+) -> CliRun {
+    let preview = previewer.preview(
+        journal_root,
+        &PreviewRequest {
+            name: options.name.clone(),
+            day: options.day.clone(),
+            segment: options.segment.clone(),
+            facet: options.facet.clone(),
+        },
+    );
+    match preview {
+        PromptPreview::Assembled {
+            access_tier,
+            loads_sources,
+            parts,
+        } => {
+            let access_tier = access_tier.as_deref().unwrap_or("normal");
+            let mut output = String::new();
+            let _ = writeln!(output, "{PREVIEW_BANNER}");
+            if loads_sources && options.day.is_none() && options.segment.is_none() {
+                let _ = writeln!(output, "{NO_DAY_LINE}");
+            }
+            let _ = writeln!(
+                output,
+                "\n  Effective prompt for: {}  tier: {access_tier}",
+                options.name
+            );
+            format_section(
+                &mut output,
+                "INSTRUCTION",
+                &parts.join("\n\n"),
+                options.full,
+            );
+            output.push('\n');
+            success(output)
+        }
+        PromptPreview::WouldNotRun { reason } => CliRun {
+            stdout: format!("This talent would not run: {reason}\n"),
+            stderr: String::new(),
+            exit_code: 1,
+        },
+        PromptPreview::UnavailablePreStep => CliRun {
+            stdout: "Prompt preview cannot assemble this talent: a required pre-step is not available.\n"
+                .to_owned(),
+            stderr: String::new(),
+            exit_code: 1,
+        },
+        PromptPreview::Failed { error } => failure(error),
     }
 }
 
@@ -451,6 +508,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::preview::{PromptPreview, UnreachablePreviewer};
     use crate::run_cli;
 
     fn root() -> tempfile::TempDir {
@@ -462,13 +520,30 @@ mod tests {
     }
 
     fn run(root: &tempfile::TempDir, args: &[&str]) -> CliRun {
+        run_with(root, args, &UnreachablePreviewer)
+    }
+
+    fn run_with(
+        root: &tempfile::TempDir,
+        args: &[&str],
+        previewer: &dyn PromptPreviewer,
+    ) -> CliRun {
         run_cli(
             &args.iter().map(Into::into).collect::<Vec<_>>(),
             &root.path().join("talent"),
             &root.path().join("apps"),
             root.path(),
             UNIX_EPOCH + Duration::from_secs(1_000),
+            previewer,
         )
+    }
+
+    struct StubPreviewer(PromptPreview);
+
+    impl PromptPreviewer for StubPreviewer {
+        fn preview(&self, _: &Path, _: &PreviewRequest) -> PromptPreview {
+            self.0.clone()
+        }
     }
 
     #[test]
@@ -618,26 +693,131 @@ mod tests {
     fn prompt_refusals_never_have_a_process_execution_path() {
         let root = root();
         fs::write(root.path().join("talent/hook.md"), "hook body").expect("hook");
-        fs::write(
-            root.path().join("talent/generate.md"),
-            "{\n\"type\": \"generate\"\n}\nbody",
-        )
-        .expect("generate");
         let hook = run(&root, &["show", "hook", "--prompt"]);
         assert_eq!(
             hook.stderr,
             "Prompt 'hook' is a hook prompt and cannot be run directly.\n"
-        );
-        let generate = run(&root, &["show", "generate", "--prompt"]);
-        assert_eq!(
-            generate.stderr,
-            "Prompt context is not available for non-cogitate talents: generate\n"
         );
         let source = include_str!("show.rs");
         let command_new = ["Command", "::new"].concat();
         let process_module = ["std::", "process"].concat();
         assert!(!source.contains(&command_new));
         assert!(!source.contains(&process_module));
+    }
+
+    #[test]
+    fn criterion_11_generate_prompt_renders_assembled_from_previewer() {
+        let root = root();
+        fs::write(
+            root.path().join("talent/generate.md"),
+            "{\n\"type\": \"generate\"\n}\nbody",
+        )
+        .expect("generate");
+        let output = run_with(
+            &root,
+            &["show", "generate", "--prompt"],
+            &StubPreviewer(PromptPreview::Assembled {
+                access_tier: None,
+                loads_sources: false,
+                parts: vec!["assembled body".to_owned()],
+            }),
+        );
+        assert_eq!(output.exit_code, 0, "{}", output.stderr);
+        assert!(output.stdout.starts_with(PREVIEW_BANNER));
+        assert!(
+            output
+                .stdout
+                .contains("\n  Effective prompt for: generate  tier: normal\n")
+        );
+        assert!(output.stdout.contains("  INSTRUCTION\n"));
+        assert!(output.stdout.contains("assembled body"));
+        assert!(!output.stdout.contains("SYSTEM INSTRUCTION"));
+        assert!(!output.stdout.contains("tools: "));
+        assert!(output.stderr.is_empty());
+    }
+
+    #[test]
+    fn criterion_12_generate_prompt_truncates_like_cogitate() {
+        let root = root();
+        let body = (0..105)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(
+            root.path().join("talent/generate.md"),
+            "{\n\"type\": \"generate\"\n}\nbody",
+        )
+        .expect("generate");
+        let previewer = StubPreviewer(PromptPreview::Assembled {
+            access_tier: None,
+            loads_sources: false,
+            parts: vec![body],
+        });
+        let output = run_with(&root, &["show", "generate", "--prompt"], &previewer);
+        assert_eq!(output.exit_code, 0, "{}", output.stderr);
+        assert!(output.stdout.contains("line 0"));
+        assert!(output.stdout.contains("lines omitted)"));
+        assert!(output.stdout.contains("(use --full to see all "));
+        assert!(!output.stdout.contains("line 52"));
+        let full = run_with(
+            &root,
+            &["show", "generate", "--prompt", "--full"],
+            &previewer,
+        );
+        assert!(full.stdout.contains("line 52"));
+        assert!(!full.stdout.contains("lines omitted"));
+    }
+
+    #[test]
+    fn criterion_13_generate_prompt_renders_unavailable_and_failed() {
+        let root = root();
+        fs::write(
+            root.path().join("talent/generate.md"),
+            "{\n\"type\": \"generate\"\n}\nbody",
+        )
+        .expect("generate");
+        let unavailable = run_with(
+            &root,
+            &["show", "generate", "--prompt"],
+            &StubPreviewer(PromptPreview::UnavailablePreStep),
+        );
+        assert_eq!(unavailable.exit_code, 1);
+        assert_eq!(
+            unavailable.stdout,
+            "Prompt preview cannot assemble this talent: a required pre-step is not available.\n"
+        );
+        assert!(unavailable.stderr.is_empty());
+
+        let failed = run_with(
+            &root,
+            &["show", "generate", "--prompt"],
+            &StubPreviewer(PromptPreview::Failed {
+                error: "talent 'generate' not found".to_owned(),
+            }),
+        );
+        assert_eq!(failed.exit_code, 1);
+        assert!(failed.stdout.is_empty());
+        assert_eq!(failed.stderr, "talent 'generate' not found\n");
+    }
+
+    #[test]
+    fn criterion_13_generate_prompt_renders_would_not_run() {
+        let root = root();
+        fs::write(
+            root.path().join("talent/generate.md"),
+            "{\n\"type\": \"generate\"\n}\nbody",
+        )
+        .expect("generate");
+        let output = run_with(
+            &root,
+            &["show", "generate", "--prompt"],
+            &StubPreviewer(PromptPreview::WouldNotRun {
+                reason: "disabled".to_owned(),
+            }),
+        );
+        assert_eq!(output.exit_code, 1);
+        assert_eq!(output.stdout, "This talent would not run: disabled\n");
+        assert!(output.stderr.is_empty());
     }
 
     #[test]

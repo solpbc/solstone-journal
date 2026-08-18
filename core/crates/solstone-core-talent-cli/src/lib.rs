@@ -78,6 +78,7 @@ pub fn run_cli(
     apps_root: &Path,
     journal_root: &Path,
     now: SystemTime,
+    previewer: &dyn preview::PromptPreviewer,
 ) -> CliRun {
     match args::parse(args) {
         args::Command::Help(text) => success(text),
@@ -86,7 +87,9 @@ pub fn run_cli(
             stderr: text,
             exit_code: 2,
         },
-        args::Command::Show(options) => show::run(talent_root, apps_root, journal_root, &options),
+        args::Command::Show(options) => {
+            show::run(talent_root, apps_root, journal_root, &options, previewer)
+        }
         args::Command::Log(options) => log::run_log(&journal_root.join("talents"), &options),
         args::Command::Inventory(options) => {
             match inventory::run(talent_root, apps_root, journal_root, &options) {
@@ -174,6 +177,7 @@ mod tests {
             &root.path().join("apps"),
             root.path(),
             UNIX_EPOCH + Duration::from_secs(1_000),
+            &preview::UnreachablePreviewer,
         )
     }
 
@@ -571,6 +575,7 @@ mod tests {
             &apps_root,
             journal.path(),
             UNIX_EPOCH,
+            &preview::UnreachablePreviewer,
         );
         assert_eq!(json.exit_code, 0, "{}", json.stderr);
         let records = json.stdout.lines().collect::<Vec<_>>();
@@ -603,6 +608,7 @@ mod tests {
             &apps_root,
             journal.path(),
             UNIX_EPOCH,
+            &preview::UnreachablePreviewer,
         );
         assert_eq!(list.exit_code, 0, "{}", list.stderr);
         assert_eq!(list.stdout, LIST_FIXTURE);
@@ -612,7 +618,8 @@ mod tests {
                 &talent_root,
                 &apps_root,
                 journal.path(),
-                UNIX_EPOCH
+                UNIX_EPOCH,
+                &preview::UnreachablePreviewer
             )
             .stdout,
             DAILY_FIXTURE
@@ -623,7 +630,8 @@ mod tests {
                 &talent_root,
                 &apps_root,
                 journal.path(),
-                UNIX_EPOCH
+                UNIX_EPOCH,
+                &preview::UnreachablePreviewer
             )
             .stdout,
             "No prompts found matching filters.\n"

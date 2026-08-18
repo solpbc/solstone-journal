@@ -84,6 +84,7 @@ use solstone_core_journal_config_write::{
 };
 use solstone_core_observer::{CREATE_RETIRED_MESSAGE, ObserverCommand};
 mod talent_contract;
+mod talent_preview;
 mod warm;
 const EXIT_USAGE: u8 = 64;
 const EXIT_UNAVAILABLE: u8 = 69;
@@ -808,7 +809,7 @@ fn run_talent(args: Vec<OsString>) -> ExitCode {
         .iter()
         .any(|argument| argument == OsStr::new("-h") || argument == OsStr::new("--help"));
     let run = if is_help {
-        solstone_core_talent_cli::run_cli(
+        talent_preview::run_talent_cli(
             &args,
             Path::new(""),
             Path::new(""),
@@ -838,7 +839,7 @@ fn run_talent(args: Vec<OsString>) -> ExitCode {
             eprintln!("talent failed: could not locate installed solstone package");
             return ExitCode::from(EXIT_TEMPFAIL);
         };
-        solstone_core_talent_cli::run_cli(
+        talent_preview::run_talent_cli(
             &args,
             &root.join("solstone/talent"),
             &root.join("solstone/apps"),
