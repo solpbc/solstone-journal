@@ -20,9 +20,13 @@ use nix::errno::Errno;
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
 use serde_json::Value;
+use solstone_core_convey_http::listener::bind_loopback;
+use solstone_core_convey_http::serve::{STANDARD_BODY_LIMIT, serve_connection, tcp_builder};
 use solstone_core_support_portal::PortalClient;
 use solstone_core_support_web::routes;
 use tempfile::TempDir;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream as TokioTcpStream;
 use tower::ServiceExt;
 
 const CORPUS: &str = include_str!("../../../fixtures/convey_support_corpus.json");
@@ -863,4 +867,104 @@ fn fake_portal_terminates_on_accept_failure() {
         );
     });
     join_bounded(thread, "accept-failure loop");
+}
+
+async fn with_served_connection<F, Fut>(root: PathBuf, write: F) -> (u16, String, Vec<u8>)
+where
+    F: FnOnce(TokioTcpStream) -> Fut,
+    Fut: std::future::Future<Output = TokioTcpStream>,
+{
+    let listeners = bind_loopback(0).await.expect("loopback binds");
+    let address = listeners.ipv4_addr().expect("IPv4 address");
+    let task = tokio::spawn(async move {
+        let (stream, identity) = listeners.accept().await.expect("connection accepts");
+        let builder = tcp_builder();
+        serve_connection(stream, routes(root), identity, &builder)
+            .await
+            .expect("connection serves");
+    });
+    let client = TokioTcpStream::connect(address)
+        .await
+        .expect("client connects");
+    let mut client = write(client).await;
+    let mut bytes = Vec::new();
+    client
+        .read_to_end(&mut bytes)
+        .await
+        .expect("response reads");
+    task.await.expect("server task joins");
+
+    let marker = b"\r\n\r\n";
+    let header_end = bytes
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("response has headers");
+    let headers = String::from_utf8(bytes[..header_end].to_vec()).expect("headers are text");
+    let status = headers
+        .split_whitespace()
+        .nth(1)
+        .expect("status exists")
+        .parse()
+        .expect("status parses");
+    (status, headers, bytes[header_end + marker.len()..].to_vec())
+}
+
+#[tokio::test]
+async fn support_still_rejects_one_byte_over_the_standard_cap() {
+    let journal = TempDir::new_in("/var/tmp").expect("journal");
+    let payload_len = STANDARD_BODY_LIMIT + 1;
+    let (status, _, body) = with_served_connection(journal.path().to_path_buf(), move |mut client| {
+        async move {
+            let header = format!(
+                "POST /app/support/api/feedback HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {payload_len}\r\n\r\n"
+            );
+            client
+                .write_all(header.as_bytes())
+                .await
+                .expect("headers write");
+            let chunk = [b'x'; 65_536];
+            let mut remaining = payload_len;
+            while remaining > 0 {
+                let take = remaining.min(chunk.len());
+                client
+                    .write_all(&chunk[..take])
+                    .await
+                    .expect("payload writes");
+                remaining -= take;
+            }
+            client
+        }
+    })
+    .await;
+    assert_eq!(status, 413, "{}", String::from_utf8_lossy(&body));
+}
+
+#[tokio::test]
+async fn support_draft_rejects_one_byte_over_the_standard_cap() {
+    let journal = TempDir::new_in("/var/tmp").expect("journal");
+    let payload_len = STANDARD_BODY_LIMIT + 1;
+    let (status, _, body) = with_served_connection(journal.path().to_path_buf(), move |mut client| {
+        async move {
+            let header = format!(
+                "POST /app/support/api/draft HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {payload_len}\r\n\r\n"
+            );
+            client
+                .write_all(header.as_bytes())
+                .await
+                .expect("headers write");
+            let chunk = [b'x'; 65_536];
+            let mut remaining = payload_len;
+            while remaining > 0 {
+                let take = remaining.min(chunk.len());
+                client
+                    .write_all(&chunk[..take])
+                    .await
+                    .expect("payload writes");
+                remaining -= take;
+            }
+            client
+        }
+    })
+    .await;
+    assert_eq!(status, 413, "{}", String::from_utf8_lossy(&body));
 }

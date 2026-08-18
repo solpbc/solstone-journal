@@ -132,10 +132,13 @@
 //!    exercises `serve::tcp_builder`, `serve::mux_builder`, and the
 //!    `RequestBodyLimitLayer` path for `REQUEST_BODY_LIMIT` (4 GiB + 1 MiB)
 //!    declared bodies, 32 headers, and the 64 KiB HTTP/1 buffer bound.
-//!    Wire-level transport and extractor-ceiling proofs live in
-//!    `solstone-core-convey-shell` `tests/boundary_tcp.rs`. The 4 GiB
-//!    file-field ceiling is owned by `solstone-core-import-web::save_stream`
-//!    unit tests, not this crate.
+//!    Wire-level SAVE transport and extractor-ceiling proofs live in
+//!    `solstone-core-import-web` `tests/import_web_transport.rs`.
+//!    Wire-level Support extractor-ceiling proofs live in
+//!    `solstone-core-support-web` `tests/support_web_transport.rs`.
+//!    Entities HTML wire proofs remain in `solstone-core-convey-shell`
+//!    `tests/boundary_tcp.rs`. The 4 GiB file-field ceiling is owned by
+//!    `solstone-core-import-web::save_stream` unit tests, not this crate.
 //! 6. `identity.rs::tests::access_basis_variants_remain_exhaustive` uses
 //!    exhaustive matches over `AccessBasis` and `Carrier`, so adding a future
 //!    `AccessBasis` variant is a compile-time test failure.

@@ -2481,6 +2481,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-import-web::import_web_transport"
+package = "solstone-core-import-web"
+target = "import_web_transport"
+set = "component"
+areas = ["import"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-indexer::architecture"
 package = "solstone-core-indexer"
 target = "architecture"

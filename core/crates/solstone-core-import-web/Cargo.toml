@@ -36,5 +36,5 @@ tokio = { workspace = true, features = ["fs", "io-util", "rt"] }
 [dev-dependencies]
 nix = { workspace = true, features = ["process", "signal"] }
 solstone-core-convey-shell.workspace = true
-tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt"] }
 tower.workspace = true
