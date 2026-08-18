@@ -184,6 +184,12 @@ fn run_import(options: Options, journal_path: &Path) -> CliOutcome {
     };
     match outcome {
         ResolutionOutcome::RouteAppleHealth => rendered(run_apple(media, &options, journal_path)),
+        ResolutionOutcome::Skipped {
+            reason: solstone_core_import::SkipReason::TimestampRequired,
+            detected_timestamp: Some(timestamp),
+        } => rendered(success(cli_render::timestamp_confirmation(
+            timestamp.as_str(),
+        ))),
         ResolutionOutcome::Skipped { reason, .. } => rendered(success(
             cli_render::resolution_skipped(&format!("{reason:?}")),
         )),
@@ -366,12 +372,6 @@ fn resolve(
                 .to_owned(),
         );
     }
-    if options.source.is_none() && is_generic_media(options.media) && options.timestamp.is_none() {
-        return Err(
-            "automatic timestamp detection requires a native timestamp detection adapter; provide --timestamp"
-                .to_owned(),
-        );
-    }
     if options.source.is_none()
         && is_generic_media(options.media)
         && !options.dry_run
@@ -390,7 +390,7 @@ fn resolve(
         // introduce a Cargo cycle. Explicit source selection still reaches the
         // resolver and then returns the named boundary refusal below.
         claims: no_registry_claim,
-        deterministic_detector: no_deterministic_timestamp,
+        deterministic_detector: file_mtime_timestamp,
         model_detector: unavailable_model_timestamp,
         // Generic manifest deduplication is performed above with the resolved
         // journal root. The resolver retains this seam for its library callers.
@@ -473,11 +473,22 @@ fn no_registry_claim(_: solstone_core_import::RegistrySource, _: &Path) -> Resul
     Ok(false)
 }
 
-fn no_deterministic_timestamp(
-    _: &Path,
+fn looks_like_media_path(value: &str) -> bool {
+    Path::new(value).exists()
+        || value.contains('/')
+        || value.contains('\\')
+        || Path::new(value).extension().is_some()
+}
+
+fn file_mtime_timestamp(
+    path: &Path,
     _: Option<&str>,
 ) -> Option<solstone_core_import::DetectedTimestamp> {
-    None
+    let modified = fs::metadata(path).ok()?.modified().ok()?;
+    let datetime = chrono::DateTime::<Local>::from(modified);
+    solstone_core_import::validate_timestamp(&datetime.format("%Y%m%d_%H%M%S").to_string())
+        .ok()
+        .map(solstone_core_import::DetectedTimestamp::new)
 }
 
 fn unavailable_model_timestamp(
@@ -867,7 +878,7 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
         } else if argument == "--auto" {
             let value = args
                 .get(index + 1)
-                .filter(|value| !value.starts_with('-'))
+                .filter(|value| !value.starts_with('-') && !looks_like_media_path(value))
                 .cloned();
             if value.is_some() {
                 index += 1;

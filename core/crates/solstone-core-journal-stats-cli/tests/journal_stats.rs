@@ -315,6 +315,12 @@ fn ac2_run_cli_writes_a_document() {
 
     assert_eq!(result.exit_code, 0);
     assert_eq!(value(writer.document())["day_count"], 1);
+    assert!(
+        result.stdout.starts_with("Wrote stats for 1 day(s) to "),
+        "{}",
+        result.stdout
+    );
+    assert!(result.stdout.contains("/stats.json\n"), "{}", result.stdout);
 }
 
 #[test]

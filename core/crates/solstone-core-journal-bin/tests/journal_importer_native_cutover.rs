@@ -291,9 +291,9 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
                 },
                 Case {
                     args: vec![path(&inputs.text), "20260311_120000".to_owned()],
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    contains: "generic text import requires a native segmentation adapter",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    contains: "Generic text import complete",
                 },
                 Case {
                     args: vec![
@@ -307,9 +307,9 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
                 },
                 Case {
                     args: vec![path(&inputs.text)],
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    contains: "automatic timestamp detection requires a native timestamp detection adapter",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    contains: "detected timestamp",
                 },
                 Case {
                     args: vec![

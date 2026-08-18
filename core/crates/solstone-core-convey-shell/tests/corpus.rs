@@ -2,9 +2,12 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Extension;
 use axum::body::{Body, to_bytes};
@@ -14,7 +17,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_shell::authorization_gate::authorized_router;
-use solstone_core_convey_shell::router;
+use solstone_core_convey_shell::{ConveyServeOptions, router, serve};
 use solstone_core_sol_link::DeviceDoorAuthorization;
 use solstone_core_sol_link::ledger::AuthorizedClientsRead;
 use tokio::sync::watch;
@@ -431,6 +434,42 @@ async fn sol_cut_uses_unknown_app_404_and_router_405_without_session_gate_change
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED, "{phase}");
         assert!(response.headers().get("location").is_none(), "{phase}");
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unestablished_loopback_serves_the_init_wizard() {
+    let journal = journal_for_phase("unestablished");
+    let handle = serve(ConveyServeOptions {
+        journal_root: journal.0.clone(),
+        loopback_port: 0,
+        door_port: 0,
+        handshake_timeout: Duration::from_secs(2),
+        stream_stall_timeout: Duration::from_secs(2),
+        router: router(journal.0.clone()),
+        carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+        handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
+    })
+    .await
+    .expect("loopback serve");
+    let port = handle.loopback_ipv4_addr().port();
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("read timeout");
+    stream
+        .write_all(b"GET /init HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .expect("write");
+    let mut body = String::new();
+    stream.read_to_string(&mut body).expect("read");
+    handle.shutdown();
+    assert!(
+        body.starts_with("HTTP/1.1 200"),
+        "expected 200 from /init, got:\n{body}"
+    );
+    assert!(
+        body.contains("create your journal"),
+        "expected wizard HTML, got:\n{body}"
+    );
 }
 
 #[tokio::test]

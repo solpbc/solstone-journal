@@ -283,6 +283,10 @@ fn indexer(args: &[OsString]) -> Outcome {
                 for warning in report.warnings {
                     stderr.push_str(&format!("warning: {warning}\n"));
                 }
+                stdout.push_str(&format!(
+                    "Indexed {} file(s), removed {}, skipped {}\n",
+                    report.indexed, report.removed, report.skipped
+                ));
                 if rescan_full && !reset && !rebuild && report.edge_rows_inserted == 0 {
                     stdout.push_str("Zero edges indexed: edges are talent-derived, and the --rescan-full edge phase remains modification-time incremental — run journal indexer --rebuild-edges to force full edge re-extraction.\n");
                 }

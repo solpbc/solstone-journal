@@ -47,7 +47,7 @@ pub fn run_cli(
         document_writer,
         options.debug,
     ) {
-        Ok(diagnostics) => {
+        Ok((day_count, diagnostics)) => {
             let mut stderr = String::new();
             if options.verbose {
                 stderr.push_str(&format!(
@@ -61,7 +61,10 @@ pub fn run_cli(
                 }
             }
             CliRun {
-                stdout: String::new(),
+                stdout: format!(
+                    "Wrote stats for {day_count} day(s) to {}/stats.json\n",
+                    journal_root.display()
+                ),
                 stderr,
                 exit_code: 0,
             }
@@ -84,7 +87,7 @@ fn run(
     backlog_reader: &dyn BacklogViewReader,
     document_writer: &dyn DocumentWriter,
     debug: bool,
-) -> Result<Vec<String>, String> {
+) -> Result<(usize, Vec<String>), String> {
     let days = solstone_core_journal_io::day_dirs(journal_root)
         .map_err(|error| format!("Error enumerating journal days: {error}"))?;
     let mut days = days.into_iter().collect::<Vec<_>>();
@@ -133,7 +136,7 @@ fn run(
     if !debug {
         diagnostics.clear();
     }
-    Ok(diagnostics)
+    Ok((document.day_count, diagnostics))
 }
 
 fn success(stdout: &str) -> CliRun {

@@ -111,7 +111,7 @@
         "*.ics",
         "*.zip"
       ],
-      "description": "Import events from ICS calendar files or Google Calendar export ZIP"
+      "description": "Preview events from ICS calendar files or Google Calendar export ZIP without writing to the journal"
     },
     {
       "name": "obsidian",
@@ -119,7 +119,7 @@
       "file_patterns": [
         "*.md"
       ],
-      "description": "Import notes from an Obsidian or Logseq vault"
+      "description": "Preview notes from an Obsidian or Logseq vault without writing to the journal"
     },
     {
       "name": "claude",
@@ -128,7 +128,7 @@
         "*.zip",
         "*.dms"
       ],
-      "description": "Import conversations from Claude chat export"
+      "description": "Preview conversations from Claude chat export without writing to the journal"
     },
     {
       "name": "chatgpt",
@@ -136,7 +136,7 @@
       "file_patterns": [
         "*.zip"
       ],
-      "description": "Import conversations from ChatGPT export"
+      "description": "Preview conversations from ChatGPT export without writing to the journal"
     },
     {
       "name": "kindle",
@@ -144,7 +144,7 @@
       "file_patterns": [
         "*.txt"
       ],
-      "description": "Import highlights and notes from Kindle's My Clippings.txt"
+      "description": "Preview highlights and notes from Kindle's My Clippings.txt without writing to the journal"
     },
     {
       "name": "gemini",
@@ -153,7 +153,7 @@
         "*.zip",
         "*.json"
       ],
-      "description": "Import activity from Google Takeout Gemini/Bard export"
+      "description": "Preview activity from Google Takeout Gemini/Bard export without writing to the journal"
     },
     {
       "name": "document",

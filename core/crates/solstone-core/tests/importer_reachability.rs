@@ -100,9 +100,9 @@ const MODE_CASES: &[ModeCase] = &[
             (
                 Invocation::GenericText,
                 Expected {
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    identifies: "generic text import requires a native segmentation adapter",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "Generic text import complete",
                 },
             ),
             (
@@ -116,9 +116,9 @@ const MODE_CASES: &[ModeCase] = &[
             (
                 Invocation::GenericAutoTimestamp,
                 Expected {
-                    exit: 1,
-                    stream: Stream::Stderr,
-                    identifies: "automatic timestamp detection requires a native timestamp detection adapter",
+                    exit: 0,
+                    stream: Stream::Stdout,
+                    identifies: "detected timestamp",
                 },
             ),
             (

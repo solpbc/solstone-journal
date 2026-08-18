@@ -60,6 +60,28 @@ fn value_options_accept_attached_and_separated_values() {
 }
 
 #[test]
+fn auto_does_not_swallow_a_path_positional() {
+    let result = run(
+        &["--auto", "/tmp/solstone-cycle2-does-not-exist.md"],
+        |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+        || false,
+    );
+    assert_eq!(result.exit_code, 1);
+    assert!(
+        result
+            .stderr
+            .contains("import source is missing: /tmp/solstone-cycle2-does-not-exist.md"),
+        "stderr={}",
+        result.stderr
+    );
+    assert!(
+        !result
+            .stderr
+            .contains("the following arguments are required: media")
+    );
+}
+
+#[test]
 fn unknown_attached_option_is_rejected() {
     let result = run(&["--nonsense=x", "file"], |_| None, || false);
 

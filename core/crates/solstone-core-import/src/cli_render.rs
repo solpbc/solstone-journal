@@ -30,37 +30,37 @@ pub const IMPORTERS: &[ImporterRow] = &[
         name: "ics",
         display_name: "Google Calendar (ICS)",
         file_patterns: &["*.ics", "*.zip"],
-        description: "Import events from ICS calendar files or Google Calendar export ZIP",
+        description: "Preview events from ICS calendar files or Google Calendar export ZIP without writing to the journal",
     },
     ImporterRow {
         name: "obsidian",
         display_name: "Obsidian / Logseq Vault",
         file_patterns: &["*.md"],
-        description: "Import notes from an Obsidian or Logseq vault",
+        description: "Preview notes from an Obsidian or Logseq vault without writing to the journal",
     },
     ImporterRow {
         name: "claude",
         display_name: "Claude Chat History",
         file_patterns: &["*.zip", "*.dms"],
-        description: "Import conversations from Claude chat export",
+        description: "Preview conversations from Claude chat export without writing to the journal",
     },
     ImporterRow {
         name: "chatgpt",
         display_name: "ChatGPT History",
         file_patterns: &["*.zip"],
-        description: "Import conversations from ChatGPT export",
+        description: "Preview conversations from ChatGPT export without writing to the journal",
     },
     ImporterRow {
         name: "kindle",
         display_name: "Kindle Highlights",
         file_patterns: &["*.txt"],
-        description: "Import highlights and notes from Kindle's My Clippings.txt",
+        description: "Preview highlights and notes from Kindle's My Clippings.txt without writing to the journal",
     },
     ImporterRow {
         name: "gemini",
         display_name: "Gemini Activity History",
         file_patterns: &["*.zip", "*.json"],
-        description: "Import activity from Google Takeout Gemini/Bard export",
+        description: "Preview activity from Google Takeout Gemini/Bard export without writing to the journal",
     },
     ImporterRow {
         name: "document",
@@ -108,9 +108,11 @@ pub const HELP: &str = concat!(
     "Import a media file into the journal\n\n",
     "positional arguments:\n  media                 Path to audio or text file\n\n",
     "options:\n  -h, --help            show this help message and exit\n",
-    "  --timestamp TIMESTAMP\n  --facet FACET\n  --setting SETTING\n  --source SOURCE\n",
+    "  --timestamp TIMESTAMP\n                        Generic .txt/.md use this, or --auto to adopt last-modified time\n",
+    "  --facet FACET\n  --setting SETTING\n",
+    "  --source SOURCE       Required for classified formats (ics, vault, chat export, image, PDF)\n",
     "  --force               Force re-import; body sources create a separate import\n",
-    "  --auto [AUTO]         Auto-accept detected timestamp\n",
+    "  --auto [AUTO]         Adopt the detected timestamp; AUTO is guidance, not the file path\n",
     "  --dry-run             Show what would be imported without writing to the journal\n",
     "  --confirm-body-save   Confirm this run may save sensitive body importer output\n",
     "  --date-from DATE_FROM\n  --date-to DATE_TO\n",
@@ -150,6 +152,10 @@ pub fn backends() -> String {
 
 pub fn resolution_skipped(reason: &str) -> String {
     format!("Import skipped: {reason}\n")
+}
+
+pub fn timestamp_confirmation(timestamp: &str) -> String {
+    format!("detected timestamp {timestamp}; rerun with --timestamp {timestamp} or --auto\n")
 }
 
 pub fn generic_text_complete(segments: usize) -> String {

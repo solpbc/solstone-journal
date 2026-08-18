@@ -9,7 +9,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient,
 };
@@ -195,10 +195,11 @@ pub fn process_transcript_with_wire(
         .ok_or_else(|| TextImportError::RawFilename {
             path: path.to_path_buf(),
         })?;
-    let segments = match segment_transcript(wire, &text, start_time) {
-        Ok(segments) => segments,
-        Err(ModelDetectionError::Unavailable) => {
-            return Err(TextImportError::SegmentationUnavailable);
+    let (segments, native_fallback) = match segment_transcript(wire, &text, start_time) {
+        Ok(segments) => (segments, false),
+        Err(ModelDetectionError::Unavailable) => (whole_file_segment(&text, start_time), true),
+        Err(ModelDetectionError::Failed(source)) if matches!(source, ClientError::Resolve(_)) => {
+            (whole_file_segment(&text, start_time), true)
         }
         Err(ModelDetectionError::Failed(source)) => {
             return Err(TextImportError::Wire {
@@ -216,6 +217,12 @@ pub fn process_transcript_with_wire(
     for (index, segment) in segments.iter().enumerate() {
         let wrapper = match normalize_segment(wire, &segment.text, &segment.start_at) {
             Ok(wrapper) => wrapper,
+            Err(ModelDetectionError::Unavailable)
+            | Err(ModelDetectionError::Failed(ClientError::Resolve(_)))
+                if native_fallback =>
+            {
+                raw_text_wrapper(segment)
+            }
             Err(ModelDetectionError::Unavailable) => continue,
             Err(ModelDetectionError::Failed(source)) => {
                 return Err(TextImportError::Wire {
@@ -285,6 +292,24 @@ pub fn process_transcript_with_wire(
 struct Segment {
     start_at: String,
     text: String,
+}
+
+fn whole_file_segment(text: &str, start_time: &str) -> Vec<Segment> {
+    vec![Segment {
+        start_at: start_time.to_owned(),
+        text: text.to_owned(),
+    }]
+}
+
+fn raw_text_wrapper(segment: &Segment) -> TranscriptWrapper {
+    TranscriptWrapper {
+        entries: vec![json!({
+            "start": segment.start_at,
+            "text": segment.text,
+        })],
+        topics: None,
+        setting: None,
+    }
 }
 
 struct TranscriptWrapper {
