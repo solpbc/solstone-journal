@@ -77,7 +77,7 @@ sh install.sh --archive solstone-journal-<version>-linux-x86_64.tar.gz \
               --release solstone-journal-<version>-linux-x86_64.release
 ```
 
-with no `--prefix` it installs under `~/.local/solstone-journal`, keeps each version in its own directory, and points a `current` symlink at the live one. it adds `current/bin` to PATH by writing a block into `~/.profile` between `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`. on success it prints the version, the prefix, and how to pick up PATH.
+with no `--prefix` it installs under `~/.local/solstone-journal`, keeps each version in its own directory, and points a `current` symlink at the live one. it adds `current/bin` to PATH by writing a block into `~/.profile` between `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`. `--no-path` skips that edit, so a throwaway or side-by-side prefix does not touch your login files. on success it prints the version, the prefix, and how to pick up PATH.
 
 ⚠ **`~/.profile` is read by login shells.** a new terminal window on most linux desktops is not one, and zsh does not read it at all. either log out and back in, or:
 
@@ -116,7 +116,7 @@ sh core/distribution/install.sh \
   --release solstone-journal-<version>-macos-arm64.release
 ```
 
-with no `--prefix` it installs under `~/.local/solstone-journal` and points a `current` symlink at the live version. on mac it writes the PATH block to both `~/.zprofile` (zsh, the login shell) and `~/.profile`. on success it prints the version, the prefix, and how to pick up PATH.
+with no `--prefix` it installs under `~/.local/solstone-journal` and points a `current` symlink at the live version. on mac it writes the PATH block to both `~/.zprofile` (zsh, the login shell) and `~/.profile`. `--no-path` skips that edit, so a throwaway or side-by-side prefix does not touch your login files. on success it prints the version, the prefix, and how to pick up PATH.
 
 macos logs you into zsh, which never reads `~/.profile`. open a new terminal, or:
 
@@ -240,8 +240,8 @@ with no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `
 
 **none of this removes your journal.** it is a folder of dated directories and it survives every step below.
 
-1. remove setup-managed runtime files: `journal setup --clean-uninstall`
-   this removes the service unit, the managed `sol` and `journal` wrappers in `~/.local/bin`, its config, and the setup manifest.
+1. remove setup-managed runtime files: `journal setup --clean-uninstall --yes`
+   this removes the service unit, the managed `sol` and `journal` wrappers in `~/.local/bin`, its config, and the setup manifest. without `--yes` it asks first; in a non-interactive shell that form refuses and exits 2, and nothing is removed. if the service cannot be removed, uninstall stops there and leaves the wrappers in place so you still have `journal` to retry.
 2. optional: remove the installed `sol` agent skill: `sol skills uninstall`.
 3. remove the tree, by the route you installed it:
    - `sudo apt remove solstone-journal` or `sudo dnf remove solstone-journal`

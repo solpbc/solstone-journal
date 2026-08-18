@@ -7,8 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::args::SetupArgs;
-use crate::steps::{CommandRequest, CommandRunner, service_artifact_path};
-use crate::wrapper::{AliasState, WrapperEnvironment, uninstall_wrappers, wrapper_paths};
+use crate::steps::{service_artifact_path, CommandRequest, CommandRunner};
+use crate::wrapper::{uninstall_wrappers, wrapper_paths, AliasState, WrapperEnvironment};
 
 pub const CLEAN_UNINSTALL_STEP_NAMES: [&str; 4] = ["service", "wrapper", "config", "manifest"];
 
@@ -177,6 +177,23 @@ pub fn clean_uninstall_has_managed_paths(context: &CleanUninstallContext<'_>) ->
     .flatten()
     .any(|path| present(path))
 }
+fn child_failure_reason(output: &crate::steps::CommandOutput) -> String {
+    let mut reason = format!("service uninstall exited {}", output.exit_code);
+    if output.timed_out {
+        reason.push_str(" (timed out)");
+    }
+    let details = if output.stderr.trim().is_empty() {
+        output.stdout.as_str()
+    } else {
+        output.stderr.as_str()
+    };
+    if let Some(line) = details.lines().map(str::trim).find(|line| !line.is_empty()) {
+        reason.push_str(": ");
+        reason.push_str(line);
+    }
+    reason
+}
+
 fn result(
     name: &'static str,
     state: CleanUninstallState,
@@ -222,7 +239,7 @@ fn remove_service(
             "service",
             CleanUninstallState::Failed,
             path,
-            Some(format!("service uninstall exited {}", output.exit_code)),
+            Some(child_failure_reason(&output)),
         ),
         Ok(_) if existed => match path.as_ref().map(fs::remove_file) {
             Some(Ok(())) => result("service", CleanUninstallState::Removed, path, None),
@@ -314,20 +331,49 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
     }
     if !context.yes && !context.stdin_is_tty {
         return CleanUninstallOutcome {
-            exit_code: 0,
+            exit_code: 2,
             message: "not a tty; rerun with --yes to proceed non-interactively (cancelled)".into(),
             results: Vec::new(),
         };
     }
     if !context.yes && !(context.confirm)() {
         return CleanUninstallOutcome {
-            exit_code: 0,
+            exit_code: 1,
             message: "cancelled".into(),
             results: Vec::new(),
         };
     }
+    let service_result = remove_service(context, service);
+    if service_result.state == CleanUninstallState::Failed {
+        let leftover = "not run because service uninstall failed";
+        return CleanUninstallOutcome {
+            exit_code: 1,
+            message: "clean uninstall stopped: service uninstall failed; wrappers, config, and manifest were left in place".into(),
+            results: vec![
+                service_result,
+                result(
+                    "wrapper",
+                    CleanUninstallState::Skipped,
+                    Some(wrappers.sol),
+                    Some(leftover.into()),
+                ),
+                result(
+                    "config",
+                    CleanUninstallState::Skipped,
+                    Some(context.config_path.clone()),
+                    Some(leftover.into()),
+                ),
+                result(
+                    "manifest",
+                    CleanUninstallState::Skipped,
+                    Some(context.manifest_path.clone()),
+                    Some(leftover.into()),
+                ),
+            ],
+        };
+    }
     let results = vec![
-        remove_service(context, service),
+        service_result,
         remove_wrappers(context, &(wrappers.sol, wrappers.journal)),
         remove_path("config", context.config_path.clone()),
         remove_path("manifest", context.manifest_path.clone()),
@@ -429,10 +475,38 @@ mod tests {
         );
         fs::create_dir_all(context.home_dir.join(".local/bin")).unwrap();
         fs::write(context.home_dir.join(".local/bin/sol"), "foreign").unwrap();
+        let cancelled = run_clean_uninstall(&mut context);
+        assert_eq!(cancelled.exit_code, 2);
         assert_eq!(
-            run_clean_uninstall(&mut context).message,
+            cancelled.message,
             "not a tty; rerun with --yes to proceed non-interactively (cancelled)"
         );
+    }
+
+    #[test]
+    fn interactive_decline_is_a_nonzero_cancel() {
+        let root = root("decline");
+        let home = root.join("home");
+        fs::create_dir_all(home.join(".local/bin")).unwrap();
+        fs::write(home.join(".local/bin/sol"), "foreign").unwrap();
+        let mut runner = Runner(VecDeque::new());
+        let mut confirm = || false;
+        let mut context = CleanUninstallContext {
+            journal_path: root.join("journal"),
+            home_dir: home,
+            config_path: root.join("config.toml"),
+            manifest_path: root.join("journal/health/setup-state.json"),
+            curdir: root.join("repo"),
+            executable_dir: root.join("bin"),
+            yes: false,
+            stdin_is_tty: true,
+            confirm: &mut confirm,
+            runner: &mut runner,
+        };
+        let outcome = run_clean_uninstall(&mut context);
+        assert_eq!(outcome.exit_code, 1);
+        assert_eq!(outcome.message, "cancelled");
+        assert!(outcome.results.is_empty());
     }
     #[test]
     fn foreign_wrapper_is_skipped_with_the_measured_reason() {
@@ -466,8 +540,26 @@ mod tests {
             Some("alias is not a managed symlink, not removing")
         );
     }
+    struct RunnerWithOutput {
+        exits: VecDeque<i32>,
+        stderr: String,
+    }
+    impl CommandRunner for RunnerWithOutput {
+        fn run(
+            &mut self,
+            _request: &CommandRequest,
+        ) -> Result<crate::steps::CommandOutput, String> {
+            Ok(crate::steps::CommandOutput {
+                exit_code: self.exits.pop_front().unwrap_or(0),
+                stdout: String::new(),
+                stderr: self.stderr.clone(),
+                timed_out: false,
+            })
+        }
+    }
+
     #[test]
-    fn runs_the_four_fixed_steps_in_order_and_fails_for_service_failure() {
+    fn service_failure_stops_before_wrappers_and_names_the_child() {
         let root = root("order");
         let home = root.join("home");
         fs::create_dir_all(home.join(".local/bin")).unwrap();
@@ -489,13 +581,18 @@ mod tests {
         fs::create_dir_all(manifest.parent().unwrap()).unwrap();
         fs::write(&config, "x").unwrap();
         fs::write(&manifest, "x").unwrap();
-        let mut runner = Runner(VecDeque::from([7]));
+        let mut runner = RunnerWithOutput {
+            exits: VecDeque::from([7]),
+            stderr:
+                "error: launchd accepted the unload request, but the service is still present\n"
+                    .into(),
+        };
         let mut confirm = || true;
         let mut context = CleanUninstallContext {
             journal_path: root.join("journal"),
-            home_dir: home,
-            config_path: config,
-            manifest_path: manifest,
+            home_dir: home.clone(),
+            config_path: config.clone(),
+            manifest_path: manifest.clone(),
             curdir: root.join("repo"),
             executable_dir: runtime,
             yes: true,
@@ -513,6 +610,34 @@ mod tests {
                 .collect::<Vec<_>>(),
             CLEAN_UNINSTALL_STEP_NAMES
         );
+        assert_eq!(
+            outcome
+                .results
+                .iter()
+                .map(|result| result.state)
+                .collect::<Vec<_>>(),
+            [
+                CleanUninstallState::Failed,
+                CleanUninstallState::Skipped,
+                CleanUninstallState::Skipped,
+                CleanUninstallState::Skipped,
+            ]
+        );
+        assert_eq!(
+            outcome.results[0].reason.as_deref(),
+            Some(
+                "service uninstall exited 7: error: launchd accepted the unload request, but the service is still present"
+            )
+        );
+        assert!(
+            outcome.message.contains("left in place"),
+            "{}",
+            outcome.message
+        );
+        assert!(home.join(".local/bin/sol").exists());
+        assert!(home.join(".local/bin/journal").exists());
+        assert!(config.exists());
+        assert!(manifest.exists());
     }
 
     #[test]
