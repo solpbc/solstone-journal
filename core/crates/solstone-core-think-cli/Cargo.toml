@@ -39,7 +39,7 @@ solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
 solstone-core-talent-config.workspace = true
 solstone-core-talent-runtime.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["net", "rt", "time"] }
 
 [dev-dependencies]
 filetime = "0.2.29"

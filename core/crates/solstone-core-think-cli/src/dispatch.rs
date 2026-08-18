@@ -92,7 +92,10 @@ pub(crate) fn excluded(config: &TalentConfig, stream: Option<&str>) -> bool {
 }
 
 pub(crate) fn runtime() -> Result<tokio::runtime::Runtime, String> {
+    // Wait talks to Callosum over a Unix socket. Time-only is enough for the
+    // claim poll, and then UnixStream::connect panics: "IO is disabled".
     tokio::runtime::Builder::new_current_thread()
+        .enable_io()
         .enable_time()
         .build()
         .map_err(|error| error.to_string())
@@ -387,5 +390,24 @@ pub(crate) fn maybe_rescan_output(
             &context.journal,
             item.output_path.as_ref().expect("checked output path"),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::runtime;
+
+    #[test]
+    fn think_runtime_can_connect_a_unix_socket() {
+        let directory = tempfile::tempdir().expect("socket directory");
+        let path = directory.path().join("callosum.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&path).expect("bind");
+        let runtime = runtime().expect("think runtime");
+        runtime.block_on(async {
+            tokio::net::UnixStream::connect(&path)
+                .await
+                .expect("think runtime must enable IO");
+        });
+        drop(listener);
     }
 }

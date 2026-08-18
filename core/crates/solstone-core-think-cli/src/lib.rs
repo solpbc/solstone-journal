@@ -197,11 +197,7 @@ where
             let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
             let result = cadence::run(&context, configs, &mut log, parsed.refresh)
                 .map_err(|message| CliError::InvalidDay { message })?;
-            return Ok(CliRun {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: (result.failed != 0) as i32,
-            });
+            return Ok(mode_outcome(result));
         }
 
         if let Some(activity_id) = parsed.activity.as_deref() {
@@ -215,11 +211,7 @@ where
                 parsed.jobs,
             )
             .map_err(|message| CliError::InvalidDay { message })?;
-            return Ok(CliRun {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: (result.failed != 0) as i32,
-            });
+            return Ok(mode_outcome(result));
         }
         if parsed.flush {
             let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
@@ -230,11 +222,7 @@ where
                 parsed.stream.as_deref(),
             )
             .map_err(|message| CliError::InvalidDay { message })?;
-            return Ok(CliRun {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: (result.failed != 0) as i32,
-            });
+            return Ok(mode_outcome(result));
         }
         if parsed.segments {
             let source = solstone_core_system_health::FilesystemSegmentSource;
@@ -284,11 +272,7 @@ where
                 false,
             )
             .map_err(|message| CliError::InvalidDay { message })?;
-            return Ok(CliRun {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: (result.failed != 0) as i32,
-            });
+            return Ok(mode_outcome(result));
         }
         if let Some(segment) = parsed.segment.as_deref() {
             let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
@@ -324,11 +308,7 @@ where
                 true,
             )
             .map_err(|message| CliError::InvalidDay { message })?;
-            return Ok(CliRun {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: (result.failed != 0) as i32,
-            });
+            return Ok(mode_outcome(result));
         }
         let mut log = open_run_log(&parsed, &day_dir, now_ms, &selected_day);
         let result = if parsed.weekly {
@@ -365,11 +345,7 @@ where
             )
         }
         .map_err(|message| CliError::InvalidDay { message })?;
-        Ok(CliRun {
-            stdout: String::new(),
-            stderr: String::new(),
-            exit_code: (result.failed != 0) as i32,
-        })
+        Ok(mode_outcome(result))
     })();
     match result {
         Ok(run) => run,
@@ -393,6 +369,26 @@ where
             stderr: format!("journal think: {message}\n"),
             exit_code: 1,
         },
+    }
+}
+
+fn mode_outcome(result: dispatch::ModeResult) -> CliRun {
+    if result.failed == 0 {
+        return CliRun {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        };
+    }
+    let mut stderr = format!("journal think: {} failed\n", result.failed);
+    for name in &result.failed_names {
+        stderr.push_str(name);
+        stderr.push('\n');
+    }
+    CliRun {
+        stdout: String::new(),
+        stderr,
+        exit_code: 1,
     }
 }
 
@@ -873,6 +869,30 @@ mod tests {
             metadata,
             body: "prompt".to_owned(),
         }
+    }
+
+    #[test]
+    fn failed_mode_prints_owner_readable_names_and_exits_1() {
+        let silent_success = mode_outcome(dispatch::ModeResult::default());
+        assert_eq!(silent_success.exit_code, 0);
+        assert!(silent_success.stdout.is_empty());
+        assert!(silent_success.stderr.is_empty());
+
+        let reported = mode_outcome(dispatch::ModeResult {
+            success: 1,
+            failed: 2,
+            failed_names: vec![
+                "daily_summary (send)".to_owned(),
+                "facts (error)".to_owned(),
+            ],
+            applicable_units: BTreeSet::new(),
+        });
+        assert_eq!(reported.exit_code, 1);
+        assert!(reported.stdout.is_empty());
+        assert_eq!(
+            reported.stderr,
+            "journal think: 2 failed\ndaily_summary (send)\nfacts (error)\n"
+        );
     }
 
     #[test]
