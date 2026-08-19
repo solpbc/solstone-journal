@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use solstone_core_cli::ServiceAction;
 use solstone_core_journal_io::{
-    acquire_existing_parent_lock, atomic_replace_detailed, DetailedAtomicOutcome,
+    DetailedAtomicOutcome, acquire_existing_parent_lock, atomic_replace_detailed,
 };
 use solstone_core_service_unit::{
     build_service_environment, render_launchd_plist, render_systemd_unit,
@@ -1769,11 +1769,10 @@ mod tests {
             bytes: Vec::new(),
         });
         assert!(!stop_requires_manager(&managed_unit, RuntimeTruth::Absent).unwrap());
-        assert!(!stop_requires_manager(
-            &UnitTruth::Absent,
-            RuntimeTruth::Managed { active: false },
-        )
-        .unwrap());
+        assert!(
+            !stop_requires_manager(&UnitTruth::Absent, RuntimeTruth::Managed { active: false },)
+                .unwrap()
+        );
         assert!(
             stop_requires_manager(&UnitTruth::Absent, RuntimeTruth::Managed { active: true },)
                 .unwrap()

@@ -9,13 +9,13 @@ use solstone_core_journal_io::{AtomicWriteError, LockError, LockTimeout};
 
 use crate::store::{retry_add_for_test, retry_record_for_test};
 use crate::store_tests::{
-    create_test_facet, write_facet_relationship, write_journal_entity, TempDir,
+    TempDir, create_test_facet, write_facet_relationship, write_journal_entity,
 };
 use crate::{
-    add_observation, count_observations, load_observations, load_observations_for_query,
-    observation_day_counts, read_facet_entity_observations, record_observation_ops,
-    resolve_observation_entity_dir, save_observations, FacetTrustLockError, FacetWriteError,
-    ObservationLookup, ObservationLookupError, ObservationWriteError,
+    FacetTrustLockError, FacetWriteError, ObservationLookup, ObservationLookupError,
+    ObservationWriteError, add_observation, count_observations, load_observations,
+    load_observations_for_query, observation_day_counts, read_facet_entity_observations,
+    record_observation_ops, resolve_observation_entity_dir, save_observations,
 };
 
 fn three_way_ada(root: &std::path::Path) {
@@ -47,12 +47,16 @@ fn record_ops_keyed_by_entity_id_write_the_relationship_dir() {
         load_observations(temporary.path(), "work", "legacy-ada").unwrap()[0]["content"],
         "from id"
     );
-    assert!(load_observations(temporary.path(), "work", "effective-ada")
-        .unwrap()
-        .is_empty());
-    assert!(load_observations(temporary.path(), "work", "dir-ada")
-        .unwrap()
-        .is_empty());
+    assert!(
+        load_observations(temporary.path(), "work", "effective-ada")
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        load_observations(temporary.path(), "work", "dir-ada")
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -80,10 +84,12 @@ fn record_ops_keyed_by_entity_id_update_the_relationship_dir() {
         load_observations(temporary.path(), "work", "legacy-ada").unwrap()[0]["content"],
         "new"
     );
-    assert!(!temporary
-        .path()
-        .join("facets/work/entities/effective-ada/observations.jsonl")
-        .exists());
+    assert!(
+        !temporary
+            .path()
+            .join("facets/work/entities/effective-ada/observations.jsonl")
+            .exists()
+    );
 }
 
 #[test]
@@ -168,10 +174,12 @@ fn resolve_error_does_not_create_a_query_named_directory() {
     }
     let error = error.unwrap_err();
     assert!(matches!(error, ObservationWriteError::Resolve(_)));
-    assert!(!temporary
-        .path()
-        .join("facets/work/entities/effective-ada")
-        .exists());
+    assert!(
+        !temporary
+            .path()
+            .join("facets/work/entities/effective-ada")
+            .exists()
+    );
 }
 
 #[test]
@@ -470,10 +478,12 @@ fn dropping_the_last_row_truncates_the_file_without_removing_its_directory() {
         read_facet_entity_observations(temporary.path(), "work", "person").unwrap(),
         Some(String::new())
     );
-    assert!(temporary
-        .path()
-        .join("facets/work/entities/person")
-        .is_dir());
+    assert!(
+        temporary
+            .path()
+            .join("facets/work/entities/person")
+            .is_dir()
+    );
 }
 
 #[test]

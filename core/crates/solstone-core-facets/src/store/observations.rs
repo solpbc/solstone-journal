@@ -10,7 +10,7 @@ use caseless::default_case_fold_str;
 use chrono::Utc;
 use serde_json::{Map, Value};
 use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
-use solstone_core_journal_io::{path_lexists, read_text, write_text, AtomicWriteOptions};
+use solstone_core_journal_io::{AtomicWriteOptions, path_lexists, read_text, write_text};
 
 use crate::hold_facet_trust_lock;
 

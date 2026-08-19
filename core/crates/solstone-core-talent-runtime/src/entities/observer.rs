@@ -7,12 +7,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::contract::{CommitPlan, GateDecision, ParsedOutput, PrePostState};
 use crate::writers::WriteIntent;
 use crate::{
-    apply_template_vars, stage_error, ExecutionContext, PreparedTalent, RuntimeOutcome, StageError,
+    ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
 };
 
 #[derive(Clone, Debug, PartialEq)]

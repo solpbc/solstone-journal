@@ -7,8 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::args::SetupArgs;
-use crate::steps::{service_artifact_path, CommandRequest, CommandRunner};
-use crate::wrapper::{uninstall_wrappers, wrapper_paths, AliasState, WrapperEnvironment};
+use crate::steps::{CommandRequest, CommandRunner, service_artifact_path};
+use crate::wrapper::{AliasState, WrapperEnvironment, uninstall_wrappers, wrapper_paths};
 
 pub const CLEAN_UNINSTALL_STEP_NAMES: [&str; 4] = ["service", "wrapper", "config", "manifest"];
 

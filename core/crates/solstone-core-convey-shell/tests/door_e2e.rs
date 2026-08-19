@@ -2355,9 +2355,7 @@ async fn minted_pair_link_reconnects_after_a_door_restart_with_a_fresh_leaf() {
             candidate.shutdown();
             drop(candidate);
             if Instant::now() >= deadline {
-                panic!(
-                    "door did not rebind stored port {restart_port} within 2s after shutdown"
-                );
+                panic!("door did not rebind stored port {restart_port} within 2s after shutdown");
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
