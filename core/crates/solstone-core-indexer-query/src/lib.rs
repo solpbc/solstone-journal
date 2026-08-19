@@ -20,8 +20,8 @@ pub use edges::{
     DirectedCounts, EdgeEvidenceRequest, EdgeEvidenceResponse, EdgeFilters, EdgeFiltersPayload,
     EdgeQueryError, EntityTypeLookup, EvidenceRow, KindSummary, NetworkNeighbor,
     NetworkOverviewRequest, NetworkOverviewResponse, NetworkRequest, NetworkResponse,
-    OverviewEntity, OverviewTotals, load_edge_evidence, load_entity_network, load_network_overview,
-    open_edges_reader,
+    OverviewEntity, OverviewTotals, is_safe_entity_id_component, load_edge_evidence,
+    load_entity_network, load_network_overview, open_edges_reader,
 };
 pub use execute::{agents, coverage, search, search_counts};
 pub use predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};

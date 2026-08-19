@@ -21,10 +21,13 @@ solstone-core-convey-http.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true
+solstone-core-indexer-query.workspace = true
 solstone-core-serving = { path = "../solstone-core-serving" }
 tokio = { workspace = true, features = ["sync", "time", "rt"] }
 
 [dev-dependencies]
+rusqlite.workspace = true
+solstone-core-indexer-store.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tower.workspace = true
 

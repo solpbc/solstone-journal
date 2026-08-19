@@ -325,11 +325,7 @@ mod tests {
     #[tokio::test]
     async fn unported_entity_plates_and_assist_keep_their_reference_refusals() {
         let journal = Journal::established();
-        // These five index-plate refusals remain until implementations replace them.
         for path in [
-            "/app/entities/api/network?entity=x",
-            "/app/entities/api/history?entity=x",
-            "/app/entities/api/overview",
             "/app/entities/api/search?query=x",
             "/app/entities/api/work/detected/preview?name=x",
         ] {
@@ -341,6 +337,21 @@ mod tests {
                 "{path}"
             );
         }
+        for path in [
+            "/app/entities/api/network?entity=x",
+            "/app/entities/api/history?entity=x",
+        ] {
+            let (status, _headers, body) = routed(&journal, "GET", path, b"").await;
+            assert_eq!(status, StatusCode::OK, "{path}");
+            let payload = json_body(&body);
+            assert_eq!(payload["resolved"], Value::Null, "{path}");
+            assert_eq!(payload["query"], "x", "{path}");
+            assert!(payload["candidates"].is_array(), "{path}");
+        }
+        let (status, _headers, body) =
+            routed(&journal, "GET", "/app/entities/api/overview", b"").await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(json_body(&body)["reason_code"], "edge_index_unavailable");
         // This is the reference's transient-outage response, not an honest not-ported signal.
         let (status, _headers, body) = routed(
             &journal,

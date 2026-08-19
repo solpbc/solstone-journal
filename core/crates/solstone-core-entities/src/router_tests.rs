@@ -337,17 +337,25 @@ async fn index_plate_routes_validate_pagination_before_refusing_as_unported() {
             "invalid_request_value",
             400,
         );
-        assert_oracle_refusal(
-            &format!("index_plate:{route}:valid-limit"),
-            call(
-                journal.path(),
-                &format!("/app/entities/api/{route}?limit=7"),
-            )
-            .await,
-            "index_plate_not_ported",
-            501,
-        );
     }
+    assert_oracle_refusal(
+        "index_plate:network:valid-limit",
+        call(journal.path(), "/app/entities/api/network?limit=7").await,
+        "missing_required_field",
+        400,
+    );
+    assert_oracle_refusal(
+        "index_plate:history:valid-limit",
+        call(journal.path(), "/app/entities/api/history?limit=7").await,
+        "missing_required_field",
+        400,
+    );
+    assert_oracle_refusal(
+        "index_plate:overview:valid-limit",
+        call(journal.path(), "/app/entities/api/overview?limit=7").await,
+        "edge_index_unavailable",
+        503,
+    );
 
     assert_oracle_refusal(
         "index_plate:search:bad-limit-falls-back",
@@ -359,6 +367,564 @@ async fn index_plate_routes_validate_pagination_before_refusing_as_unported() {
         "index_plate_not_ported",
         501,
     );
+}
+
+fn save_person(root: &Path, dir: &str, name: &str) {
+    solstone_core_entity::save_entity_identity(
+        root,
+        dir,
+        &json!({"id":dir,"name":name,"type":"Person"}),
+        None,
+    )
+    .unwrap();
+}
+
+fn rewrite_written_id(root: &Path, dir: &str, written_id: &str) {
+    let path = root.join(format!("entities/{dir}/entity.json"));
+    let mut identity: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    identity["id"] = json!(written_id);
+    fs::write(path, serde_json::to_vec(&identity).unwrap()).unwrap();
+}
+
+fn seed_edge_rows(root: &Path, rows: &[(&str, &str, &str, Option<&str>, &str)]) {
+    let connection = solstone_core_indexer_store::db::open_index(root).expect("seed native schema");
+    for (src, dst, kind, day, path) in rows {
+        connection
+            .execute(
+                "INSERT INTO edges(src,dst,kind,directed,src_name,dst_name,day,facet,source,path,anchor,label,ts,weight) VALUES(?,?,?,?,?,?,?,'work','test',?,?,?, ?, ?)",
+                rusqlite::params![src, dst, kind, 0i64, None::<&str>, None::<&str>, day, path, None::<&str>, path, Some(1i64), 1i64],
+            )
+            .expect("seed edge");
+    }
+}
+
+fn assert_unresolved(actual: (u16, Value), query: &str) {
+    let (status, body) = actual;
+    assert_eq!(status, 200, "unresolved status");
+    assert_eq!(body["resolved"], Value::Null, "resolved");
+    assert_eq!(body["query"], query, "query");
+    assert!(body["candidates"].is_array(), "candidates");
+}
+
+#[tokio::test]
+async fn index_plate_network_returns_neighbors_for_a_directory_hit() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    save_person(journal.path(), "person-bob", "Bob");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "person-ada",
+            "person-bob",
+            "works-with",
+            Some("20260501"),
+            "a",
+        )],
+    );
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/network?entity=person-ada",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(body.get("reason_code").is_none());
+    assert_eq!(
+        value_keys(&body),
+        BTreeSet::from(
+            [
+                "entity_id",
+                "reference_day",
+                "filters",
+                "limit",
+                "evidence_limit",
+                "total_neighbors",
+                "neighbors"
+            ]
+            .map(str::to_string)
+        )
+    );
+    assert_eq!(body["entity_id"], "person-ada");
+    assert_eq!(body["neighbors"][0]["entity_id"], "person-bob");
+    assert_eq!(body["neighbors"][0]["evidence_class"], "semantic");
+    assert_eq!(body["neighbors"][0]["count"], 1);
+    assert!(body["neighbors"][0]["kinds"]["works-with"]["weighted"].is_number());
+}
+
+#[tokio::test]
+async fn index_plate_network_exact_hit_uses_directory_when_written_id_differs() {
+    let journal = Journal::new();
+    save_person(journal.path(), "dir-ada", "Ada Lovelace");
+    rewrite_written_id(journal.path(), "dir-ada", "written-ada");
+    save_person(journal.path(), "person-bob", "Bob");
+    seed_edge_rows(
+        journal.path(),
+        &[("dir-ada", "person-bob", "works-with", Some("20260501"), "a")],
+    );
+    for query in ["dir-ada", "written-ada"] {
+        let (status, body) = call(
+            journal.path(),
+            &format!("/app/entities/api/network?entity={query}"),
+        )
+        .await;
+        assert_eq!(status, 200, "{query}");
+        assert_eq!(body["entity_id"], "dir-ada", "{query}");
+        assert_eq!(body["neighbors"][0]["entity_id"], "person-bob", "{query}");
+    }
+}
+
+#[tokio::test]
+async fn index_plate_history_returns_pair_evidence() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    save_person(journal.path(), "person-bob", "Bob");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "person-ada",
+            "person-bob",
+            "mentioned",
+            Some("20260501"),
+            "a",
+        )],
+    );
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=person-ada&peer=person-bob",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["entity_id"], "person-ada");
+    assert_eq!(body["peer_id"], "person-bob");
+    assert_eq!(body["evidence"][0]["kind"], "mentioned");
+    assert_eq!(body["evidence"][0]["day"], "20260501");
+}
+
+#[tokio::test]
+async fn index_plate_history_without_peer_uses_principal_directory() {
+    let journal = Journal::new();
+    save_person(journal.path(), "owner-dir", "Owner");
+    let owner_path = journal.path().join("entities/owner-dir/entity.json");
+    let mut owner: Value = serde_json::from_slice(&fs::read(&owner_path).unwrap()).unwrap();
+    owner["id"] = json!("written-owner");
+    owner["is_principal"] = json!(true);
+    fs::write(&owner_path, serde_json::to_vec(&owner).unwrap()).unwrap();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "person-ada",
+            "owner-dir",
+            "spoke-with",
+            Some("20260501"),
+            "a",
+        )],
+    );
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=person-ada",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["entity_id"], "person-ada");
+    assert_eq!(body["peer_id"], "owner-dir");
+    assert_eq!(body["evidence"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn index_plate_history_without_peer_or_principal_is_invalid_request() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=person-ada",
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(body["reason_code"], "invalid_request_value");
+    assert_eq!(
+        body["detail"],
+        "history requires PEER because no principal entity is configured"
+    );
+}
+
+#[tokio::test]
+async fn index_plate_overview_returns_ranked_entities() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    save_person(journal.path(), "person-bob", "Bob");
+    solstone_core_entity::save_entity_identity(
+        journal.path(),
+        "person-cara",
+        &json!({"id": "person-cara", "name": "Cara"}),
+        None,
+    )
+    .unwrap();
+    seed_edge_rows(
+        journal.path(),
+        &[
+            (
+                "person-ada",
+                "person-bob",
+                "works-with",
+                Some("20260501"),
+                "a",
+            ),
+            (
+                "person-ada",
+                "person-cara",
+                "mentioned",
+                Some("20260502"),
+                "b",
+            ),
+        ],
+    );
+    let (status, body) = call(journal.path(), "/app/entities/api/overview").await;
+    assert_eq!(status, 200);
+    assert_eq!(body["totals"]["edges"], 2);
+    assert!(!body["entities"].as_array().unwrap().is_empty());
+    let ada = body["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entity| entity["entity_id"] == "person-ada")
+        .expect("ada is ranked");
+    assert_eq!(ada["type"], "Person");
+    let cara = body["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entity| entity["entity_id"] == "person-cara")
+        .expect("cara is ranked");
+    assert_eq!(cara["type"], Value::Null);
+}
+
+#[tokio::test]
+async fn index_plate_unresolved_entity_returns_candidates() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    seed_edge_rows(journal.path(), &[]);
+    assert_unresolved(
+        call(journal.path(), "/app/entities/api/network?entity=Nobody").await,
+        "Nobody",
+    );
+    assert_unresolved(
+        call(
+            journal.path(),
+            "/app/entities/api/history?entity=Nobody&peer=person-ada",
+        )
+        .await,
+        "Nobody",
+    );
+}
+
+#[tokio::test]
+async fn index_plate_pagination_runs_before_resolution_or_index_reads() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "person-ada",
+            "person-bob",
+            "works-with",
+            Some("20260501"),
+            "a",
+        )],
+    );
+    assert_oracle_refusal(
+        "index_plate:network:invalid-limit-before-resolve",
+        call(
+            journal.path(),
+            "/app/entities/api/network?entity=person-ada&limit=not-an-integer",
+        )
+        .await,
+        "invalid_request_value",
+        400,
+    );
+}
+
+#[tokio::test]
+async fn index_plate_kinds_repeated_and_comma_separated_match() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    save_person(journal.path(), "person-bob", "Bob");
+    save_person(journal.path(), "person-cara", "Cara");
+    seed_edge_rows(
+        journal.path(),
+        &[
+            (
+                "person-ada",
+                "person-bob",
+                "works-with",
+                Some("20260501"),
+                "a",
+            ),
+            (
+                "person-ada",
+                "person-cara",
+                "mentioned",
+                Some("20260501"),
+                "b",
+            ),
+        ],
+    );
+    let repeated = call(
+        journal.path(),
+        "/app/entities/api/network?entity=person-ada&kinds=works-with&kinds=mentioned",
+    )
+    .await;
+    let csv = call(
+        journal.path(),
+        "/app/entities/api/network?entity=person-ada&kinds=works-with,mentioned",
+    )
+    .await;
+    assert_eq!(repeated.0, 200);
+    assert_eq!(csv.0, 200);
+    assert_eq!(repeated.1, csv.1);
+    assert_eq!(repeated.1["total_neighbors"], 2);
+}
+
+#[tokio::test]
+async fn index_plate_unknown_kind_is_invalid_after_resolution() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    seed_edge_rows(journal.path(), &[]);
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/network?entity=person-ada&kinds=not-a-kind",
+    )
+    .await;
+    assert_oracle_refusal(
+        "index_plate:network:unknown-kind",
+        (status, body.clone()),
+        "invalid_request_value",
+        400,
+    );
+    assert!(
+        body["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("not-a-kind"),
+        "detail names the bad kind: {}",
+        body["detail"]
+    );
+}
+
+#[tokio::test]
+async fn index_plate_missing_index_is_edge_index_unavailable() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    assert_oracle_refusal(
+        "index_plate:network:missing-index",
+        call(
+            journal.path(),
+            "/app/entities/api/network?entity=person-ada",
+        )
+        .await,
+        "edge_index_unavailable",
+        503,
+    );
+    assert!(
+        !journal.path().join("indexer").exists(),
+        "GET must not create indexer/"
+    );
+}
+
+#[tokio::test]
+async fn index_plate_network_resolves_a_unique_name_to_the_directory() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    save_person(journal.path(), "person-bob", "Bob");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "person-ada",
+            "person-bob",
+            "works-with",
+            Some("20260501"),
+            "a",
+        )],
+    );
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/network?entity=Ada%20Lovelace",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["entity_id"], "person-ada");
+    assert_eq!(body["neighbors"][0]["entity_id"], "person-bob");
+}
+
+#[test]
+fn require_existing_entity_dir_refuses_a_missing_identity() {
+    let journal = Journal::new();
+    let error =
+        crate::router::require_existing_entity_dir(journal.path(), "ghost".to_owned()).unwrap_err();
+    match error {
+        crate::router::IndexPlateError::OperationFailed(detail) => {
+            assert_eq!(detail, "resolved entity is not a journal entity");
+        }
+        _ => panic!("expected operation failed"),
+    }
+}
+
+#[tokio::test]
+async fn index_plate_history_resolves_names_on_both_sides() {
+    let journal = Journal::new();
+    save_person(journal.path(), "p-1", "Grace Hopper");
+    save_person(journal.path(), "p-2", "Alan Turing");
+    seed_edge_rows(
+        journal.path(),
+        &[("p-1", "p-2", "works-with", Some("20260501"), "a")],
+    );
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=Grace%20Hopper&peer=Alan%20Turing",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["entity_id"], "p-1");
+    assert_eq!(body["peer_id"], "p-2");
+}
+
+#[tokio::test]
+async fn index_plate_ambiguous_name_returns_candidates_without_writing_ambiguities() {
+    let journal = Journal::new();
+    save_person(journal.path(), "sarah-connor", "Sarah Connor");
+    save_person(journal.path(), "sarah-lee", "Sarah Lee");
+    let ambiguities = journal.path().join("entities/ambiguities.jsonl");
+    let before = fs::read(&ambiguities).ok();
+    let (status, body) = call(journal.path(), "/app/entities/api/network?entity=Sarah").await;
+    assert_eq!(status, 200);
+    assert_ne!(status, 501);
+    assert!(status < 400);
+    assert_eq!(body["resolved"], Value::Null);
+    assert_eq!(body["query"], "Sarah");
+    let candidates = body["candidates"].as_array().expect("candidates");
+    assert!(candidates.len() >= 2);
+    assert!(
+        candidates.iter().all(|candidate| {
+            candidate.get("id").is_some()
+                && candidate.get("name").is_some()
+                && candidate.get("type").is_some()
+        }),
+        "candidates carry id/name/type: {candidates:?}"
+    );
+    assert_eq!(fs::read(&ambiguities).ok(), before);
+    assert!(!ambiguities.exists());
+}
+
+#[tokio::test]
+async fn index_plate_network_and_history_require_entity_param() {
+    let journal = Journal::new();
+    for path in [
+        "/app/entities/api/network",
+        "/app/entities/api/network?entity=",
+        "/app/entities/api/history",
+        "/app/entities/api/history?entity=",
+    ] {
+        let (status, body) = call(journal.path(), path).await;
+        assert_oracle_refusal(
+            &format!("index_plate:missing-entity:{path}"),
+            (status, body.clone()),
+            "missing_required_field",
+            400,
+        );
+        assert_eq!(body["detail"], "entity is required", "{path}");
+    }
+    assert!(!journal.path().join("indexer").exists());
+}
+
+#[tokio::test]
+async fn index_plate_negative_limit_is_invalid_request() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    seed_edge_rows(journal.path(), &[]);
+    assert_oracle_refusal(
+        "index_plate:network:negative-limit",
+        call(
+            journal.path(),
+            "/app/entities/api/network?entity=person-ada&limit=-1",
+        )
+        .await,
+        "invalid_request_value",
+        400,
+    );
+}
+
+#[tokio::test]
+async fn index_plate_network_empty_index_returns_zero_neighbors() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    seed_edge_rows(journal.path(), &[]);
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/network?entity=person-ada",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["total_neighbors"], 0);
+    assert_eq!(body["neighbors"], json!([]));
+}
+
+#[tokio::test]
+async fn index_plate_include_principal_toggles_principal_neighbor() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    save_person(journal.path(), "person-bob", "Bob");
+    solstone_core_entity::save_entity_identity(
+        journal.path(),
+        "owner-dir",
+        &json!({"id":"owner-dir","name":"Owner","type":"Person","is_principal":true}),
+        None,
+    )
+    .unwrap();
+    seed_edge_rows(
+        journal.path(),
+        &[
+            (
+                "person-ada",
+                "person-bob",
+                "works-with",
+                Some("20260501"),
+                "a",
+            ),
+            (
+                "person-ada",
+                "owner-dir",
+                "spoke-with",
+                Some("20260501"),
+                "b",
+            ),
+        ],
+    );
+    let neighbor_ids = |body: &Value| {
+        body["neighbors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|neighbor| neighbor["entity_id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let (_, omitted) = call(
+        journal.path(),
+        "/app/entities/api/network?entity=person-ada",
+    )
+    .await;
+    assert!(!neighbor_ids(&omitted).contains(&"owner-dir".to_owned()));
+    assert!(neighbor_ids(&omitted).contains(&"person-bob".to_owned()));
+    let (_, excluded) = call(
+        journal.path(),
+        "/app/entities/api/network?entity=person-ada&include_principal=False",
+    )
+    .await;
+    assert!(!neighbor_ids(&excluded).contains(&"owner-dir".to_owned()));
+    let (_, included) = call(
+        journal.path(),
+        "/app/entities/api/network?entity=person-ada&include_principal=True",
+    )
+    .await;
+    assert!(neighbor_ids(&included).contains(&"owner-dir".to_owned()));
 }
 
 #[tokio::test]

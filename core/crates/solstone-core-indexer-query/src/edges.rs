@@ -675,7 +675,7 @@ fn update_seen(first: &mut Option<String>, last: &mut Option<String>, day: Optio
         }
     }
 }
-fn is_safe_entity_id_component(entity_id: &str) -> bool {
+pub fn is_safe_entity_id_component(entity_id: &str) -> bool {
     !matches!(entity_id, "" | "." | "..") && !entity_id.contains(['/', '\\', ':', '\0'])
 }
 fn invalid(detail: String) -> EdgeQueryError {

@@ -9,18 +9,22 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use axum::extract::{Extension, Path as RoutePath, Query, Request, State};
+use axum::extract::{Extension, Path as RoutePath, Query, RawQuery, Request, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use ring::rand::{SecureRandom, SystemRandom};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::{ErrorEnvelope, not_found_fallback};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::refusal::{MergeRepairRequired, UndoRepairRequired};
+use solstone_core_indexer_query::{
+    EdgeEvidenceRequest, EdgeFilters, EdgeQueryError, NetworkOverviewRequest, NetworkRequest,
+    is_safe_entity_id_component, load_edge_evidence, load_entity_network, load_network_overview,
+};
 
 use crate::deferred_delete::DeferredDeleteRegistry;
 use crate::model::{
@@ -349,11 +353,19 @@ struct FacetFlags {
     include_blocked: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 struct IndexPlateQuery {
+    entity: Option<String>,
+    peer: Option<String>,
+    #[serde(default)]
+    kinds: Vec<String>,
+    facet: Option<String>,
+    day_from: Option<String>,
+    day_to: Option<String>,
     limit: Option<String>,
     offset: Option<String>,
     evidence_limit: Option<String>,
+    include_principal: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -369,6 +381,15 @@ const RESOLUTION_FUZZY_THRESHOLD: f64 = 90.0;
 
 #[derive(Clone)]
 struct FacetResolutionEntity {
+    entity_dir: String,
+    identity: Value,
+    resolution: solstone_core_entity::EntityResolutionEntity,
+}
+
+#[derive(Clone)]
+struct IndexPlateEntity {
+    entity_dir: String,
+    written: bool,
     identity: Value,
     resolution: solstone_core_entity::EntityResolutionEntity,
 }
@@ -395,38 +416,136 @@ fn load_facet_resolution_entities(
         entities
             .into_iter()
             .map(|entity| FacetResolutionEntity {
+                entity_dir: entity.entity_dir,
                 resolution: solstone_core_entity::EntityResolutionEntity {
                     id: Some(entity.entity_id),
-                    name: entity
-                        .identity
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned(),
-                    aka: entity
-                        .identity
-                        .get("aka")
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(Value::as_str)
-                        .map(str::to_owned)
-                        .collect(),
-                    emails: entity
-                        .identity
-                        .get("emails")
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(Value::as_str)
-                        .map(str::to_owned)
-                        .collect(),
+                    name: identity_name(&entity.identity),
+                    aka: identity_string_list(&entity.identity, "aka"),
+                    emails: identity_string_list(&entity.identity, "emails"),
                     blocked: entity.blocked,
                 },
                 identity: entity.identity,
             })
             .collect()
     })
+}
+
+fn identity_name(identity: &Value) -> String {
+    identity
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn identity_string_list(identity: &Value, key: &str) -> Vec<String> {
+    identity
+        .get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
+}
+
+fn identity_is_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
+        Value::String(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::Object(value) => !value.is_empty(),
+    }
+}
+
+fn load_journal_resolution_entities(
+    journal_root: &Path,
+) -> Result<Vec<IndexPlateEntity>, solstone_core_entity::EntityStoreError> {
+    let groups = solstone_core_entity::read_identity_group_map(journal_root)?;
+    let mut entity_dirs = groups.groups.into_values().flatten().collect::<Vec<_>>();
+    entity_dirs.sort();
+    let mut entities = Vec::new();
+    for entity_dir in entity_dirs {
+        let Some(identity) = solstone_core_entity::read_entity_identity(journal_root, &entity_dir)?
+        else {
+            continue;
+        };
+        let value = identity.value().clone();
+        let blocked = value.get("blocked") == Some(&Value::Bool(true));
+        entities.push(IndexPlateEntity {
+            entity_dir: entity_dir.clone(),
+            written: identity.was_written(),
+            identity: value,
+            resolution: solstone_core_entity::EntityResolutionEntity {
+                id: Some(entity_dir),
+                name: identity_name(identity.value()),
+                aka: identity_string_list(identity.value(), "aka"),
+                emails: identity_string_list(identity.value(), "emails"),
+                blocked,
+            },
+        });
+    }
+    Ok(entities)
+}
+
+fn exact_journal_entity_dir(entities: &[IndexPlateEntity], query: &str) -> Option<String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return None;
+    }
+    if let Some(entity) = entities.iter().find(|entity| entity.entity_dir == query) {
+        return Some(entity.entity_dir.clone());
+    }
+    entities
+        .iter()
+        .filter(|entity| entity.identity.get("id").and_then(Value::as_str) == Some(query))
+        .min_by_key(|entity| (!entity.written, entity.entity_dir.as_str()))
+        .map(|entity| entity.entity_dir.clone())
+}
+
+fn find_journal_principal_dir(
+    journal_root: &Path,
+) -> Result<Option<(String, Value)>, solstone_core_entity::EntityStoreError> {
+    let mut entity_dirs = solstone_core_entity::read_identity_group_map(journal_root)?
+        .groups
+        .into_values()
+        .flatten()
+        .collect::<Vec<_>>();
+    entity_dirs.sort();
+    for entity_dir in entity_dirs {
+        let Some(identity) = solstone_core_entity::read_entity_identity(journal_root, &entity_dir)?
+        else {
+            continue;
+        };
+        if identity
+            .value()
+            .get("is_principal")
+            .is_some_and(identity_is_truthy)
+        {
+            return Ok(Some((entity_dir, identity.value().clone())));
+        }
+    }
+    Ok(None)
+}
+
+fn journal_resolution_slice(
+    entities: &[IndexPlateEntity],
+) -> Vec<solstone_core_entity::EntityResolutionEntity> {
+    entities
+        .iter()
+        .filter(|entity| !entity.resolution.blocked)
+        .map(|entity| entity.resolution.clone())
+        .collect()
+}
+
+fn index_plate_entity_as_facet(entity: &IndexPlateEntity) -> FacetResolutionEntity {
+    FacetResolutionEntity {
+        entity_dir: entity.entity_dir.clone(),
+        identity: entity.identity.clone(),
+        resolution: entity.resolution.clone(),
+    }
 }
 
 fn resolution_candidate_payloads(
@@ -3603,6 +3722,434 @@ async fn history_route(
     }
 }
 
+fn percent_decode_query_component(value: &str) -> String {
+    let mut output = Vec::new();
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%'
+            && index + 2 < bytes.len()
+            && let Some(hex) = std::str::from_utf8(&bytes[index + 1..index + 3])
+                .ok()
+                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+        {
+            output.push(hex);
+            index += 3;
+            continue;
+        }
+        output.push(if bytes[index] == b'+' {
+            b' '
+        } else {
+            bytes[index]
+        });
+        index += 1;
+    }
+    String::from_utf8_lossy(&output).into_owned()
+}
+
+fn parse_index_plate_query(raw: Option<&str>) -> IndexPlateQuery {
+    let mut query = IndexPlateQuery::default();
+    for pair in raw
+        .unwrap_or_default()
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+    {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = percent_decode_query_component(key);
+        let value = percent_decode_query_component(value);
+        match key.as_str() {
+            "entity" => query.entity = Some(value),
+            "peer" => query.peer = Some(value),
+            "kinds" => {
+                query.kinds.extend(
+                    value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|kind| !kind.is_empty())
+                        .map(str::to_owned),
+                );
+            }
+            "facet" => query.facet = Some(value),
+            "day_from" => query.day_from = Some(value),
+            "day_to" => query.day_to = Some(value),
+            "limit" => query.limit = Some(value),
+            "offset" => query.offset = Some(value),
+            "evidence_limit" => query.evidence_limit = Some(value),
+            "include_principal" => query.include_principal = Some(value),
+            _ => {}
+        }
+    }
+    query
+}
+
+fn optional_query_text(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn include_principal_flag(value: Option<&str>) -> bool {
+    matches!(
+        value
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "true" | "1" | "yes"
+    )
+}
+
+fn index_plate_edge_filters(query: &IndexPlateQuery) -> EdgeFilters {
+    EdgeFilters {
+        kinds: if query.kinds.is_empty() {
+            None
+        } else {
+            Some(query.kinds.clone())
+        },
+        facet: optional_query_text(query.facet.as_deref()),
+        day_from: optional_query_text(query.day_from.as_deref()),
+        day_to: optional_query_text(query.day_to.as_deref()),
+    }
+}
+
+fn required_index_plate_entity(query: &IndexPlateQuery) -> Result<String, Response> {
+    optional_query_text(query.entity.as_deref())
+        .ok_or_else(|| refusal(ReasonCode::MissingRequiredField, "entity is required"))
+}
+
+fn edge_query_error_response(error: EdgeQueryError) -> Response {
+    match error {
+        EdgeQueryError::EdgeIndexUnavailable { detail, .. } => {
+            refusal(ReasonCode::EdgeIndexUnavailable, detail)
+        }
+        EdgeQueryError::InvalidRequestValue { detail } => {
+            refusal(ReasonCode::InvalidRequestValue, detail)
+        }
+        EdgeQueryError::Internal { detail } => refusal(ReasonCode::EntityOperationFailed, detail),
+    }
+}
+
+fn index_plate_store_error(error: solstone_core_entity::EntityStoreError) -> Response {
+    match error {
+        solstone_core_entity::EntityStoreError::AmbiguityInvalidRow { path, .. } => refusal(
+            ReasonCode::EntityAmbiguityCorrupt,
+            format!("ambiguity file {} contains a corrupt row", path.display()),
+        ),
+        error => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
+    }
+}
+
+pub(crate) enum IndexPlateError {
+    Store(solstone_core_entity::EntityStoreError),
+    Facet(solstone_core_facets::FacetEntityWriteError),
+    Resolution(solstone_core_entity::EntityResolutionError),
+    Query(EdgeQueryError),
+    InvalidRequestValue(&'static str),
+    OperationFailed(String),
+}
+
+fn index_plate_error_response(error: IndexPlateError) -> Response {
+    match error {
+        IndexPlateError::Store(error) => index_plate_store_error(error),
+        IndexPlateError::Facet(error) => {
+            resolution_error_response(FacetResolutionError::Facet(error))
+        }
+        IndexPlateError::Resolution(error) => {
+            resolution_error_response(FacetResolutionError::Resolution(error))
+        }
+        IndexPlateError::Query(error) => edge_query_error_response(error),
+        IndexPlateError::InvalidRequestValue(detail) => {
+            refusal(ReasonCode::InvalidRequestValue, detail)
+        }
+        IndexPlateError::OperationFailed(detail) => {
+            refusal(ReasonCode::EntityOperationFailed, detail)
+        }
+    }
+}
+
+enum IndexPlateOutcome {
+    Unresolved {
+        query: String,
+        candidates: Vec<Value>,
+    },
+    Payload(Value),
+}
+
+enum IndexPlateTarget {
+    Directory(String),
+    Unresolved {
+        query: String,
+        candidates: Vec<Value>,
+    },
+}
+
+fn index_plate_entity_type(journal_root: &Path, entity_id: &str) -> Option<String> {
+    if !is_safe_entity_id_component(entity_id) {
+        return None;
+    }
+    solstone_core_entity::read_entity_identity(journal_root, entity_id)
+        .ok()
+        .flatten()?
+        .value()
+        .get("type")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+pub(crate) fn require_existing_entity_dir(
+    journal_root: &Path,
+    entity_dir: String,
+) -> Result<String, IndexPlateError> {
+    match solstone_core_entity::read_entity_identity(journal_root, &entity_dir) {
+        Ok(Some(_)) => Ok(entity_dir),
+        Ok(None) => Err(IndexPlateError::OperationFailed(
+            "resolved entity is not a journal entity".to_owned(),
+        )),
+        Err(error) => Err(IndexPlateError::Store(error)),
+    }
+}
+
+fn resolved_directory(
+    resolution: &solstone_core_entity::EntityResolution,
+    entity_dir: impl Fn(usize) -> Option<String>,
+) -> Result<String, IndexPlateError> {
+    resolution.entity_index.and_then(entity_dir).ok_or_else(|| {
+        IndexPlateError::OperationFailed("resolved entity is not a journal entity".to_owned())
+    })
+}
+
+fn resolve_index_plate_target(
+    journal_root: &Path,
+    query: &str,
+    facet: Option<&str>,
+    journal_entities: &[IndexPlateEntity],
+) -> Result<IndexPlateTarget, IndexPlateError> {
+    if let Some(entity_dir) = exact_journal_entity_dir(journal_entities, query) {
+        return Ok(IndexPlateTarget::Directory(entity_dir));
+    }
+    if let Some(facet_name) = facet {
+        let entities =
+            load_facet_resolution_entities(journal_root, facet_name, false).map_err(|error| {
+                match error {
+                    FacetResolutionError::Facet(error) => IndexPlateError::Facet(error),
+                    FacetResolutionError::Resolution(error) => IndexPlateError::Resolution(error),
+                }
+            })?;
+        let resolution_entities: Vec<_> = entities
+            .iter()
+            .map(|entity| entity.resolution.clone())
+            .collect();
+        let resolution = solstone_core_entity::record_entity_resolution(
+            journal_root,
+            query,
+            &resolution_entities,
+            json!({"kind":"facet","facet":facet_name}),
+            Value::Null,
+            RESOLUTION_FUZZY_THRESHOLD,
+            true,
+        )
+        .map_err(IndexPlateError::Resolution)?;
+        return index_plate_target_from_resolution(query, &entities, &resolution, |entity| {
+            entity.entity_dir.clone()
+        });
+    }
+    let resolution_entities = journal_resolution_slice(journal_entities);
+    let resolution = solstone_core_entity::record_entity_resolution(
+        journal_root,
+        query,
+        &resolution_entities,
+        json!({"kind":"journal"}),
+        Value::Null,
+        RESOLUTION_FUZZY_THRESHOLD,
+        true,
+    )
+    .map_err(IndexPlateError::Resolution)?;
+    let views: Vec<_> = journal_entities
+        .iter()
+        .filter(|entity| !entity.resolution.blocked)
+        .map(index_plate_entity_as_facet)
+        .collect();
+    index_plate_target_from_resolution(query, &views, &resolution, |entity| {
+        entity.entity_dir.clone()
+    })
+}
+
+fn index_plate_target_from_resolution(
+    query: &str,
+    entities: &[FacetResolutionEntity],
+    resolution: &solstone_core_entity::EntityResolution,
+    entity_dir: impl Fn(&FacetResolutionEntity) -> String,
+) -> Result<IndexPlateTarget, IndexPlateError> {
+    match resolution.outcome {
+        solstone_core_entity::EntityResolutionOutcome::Resolved => {
+            let entity_dir =
+                resolved_directory(resolution, |index| entities.get(index).map(&entity_dir))?;
+            Ok(IndexPlateTarget::Directory(entity_dir))
+        }
+        solstone_core_entity::EntityResolutionOutcome::Ambiguous => {
+            Ok(IndexPlateTarget::Unresolved {
+                query: query.to_owned(),
+                candidates: resolution_candidate_payloads(&resolution.candidates, entities),
+            })
+        }
+        solstone_core_entity::EntityResolutionOutcome::NoMatch => {
+            Ok(IndexPlateTarget::Unresolved {
+                query: query.to_owned(),
+                candidates: closest_resolution_candidate_payloads(query, entities),
+            })
+        }
+    }
+}
+
+fn payload_value<T: Serialize>(value: T) -> Result<IndexPlateOutcome, IndexPlateError> {
+    serde_json::to_value(value)
+        .map(IndexPlateOutcome::Payload)
+        .map_err(|error| IndexPlateError::OperationFailed(error.to_string()))
+}
+
+fn network_plate_work(
+    journal_root: &Path,
+    query: &IndexPlateQuery,
+    entity: &str,
+) -> Result<IndexPlateOutcome, IndexPlateError> {
+    let journal_entities =
+        load_journal_resolution_entities(journal_root).map_err(IndexPlateError::Store)?;
+    match resolve_index_plate_target(
+        journal_root,
+        entity,
+        optional_query_text(query.facet.as_deref()).as_deref(),
+        &journal_entities,
+    )? {
+        IndexPlateTarget::Unresolved { query, candidates } => {
+            Ok(IndexPlateOutcome::Unresolved { query, candidates })
+        }
+        IndexPlateTarget::Directory(entity_dir) => {
+            let entity_dir = require_existing_entity_dir(journal_root, entity_dir)?;
+            let principal_id = find_journal_principal_dir(journal_root)
+                .map_err(IndexPlateError::Store)?
+                .map(|(entity_dir, _)| entity_dir);
+            let limit = index_plate_integer(query.limit.as_deref(), "limit", 25).unwrap_or(25);
+            let evidence_limit =
+                index_plate_integer(query.evidence_limit.as_deref(), "evidence_limit", 5)
+                    .unwrap_or(5);
+            let request = NetworkRequest {
+                filters: index_plate_edge_filters(query),
+                include_principal: include_principal_flag(query.include_principal.as_deref()),
+                limit,
+                evidence_limit,
+                reference_day: None,
+            };
+            let response = load_entity_network(
+                journal_root,
+                &entity_dir,
+                &request,
+                principal_id.as_deref(),
+                &ATTENDANCE_KINDS,
+            )
+            .map_err(IndexPlateError::Query)?;
+            payload_value(response)
+        }
+    }
+}
+
+fn history_plate_work(
+    journal_root: &Path,
+    query: &IndexPlateQuery,
+    entity: &str,
+) -> Result<IndexPlateOutcome, IndexPlateError> {
+    let journal_entities =
+        load_journal_resolution_entities(journal_root).map_err(IndexPlateError::Store)?;
+    let facet = optional_query_text(query.facet.as_deref());
+    let entity_dir = match resolve_index_plate_target(
+        journal_root,
+        entity,
+        facet.as_deref(),
+        &journal_entities,
+    )? {
+        IndexPlateTarget::Unresolved { query, candidates } => {
+            return Ok(IndexPlateOutcome::Unresolved { query, candidates });
+        }
+        IndexPlateTarget::Directory(entity_dir) => {
+            require_existing_entity_dir(journal_root, entity_dir)?
+        }
+    };
+    let peer_dir = match optional_query_text(query.peer.as_deref()) {
+        Some(peer) => match resolve_index_plate_target(
+            journal_root,
+            &peer,
+            facet.as_deref(),
+            &journal_entities,
+        )? {
+            IndexPlateTarget::Unresolved { query, candidates } => {
+                return Ok(IndexPlateOutcome::Unresolved { query, candidates });
+            }
+            IndexPlateTarget::Directory(peer_dir) => {
+                require_existing_entity_dir(journal_root, peer_dir)?
+            }
+        },
+        None => match find_journal_principal_dir(journal_root).map_err(IndexPlateError::Store)? {
+            Some((entity_dir, _)) => entity_dir,
+            None => {
+                return Err(IndexPlateError::InvalidRequestValue(
+                    "history requires PEER because no principal entity is configured",
+                ));
+            }
+        },
+    };
+    let limit = index_plate_integer(query.limit.as_deref(), "limit", 50).unwrap_or(50);
+    let offset = index_plate_integer(query.offset.as_deref(), "offset", 0).unwrap_or(0);
+    let request = EdgeEvidenceRequest {
+        filters: index_plate_edge_filters(query),
+        limit,
+        offset,
+    };
+    let response = load_edge_evidence(journal_root, &entity_dir, &peer_dir, &request)
+        .map_err(IndexPlateError::Query)?;
+    payload_value(response)
+}
+
+fn overview_plate_work(
+    journal_root: &Path,
+    query: &IndexPlateQuery,
+) -> Result<IndexPlateOutcome, IndexPlateError> {
+    let limit = index_plate_integer(query.limit.as_deref(), "limit", 25).unwrap_or(25);
+    let request = NetworkOverviewRequest {
+        filters: index_plate_edge_filters(query),
+        limit,
+        reference_day: None,
+    };
+    let response = load_network_overview(journal_root, &request, &ATTENDANCE_KINDS, &|entity_id| {
+        index_plate_entity_type(journal_root, entity_id)
+    })
+    .map_err(IndexPlateError::Query)?;
+    payload_value(response)
+}
+
+fn index_plate_outcome_response(outcome: IndexPlateOutcome) -> Response {
+    match outcome {
+        IndexPlateOutcome::Unresolved { query, candidates } => Json(json!({
+            "resolved": Value::Null,
+            "query": query,
+            "candidates": candidates,
+        }))
+        .into_response(),
+        IndexPlateOutcome::Payload(value) => Json(value).into_response(),
+    }
+}
+
+async fn finish_index_plate(
+    work: impl std::future::Future<
+        Output = Result<Result<IndexPlateOutcome, IndexPlateError>, tokio::task::JoinError>,
+    >,
+) -> Response {
+    match work.await {
+        Ok(Ok(outcome)) => index_plate_outcome_response(outcome),
+        Ok(Err(error)) => index_plate_error_response(error),
+        Err(_) => refusal(ReasonCode::EntityOperationFailed, "index plate task failed"),
+    }
+}
+
 fn index_plate_integer(
     value: Option<&str>,
     name: &str,
@@ -3675,23 +4222,64 @@ async fn index_plate(
 
 async fn index_plate_network(
     Extension(basis): Extension<AccessBasis>,
-    Query(query): Query<IndexPlateQuery>,
+    State(root): State<Arc<RouterState>>,
+    RawQuery(raw): RawQuery,
 ) -> Response {
-    index_plate_response(basis, query, IndexPlateRoute::Network)
+    if let Some(response) = admitted(&basis) {
+        return response;
+    }
+    let query = parse_index_plate_query(raw.as_deref());
+    if let Err(response) = validate_index_plate_pagination(IndexPlateRoute::Network, &query) {
+        return *response;
+    }
+    let entity = match required_index_plate_entity(&query) {
+        Ok(entity) => entity,
+        Err(response) => return response,
+    };
+    finish_index_plate(solstone_core_serving::seam::run_blocking(move || {
+        network_plate_work(&root, &query, &entity)
+    }))
+    .await
 }
 
 async fn index_plate_history(
     Extension(basis): Extension<AccessBasis>,
-    Query(query): Query<IndexPlateQuery>,
+    State(root): State<Arc<RouterState>>,
+    RawQuery(raw): RawQuery,
 ) -> Response {
-    index_plate_response(basis, query, IndexPlateRoute::History)
+    if let Some(response) = admitted(&basis) {
+        return response;
+    }
+    let query = parse_index_plate_query(raw.as_deref());
+    if let Err(response) = validate_index_plate_pagination(IndexPlateRoute::History, &query) {
+        return *response;
+    }
+    let entity = match required_index_plate_entity(&query) {
+        Ok(entity) => entity,
+        Err(response) => return response,
+    };
+    finish_index_plate(solstone_core_serving::seam::run_blocking(move || {
+        history_plate_work(&root, &query, &entity)
+    }))
+    .await
 }
 
 async fn index_plate_overview(
     Extension(basis): Extension<AccessBasis>,
-    Query(query): Query<IndexPlateQuery>,
+    State(root): State<Arc<RouterState>>,
+    RawQuery(raw): RawQuery,
 ) -> Response {
-    index_plate_response(basis, query, IndexPlateRoute::Overview)
+    if let Some(response) = admitted(&basis) {
+        return response;
+    }
+    let query = parse_index_plate_query(raw.as_deref());
+    if let Err(response) = validate_index_plate_pagination(IndexPlateRoute::Overview, &query) {
+        return *response;
+    }
+    finish_index_plate(solstone_core_serving::seam::run_blocking(move || {
+        overview_plate_work(&root, &query)
+    }))
+    .await
 }
 
 async fn index_plate_search(
