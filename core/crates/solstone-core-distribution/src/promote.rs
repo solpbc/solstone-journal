@@ -462,6 +462,7 @@ fn collect(
 mod tests {
     use super::{copy_recursively, rename_error, rename_or_copy};
     use std::fs;
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn scratch(label: &str) -> std::path::PathBuf {
@@ -508,6 +509,77 @@ mod tests {
             "payload"
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn writers_do_not_mention_the_signing_env() {
+        // Paired with promote_writes_unsigned_six_file_set_without_a_minisig:
+        // this half proves the writers cannot read the signing env; that test
+        // proves promote still exits 0 with the usual unsigned six-file set
+        // and no .minisig.
+        const NEEDLE: &str = concat!("SOLSTONE_JOURNAL_MINISIGN", "_KEY");
+        assert!(!include_str!("promote.rs").contains(NEEDLE));
+        assert!(!include_str!("produce.rs").contains(NEEDLE));
+        assert!(!include_str!("inspect.rs").contains(NEEDLE));
+    }
+
+    #[test]
+    fn promote_writes_unsigned_six_file_set_without_a_minisig() {
+        use crate::inventory;
+        use crate::promote::{PromoteRequest, promote};
+        use crate::provenance::Provenance;
+
+        let version = env!("CARGO_PKG_VERSION");
+        let basename = format!("solstone-journal-{version}-linux-x86_64");
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let dest = PathBuf::from(format!(
+            "/var/tmp/solstone-distribution-sign-env-dest-{}-{nanos}",
+            std::process::id()
+        ));
+        let work = PathBuf::from(format!(
+            "/var/tmp/solstone-distribution-sign-env-work-{}-{nanos}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dest);
+        let _ = fs::remove_dir_all(&work);
+        promote(&PromoteRequest {
+            dest: dest.clone(),
+            work: work.clone(),
+            tree: vec![("bin/solstone-core".into(), b"core".to_vec(), 0o755)],
+            version: version.to_owned(),
+            basename: basename.clone(),
+            os: "linux".into(),
+            arch: "linux-x86_64".into(),
+            deb_arch: "amd64".into(),
+            rpm_arch: "x86_64".into(),
+            dirty: false,
+            observed: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            expected: Provenance {
+                commit: "aaa".into(),
+                lock_sha256: "bbb".into(),
+            },
+            fail_after: None,
+            apple: None,
+        })
+        .expect("promote");
+        let found = fs::read_dir(&dest)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let mut expected = inventory::artifact_set(&basename).to_vec();
+        expected.sort();
+        let mut found_sorted = found.clone();
+        found_sorted.sort();
+        assert_eq!(found_sorted, expected);
+        assert!(!found.iter().any(|name| name.ends_with(".minisig")));
+        let _ = fs::remove_dir_all(&dest);
+        let _ = fs::remove_dir_all(&work);
     }
 
     #[test]

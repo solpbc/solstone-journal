@@ -288,6 +288,18 @@ regex = "1.13.1"
 # signature uses ring. cargo-deny here does not check advisories, so that gate
 # result is not the justification for the containment.
 rsa = "0.9.10"
+# Detached minisign signatures for solstone-distribution `sign`. Release-rail lenses:
+# `minisign` 0.9.1 is MIT; its graph adds ct-codecs, scrypt, pbkdf2, salsa20,
+# rpassword, rtoolbox, and (Windows-only) windows-sys 0.59.0. No crate in that
+# set has a C/C++ build.rs, so musl x86_64/aarch64 stay eligible and the
+# PORTING.md native-dependency proof does not apply. Package MSRVs are at or
+# below 1.85, under the workspace rust-version 1.95 / check-rust-msrv 1.95.0
+# toolchain. The graph is pure Rust and eligible for iOS and macOS cross
+# targets. cargo-deny bans/licenses/sources passed on the proposed lock.
+# Transitive `rpassword` is a unix/windows tty prompt crate; product code
+# always passes Some(password) into rust-minisign, so that prompt path is
+# unreachable.
+minisign = "0.9.1"
 unicode-general-category = "1.1.0"
 unicode-xid = "0.2.6"
 unicode_names2 = "1.3.0"

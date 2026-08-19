@@ -23,6 +23,7 @@ pub mod record;
 pub mod relocate;
 pub mod rpm;
 pub mod select;
+pub mod sign;
 pub mod stage;
 pub mod tar;
 pub mod zip;
