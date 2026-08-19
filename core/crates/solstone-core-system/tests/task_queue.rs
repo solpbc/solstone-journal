@@ -229,6 +229,14 @@ fn wait_for_history(queue: &TaskQueue, count: usize) {
     wait_until(|| queue.history().len() >= count);
 }
 
+fn process_is_gone(pid: u32) -> bool {
+    let pid = i32::try_from(pid).expect("fixture pid fits i32");
+    matches!(
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
+        Err(nix::errno::Errno::ESRCH)
+    )
+}
+
 fn started_references(sink: &QueueCollector) -> Vec<String> {
     sink.0
         .lock()
@@ -1059,4 +1067,27 @@ fn ac32_cap_termination_drains_continuous_output_without_partial_lines() {
             .is_some_and(|suffix| suffix.parse::<u64>().is_ok())
     }));
     assert_eq!(queue.history()[0].exit_status, TIMEOUT_EXIT_STATUS);
+}
+
+#[test]
+fn ac33_dropping_one_clone_does_not_terminate_worker_another_clone_holds() {
+    let bed = Bed::new("ac33");
+    let queue = queue(&bed, Duration::from_secs(30), true, None, None);
+    let clone = queue.clone();
+    let ready = bed.root.join("ready");
+    clone.submit(request(
+        "held",
+        &command(&["ready-sleep", ready.to_str().expect("utf8"), "5000"]),
+        None,
+        None,
+    ));
+    wait_for_ready(&ready);
+    let pid = queue.active_process_handles()[0].pid();
+    drop(clone);
+    assert!(
+        !process_is_gone(pid),
+        "dropping one TaskQueue clone must not kill a worker another clone still holds"
+    );
+    assert_eq!(queue.shutdown(), 1);
+    wait_until(|| process_is_gone(pid));
 }
