@@ -10,7 +10,9 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 
 use serde_json::{Map, Value, json};
-use solstone_core_system::process::{ManagedProcess, SpawnOptions, TerminationError};
+use solstone_core_system::process::{
+    ManagedProcess, SERVICE_SHUTDOWN_TIMEOUT, SpawnOptions, TerminationError,
+};
 
 use crate::beacon::Health;
 use crate::config::{
@@ -747,13 +749,15 @@ fn cleanup_async(process: ManagedProcess) {
             }
         });
     if spawned.is_err() {
-        // A synchronous Drop could block on an unreaped descendant's pipe FDs.
-        let process = handoff
+        // terminate-then-cleanup is the Drop-equivalent path when the cleanup
+        // thread cannot be spawned; terminate() reaps descendants before join.
+        let mut process = handoff
             .lock()
             .expect("cleanup handoff")
             .take()
             .expect("cleanup process");
-        std::mem::forget(process);
+        let _ = process.terminate(SERVICE_SHUTDOWN_TIMEOUT);
+        process.cleanup();
     }
 }
 
