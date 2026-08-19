@@ -227,6 +227,7 @@ fn latest_should_advance(existing_body: &str, incoming: &str) -> bool {
     version_order(incoming, existing) != Ordering::Less
 }
 
+/// Dot-separated numeric segments; non-numeric segments compare as strings (not semver).
 fn version_order(left: &str, right: &str) -> Ordering {
     let mut left_parts = left.split('.');
     let mut right_parts = right.split('.');
@@ -670,7 +671,7 @@ fi
     }
 
     #[test]
-    fn ac2_latest_pointer_is_unconditionally_overwritten_in_every_lane() {
+    fn ac2_latest_pointer_advances_to_v2_in_every_lane() {
         for lane in ALLOWED_LANES {
             let root = temp();
             let src_v1 = stub_produced(root.path(), "1.0.0");
