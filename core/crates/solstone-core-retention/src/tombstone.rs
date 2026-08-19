@@ -10,17 +10,15 @@
 //!
 //! # Why this lives here rather than at the segment boundary
 //!
-//! The segment boundary has a tombstone writer already, and it is **superseded**:
-//! it hard-codes `reason: "owner_location_data_delete"`, from a time when deleting
-//! a *source* was an operation. It no longer is — an owner deletes segments — so
-//! reusing it would stamp a durable, owner-facing record saying the owner asked to
-//! delete their location data onto a removal triggered by a retention policy.
+//! This crate is the only tombstone writer. The segment crate's superseded one —
+//! which hard-coded `reason: "owner_location_data_delete"` from a time when
+//! deleting a *source* was an operation — was removed. An owner deletes segments,
+//! so the reason vocabulary is this crate's closed set ([`RemovalReason`]), never
+//! a free string and never a source-level claim.
 //!
-//! ⛔ And it cannot be extended in place: it takes a resolved segment handle, and
-//! the staged directory a removal writes into cannot be named by one, because that
-//! boundary rejects a leading-dot component. So the contents live here, with the
-//! executor that owns every removal, and the superseded writer goes with the
-//! retired partial-delete path it serves.
+//! ⛔ The contents live here with the executor that owns every removal: a staged
+//! directory cannot be named by a resolved segment handle, because that boundary
+//! rejects a leading-dot component.
 //!
 //! # What it may claim
 //!

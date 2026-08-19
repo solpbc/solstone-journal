@@ -52,6 +52,6 @@ mod tests {
             entries.iter().any(|entry| entry.kind == DirEntryKind::File
                 && entry.name.to_string_lossy() == "item.json")
         );
-        assert!(select_location_targets(root.path()).is_empty());
+        assert!(select_location_targets(root.path()).targets.is_empty());
     }
 }

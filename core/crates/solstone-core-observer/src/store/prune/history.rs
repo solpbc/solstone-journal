@@ -6,8 +6,10 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, DirEntryKind, append_jsonl, atomic_replace, list_dir_entries,
+    AtomicWriteOptions, DirEntryKind, append_jsonl, atomic_replace, contained_path,
+    list_dir_entries,
 };
+use solstone_core_segment::is_safe_stream_component;
 
 use super::super::history::load_history;
 use super::super::paths::{history_dir, history_path};
@@ -178,6 +180,16 @@ pub fn remove_history_rows_for_stream(journal: &Path, stream: &str) -> HistoryPr
     let mut report = HistoryPruneReport::default();
     for observer in load_observers(journal).unwrap_or_default() {
         let prefix = observer.prefix();
+        if !is_safe_stream_component(&prefix) {
+            report.failures.push(HistoryPruneFailure {
+                entry: format!("apps/observer/observers/{prefix}"),
+                reason: "this observer's history path is not a safe journal location \
+                         and was left unchanged"
+                    .to_owned(),
+                torn: false,
+            });
+            continue;
+        }
         let hist_dir = history_dir(journal, &prefix);
         let Ok(entries) = list_dir_entries(&hist_dir) else {
             continue;
@@ -193,7 +205,20 @@ pub fn remove_history_rows_for_stream(journal: &Path, stream: &str) -> HistoryPr
             else {
                 continue;
             };
-            let path = hist_dir.join(format!("{day}.jsonl"));
+            let rel = history_entry(&prefix, day);
+            let path = match contained_path(journal, &rel) {
+                Ok(path) => path,
+                Err(_) => {
+                    report.failures.push(HistoryPruneFailure {
+                        entry: rel,
+                        reason: "this observer's history path is not a safe journal location \
+                                 and was left unchanged"
+                            .to_owned(),
+                        torn: false,
+                    });
+                    continue;
+                }
+            };
             let loaded = load_history(&path);
             if loaded.stopped.is_some() {
                 report.failures.push(HistoryPruneFailure {
@@ -383,6 +408,27 @@ mod tests {
             fs::read_to_string(&torn).unwrap(),
             "{\"stream\":\"location\"}\n{broken}\n{\"stream\":\"location\"}\n"
         );
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn remove_history_skips_unsafe_prefix() {
+        let root = root("unsafe-prefix");
+        let record = ObserverRecord::from_value(json!({"key":"ABCDEFGHx","name":"one"})).unwrap();
+        save_observer(&root, &record).unwrap();
+        let path = history_path(&root, "ABCDEFGH", "20260101");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "{\"type\":\"pruned\",\"stream\":\"location\",\"segment\":\"a\"}\n",
+        )
+        .unwrap();
+        let before = fs::read(&path).unwrap();
+        let report = remove_history_rows_for_stream(&root, "location");
+        assert_eq!(report.removed, 0);
+        assert_eq!(report.failures.len(), 1);
+        assert!(!report.failures[0].torn);
+        assert_eq!(fs::read(&path).unwrap(), before);
         fs::remove_dir_all(&root).ok();
     }
 }

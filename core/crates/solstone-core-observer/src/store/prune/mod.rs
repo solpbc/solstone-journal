@@ -7,7 +7,7 @@
 //! append-before-delete ordering in `apply::execute_plan`.
 
 mod apply;
-pub mod attribution;
+mod attribution;
 mod chain;
 mod history;
 mod identity;

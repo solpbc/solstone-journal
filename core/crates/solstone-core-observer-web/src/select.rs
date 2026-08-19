@@ -21,6 +21,11 @@ pub(crate) struct Selected {
     pub did: String,
 }
 
+pub(crate) struct LocationScan {
+    pub targets: Vec<Selected>,
+    pub complete: bool,
+}
+
 /// A segment is mixed iff a direct child is client content other than its
 /// location data. Directories count (`talents/` makes a segment mixed).
 pub(crate) fn segment_is_mixed(entries: &[DirEntry]) -> bool {
@@ -60,14 +65,25 @@ fn segment_did(path: &Path) -> String {
         .unwrap_or_else(|| "unknown".to_owned())
 }
 
-pub(crate) fn select_location_targets(journal: &Path) -> Vec<Selected> {
+pub(crate) fn select_location_targets(journal: &Path) -> LocationScan {
     let mut selected = Vec::new();
-    let Ok(days) = list_days(journal) else {
-        return selected;
+    let days = match list_days(journal) {
+        Ok(days) => days,
+        Err(_) => {
+            return LocationScan {
+                targets: selected,
+                complete: false,
+            };
+        }
     };
+    let mut complete = true;
     for (day, _) in days {
-        let Ok(segments) = list_segments(journal, &day) else {
-            continue;
+        let segments = match list_segments(journal, &day) {
+            Ok(segments) => segments,
+            Err(_) => {
+                complete = false;
+                continue;
+            }
         };
         for segment in segments {
             let Some(dir) = segment
@@ -97,7 +113,10 @@ pub(crate) fn select_location_targets(journal: &Path) -> Vec<Selected> {
             });
         }
     }
-    selected
+    LocationScan {
+        targets: selected,
+        complete,
+    }
 }
 
 pub(crate) fn days_holding_tombstones(journal: &Path) -> Vec<String> {

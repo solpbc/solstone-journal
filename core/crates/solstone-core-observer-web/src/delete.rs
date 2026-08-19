@@ -81,7 +81,9 @@ pub(crate) async fn delete_source(
 }
 
 fn erase_location(journal: &Path) -> Receipt {
-    let selected = select_location_targets(journal);
+    let scan = select_location_targets(journal);
+    let scan_complete = scan.complete;
+    let selected = scan.targets;
     let occupied_streams: BTreeSet<String> = selected
         .iter()
         .map(|item| item.target.stream.clone())
@@ -104,11 +106,6 @@ fn erase_location(journal: &Path) -> Receipt {
             RemovalReason::OwnerSegmentDelete,
             &did,
         );
-        if let Some(halted) = part.halted {
-            outcome.halted = Some(halted);
-            outcome.targets.extend(part.targets);
-            break;
-        }
         outcome.targets.extend(part.targets);
     }
 
@@ -153,16 +150,21 @@ fn erase_location(journal: &Path) -> Receipt {
         }
     };
 
-    let history = remove_history_rows_for_stream(journal, "location");
-    let history_rows = history.removed as u64;
-    for failure in history.failures {
-        not_removed.push(Issue {
-            what: "observer history".to_owned(),
-            plain_reason: failure.reason,
-        });
-    }
+    let history_rows = if any_failed {
+        0
+    } else {
+        let history = remove_history_rows_for_stream(journal, "location");
+        for failure in history.failures {
+            not_removed.push(Issue {
+                what: "observer history".to_owned(),
+                plain_reason: failure.reason,
+            });
+        }
+        history.removed as u64
+    };
 
-    let stream_identity = unlink_location_stream(journal, any_failed, &mut not_removed);
+    let stream_identity =
+        unlink_location_stream(journal, any_failed, scan_complete, &mut not_removed);
 
     let not_confirmed = collect_not_confirmed(journal, &attempted, &occupied_streams);
 
@@ -199,8 +201,25 @@ fn groups_by_did(selected: &[Selected]) -> Vec<(String, Vec<Target>)> {
     groups
 }
 
-fn unlink_location_stream(journal: &Path, any_failed: bool, not_removed: &mut Vec<Issue>) -> u64 {
-    if any_failed || !select_location_targets(journal).is_empty() {
+fn unlink_location_stream(
+    journal: &Path,
+    any_failed: bool,
+    scan_complete: bool,
+    not_removed: &mut Vec<Issue>,
+) -> u64 {
+    if any_failed {
+        return 0;
+    }
+    if !scan_complete {
+        not_removed.push(incomplete_scan_issue());
+        return 0;
+    }
+    let remaining = select_location_targets(journal);
+    if !remaining.complete {
+        not_removed.push(incomplete_scan_issue());
+        return 0;
+    }
+    if !remaining.targets.is_empty() {
         return 0;
     }
     match delete_stream_record(journal, "location") {
@@ -213,5 +232,14 @@ fn unlink_location_stream(journal: &Path, any_failed: bool, not_removed: &mut Ve
             });
             0
         }
+    }
+}
+
+fn incomplete_scan_issue() -> Issue {
+    Issue {
+        what: "chronicle listing".to_owned(),
+        plain_reason: "the journal could not be listed completely, so remaining \
+                       location data could not be ruled out"
+            .to_owned(),
     }
 }

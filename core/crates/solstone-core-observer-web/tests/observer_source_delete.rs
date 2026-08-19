@@ -385,6 +385,22 @@ async fn criterion_6_auth_before_400_and_other_observer_key() {
 }
 
 #[tokio::test]
+async fn ambiguous_attribution_with_two_unrevoked_observers_is_403() {
+    let bed = Bed::new();
+    bed.seed_observer(KEY, json!({}));
+    bed.seed_observer(OTHER_KEY, json!({}));
+    bed.location_only("20260805", "location", "070000_17");
+    let loc = bed
+        .path()
+        .join("chronicle/20260805/location/070000_17/location.jsonl");
+    let before = fs::read(&loc).unwrap();
+    let (status, body) = call(bed.path(), "location", &owner_headers()).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(body["reason_code"], "feature_unavailable");
+    assert_eq!(fs::read(&loc).unwrap(), before);
+}
+
+#[tokio::test]
 async fn criterion_7_staged_leftover_is_a_real_door_incomplete() {
     let bed = Bed::new();
     bed.seed_observer(KEY, json!({}));
@@ -415,6 +431,38 @@ async fn criterion_7_staged_leftover_is_a_real_door_incomplete() {
             .exists()
     );
     assert!(indexed_paths(bed.path()).contains(loc));
+}
+
+#[tokio::test]
+async fn history_untouched_when_door_refuses() {
+    let bed = Bed::new();
+    bed.seed_observer(KEY, json!({}));
+    bed.location_only("20260805", "location", "070000_17");
+    fs::create_dir_all(
+        bed.path()
+            .join("chronicle/20260805/location/.removing_070000_17"),
+    )
+    .unwrap();
+    write_history(
+        bed.path(),
+        "abcdefgh",
+        "20260805",
+        &[json!({"type":"pruned","ts":1,"segment":"a","stream":"location","duplicate_of":"b"})],
+    );
+    let hist = hist_path(bed.path(), "abcdefgh", "20260805");
+    let before = fs::read(&hist).unwrap();
+    let (status, body) = call(bed.path(), "location", &owner_headers()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["removed"]["history_rows"], 0);
+    assert_eq!(fs::read(&hist).unwrap(), before);
+    assert!(
+        !body["not_removed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["what"] == "observer history"),
+        "{body}"
+    );
 }
 
 #[tokio::test]

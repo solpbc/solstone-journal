@@ -20,7 +20,11 @@ pub(crate) fn authorize(journal: &Path, headers: &HeaderMap) -> Result<ObserverR
         return Err(AuthError::Required);
     };
     let records = load_observers(journal).map_err(|_| AuthError::InvalidKey)?;
-    let Some(record) = records.into_iter().find(|record| record.key() == handle) else {
+    let Some(record) = records
+        .iter()
+        .find(|record| record.key() == handle)
+        .cloned()
+    else {
         return Err(AuthError::InvalidKey);
     };
     if record.revoked() {
@@ -29,10 +33,19 @@ pub(crate) fn authorize(journal: &Path, headers: &HeaderMap) -> Result<ObserverR
     if !record.enabled().unwrap_or(true) {
         return Err(AuthError::FeatureUnavailable);
     }
-    if let Ok(prefix) = observer_prefix_for_stream(journal, "location")
-        && prefix != record.prefix()
-    {
-        return Err(AuthError::FeatureUnavailable);
+    match observer_prefix_for_stream(journal, "location") {
+        Ok(prefix) if prefix != record.prefix() => {
+            return Err(AuthError::FeatureUnavailable);
+        }
+        Ok(_) => {}
+        Err(_) => {
+            // Attribution failure is only safe when there is no second
+            // observer whose data could be erased.
+            let unrevoked = records.iter().filter(|item| !item.revoked()).count();
+            if unrevoked >= 2 {
+                return Err(AuthError::FeatureUnavailable);
+            }
+        }
     }
     Ok(record)
 }
