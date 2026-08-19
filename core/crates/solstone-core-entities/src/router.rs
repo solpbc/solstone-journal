@@ -913,7 +913,7 @@ async fn detect_entity_route(
     })
     .await
     {
-        Ok(Ok(_)) => Json(json!({"name":response_name})).into_response(),
+        Ok(Ok(_)) => Json(json!({"success":true,"name":response_name})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. }))
         | Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
             refusal(ReasonCode::InvalidRequestValue, "invalid detected entity")
@@ -1112,7 +1112,9 @@ async fn record_merge_candidate_route(
     })
     .await
     {
-        Ok(Ok((row, created))) => Json(json!({"row":row,"created":created})).into_response(),
+        Ok(Ok((row, created))) => {
+            Json(json!({"success":true,"row":row,"created":created})).into_response()
+        }
         Ok(Err(error)) => {
             entity_review_candidate_error_response(error, "merge candidate record failed")
         }
@@ -2955,7 +2957,7 @@ async fn create_entity_route(
     {
         Ok(Ok(result)) => {
             if result.reactivated {
-                return Json(json!({"reattached":true})).into_response();
+                return Json(json!({"success":true,"reattached":true})).into_response();
             }
             let relationship = result.relationship;
             (
@@ -3011,7 +3013,7 @@ async fn update_description_route(
     })
     .await
     {
-        Ok(Ok(entity)) => Json(json!({"entity":entity})).into_response(),
+        Ok(Ok(entity)) => Json(json!({"success":true,"entity":entity})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
             refusal(ReasonCode::EntityNotFound, "entity not found")
         }
@@ -3066,7 +3068,7 @@ async fn update_detected_route(
     })
     .await
     {
-        Ok(Ok(entity)) => Json(json!({"entity":entity})).into_response(),
+        Ok(Ok(entity)) => Json(json!({"success":true,"entity":entity})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
             refusal(ReasonCode::InvalidRequestValue, "detected entity not found")
         }
@@ -3127,6 +3129,7 @@ async fn move_route(
     .await
     {
         Ok(Ok(result)) => Json(json!({
+            "success":true,
             "entity":entity_for_response,
             "moved_from":from_facet_for_response,
             "moved_to":to_facet_for_response,
@@ -3281,6 +3284,7 @@ async fn observe_route(
     .await
     {
         Ok(Ok((observations, count))) => Json(json!({
+            "success":true,
             "result":{"observations":observations,"count":count}
         }))
         .into_response(),
@@ -3302,6 +3306,22 @@ async fn observe_route(
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(ReasonCode::EntityOperationFailed, "observation add failed"),
     }
+}
+
+fn detected_day_stems(entities_dir: &Path) -> std::io::Result<Vec<String>> {
+    let mut days = std::fs::read_dir(entities_dir)?
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            (path
+                .extension()
+                .is_some_and(|extension| extension == "jsonl"))
+            .then(|| path.file_stem()?.to_str().map(str::to_owned))
+            .flatten()
+        })
+        .collect::<Vec<_>>();
+    days.sort();
+    Ok(days)
 }
 
 async fn delete_detected_route(
@@ -3331,20 +3351,10 @@ async fn delete_detected_route(
     };
     let entities_dir = root.join("facets").join(&facet).join("entities");
     if !entities_dir.exists() {
-        return Json(json!({"days_modified":[]})).into_response();
+        return Json(json!({"success":true,"days_modified":[]})).into_response();
     }
-    let mut days = match std::fs::read_dir(&entities_dir) {
-        Ok(entries) => entries
-            .filter_map(Result::ok)
-            .filter_map(|entry| {
-                let path = entry.path();
-                (path
-                    .extension()
-                    .is_some_and(|extension| extension == "jsonl"))
-                .then(|| path.file_stem()?.to_str().map(str::to_owned))
-                .flatten()
-            })
-            .collect::<Vec<_>>(),
+    let days = match detected_day_stems(&entities_dir) {
+        Ok(days) => days,
         Err(_) => {
             return refusal(
                 ReasonCode::EntityOperationFailed,
@@ -3352,7 +3362,6 @@ async fn delete_detected_route(
             );
         }
     };
-    days.sort();
     let name = name.to_owned();
     match run_facet_entity_write(move || {
         let mut days_modified = Vec::new();
@@ -3370,7 +3379,9 @@ async fn delete_detected_route(
     })
     .await
     {
-        Ok(Ok(days_modified)) => Json(json!({"days_modified":days_modified})).into_response(),
+        Ok(Ok(days_modified)) => {
+            Json(json!({"success":true,"days_modified":days_modified})).into_response()
+        }
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(
             solstone_core_facets::FacetTrustLockError::Lock(
                 solstone_core_entity::LockError::Timeout(_),
@@ -3416,7 +3427,7 @@ async fn aka_route(
     })
     .await
     {
-        Ok(Ok(aka)) => Json(json!({"aka":aka})).into_response(),
+        Ok(Ok(aka)) => Json(json!({"success":true,"aka":aka})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::AkaConflict {
             alias,
             conflict_name,
@@ -3507,7 +3518,7 @@ async fn update_entity_route(
     })
     .await
     {
-        Ok(Ok(entity)) => Json(json!({"entity":entity})).into_response(),
+        Ok(Ok(entity)) => Json(json!({"success":true,"entity":entity})).into_response(),
         Ok(Err(solstone_core_facets::FacetEntityWriteError::EntityNotFound { .. })) => {
             refusal(ReasonCode::EntityNotFound, "Entity not found")
         }

@@ -2136,6 +2136,7 @@ async fn move_transfers_facet_entity() {
     assert_eq!(
         response,
         json!({
+            "success":true,
             "entity":"Alice",
             "moved_from":"from",
             "moved_to":"to",
@@ -2520,7 +2521,7 @@ async fn delete_detected_without_match_succeeds_unchanged() {
     )
     .await;
     assert_eq!(status, 200);
-    assert_eq!(response, json!({"days_modified":[]}));
+    assert_eq!(response, json!({"success":true,"days_modified":[]}));
 }
 
 #[tokio::test]
@@ -2533,7 +2534,7 @@ async fn delete_detected_without_entities_directory_succeeds() {
     )
     .await;
     assert_eq!(status, 200);
-    assert_eq!(response, json!({"days_modified":[]}));
+    assert_eq!(response, json!({"success":true,"days_modified":[]}));
 }
 
 #[tokio::test]
@@ -2624,7 +2625,7 @@ async fn create_entity_reattaches_detached_relationship() {
     )
     .await;
     assert_eq!(status, 200);
-    assert_eq!(response, json!({"reattached":true}));
+    assert_eq!(response, json!({"success":true,"reattached":true}));
 }
 
 #[tokio::test]
@@ -5040,7 +5041,7 @@ async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
         assert_eq!(status, 200, "{kind} acquired status: {body}");
         match kind {
             "delete_detected" => {
-                assert_eq!(body, json!({"days_modified":["20260101"]}));
+                assert_eq!(body, json!({"success":true,"days_modified":["20260101"]}));
                 assert!(
                     !fs::read_to_string(journal.path().join("facets/work/entities/20260101.jsonl"))
                         .unwrap()
@@ -5056,7 +5057,7 @@ async fn refusal_sites_batch_6_forced_write_outcomes_cover_busy_and_success() {
                 assert_eq!(relationship["detached"], true);
             }
             "detect_entity_route" => {
-                assert_eq!(body, json!({"name":"Alice"}));
+                assert_eq!(body, json!({"success":true,"name":"Alice"}));
                 assert!(
                     fs::read_to_string(journal.path().join("facets/work/entities/20260101.jsonl"))
                         .unwrap()
