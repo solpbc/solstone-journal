@@ -1044,6 +1044,11 @@ format:
 # Clean build artifacts and cache files
 clean:
 	@$(REQUIRE_CARGO)
+	@if [ "$(CLEAN_FORCE)" = "1" ]; then \
+		echo "CLEAN_FORCE=1: skipping live-use census"; \
+	else \
+		$(CURDIR)/scripts/check_rust_target_live_use.sh "$(RUST_TARGET_DIR)"; \
+	fi
 	@echo "Cleaning build artifacts and cache files..."
 	cargo clean --manifest-path $(RUST_MANIFEST)
 	rm -rf build/ dist/ *.egg-info/

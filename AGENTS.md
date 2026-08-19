@@ -113,8 +113,8 @@ Verified against `Makefile`. Grouped by use.
 | `make skills` | Regenerate generated router references, then rewrite the `solstone` + `journal` router skill symlinks into `journal/`. (`make install` depends on this; rarely run alone.) |
 | `make update` | Upgrade all deps to latest, regenerate `uv.lock`. Expect test churn. |
 | `make update-prices` | Refresh genai-prices model-cost data when adding a new provider model or when pricing tests fail. |
-| `make clean` | Remove build artifacts, caches, and the skill symlinks. Does not touch `.venv/`. |
-| `make clean-install` | Nuke `.venv/` and `.installed`, then reinstall. Recovery path when the venv is wedged. |
+| `make clean` | Remove build artifacts, caches, and the skill symlink dirs (`journal/.agents/`, `journal/.claude/`). Does not touch `.venv/`. Before `cargo clean`, refuses if a live process has an open file, mapping, cwd, or executable under this checkout's `RUST_TARGET_DIR` (`core/target`, or `CARGO_TARGET_DIR` if set) and prints blocker pids+paths. Override with `CLEAN_FORCE=1`. |
+| `make clean-install` | Runs `clean` first (same live-use refuse / `CLEAN_FORCE=1`), then deletes `.venv/` and `.installed`, then exits 1 as retired. Recreate a Python tooling venv with `uv sync --group dev` only if a remaining script still needs it. |
 
 ### Run the stack
 
