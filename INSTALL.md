@@ -37,17 +37,15 @@ sudo pacman -S libgomp         # Arch
 
 ### where the files come from
 
-⚠ **the tree is not published yet.** its release channel is `updates.solstone.app`. `install.sh` accepts only that host, re-checking on every redirect hop; loopback is allowed for testing, and `--origin` overrides.
+the release channel is `updates.solstone.app`. `install.sh` accepts only that host, re-checking on every redirect hop; loopback is allowed for testing, and `--origin` overrides. `install.sh` lives in this repository at `core/distribution/install.sh`, and is served from the origin as well.
 
-until the first release lands there, the routes below start from files you already have: a local build, or a copy someone handed you. `install.sh` itself is not inside the tree. today it lives in this repository at `core/distribution/install.sh`, and after the first release it is served from the origin as well.
-
-once it is published, one command does the whole thing, and this becomes the recommended route:
+one command does the whole thing:
 
 ```bash
-sh install.sh --version <version>
+sh install.sh
 ```
 
-that fetches the archive, its checksum and its release record from `updates.solstone.app`, verifies the digest, and installs. the archive route below is the same operation with the files already on disk; the package route is your distribution's installer and does not verify a checksum for you.
+that follows the `release` lane's `latest` pointer, then fetches the archive, its checksum and its release record from `updates.solstone.app`, verifies the digest, and installs. pass `--version <version>` to pin a version instead of following `latest`. pass `--lane staging` or `--lane dev` to install from a non-release lane (testers only; the default lane is `release`). the archive route below is the same operation with the files already on disk; the package route is your distribution's installer and does not verify a checksum for you.
 
 every release names its files the same way: `solstone-journal-<version>-linux-<arch>`, where `<arch>` is `x86_64` or `aarch64`. the three archives are `.tar.gz`, `.deb` and `.rpm`; each release also carries a `.sha256`, a `.manifest.json` and a `.release` record.
 
