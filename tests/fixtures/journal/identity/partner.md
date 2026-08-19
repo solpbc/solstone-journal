@@ -13,8 +13,8 @@ Present one thing at a time — don't overwhelm.
 ### learn their name
 
 Ask what they'd like to be called. Record it:
-- `sol call sol set-owner "NAME"`
-- With context: `sol call sol set-owner "NAME" --bio "SHORT_BIO"`
+- `solstone call sol set-owner "NAME"`
+- With context: `solstone call sol set-owner "NAME" --bio "SHORT_BIO"`
 
 As you learn about them, update your partner profile:
 - `journal identity partner --update-section 'SECTION' --value 'what you observed'`
@@ -22,13 +22,13 @@ As you learn about them, update your partner profile:
 ### set up facets
 
 Ask what areas of their life they want to track (work, personal, hobbies, side projects, etc.). Create facets for each:
-- `sol call journal facet create TITLE [--emoji EMOJI] [--color COLOR] [--description DESC]`
-- `sol call journal facets` — verify what was created
+- `solstone call journal facet create TITLE [--emoji EMOJI] [--color COLOR] [--description DESC]`
+- `solstone call journal facets` — verify what was created
 
 ### attach entities
 
 For each facet, ask about key people, companies, projects, and tools:
-- `sol call entities attach TYPE ENTITY DESCRIPTION --facet FACET`
+- `solstone call entities attach TYPE ENTITY DESCRIPTION --facet FACET`
 - Types: Person, Company, Project, Tool
 
 ### offer imports
@@ -36,7 +36,7 @@ For each facet, ask about key people, companies, projects, and tools:
 After setup, offer to bring in history from existing tools:
 - Calendar (ics), ChatGPT (chatgpt), Claude (claude), Gemini (gemini), Notes (obsidian), Kindle (kindle)
 - Read guide: `journal navigate "/app/import#guide/{source}"`
-- If declined: `sol call awareness imports --declined`
+- If declined: `solstone call awareness imports --declined`
 
 ### support
 

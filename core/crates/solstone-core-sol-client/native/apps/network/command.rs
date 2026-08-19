@@ -234,7 +234,7 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
         {
             push_line(
                 &mut out,
-                "Pair request completed; device should appear in `sol call link list`.",
+                "Pair request completed; device should appear in `solstone call link list`.",
             );
             return CommandOutput::success(out);
         }

@@ -16,7 +16,7 @@ use crate::transport::{
 
 const IMPORT_API: &str = "/app/import/api";
 const JOURNAL_HOST_HINT: &str = "Run this on the journal host with `journal importer`.";
-const HELP: &str = "usage: sol import [-h] [--timestamp TIMESTAMP] [--facet FACET] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--deterministic-only] [--dry-run] [--backends] [--sync BACKEND] [--save] [--path PATH] [--list-importers] [--json] [-v] [media]\n\nImport media through the journal\n";
+const HELP: &str = "usage: solstone import [-h] [--timestamp TIMESTAMP] [--facet FACET] [--setting SETTING] [--source SOURCE] [--force] [--auto [AUTO]] [--deterministic-only] [--dry-run] [--backends] [--sync BACKEND] [--save] [--path PATH] [--list-importers] [--json] [-v] [media]\n\nImport media through the journal\n";
 
 #[must_use]
 pub fn import_top_level(ctx: CommandContext<'_>) -> CommandOutput {
@@ -164,7 +164,7 @@ fn push_positional(parsed: &mut ParsedArgs, value: String) {
 fn reject_unsupported_modes(parsed: &ParsedArgs) -> Option<CommandOutput> {
     if parsed.media.as_deref() == Some("journal-source") {
         return Some(rejected(
-            "journal-source management moved to `sol call import <verb>`.",
+            "journal-source management moved to `solstone call import <verb>`.",
         ));
     }
     if parsed.dry_run {
@@ -210,11 +210,11 @@ fn reject_unsupported_modes(parsed: &ParsedArgs) -> Option<CommandOutput> {
 }
 
 fn rejected(message: impl AsRef<str>) -> CommandOutput {
-    CommandOutput::failure(format!("sol import: {}\n", message.as_ref()), 2)
+    CommandOutput::failure(format!("solstone import: {}\n", message.as_ref()), 2)
 }
 
 fn argparse_error(error: String) -> CommandOutput {
-    CommandOutput::failure(format!("{HELP}sol import: error: {error}\n"), 2)
+    CommandOutput::failure(format!("{HELP}solstone import: error: {error}\n"), 2)
 }
 
 fn run_import(ctx: CommandContext<'_>, parsed: &ParsedArgs) -> CommandOutput {
@@ -226,7 +226,7 @@ fn run_import(ctx: CommandContext<'_>, parsed: &ParsedArgs) -> CommandOutput {
         Ok(response) => response,
         Err(ImportError::Unreachable) => {
             return CommandOutput::failure(
-                "sol import: couldn't reach the journal. Start it with 'journal up' and retry.\n",
+                "solstone import: couldn't reach the journal. Start it with 'journal up' and retry.\n",
                 1,
             );
         }
@@ -250,7 +250,7 @@ fn run_import(ctx: CommandContext<'_>, parsed: &ParsedArgs) -> CommandOutput {
         Err(ImportError::Unreachable) => {
             return CommandOutput::failure(
                 format!(
-                    "sol import: staged {staged_path} but processing was not queued: couldn't reach the journal\n"
+                    "solstone import: staged {staged_path} but processing was not queued: couldn't reach the journal\n"
                 ),
                 1,
             );
@@ -411,17 +411,17 @@ fn map_transport_error(error: ClientError) -> ImportError {
 fn print_client_error(operation: &str, error: ImportError) -> CommandOutput {
     match error {
         ImportError::Malformed => {
-            CommandOutput::failure("sol import: couldn't read journal response\n", 1)
+            CommandOutput::failure("solstone import: couldn't read journal response\n", 1)
         }
         ImportError::Client { error, detail } => {
-            let mut stderr = format!("sol import: failed to {operation}: {error}\n");
+            let mut stderr = format!("solstone import: failed to {operation}: {error}\n");
             if let Some(detail) = detail {
-                stderr.push_str(&format!("sol import: {detail}\n"));
+                stderr.push_str(&format!("solstone import: {detail}\n"));
             }
             CommandOutput::failure(stderr, 1)
         }
         ImportError::Unreachable => CommandOutput::failure(
-            "sol import: couldn't reach the journal. Start it with 'journal up' and retry.\n",
+            "solstone import: couldn't reach the journal. Start it with 'journal up' and retry.\n",
             1,
         ),
     }
@@ -431,22 +431,22 @@ fn print_partial_error(staged_path: &str, error: ImportError) -> CommandOutput {
     match error {
         ImportError::Malformed => CommandOutput::failure(
             format!(
-                "sol import: staged {staged_path} but processing was not queued: couldn't read journal response\n"
+                "solstone import: staged {staged_path} but processing was not queued: couldn't read journal response\n"
             ),
             1,
         ),
         ImportError::Client { error, detail } => {
             let mut stderr = format!(
-                "sol import: staged {staged_path} but processing was not queued: {error}\n"
+                "solstone import: staged {staged_path} but processing was not queued: {error}\n"
             );
             if let Some(detail) = detail {
-                stderr.push_str(&format!("sol import: {detail}\n"));
+                stderr.push_str(&format!("solstone import: {detail}\n"));
             }
             CommandOutput::failure(stderr, 1)
         }
         ImportError::Unreachable => CommandOutput::failure(
             format!(
-                "sol import: staged {staged_path} but processing was not queued: couldn't reach the journal\n"
+                "solstone import: staged {staged_path} but processing was not queued: couldn't reach the journal\n"
             ),
             1,
         ),
@@ -497,7 +497,7 @@ fn print_duplicate(save_response: &Map<String, Value>, json_out: bool) -> Comman
     }
     let duplicate = save_response.get("duplicate").and_then(Value::as_object);
     let Some(duplicate) = duplicate else {
-        return CommandOutput::success("sol import: duplicate import; skipping\n");
+        return CommandOutput::success("solstone import: duplicate import; skipping\n");
     };
     match duplicate.get("state").and_then(Value::as_str) {
         Some("imported") => {
@@ -511,7 +511,7 @@ fn print_duplicate(save_response: &Map<String, Value>, json_out: bool) -> Comman
                 .map(|count| format!(" ({} entries)", display_value(count)))
                 .unwrap_or_default();
             CommandOutput::success(format!(
-                "sol import: already imported on {imported_at}{entries}; skipping\n"
+                "solstone import: already imported on {imported_at}{entries}; skipping\n"
             ))
         }
         Some("staged") => {
@@ -520,10 +520,10 @@ fn print_duplicate(save_response: &Map<String, Value>, json_out: bool) -> Comman
                 .and_then(Value::as_str)
                 .unwrap_or("unknown");
             CommandOutput::success(format!(
-                "sol import: already staged as {import_id}; skipping\n"
+                "solstone import: already staged as {import_id}; skipping\n"
             ))
         }
-        _ => CommandOutput::success("sol import: duplicate import; skipping\n"),
+        _ => CommandOutput::success("solstone import: duplicate import; skipping\n"),
     }
 }
 
@@ -838,35 +838,35 @@ mod tests {
         let cases: Vec<(Vec<&str>, &str)> = vec![
             (
                 vec!["media.txt", "--dry-run"],
-                "sol import: `--dry-run` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--dry-run` requires the journal host. Run this on the journal host with `journal importer`.\n",
             ),
             (
                 vec!["--backends"],
-                "sol import: `--backends` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--backends` requires the journal host. Run this on the journal host with `journal importer`.\n",
             ),
             (
                 vec!["--list-importers"],
-                "sol import: `--list-importers` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--list-importers` requires the journal host. Run this on the journal host with `journal importer`.\n",
             ),
             (
                 vec!["--sync", "plaud"],
-                "sol import: `--sync` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--sync` requires the journal host. Run this on the journal host with `journal importer`.\n",
             ),
             (
                 vec!["media.txt", "--save"],
-                "sol import: `--save` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--save` requires the journal host. Run this on the journal host with `journal importer`.\n",
             ),
             (
                 vec!["media.txt", "--path", "/tmp/source"],
-                "sol import: `--path` requires the journal host. Run this on the journal host with `journal importer`.\n",
+                "solstone import: `--path` requires the journal host. Run this on the journal host with `journal importer`.\n",
             ),
             (
                 vec!["media.txt", "--auto", "timestamps are Pacific"],
-                "sol import: `--auto <guidance>` requires the journal host. Use `--timestamp` here or run `journal importer`.\n",
+                "solstone import: `--auto <guidance>` requires the journal host. Use `--timestamp` here or run `journal importer`.\n",
             ),
             (
                 vec!["journal-source", "list"],
-                "sol import: journal-source management moved to `sol call import <verb>`.\n",
+                "solstone import: journal-source management moved to `solstone call import <verb>`.\n",
             ),
         ];
 
@@ -913,7 +913,7 @@ mod tests {
             output,
             CommandOutput {
                 stdout: String::new(),
-                stderr: "sol import: couldn't read journal response\n".to_string(),
+                stderr: "solstone import: couldn't read journal response\n".to_string(),
                 exit: 1,
             }
         );
@@ -947,7 +947,7 @@ mod tests {
             output,
             CommandOutput {
                 stdout: String::new(),
-                stderr: "sol import: couldn't reach the journal. Start it with 'journal up' and retry.\n".to_string(),
+                stderr: "solstone import: couldn't reach the journal. Start it with 'journal up' and retry.\n".to_string(),
                 exit: 1,
             }
         );
@@ -988,7 +988,7 @@ mod tests {
         assert_eq!(
             output,
             CommandOutput {
-                stdout: "sol import: already staged as 20260101_150000; skipping\n".to_string(),
+                stdout: "solstone import: already staged as 20260101_150000; skipping\n".to_string(),
                 stderr: String::new(),
                 exit: 0,
             }
@@ -1049,7 +1049,7 @@ mod tests {
         assert_eq!(output.stdout, "");
         assert_eq!(
             output.stderr,
-            "sol import: staged /staged/imports/20260101_160000/media.txt but processing was not queued: queue failed\n"
+            "solstone import: staged /staged/imports/20260101_160000/media.txt but processing was not queued: queue failed\n"
         );
         assert_eq!(output.exit, 1);
         assert!(!output.stdout.contains("queued processing"));

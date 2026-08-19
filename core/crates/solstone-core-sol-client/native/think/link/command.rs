@@ -24,10 +24,10 @@ use crate::seam::{
     LinkServeRequest, LinkServeTransportErrorKind,
 };
 
-const HELP: &str = "usage: sol link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n\noptions:\n  -h, --help     show this help message and exit\n  --home HOME    Receiver base URL\n  --code CODE    pair-link URL\n  --as AS_ROLE   Optional tag to join as\n  --label LABEL  Local credentials label (defaults to this machine's hostname)\n";
-const USAGE: &str = "usage: sol link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n";
-const SERVE_HELP: &str = "usage: sol link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Observer link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the spl relay URL\n  --direct              PL-direct only: dial the journal over the LAN secure\n                        listener, never the spl relay. Use when the home is\n                        reachable directly (same LAN/VPN) to avoid any relay\n                        dependency.\n";
-const SERVE_USAGE: &str = "usage: sol link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct]\n";
+const HELP: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n\noptions:\n  -h, --help     show this help message and exit\n  --home HOME    Receiver base URL\n  --code CODE    pair-link URL\n  --as AS_ROLE   Optional tag to join as\n  --label LABEL  Local credentials label (defaults to this machine's hostname)\n";
+const USAGE: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n";
+const SERVE_HELP: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Observer link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the spl relay URL\n  --direct              PL-direct only: dial the journal over the LAN secure\n                        listener, never the spl relay. Use when the home is\n                        reachable directly (same LAN/VPN) to avoid any relay\n                        dependency.\n";
+const SERVE_USAGE: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct]\n";
 const DEFAULT_CLIENT_LABEL: &str = "linked-system";
 const DEFAULT_SERVE_PORT: u16 = 5015;
 const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
@@ -381,7 +381,7 @@ fn take_raw_value<'a>(args: &'a [String], index: usize, option: &str) -> Result<
 }
 
 fn argparse_serve_error(error: String) -> CommandOutput {
-    CommandOutput::failure(format!("{SERVE_USAGE}sol link serve: error: {error}\n"), 2)
+    CommandOutput::failure(format!("{SERVE_USAGE}solstone link serve: error: {error}\n"), 2)
 }
 
 fn resolve_serve_bundle(
@@ -392,7 +392,7 @@ fn resolve_serve_bundle(
         let bundle_dir = observer_bundle_dir(label, env)?;
         let bundle = load_serve_bundle(&bundle_dir).map_err(|error| {
             format!(
-                "invalid link bundle for label '{label}' at {}: {error}. Run `sol link join` to pair this device.",
+                "invalid link bundle for label '{label}' at {}: {error}. Run `solstone link join` to pair this device.",
                 bundle_dir.display()
             )
         })?;
@@ -419,7 +419,7 @@ fn resolve_serve_bundle(
     }
     if bundles.is_empty() {
         return Err(format!(
-            "no observer link bundles found under {}. Run `sol link join` to pair this device.",
+            "no observer link bundles found under {}. Run `solstone link join` to pair this device.",
             root.display()
         ));
     }
@@ -575,7 +575,7 @@ fn resolve_serve_relay_url(value: Option<&str>, env: &BTreeMap<String, String>) 
 }
 
 fn argparse_error(error: String) -> CommandOutput {
-    CommandOutput::failure(format!("{USAGE}sol link join: error: {error}\n"), 2)
+    CommandOutput::failure(format!("{USAGE}solstone link join: error: {error}\n"), 2)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -601,7 +601,7 @@ struct RelayPairRequest {
 fn parse_pair_request(code: &str, home: Option<&str>) -> Result<PairRequest, String> {
     if !code.starts_with(PAIR_LINK_PREFIX) {
         return Err(format!(
-            "Pair code did not match an accepted form. Use a pair-link like {PAIR_LINK_PREFIX}... from 'sol call link pair'."
+            "Pair code did not match an accepted form. Use a pair-link like {PAIR_LINK_PREFIX}... from 'solstone call link pair'."
         ));
     }
     match spl_core::pairlink::parse(code) {
@@ -928,12 +928,12 @@ fn pairing_error_text(error: LinkJoinPairingError) -> String {
 fn serve_error_text(error: LinkServeError) -> String {
     match error.kind {
         LinkServeErrorKind::InvalidBundle => {
-            "Link credentials are invalid. Run sol link join before sol link serve.".to_string()
+            "Link credentials are invalid. Run solstone link join before solstone link serve.".to_string()
         }
         LinkServeErrorKind::Bind { port, addr_in_use } => {
             if addr_in_use {
                 format!(
-                    "cannot bind 127.0.0.1:{port}: address already in use. Another `sol link serve` or Convey may already be using that port."
+                    "cannot bind 127.0.0.1:{port}: address already in use. Another `solstone link serve` or Convey may already be using that port."
                 )
             } else {
                 format!("cannot bind 127.0.0.1:{port}: bind failed")
@@ -956,10 +956,10 @@ fn serve_transport_error_text(kind: LinkServeTransportErrorKind) -> String {
             "Link transport I/O failed while serving. Check that the journal is reachable on LAN/VPN or relay, then retry.".to_string()
         }
         LinkServeTransportErrorKind::Tls => {
-            "Secure link handshake failed. Re-run sol link join if the journal certificate or pairing changed.".to_string()
+            "Secure link handshake failed. Re-run solstone link join if the journal certificate or pairing changed.".to_string()
         }
         LinkServeTransportErrorKind::Crypto => {
-            "Link credential material is invalid. Re-run sol link join for this observer.".to_string()
+            "Link credential material is invalid. Re-run solstone link join for this observer.".to_string()
         }
         LinkServeTransportErrorKind::Mux => {
             "SPL stream framing failed while serving. Retry; re-pair if it continues.".to_string()
@@ -971,10 +971,10 @@ fn serve_transport_error_text(kind: LinkServeTransportErrorKind) -> String {
             "Relay or bridge JSON could not be parsed. Check the relay URL and retry.".to_string()
         }
         LinkServeTransportErrorKind::PairLink => {
-            "Stored pairing data is invalid. Re-run sol link join for this observer.".to_string()
+            "Stored pairing data is invalid. Re-run solstone link join for this observer.".to_string()
         }
         LinkServeTransportErrorKind::Pairing => {
-            "Link credential or relay enrollment failed. Re-run sol link join if retrying does not fix it.".to_string()
+            "Link credential or relay enrollment failed. Re-run solstone link join if retrying does not fix it.".to_string()
         }
         LinkServeTransportErrorKind::Rejected { status } => {
             format!("The paired journal rejected the link request with HTTP {status}.")
@@ -983,18 +983,18 @@ fn serve_transport_error_text(kind: LinkServeTransportErrorKind) -> String {
         LinkServeTransportErrorKind::RelayControlRejected { endpoint, status } => {
             match endpoint {
                 crate::seam::LinkServeRelayControlEndpoint::EnrollDevice => format!(
-                    "Relay enrollment was rejected with HTTP {status}. Re-run sol link join if the bundle attestation is stale."
+                    "Relay enrollment was rejected with HTTP {status}. Re-run solstone link join if the bundle attestation is stale."
                 ),
                 crate::seam::LinkServeRelayControlEndpoint::TokenRefresh => format!(
-                    "Relay token refresh was rejected with HTTP {status}. Re-run sol link join for this observer."
+                    "Relay token refresh was rejected with HTTP {status}. Re-run solstone link join for this observer."
                 ),
             }
         }
         LinkServeTransportErrorKind::NoEndpoint => {
-            "No journal endpoint is available. Re-run sol link join or pass --relay-url unless using --direct intentionally.".to_string()
+            "No journal endpoint is available. Re-run solstone link join or pass --relay-url unless using --direct intentionally.".to_string()
         }
         LinkServeTransportErrorKind::NotPaired => {
-            "Link credentials are missing. Run sol link join before sol link serve.".to_string()
+            "Link credentials are missing. Run solstone link join before solstone link serve.".to_string()
         }
         LinkServeTransportErrorKind::LocalOffset => {
             "Local offset lookup failed. Check the system clock and retry.".to_string()
@@ -1008,16 +1008,16 @@ fn serve_relay_error_text(error: crate::seam::LinkServeRelayErrorKind) -> &'stat
             "The relay reports the home journal is offline. Start the journal or use --direct on LAN/VPN."
         }
         crate::seam::LinkServeRelayErrorKind::Unauthorized => {
-            "The relay rejected this observer token. Re-run sol link join for this observer."
+            "The relay rejected this observer token. Re-run solstone link join for this observer."
         }
         crate::seam::LinkServeRelayErrorKind::Unpaid => {
             "The relay account is not available. Check relay service/account status or use --direct."
         }
         crate::seam::LinkServeRelayErrorKind::UnknownInstance => {
-            "The relay does not know this journal instance. Re-run sol link join."
+            "The relay does not know this journal instance. Re-run solstone link join."
         }
         crate::seam::LinkServeRelayErrorKind::PairWindowClosed => {
-            "The relay pairing window is closed. Re-run sol link join from a fresh code."
+            "The relay pairing window is closed. Re-run solstone link join from a fresh code."
         }
         crate::seam::LinkServeRelayErrorKind::Overflow => {
             "The relay is temporarily overloaded. Retry or use --direct on LAN/VPN."
@@ -1531,7 +1531,7 @@ mod tests {
         let clock = FakeClock::at_unix(0);
         let output = run(&["--help"], &env, &root, &seam, &clock);
         assert_eq!(output, CommandOutput::success(HELP));
-        assert_eq!(HELP.len(), 349);
+        assert_eq!(HELP.len(), 354);
         seam.assert_done();
     }
 
@@ -1544,8 +1544,8 @@ mod tests {
             Ok(_) => panic!("help must not enter resident serve"),
         };
         assert_eq!(output, CommandOutput::success(SERVE_HELP));
-        assert_eq!(SERVE_HELP.len(), 638);
-        assert_eq!(SERVE_USAGE.len(), 114);
+        assert_eq!(SERVE_HELP.len(), 643);
+        assert_eq!(SERVE_USAGE.len(), 119);
         runner.assert_done();
     }
 
@@ -1554,18 +1554,18 @@ mod tests {
         let cases = [
             (
                 vec!["--unknown"],
-                format!("{SERVE_USAGE}sol link serve: error: unrecognized arguments: --unknown\n"),
+                format!("{SERVE_USAGE}solstone link serve: error: unrecognized arguments: --unknown\n"),
             ),
             (
                 vec!["--label"],
                 format!(
-                    "{SERVE_USAGE}sol link serve: error: argument --label: expected one argument\n"
+                    "{SERVE_USAGE}solstone link serve: error: argument --label: expected one argument\n"
                 ),
             ),
             (
                 vec!["--port", "abc"],
                 format!(
-                    "{SERVE_USAGE}sol link serve: error: argument --port: invalid int value: 'abc'\n"
+                    "{SERVE_USAGE}solstone link serve: error: argument --port: invalid int value: 'abc'\n"
                 ),
             ),
             (
@@ -1742,7 +1742,7 @@ mod tests {
         assert_eq!(bind.exit, 1);
         assert_eq!(
             bind.stderr,
-            "cannot bind 127.0.0.1:5015: address already in use. Another `sol link serve` or Convey may already be using that port.\n"
+            "cannot bind 127.0.0.1:5015: address already in use. Another `solstone link serve` or Convey may already be using that port.\n"
         );
         bind_runner.assert_done();
 
@@ -1768,7 +1768,7 @@ mod tests {
         assert_eq!(enrollment.exit, 1);
         assert_eq!(
             enrollment.stderr,
-            "Relay enrollment was rejected with HTTP 401. Re-run sol link join if the bundle attestation is stale.\n"
+            "Relay enrollment was rejected with HTTP 401. Re-run solstone link join if the bundle attestation is stale.\n"
         );
         enroll_runner.assert_done();
     }
@@ -1821,7 +1821,7 @@ mod tests {
         let output = run(&[], &env, &root, &seam, &clock);
         assert_eq!(
             output.stderr,
-            format!("{USAGE}sol link join: error: the following arguments are required: --code\n")
+            format!("{USAGE}solstone link join: error: the following arguments are required: --code\n")
         );
         assert_eq!(output.exit, 2);
         seam.assert_done();

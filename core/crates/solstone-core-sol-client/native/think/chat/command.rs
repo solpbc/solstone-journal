@@ -19,7 +19,7 @@ const EMPTY_ANSWER_MESSAGE: &str = "sol: Sol returned an empty answer.";
 const MALFORMED_RESPONSE_MESSAGE: &str = "I couldn't read the chat response.";
 const COMPOSING_MESSAGE: &str = "Composing your answer…";
 const CHAT_LIVENESS_THINKING: &str = "sol is thinking…";
-const HELP: &str = "usage: sol chat [-h] [--facet FACET] [-v] [-d] [message ...]\n\nChat with your journal\n\npositional arguments:\n  message        Chat message\n\noptions:\n  -h, --help     show this help message and exit\n  --facet FACET  Facet context\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n";
+const HELP: &str = "usage: solstone chat [-h] [--facet FACET] [-v] [-d] [message ...]\n\nChat with your journal\n\npositional arguments:\n  message        Chat message\n\noptions:\n  -h, --help     show this help message and exit\n  --facet FACET  Facet context\n  -v, --verbose  Enable verbose output\n  -d, --debug    Enable debug logging\n";
 const POLL_SECONDS: u64 = 2;
 const IDLE_CEILING_SECONDS: u64 = 240;
 
@@ -129,7 +129,7 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
 }
 
 fn argparse_error(error: String) -> CommandOutput {
-    CommandOutput::failure(format!("{HELP}sol chat: error: {error}\n"), 2)
+    CommandOutput::failure(format!("{HELP}solstone chat: error: {error}\n"), 2)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -630,7 +630,7 @@ mod tests {
 
     #[test]
     fn chat_help_matches_argparse_surface() {
-        assert!(HELP.starts_with("usage: sol chat "));
+        assert!(HELP.starts_with("usage: solstone chat "));
         assert!(HELP.contains("--facet FACET  Facet context"));
     }
 

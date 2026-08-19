@@ -149,7 +149,7 @@ pub enum TransferError {
     #[error("journal day {0} has no segments")]
     NoSegments(String),
     /// No paired peers are available in this journal.
-    #[error("no peers paired (run \"sol link join --as peer\" first)")]
+    #[error("no peers paired (run \"solstone link join --as peer\" first)")]
     NoPeersPaired,
     /// No peer has the requested label.
     #[error("no peer with label \"{label}\"; available: {available}")]

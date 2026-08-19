@@ -333,7 +333,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         assert_eq!(
             resolve_peer(root.path(), "office").unwrap_err().to_string(),
-            "no peers paired (run \"sol link join --as peer\" first)"
+            "no peers paired (run \"solstone link join --as peer\" first)"
         );
         let peers = root.path().join("peers");
         for (directory, label, instance_id) in [

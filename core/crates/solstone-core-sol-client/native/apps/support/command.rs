@@ -89,7 +89,7 @@ pub fn search(ctx: CommandContext<'_>) -> CommandOutput {
     }
     lines.push(String::new());
     lines.push(format!(
-        "{} article(s) found. Use `sol call support article <slug>` to read.",
+        "{} article(s) found. Use `solstone call support article <slug>` to read.",
         items.len()
     ));
     stdout(lines)
@@ -225,7 +225,7 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
             }
             out.stdout.push(String::new());
             out.stdout.push(
-                "These may answer your question. Use `sol call support article <slug>` to read."
+                "These may answer your question. Use `solstone call support article <slug>` to read."
                     .to_string(),
             );
             if !parsed.has_flag("--yes") {
@@ -867,7 +867,7 @@ pub fn history(ctx: CommandContext<'_>) -> CommandOutput {
     }
     if let Some(cursor) = data["next_cursor"].as_str() {
         lines.push(format!(
-            "Run `sol call support history --cursor {cursor}` for more."
+            "Run `solstone call support history --cursor {cursor}` for more."
         ));
     } else {
         lines.push("No more closed tickets.".to_string());
