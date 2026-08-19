@@ -358,18 +358,21 @@ fn load_passphrase(key_path: &Path) -> Result<String, SignError> {
 }
 
 fn pass_path(key_path: &Path) -> PathBuf {
-    let mut path = key_path.as_os_str().to_os_string();
-    path.push(".pass");
-    PathBuf::from(path)
+    key_path.with_extension("pass")
 }
 
 fn decode_passphrase(bytes: Vec<u8>) -> Result<String, SignError> {
-    String::from_utf8(bytes).map_err(|_| {
+    let text = String::from_utf8(bytes).map_err(|_| {
         SignError::new(
             SignRefusal::MissingPassphrase,
             "passphrase is not valid UTF-8".to_owned(),
         )
-    })
+    })?;
+    Ok(text
+        .strip_suffix("\r\n")
+        .or_else(|| text.strip_suffix('\n'))
+        .unwrap_or(text.as_str())
+        .to_owned())
 }
 
 fn load_secret_key(key_path: &Path, passphrase: String) -> Result<SecretKey, SignError> {

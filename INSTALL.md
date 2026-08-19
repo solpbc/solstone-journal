@@ -45,11 +45,53 @@ one command does the whole thing, once a release has been published:
 sh install.sh
 ```
 
-that follows the `release` lane's `latest` pointer, then fetches the archive, its checksum and its release record from `updates.solstone.app`, verifies the digest, and installs. ⚠ **the `release` lane is empty until the first cut**, so that command refuses today. pass `--lane staging` or `--lane dev` to install from a published candidate (testers only; the default lane is `release`). pass `--version <version>` to pin a version instead of following `latest`. the archive route below is the same operation with the files already on disk; the package route is your distribution's installer and does not verify a checksum for you.
+that follows the `release` lane's `latest` pointer, then fetches the archive, its checksum and its release record from `updates.solstone.app`, verifies the digest, and installs. ⚠ **the `release` lane is empty until the first cut**, so that command refuses today. pass `--lane staging` or `--lane dev` to install from a published candidate (testers only; the default lane is `release`). pass `--version <version>` to pin a version instead of following `latest`. the archive route below is the same operation with the files already on disk.
 
-every release names its files the same way: `solstone-journal-<version>-linux-<arch>`, where `<arch>` is `x86_64` or `aarch64`. the three archives are `.tar.gz`, `.deb` and `.rpm`; each release also carries a `.sha256`, a `.manifest.json` and a `.release` record.
+every release names its files the same way: `solstone-journal-<version>-linux-<arch>`, where `<arch>` is `x86_64` or `aarch64`. the three archives are `.tar.gz`, `.deb` and `.rpm`. each release also carries a `.sha256`, a `.manifest.json`, a `.manifest.json.minisig` and a `.release` record.
+
+### verify first
+
+one minisign signature covers every archive in the set. you run this. `apt` and `dnf` do not.
+
+```bash
+minisign -Vm solstone-journal-<version>-linux-x86_64.manifest.json \
+  -p solstone-journal-release.pub
+```
+
+if it refuses, stop. then install.
+
+the public key is in this repository at `packaging/keys/solstone-journal-release.pub`. once the channel is live it is also at `https://updates.solstone.app/solstone-journal/minisign.pub`. install minisign from your distribution if you do not have it (`apt install minisign` or `dnf install minisign`).
+
+`install.sh` checks the sha256. it does not check this signature. that is why this command comes first.
+
+### the archive
+
+this is the route that verifies a digest for you, after the signature check above. for a machine you do not administer, or a prefix you choose:
+
+```bash
+minisign -Vm solstone-journal-<version>-linux-x86_64.manifest.json \
+  -p solstone-journal-release.pub
+sh install.sh --archive solstone-journal-<version>-linux-x86_64.tar.gz \
+              --sha256 solstone-journal-<version>-linux-x86_64.sha256 \
+              --release solstone-journal-<version>-linux-x86_64.release
+```
+
+with no `--prefix` it installs under `~/.local/solstone-journal`, keeps each version in its own directory, and points a `current` symlink at the live one. it adds `current/bin` to PATH by writing a block into `~/.profile` between `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`. `--no-path` skips that edit, so a throwaway or side-by-side prefix does not touch your login files. on success it prints the version, the prefix, and how to pick up PATH.
+
+⚠ **`~/.profile` is read by login shells.** a new terminal window on most linux desktops is not one, and zsh does not read it at all. either log out and back in, or:
+
+```bash
+. ~/.profile
+```
 
 ### a distribution package
+
+`apt` and `dnf` do not check our signature. run this first, then install:
+
+```bash
+minisign -Vm solstone-journal-<version>-linux-x86_64.manifest.json \
+  -p solstone-journal-release.pub
+```
 
 on Debian or Ubuntu:
 
@@ -65,32 +107,6 @@ sudo dnf install ./solstone-journal-<version>-linux-x86_64.rpm
 
 either one puts `sol`, `solstone` and `journal` on PATH for every account on the machine.
 
-### the archive
-
-for a machine you do not administer, or a prefix you choose:
-
-```bash
-sh install.sh --archive solstone-journal-<version>-linux-x86_64.tar.gz \
-              --sha256 solstone-journal-<version>-linux-x86_64.sha256 \
-              --release solstone-journal-<version>-linux-x86_64.release
-```
-
-with no `--prefix` it installs under `~/.local/solstone-journal`, keeps each version in its own directory, and points a `current` symlink at the live one. it adds `current/bin` to PATH by writing a block into `~/.profile` between `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`. `--no-path` skips that edit, so a throwaway or side-by-side prefix does not touch your login files. on success it prints the version, the prefix, and how to pick up PATH.
-
-⚠ **`~/.profile` is read by login shells.** a new terminal window on most linux desktops is not one, and zsh does not read it at all. either log out and back in, or:
-
-```bash
-. ~/.profile
-```
-
-**to verify the archive by hand** — `install.sh` already does this for you:
-
-```bash
-sha256sum --ignore-missing -c solstone-journal-<version>-linux-x86_64.sha256
-```
-
-⚠ `--ignore-missing` is not optional: the checksum file carries one line for each of the three archives, so a plain `-c` fails on the two you did not download.
-
 ### one tree, whichever machine
 
 there is no separate download for talking to a journal running elsewhere. the tree carries `sol` and `solstone` alongside the journal binaries, so one install covers both roles. you carry a few binaries you will not run, and nothing else changes.
@@ -101,13 +117,15 @@ apple silicon only. `install.sh` refuses any other mac by name.
 
 ⚠ **the tree is not published yet.** same origin and same bootstrap as linux, above. until the first release lands on `updates.solstone.app`, start from the files you have. `install.sh` lives in this repository at `core/distribution/install.sh`.
 
-every release names its files `solstone-journal-<version>-macos-arm64`. the two containers are a `.tar.gz` and a signed, notarized, stapled `.pkg`. each release also carries a `.sha256`, a `.manifest.json`, a `.release` record, and a `.signing.json`.
+every release names its files `solstone-journal-<version>-macos-arm64`. the two containers are a `.tar.gz` and a signed, notarized, stapled `.pkg`. each release also carries a `.sha256`, a `.manifest.json`, a `.manifest.json.minisig`, a `.release` record, and a `.signing.json`.
 
 ### the archive
 
-this is the route to run. it does not need administrator rights and it does not write `/usr/local`:
+this is the route to run. it does not need administrator rights and it does not write `/usr/local`. run this first, then install. the minisign check is a step you take; it does not replace Apple's signature on the `.pkg`.
 
 ```bash
+minisign -Vm solstone-journal-<version>-macos-arm64.manifest.json \
+  -p solstone-journal-release.pub
 sh core/distribution/install.sh \
   --archive solstone-journal-<version>-macos-arm64.tar.gz \
   --sha256 solstone-journal-<version>-macos-arm64.sha256 \
@@ -133,9 +151,11 @@ the checksum file carries one line for each container. if you only have the tarb
 
 ### the package
 
-the `.pkg` is the `/usr/local` route: same tree, signed with Developer ID Installer, notarized, and stapled. `/usr/local/bin` is already on the default PATH via `/etc/paths`.
+the `.pkg` is the `/usr/local` route: same tree, signed with Developer ID Installer, notarized, and stapled. `/usr/local/bin` is already on the default PATH via `/etc/paths`. Apple's signature is that chain. our minisign check is a step you take; `installer` does not run it.
 
 ```bash
+minisign -Vm solstone-journal-<version>-macos-arm64.manifest.json \
+  -p solstone-journal-release.pub
 sudo installer -pkg solstone-journal-<version>-macos-arm64.pkg -target /
 ```
 

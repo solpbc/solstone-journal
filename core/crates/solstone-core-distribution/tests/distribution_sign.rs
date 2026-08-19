@@ -244,7 +244,7 @@ fn stdin_passphrase_writes_verifiable_minisig() {
 #[test]
 fn adjacent_pass_file_signs_and_wrong_pass_refuses() {
     let fixture = build_fixture("passfile");
-    let pass_path = PathBuf::from(format!("{}.pass", fixture.key_path.display()));
+    let pass_path = fixture.key_path.with_extension("pass");
     fs::write(&pass_path, PASSPHRASE.as_bytes()).expect("write .pass");
     sign_ok(&fixture.dest, &fixture.key_path, &fixture.pin_path, b"");
     let minisig = minisig_path(&fixture);
