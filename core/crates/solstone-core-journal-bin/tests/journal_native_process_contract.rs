@@ -1462,10 +1462,10 @@ fn native_setup_full_run_never_reaches_a_poisoned_interpreter() {
     prove_poison_interpreters_live(&context);
     let fixture = locate_workspace_binary("solstone-core-journal-bin", "setup-fixture-journal");
     let journal = context.sibling_dir.join("journal");
-    let sol = context.sibling_dir.join("sol");
+    let solstone = context.sibling_dir.join("solstone");
     fs::remove_file(&journal).expect("replace dispatcher journal link");
     copy_executable(&fixture, &journal);
-    copy_executable(&fixture, &sol);
+    copy_executable(&fixture, &solstone);
     let run = |path: &Path, journal_path: &Path| {
         let _ = fs::remove_file(context.poison_marker);
         let output = Command::new(&journal)
@@ -1931,15 +1931,15 @@ fn native_config_branches_remain_poison_clean_through_dispatcher() {
     let aliases = context.home.join(".local/bin");
     fs::create_dir_all(&aliases).expect("create wrapper directory");
     let current = context.home.join("current-journal");
-    let sol = aliases.join("sol");
+    let solstone = aliases.join("solstone");
     fs::write(
-        &sol,
+        &solstone,
         format!(
-            "# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nSOL_BIN='/native/sol'\n",
+            "# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nSOL_BIN='/native/solstone'\n",
             current.display()
         ),
     )
-    .expect("write managed sol wrapper");
+    .expect("write managed solstone wrapper");
 
     let plan_target = context.home.join("planned-journal");
     let plan_target_arg = plan_target.display().to_string();
