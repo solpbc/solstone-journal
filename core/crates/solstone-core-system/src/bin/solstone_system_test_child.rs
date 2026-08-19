@@ -3,10 +3,12 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
 use solstone_core_system::lifecycle::SupervisorLifecycle;
+use solstone_core_system::process::{ManagedProcess, SpawnOptions, apply_parent_death_kill};
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -20,6 +22,41 @@ fn main() {
             let _ = std::io::stderr().write_all(b"stderr-line\n");
         }
         "sleep" => std::thread::sleep(Duration::from_secs(30)),
+        "host-death-managed" => {
+            let ready_path = args.next().expect("ready path");
+            let journal_root = args.next().expect("journal root");
+            let executable = std::env::current_exe().expect("fixture executable");
+            let process = ManagedProcess::spawn(
+                vec![
+                    executable.to_string_lossy().into_owned(),
+                    "sleep".to_owned(),
+                ],
+                SpawnOptions {
+                    journal_root: PathBuf::from(journal_root),
+                    reference: "host-death".to_owned(),
+                    day: None,
+                    sink: None,
+                    environment: Default::default(),
+                },
+            )
+            .expect("spawn host-death managed child");
+            std::fs::write(&ready_path, process.pid().to_string()).expect("signal readiness");
+            std::thread::sleep(Duration::from_secs(30));
+        }
+        "host-death-direct" => {
+            let ready_path = args.next().expect("ready path");
+            let executable = std::env::current_exe().expect("fixture executable");
+            let mut command = Command::new(executable);
+            command.arg("sleep");
+            apply_parent_death_kill(&mut command);
+            // This process is about to be killed externally to simulate host
+            // death; the child outliving it (or being reaped by PDEATHSIG) is
+            // exactly what the test observes, so it is never wait()ed on here.
+            #[allow(clippy::zombie_processes)]
+            let child = command.spawn().expect("spawn host-death direct child");
+            std::fs::write(&ready_path, child.id().to_string()).expect("signal readiness");
+            std::thread::sleep(Duration::from_secs(30));
+        }
         "hold-supervisor-lock" => {
             let journal = args.next().expect("journal path");
             let ready_path = args.next().expect("ready path");

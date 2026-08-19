@@ -27,6 +27,8 @@ use solstone_core_local::plan::{PlanBackend, PlanInput, Platform, VulkanDevice};
 use solstone_core_local::plan::{PlanOutcome, plan};
 use solstone_core_local::{ConnectInput, ConnectOutcome, LoopbackAddr, connect};
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use crate::process::apply_parent_death_kill;
 use crate::process::{SERVICE_SHUTDOWN_TIMEOUT, terminate};
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -302,7 +304,26 @@ impl LifecycleSeam for LocalLifecycleSeam {
                     )
                 })
                 .unwrap_or_else(launch_failed);
+            // PR_SET_PDEATHSIG tracks the creating *thread*, Linux-only.
+            // Stay alive while the child is live so exiting this worker does
+            // not SIGKILL it; stop polling once terminate() (or exit) reaps it.
+            #[cfg(target_os = "linux")]
+            let hold_pid = outcome.managed.as_ref().and_then(|managed| {
+                managed
+                    .id
+                    .rsplit_once(':')
+                    .and_then(|(_, pid)| pid.parse::<u32>().ok())
+            });
+            #[cfg(not(target_os = "linux"))]
+            let _hold_pid: Option<u32> = None;
             shared.record_launch_result(&fence, outcome);
+            #[cfg(target_os = "linux")]
+            if let Some(pid) = hold_pid {
+                let pid = i32::try_from(pid).unwrap_or(i32::MAX);
+                while crate::process::process_alive(pid) {
+                    thread::park_timeout(Duration::from_secs(2));
+                }
+            }
         });
     }
 
@@ -801,10 +822,10 @@ fn spawn_plan(plan: &solstone_core_local::plan::LaunchPlan) -> std::io::Result<C
             "local launch plan has no argv",
         )
     })?;
-    Command::new(program)
-        .args(arguments)
-        .envs(&plan.extra_env)
-        .spawn()
+    let mut command = Command::new(program);
+    command.args(arguments).envs(&plan.extra_env);
+    apply_parent_death_kill(&mut command);
+    command.spawn()
 }
 
 fn launch_failed() -> ProviderLaunchOutcome {

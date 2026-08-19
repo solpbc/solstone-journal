@@ -27,6 +27,8 @@ use std::collections::BTreeMap;
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 use std::collections::BTreeSet;
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use crate::process::apply_parent_death_kill;
 use crate::process::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
 use crate::process::{SERVICE_SHUTDOWN_TIMEOUT, terminate};
 
@@ -553,7 +555,26 @@ impl LifecycleSeam for ParakeetLifecycleSeam {
                     )
                 })
                 .unwrap_or_else(launch_failed);
+            // PR_SET_PDEATHSIG tracks the creating *thread*, Linux-only.
+            // Stay alive while the child is live so exiting this worker does
+            // not SIGKILL it; stop polling once terminate() (or exit) reaps it.
+            #[cfg(target_os = "linux")]
+            let hold_pid = outcome.managed.as_ref().and_then(|managed| {
+                managed
+                    .id
+                    .rsplit_once(':')
+                    .and_then(|(_, pid)| pid.parse::<u32>().ok())
+            });
+            #[cfg(not(target_os = "linux"))]
+            let _hold_pid: Option<u32> = None;
             shared.record_launch_result(&fence, outcome);
+            #[cfg(target_os = "linux")]
+            if let Some(pid) = hold_pid {
+                let pid = i32::try_from(pid).unwrap_or(i32::MAX);
+                while crate::process::process_alive(pid) {
+                    thread::park_timeout(Duration::from_secs(2));
+                }
+            }
         });
     }
 
@@ -794,10 +815,10 @@ fn spawn_parakeet(
             "parakeet launch command has no argv",
         )
     })?;
-    Command::new(program)
-        .args(arguments)
-        .envs(env_updates)
-        .spawn()
+    let mut command = Command::new(program);
+    command.args(arguments).envs(env_updates);
+    apply_parent_death_kill(&mut command);
+    command.spawn()
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

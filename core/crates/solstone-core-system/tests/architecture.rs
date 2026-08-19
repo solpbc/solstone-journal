@@ -26,6 +26,7 @@ const SPAWN: &str = include_str!("../src/process/spawn.rs");
 const TERMINATE: &str = include_str!("../src/process/terminate.rs");
 const DESCENDANTS: &str = include_str!("../src/process/descendants.rs");
 const OBSERVATION: &str = include_str!("../src/process/observation.rs");
+const PDEATHSIG: &str = include_str!("../src/process/pdeathsig.rs");
 const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
 const LIFECYCLE_ADMISSION: &str = include_str!("../src/lifecycle/admission.rs");
 const LIFECYCLE_READINESS: &str = include_str!("../src/lifecycle/readiness.rs");
@@ -174,6 +175,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("events", EVENTS),
         ("log", LOG),
         ("observation", OBSERVATION),
+        ("pdeathsig", PDEATHSIG),
         ("restart", RESTART),
         ("spawn", SPAWN),
         ("terminate", TERMINATE),
@@ -331,6 +333,14 @@ fn ac17_running_slots_are_released_by_the_worker_lease_drop_path() {
     assert!(QUEUE.contains("impl Drop for WorkerLease"));
     assert!(QUEUE.contains("finish_worker(&self.inner, &self.partition, &self.reference)"));
     assert!(QUEUE.contains("let _lease = WorkerLease"));
+}
+
+#[test]
+fn ac27_spawn_plan_and_spawn_parakeet_apply_parent_death_kill() {
+    assert!(PROVIDER_RUNTIME_LAUNCH.contains("fn spawn_plan"));
+    assert!(PROVIDER_RUNTIME_LAUNCH.contains("apply_parent_death_kill"));
+    assert!(PROVIDER_RUNTIME_PARAKEET.contains("fn spawn_parakeet"));
+    assert!(PROVIDER_RUNTIME_PARAKEET.contains("apply_parent_death_kill"));
 }
 
 #[test]

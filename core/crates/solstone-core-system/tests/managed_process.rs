@@ -6,12 +6,12 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use solstone_core_system::process::{
-    CAP_TERMINATION_TIMEOUT, EXIT_TEMPFAIL, KILL_REAP_GRACE, ManagedProcess, OutputStream,
-    ProcessEvent, ProcessEventSink, RestartPolicy, SERVICE_SHUTDOWN_TIMEOUT, SpawnOptions,
-    TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, describe_exit,
+    CAP_TERMINATION_TIMEOUT, DRAIN_JOIN_TIMEOUT, EXIT_TEMPFAIL, KILL_REAP_GRACE, ManagedProcess,
+    OutputStream, ProcessEvent, ProcessEventSink, RestartPolicy, SERVICE_SHUTDOWN_TIMEOUT,
+    SpawnOptions, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, describe_exit,
     exit_status_for_code,
 };
 
@@ -121,6 +121,32 @@ fn ac13_escaped_setsid_descendant_is_reaped_by_its_snapshotted_pid() {
         "escaped setsid descendant {grandchild_pid} survived termination"
     );
     process.cleanup();
+}
+
+#[test]
+fn ac24_drop_reaps_snapshotted_setsid_descendant() {
+    let bed = Bed::new("drop-escaped");
+    let ready = bed.root.join("escaped-ready");
+    let process = bed.spawn(
+        "drop-escaped",
+        &["setsid-grandchild", ready.to_str().expect("utf8")],
+    );
+    wait_for_ready(&ready);
+    let grandchild_pid: u32 = fs::read_to_string(&ready)
+        .expect("read escaped grandchild pid")
+        .trim()
+        .parse()
+        .expect("escaped grandchild published its pid");
+    assert!(
+        !process_is_gone(grandchild_pid),
+        "fixture precondition: the escaped grandchild must be alive before drop"
+    );
+
+    drop(process);
+    assert!(
+        process_is_gone(grandchild_pid),
+        "escaped setsid descendant {grandchild_pid} survived Drop"
+    );
 }
 
 #[test]
@@ -350,4 +376,85 @@ fn ac22_independent_managed_processes_run_concurrently_without_cross_talk() {
     ));
     first.cleanup();
     second.cleanup();
+}
+
+#[test]
+fn ac23_drop_terminates_a_live_child() {
+    let bed = Bed::new("drop-live");
+    let process = bed.spawn("drop-live", &["sleep"]);
+    let pid = process.pid();
+    assert!(
+        !process_is_gone(pid),
+        "fixture precondition: child is alive"
+    );
+    let started = Instant::now();
+    drop(process);
+    assert!(
+        started.elapsed() < SERVICE_SHUTDOWN_TIMEOUT + DRAIN_JOIN_TIMEOUT + Duration::from_secs(1),
+        "Drop must return within the named terminate+drain windows"
+    );
+    assert!(process_is_gone(pid), "live child survived Drop");
+}
+
+#[test]
+fn ac25_drain_join_timeout_is_the_named_two_second_backstop() {
+    assert_eq!(DRAIN_JOIN_TIMEOUT, Duration::from_secs(2));
+}
+
+#[test]
+fn ac26_drop_after_reap_does_not_attempt_termination() {
+    let bed = Bed::new("drop-reaped");
+    let mut process = bed.spawn("drop-reaped", &["lines"]);
+    let _ = process.wait().expect("fixture exits");
+    process.cleanup();
+    let started = Instant::now();
+    drop(process);
+    // Proxy: terminate() of a live child waits up to SERVICE_SHUTDOWN_TIMEOUT;
+    // Drop after wait() returns immediately because try_wait already shows reaped.
+    assert!(
+        started.elapsed() < Duration::from_millis(500),
+        "Drop of an already-reaped child must not pay the terminate window"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn ac27_linux_sigkill_of_spawner_kills_direct_child() {
+    let bed = Bed::new("host-death-managed");
+    let ready = bed.root.join("host-death-ready");
+    let mut spawner = std::process::Command::new(FIXTURE)
+        .args([
+            "host-death-managed",
+            ready.to_str().expect("utf8"),
+            bed.root.to_str().expect("utf8"),
+        ])
+        .spawn()
+        .expect("spawn host-death-managed fixture");
+    wait_for_ready(&ready);
+    let grandchild_pid: u32 = fs::read_to_string(&ready)
+        .expect("read host-death child pid")
+        .trim()
+        .parse()
+        .expect("host-death child published its pid");
+    assert!(
+        !process_is_gone(grandchild_pid),
+        "fixture precondition: direct child is alive before SIGKILL"
+    );
+    let spawner_pid = spawner.id();
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(i32::try_from(spawner_pid).expect("spawner pid fits i32")),
+        nix::sys::signal::Signal::SIGKILL,
+    )
+    .expect("sigkill host-death spawner");
+    for _ in 0..200 {
+        if process_is_gone(grandchild_pid) && process_is_gone(spawner_pid) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        process_is_gone(grandchild_pid),
+        "direct child {grandchild_pid} survived SIGKILL of its spawner"
+    );
+    let _ = spawner.wait();
 }

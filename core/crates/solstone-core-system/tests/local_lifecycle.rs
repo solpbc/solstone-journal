@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
@@ -134,6 +135,26 @@ fn wait_stop(
     fence: &ProviderFence,
 ) -> solstone_core_system::provider_runtime::ProviderStopCleanupOutcome {
     shared.wait_for_stop_cleanup_result(fence)
+}
+
+#[cfg(target_os = "linux")]
+fn wait_for_ready(path: &Path) {
+    for _ in 0..200 {
+        if path.exists() {
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("fixture did not signal readiness");
+}
+
+#[cfg(target_os = "linux")]
+fn process_is_gone(pid: u32) -> bool {
+    let pid = i32::try_from(pid).expect("fixture pid fits i32");
+    matches!(
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
+        Err(nix::errno::Errno::ESRCH)
+    )
 }
 
 fn stop_state(managed: ManagedProcess) -> ProviderRuntimeState {
@@ -310,4 +331,42 @@ fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
         wait_stop(&shared, &cancelled_fence).status,
         StopCleanupStatus::Cancelled
     );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn ac9_linux_sigkill_of_spawner_kills_direct_child() {
+    let root = tempfile::tempdir().expect("temporary journal");
+    let ready = root.path().join("host-death-ready");
+    let mut spawner = std::process::Command::new(FIXTURE)
+        .args(["host-death-direct", ready.to_str().expect("utf8")])
+        .spawn()
+        .expect("spawn host-death-direct fixture");
+    wait_for_ready(&ready);
+    let grandchild_pid: u32 = std::fs::read_to_string(&ready)
+        .expect("read host-death child pid")
+        .trim()
+        .parse()
+        .expect("host-death child published its pid");
+    assert!(
+        !process_is_gone(grandchild_pid),
+        "fixture precondition: direct child is alive before SIGKILL"
+    );
+    let spawner_pid = spawner.id();
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(i32::try_from(spawner_pid).expect("spawner pid fits i32")),
+        nix::sys::signal::Signal::SIGKILL,
+    )
+    .expect("sigkill host-death spawner");
+    for _ in 0..200 {
+        if process_is_gone(grandchild_pid) && process_is_gone(spawner_pid) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        process_is_gone(grandchild_pid),
+        "direct child {grandchild_pid} survived SIGKILL of its spawner"
+    );
+    let _ = spawner.wait();
 }

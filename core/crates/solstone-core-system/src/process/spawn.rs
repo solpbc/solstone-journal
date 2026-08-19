@@ -6,6 +6,7 @@ use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -17,8 +18,11 @@ use crate::partition::partition_for;
 
 use super::events::{OutputStream, ProcessEvent, ProcessEventSink};
 use super::log::DailyLogWriter;
+use super::pdeathsig::apply_parent_death_kill;
 use super::signal_aware_exit_code;
-use super::terminate::{TerminationError, TerminationOutcome, terminate};
+use super::terminate::{
+    DRAIN_JOIN_TIMEOUT, SERVICE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, terminate,
+};
 
 #[derive(Debug, Error)]
 pub enum SpawnError {
@@ -81,6 +85,7 @@ impl ManagedProcess {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
+        apply_parent_death_kill(&mut command);
         let mut child = command.spawn().map_err(SpawnError::Spawn)?;
         let pid = child.id();
         let stdout = child.stdout.take();
@@ -197,7 +202,7 @@ impl ManagedProcess {
             return;
         }
         for drain in self.drains.drain(..) {
-            let _ = drain.join();
+            join_drain_bounded(drain);
         }
         if self.exit_emitted {
             return;
@@ -227,7 +232,21 @@ impl ManagedProcess {
 
 impl Drop for ManagedProcess {
     fn drop(&mut self) {
+        if self.child.try_wait().ok().flatten().is_none() {
+            let _ = self.terminate(SERVICE_SHUTDOWN_TIMEOUT);
+        }
         self.cleanup();
+    }
+}
+
+fn join_drain_bounded(handle: JoinHandle<()>) {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = handle.join();
+        let _ = tx.send(());
+    });
+    if rx.recv_timeout(DRAIN_JOIN_TIMEOUT).is_err() {
+        eprintln!("managed process: drain join exceeded DRAIN_JOIN_TIMEOUT; detaching");
     }
 }
 

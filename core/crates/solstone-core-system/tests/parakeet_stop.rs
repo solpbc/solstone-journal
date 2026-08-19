@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -149,4 +149,62 @@ fn dispatch_stop_reports_cancelled_without_a_child() {
     lifecycle.dispatch_stop(&cancelled, &stop_fence);
     let outcome = shared.wait_for_stop_cleanup_result(&stop_fence);
     assert_eq!(outcome.status, StopCleanupStatus::Cancelled);
+}
+
+#[cfg(target_os = "linux")]
+fn wait_for_ready(path: &Path) {
+    for _ in 0..200 {
+        if path.exists() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("fixture did not signal readiness");
+}
+
+#[cfg(target_os = "linux")]
+fn process_is_gone(pid: u32) -> bool {
+    let pid = i32::try_from(pid).expect("fixture pid fits i32");
+    matches!(
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
+        Err(nix::errno::Errno::ESRCH)
+    )
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_sigkill_of_spawner_kills_direct_child() {
+    let root = tempfile::tempdir().expect("temporary journal");
+    let ready = root.path().join("host-death-ready");
+    let mut spawner = std::process::Command::new(FIXTURE)
+        .args(["host-death-direct", ready.to_str().expect("utf8")])
+        .spawn()
+        .expect("spawn host-death-direct fixture");
+    wait_for_ready(&ready);
+    let grandchild_pid: u32 = std::fs::read_to_string(&ready)
+        .expect("read host-death child pid")
+        .trim()
+        .parse()
+        .expect("host-death child published its pid");
+    assert!(
+        !process_is_gone(grandchild_pid),
+        "fixture precondition: direct child is alive before SIGKILL"
+    );
+    let spawner_pid = spawner.id();
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(i32::try_from(spawner_pid).expect("spawner pid fits i32")),
+        nix::sys::signal::Signal::SIGKILL,
+    )
+    .expect("sigkill host-death spawner");
+    for _ in 0..200 {
+        if process_is_gone(grandchild_pid) && process_is_gone(spawner_pid) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        process_is_gone(grandchild_pid),
+        "direct child {grandchild_pid} survived SIGKILL of its spawner"
+    );
+    let _ = spawner.wait();
 }

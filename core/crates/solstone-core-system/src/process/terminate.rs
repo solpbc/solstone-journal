@@ -26,6 +26,8 @@ pub const TASK_QUEUE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 pub const SERVICE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 /// Unconditional bounded reap window after SIGKILL escalation.
 pub const KILL_REAP_GRACE: Duration = Duration::from_millis(500);
+/// Bounded drain-thread join after the child and descendants are reaped.
+pub const DRAIN_JOIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminationOutcome {
@@ -163,7 +165,7 @@ fn live_descendants(descendants: &[Descendant]) -> Vec<Descendant> {
 }
 
 #[cfg(target_os = "linux")]
-fn process_alive(pid: i32) -> bool {
+pub(crate) fn process_alive(pid: i32) -> bool {
     let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
         return false;
     };

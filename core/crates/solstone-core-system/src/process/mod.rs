@@ -5,6 +5,7 @@ mod descendants;
 mod events;
 mod log;
 mod observation;
+mod pdeathsig;
 mod restart;
 mod spawn;
 mod terminate;
@@ -15,17 +16,18 @@ pub use descendants::{Descendant, ProcessTreeSnapshot};
 pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
 pub use log::DailyLogWriter;
 pub use observation::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
+pub use pdeathsig::apply_parent_death_kill;
 pub use restart::{
     EXIT_TEMPFAIL, GIVE_UP_AFTER, RestartDecision, RestartPolicy, TEMPFAIL_DELAY, describe_exit,
     exit_status_for_code,
 };
 pub use spawn::{ManagedProcess, SpawnError, SpawnOptions};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use terminate::process_alive;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use terminate::signal_pid;
 pub use terminate::{
-    CAP_TERMINATION_TIMEOUT, KILL_REAP_GRACE, SERVICE_SHUTDOWN_TIMEOUT,
+    CAP_TERMINATION_TIMEOUT, DRAIN_JOIN_TIMEOUT, KILL_REAP_GRACE, SERVICE_SHUTDOWN_TIMEOUT,
     TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, terminate,
 };
 
