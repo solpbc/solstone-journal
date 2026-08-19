@@ -246,7 +246,29 @@ with no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `
 3. remove the tree, by the route you installed it:
    - `sudo apt remove solstone-journal` or `sudo dnf remove solstone-journal`
    - archive install: delete the prefix directory (`~/.local/solstone-journal` by default) and the PATH block `install.sh` added to `~/.profile` (and on mac, `~/.zprofile`), marked with `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`.
-   - mac `.pkg` install: remove the tree under `/usr/local` (`bin/journal`, `bin/sol`, `bin/solstone`, and the matching `lib/` and `share/` members).
+   - mac `.pkg` install: use the receipt the installer registered — it names every file the
+     package put on disk.
+
+     ⚠ **do not pipe `pkgutil --files` into `rm -rf`.** it lists directories too (`bin`, `lib`,
+     `share`), and `/usr/local` is shared with Homebrew, Docker, VS Code and anything else on this
+     machine — a raw `rm -rf` over the full list takes all of it with the package.
+
+     ```bash
+     pkgutil --files app.solstone.journal --only-files | while IFS= read -r f; do
+       sudo rm -- "/usr/local/$f"
+     done
+     pkgutil --files app.solstone.journal --only-dirs \
+       | awk '{ print gsub(/\//,"/"), $0 }' | sort -rn | cut -d' ' -f2- \
+       | while IFS= read -r d; do
+         sudo rmdir "/usr/local/$d" 2>/dev/null || true
+       done
+     sudo pkgutil --forget app.solstone.journal
+     ```
+
+     the first loop removes only the files the package installed — nothing else in `/usr/local` is
+     touched. the second removes the directories it created, deepest first, and only the ones that
+     are empty afterward; `rmdir` refuses a directory that still holds something else, so `bin`
+     itself (shared with other tools) is left standing. the third clears the receipt.
 4. mac only: drag `/Applications/solstone.app` to Trash.
 5. mac only, optional: remove sol's app data and the Parakeet model cache:
    ```bash
