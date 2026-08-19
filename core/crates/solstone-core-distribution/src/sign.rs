@@ -167,15 +167,13 @@ pub fn run(dir: &Path) -> Result<PathBuf, SignError> {
             format!("could not read {}: {error}", guard.path.display()),
         )
     })?;
-    minisign::verify(
-        &pin,
-        &signature_box,
-        Cursor::new(manifest_bytes.as_slice()),
-        true,
-        false,
-        false,
-    )
-    .map_err(|error| {
+    let on_disk = fs::File::open(&manifest_path).map_err(|error| {
+        SignError::new(
+            SignRefusal::VerifyAfterSign,
+            format!("could not re-read {}: {error}", manifest_path.display()),
+        )
+    })?;
+    minisign::verify(&pin, &signature_box, on_disk, true, false, false).map_err(|error| {
         SignError::new(
             SignRefusal::VerifyAfterSign,
             format!(

@@ -201,9 +201,21 @@ fn assert_minisig_format(path: &Path) {
     lines.next().expect("global");
 }
 
+fn assert_no_signature_artifacts(dir: &Path, basename: &str) {
+    assert!(
+        !dir.join(format!("{basename}.manifest.json.minisig"))
+            .exists()
+    );
+    assert!(
+        !dir.join(format!("{basename}.manifest.json.minisig.partial"))
+            .exists()
+    );
+}
+
 #[test]
 fn stdin_passphrase_writes_verifiable_minisig() {
     let fixture = build_fixture("stdin");
+    let before = fs::read(manifest_path(&fixture)).expect("manifest before");
     sign_ok(
         &fixture.dest,
         &fixture.key_path,
@@ -213,6 +225,10 @@ fn stdin_passphrase_writes_verifiable_minisig() {
     let minisig = minisig_path(&fixture);
     assert!(minisig.is_file());
     assert_minisig_format(&minisig);
+    assert_eq!(
+        fs::read(manifest_path(&fixture)).expect("manifest after"),
+        before
+    );
     assert!(verify(
         &fixture.signing_pk,
         &manifest_path(&fixture),
@@ -247,8 +263,7 @@ fn adjacent_pass_file_signs_and_wrong_pass_refuses() {
         Some(&fixture.pin_path),
         b"",
     );
-    assert!(!minisig.exists());
-    assert!(!partial_path(&fixture).exists());
+    assert_no_signature_artifacts(&fixture.dest, &fixture.basename);
 }
 
 #[test]
@@ -269,14 +284,20 @@ fn flipped_manifest_refuses_and_flipped_archive_keeps_signature() {
     assert!(!verify(&fixture.signing_pk, &manifest, &minisig));
 
     fs::write(&manifest, &original_manifest).expect("restore manifest");
-    let archive = fixture.dest.join(format!("{}.tar.gz", fixture.basename));
-    let original_archive = fs::read(&archive).expect("archive");
-    let expected = sha256_hex(&original_archive);
-    let mut flipped_archive = original_archive;
+    let archive_name = format!("{}.tar.gz", fixture.basename);
+    let archive = fixture.dest.join(&archive_name);
+    let mut flipped_archive = fs::read(&archive).expect("archive");
     flipped_archive[0] ^= 0x01;
     fs::write(&archive, &flipped_archive).expect("flip archive");
     assert!(verify(&fixture.signing_pk, &manifest, &minisig));
-    assert_ne!(sha256_hex(&fs::read(&archive).expect("reread")), expected);
+    let listed = serde_json::from_slice::<serde_json::Value>(&original_manifest)
+        .expect("manifest json")
+        .get("files")
+        .and_then(|files| files.get(&archive_name))
+        .and_then(serde_json::Value::as_str)
+        .expect("listed digest")
+        .to_owned();
+    assert_ne!(sha256_hex(&fs::read(&archive).expect("reread")), listed);
 }
 
 #[test]
@@ -290,8 +311,7 @@ fn extra_unlisted_archive_refuses_allowed_sidecars_sign() {
         Some(&fixture.pin_path),
         PASSPHRASE.as_bytes(),
     );
-    assert!(!minisig_path(&fixture).exists());
-    assert!(!partial_path(&fixture).exists());
+    assert_no_signature_artifacts(&fixture.dest, &fixture.basename);
 
     fs::remove_file(&extra_deb).expect("remove extra deb");
     fs::write(fixture.dest.join("unlisted.pkg"), b"extra-pkg").expect("extra pkg");
@@ -301,7 +321,7 @@ fn extra_unlisted_archive_refuses_allowed_sidecars_sign() {
         Some(&fixture.pin_path),
         PASSPHRASE.as_bytes(),
     );
-    assert!(!minisig_path(&fixture).exists());
+    assert_no_signature_artifacts(&fixture.dest, &fixture.basename);
 
     fs::remove_file(fixture.dest.join("unlisted.pkg")).expect("remove extra pkg");
     fs::write(
@@ -332,8 +352,7 @@ fn listed_archive_absent_or_digest_mismatch_refuses() {
         Some(&fixture.pin_path),
         PASSPHRASE.as_bytes(),
     );
-    assert!(!minisig_path(&fixture).exists());
-    assert!(!partial_path(&fixture).exists());
+    assert_no_signature_artifacts(&fixture.dest, &fixture.basename);
 
     let mut flipped = original.clone();
     flipped[0] ^= 0x01;
@@ -344,8 +363,7 @@ fn listed_archive_absent_or_digest_mismatch_refuses() {
         Some(&fixture.pin_path),
         PASSPHRASE.as_bytes(),
     );
-    assert!(!minisig_path(&fixture).exists());
-    assert!(!partial_path(&fixture).exists());
+    assert_no_signature_artifacts(&fixture.dest, &fixture.basename);
 }
 
 #[test]
@@ -360,7 +378,7 @@ fn missing_inputs_each_refuse() {
         String::from_utf8_lossy(&unset.stderr).contains("missing-key-env"),
         "{unset:?}"
     );
-    assert!(!minisig_path(&fixture).exists());
+    assert_no_signature_artifacts(dest, &fixture.basename);
 
     let mut empty_cmd = Command::new(BINARY);
     empty_cmd.arg("sign").arg(dest);
@@ -382,6 +400,7 @@ fn missing_inputs_each_refuse() {
         String::from_utf8_lossy(&empty.stderr).contains("empty-key-path"),
         "{empty:?}"
     );
+    assert_no_signature_artifacts(dest, &fixture.basename);
 
     let mut relative_cmd = Command::new(BINARY);
     relative_cmd.arg("sign").arg(dest);
@@ -403,18 +422,21 @@ fn missing_inputs_each_refuse() {
         String::from_utf8_lossy(&relative.stderr).contains("relative-key-path"),
         "{relative:?}"
     );
+    assert_no_signature_artifacts(dest, &fixture.basename);
 
     let missing_pass = sign_refuses(dest, Some(key), Some(pin), b"");
     assert!(
         String::from_utf8_lossy(&missing_pass.stderr).contains("missing-passphrase"),
         "{missing_pass:?}"
     );
+    assert_no_signature_artifacts(dest, &fixture.basename);
 
     let empty_dir = fixture.root.join("empty-dir");
     fs::create_dir_all(&empty_dir).expect("empty dir");
     let missing_manifest = sign_refuses(&empty_dir, Some(key), Some(pin), PASSPHRASE.as_bytes());
     assert_eq!(missing_manifest.status.code(), Some(2));
-    assert!(!minisig_path(&fixture).exists());
+    assert_no_signature_artifacts(&empty_dir, &fixture.basename);
+    assert_no_signature_artifacts(dest, &fixture.basename);
 }
 
 #[test]
@@ -442,6 +464,7 @@ fn pin_mismatch_is_fail_closed_and_cwd_does_not_load_the_pin() {
     );
     assert_eq!(refused.status.code(), Some(2));
     assert!(!partial_path(&fixture).exists());
+    assert!(minisig.is_file());
     assert_eq!(fs::read(&minisig).expect("kept dest"), first);
     assert!(verify(
         &fixture.signing_pk,

@@ -512,24 +512,39 @@ mod tests {
     }
 
     #[test]
-    fn promote_with_signing_env_writes_unsigned_set() {
+    fn writers_do_not_mention_the_signing_env() {
+        // Paired with promote_writes_unsigned_six_file_set_without_a_minisig:
+        // this half proves the writers cannot read the signing env; that test
+        // proves promote still exits 0 with the usual unsigned six-file set
+        // and no .minisig.
+        const NEEDLE: &str = concat!("SOLSTONE_JOURNAL_MINISIGN", "_KEY");
+        assert!(!include_str!("promote.rs").contains(NEEDLE));
+        assert!(!include_str!("produce.rs").contains(NEEDLE));
+        assert!(!include_str!("inspect.rs").contains(NEEDLE));
+    }
+
+    #[test]
+    fn promote_writes_unsigned_six_file_set_without_a_minisig() {
         use crate::inventory;
         use crate::promote::{PromoteRequest, promote};
         use crate::provenance::Provenance;
 
         let version = env!("CARGO_PKG_VERSION");
         let basename = format!("solstone-journal-{version}-linux-x86_64");
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
         let dest = PathBuf::from(format!(
-            "/var/tmp/solstone-distribution-sign-env-dest-{}",
+            "/var/tmp/solstone-distribution-sign-env-dest-{}-{nanos}",
             std::process::id()
         ));
         let work = PathBuf::from(format!(
-            "/var/tmp/solstone-distribution-sign-env-work-{}",
+            "/var/tmp/solstone-distribution-sign-env-work-{}-{nanos}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&dest);
         let _ = fs::remove_dir_all(&work);
-        let key_was = std::env::var_os("SOLSTONE_JOURNAL_MINISIGN_KEY");
         promote(&PromoteRequest {
             dest: dest.clone(),
             work: work.clone(),
@@ -563,11 +578,6 @@ mod tests {
         found_sorted.sort();
         assert_eq!(found_sorted, expected);
         assert!(!found.iter().any(|name| name.ends_with(".minisig")));
-        assert_eq!(
-            std::env::var_os("SOLSTONE_JOURNAL_MINISIGN_KEY"),
-            key_was,
-            "promote must not read or mutate the signing env"
-        );
         let _ = fs::remove_dir_all(&dest);
         let _ = fs::remove_dir_all(&work);
     }
