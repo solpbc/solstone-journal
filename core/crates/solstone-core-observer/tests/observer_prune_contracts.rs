@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[path = "observer_hostname_surface.rs"]
+mod observer_hostname_surface;
 #[path = "observer_list_human.rs"]
 mod observer_list_human;
 #[path = "observer_list_json.rs"]

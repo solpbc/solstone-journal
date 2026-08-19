@@ -111,16 +111,19 @@ pub fn render_list(
     if records.is_empty() {
         return "No devices registered.".to_owned();
     }
-    let mut lines = vec![
-        format!(
-            "{:<20} {:<18} {:<14} {:<10} {:<18} {:<12} {:>10} {:>12}",
-            "Name", "Prefix", "Status", "Binding", "Last Seen", "Last Segment", "Segments", "Bytes"
-        ),
-        "-".repeat(118),
-    ];
+    let hostname_rule = hostname_rule_width(records, 118);
+    let show_hostname = hostname_rule.is_some();
+    let mut header = format!(
+        "{:<20} {:<18} {:<14} {:<10} {:<18} {:<12} {:>10} {:>12}",
+        "Name", "Prefix", "Status", "Binding", "Last Seen", "Last Segment", "Segments", "Bytes"
+    );
+    if show_hostname {
+        header.push_str(" Hostname");
+    }
+    let mut lines = vec![header, "-".repeat(hostname_rule.unwrap_or(118))];
     for record in records {
         let stats = record.stats();
-        lines.push(format!(
+        let mut row = format!(
             "{:<20} {:<18} {:<14} {:<10} {:<18} {:<12} {:>10} {:>12}",
             record.name().unwrap_or_default(),
             record.prefix(),
@@ -130,7 +133,12 @@ pub fn render_list(
             compact_field(record.last_segment_received_at(), now_ms),
             metric_display(stats, "segments_received"),
             fmt_bytes(metric_number(stats, "bytes_received"))
-        ));
+        );
+        if show_hostname && let Some(hostname) = record.hostname() {
+            row.push(' ');
+            row.push_str(hostname);
+        }
+        lines.push(row);
     }
     lines.join("\n")
 }
@@ -165,6 +173,15 @@ pub fn render_status_all(
     if json_output {
         return serde_json::to_string(&json!({"total":records.len(),"connected":connected,"disconnected":disconnected,"revoked":revoked,"total_segments":number_value(total_segments),"total_bytes":number_value(total_bytes),"observers":records.iter().map(|record| status_entry(record, now_ms)).collect::<Vec<_>>() })).expect("JSON values serialize");
     }
+    let hostname_rule = hostname_rule_width(records, 98);
+    let show_hostname = hostname_rule.is_some();
+    let mut header = format!(
+        "{:<20} {:<18} {:<14} {:<10} {:<18} {:<12}",
+        "Name", "Prefix", "Status", "Binding", "Last Seen", "Last Segment"
+    );
+    if show_hostname {
+        header.push_str(" Hostname");
+    }
     let mut lines = vec![
         format!("Devices: {} total", records.len()),
         format!("  Connected:    {connected}"),
@@ -173,14 +190,11 @@ pub fn render_status_all(
         format!("  Total segments: {}", format_number(total_segments, "")),
         format!("  Total bytes:    {}", fmt_bytes(total_bytes)),
         String::new(),
-        format!(
-            "{:<20} {:<18} {:<14} {:<10} {:<18} {:<12}",
-            "Name", "Prefix", "Status", "Binding", "Last Seen", "Last Segment"
-        ),
-        "-".repeat(98),
+        header,
+        "-".repeat(hostname_rule.unwrap_or(98)),
     ];
     for record in records {
-        lines.push(format!(
+        let mut row = format!(
             "{:<20} {:<18} {:<14} {:<10} {:<18} {:<12}",
             record.name().unwrap_or_default(),
             record.prefix(),
@@ -188,7 +202,12 @@ pub fn render_status_all(
             record.device_binding_kind().unwrap_or("unbound"),
             fmt_time(record.last_seen(), zone),
             compact_field(record.last_segment_received_at(), now_ms)
-        ));
+        );
+        if show_hostname && let Some(hostname) = record.hostname() {
+            row.push(' ');
+            row.push_str(hostname);
+        }
+        lines.push(row);
     }
     lines.join("\n")
 }
@@ -202,7 +221,14 @@ pub fn render_status_single(
 ) -> String {
     if json_output {
         let stats = record.stats();
-        return serde_json::to_string(&json!({"name":record.name().unwrap_or_default(),"prefix":record.prefix(),"status":status_label(record, now_ms),"device_binding_kind":record.device_binding_kind(),"created_at":record.created_at(),"last_seen":record.last_seen(),"last_segment_received_at":record.last_segment_received_at(),"last_segment_day":record.last_segment_day(),"revoked":record.revoked(),"segments":metric_value(stats,"segments_received"),"bytes":metric_value(stats,"bytes_received")})).expect("JSON values serialize");
+        let mut entry = json!({"name":record.name().unwrap_or_default(),"prefix":record.prefix(),"status":status_label(record, now_ms),"device_binding_kind":record.device_binding_kind(),"created_at":record.created_at(),"last_seen":record.last_seen(),"last_segment_received_at":record.last_segment_received_at(),"last_segment_day":record.last_segment_day(),"revoked":record.revoked(),"segments":metric_value(stats,"segments_received"),"bytes":metric_value(stats,"bytes_received")});
+        if let Some(hostname) = record.hostname() {
+            entry
+                .as_object_mut()
+                .expect("json! object")
+                .insert("hostname".to_owned(), Value::from(hostname));
+        }
+        return serde_json::to_string(&entry).expect("JSON values serialize");
     }
     let today = display_time(now_ms, zone)
         .expect("valid current time")
@@ -243,6 +269,9 @@ pub fn render_status_single(
         "Binding:",
         record.device_binding_kind().unwrap_or("unbound"),
     );
+    if let Some(hostname) = record.hostname() {
+        field(&mut lines, "Hostname:", hostname);
+    }
     field(&mut lines, "Created:", &fmt_time(record.created_at(), zone));
     field(
         &mut lines,
@@ -353,10 +382,24 @@ fn day_count_line(day: &str, count: usize, stopped: Option<&HistoryStop>) -> Str
 }
 
 fn list_entry(record: &ObserverRecord, now_ms: i64) -> Value {
-    json!({"name":record.name().unwrap_or_default(),"prefix":record.prefix(),"status":status_label(record,now_ms),"device_binding_kind":record.device_binding_kind(),"last_seen":record.last_seen(),"last_segment_received_at":record.last_segment_received_at(),"last_segment_day":record.last_segment_day(),"segments":metric_value(record.stats(),"segments_received"),"bytes":metric_value(record.stats(),"bytes_received")})
+    let mut entry = json!({"name":record.name().unwrap_or_default(),"prefix":record.prefix(),"status":status_label(record,now_ms),"device_binding_kind":record.device_binding_kind(),"last_seen":record.last_seen(),"last_segment_received_at":record.last_segment_received_at(),"last_segment_day":record.last_segment_day(),"segments":metric_value(record.stats(),"segments_received"),"bytes":metric_value(record.stats(),"bytes_received")});
+    if let Some(hostname) = record.hostname() {
+        entry
+            .as_object_mut()
+            .expect("json! object")
+            .insert("hostname".to_owned(), Value::from(hostname));
+    }
+    entry
 }
 fn status_entry(record: &ObserverRecord, now_ms: i64) -> Value {
-    json!({"name":record.name().unwrap_or_default(),"prefix":record.prefix(),"status":status_label(record,now_ms),"device_binding_kind":record.device_binding_kind(),"last_seen":record.last_seen(),"last_segment_received_at":record.last_segment_received_at(),"last_segment_day":record.last_segment_day()})
+    let mut entry = json!({"name":record.name().unwrap_or_default(),"prefix":record.prefix(),"status":status_label(record,now_ms),"device_binding_kind":record.device_binding_kind(),"last_seen":record.last_seen(),"last_segment_received_at":record.last_segment_received_at(),"last_segment_day":record.last_segment_day()});
+    if let Some(hostname) = record.hostname() {
+        entry
+            .as_object_mut()
+            .expect("json! object")
+            .insert("hostname".to_owned(), Value::from(hostname));
+    }
+    entry
 }
 fn metric_value(stats: Option<&Map<String, Value>>, key: &str) -> Value {
     stats
@@ -383,6 +426,16 @@ fn number_value(value: f64) -> Value {
     } else {
         Value::from(value)
     }
+}
+/// The dash-rule width once a Hostname column is shown, or `None` when no record
+/// in `records` carries one.
+fn hostname_rule_width(records: &[ObserverRecord], base: usize) -> Option<usize> {
+    records
+        .iter()
+        .filter_map(ObserverRecord::hostname)
+        .map(str::len)
+        .max()
+        .map(|longest| base + 1 + longest.max("Hostname".len()))
 }
 fn compact_field(value: Option<i64>, now_ms: i64) -> String {
     value

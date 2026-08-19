@@ -83,6 +83,11 @@ impl ObserverRecord {
     pub fn name(&self) -> Option<&str> {
         self.string("name")
     }
+    pub fn hostname(&self) -> Option<&str> {
+        self.string("hostname")
+            .map(str::trim)
+            .filter(|hostname| !hostname.is_empty())
+    }
     pub fn created_at(&self) -> Option<i64> {
         self.integer("created_at")
     }
@@ -245,5 +250,30 @@ mod tests {
         let record = record();
         assert_eq!(record.stats().expect("stats")["note"], "keep");
         assert_eq!(record.stats().expect("stats")["nested"]["x"], 1);
+    }
+
+    #[test]
+    fn hostname_trims_and_treats_blank_as_absent() {
+        fn with_hostname(hostname: Option<&str>) -> ObserverRecord {
+            let mut value = json!({"key": "abcdefgh123"});
+            if let Some(hostname) = hostname {
+                value
+                    .as_object_mut()
+                    .expect("object")
+                    .insert("hostname".to_owned(), Value::from(hostname));
+            }
+            ObserverRecord::from_value(value).expect("record")
+        }
+        assert_eq!(
+            with_hostname(Some("Davids-Mac-Studio.local")).hostname(),
+            Some("Davids-Mac-Studio.local")
+        );
+        assert_eq!(with_hostname(None).hostname(), None);
+        assert_eq!(with_hostname(Some("")).hostname(), None);
+        assert_eq!(with_hostname(Some("   ")).hostname(), None);
+        assert_eq!(
+            with_hostname(Some("  host.local  ")).hostname(),
+            Some("host.local")
+        );
     }
 }
