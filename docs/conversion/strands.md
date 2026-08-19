@@ -370,6 +370,16 @@ First-run journal establishment. **Creates the identity root** that `S:device-li
 
 ⚠ Eight `/init/*` routes are session-gate-exempt and admitted **before** the journal-is-active check. That is the same `localhost:5015` human-entry basis as everything else on `P-web`, before a session exists to gate — **not** a third access path.
 
+### `S:journal-segment:peer-exchange`
+**Connects** `P-journal` → `P-peer-exchange` · **Owner** `P-peer-exchange` · **Tier** fixture
+
+⚠ **Owner assigned 2026-08-19, alongside adopting `P-peer-exchange` as a plate covering `transfer` and `export`.** The **archive manifest v1** — the durable format `transfer export` writes and `transfer import` reads: segments, sha256 + size per file. Cross-instance — the far end may be running a different journal version — which is the one-to-many shape rule 1 puts the contract at the receiving end for.
+
+### `S:device-link:peer-exchange`
+**Connects** `P-device-link` → `P-peer-exchange` · **Owner** `P-peer-exchange` · **Tier** schema
+
+⚠ **Owner assigned 2026-08-19, alongside adopting `P-peer-exchange` as a plate.** The **peer-ingest HTTP surface**, `/app/import/journal/{prefix}/…` — nine operations across five areas. Rides the paired-peer transport `S:device-link:journal` already authenticates.
+
 ---
 
 ## Tier 1 — distribution

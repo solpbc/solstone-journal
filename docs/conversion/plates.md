@@ -44,6 +44,15 @@ Link identity, security, mTLS.
 
 The ingest **API**. Deliberately separate from `P-segment-media`. ⚠ 9 published operations, 7 named client consumers.
 
+## `P-peer-exchange`
+
+🆕 **Added 2026-08-19 by operator ruling.** Journal↔journal exchange between two instances the same owner holds — covers `transfer` and `export`. ⛔ **Not egress** — the far end is a journal the same owner holds, not a third party; see § *Egress — where the covenant applies*.
+
+Two cross-instance contracts that had no owner get one here — see [`strands.md`](strands.md) § `S:journal-segment:peer-exchange` · § `S:device-link:peer-exchange`:
+
+- **Archive manifest v1** — the durable format `transfer export` writes and `transfer import` reads.
+- **The peer-ingest HTTP surface**, `/app/import/journal/{prefix}/…`.
+
 ## `P-segment-media`
 
 An ingested, not-yet-processed segment.
