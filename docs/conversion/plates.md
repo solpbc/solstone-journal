@@ -666,13 +666,13 @@ The logic that decides what raw media is retained, and what logs are retained fo
 
 🆕 ⛔ **CLOSED 2026-08-05 by operator ruling, by removing the question rather than answering it. Do not re-derive it.** This entry used to record an open call: legacy segments holding one source's data beside another's, where an owner deleting one source either loses the segment whole or keeps the data they asked to remove.
 
-🔴 **There is no source-delete affordance.** The owner deletes **a segment, or a set of segments** — that is the only owner-facing removal there is, and ⛔ **there is no affordance for a partial owner-directed delete of any kind.** The legacy-mixed problem existed only as a *resolution* step, turning "delete my ⟨source⟩ data" into a set of segments; with the owner naming segments directly there is nothing to resolve and no disposition to choose.
+🔴 **The source-delete affordance resolves a source name to a SET of whole segments and hands that set to the door.** There is still no partial owner-directed delete of any kind. The legacy-mixed problem was a *disposition* (keep vs drop part of a segment); that disposition stays gone. `DELETE /app/observer/source/{stream}` names a source (`location`); selection lives with that surface.
 
-✅ **The surface already exists** — the per-segment delete route under the transcripts app, with containment via `commonpath` and a **10-second undo window**. ⛔ Retention never resolves anything; it receives owner-chosen targets. Selection lives with the surface.
+✅ **Two selection surfaces exist** — the per-segment delete route under the transcripts app, with containment via `commonpath` and a **10-second undo window**, and the source-delete route which expands a source name to a set. ⛔ Retention never resolves anything; it receives owner-chosen targets. Selection lives with the surface.
 
 🔴 **The whole-segment verb therefore takes a SET.** One receipt covers it, and per-target failures are receipt rows. ⛔ It is not all-or-nothing: an owner deleting forty segments must not lose the thirty-nine that succeeded because the fortieth was unreadable.
 
-⛔ **Retired with it:** the owner-facing source-delete route · the source-delete implementation and both of its branches · the deletable-source-stream allowlist · the mixed / location-only classification and its discovery helper. ⚠ **The reserved-name set divergence loses its last load-bearing consumer** — it fed the mixed classifier, and there is no classifier.
+⛔ **Retired with it:** the *partial* source-delete implementation and both of its branches · the location-only vs mixed *disposition*. The owner-facing source-delete **route** remains. A mixed classifier returns **only** as a receipt counter (cost disclosure) and never selects a disposition. The reserved-name set feeds that disclosure and the ingest upload guard, not a partial delete.
 
 ### Two units of removal, and the plate serves both
 

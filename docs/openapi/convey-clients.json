@@ -8554,7 +8554,7 @@
     },
     "/app/observer/source/{stream}": {
       "delete": {
-        "description": "Delete an allowed observer-owned source stream from the journal.",
+        "description": "Erase every journal segment that holds location.jsonl as a whole segment, leaving tombstone.json. Removal runs only through retention's door; this route selects the set. mixed_segments is a cost disclosure, never a disposition: mixed segments are still removed whole. Auth is the observer's full key in X-Solstone-Observer (preferred) or Authorization: Bearer. The receipt includes removed.tombstones and does not include removed.in_segment_derived. Coordinated adoption: solstone-swift's DeleteSourceReceipt.Removed.inSegmentDerived is required today and must be dropped or made optional in the same release arc.",
         "operationId": "observer.deleteSource",
         "parameters": [
           {
@@ -8596,12 +8596,12 @@
                   "removed": {
                     "days": 0,
                     "history_rows": 0,
-                    "in_segment_derived": 0,
                     "index_chunks": 0,
                     "mixed_segments": 0,
                     "originals": 0,
                     "segments": 0,
-                    "stream_identity": 0
+                    "stream_identity": 0,
+                    "tombstones": 0
                   },
                   "target": {
                     "journal": "/journal",
