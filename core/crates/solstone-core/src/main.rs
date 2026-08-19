@@ -4797,7 +4797,7 @@ fn run_cortex_service(options: ServiceOptions) -> ExitCode {
     )) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("cortex service failed: {}", error.class());
+            eprintln!("cortex service failed: {error}");
             ExitCode::from(EXIT_TEMPFAIL)
         }
     }

@@ -35,15 +35,20 @@ pub enum CortexServiceError {
     Runtime,
     #[error("could not inspect current executable: {0}")]
     CurrentExecutable(#[source] std::io::Error),
-    #[error("could not locate installed solstone package from {0}")]
-    InstallationRoot(PathBuf),
+    #[error("{0}")]
+    InstallationRoot(String),
     #[error("could not initialize cortex journal storage: {0}")]
     Storage(#[source] std::io::Error),
 }
 
 impl CortexServiceError {
     pub const fn class(&self) -> &'static str {
-        "runtime"
+        match self {
+            Self::Runtime => "runtime",
+            Self::CurrentExecutable(_) => "executable",
+            Self::InstallationRoot(_) => "installation-root",
+            Self::Storage(_) => "storage",
+        }
     }
 }
 
@@ -63,8 +68,11 @@ pub async fn run_native_service(
         .map(PathBuf::from)
         .ok_or(CortexServiceError::Runtime)?;
     let (talent_root, apps_root, templates_dir) =
-        package_roots_from_executable_dir(&executable_dir)
-            .ok_or_else(|| CortexServiceError::InstallationRoot(executable_dir.clone()))?;
+        package_roots_from_executable_dir(&executable_dir).ok_or_else(|| {
+            CortexServiceError::InstallationRoot(
+                solstone_core_journal::describe_installation_root_miss(&executable_dir),
+            )
+        })?;
     let connection =
         CallosumSocketConnection::new(journal.join("health/callosum.sock"), Map::new());
     run_until(
@@ -443,5 +451,25 @@ mod tests {
         assert_eq!(templates, share.join("solstone/think/templates"));
         std::fs::remove_file(share.join(solstone_core_journal::LAYOUT_BUNDLE_ANCHOR)).unwrap();
         assert!(package_roots_from_executable_dir(&bin).is_none());
+        let error = CortexServiceError::InstallationRoot(
+            solstone_core_journal::describe_installation_root_miss(&bin),
+        );
+        assert_eq!(error.class(), "installation-root");
+        assert_ne!(CortexServiceError::Runtime.class(), "installation-root");
+        assert_eq!(
+            CortexServiceError::CurrentExecutable(std::io::Error::other("inspect")).class(),
+            "executable"
+        );
+        assert_eq!(
+            CortexServiceError::Storage(std::io::Error::other("storage")).class(),
+            "storage"
+        );
+        let text = error.to_string();
+        assert!(
+            text.contains(&bin.display().to_string()),
+            "InstallationRoot Display must carry the diagnostic: {text}"
+        );
+        assert!(text.contains("pyproject.toml"));
+        assert_ne!(error.class(), "runtime");
     }
 }
