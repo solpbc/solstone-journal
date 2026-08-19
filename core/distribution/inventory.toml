@@ -228,6 +228,17 @@ dest = "share/LICENSE"
 mode = 0o644
 targets = ["linux-x86_64", "linux-aarch64", "macos-arm64"]
 
+# parakeet-helper is a Swift/CoreML binary and macOS-only (`make parakeet-helper`
+# builds it; there is no Rust or Linux equivalent). The resolver
+# (parakeet_coreml.rs) looks next to the running binary first, so it lands in
+# the same `bin/` every other admitted binary lands in.
+[[entry]]
+kind = "copy"
+source = "core/crates/solstone-core-transcribe/parakeet-helper/.build/release/parakeet-helper"
+dest = "bin/parakeet-helper"
+mode = 0o755
+targets = ["macos-arm64"]
+
 [[deny]]
 bin = "solstone-transcribe"
 reason = "product-ish helper; not in the admitted ten; inventory allow-list decides"

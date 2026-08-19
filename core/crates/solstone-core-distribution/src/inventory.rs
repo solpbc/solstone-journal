@@ -765,9 +765,19 @@ mod tests {
     #[test]
     fn every_admitted_binary_and_payload_ships_on_macos_too() {
         // "The same distribution tree" is the contract, so the macOS target's
-        // dest set must equal the Linux one exactly. A drift in either
-        // direction — a binary Linux ships and macOS does not, or the reverse —
-        // is what this asserts against.
+        // dest set must equal the Linux one exactly, minus a named, documented
+        // set of deliberately platform-exclusive entries. A drift in the
+        // shared set — a binary Linux ships and macOS does not, or the
+        // reverse — is what this asserts against; MACOS_ONLY is not an escape
+        // hatch for that, it is the one standing exception.
+        //
+        // bin/parakeet-helper is that exception: it is the CoreML subprocess
+        // helper the macOS parakeet backend spawns (parakeet_coreml.rs).
+        // Linux's parakeet backend (parakeet_cpp.rs) connects over HTTP to a
+        // separately-managed parakeet-cpp server that this inventory does not
+        // admit at all — there is no Linux binary for this to match, by
+        // design, not by drift.
+        const MACOS_ONLY: &[&str] = &["bin/parakeet-helper"];
         let inventory = committed();
         let dests_for = |id: &str| {
             inventory
@@ -778,7 +788,13 @@ mod tests {
                 .collect::<BTreeSet<_>>()
         };
         let linux = dests_for("linux-x86_64");
-        let macos = dests_for("macos-arm64");
+        let mut macos = dests_for("macos-arm64");
+        for exception in MACOS_ONLY {
+            assert!(
+                macos.remove(*exception),
+                "{exception} is declared as a macOS-only exception but is not admitted for macos-arm64"
+            );
+        }
         assert!(!linux.is_empty());
         assert_eq!(linux, macos);
     }
