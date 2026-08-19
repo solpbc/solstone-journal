@@ -32,9 +32,12 @@ pub fn discover_package_roots_from_executable_dir(
 }
 
 pub fn generators(config: &Map<String, Value>) -> Result<Value, String> {
-    let (system_root, apps_root) = discover_package_roots().ok_or_else(|| {
-        "could not locate packaged talent roots from the current executable".to_owned()
-    })?;
+    let executable_dir = env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf));
+    let directory = executable_dir.as_deref().unwrap_or(Path::new(""));
+    let (system_root, apps_root) = discover_package_roots_from_executable_dir(directory)
+        .ok_or_else(|| solstone_core_journal::describe_package_roots_miss(directory))?;
     generators_from_roots(config, &system_root, &apps_root)
 }
 

@@ -966,3 +966,21 @@ async fn session_gate_corrupt_and_unestablished_oracle() {
     assert_eq!(response.status(), StatusCode::FOUND);
     assert_eq!(response.headers()[header::LOCATION], "/init");
 }
+
+#[test]
+fn run_convey_from_isolated_dir_returns_diagnostic_without_panicking() {
+    let isolated = tempfile::TempDir::new_in("/var/tmp").expect("isolated root");
+    let bin = isolated.path().join("bin");
+    fs::create_dir_all(&bin).expect("isolated bin");
+    let journal = isolated.path().join("journal");
+    fs::create_dir_all(&journal).expect("isolated journal");
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        solstone_core_convey_shell::run_convey_from_executable_dir(journal, 5015, &bin)
+    }));
+    let result = caught.expect("run_convey_from_executable_dir must not panic");
+    let error = result.expect_err("isolated executable dir must miss");
+    assert!(
+        error.contains(&bin.display().to_string()),
+        "diagnostic must name the executable dir: {error}"
+    );
+}

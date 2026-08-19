@@ -36,18 +36,21 @@ pub(crate) struct TalentRoots {
 
 impl TalentRoots {
     pub(crate) fn production() -> Result<Self, String> {
-        std::env::current_exe()
-            .ok()
-            .and_then(|path| path.parent().map(PathBuf::from))
-            .and_then(|directory| Self::from_executable_dir(&directory))
-            .ok_or_else(|| {
-                "could not locate packaged talent roots from the current executable".to_owned()
-            })
+        let executable = std::env::current_exe()
+            .map_err(|error| format!("could not inspect current executable: {error}"))?;
+        let directory = executable.parent().ok_or_else(|| {
+            format!(
+                "could not locate packaged talent roots from the current executable {}",
+                executable.display()
+            )
+        })?;
+        Self::from_executable_dir(directory)
     }
 
-    fn from_executable_dir(directory: &Path) -> Option<Self> {
+    pub(crate) fn from_executable_dir(directory: &Path) -> Result<Self, String> {
         solstone_core_journal::resolve_installation_root_from_executable_dir(directory)
             .map(Self::from_root)
+            .ok_or_else(|| solstone_core_journal::describe_installation_root_miss(directory))
     }
 
     fn from_root(root: PathBuf) -> Self {
@@ -951,6 +954,6 @@ mod tests {
         assert_eq!(roots.talent_root, share.join("solstone/talent"));
         assert_eq!(roots.apps_root, share.join("solstone/apps"));
         fs::remove_file(share.join(solstone_core_journal::LAYOUT_TEMPLATE_ANCHOR)).unwrap();
-        assert!(TalentRoots::from_executable_dir(&bin).is_none());
+        assert!(TalentRoots::from_executable_dir(&bin).is_err());
     }
 }

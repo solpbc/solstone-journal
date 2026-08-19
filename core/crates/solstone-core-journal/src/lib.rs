@@ -255,6 +255,77 @@ pub fn resolve_installation_root_from_executable_dir(executable_dir: &Path) -> O
         .or_else(|| executable_dir.parent().and_then(is_layout_install_root))
 }
 
+/// Why [`resolve_installation_root_from_executable_dir`] returned `None`.
+///
+/// Reuses the same three candidate predicates as the resolver. The text is for
+/// operators; it names the executable directory, a walked ancestor, and the
+/// checkout / layout markers that were required.
+pub fn describe_installation_root_miss(executable_dir: &Path) -> String {
+    let site_packages = installed_site_packages_from_executable_dir(executable_dir);
+    let checkout = executable_dir.ancestors().find_map(|candidate| {
+        detect_checkout_root(candidate)
+            .and_then(|root| is_solstone_checkout_root(&root).map(|payload| (root, payload)))
+    });
+    let layout = executable_dir.parent().and_then(is_layout_install_root);
+    let ancestor = executable_dir
+        .parent()
+        .or_else(|| executable_dir.ancestors().nth(1))
+        .unwrap_or(executable_dir);
+    format!(
+        "could not locate packaged talent roots from executable directory {}\n\
+         walked ancestor {}\n\
+         site-packages candidate: {}\n\
+         checkout candidate (pyproject.toml + .git): {}\n\
+         layout share anchors {}, {}, {}: {}",
+        executable_dir.display(),
+        ancestor.display(),
+        site_packages
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "none".to_owned()),
+        checkout
+            .as_ref()
+            .map(|(root, _)| root.display().to_string())
+            .unwrap_or_else(|| "none".to_owned()),
+        LAYOUT_BUNDLE_ANCHOR,
+        LAYOUT_LAYOUT_ANCHOR,
+        LAYOUT_TEMPLATE_ANCHOR,
+        layout
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "none".to_owned()),
+    )
+}
+
+/// Why packaged `solstone/talent` + `solstone/apps` roots could not be formed.
+pub fn describe_package_roots_miss(executable_dir: &Path) -> String {
+    match resolve_installation_root_from_executable_dir(executable_dir) {
+        None => describe_installation_root_miss(executable_dir),
+        Some(root) => {
+            let talent = root.join("solstone/talent");
+            let apps = root.join("solstone/apps");
+            if !talent.is_dir() {
+                format!(
+                    "installation root {} is missing directory {}",
+                    root.display(),
+                    talent.display()
+                )
+            } else if !apps.is_dir() {
+                format!(
+                    "installation root {} is missing directory {}",
+                    root.display(),
+                    apps.display()
+                )
+            } else {
+                format!(
+                    "could not locate packaged talent roots from executable directory {}",
+                    executable_dir.display()
+                )
+            }
+        }
+    }
+}
+
 fn is_layout_install_root(prefix: &Path) -> Option<PathBuf> {
     let share = prefix.join("share");
     has_layout_anchors(&share).then_some(share)
@@ -617,6 +688,30 @@ mod tests {
             fs::create_dir_all(path.parent().expect("anchor parent")).expect("create anchor dir");
             fs::write(&path, relative).expect("write layout anchor");
         }
+    }
+
+    #[test]
+    fn describe_installation_root_miss_names_the_paths_it_walked() {
+        let root = unique_temp("install-root-miss");
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).expect("create bin");
+        assert_eq!(resolve_installation_root_from_executable_dir(&bin), None);
+        let text = describe_installation_root_miss(&bin);
+        for token in [
+            bin.to_str().expect("utf8 bin"),
+            root.to_str().expect("utf8 ancestor"),
+            "pyproject.toml",
+            ".git",
+            LAYOUT_BUNDLE_ANCHOR,
+            LAYOUT_LAYOUT_ANCHOR,
+            LAYOUT_TEMPLATE_ANCHOR,
+        ] {
+            assert!(
+                text.contains(token),
+                "diagnostic must contain {token:?}: {text}"
+            );
+        }
+        fs::remove_dir_all(root).expect("cleanup install-root-miss");
     }
 
     #[test]

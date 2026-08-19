@@ -398,6 +398,27 @@ async fn serve_loopback(
 /// Run the production Convey server until its process is terminated; port zero is unsupported.
 #[cfg(feature = "host")]
 pub fn run_convey(journal_root: PathBuf, port: u16) -> Result<(), String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("convey could not inspect current executable: {error}"))?;
+    let executable_dir = executable
+        .parent()
+        .ok_or_else(|| format!("convey executable has no parent: {}", executable.display()))?;
+    run_convey_from_executable_dir(journal_root, port, executable_dir)
+}
+
+/// Like [`run_convey`], but resolves packaged talent roots from `executable_dir`.
+#[cfg(feature = "host")]
+pub fn run_convey_from_executable_dir(
+    journal_root: PathBuf,
+    port: u16,
+    executable_dir: &std::path::Path,
+) -> Result<(), String> {
+    let _roots = crate::thinking_sol_reads::TalentRoots::from_executable_dir(executable_dir)?;
+    run_convey_bound(journal_root, port)
+}
+
+#[cfg(feature = "host")]
+fn run_convey_bound(journal_root: PathBuf, port: u16) -> Result<(), String> {
     use solstone_core_sol_link::ledger::AuthorizedClientsRead;
     use tokio::sync::watch;
 

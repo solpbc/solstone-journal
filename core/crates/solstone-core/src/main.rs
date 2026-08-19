@@ -75,8 +75,9 @@ use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
 };
 use solstone_core_journal::{
-    ConfigError, HomeError, Source, discover_home, ensure_journal_dir_with_label,
-    read_config_journal, resolve_installation_root_from_executable_dir, resolve_journal_path,
+    ConfigError, HomeError, Source, describe_package_roots_miss, discover_home,
+    ensure_journal_dir_with_label, read_config_journal,
+    resolve_installation_root_from_executable_dir, resolve_journal_path,
 };
 use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
@@ -797,8 +798,14 @@ fn run_journal_stats(args: Vec<OsString>) -> ExitCode {
                 return ExitCode::from(EXIT_TEMPFAIL);
             }
         };
+        let executable_dir = env::current_exe()
+            .ok()
+            .and_then(|executable| executable.parent().map(Path::to_path_buf));
         let Some((system_talent_root, apps_root)) = discover_package_roots() else {
-            eprintln!("journal-stats failed: could not locate packaged talent roots");
+            eprintln!(
+                "journal-stats failed: {}",
+                describe_package_roots_miss(executable_dir.as_deref().unwrap_or(Path::new("")))
+            );
             return ExitCode::from(EXIT_TEMPFAIL);
         };
         (journal_root, system_talent_root, apps_root)

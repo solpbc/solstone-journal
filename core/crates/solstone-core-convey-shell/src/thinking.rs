@@ -289,7 +289,7 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
         .layer(Extension(journal))
         .layer(Extension(Arc::new(
             crate::thinking_sol_reads::TalentRoots::production()
-                .expect("could not locate packaged talent roots from the current executable"),
+                .unwrap_or_else(|error| panic!("{error}")),
         )))
         .layer(Extension(Arc::new(OperationRegistry::default())))
         .layer(Extension(confidential_runtime))

@@ -133,13 +133,12 @@ impl ThinkContext {
 }
 
 fn package_roots() -> Result<(PathBuf, PathBuf), String> {
-    std::env::current_exe()
+    let executable_dir = std::env::current_exe()
         .ok()
-        .and_then(|path| path.parent().map(Path::to_path_buf))
-        .and_then(|directory| package_roots_from_executable_dir(&directory))
-        .ok_or_else(|| {
-            "could not locate packaged talent roots from the current executable".to_owned()
-        })
+        .and_then(|path| path.parent().map(Path::to_path_buf));
+    let directory = executable_dir.as_deref().unwrap_or(Path::new(""));
+    package_roots_from_executable_dir(directory)
+        .ok_or_else(|| solstone_core_journal::describe_package_roots_miss(directory))
 }
 
 fn package_roots_from_executable_dir(executable_dir: &Path) -> Option<(PathBuf, PathBuf)> {
@@ -174,6 +173,11 @@ mod tests {
         assert!(
             package_roots_from_executable_dir(&bin).is_none(),
             "talent without apps must fail closed"
+        );
+        let missing_apps = solstone_core_journal::describe_package_roots_miss(&bin);
+        assert!(
+            missing_apps.contains(&share.join("solstone/apps").display().to_string()),
+            "directory-miss diagnostic must name solstone/apps: {missing_apps}"
         );
         fs::create_dir_all(share.join("solstone/apps")).unwrap();
         let (talent, apps) = package_roots_from_executable_dir(&bin).unwrap();
