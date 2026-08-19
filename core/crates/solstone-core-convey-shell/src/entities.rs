@@ -325,10 +325,7 @@ mod tests {
     #[tokio::test]
     async fn unported_entity_plates_and_assist_keep_their_reference_refusals() {
         let journal = Journal::established();
-        for path in [
-            "/app/entities/api/search?query=x",
-            "/app/entities/api/work/detected/preview?name=x",
-        ] {
+        for path in ["/app/entities/api/search?query=x"] {
             let (status, _headers, body) = routed(&journal, "GET", path, b"").await;
             assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{path}");
             assert_eq!(

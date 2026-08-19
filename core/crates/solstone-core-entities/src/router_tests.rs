@@ -323,6 +323,24 @@ fn assert_oracle_refusal(site: &str, actual: (u16, Value), code: &str, status: u
     assert_eq!(body["reason_code"], code, "{site}: reason code");
 }
 
+fn assert_success_envelope(route: &str, body: &Value, expected: &Value) {
+    assert_eq!(
+        body["success"],
+        json!(true),
+        "{route}: missing success envelope"
+    );
+    for (key, value) in expected.as_object().expect("{route}: expected object") {
+        assert_eq!(body[key], *value, "{route}: {key}");
+    }
+}
+
+fn assert_no_success_envelope(route: &str, body: &Value) {
+    assert!(
+        body.get("success").is_none(),
+        "{route}: unexpected success envelope"
+    );
+}
+
 #[tokio::test]
 async fn index_plate_routes_validate_pagination_before_refusing_as_unported() {
     let journal = Journal::new();
@@ -5252,4 +5270,633 @@ async fn refusal_sites_batch_8_restore_guard_and_unblock_mutation_failure_are_ex
         "entity_operation_failed",
         500,
     );
+}
+
+fn write_detected_day(root: &Path, day: &str, contents: &str) {
+    let path = root
+        .join("facets/work/entities")
+        .join(format!("{day}.jsonl"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, contents).unwrap();
+}
+
+#[tokio::test]
+async fn detected_preview_lists_matching_days_sorted() {
+    let j = Journal::new();
+    write_detected_day(
+        j.path(),
+        "20260102",
+        "{\"type\":\"Person\",\"name\":\"Ada\",\"description\":\"second\"}\n",
+    );
+    write_detected_day(
+        j.path(),
+        "20260101",
+        "{\"type\":\"Person\",\"name\":\"Ada\",\"description\":\"first\"}\n",
+    );
+    let (status, body) = call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        body,
+        json!({
+            "success":true,
+            "days":[
+                {"day":"20260101","type":"Person","description":"first"},
+                {"day":"20260102","type":"Person","description":"second"}
+            ]
+        })
+    );
+}
+
+#[tokio::test]
+async fn detected_preview_without_entities_directory_returns_empty_days() {
+    let j = Journal::new();
+    let (status, body) = call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
+    assert_eq!(status, 200);
+    assert_eq!(body, json!({"success":true,"days":[]}));
+}
+
+#[tokio::test]
+async fn detected_preview_requires_name() {
+    let j = Journal::new();
+    for uri in [
+        "/app/entities/api/work/detected/preview",
+        "/app/entities/api/work/detected/preview?name=",
+        "/app/entities/api/work/detected/preview?name=%20",
+    ] {
+        let (status, body) = call(j.path(), uri).await;
+        assert_eq!(status, 400, "{uri}");
+        assert_eq!(body["reason_code"], "missing_required_field", "{uri}");
+        assert_eq!(body["detail"], "Entity name is required", "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn detected_preview_emits_one_entry_per_matching_row() {
+    let j = Journal::new();
+    write_detected_day(
+        j.path(),
+        "20260101",
+        "{\"type\":\"Person\",\"name\":\"Ada\",\"description\":\"one\"}\n{\"type\":\"Tool\",\"name\":\"Ada\",\"description\":\"two\"}\n",
+    );
+    let (status, body) = call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        body["days"],
+        json!([
+            {"day":"20260101","type":"Person","description":"one"},
+            {"day":"20260101","type":"Tool","description":"two"}
+        ])
+    );
+}
+
+#[tokio::test]
+async fn detected_preview_skips_invalid_type_and_matches_delete_day_set() {
+    let j = Journal::new();
+    write_detected_day(j.path(), "20260101", "{\"name\":\"Ada\"}\n");
+    write_detected_day(
+        j.path(),
+        "20260102",
+        "{\"type\":\"Person\",\"name\":\"Ada\",\"description\":\"ok\"}\n",
+    );
+    let (status, preview) =
+        call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        preview["days"],
+        json!([{"day":"20260102","type":"Person","description":"ok"}])
+    );
+    let (delete_status, deleted) = delete_json(
+        j.path(),
+        "/app/entities/api/work/detected",
+        json!({"name":"Ada"}),
+    )
+    .await;
+    assert_eq!(delete_status, 200);
+    assert_eq!(deleted["days_modified"], json!(["20260102"]));
+}
+
+#[tokio::test]
+async fn detected_preview_without_match_returns_empty_days() {
+    let j = Journal::new();
+    write_detected_day(
+        j.path(),
+        "20260101",
+        "{\"type\":\"Person\",\"name\":\"Bob\",\"description\":\"other\"}\n",
+    );
+    let (status, body) = call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
+    assert_eq!(status, 200);
+    assert_eq!(body, json!({"success":true,"days":[]}));
+}
+
+#[tokio::test]
+async fn detected_preview_ignores_directory_at_day_file_path() {
+    let j = Journal::new();
+    let entities_dir = j.path().join("facets/work/entities");
+    fs::create_dir_all(entities_dir.join("20260101.jsonl")).unwrap();
+    write_detected_day(
+        j.path(),
+        "20260102",
+        "{\"type\":\"Person\",\"name\":\"Ada\",\"description\":\"ok\"}\n",
+    );
+    let (status, body) = call(j.path(), "/app/entities/api/work/detected/preview?name=Ada").await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        body["days"],
+        json!([{"day":"20260102","type":"Person","description":"ok"}])
+    );
+}
+
+#[tokio::test]
+async fn every_success_envelope_branch_sets_success_true() {
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        let (status, body) = delete(j.path(), "/app/entities/api/journal/entity/a").await;
+        assert_eq!(status, 200, "deferred-delete: status");
+        assert_success_envelope("deferred-delete", &body, &json!({}));
+        assert!(
+            body["pending"].as_str().is_some(),
+            "deferred-delete: pending"
+        );
+    }
+    {
+        let j = Journal::new();
+        write(
+            j.path(),
+            "entities/a/entity.json",
+            json!({"id":"a","name":"Alice","type":"Person","updated_at":123}),
+        );
+        let (status, body) = put(
+            j.path(),
+            "/app/entities/api/journal/entity/a",
+            json!({"name":"Alice"}),
+        )
+        .await;
+        assert_eq!(status, 200, "journal-update-noop: status");
+        assert_success_envelope(
+            "journal-update-noop",
+            &body,
+            &json!({"message":"No changes made"}),
+        );
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        let (status, body) = put(
+            j.path(),
+            "/app/entities/api/journal/entity/a",
+            json!({"name":"Alicia"}),
+        )
+        .await;
+        assert_eq!(status, 200, "journal-update: status");
+        assert_success_envelope("journal-update", &body, &json!({}));
+        assert_eq!(body["entity"]["name"], "Alicia", "journal-update: entity");
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        seed_facet_entity(j.path(), "work", "a");
+        delete(j.path(), "/app/entities/api/work/entity/a").await;
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/work/attach",
+            json!({"type":"Person","name":"Alice"}),
+        )
+        .await;
+        assert_eq!(status, 200, "attach-reactivated: status");
+        assert_success_envelope("attach-reactivated", &body, &json!({}));
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        seed_facet_entity(j.path(), "work", "a");
+        let (status, body) = delete(j.path(), "/app/entities/api/work/entity/a").await;
+        assert_eq!(status, 200, "detach: status");
+        assert_success_envelope("detach", &body, &json!({}));
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        seed_facet_entity(j.path(), "work", "a");
+        let (status, body) = put(
+            j.path(),
+            "/app/entities/api/work/entity/a/description",
+            json!({"description":"new"}),
+        )
+        .await;
+        assert_eq!(status, 200, "path-description: status");
+        assert_success_envelope("path-description", &body, &json!({}));
+    }
+    {
+        let j = Journal::new();
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/work/detected",
+            json!({"day":"20260101","type":"Person","entity":"Alice","description":"seen"}),
+        )
+        .await;
+        assert_eq!(status, 200, "detect: status");
+        assert_success_envelope("detect", &body, &json!({"name":"Alice"}));
+    }
+    {
+        let j = Journal::new();
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/record-merge-candidate",
+            json!({
+                "facet":"work",
+                "day":"20260101",
+                "source":"Alice",
+                "target":"Alicia",
+                "evidence":"evidence",
+            }),
+        )
+        .await;
+        assert_eq!(status, 200, "record-merge-candidate: status");
+        assert_success_envelope("record-merge-candidate", &body, &json!({"created":true}));
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        seed_facet_entity(j.path(), "work", "a");
+        delete(j.path(), "/app/entities/api/work/entity/a").await;
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/work",
+            json!({"type":"Person","name":"Alice"}),
+        )
+        .await;
+        assert_eq!(status, 200, "create-reattach: status");
+        assert_success_envelope("create-reattach", &body, &json!({"reattached":true}));
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        seed_facet_entity(j.path(), "work", "a");
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/work/update-description",
+            json!({"entity_id":"a","description":"new"}),
+        )
+        .await;
+        assert_eq!(status, 200, "update-description: status");
+        assert_success_envelope("update-description", &body, &json!({}));
+        assert_eq!(
+            body["entity"]["description"], "new",
+            "update-description: entity"
+        );
+    }
+    {
+        let j = Journal::new();
+        write_detected_day(
+            j.path(),
+            "20260101",
+            "{\"id\":\"alice\",\"type\":\"Person\",\"name\":\"Alice\",\"description\":\"old\"}\n",
+        );
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/work/update-detected",
+            json!({"day":"20260101","entity":"Alice","description":"new"}),
+        )
+        .await;
+        assert_eq!(status, 200, "update-detected: status");
+        assert_success_envelope("update-detected", &body, &json!({}));
+        assert_eq!(
+            body["entity"]["description"], "new",
+            "update-detected: entity"
+        );
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        seed_facet_entity(j.path(), "from", "a");
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/move",
+            json!({"entity":"Alice","from_facet":"from","to_facet":"to"}),
+        )
+        .await;
+        assert_eq!(status, 200, "move: status");
+        assert_success_envelope(
+            "move",
+            &body,
+            &json!({
+                "entity":"Alice",
+                "moved_from":"from",
+                "moved_to":"to",
+                "merged":false
+            }),
+        );
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "alice", "Alice");
+        seed_facet_entity(j.path(), "work", "alice");
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/work/observe",
+            json!({"name":"Alice","content":"seen"}),
+        )
+        .await;
+        assert_eq!(status, 200, "observe: status");
+        assert_success_envelope("observe", &body, &json!({}));
+        assert_eq!(body["result"]["count"], 1, "observe: count");
+    }
+    {
+        let j = Journal::new();
+        let (status, body) = delete_json(
+            j.path(),
+            "/app/entities/api/work/detected",
+            json!({"name":"Alice"}),
+        )
+        .await;
+        assert_eq!(status, 200, "delete-detected-empty: status");
+        assert_success_envelope("delete-detected-empty", &body, &json!({"days_modified":[]}));
+    }
+    {
+        let j = Journal::new();
+        write_detected_day(
+            j.path(),
+            "20260101",
+            "{\"type\":\"Person\",\"name\":\"Alice\"}\n",
+        );
+        let (status, body) = delete_json(
+            j.path(),
+            "/app/entities/api/work/detected",
+            json!({"name":"Alice"}),
+        )
+        .await;
+        assert_eq!(status, 200, "delete-detected: status");
+        assert_success_envelope(
+            "delete-detected",
+            &body,
+            &json!({"days_modified":["20260101"]}),
+        );
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        seed_facet_entity(j.path(), "work", "a");
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/work/aka",
+            json!({"entity_id":"a","aka":"Al","exclude_name":"Alice"}),
+        )
+        .await;
+        assert_eq!(status, 200, "aka: status");
+        assert_success_envelope("aka", &body, &json!({"aka":["Al"]}));
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        seed_facet_entity(j.path(), "work", "a");
+        let (status, body) = put(
+            j.path(),
+            "/app/entities/api/work/update",
+            json!({"old_name":"Alice","new_name":"Alicia"}),
+        )
+        .await;
+        assert_eq!(status, 200, "update-entity: status");
+        assert_success_envelope("update-entity", &body, &json!({}));
+        assert_eq!(body["entity"]["name"], "Alicia", "update-entity: entity");
+    }
+}
+
+#[tokio::test]
+async fn attach_fresh_and_create_fresh_omit_success() {
+    let j = Journal::new();
+    let (attach_status, attached) = post(
+        j.path(),
+        "/app/entities/api/work/attach",
+        json!({"type":"Person","name":"Alice"}),
+    )
+    .await;
+    assert_eq!(attach_status, 200, "attach-fresh: status");
+    assert_no_success_envelope("attach-fresh", &attached);
+    assert_eq!(attached["name"], "Alice", "attach-fresh: name");
+
+    let j = Journal::new();
+    let (create_status, created) = post(
+        j.path(),
+        "/app/entities/api/work",
+        json!({"type":"Person","name":"Bob"}),
+    )
+    .await;
+    assert_eq!(create_status, 201, "create-fresh: status");
+    assert_no_success_envelope("create-fresh", &created);
+    assert_eq!(created["name"], "Bob", "create-fresh: name");
+}
+
+#[tokio::test]
+async fn collection_routes_remain_items_and_total() {
+    let j = Journal::new();
+    seed_entity(j.path(), "alice", "Alice");
+    seed_facet_entity(j.path(), "work", "alice");
+    write_detected_day(
+        j.path(),
+        "20260101",
+        "{\"type\":\"Person\",\"name\":\"Bob\"}\n",
+    );
+    for (route, uri) in [
+        ("detected", "/app/entities/api/work/detected?day=20260101"),
+        ("merge-candidates", "/app/entities/api/merge-candidates"),
+        ("curation-candidates", "/app/curation/api/facet/candidates"),
+        ("ambiguities", "/app/entities/api/ambiguities"),
+        (
+            "observations",
+            "/app/entities/api/work/observations?name=Alice",
+        ),
+    ] {
+        let (status, body) = call(j.path(), uri).await;
+        assert_eq!(status, 200, "{route}: status");
+        assert_no_success_envelope(route, &body);
+        assert!(body["items"].is_array(), "{route}: items");
+        assert!(body["total"].is_number(), "{route}: total");
+        let keys: BTreeSet<_> = body.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(
+            keys,
+            BTreeSet::from(["items".to_owned(), "total".to_owned()]),
+            "{route}: keys"
+        );
+    }
+}
+
+#[tokio::test]
+async fn resource_mutation_routes_omit_success() {
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "source", "Source");
+        seed_entity(j.path(), "target", "Target");
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/merge",
+            json!({"source_slug":"source","target_slug":"target","commit":true}),
+        )
+        .await;
+        assert_eq!(status, 200, "merge: status");
+        assert_no_success_envelope("merge", &body);
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "source", "Source");
+        seed_entity(j.path(), "target", "Target");
+        let (_, merge) = post(
+            j.path(),
+            "/app/entities/api/merge",
+            json!({"source_slug":"source","target_slug":"target","commit":true}),
+        )
+        .await;
+        let merge_id = merge["merge_id"].as_str().unwrap();
+        let (status, body) = post(
+            j.path(),
+            &format!("/app/entities/api/merge/{merge_id}/undo"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, 200, "undo: status");
+        assert_no_success_envelope("undo", &body);
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "source", "Source");
+        seed_entity(j.path(), "target", "Target");
+        seed_open_merge_candidate(j.path()).await;
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/accept-merge-candidate",
+            merge_candidate_request(true),
+        )
+        .await;
+        assert_eq!(status, 200, "accept-merge-candidate: status");
+        assert_no_success_envelope("accept-merge-candidate", &body);
+    }
+    {
+        let j = Journal::new();
+        seed_open_merge_candidate(j.path()).await;
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/dismiss-merge-candidate",
+            json!({"facet":"work","source_slug":"source","target_slug":"target"}),
+        )
+        .await;
+        assert_eq!(status, 200, "dismiss-merge-candidate: status");
+        assert_no_success_envelope("dismiss-merge-candidate", &body);
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        seed_facet_entity(j.path(), "work", "a");
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/journal/entity/a/block",
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, 200, "block: status");
+        assert_no_success_envelope("block", &body);
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        seed_facet_entity(j.path(), "work", "a");
+        post(
+            j.path(),
+            "/app/entities/api/journal/entity/a/block",
+            json!({}),
+        )
+        .await;
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/journal/entity/a/unblock",
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, 200, "unblock: status");
+        assert_no_success_envelope("unblock", &body);
+    }
+    {
+        let j = Journal::new();
+        let before = json!({"id":"a","name":"Before","type":"Person"});
+        let version = solstone_core_entity::save_entity_identity(j.path(), "a", &before, None)
+            .unwrap()
+            .event
+            .unwrap()["version_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        solstone_core_entity::save_entity_identity(
+            j.path(),
+            "a",
+            &json!({"id":"a","name":"After","type":"Person"}),
+            None,
+        )
+        .unwrap();
+        let (status, body) = post(
+            j.path(),
+            "/app/entities/api/journal/entity/a/restore",
+            json!({"version_id":version}),
+        )
+        .await;
+        assert_eq!(status, 200, "restore: status");
+        assert_no_success_envelope("restore", &body);
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "target", "Target");
+        let registry = Arc::new(crate::deferred_delete::DeferredDeleteRegistry::new());
+        let router = crate::router_with_delete_window_and_registry(
+            j.path(),
+            Duration::from_secs(3600),
+            Arc::clone(&registry),
+        );
+        let (_, scheduled) =
+            delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
+        let pending_id = scheduled["pending"].as_str().unwrap();
+        let (status, body) = post_with_router(
+            &router,
+            &format!("/app/entities/api/cancel-delete/{pending_id}"),
+        )
+        .await;
+        assert_eq!(status, 200, "cancel-delete: status");
+        assert_no_success_envelope("cancel-delete", &body);
+    }
+    {
+        let j = Journal::new();
+        seed_entity(j.path(), "a", "Alice");
+        seed_facet_entity(j.path(), "work", "a");
+        let row = seed_facet_ambiguity(j.path(), "Alic");
+        let ambiguity_id = row["ambiguity_id"].as_str().unwrap();
+        let (status, body) = post(
+            j.path(),
+            &format!("/app/entities/api/ambiguities/{ambiguity_id}/resolve"),
+            json!({"entity_id":"a"}),
+        )
+        .await;
+        assert_eq!(status, 200, "ambiguity-resolve: status");
+        assert_no_success_envelope("ambiguity-resolve", &body);
+    }
+    {
+        let j = Journal::new();
+        seed_facet_candidate(j.path(), "project-alpha", "Project Alpha", "open");
+        let (status, body) = post(
+            j.path(),
+            "/app/curation/api/facet/accept",
+            json!({"name_key":"project-alpha"}),
+        )
+        .await;
+        assert_eq!(status, 200, "curation-accept: status");
+        assert_no_success_envelope("curation-accept", &body);
+    }
+    {
+        let j = Journal::new();
+        seed_facet_candidate(j.path(), "project-beta", "Project Beta", "open");
+        let (status, body) = post(
+            j.path(),
+            "/app/curation/api/facet/dismiss",
+            json!({"name_key":"project-beta"}),
+        )
+        .await;
+        assert_eq!(status, 200, "curation-dismiss: status");
+        assert_no_success_envelope("curation-dismiss", &body);
+    }
 }

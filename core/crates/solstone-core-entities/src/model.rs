@@ -16,9 +16,8 @@ pub static ENTITIES_COPY: LazyLock<serde_json::Value> = LazyLock::new(|| {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReasonCode {
     AgentUnavailable,
-    /// `/api/search` is the sole remaining route that still serves
-    /// `IndexPlateNotPorted` instead of this variant.
-    #[allow(dead_code)]
+    /// `/app/entities/api/search` is the sole remaining route that still
+    /// serves `IndexPlateNotPorted` instead of this variant.
     EdgeIndexUnavailable,
     EntityAliasConflict,
     EntityAlreadyExists,

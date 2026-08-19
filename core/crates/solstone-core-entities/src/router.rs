@@ -153,7 +153,7 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
         )
         .route(
             "/app/entities/api/{facet_name}/detected/preview",
-            get(index_plate),
+            get(detected_preview_route),
         )
         .route("/app/entities/api/{facet_name}/attach", post(attach_route))
         .route("/app/entities/api/{facet_name}/aka", post(aka_route))
@@ -374,7 +374,6 @@ enum IndexPlateRoute {
     History,
     Overview,
     Search,
-    Other,
 }
 
 const RESOLUTION_FUZZY_THRESHOLD: f64 = 90.0;
@@ -1024,6 +1023,53 @@ async fn detected_route(
         _ => refusal(ReasonCode::EntityOperationFailed, "detected read failed"),
     }
 }
+
+async fn detected_preview_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    RoutePath(facet): RoutePath<String>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let Some(name) = q
+        .get("name")
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+    else {
+        return refusal(ReasonCode::MissingRequiredField, "Entity name is required");
+    };
+    let entities_dir = root.join("facets").join(&facet).join("entities");
+    if !entities_dir.exists() {
+        return Json(json!({"success":true,"days":[]})).into_response();
+    }
+    let name = name.to_owned();
+    match solstone_core_serving::seam::run_blocking(move || {
+        let days = detected_day_stems(&entities_dir)
+            .map_err(solstone_core_facets::FacetEntityWriteError::Io)?;
+        let mut entries = Vec::new();
+        for day in days {
+            for entity in solstone_core_facets::read_detected_entities(&root, &facet, &day)? {
+                if entity.get("name").and_then(serde_json::Value::as_str) == Some(name.as_str()) {
+                    entries.push(json!({
+                        "day": day,
+                        "type": entity.get("type").and_then(serde_json::Value::as_str).unwrap_or(""),
+                        "description": entity.get("description").and_then(serde_json::Value::as_str).unwrap_or(""),
+                    }));
+                }
+            }
+        }
+        Ok::<_, solstone_core_facets::FacetEntityWriteError>(entries)
+    })
+    .await
+    {
+        Ok(Ok(days)) => Json(json!({"success":true,"days":days})).into_response(),
+        _ => refusal(ReasonCode::EntityOperationFailed, "detected read failed"),
+    }
+}
+
 async fn merge_candidates_route(
     Extension(b): Extension<AccessBasis>,
     State(root): State<Arc<RouterState>>,
@@ -4202,7 +4248,6 @@ fn validate_index_plate_pagination(
                 .and_then(|value| value.trim().parse::<i64>().ok())
                 .unwrap_or(20);
         }
-        IndexPlateRoute::Other => {}
     }
     Ok(())
 }
@@ -4222,13 +4267,6 @@ fn index_plate_response(
         ReasonCode::IndexPlateNotPorted,
         "This entity index route is not ported yet.",
     )
-}
-
-async fn index_plate(
-    Extension(basis): Extension<AccessBasis>,
-    Query(query): Query<IndexPlateQuery>,
-) -> Response {
-    index_plate_response(basis, query, IndexPlateRoute::Other)
 }
 
 async fn index_plate_network(
