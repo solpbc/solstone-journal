@@ -2310,6 +2310,74 @@ async fn minted_pair_link_drives_the_shipped_client_and_reconnects_as_its_finger
     handle.shutdown();
 }
 
+#[tokio::test]
+async fn minted_pair_link_reconnects_after_a_door_restart_with_a_fresh_leaf() {
+    let fixture = Fixture::established(1);
+    let first = serve(options(
+        &fixture,
+        pairing_router(&fixture, pairing_snapshot()),
+        0,
+    ))
+    .await
+    .expect("first serve");
+    let mint = mint_from_loopback(&first, "restart phone").await;
+    let link = link_for_door(
+        mint["pair_link"].as_str().expect("minted pair link"),
+        door_port(first.door_outcome()),
+    );
+    let credential =
+        spl_transport::pairing::pair_from_link(&link, "restart phone", &serde_json::Map::new())
+            .await
+            .expect("shipped pairing client completes ceremony");
+    let first_chain = presented_chain(&fixture, door_port(first.door_outcome())).await;
+    let (_, first_leaf) =
+        x509_parser::parse_x509_certificate(first_chain[0].as_ref()).expect("first leaf parses");
+    let restart_port = door_port(first.door_outcome());
+    first.shutdown();
+    drop(first);
+
+    let second = {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let candidate = serve(options(
+                &fixture,
+                pairing_router(&fixture, pairing_snapshot()),
+                restart_port,
+            ))
+            .await
+            .expect("second serve starts");
+            if matches!(
+                candidate.door_outcome(),
+                DoorOutcome::Bound(address) if address.port() == restart_port
+            ) {
+                break candidate;
+            }
+            candidate.shutdown();
+            drop(candidate);
+            if Instant::now() >= deadline {
+                panic!(
+                    "door did not rebind stored port {restart_port} within 2s after shutdown"
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    };
+    let second_chain = presented_chain(&fixture, door_port(second.door_outcome())).await;
+    let (_, second_leaf) =
+        x509_parser::parse_x509_certificate(second_chain[0].as_ref()).expect("second leaf parses");
+    assert_ne!(
+        first_leaf.raw_serial(),
+        second_leaf.raw_serial(),
+        "a restart that reused the first leaf would make this reconnect test pass vacuously"
+    );
+    TransportClient::new(credential, None)
+        .expect("credential has strict mTLS configuration")
+        .dial_carrier()
+        .await
+        .expect("stored credential reconnects after the door reminted its leaf");
+    second.shutdown();
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
