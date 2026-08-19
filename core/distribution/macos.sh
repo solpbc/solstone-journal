@@ -153,7 +153,7 @@ install_tar() {
 }
 
 assert_launchers() {
-	for launcher in journal sol solstone; do
+	for launcher in journal solstone; do
 		path=$(command -v "$launcher") || refuse "launcher missing: $launcher"
 		case $path in
 		*site-packages* | *.venv/* | *'/venv/'* | *Python.framework*)
@@ -642,7 +642,7 @@ pkg_rung() {
 	if [ "${SOLSTONE_MACOS_INSTALL_PKG:-}" = "1" ]; then
 		sudo installer -pkg "$package" -target / >"$WORK/installer.out" 2>&1 \
 			|| { cat "$WORK/installer.out" >&2; refuse "installer refused the package"; }
-		for launcher in journal sol solstone; do
+		for launcher in journal solstone; do
 			[ -x "/usr/local/bin/$launcher" ] \
 				|| refuse "installed package did not place /usr/local/bin/$launcher"
 		done
@@ -675,10 +675,12 @@ bootstrap_rung() {
 	for shell in /bin/sh /bin/zsh; do
 		[ -x "$shell" ] || continue
 		resolved=$(env -i HOME="$home" PATH=/usr/bin:/bin TERM=dumb \
-			"$shell" -l -c 'command -v journal; command -v sol; command -v solstone' 2>/dev/null || true)
+			"$shell" -l -c 'command -v journal; command -v solstone' 2>/dev/null || true)
 		lines=$(printf '%s\n' "$resolved" | grep -c . || true)
-		[ "$lines" -eq 3 ] \
-			|| refuse "fresh $shell login shell resolved $lines of 3 launchers"
+		[ "$lines" -eq 2 ] \
+			|| refuse "fresh $shell login shell resolved $lines of 2 launchers"
+		! printf '%s\n' "$resolved" | grep -qx '.*/sol' \
+			|| refuse "fresh $shell login still resolved sol"
 	done
 	printf 'rung=bootstrap ok\n'
 }

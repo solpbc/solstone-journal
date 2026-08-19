@@ -84,4 +84,31 @@ fn inventory_has_no_sol_launcher_and_keeps_solstone() {
             .all(|entry| entry.source.as_deref() != Some("scripts/root-launchers/sol")),
         "inventory must not reference scripts/root-launchers/sol"
     );
+
+    for rel in [
+        "pyproject.toml",
+        "MANIFEST.in",
+        "core/distribution/macos.sh",
+        "core/distribution/cleanroom.sh",
+    ] {
+        let text = fs::read_to_string(root.join(rel)).unwrap_or_else(|error| {
+            panic!("read {rel}: {error}")
+        });
+        assert!(
+            !text.contains("scripts/root-launchers/sol\""),
+            "{rel} still names scripts/root-launchers/sol"
+        );
+        assert!(
+            !text.contains("include scripts/root-launchers/sol\n"),
+            "{rel} still includes scripts/root-launchers/sol"
+        );
+        assert!(
+            !text.contains("journal sol solstone"),
+            "{rel} still asserts a sol launcher beside journal and solstone"
+        );
+        assert!(
+            !text.contains("command -v sol;"),
+            "{rel} still probes command -v sol"
+        );
+    }
 }

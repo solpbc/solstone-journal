@@ -6,7 +6,6 @@
 # removes that failure mode at the root.
 graft solstone
 include build_hooks.py
-include scripts/root-launchers/sol
 include scripts/root-launchers/solstone
 
 # Exclude only compiled/editor cruft.

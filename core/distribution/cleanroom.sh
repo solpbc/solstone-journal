@@ -39,7 +39,7 @@ scan_control() {
 }
 
 assert_launchers() {
-	for launcher in journal sol solstone; do
+	for launcher in journal solstone; do
 		path=$(command -v "$launcher") || refuse "launcher missing: $launcher"
 		case $path in
 		*site-packages* | *dist-packages* | *.venv/* | *'/venv/'*)
@@ -197,10 +197,12 @@ bootstrap_install() {
 	curl --fail --silent --show-error "$origin/install.sh" \
 		| sh -s -- --version "$version" --origin "$origin"
 	login_paths=$(env -i HOME="$HOME" USER=clean LOGNAME=clean TERM=dumb \
-		sh -l -c 'command -v journal; command -v sol; command -v solstone')
+		sh -l -c 'command -v journal; command -v solstone')
 	printf '%s\n' "$login_paths"
-	[ "$(printf '%s\n' "$login_paths" | wc -l | tr -d ' ')" -eq 3 ] \
+	[ "$(printf '%s\n' "$login_paths" | wc -l | tr -d ' ')" -eq 2 ] \
 		|| refuse "fresh login did not resolve all launchers"
+	! printf '%s\n' "$login_paths" | grep -qx '.*/sol' \
+		|| refuse "fresh login still resolved sol"
 	PATH=$HOME/.local/solstone-journal/current/bin:/usr/bin:/usr/sbin:/bin:/sbin
 	export PATH
 	stop_server

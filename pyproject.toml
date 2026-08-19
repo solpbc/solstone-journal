@@ -145,7 +145,6 @@ Documentation = "https://github.com/solpbc/solstone-journal/blob/main/README.md"
 # uv-tool exports the root-owned public commands while dependency-owned core
 # scripts stay inside the tool environment.
 script-files = [
-    "scripts/root-launchers/sol",
     "scripts/root-launchers/solstone",
 ]
 
