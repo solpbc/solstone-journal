@@ -21,6 +21,8 @@
 #   release-invalid
 #   version-mismatch
 #   conflicting-digest
+#   lane-invalid
+#   latest-invalid
 
 set -eu
 
@@ -42,11 +44,12 @@ refuse() {
 }
 
 usage() {
-	printf '%s\n' "usage: install.sh [--prefix DIR] [--version VER] [--origin URL] [--archive FILE] [--sha256 FILE] [--release FILE] [--no-path]"
+	printf '%s\n' "usage: install.sh [--prefix DIR] [--version VER] [--lane LANE] [--origin URL] [--archive FILE] [--sha256 FILE] [--release FILE] [--no-path]"
 }
 
 PREFIX=
 VERSION=
+LANE=release
 ORIGIN=
 ARCHIVE=
 SHA256_FILE=
@@ -60,6 +63,10 @@ while [ "$#" -gt 0 ]; do
 		;;
 	--version)
 		VERSION=$2
+		shift 2
+		;;
+	--lane)
+		LANE=$2
 		shift 2
 		;;
 	--origin)
@@ -91,6 +98,11 @@ while [ "$#" -gt 0 ]; do
 		;;
 	esac
 done
+
+case $LANE in
+release | staging | dev) ;;
+*) refuse lane-invalid "$LANE" ;;
+esac
 
 HOME=${HOME:-}
 if [ -z "$HOME" ]; then
@@ -208,6 +220,7 @@ parse_sha256_file() {
 fetch_url() {
 	_url=$1
 	_dest=$2
+	_on_fail=${3:-origin-refused}
 	check_origin_url "$_url"
 	_hops=0
 	_current=$_url
@@ -235,9 +248,9 @@ fetch_url() {
 			return 0
 			;;
 		301 | 302 | 303 | 307 | 308)
-			[ -n "$_location" ] || refuse origin-refused "redirect without Location"
+			[ -n "$_location" ] || refuse "$_on_fail" "redirect without Location"
 			_hops=$((_hops + 1))
-			[ "$_hops" -le "$MAX_HOPS" ] || refuse origin-refused "too many redirects"
+			[ "$_hops" -le "$MAX_HOPS" ] || refuse "$_on_fail" "too many redirects"
 			case $_location in
 			http://* | https://*) _current=$_location ;;
 			/*)
@@ -245,15 +258,15 @@ fetch_url() {
 				_host=$(origin_host "$_current")
 				_current=${_scheme}://${_host}${_location}
 				;;
-			*) refuse origin-refused "relative redirect" ;;
+			*) refuse "$_on_fail" "relative redirect" ;;
 			esac
 			;;
 		*)
-			refuse origin-refused "http ${_code}"
+			refuse "$_on_fail" "http ${_code}"
 			;;
 		esac
 	done
-	refuse origin-refused "too many redirects"
+	refuse "$_on_fail" "too many redirects"
 }
 
 validate_release() {
@@ -485,16 +498,32 @@ if [ -n "$ARCHIVE" ]; then
 	cp "$RELEASE_FILE" "$WORK/tree.release"
 	_archive_name=${ARCHIVE##*/}
 else
-	[ -n "$VERSION" ] || refuse release-invalid "version required to fetch"
-	_base=${PRODUCT}-${VERSION}-${TARGET}
 	_origin=${ORIGIN%/}
-	check_origin_url "${_origin}/${_base}.tar.gz"
 	if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
 		refuse fetcher-missing
 	fi
-	fetch_url "${_origin}/${_base}.tar.gz" "$WORK/tree.tar.gz"
-	fetch_url "${_origin}/${_base}.sha256" "$WORK/tree.sha256"
-	fetch_url "${_origin}/${_base}.release" "$WORK/tree.release"
+	if [ -z "$VERSION" ]; then
+		_latest=$(mktemp "$WORK/solstone-install-latest-XXXXXX")
+		fetch_url "${_origin}/solstone-journal/${LANE}/latest" "$_latest" latest-invalid
+		_nlines=$(wc -l <"$_latest" | tr -d ' ')
+		[ "$_nlines" -eq 1 ] || refuse latest-invalid
+		_line=$(cat "$_latest")
+		case $_line in
+		version=*) ;;
+		*) refuse latest-invalid ;;
+		esac
+		_token=${_line#version=}
+		case $_token in
+		"" | . | .. | */*) refuse latest-invalid "$_token" ;;
+		esac
+		VERSION=$_token
+	fi
+	_base=${PRODUCT}-${VERSION}-${TARGET}
+	_object_base="${_origin}/solstone-journal/${LANE}/${VERSION}"
+	check_origin_url "${_object_base}/${_base}.tar.gz"
+	fetch_url "${_object_base}/${_base}.tar.gz" "$WORK/tree.tar.gz"
+	fetch_url "${_object_base}/${_base}.sha256" "$WORK/tree.sha256"
+	fetch_url "${_object_base}/${_base}.release" "$WORK/tree.release"
 	_archive_name=${_base}.tar.gz
 fi
 

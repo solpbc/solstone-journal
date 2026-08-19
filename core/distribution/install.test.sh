@@ -466,11 +466,13 @@ if [ ! -x "$BIN" ]; then
 fi
 if [ -x "$BIN" ]; then
 	SERVE=$BASE/origin
-	mkdir -p "$SERVE"
 	_base=solstone-journal-3.0.0-${TARGET}
-	cp "$ARCHIVE" "$SERVE/${_base}.tar.gz"
-	make_release "$SERVE/${_base}.release" 3.0.0 "$TARGET"
-	sha_sidecar "$SERVE/${_base}.tar.gz" "$SERVE/${_base}.sha256"
+	_object=$SERVE/solstone-journal/release/3.0.0
+	mkdir -p "$_object"
+	cp "$ARCHIVE" "$_object/${_base}.tar.gz"
+	make_release "$_object/${_base}.release" 3.0.0 "$TARGET"
+	sha_sidecar "$_object/${_base}.tar.gz" "$_object/${_base}.sha256"
+	printf 'version=3.0.0\n' >"$SERVE/solstone-journal/release/latest"
 	"$BIN" cleanroom-serve "$SERVE" >"$BASE/serve.out" 2>"$BASE/serve.err" &
 	_srv=$!
 	_i=0
@@ -482,7 +484,7 @@ if [ -x "$BIN" ]; then
 	_addr=$(head -1 "$BASE/serve.out")
 	if [ -n "$_addr" ]; then
 		if env HOME="$HOME" \
-			"$INSTALL" --prefix "$BASE/net-prefix" --version 3.0.0 --origin "http://${_addr}"; then
+			"$INSTALL" --prefix "$BASE/net-prefix" --origin "http://${_addr}"; then
 			if [ -x "$BASE/net-prefix/current/bin/journal" ]; then
 				pass "loopback fetch install"
 			else
