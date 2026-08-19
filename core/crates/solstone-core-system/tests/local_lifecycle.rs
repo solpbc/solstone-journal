@@ -307,6 +307,7 @@ fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
 
     let missing = ManagedProcess {
         id: "local:already-gone".into(),
+        pid: 0,
         name: "local".into(),
         running: false,
         fence: None,
@@ -320,6 +321,7 @@ fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
 
     let mut cancelled = stop_state(ManagedProcess {
         id: "local:cancelled".into(),
+        pid: 0,
         name: "local".into(),
         running: true,
         fence: None,

@@ -140,6 +140,7 @@ fn dispatch_stop_reports_cancelled_without_a_child() {
     );
     let mut cancelled = stop_state(ManagedProcess {
         id: "parakeet:cancelled".to_owned(),
+        pid: 0,
         name: PARAKEET_SERVER_PROCESS_NAME.to_owned(),
         running: true,
         fence: None,

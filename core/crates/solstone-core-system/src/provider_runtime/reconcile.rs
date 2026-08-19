@@ -968,6 +968,7 @@ mod tests {
     fn managed(id: &str) -> ManagedProcess {
         ManagedProcess {
             id: id.to_owned(),
+            pid: 0,
             name: "provider".to_owned(),
             running: true,
             fence: None,
@@ -1566,12 +1567,14 @@ mod tests {
         let current_fence = coordinator.fence(&state, 0);
         let old = ManagedProcess {
             id: "local:42".to_owned(),
+            pid: 42,
             name: "local".to_owned(),
             running: true,
             fence: Some(old_fence),
         };
         let current = ManagedProcess {
             id: "local:42".to_owned(),
+            pid: 42,
             name: "local".to_owned(),
             running: true,
             fence: Some(current_fence.clone()),

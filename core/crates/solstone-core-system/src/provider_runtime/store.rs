@@ -1279,6 +1279,7 @@ mod tests {
     fn current_process(fence: Option<ProviderFence>) -> ManagedProcess {
         ManagedProcess {
             id: "local:42".to_owned(),
+            pid: 42,
             name: "local".to_owned(),
             running: true,
             fence,
@@ -1851,6 +1852,7 @@ mod tests {
         stopping.pending_stop_request = Some(ProviderStopCleanupRequest {
             managed: ManagedProcess {
                 id: "local:42".to_owned(),
+                pid: 42,
                 name: "local".to_owned(),
                 running: true,
                 fence: None,

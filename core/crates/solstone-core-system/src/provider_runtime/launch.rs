@@ -308,12 +308,7 @@ impl LifecycleSeam for LocalLifecycleSeam {
             // Stay alive while the child is live so exiting this worker does
             // not SIGKILL it; stop polling once terminate() (or exit) reaps it.
             #[cfg(target_os = "linux")]
-            let hold_pid = outcome.managed.as_ref().and_then(|managed| {
-                managed
-                    .id
-                    .rsplit_once(':')
-                    .and_then(|(_, pid)| pid.parse::<u32>().ok())
-            });
+            let hold_pid = outcome.managed.as_ref().map(|managed| managed.pid);
             #[cfg(not(target_os = "linux"))]
             let _hold_pid: Option<u32> = None;
             shared.record_launch_result(&fence, outcome);
@@ -762,6 +757,7 @@ fn start_local(
         if warmup_health_probe(port) == WarmupHealth::Ready {
             let managed = ManagedProcess {
                 id: process_id.clone(),
+                pid,
                 name: "local".into(),
                 running: true,
                 fence: Some(fence.clone()),
@@ -786,6 +782,7 @@ fn start_local(
         if clock.monotonic_seconds() >= deadline {
             let managed = ManagedProcess {
                 id: process_id.clone(),
+                pid,
                 name: "local".into(),
                 running: true,
                 fence: None,
@@ -967,6 +964,7 @@ mod tests {
         let request = ProviderStopCleanupRequest {
             managed: ManagedProcess {
                 id: "local:42".to_owned(),
+                pid: 42,
                 name: "local".to_owned(),
                 running: true,
                 fence: Some(fence),

@@ -284,6 +284,7 @@ pub struct ProviderFence {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManagedProcess {
     pub id: String,
+    pub pid: u32,
     pub name: String,
     pub running: bool,
     /// The accepted launch fence, absent for intermediate launch outcomes.
