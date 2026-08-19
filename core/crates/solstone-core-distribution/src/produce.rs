@@ -425,6 +425,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                     epoch: &epoch,
                 })?,
             );
+            build_parakeet_helper(&checkout)?;
             return finish_produce(FinishProduce {
                 args: &args,
                 inventory: &inventory,
@@ -1105,6 +1106,32 @@ fn git_stdout(repo: &Path, args: &[&str]) -> Result<String, ProduceError> {
 
 fn git_run(repo: &Path, args: &[&str]) -> Result<(), ProduceError> {
     git_stdout(repo, args).map(|_| ())
+}
+
+/// The CoreML helper (parakeet-helper) is Swift, not Rust, so cargo build
+/// never produces it. Building it here — inside the isolated checkout, from
+/// nothing but what that commit tracks — keeps it inside the same
+/// reproducibility boundary as every cargo-built binary: the artifact traces
+/// to a commit, not to whatever happened to be lying around in the working
+/// tree that invoked produce. The entry that stages the result is a plain
+/// copy entry in the inventory, matched against this same relative path.
+fn build_parakeet_helper(checkout: &Path) -> Result<(), ProduceError> {
+    let dir = checkout.join("core/crates/solstone-core-transcribe/parakeet-helper");
+    let output = Command::new("swift")
+        .arg("build")
+        .arg("-c")
+        .arg("release")
+        .current_dir(&dir)
+        .output()
+        .map_err(|error| ProduceError::new(format!("swift build: {error}")))?;
+    if !output.status.success() {
+        return Err(ProduceError::new(format!(
+            "swift build -c release failed in {}:\n{}",
+            dir.display(),
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    Ok(())
 }
 
 fn command_stdout(bin: &Path, args: &[&str]) -> Result<String, ProduceError> {
