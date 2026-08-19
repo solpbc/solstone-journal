@@ -75,9 +75,9 @@
 //! five stub data routes still answer with a refusal.
 //!
 //! `/app/body` without its trailing slash reaches the generic converted-app
-//! catch-all and answers the shared HTML 404 — the same pre-existing
-//! behavior every converted app has today; `/app/body/` with the trailing
-//! slash is the explicit native shell entry point.
+//! catch-all, which permanently redirects to `/app/body/`. Every converted
+//! app uses that same bare-path redirect; the slashed form is the native
+//! shell entry point.
 
 #[cfg(feature = "host")]
 use std::path::Path as FsPath;
@@ -97,7 +97,7 @@ use axum::Extension;
 use axum::body::Body;
 use axum::extract::Path;
 use axum::http::{StatusCode, header};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 #[cfg(feature = "host")]
@@ -740,7 +740,7 @@ pub fn router(journal_root: PathBuf) -> Router {
             solstone_core_transcripts_web::Clock::system(),
             || asset_response("/static/shell.html"),
         ))
-        .route("/app/{app}", get(app_root))
+        .route("/app/{app}", get(app_bare))
         .route("/app/{app}/", get(app_root))
         .route("/app/{app}/{*tail}", get(app_nested))
         .merge(solstone_core_records_web::api_router(journal_root.clone()))
@@ -799,6 +799,13 @@ async fn static_asset(Path(path): Path<String>) -> Response {
 
 async fn shell_api(Extension(shell): Extension<Arc<ShellPayload>>) -> Response {
     Json((*shell).clone()).into_response()
+}
+
+async fn app_bare(Path(app): Path<String>) -> Response {
+    if known_app(&app).is_some_and(|definition| definition.converted) {
+        return Redirect::permanent(&format!("/app/{app}/")).into_response();
+    }
+    app_response(&app)
 }
 
 async fn app_root(Path(app): Path<String>) -> Response {
@@ -960,6 +967,8 @@ mod tests {
             ("/app/chat/api/stats/202607", StatusCode::OK),
             ("/app/search/", StatusCode::OK),
             ("/app/search", StatusCode::PERMANENT_REDIRECT),
+            ("/app/health", StatusCode::PERMANENT_REDIRECT),
+            ("/app/health/", StatusCode::OK),
             ("/app/search/workspace", StatusCode::OK),
             ("/app/search/api/agents?day=20260731", StatusCode::OK),
             (

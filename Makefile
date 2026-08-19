@@ -912,12 +912,13 @@ skills:
 	@$(VENV_BIN)/python scripts/build_skill_references.py
 	@$(RUST_BIN)/solstone-core-sol skills install --project journal --agent all
 
-# Start local dev stack against fixture journal (no observers, no daily processing)
-dev: .installed
+# Start local dev stack against fixture journal (no observers, no daily processing).
+# Recipe is native-only; `build` is cargo. Do not reattach `.installed`.
+dev: build
 	$(TEST_ENV) PATH=$(CURDIR)/$(RUST_BIN):$$PATH $(RUST_BIN)/solstone-core-journal supervisor 0 --no-daily
 
 # Start sandbox stack: fixture copy + background supervisor + readiness wait
-sandbox: .installed
+sandbox: build
 	@# Fail if sandbox already running
 	@if [ -f .sandbox.pid ] && kill -0 $$(cat .sandbox.pid) 2>/dev/null; then \
 		echo "Sandbox already running (PID $$(cat .sandbox.pid))"; \
@@ -936,7 +937,7 @@ sandbox: .installed
 	echo "Sandbox journal: $$SANDBOX_JOURNAL"; \
 	: "Boot supervisor in background"; \
 	SOLSTONE_JOURNAL="$$SANDBOX_JOURNAL" SANDBOX_PATH="$(CURDIR)/$(RUST_BIN):$$PATH" SANDBOX_LOG="$$SANDBOX_JOURNAL/health/service.log" JOURNAL_BIN="$(CURDIR)/$(RUST_BIN)/solstone-core-journal" \
-		$(VENV_PY) scripts/start_sandbox_supervisor.py > .sandbox.pid; \
+		$(SHELL) scripts/start_sandbox_supervisor.sh > .sandbox.pid; \
 	echo "Supervisor PID: $$(cat .sandbox.pid)"; \
 	: "Poll for readiness"; \
 	echo "Waiting for services..."; \

@@ -221,12 +221,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bare_body_and_speakers_share_the_html_404_fallback() {
+    async fn bare_converted_app_paths_permanently_redirect_to_the_trailing_slash() {
         let journal = EstablishedJournal::established();
-        for path in ["/app/body", "/app/speakers"] {
-            let response = get(crate::router(journal.0.path().to_path_buf()), path).await;
-            assert_eq!(response.0, StatusCode::NOT_FOUND, "{path}");
-            assert_eq!(response.1, "text/html; charset=utf-8", "{path}");
+        for path in ["/app/body", "/app/speakers", "/app/health"] {
+            let response = crate::router(journal.0.path().to_path_buf())
+                .oneshot(
+                    Request::get(path)
+                        .body(Body::empty())
+                        .expect("request builds"),
+                )
+                .await
+                .expect("router responds");
+            assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT, "{path}");
+            assert_eq!(
+                response
+                    .headers()
+                    .get("location")
+                    .and_then(|value| value.to_str().ok()),
+                Some(format!("{path}/").as_str()),
+                "{path}"
+            );
         }
     }
 
