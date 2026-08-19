@@ -551,6 +551,12 @@
     }
 
     const rendered = relationshipItems.length + attendanceItems.length;
+    if (typeof connections.horizon_note === 'string' && connections.horizon_note
+        && typeof connections.horizon_day === 'string' && connections.horizon_day) {
+      html += '<div class="pulse-connections-horizon">'
+        + esc(connections.horizon_note.replace('{day}', formatConnectionDay(connections.horizon_day, referenceDay)))
+        + '</div>';
+    }
     if (Number(connections.total || 0) > rendered) {
       html += '<div class="pulse-connections-footer"><a href="/app/entities">all connections →</a></div>';
     }

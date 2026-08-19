@@ -1416,6 +1416,12 @@ tr:hover .entity-delete-btn {
   margin-bottom: 0.8em;
 }
 
+.entity-conn-horizon {
+  color: #6c757d;
+  font-size: 0.85em;
+  margin-top: 0.8em;
+}
+
 .entity-conn-list {
   display: flex;
   flex-direction: column;
@@ -2729,6 +2735,13 @@ async function renderConnectionsSection(entityId, containerId, isPrincipal) {
 
     if (neighbors.length === 0 && !hasWithYou) {
       renderConnectionsEmpty(container);
+    }
+    if (typeof network.horizon_note === 'string' && network.horizon_note
+        && typeof network.horizon_day === 'string' && network.horizon_day) {
+      const line = document.createElement('div');
+      line.className = 'entity-conn-horizon';
+      line.textContent = network.horizon_note.replace('{day}', formatEntityConnDay(network.horizon_day, referenceDay));
+      container.appendChild(line);
     }
   } catch (error) {
     if (!isCurrentConnectionEntity(entityId)) return;

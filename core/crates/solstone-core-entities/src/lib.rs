@@ -10,7 +10,7 @@ mod deferred_delete;
 mod model;
 mod router;
 
-pub use model::{ATTENDANCE_KINDS, ENTITIES_COPY};
+pub use model::{ATTENDANCE_KINDS, ENTITIES_COPY, compose_connections_horizon_note};
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use router::router_with_delete_window;

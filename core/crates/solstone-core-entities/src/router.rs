@@ -28,7 +28,8 @@ use solstone_core_indexer_query::{
 
 use crate::deferred_delete::DeferredDeleteRegistry;
 use crate::model::{
-    ATTENDANCE_KINDS, ENTITIES_COPY, ENTITY_TYPES, ReasonCode, refusal, refusal_with_status,
+    ATTENDANCE_KINDS, ENTITIES_COPY, ENTITY_TYPES, ReasonCode, compose_connections_horizon_note,
+    refusal, refusal_with_status,
 };
 
 #[derive(Clone)]
@@ -4105,7 +4106,22 @@ fn network_plate_work(
                 &ATTENDANCE_KINDS,
             )
             .map_err(IndexPlateError::Query)?;
-            payload_value(response)
+            let mut value = serde_json::to_value(&response)
+                .map_err(|error| IndexPlateError::OperationFailed(error.to_string()))?;
+            if principal_id.as_deref() == Some(entity_dir.as_str())
+                && let Some(horizon) =
+                    solstone_core_facets::refresh_connections_horizon(journal_root)
+            {
+                let object = value
+                    .as_object_mut()
+                    .expect("NetworkResponse serializes to an object");
+                object.insert("horizon_day".to_owned(), Value::String(horizon.day));
+                object.insert(
+                    "horizon_note".to_owned(),
+                    Value::String(compose_connections_horizon_note(horizon.earlier_days)),
+                );
+            }
+            Ok(IndexPlateOutcome::Payload(value))
         }
     }
 }

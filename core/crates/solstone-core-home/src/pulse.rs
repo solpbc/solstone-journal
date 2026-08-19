@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, Timelike, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_entity::read_journal_principal;
+use solstone_core_facets::{ConnectionsHorizon, refresh_connections_horizon};
 
 use crate::HomeContext;
 use crate::briefing;
@@ -199,7 +200,8 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         context.now_utc,
     );
     let yesterday_processing = summarize_yesterday_processing(context, journal_age_days);
-    let connections = load_connections_card(context);
+    let horizon = refresh_connections_horizon(context.journal_root());
+    let connections = load_connections_card(context, horizon);
 
     let narrative_summary = narrative_content.as_ref().map_or_else(String::new, |_| {
         narrative_updated_at.as_ref().map_or_else(
@@ -329,7 +331,7 @@ fn format_now(now: DateTime<Utc>) -> String {
     now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()
 }
 
-fn load_connections_card(context: &HomeContext) -> Value {
+fn load_connections_card(context: &HomeContext, horizon: Option<ConnectionsHorizon>) -> Value {
     let principal = read_journal_principal(context.journal_root()).map_err(|_| ());
     let network = match principal.as_ref() {
         Err(_) | Ok(None) => Ok(json!({})),
@@ -350,7 +352,7 @@ fn load_connections_card(context: &HomeContext) -> Value {
             })
             .map(|network| network.unwrap_or_else(|| json!({}))),
     };
-    build_connections_card(principal, network)
+    build_connections_card(principal, network, horizon)
 }
 
 fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) -> Option<Value> {
@@ -902,6 +904,105 @@ mod tests {
                 .any(|detail| detail.contains("Muted"))
         );
         assert!(!payload.to_string().contains("Unlisted"));
+    }
+
+    fn write_principal(root: &Path) {
+        solstone_core_entity::save_entity_identity(
+            root,
+            "owner",
+            &json!({"id":"owner","name":"Owner","type":"Person","is_principal":true}),
+            None,
+        )
+        .unwrap();
+    }
+
+    fn horizon_context(root: &Path) -> HomeContext {
+        HomeContext::new(root, Utc.with_ymd_and_hms(2026, 6, 2, 13, 0, 0).unwrap())
+    }
+
+    fn assert_horizon_failure_does_not_change_card(root: &Path) {
+        let ctx = horizon_context(root);
+        assert!(refresh_connections_horizon(root).is_none());
+        let with_refresh = load_connections_card(&ctx, refresh_connections_horizon(root));
+        let with_none = load_connections_card(&ctx, None);
+        assert_eq!(with_refresh, with_none);
+        assert!(with_refresh.get("horizon_day").is_none());
+        assert!(with_refresh.get("horizon_note").is_none());
+    }
+
+    #[test]
+    fn load_connections_card_does_not_degrade_when_horizon_scan_fails() {
+        let missing = TempDir::new().unwrap();
+        write_principal(missing.path());
+        assert_horizon_failure_does_not_change_card(missing.path());
+
+        let poisoned = TempDir::new().unwrap();
+        write_principal(poisoned.path());
+        fs::create_dir_all(poisoned.path().join("facets")).unwrap();
+        fs::write(
+            poisoned
+                .path()
+                .join("facets/.connections-horizon-cache.json"),
+            "not-json{{{",
+        )
+        .unwrap();
+        assert_horizon_failure_does_not_change_card(poisoned.path());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let unreadable = TempDir::new().unwrap();
+            write_principal(unreadable.path());
+            solstone_core_facets::create_facet(
+                unreadable.path(),
+                "work",
+                "work",
+                "Description",
+                "blue",
+                "💼",
+                None,
+            )
+            .unwrap();
+            let day = unreadable
+                .path()
+                .join("facets/work/entities/20260301.jsonl");
+            fs::create_dir_all(day.parent().unwrap()).unwrap();
+            fs::write(&day, "{\"name\":\"Ada\",\"segments\":[\"seg-1\"]}\n").unwrap();
+            fs::create_dir_all(unreadable.path().join("chronicle/20260101")).unwrap();
+            fs::set_permissions(&day, fs::Permissions::from_mode(0o000)).unwrap();
+            if fs::File::open(&day).is_ok() {
+                fs::set_permissions(&day, fs::Permissions::from_mode(0o600)).unwrap();
+                return;
+            }
+            assert_horizon_failure_does_not_change_card(unreadable.path());
+            fs::set_permissions(&day, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+
+    #[test]
+    fn load_connections_card_omits_horizon_when_store_has_no_gap() {
+        let root = TempDir::new().unwrap();
+        write_principal(root.path());
+        solstone_core_facets::create_facet(
+            root.path(),
+            "work",
+            "work",
+            "Description",
+            "blue",
+            "💼",
+            None,
+        )
+        .unwrap();
+        let day = root.path().join("facets/work/entities/20260101.jsonl");
+        fs::create_dir_all(day.parent().unwrap()).unwrap();
+        fs::write(&day, "{\"name\":\"Ada\",\"segments\":[\"seg-1\"]}\n").unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260101")).unwrap();
+        let ctx = horizon_context(root.path());
+        let horizon = refresh_connections_horizon(root.path());
+        assert!(horizon.is_none());
+        let card = load_connections_card(&ctx, horizon);
+        assert!(card.get("horizon_day").is_none());
+        assert!(card.get("horizon_note").is_none());
     }
 
     fn fixture_context(fixture: &str, now: DateTime<Utc>) -> HomeContext {

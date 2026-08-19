@@ -4,7 +4,8 @@
 //! Pure connections-card projection.
 
 use serde_json::{Value, json};
-use solstone_core_entities::{ATTENDANCE_KINDS, ENTITIES_COPY};
+use solstone_core_entities::{ATTENDANCE_KINDS, ENTITIES_COPY, compose_connections_horizon_note};
+use solstone_core_facets::ConnectionsHorizon;
 
 const CONNECTION_KIND_KEYS: [&str; 15] = [
     "works-with",
@@ -27,6 +28,7 @@ const CONNECTION_KIND_KEYS: [&str; 15] = [
 pub fn build_connections_card(
     principal: Result<Option<Value>, ()>,
     network: Result<Value, ()>,
+    horizon: Option<ConnectionsHorizon>,
 ) -> Value {
     let Ok(principal) = principal else {
         return json!({"state":"unavailable"});
@@ -52,7 +54,16 @@ pub fn build_connections_card(
     }
     let mut attendance_kinds = ATTENDANCE_KINDS.to_vec();
     attendance_kinds.sort_unstable();
-    json!({"state":"ok","neighbors":neighbors.iter().filter_map(Value::as_object).map(trim_neighbor).collect::<Vec<_>>(),"total":network.get("total_neighbors").and_then(Value::as_i64).unwrap_or(0),"kind_words":kind_words(),"attendance_kinds":attendance_kinds})
+    let mut card = json!({"state":"ok","neighbors":neighbors.iter().filter_map(Value::as_object).map(trim_neighbor).collect::<Vec<_>>(),"total":network.get("total_neighbors").and_then(Value::as_i64).unwrap_or(0),"kind_words":kind_words(),"attendance_kinds":attendance_kinds});
+    if let Some(horizon) = horizon {
+        let object = card.as_object_mut().expect("ok card is an object");
+        object.insert("horizon_day".to_owned(), Value::String(horizon.day));
+        object.insert(
+            "horizon_note".to_owned(),
+            Value::String(compose_connections_horizon_note(horizon.earlier_days)),
+        );
+    }
+    card
 }
 
 fn kind_words() -> Value {
@@ -115,34 +126,39 @@ mod tests {
     #[test]
     fn injected_read_failures_are_unavailable_and_absence_is_empty() {
         assert_eq!(
-            build_connections_card(Err(()), Ok(json!({}))),
+            build_connections_card(Err(()), Ok(json!({})), None),
             json!({"state":"unavailable"})
         );
         assert_eq!(
-            build_connections_card(Ok(None), Ok(json!({}))),
+            build_connections_card(Ok(None), Ok(json!({})), None),
             json!({"state":"empty"})
         );
         assert_eq!(
-            build_connections_card(Ok(Some(json!({"id":"owner"}))), Err(())),
+            build_connections_card(Ok(Some(json!({"id":"owner"}))), Err(()), None),
             json!({"state":"unavailable"})
         );
         assert_eq!(
-            build_connections_card(Ok(Some(json!({}))), Ok(json!({}))),
+            build_connections_card(Ok(Some(json!({}))), Ok(json!({})), None),
             json!({"state":"empty"})
         );
         assert_eq!(
-            build_connections_card(Ok(Some(json!({"id":"owner"}))), Ok(json!({}))),
+            build_connections_card(Ok(Some(json!({"id":"owner"}))), Ok(json!({})), None),
             json!({"state":"empty"})
         );
         assert_eq!(
             build_connections_card(
                 Ok(Some(json!({"id":"owner"}))),
                 Ok(json!({"neighbors":"not a list"})),
+                None,
             ),
             json!({"state":"empty"})
         );
         assert_eq!(
-            build_connections_card(Ok(Some(json!({"id":"owner"}))), Ok(json!({"neighbors":[]})),),
+            build_connections_card(
+                Ok(Some(json!({"id":"owner"}))),
+                Ok(json!({"neighbors":[]})),
+                None,
+            ),
             json!({"state":"empty"})
         );
     }
@@ -154,6 +170,7 @@ mod tests {
             Ok(
                 json!({"total_neighbors":4,"neighbors":[{"entity_id":"person:one","name":"One","evidence_class":"direct","count":4,"last_seen":"20260602","evidence":[{"label":"meeting","kind":"note","day":"20260601"}],"kinds":{"mentioned":{"count":0,"weighted":0},"works-with":{"count":1,"weighted":2},"created":{"count":3,"weighted":2},"knows":{"count":1,"weighted":3}}}]}),
             ),
+            None,
         );
         assert_eq!(card["state"], "ok");
         assert_eq!(
@@ -199,6 +216,7 @@ mod tests {
                     {"entity_id":"one","kinds":{"z":{"count":0,"weighted":2.5},"a":{"count":1,"weighted":2.5},"drop":{"count":0,"weighted":0}},"evidence":"not a list"}
                 ]
             })),
+            None,
         );
         assert_eq!(card["total"], 9);
         assert_eq!(card["neighbors"].as_array().unwrap().len(), 1);
@@ -213,9 +231,51 @@ mod tests {
         let kinds = build_connections_card(
             Ok(Some(json!({"id":"owner"}))),
             Ok(json!({"neighbors":[{"kinds":"invalid"}]})),
+            None,
         );
         assert_eq!(kinds["neighbors"][0]["kinds"], json!([]));
         assert_eq!(kinds.as_object().unwrap().len(), 5);
         assert_eq!(kinds["kind_words"].as_object().unwrap().len(), 15);
+    }
+
+    fn ok_network() -> Value {
+        json!({"total_neighbors":1,"neighbors":[{"entity_id":"person:one","name":"One","count":1}]})
+    }
+
+    #[test]
+    fn populated_card_with_horizon_adds_two_keys() {
+        let horizon = ConnectionsHorizon {
+            day: "20260301".to_owned(),
+            earlier_days: 3,
+        };
+        let card = build_connections_card(
+            Ok(Some(json!({"id":"owner"}))),
+            Ok(ok_network()),
+            Some(horizon),
+        );
+        assert_eq!(card["state"], "ok");
+        assert_eq!(card.as_object().unwrap().len(), 7);
+        assert_eq!(card["horizon_day"], "20260301");
+        assert_eq!(card["horizon_note"], compose_connections_horizon_note(3));
+        assert!(card["horizon_note"].as_str().unwrap().contains("{day}"));
+        assert!(!card["horizon_note"].as_str().unwrap().contains("{n}"));
+    }
+
+    #[test]
+    fn horizon_note_is_byte_identical_for_one_and_three() {
+        for earlier_days in [1_usize, 3] {
+            let card = build_connections_card(
+                Ok(Some(json!({"id":"owner"}))),
+                Ok(ok_network()),
+                Some(ConnectionsHorizon {
+                    day: "20260301".to_owned(),
+                    earlier_days,
+                }),
+            );
+            assert_eq!(
+                card["horizon_note"].as_str().unwrap(),
+                compose_connections_horizon_note(earlier_days)
+            );
+        }
     }
 }

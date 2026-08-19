@@ -107,5 +107,7 @@
     "spoke-with": "a conversation",
     "co-present": "time in the same place",
     "mentioned": "came up in conversation"
-  }
+  },
+  "ENT_CONN_HORIZON": "connections from time in the same place go back only to {day}. the {n} earlier days are still in your journal — those connections haven't been built.",
+  "ENT_CONN_HORIZON_ONE": "connections from time in the same place go back only to {day}. one earlier day is still in your journal — those connections haven't been built."
 }

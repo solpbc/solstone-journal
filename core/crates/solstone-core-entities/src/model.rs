@@ -13,6 +13,23 @@ pub static ENTITIES_COPY: LazyLock<serde_json::Value> = LazyLock::new(|| {
         .expect("entities_copy.json is valid JSON")
 });
 
+pub fn compose_connections_horizon_note(earlier_days: usize) -> String {
+    debug_assert!(earlier_days >= 1);
+    if earlier_days == 1 {
+        ENTITIES_COPY
+            .get("ENT_CONN_HORIZON_ONE")
+            .and_then(serde_json::Value::as_str)
+            .expect("ENT_CONN_HORIZON_ONE")
+            .to_owned()
+    } else {
+        ENTITIES_COPY
+            .get("ENT_CONN_HORIZON")
+            .and_then(serde_json::Value::as_str)
+            .expect("ENT_CONN_HORIZON")
+            .replace("{n}", &earlier_days.to_string())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReasonCode {
     AgentUnavailable,
@@ -97,4 +114,35 @@ pub fn refusal_with_status(
     status: StatusCode,
 ) -> Response {
     error_envelope(code.as_str(), "Entity request refused", detail, status).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compose_selects_one_and_horizon_templates() {
+        assert_eq!(
+            compose_connections_horizon_note(1),
+            ENTITIES_COPY["ENT_CONN_HORIZON_ONE"].as_str().unwrap()
+        );
+        assert_eq!(
+            compose_connections_horizon_note(2),
+            ENTITIES_COPY["ENT_CONN_HORIZON"]
+                .as_str()
+                .unwrap()
+                .replace("{n}", "2")
+        );
+        assert_eq!(
+            compose_connections_horizon_note(3),
+            ENTITIES_COPY["ENT_CONN_HORIZON"]
+                .as_str()
+                .unwrap()
+                .replace("{n}", "3")
+        );
+        assert!(compose_connections_horizon_note(1).contains("{day}"));
+        assert!(!compose_connections_horizon_note(1).contains("{n}"));
+        assert!(compose_connections_horizon_note(3).contains("{day}"));
+        assert!(!compose_connections_horizon_note(3).contains("{n}"));
+    }
 }

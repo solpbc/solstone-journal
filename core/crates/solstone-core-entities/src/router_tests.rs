@@ -469,6 +469,77 @@ async fn index_plate_network_returns_neighbors_for_a_directory_hit() {
 }
 
 #[tokio::test]
+async fn network_plate_includes_horizon_only_for_principal_dir() {
+    let journal = Journal::new();
+    save_person(journal.path(), "owner-dir", "Owner");
+    let owner_path = journal.path().join("entities/owner-dir/entity.json");
+    let mut owner: Value = serde_json::from_slice(&fs::read(&owner_path).unwrap()).unwrap();
+    owner["id"] = json!("written-owner");
+    owner["is_principal"] = json!(true);
+    fs::write(&owner_path, serde_json::to_vec(&owner).unwrap()).unwrap();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "owner-dir",
+            "person-ada",
+            "works-with",
+            Some("20260501"),
+            "a",
+        )],
+    );
+    solstone_core_facets::create_facet(
+        journal.path(),
+        "work",
+        "work",
+        "Description",
+        "blue",
+        "💼",
+        None,
+    )
+    .unwrap();
+    let detected = journal.path().join("facets/work/entities/20260601.jsonl");
+    fs::create_dir_all(detected.parent().unwrap()).unwrap();
+    fs::write(&detected, "{\"name\":\"Ada\",\"segments\":[\"seg-1\"]}\n").unwrap();
+    fs::create_dir_all(journal.path().join("chronicle/20260101")).unwrap();
+    fs::create_dir_all(journal.path().join("chronicle/20260201")).unwrap();
+    fs::create_dir_all(journal.path().join("chronicle/20260301")).unwrap();
+
+    let (status, principal) =
+        call(journal.path(), "/app/entities/api/network?entity=owner-dir").await;
+    assert_eq!(status, 200);
+    assert_eq!(principal["horizon_day"], "20260601");
+    assert_eq!(
+        principal["horizon_note"],
+        crate::compose_connections_horizon_note(3)
+    );
+    assert!(
+        principal["horizon_note"]
+            .as_str()
+            .unwrap()
+            .contains("{day}")
+    );
+
+    let (status, other) = call(
+        journal.path(),
+        "/app/entities/api/network?entity=person-ada",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(other.get("horizon_day").is_none());
+    assert!(other.get("horizon_note").is_none());
+
+    let (status, by_written_id) = call(
+        journal.path(),
+        "/app/entities/api/network?entity=written-owner",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(by_written_id["entity_id"], "owner-dir");
+    assert_eq!(by_written_id["horizon_day"], "20260601");
+}
+
+#[tokio::test]
 async fn index_plate_network_exact_hit_uses_directory_when_written_id_differs() {
     let journal = Journal::new();
     save_person(journal.path(), "dir-ada", "Ada Lovelace");
