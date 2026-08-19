@@ -177,7 +177,7 @@ fn exclusion_candidates(
     Ok(candidates)
 }
 
-fn detected_days(
+pub(crate) fn detected_days(
     journal_root: &Path,
     facet_dir: &str,
 ) -> Result<Vec<String>, FacetEntityWriteError> {

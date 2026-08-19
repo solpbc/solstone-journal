@@ -4,6 +4,7 @@
 mod activities;
 mod activity_records;
 mod awareness;
+mod connections_horizon;
 mod declaration;
 mod detected_entities;
 mod detected_entity_activity;
@@ -42,6 +43,7 @@ pub use awareness::{
     AwarenessStoreError, append_log, load_current, load_imports, read_log, record_import,
     record_import_nudge, record_import_offer_declined,
 };
+pub use connections_horizon::{ConnectionsHorizon, refresh_connections_horizon};
 pub use declaration::{FacetDeclarationSnapshot, read_facet_declaration};
 pub use detected_entities::{
     DetectedEntityInput, DetectionUpsertReport, delete_detected_entity, read_detected_entities,
