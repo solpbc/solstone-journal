@@ -39,13 +39,13 @@ sudo pacman -S libgomp         # Arch
 
 the release channel is `updates.solstone.app`. `install.sh` accepts only that host, re-checking on every redirect hop; loopback is allowed for testing, and `--origin` overrides. `install.sh` lives in this repository at `core/distribution/install.sh`, and is served from the origin as well.
 
-one command does the whole thing:
+one command does the whole thing, once a release has been published:
 
 ```bash
 sh install.sh
 ```
 
-that follows the `release` lane's `latest` pointer, then fetches the archive, its checksum and its release record from `updates.solstone.app`, verifies the digest, and installs. pass `--version <version>` to pin a version instead of following `latest`. pass `--lane staging` or `--lane dev` to install from a non-release lane (testers only; the default lane is `release`). the archive route below is the same operation with the files already on disk; the package route is your distribution's installer and does not verify a checksum for you.
+that follows the `release` lane's `latest` pointer, then fetches the archive, its checksum and its release record from `updates.solstone.app`, verifies the digest, and installs. ⚠ **the `release` lane is empty until the first cut**, so that command refuses today. pass `--lane staging` or `--lane dev` to install from a published candidate (testers only; the default lane is `release`). pass `--version <version>` to pin a version instead of following `latest`. the archive route below is the same operation with the files already on disk; the package route is your distribution's installer and does not verify a checksum for you.
 
 every release names its files the same way: `solstone-journal-<version>-linux-<arch>`, where `<arch>` is `x86_64` or `aarch64`. the three archives are `.tar.gz`, `.deb` and `.rpm`; each release also carries a `.sha256`, a `.manifest.json` and a `.release` record.
 
