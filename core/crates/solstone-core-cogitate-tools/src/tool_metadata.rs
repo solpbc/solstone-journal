@@ -27,19 +27,19 @@ pub struct ToolArgumentSpec {
 
 static SOL_TOOL: OnceLock<ToolSpec> = OnceLock::new();
 
-/// The `sol` descriptions derive their approved host vocabulary at construction.
+/// The `solstone` descriptions derive their approved host vocabulary at construction.
 pub fn sol_tool() -> &'static ToolSpec {
     SOL_TOOL.get_or_init(|| {
         let families = COGITATE_JOURNAL_COMMANDS.join(", ");
         let description = Box::leak(
             format!(
-                "Run one policy-approved command directly, without a shell: use `sol`/`sol call ...` for normal journal access; run approved `journal` families ({families}) directly as `journal <family> ...`, never prefixed with `sol` or `sol call`."
+                "Run one policy-approved command directly, without a shell: use `solstone`/`solstone call ...` for normal journal access; run approved `journal` families ({families}) directly as `journal <family> ...`, never prefixed with `solstone` or `solstone call`."
             )
             .into_boxed_str(),
         );
         let argument_description = Box::leak(
             format!(
-                "Single command-line invocation to run directly, without a shell: use `sol`/`sol call ...` for normal journal access; run approved `journal` families ({families}) directly as `journal <family> ...`, never prefixed with `sol` or `sol call`."
+                "Single command-line invocation to run directly, without a shell: use `solstone`/`solstone call ...` for normal journal access; run approved `journal` families ({families}) directly as `journal <family> ...`, never prefixed with `solstone` or `solstone call`."
             )
             .into_boxed_str(),
         );
@@ -52,7 +52,7 @@ pub fn sol_tool() -> &'static ToolSpec {
             .into_boxed_slice(),
         );
         ToolSpec {
-            name: "sol",
+            name: "solstone",
             description,
             arguments,
             read_only_hint: true,
@@ -84,7 +84,7 @@ const FINISH_ARGUMENTS: [ToolArgumentSpec; 1] = [ToolArgumentSpec {
 /// `finish` is read-only and non-destructive because it only announces completion.
 pub const FINISH_TOOL: ToolSpec = ToolSpec {
     name: "finish",
-    description: "Terminal tool for ending the run when no `emit_final` tool is bound.\n\nCall this tool exactly once when the run is complete. The message argument is a concise, signal-carrying account of what was done: what changed, what was found, or why nothing changed.\n\nA side-effect-only run that already persisted its results through sol commands still calls this tool, with a short completion note rather than ending silently.\n",
+    description: "Terminal tool for ending the run when no `emit_final` tool is bound.\n\nCall this tool exactly once when the run is complete. The message argument is a concise, signal-carrying account of what was done: what changed, what was found, or why nothing changed.\n\nA side-effect-only run that already persisted its results through solstone commands still calls this tool, with a short completion note rather than ending silently.\n",
     arguments: &FINISH_ARGUMENTS,
     read_only_hint: true,
     destructive_hint: false,

@@ -581,7 +581,7 @@ mod tests {
             &mut stderr,
         );
         assert_eq!(exit, ExitCode::SUCCESS);
-        assert!(!home.join(".local/bin/sol").exists());
+        assert!(!home.join(".local/bin/solstone").exists());
         assert!(!home.join(".local/bin/journal").exists());
     }
 
@@ -596,7 +596,7 @@ mod tests {
         let home = root.join("home");
         fs::create_dir_all(&executable_dir).unwrap();
         fs::create_dir_all(home.join(".local/bin")).unwrap();
-        fs::write(home.join(".local/bin/sol"), "#!/bin/sh\necho owner\n").unwrap();
+        fs::write(home.join(".local/bin/solstone"), "#!/bin/sh\necho owner\n").unwrap();
         let args = parsed(&["--clean-uninstall".into(), "--yes".into()], &root);
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -636,7 +636,7 @@ mod tests {
             "summary missing:\n{text}"
         );
         assert!(
-            home.join(".local/bin/sol").exists(),
+            home.join(".local/bin/solstone").exists(),
             "an owner-authored alias must never be removed"
         );
     }

@@ -10,7 +10,7 @@ pub mod journal_caught_up;
 pub mod journal_dir_writable;
 pub mod journal_sync;
 pub mod launchd_stale_plist;
-pub mod local_bin_sol_reachable;
+pub mod local_bin_solstone_reachable;
 pub(crate) mod managed_wrapper;
 pub mod observer_binding;
 pub mod observer_delivery_stall;

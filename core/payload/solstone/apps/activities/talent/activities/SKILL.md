@@ -4,26 +4,26 @@ description: >
   Completed activity records organized by facet and day. List, inspect,
   create, update, mute/unmute activity spans, including synthetic records
   from the CLI. TRIGGER: activity, activities, work session, completed span,
-  mute/unmute, activity record, meeting attendees, sol call activities
+  mute/unmute, activity record, meeting attendees, solstone call activities
   list/create/update/mute/unmute/get.
 ---
 
 # Activities CLI Skill
 
-Manage completed activity records. Invoke via Bash: `sol call activities <command> [args...]`.
+Manage completed activity records. Invoke via Bash: `solstone call activities <command> [args...]`.
 
 **Environment defaults**: When `SOL_DAY` is set, commands that take `DAY` use it automatically. Same for `SOL_FACET` where `FACET` is accepted.
 
 Common pattern:
 
 ```bash
-sol call activities <command> [args...]
+solstone call activities <command> [args...]
 ```
 
 ## list
 
 ```bash
-sol call activities list [-d DAY | --from DAY --to DAY] [-f FACET] [-a ACTIVITY] [--entity ENTITY] [--source SOURCE] [--all] [--json]
+solstone call activities list [-d DAY | --from DAY --to DAY] [-f FACET] [-a ACTIVITY] [--entity ENTITY] [--source SOURCE] [--all] [--json]
 ```
 
 List activity records for one day or an inclusive day range.
@@ -40,15 +40,15 @@ List activity records for one day or an inclusive day range.
 Examples:
 
 ```bash
-sol call activities list -d 20260115 -f work
-sol call activities list --from 20260101 --to 20260107 -f work --activity coding
-sol call activities list -d 20260115 --entity "Alicia Chen" --json
+solstone call activities list -d 20260115 -f work
+solstone call activities list --from 20260101 --to 20260107 -f work --activity coding
+solstone call activities list -d 20260115 --entity "Alicia Chen" --json
 ```
 
 ## get
 
 ```bash
-sol call activities get SPAN_ID [-f FACET] [-d DAY] [--json]
+solstone call activities get SPAN_ID [-f FACET] [-d DAY] [--json]
 ```
 
 Fetch one activity record by id.
@@ -61,13 +61,13 @@ Fetch one activity record by id.
 Example:
 
 ```bash
-sol call activities get coding_090000_300 -f work -d 20260115
+solstone call activities get coding_090000_300 -f work -d 20260115
 ```
 
 ## create
 
 ```bash
-sol call activities create [-f FACET] [-d DAY] [--since-segment SEGMENT] [--source user|cogitate] [--title T] [--activity TYPE] [--description D] [--details E] [--json]
+solstone call activities create [-f FACET] [-d DAY] [--since-segment SEGMENT] [--source user|cogitate] [--title T] [--activity TYPE] [--description D] [--details E] [--json]
 ```
 
 Create a new activity record from argv flags or a JSON object on stdin.
@@ -106,10 +106,10 @@ Names are resolved against journal entities after validation; any caller-supplie
 Examples:
 
 ```bash
-sol call activities create -f work --title "Deep work" --activity coding
-sol call activities create -f work --title "Session review" --activity coding --details "Retrospective notes" --since-segment 090000_300 --source cogitate --json
-echo '{"title":"Deep work","activity":"coding"}' | sol call activities create -f work
-echo '{"title":"Session review","activity":"coding","details":"Retrospective notes"}' | sol call activities create -f work --since-segment 090000_300 --source cogitate --json
+solstone call activities create -f work --title "Deep work" --activity coding
+solstone call activities create -f work --title "Session review" --activity coding --details "Retrospective notes" --since-segment 090000_300 --source cogitate --json
+echo '{"title":"Deep work","activity":"coding"}' | solstone call activities create -f work
+echo '{"title":"Session review","activity":"coding","details":"Retrospective notes"}' | solstone call activities create -f work --since-segment 090000_300 --source cogitate --json
 echo '{
   "title":"Sync with Alicia",
   "activity":"meeting",
@@ -117,13 +117,13 @@ echo '{
     {"name":"Alicia Chen","role":"attendee","source":"voice","confidence":0.95,"context":"voice detected start of segment"},
     {"name":"You","role":"attendee","source":"screen","confidence":1.0,"context":"screen share"}
   ]
-}' | sol call activities create -f work
+}' | solstone call activities create -f work
 ```
 
 ## update
 
 ```bash
-sol call activities update SPAN_ID [-f FACET] [-d DAY] [--note TEXT] [--title T] [--description D] [--details E] [--json]
+solstone call activities update SPAN_ID [-f FACET] [-d DAY] [--note TEXT] [--title T] [--description D] [--details E] [--json]
 ```
 
 Update one activity record from argv flags or a JSON patch on stdin.
@@ -142,14 +142,14 @@ Stdin JSON may include only `title`, `description`, and `details`.
 Examples:
 
 ```bash
-sol call activities update coding_090000_300 -f work --title "Focused coding" --details "Closed out CLI edge cases" --note "tightened summary"
-echo '{"title":"Focused coding","details":"Closed out CLI edge cases"}' | sol call activities update coding_090000_300 -f work --note "tightened summary"
+solstone call activities update coding_090000_300 -f work --title "Focused coding" --details "Closed out CLI edge cases" --note "tightened summary"
+echo '{"title":"Focused coding","details":"Closed out CLI edge cases"}' | solstone call activities update coding_090000_300 -f work --note "tightened summary"
 ```
 
 ## mute
 
 ```bash
-sol call activities mute SPAN_ID [-f FACET] [-d DAY] [--reason TEXT] [--json]
+solstone call activities mute SPAN_ID [-f FACET] [-d DAY] [--reason TEXT] [--json]
 ```
 
 Hide an activity record without deleting it.
@@ -163,13 +163,13 @@ Hide an activity record without deleting it.
 Example:
 
 ```bash
-sol call activities mute coding_090000_300 -f work --reason "synthetic duplicate"
+solstone call activities mute coding_090000_300 -f work --reason "synthetic duplicate"
 ```
 
 ## unmute
 
 ```bash
-sol call activities unmute SPAN_ID [-f FACET] [-d DAY] [--reason TEXT] [--json]
+solstone call activities unmute SPAN_ID [-f FACET] [-d DAY] [--reason TEXT] [--json]
 ```
 
 Restore a muted activity record.
@@ -183,5 +183,5 @@ Restore a muted activity record.
 Example:
 
 ```bash
-sol call activities unmute coding_090000_300 -f work --reason "keep owner-authored record"
+solstone call activities unmute coding_090000_300 -f work --reason "keep owner-authored record"
 ```

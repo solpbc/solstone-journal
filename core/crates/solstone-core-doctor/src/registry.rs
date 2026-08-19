@@ -61,8 +61,8 @@ fn disk_space(c: &CheckContext) -> RunnerResult {
 fn service_identity(c: &CheckContext) -> RunnerResult {
     checks::service_identity::run(c, CHECK_SERVICE_IDENTITY)
 }
-fn local_bin_sol_reachable(c: &CheckContext) -> RunnerResult {
-    checks::local_bin_sol_reachable::run(c, CHECK_LOCAL_BIN_SOL_REACHABLE)
+fn local_bin_solstone_reachable(c: &CheckContext) -> RunnerResult {
+    checks::local_bin_solstone_reachable::run(c, CHECK_LOCAL_BIN_SOLSTONE_REACHABLE)
 }
 fn journal_sync(c: &CheckContext) -> RunnerResult {
     checks::journal_sync::run(c, CHECK_SYNC)
@@ -138,8 +138,8 @@ const CHECK_SERVICE_IDENTITY: Check = Check {
     severity: Severity::Blocker,
     platforms: BOTH,
 };
-const CHECK_LOCAL_BIN_SOL_REACHABLE: Check = Check {
-    name: "local_bin_sol_reachable",
+const CHECK_LOCAL_BIN_SOLSTONE_REACHABLE: Check = Check {
+    name: "local_bin_solstone_reachable",
     severity: Severity::Advisory,
     platforms: BOTH,
 };
@@ -312,8 +312,8 @@ pub static JOURNAL: &[RegistryEntry] = &[
 ];
 pub static READINESS: &[RegistryEntry] = &[
     RegistryEntry {
-        check: CHECK_LOCAL_BIN_SOL_REACHABLE,
-        runner: local_bin_sol_reachable,
+        check: CHECK_LOCAL_BIN_SOLSTONE_REACHABLE,
+        runner: local_bin_solstone_reachable,
         deferred: None,
     },
     RegistryEntry {

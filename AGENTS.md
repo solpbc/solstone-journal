@@ -25,7 +25,7 @@ This file is the **developer guide** for the solstone repository. Read it before
 Audience:
 
 - **Coders** (cwd = repo root, editing `core/crates/`, `core/native-sol/`, `core/payload/solstone/talent/`) — you're in the right place.
-- **Cogitate talents** (cwd = `journal/`, running inside the live system) — your journal-side entry is `core/payload/solstone/talent/journal/SKILL.md`, installed into `journal/.claude/skills/journal/` and `journal/.agents/skills/journal/` alongside the `sol` router skill. The runtime contract you operate under — tools, reads vs writes, finalization, access tiers, and what is *not* in your context — is `docs/COGITATE.md`.
+- **Cogitate talents** (cwd = `journal/`, running inside the live system) — your journal-side entry is `core/payload/solstone/talent/journal/SKILL.md`, installed into `journal/.claude/skills/journal/` and `journal/.agents/skills/journal/` alongside the `solstone` router skill. The runtime contract you operate under — tools, reads vs writes, finalization, access tiers, and what is *not* in your context — is `docs/COGITATE.md`.
 - **Operators** debugging a running system — see `docs/DOCTOR.md`.
 
 For the journal-side runtime entry point, see `journal/AGENTS.md`.
@@ -37,14 +37,14 @@ For the journal-side runtime entry point, see `journal/AGENTS.md`.
 Read, in order, when you enter the repo for a coding task:
 
 1. **This file through §8** — the invariants must be in working memory before your first edit.
-2. **`docs/SOLCLI.md`** — the CLI routing map. `sol` and `journal` are separate native Rust executables with different authority.
+2. **`docs/SOLCLI.md`** — the CLI routing map. `solstone` and `journal` are separate native Rust executables with different authority.
 3. ⛔ **`solstone/think/top.py` is gone** — it was the interactive TUI, and reading it was the "oh, this is how it connects" moment because it tied callosum, supervisor, and service status together in one vantage point. Nothing has replaced it as a single reading target; the equivalent orientation is now spread across the callosum, supervisor, and system crates under `core/crates/`.
 4. **The area you're about to touch:**
-   - User-visible feature or `sol call <app> <verb>` → `core/native-sol/apps/<name>/` + the matching `*-web` crate or `convey-shell/assets/<name>/`. See `docs/APPS.md`.
+   - User-visible feature or `solstone call <app> <verb>` → `core/native-sol/apps/<name>/` + the matching `*-web` crate or `convey-shell/assets/<name>/`. See `docs/APPS.md`.
    - Think pipeline → the matching crate under `core/crates/solstone-core-*`.
    - AI talent prompt or behavior → `core/payload/solstone/talent/<name>.md`.
    - Capture / observe → `solstone-core-ingest`, `solstone-core-transcribe`, `solstone-core-describe`.
-5. **Run `sol`** (no args) — prints the static grouped command list. Orients you to the public CLI surface.
+5. **Run `solstone`** (no args) — prints the static grouped command list. Orients you to the public CLI surface.
 6. **`make dev`** or **`make sandbox`** when you need a running stack to iterate against.
 
 > If you cannot state in one sentence **which module owns the data your change touches**, stop and re-read §7 L2 (the domain ownership table). Writing to a domain from the wrong module is how we got the 14 layer violations the April 2026 audit catalogued.
@@ -57,8 +57,8 @@ Read, in order, when you enter the repo for a coding task:
 | `core/crates/solstone-core-{ingest,transcribe,describe}/` | Multimodal capture — ingest, transcribe, describe, sense | capture-side bugs, new input modalities | `docs/OBSERVE.md` |
 | `core/crates/solstone-core-*/` | Post-processing core — cortex, talent, callosum, indexer, entities, facets, activities, scheduler, heartbeat, supervisor | anything downstream of capture; most coder work lives here | `docs/THINK.md`, `docs/CORTEX.md`, `docs/COGITATE.md`, `docs/CALLOSUM.md` |
 | `core/crates/solstone-core-convey-shell/` | Web app framework — shell, session gate, app registry | layout / framework-level UI changes | `docs/CONVEY.md` |
-| `core/crates/solstone-core-*-web/` + `convey-shell/assets/` | Convey apps — registered in `APP_REGISTRY`, served by a `*-web` crate or shell assets | adding a user-facing feature, a `sol call <app>` verb, a UI surface | `docs/APPS.md` |
-| `core/payload/solstone/talent/` | AI talent configs (markdown prompts) + installed router skills (`sol`, `journal`); app fragments feed generated router references. **The `.py` post-hooks are not here** — they are not shipped data and stay at `solstone/talent/` | defining or tuning a talent; updating router guidance | `core/payload/solstone/talent/journal/SKILL.md`, `docs/PROMPT_TEMPLATES.md` |
+| `core/crates/solstone-core-*-web/` + `convey-shell/assets/` | Convey apps — registered in `APP_REGISTRY`, served by a `*-web` crate or shell assets | adding a user-facing feature, a `solstone call <app>` verb, a UI surface | `docs/APPS.md` |
+| `core/payload/solstone/talent/` | AI talent configs (markdown prompts) + installed router skills (`solstone`, `journal`); app fragments feed generated router references. **The `.py` post-hooks are not here** — they are not shipped data and stay at `solstone/talent/` | defining or tuning a talent; updating router guidance | `core/payload/solstone/talent/journal/SKILL.md`, `docs/PROMPT_TEMPLATES.md` |
 | `core/` | Rust workspace — thin `solstone-core` bin plus library-first adapter crates | Rust scaffold, gates, workspace rules | `docs/PORTING.md` |
 | `scripts/` | Repo maintenance scripts. ⚠ Reduced with the Python reference cut — anything whose oracle was the Python implementation is gone, so treat a script here as build tooling, not as a source of truth about behaviour | tooling that guards the codebase; reached by `make install-checks`, never by `make ci` | channel adapters: `docs/CHANNEL_ADAPTERS.md` |
 | `tests/` | `tests/fixtures/journal/` mock journal. ⚠ **No Python suites remain** — the pytest tree went with the reference cut, and Rust tests live beside their crates under `core/crates/*/tests/` | `make dev` / `make sandbox` use the fixtures as the journal | `docs/testing.md` |
@@ -70,13 +70,13 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 
 ## 3. Mental model
 
-**The pipeline:** `observe` (capture) → JSON transcripts in `journal/chronicle/YYYYMMDD/` → `think` (analyze) → SQLite index + derived artifacts → `convey` (web UI) and `sol call` CLIs.
+**The pipeline:** `observe` (capture) → JSON transcripts in `journal/chronicle/YYYYMMDD/` → `think` (analyze) → SQLite index + derived artifacts → `convey` (web UI) and `solstone call` CLIs.
 
 **Think is the center.** observe feeds it raw material; convey + apps render its outputs; talent prompts + cortex run AI against it; indexer makes it searchable. A change in `solstone/think/` usually ripples outward.
 
 **Key concepts, priority-ordered:**
 
-- **Journal** — the on-disk record rooted at `journal/` in the repo. Every day is a `journal/chronicle/YYYYMMDD/` directory. Segments (timestamped capture windows) are anchored to creation/modification time, not content "about" time. `solstone-core-journal::resolve_journal_path` is the resolver. Source-checkout installs inherit `SOLSTONE_JOURNAL` from the managed wrapper at `~/.local/bin/sol`; a tree install puts `sol` and `journal` on PATH (see `INSTALL.md`). Tests and sandboxes set the env explicitly. Application code must not set it itself. See `docs/environment.md`.
+- **Journal** — the on-disk record rooted at `journal/` in the repo. Every day is a `journal/chronicle/YYYYMMDD/` directory. Segments (timestamped capture windows) are anchored to creation/modification time, not content "about" time. `solstone-core-journal::resolve_journal_path` is the resolver. Source-checkout installs inherit `SOLSTONE_JOURNAL` from the managed wrapper at `~/.local/bin/solstone`; a tree install puts `solstone` and `journal` on PATH (see `INSTALL.md`). Tests and sandboxes set the env explicitly. Application code must not set it itself. See `docs/environment.md`.
 - **Talents** — AI processors (markdown prompt + optional Python post-hook). Each has a config in `core/payload/solstone/talent/<name>.md` with frontmatter that declares hooks, priority, model, and output. Cortex spawns them as subprocesses.
 - **Callosum** — Unix-socket JSON message bus at `journal/health/callosum.sock`. Real-time event distribution across services (`tract` + `event` + payload). If components need to talk asynchronously, they talk through callosum.
 - **Cortex** — process manager for talent runs. Listens on callosum (`tract="cortex"`, `event="request"`), resolves the sibling `solstone-core` binary and spawns it with `__talent-worker`, writes `<talent>/<ts>_active.jsonl` then renames to `<talent>/<ts>.jsonl` on completion, broadcasts all events back through callosum. Read `docs/CORTEX.md` before modifying talent execution.
@@ -86,20 +86,20 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 - **Indexer** — reads journal state, builds SQLite + FTS5 index. **Never** mutates source data (§7 L6). Rerunning on unchanged data is a no-op.
 - **Supervisor** — top-level process manager. Starts/restarts services, talks to callosum. `journal supervisor` / `journal start`.
 
-## 4. The sol CLI
+## 4. The solstone CLI
 
 Two surfaces:
 
-- **`sol <command>`** — native access commands declared under `core/native-sol/think/native/<command>/authority.toml` and implemented by `core/crates/solstone-core-sol-client/native/think/<command>/command.rs` (e.g., `sol import`, `sol chat`).
+- **`solstone <command>`** — native access commands declared under `core/native-sol/think/native/<command>/authority.toml` and implemented by `core/crates/solstone-core-sol-client/native/think/<command>/command.rs` (e.g., `solstone import`, `solstone chat`).
 - **`journal <command>`** — same-device commands owned by `solstone-core-journal`. Local writers execute in Rust; service commands use the native closed process table (e.g., `journal think`, `journal supervisor`, `journal heartbeat`). `journal up/down` are fixed aliases for `journal service up/down`.
-- **`sol call <app> <verb>`** — native app commands declared under `solstone/apps/<app>/native/` or `solstone/think/tools/native/` and implemented under `core/crates/solstone-core-sol-client/native/{apps,tools}/`. `sol call journal` exposes its native 17-leaf journal group through this boundary.
+- **`solstone call <app> <verb>`** — native app commands declared under `solstone/apps/<app>/native/` or `solstone/think/tools/native/` and implemented under `core/crates/solstone-core-sol-client/native/{apps,tools}/`. `solstone call journal` exposes its native 17-leaf journal group through this boundary.
 
-**Adding a top-level `sol` command:** add a native authority under `core/native-sol/think/native/<command>/authority.toml` and implement the handler at `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`. Use `core/native-sol/think/native/chat/authority.toml` with `core/crates/solstone-core-sol-client/native/think/chat/command.rs` as the current pattern.
+**Adding a top-level `solstone` command:** add a native authority under `core/native-sol/think/native/<command>/authority.toml` and implement the handler at `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`. Use `core/native-sol/think/native/chat/authority.toml` with `core/crates/solstone-core-sol-client/native/think/chat/command.rs` as the current pattern.
 
-**Adding a `sol call` sub-verb:** update `core/native-sol/apps/<app>/native/authority.toml`, implement the handler in `core/crates/solstone-core-sol-client/native/apps/<app>/command.rs`, and regenerate the native inventory.
+**Adding a `solstone call` sub-verb:** update `core/native-sol/apps/<app>/native/authority.toml`, implement the handler in `core/crates/solstone-core-sol-client/native/apps/<app>/command.rs`, and regenerate the native inventory.
 Portable journal archive export is temporarily unavailable while archive support migrates; read-only archive validation lives in `solstone/think/importers/journal_archive.py`.
 
-Run `sol` (no args) for the static grouped command list.
+Run `solstone` (no args) for the static grouped command list.
 
 ## 5. Make commands
 
@@ -110,7 +110,7 @@ Verified against `Makefile`. Grouped by use.
 | Target | When to use |
 |--------|-------------|
 | `make install` | First setup and whenever `pyproject.toml` or `uv.lock` changes. Creates `.venv/`, syncs deps, runs `make skills`. |
-| `make skills` | Regenerate generated router references, then rewrite the `sol` + `journal` router skill symlinks into `journal/`. (`make install` depends on this; rarely run alone.) |
+| `make skills` | Regenerate generated router references, then rewrite the `solstone` + `journal` router skill symlinks into `journal/`. (`make install` depends on this; rarely run alone.) |
 | `make update` | Upgrade all deps to latest, regenerate `uv.lock`. Expect test churn. |
 | `make update-prices` | Refresh genai-prices model-cost data when adding a new provider model or when pricing tests fail. |
 | `make clean` | Remove build artifacts, caches, and the skill symlinks. Does not touch `.venv/`. |
@@ -191,7 +191,7 @@ is the behavior; the goal is fewer binaries, not relabeling integration tests.
 
 ### Service management (systemd / launchd)
 
-`journal setup` is the runtime install path once you have a `journal` binary, from a tree install or from `cargo build` in this checkout. `make install` is retired. It installs or refreshes the managed wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/sol` and `~/.local/bin/journal` let you use `sol` and `journal` from anywhere. Use `journal service <install|start|stop|restart|status|logs>` for manual service operations.
+`journal setup` is the runtime install path once you have a `journal` binary, from a tree install or from `cargo build` in this checkout. `make install` is retired. It installs or refreshes the managed wrappers, installs the Claude Code skill when Claude is configured, and starts the background service on port 5015 by default. After the first run, the wrappers at `~/.local/bin/solstone` and `~/.local/bin/journal` let you use `solstone` and `journal` from anywhere. Use `journal service <install|start|stop|restart|status|logs>` for manual service operations.
 
 | Target | When to use |
 |--------|-------------|
@@ -214,7 +214,7 @@ The Python wheel/release targets and `scripts/release.sh` are gone. See
 
 | Target | Why not |
 |--------|---------|
-| `make uninstall` | Disabled by design. Use `journal service uninstall`, `sol skills uninstall`, and `python -m solstone.think.install_guard uninstall` for installed user artifacts, or `make clean-install` to rebuild the local dev env. |
+| `make uninstall` | Disabled by design. Use `journal service uninstall`, `solstone skills uninstall`, and `python -m solstone.think.install_guard uninstall` for installed user artifacts, or `make clean-install` to rebuild the local dev env. |
 
 ## 6. Testing quickstart
 
@@ -235,7 +235,7 @@ Full depth: `docs/testing.md`.
 
 ### L1 — Layer boundaries are load-bearing
 
-Each module family has a declared responsibility. Infrastructure modules (indexer, importer, scheduler, search, graph, stats) may write **only their own output artifacts**. They may not create, modify, or delete domain state (entities, facets, observations, activities, events, chronicle day content). If an infrastructure module needs to trigger a domain mutation, it emits a callosum event or invokes a `sol call <domain> <verb>` subprocess — never writes domain state directly.
+Each module family has a declared responsibility. Infrastructure modules (indexer, importer, scheduler, search, graph, stats) may write **only their own output artifacts**. They may not create, modify, or delete domain state (entities, facets, observations, activities, events, chronicle day content). If an infrastructure module needs to trigger a domain mutation, it emits a callosum event or invokes a `solstone call <domain> <verb>` subprocess — never writes domain state directly.
 
 ### L2 — Domain write ownership
 
@@ -308,11 +308,11 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 
 If you're about to write to a domain from a module not in this table, stop and route through the owner.
 
-**Native `sol call <app> <verb>` handlers keep the HTTP boundary.** Each
+**Native `solstone call <app> <verb>` handlers keep the HTTP boundary.** Each
 journal-data command is declared by an app-local native authority and reaches the
 journal through the generated native HTTP client. The positive native-sol
 inventory, coverage, architecture, and conformance gates enforce that boundary.
-The `sol call journal` group is a native HTTP surface declared under
+The `solstone call journal` group is a native HTTP surface declared under
 `solstone/think/tools/native/journal/`.
 
 ### L3 — Naming is a contract
@@ -342,7 +342,7 @@ CLI subcommands with read verbs (list, show, status, get, search, find, check, v
 CLI subcommands with write verbs default to safe.
 
 - Preferred: no default mutation; an explicit `--commit` (or `--apply`) flag is required to perform the write.
-- Acceptable alternative: `--dry-run` defaulting to `False` *only if* the subcommand name is unambiguously a write verb AND the command's primary user journey is the write (e.g., `sol call entities create`).
+- Acceptable alternative: `--dry-run` defaulting to `False` *only if* the subcommand name is unambiguously a write verb AND the command's primary user journey is the write (e.g., `solstone call entities create`).
 
 "Bootstrap", "backfill", and "resolve-names" are not unambiguous — default them to dry-run.
 
@@ -403,12 +403,12 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/APPS.md` | **Required before adding or moving a Convey app** — native registry, `*-web` crates, journal `solstone/apps/` storage |
 | `docs/THINK.md` | Understanding the think-layer pipeline (importers, indexer, segment/stream processing) |
 | `docs/CORTEX.md` | Modifying talent execution, cortex lifecycle, talent process management |
-| `docs/COGITATE.md` | The cogitate talent runtime contract — cwd/workspace, the `sol`-CLI-authoritative journal access, raw-read bound, access tiers, finalization, disallowed assumptions, and the in-context preamble constant. Read before authoring/editing a talent prompt. |
+| `docs/COGITATE.md` | The cogitate talent runtime contract — cwd/workspace, the `solstone`-CLI-authoritative journal access, raw-read bound, access tiers, finalization, disallowed assumptions, and the in-context preamble constant. Read before authoring/editing a talent prompt. |
 | `docs/GENERATE.md` | The `generate` contract — the record vocabulary for asking the model boundary for one completion, its two framings, and the invariants it guarantees. Read before writing anything that calls a model, or that consumes a completion's outcome. |
 | `docs/CALLOSUM.md` | Adding a new tract/event, debugging message flow |
 | `docs/CONVEY.md` | Framework-level web changes (as opposed to an individual app) |
 | `docs/OBSERVE.md` | Capture-side work: new modalities, transcription, sensing |
-| `docs/SOLCLI.md` | Adding a new `sol <cmd>` or `sol call <app> <verb>` |
+| `docs/SOLCLI.md` | Adding a new `solstone <cmd>` or `solstone call <app> <verb>` |
 | `docs/PORTING.md` | Rust workspace rules: edition, iOS canary, native-dep proof |
 | `docs/PROMPT_TEMPLATES.md` | Modifying talent prompt format or frontmatter |
 | `docs/PROVIDERS.md` | Three-lane provider architecture: active-brain resolution, local/BYO/confidential lanes, and honest no-fallback failure semantics |
@@ -424,8 +424,8 @@ Bare links don't motivate clicking. Each entry below says when you actually need
 | `docs/VENDOR.md` | Vendor-level integrations |
 | `docs/design/` | Per-subsystem design docs |
 | `docs/JOURNAL.md` | **Breadcrumb only** — redirects to `core/payload/solstone/talent/journal/SKILL.md`, the progressive-disclosure journal-layout reference |
-| `core/payload/solstone/talent/journal/SKILL.md` | Journal layout, vocabulary, and `sol call journal` CLI (loaded by cogitate talents on demand via skills) |
-| `core/payload/solstone/talent/journal/references/cli.md` | Full `sol call journal` reference, including **Talent CLI Boundaries** (which infrastructure commands cogitate talents must not call) |
+| `core/payload/solstone/talent/journal/SKILL.md` | Journal layout, vocabulary, and `solstone call journal` CLI (loaded by cogitate talents on demand via skills) |
+| `core/payload/solstone/talent/journal/references/cli.md` | Full `solstone call journal` reference, including **Talent CLI Boundaries** (which infrastructure commands cogitate talents must not call) |
 
 The live journal also carries `journal/AGENTS.md` as its runtime-facing breadcrumb.
 

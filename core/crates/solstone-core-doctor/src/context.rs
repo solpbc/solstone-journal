@@ -113,7 +113,7 @@ fn checkout_ancestor(path: &Path) -> Option<(PathBuf, PathBuf)> {
     start.ancestors().find_map(|candidate| {
         let repository = solstone_core_journal::detect_checkout_root(candidate)?;
         let payload = solstone_core_journal::payload_root_in_checkout(&repository)?;
-        (payload.join("solstone/talent/sol/SKILL.md").is_file()
+        (payload.join("solstone/talent/solstone/SKILL.md").is_file()
             && payload.join("solstone/talent/journal/SKILL.md").is_file())
         .then_some((repository, payload))
     })

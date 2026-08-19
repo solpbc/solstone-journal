@@ -5,18 +5,18 @@ description: >
   on disk — captures, extracts, talent outputs, apps, facets, and the search
   index. Covers host commands such as `journal setup`, `journal doctor`,
   `journal service`, `journal health`, `journal talent`, and `journal
-  identity`, plus the `sol call journal` CLI.
+  identity`, plus the `solstone call journal` CLI.
   TRIGGER: journal, journal setup, journal doctor, journal service, journal
   health, journal talent, journal identity, journal layout, search journal,
   find meeting, list facets, show agent output, captures, extracts, talents,
-  apps, facet, indexer, activity records, sol call journal, sol call journal
-  search, sol call journal facet.
+  apps, facet, indexer, activity records, solstone call journal, solstone call journal
+  search, solstone call journal facet.
 ---
 
 # Journal Skill
 
 Operate the local journal host and explore journal layout. Use this skill for
-`journal <command>` runtime/setup work and for `sol call journal <command>`
+`journal <command>` runtime/setup work and for `solstone call journal <command>`
 content queries.
 
 ## Overview
@@ -54,7 +54,7 @@ journal identity
 Boundaries:
 
 - `journal setup` owns first-run setup and repair: config, models, wrappers,
-  service units, and the `sol` + `journal` router skill links.
+  service units, and the `solstone` + `journal` router skill links.
 - `journal doctor` examines only. It can warn when router skills are missing,
   stale, or pointed at the wrong source, but it does not repair them.
 - `journal start` starts the supervisor runtime only. It must not initialize
@@ -98,7 +98,7 @@ For the full table, see [storage](references/storage.md).
 
 ## References
 
-- [CLI reference](references/cli.md) — `sol call journal` commands
+- [CLI reference](references/cli.md) — `solstone call journal` commands
 - [Configuration](references/config.md) — `journal.json`, providers, retention
 - [Facets](references/facets.md) — facet folders, entities, news, activities
 - [Captures and Extracts](references/captures.md) — layers, imports, segment layout

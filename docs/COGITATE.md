@@ -48,18 +48,18 @@ misread.
 
 | | Value | What it governs |
 |---|---|---|
-| **Talent subprocess cwd** | the **journal root** (resolved from `cwd: journal`) | the cwd the `sol` tool inherits — i.e. where `sol` / `sol call` commands run |
-| **Native request `journal_root`** | the **journal root** | the native tool executor's journal path and `sol` command cwd |
+| **Talent subprocess cwd** | the **journal root** (resolved from `cwd: journal`) | the cwd the `solstone` tool inherits — i.e. where `solstone` / `solstone call` commands run |
+| **Native request `journal_root`** | the **journal root** | the native tool executor's journal path and `solstone` command cwd |
 
-The journal-root cwd matters operationally because the `sol` tool inherits it, but
+The journal-root cwd matters operationally because the `solstone` tool inherits it, but
 **cwd contents are never automatically loaded into the model's context.**
 
-## The `sol` CLI is the authoritative talent-to-journal contract
+## The `solstone` CLI is the authoritative talent-to-journal contract
 
-A talent reaches journal functionality by emitting `sol` / `sol call ...`
+A talent reaches journal functionality by emitting `solstone` / `solstone call ...`
 command lines. The approved host command families `journal identity ...`,
 `journal health ...`, and `journal talent ...` also run directly and must not be
-prefixed with `sol` or `sol call`. The runtime parses each tool call as one
+prefixed with `solstone` or `solstone call`. The runtime parses each tool call as one
 command-line invocation and executes that argv directly; it is not an arbitrary
 shell. The CLI handlers are the **single authoritative translation layer**
 between a talent and the journal: they turn CLI syntax into journal operations.
@@ -69,19 +69,19 @@ A talent therefore:
 - **never** assumes a database, a socket, or any journal access other than the
   documented command forms and the bounded raw-read tools below.
 
-The tool call shape is `sol(command="sol call activities list")`, or
-`sol(command="journal identity partner")` for an approved host command family.
+The tool call shape is `solstone(command="solstone call activities list")`, or
+`solstone(command="journal identity partner")` for an approved host command family.
 The command policy (below) constrains what may run and rejects shell composition
 such as pipes, redirects, chaining, and command substitution.
 
 ## Reads: domain reads vs raw evidence reads
 
 **Domain reads — the default.** Indexed, normalized, or semantic reads go through
-`sol call` verbs (e.g. `sol call activities list`, `sol call entities search`,
-`sol call transcripts read`). Anything that needs authorization, derived state,
+`solstone call` verbs (e.g. `solstone call activities list`, `solstone call entities search`,
+`solstone call transcripts read`). Anything that needs authorization, derived state,
 normalization, or audit behavior is a domain read, not a raw read.
 
-**Raw evidence reads — bounded, for evidence with no `sol` verb.** A normal talent
+**Raw evidence reads — bounded, for evidence with no `solstone` verb.** A normal talent
 may be given a small read tier (`read_file`, `list_directory`, `glob`,
 `grep_search`) for raw evidence (e.g. a per-span narrative file) that no domain
 command exposes. Reads resolve relative to wherever the caller points them —
@@ -110,8 +110,8 @@ talent never fails for reading an undeclared journal file.
 ## Writes: only through approved journal commands
 
 A talent **writes journal state only through approved journal commands** (the
-`sol call ...` verbs for the domain it is updating, e.g.
-`sol call entities update ...`, plus approved direct host commands when a prompt
+`solstone call ...` verbs for the domain it is updating, e.g.
+`solstone call entities update ...`, plus approved direct host commands when a prompt
 names one). There is **no general-purpose write tool** and no raw-write tier —
 write-class tools are denied by policy. The mechanic is centralized in the owning
 command; a talent gets the *capability* to update a domain, never an arbitrary
@@ -127,10 +127,10 @@ enforcement are layered on top of it.
 
 | Tier | Purpose | Surface |
 |---|---|---|
-| `normal` | default cogitate talents | the `sol` tool (`sol` / `sol call`, plus approved direct `journal` families when a prompt names one), the bounded raw-read tier, a finalization tool |
-| `system-read` | diagnostics boundary for scoped operational evidence | no cogitate talent claims it today (steward was demoted to a deterministic renderer + `lite` generate); when used, the declared surface is the `sol` tool (`sol` / `sol call`, plus approved direct `journal` families when a prompt names one), the bounded raw-read tier, and a finalization tool, with scoped evidence arriving through a talent pre-hook rather than an extra model read tool |
-| `outbound` | comms-like talents that may submit something that leaves the machine (e.g. `support`) | the `sol` tool (`sol` / `sol call`, plus approved direct `journal` families when a prompt names one) and a finalization tool, plus submit-capable support commands gated on per-send owner approval supplied only by a human-initiated chat launch; no raw-read tier — drafts and evidence go through `sol` domain commands |
-| `synthesis` | pure command-surface synthesis talents (e.g. `weekly_reflection`, `partner`) whose source of record is a documented command form, not the raw journal tree | the `sol` tool (`sol` / `sol call`, plus approved direct `journal` families when a prompt names one) and a finalization tool; **no raw-read tier and no submit** — same as `outbound` minus the outbound submit capability. Removing the raw-read tools keeps a synthesis talent from spelunking `chronicle/` / `talents/` / `facets/` and burning its budget instead of using documented commands |
+| `normal` | default cogitate talents | the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one), the bounded raw-read tier, a finalization tool |
+| `system-read` | diagnostics boundary for scoped operational evidence | no cogitate talent claims it today (steward was demoted to a deterministic renderer + `lite` generate); when used, the declared surface is the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one), the bounded raw-read tier, and a finalization tool, with scoped evidence arriving through a talent pre-hook rather than an extra model read tool |
+| `outbound` | comms-like talents that may submit something that leaves the machine (e.g. `support`) | the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one) and a finalization tool, plus submit-capable support commands gated on per-send owner approval supplied only by a human-initiated chat launch; no raw-read tier — drafts and evidence go through `solstone` domain commands |
+| `synthesis` | pure command-surface synthesis talents (e.g. `weekly_reflection`, `partner`) whose source of record is a documented command form, not the raw journal tree | the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one) and a finalization tool; **no raw-read tier and no submit** — same as `outbound` minus the outbound submit capability. Removing the raw-read tools keeps a synthesis talent from spelunking `chronicle/` / `talents/` / `facets/` and burning its budget instead of using documented commands |
 
 Policy denies support send verbs (`create`, `reply`, `attach`, `feedback`) for
 `normal` / `system-read` runs. `outbound` runs may use those verbs only when the
@@ -172,8 +172,8 @@ A talent prompt must not assume any of the following — they are named here so
 prompts can be checked against them:
 
 - **other bare `journal ...` families** (e.g. `journal search`, `journal facet`,
-  `journal navigate`) — reach the journal through the documented `sol` /
-  `sol call` form;
+  `journal navigate`) — reach the journal through the documented `solstone` /
+  `solstone call` form;
 - **raw `cat` / `ls` / arbitrary shell file reads** — use the raw-read tools when
   present, not shell file access;
 - **auto-loaded skills, `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`** — these are
@@ -194,10 +194,10 @@ system prompt. Native `compose_system_instruction`
 ```
 You are a solstone cogitate talent running inside the live system. This runtime contract is authoritative; do not assume capabilities beyond it.
 
-- Reach the journal through the `sol` command line: emit `sol` / `sol call ...` command lines, e.g. sol(command="sol call activities list"). The runtime runs each call as a single parsed command-line invocation, not an arbitrary shell. The `sol` CLI is the one authoritative path between you and the journal; never assume direct database, socket, or HTTP access.
-- The approved host command families are identity, health, talent; run them directly as `journal <family> ...` through the same tool, never prefixed with `sol` or `sol call`.
-- Write journal state only through approved journal commands (`sol call ...` verbs for the data you own, plus approved direct host commands when a prompt names one). There is no general-purpose write tool; persistence that does not go through an approved journal command will not happen.
-- Raw evidence reads use the provided read tools (`read_file`, `list_directory`, `glob`, `grep_search`) for bounded journal evidence: a denylist (`.git`, caches, credentials, virtualenvs, `node_modules`) and per-call / per-run caps apply. Recursive scans must not start at the journal root, `chronicle/`, or `facets/`: `glob` and directory `grep_search` must start below them, as must recursive `list_directory`. Prefer `sol call` reads; use raw reads only for evidence that has no `sol` command.
+- Reach the journal through the `solstone` command line: emit `solstone` / `solstone call ...` command lines, e.g. solstone(command="solstone call activities list"). The runtime runs each call as a single parsed command-line invocation, not an arbitrary shell. The `solstone` CLI is the one authoritative path between you and the journal; never assume direct database, socket, or HTTP access.
+- The approved host command families are identity, health, talent; run them directly as `journal <family> ...` through the same tool, never prefixed with `solstone` or `solstone call`.
+- Write journal state only through approved journal commands (`solstone call ...` verbs for the data you own, plus approved direct host commands when a prompt names one). There is no general-purpose write tool; persistence that does not go through an approved journal command will not happen.
+- Raw evidence reads use the provided read tools (`read_file`, `list_directory`, `glob`, `grep_search`) for bounded journal evidence: a denylist (`.git`, caches, credentials, virtualenvs, `node_modules`) and per-call / per-run caps apply. Recursive scans must not start at the journal root, `chronicle/`, or `facets/`: `glob` and directory `grep_search` must start below them, as must recursive `list_directory`. Prefer `solstone call` reads; use raw reads only for evidence that has no `solstone` command.
 - Finalize as your run is configured: call `emit_final` when an `emit_final` tool is present; otherwise finish through the built-in finish tool; a side-effect-only talent that has already persisted its work finishes quietly with no output.
 - Do not assume tools or context you were not given: no other bare `journal ...` family, no raw `cat` / `ls` / shell file reads, no shell composition (pipes, redirects, chaining, or command substitution; one command per call), no auto-loaded skills or AGENTS.md / CLAUDE.md, no browser or web access, no MCP tools, and no delegating to sub-agents. Any guidance file is a normal journal file with no special status; this contract is your source of truth.
 ```

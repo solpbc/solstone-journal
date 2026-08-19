@@ -1,6 +1,6 @@
-# Sol CLI Developer Guide
+# solstone CLI Developer Guide
 
-How the `sol` CLI is organized, how to add new commands, and what files to maintain.
+How the `solstone` CLI is organized, how to add new commands, and what files to maintain.
 
 ## Architecture
 
@@ -8,33 +8,33 @@ The CLI has two tiers with distinct purposes:
 
 | Tier | Pattern | Framework | Purpose |
 |------|---------|-----------|---------|
-| **Top-level** | `sol <cmd>` / `journal <cmd>` | Distinct native Rust executables | API-only journal access under `sol`; same-device services and local authorities under `journal` |
-| **Call** | `sol call <app> <cmd>` | Native authority inventory | Tool-callable functions — what agents and humans invoke for data operations |
+| **Top-level** | `solstone <cmd>` / `journal <cmd>` | Distinct native Rust executables | API-only journal access under `solstone`; same-device services and local authorities under `journal` |
+| **Call** | `solstone call <app> <cmd>` | Native authority inventory | Tool-callable functions — what agents and humans invoke for data operations |
 
 ### The boundary
 
-**If an AI agent should tool-call a journal-access data operation → `sol call`.** These commands appear in SKILL.md files and are invoked by talent agents during conversations. Local-only host tools live under `journal`.
+**If an AI agent should tool-call a journal-access data operation → `solstone call`.** These commands appear in SKILL.md files and are invoked by talent agents during conversations. Local-only host tools live under `journal`.
 
 **If it's system plumbing or local-only host control → `journal <cmd>`.** Processing pipelines, supervisor, services, capture — things that cron or systemd runs.
 
-**Interactive entry points** (`sol chat`, `sol help`, `journal engage`) are top-level for discoverability even though they're user-facing. Agents don't invoke these.
+**Interactive entry points** (`solstone chat`, `solstone help`, `journal engage`) are top-level for discoverability even though they're user-facing. Agents don't invoke these.
 
-Launchers are split. `sol` / `solstone` exec `solstone-core-sol` (API
+Launchers are split. `solstone` execs `solstone-core-sol` (API
 transport, no journal filesystem authority). `journal` execs
 `solstone-core-journal` (same-device journal operations). There is no CUDA
-package. Installing only `sol` does not install `journal`.
+package. Installing only `solstone` does not install `journal`.
 
-## Top-Level Commands (`sol <cmd>`)
+## Top-Level Commands (`solstone <cmd>`)
 
 ### How they work
 
-The public `sol` / `solstone` commands are top-level launchers that exec the
+The public `solstone` commands are top-level launchers that exec the
 sibling native `solstone-core-sol` binary. Authority declarations live under
 `core/native-sol/think/native/<command>/authority.toml`. Rust handlers live under
 `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`.
 
-The public API-root commands are `sol call`, `sol chat`, `sol import`, and
-`sol status`. `sol status` queries journal network status through the native
+The public API-root commands are `solstone call`, `solstone chat`, `solstone import`, and
+`solstone status`. `solstone status` queries journal network status through the native
 HTTP boundary; it is distinct from `journal status`, which reports local
 journal state.
 
@@ -59,7 +59,7 @@ fixed positions. Local writers (`archive`, `facet`, and `news`) are Rust.
 Fixed aliases provide `journal up` and `journal down`. There are no retained
 Python services.
 
-### Adding a top-level public `sol` command
+### Adding a top-level public `solstone` command
 
 1. **Create `core/native-sol/think/native/<command>/authority.toml`** with the command
    path, params, entry type, operation id, and handler name.
@@ -73,7 +73,7 @@ Python services.
 
 Use this authority route for top-level commands that read or write journal data
 through the native HTTP boundary. For local commands that touch no journal data
-and have no `sol call` oracle path, use a direct match arm in
+and have no `solstone call` oracle path, use a direct match arm in
 `solstone_core_sol::run` alongside `root` and `skills`.
 
 For host-only commands, use the native journal command root. Register retained
@@ -89,11 +89,11 @@ journal mutations in Rust under `local_ops.rs` and the relevant owner crate.
 | `core/crates/solstone-core-journal-cli/src/processes.rs` | Register a retained process or an explicit native cutover |
 | `core/crates/solstone-core-journal-cli/src/local_ops.rs` | Compose a same-device Rust authority |
 
-## Call Commands (`sol call <app> <cmd>`)
+## Call Commands (`solstone call <app> <cmd>`)
 
 ### How they work
 
-Native `sol call` commands are declared by `authority.toml` files under
+Native `solstone call` commands are declared by `authority.toml` files under
 `core/native-sol/apps/*/native/` and `core/native-sol/think/tools/native/`.
 Rust handlers live under
 `core/crates/solstone-core-sol-client/native/{apps,tools}/`.
@@ -101,7 +101,7 @@ The production aggregate inventory is generated into
 `core/crates/solstone-core-sol-client/src/generated/inventory.rs`.
 
 Local-only service tools such as `journal navigate` and `journal identity` are
-registered in the native journal process table instead of mounted under `sol call`.
+registered in the native journal process table instead of mounted under `solstone call`.
 
 ### Adding a new native app command
 
@@ -132,13 +132,13 @@ description: >
 
 Common pattern:
 \`\`\`bash
-sol call myapp <command> [args...]
+solstone call myapp <command> [args...]
 \`\`\`
 
 ## list
 
 \`\`\`bash
-sol call myapp list [-d DAY] [-f FACET]
+solstone call myapp list [-d DAY] [-f FACET]
 \`\`\`
 
 List items for a day.
@@ -147,7 +147,7 @@ List items for a day.
 - `-f, --facet`: facet name (default: `SOL_FACET` env).
 ```
 
-4. **Run `make skills`** to regenerate the checked-in router references with `scripts/build_skill_references.py` and refresh the installed `sol` + `journal` router skill symlinks.
+4. **Run `make skills`** to regenerate the checked-in router references with `scripts/build_skill_references.py` and refresh the installed `solstone` + `journal` router skill symlinks.
 
 5. **Run `make check-skill-references`** before committing, or rely on `make install-checks`. The check invokes `scripts/build_skill_references.py --check` and fails when generated router references are stale.
 
@@ -167,7 +167,7 @@ the journal host.
 | `core/native-sol/apps/<name>/native/authority.toml` | Native command path, params, and route contract | Yes |
 | `core/crates/solstone-core-sol-client/native/apps/<name>/command.rs` | Native handler implementation | Yes |
 | `core/payload/solstone/apps/<name>/talent/<name>/SKILL.md` | App command guidance fragment used by `scripts/build_skill_references.py` | If agents should use it |
-| `core/payload/solstone/talent/sol/references/commands.md` | Generated `sol call <app>` inventory | Auto-generated by `make skills` (`scripts/build_skill_references.py`) |
+| `core/payload/solstone/talent/solstone/references/commands.md` | Generated `solstone call <app>` inventory | Auto-generated by `make skills` (`scripts/build_skill_references.py`) |
 | `core/payload/solstone/talent/journal/references/commands.md` | Generated journal-host command guidance | Auto-generated by `make skills` (`scripts/build_skill_references.py`) |
 | `core/fixtures/native-sol/parity/<name>.jsonl` | Native parity vectors | Yes |
 
@@ -180,7 +180,7 @@ as defaults.
 
 ### Action logging
 
-Mutating `sol call` commands log to `facets/{facet}/logs/{day}.jsonl`
+Mutating `solstone call` commands log to `facets/{facet}/logs/{day}.jsonl`
 (or `config/actions/{day}.jsonl` when there is no facet).
 
 ### The `--consent` flag
@@ -316,11 +316,11 @@ proc.wait()
 ## Directory Structure
 
 ```
-core/native-sol/apps/<name>/native/   # sol call authority
-core/native-sol/think/native/<cmd>/   # top-level sol command authority
+core/native-sol/apps/<name>/native/   # solstone call authority
+core/native-sol/think/native/<cmd>/   # top-level solstone command authority
 core/native-sol/think/tools/native/   # journal-side tool authority
 core/crates/solstone-core-sol-client/native/  # handlers
-core/payload/solstone/talent/         # prompts + sol/journal router skills
+core/payload/solstone/talent/         # prompts + solstone/journal router skills
 core/payload/solstone/apps/<name>/talent/  # app command fragments
 ```
 
@@ -329,7 +329,7 @@ not the codebase. See [APPS.md](APPS.md).
 
 ## Current Command Inventory
 
-### Top-level (`sol <cmd>` / `journal <cmd>`)
+### Top-level (`solstone <cmd>` / `journal <cmd>`)
 
 | Group | Commands |
 |-------|----------|
@@ -349,7 +349,7 @@ not the codebase. See [APPS.md](APPS.md).
 
 `journal maintenance list|sync|run <name>` runs native maintenance (`solstone-core-maintenance`).
 
-### Call (`sol call <app> <cmd>`)
+### Call (`solstone call <app> <cmd>`)
 
 | App | Source | Commands |
 |-----|--------|----------|
@@ -363,24 +363,24 @@ not the codebase. See [APPS.md](APPS.md).
 | `awareness` | `core/native-sol/apps/awareness/native/authority.toml` | status, imports, log, log-read |
 | `journal` | `core/native-sol/think/tools/native/journal/authority.toml` | agents, facet (create/delete/mute/rename/show/unmute/update), facets, import, imports, news, read, retention (config/list), search, storage-summary |
 
-`sol skills` manages coding-agent skill installation with `install`, `uninstall`, and `list`. The former `build` verb is gone; `make skills` runs `scripts/build_skill_references.py` directly before invoking `sol skills install`.
+`solstone skills` manages coding-agent skill installation with `install`, `uninstall`, and `list`. The former `build` verb is gone; `make skills` runs `scripts/build_skill_references.py` directly before invoking `solstone skills install`.
 
 ## Skill System
 
-Project skill installation installs exactly two router skills into both `journal/.claude/skills/` and `journal/.agents/skills/`: `sol` and `journal`. `sol skills install --project` does not install per-app fragments or every `SKILL.md` as a top-level skill.
+Project skill installation installs exactly two router skills into both `journal/.claude/skills/` and `journal/.agents/skills/`: `solstone` and `journal`. `solstone skills install --project` does not install per-app fragments or every `SKILL.md` as a top-level skill.
 
 **Skill locations:**
-- Installed router skills: `core/payload/solstone/talent/sol/SKILL.md`, `core/payload/solstone/talent/journal/SKILL.md`
+- Installed router skills: `core/payload/solstone/talent/solstone/SKILL.md`, `core/payload/solstone/talent/journal/SKILL.md`
 - App command fragments: `core/payload/solstone/apps/<name>/talent/<name>/SKILL.md`
-- Generated references: `core/payload/solstone/talent/sol/references/commands.md`, `core/payload/solstone/talent/journal/references/commands.md`
+- Generated references: `core/payload/solstone/talent/solstone/references/commands.md`, `core/payload/solstone/talent/journal/references/commands.md`
 
-App command fragments are builder source. `make skills` folds their guidance into deterministic, checked-in generated references via `scripts/build_skill_references.py`. The generated references aggregate per-app command guidance from native authority files, including health's `sol call health` commands and health's journal-host `journal health` / `journal talent` guidance. There is no in-repo `vit` skill.
+App command fragments are builder source. `make skills` folds their guidance into deterministic, checked-in generated references via `scripts/build_skill_references.py`. The generated references aggregate per-app command guidance from native authority files, including health's `solstone call health` commands and health's journal-host `journal health` / `journal talent` guidance. There is no in-repo `vit` skill.
 
-Fragments document CLI commands and add behavioral guidance beyond what `--help` shows (e.g., "check entity context before attaching a new relationship to avoid duplicates"). Agents consume that guidance through the `sol` and `journal` router skill references.
+Fragments document CLI commands and add behavioral guidance beyond what `--help` shows (e.g., "check entity context before attaching a new relationship to avoid duplicates"). Agents consume that guidance through the `solstone` and `journal` router skill references.
 
 ### Keeping skills in sync
 
-When you add or change a `sol call` command, update both the native authority/handler and the corresponding app command fragment. The generated router references are what agents actually read — they don't parse `--help` output. Include:
+When you add or change a `solstone call` command, update both the native authority/handler and the corresponding app command fragment. The generated router references are what agents actually read — they don't parse `--help` output. Include:
 - Full command syntax with all flags
 - Behavior notes (edge cases, defaults, validation)
 - Examples showing common usage patterns

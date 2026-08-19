@@ -110,7 +110,7 @@ JOURNAL_NAMESPACE_CONTRIBUTIONS = {"health": HEALTH_JOURNAL_NAMESPACES}
 # source root rather than into the package tree. Moving the outputs without
 # moving the generator would recreate them at the old path on the next run.
 PAYLOAD_SRC_ROOT = Path("core/payload")
-SOL_COMMANDS_PATH = PAYLOAD_SRC_ROOT / "solstone/talent/sol/references/commands.md"
+SOL_COMMANDS_PATH = PAYLOAD_SRC_ROOT / "solstone/talent/solstone/references/commands.md"
 JOURNAL_COMMANDS_PATH = (
     PAYLOAD_SRC_ROOT / "solstone/talent/journal/references/commands.md"
 )

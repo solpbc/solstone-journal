@@ -1,0 +1,15 @@
+{
+  "schema": "native-sol-retired-sol-user-skill-v1",
+  "retired_skill_name": "sol",
+  "source_commit": "324d92c19",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "c977cfeb857470dc5b6045a71c17967eaa31ec38187f00401dab602714220809"
+    },
+    {
+      "path": "references/commands.md",
+      "sha256": "32cfae89ac8e0c93ee2f82bd2e056a99bef0d239670d1c86c00abf8d65a5de84"
+    }
+  ]
+}

@@ -124,7 +124,7 @@ fn wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes() {
     let root = TestRoot::new();
     let bin = root.path().join("bin");
     let target = root.path().join("target");
-    let sol = bin.join("sol");
+    let sol = bin.join("solstone");
     let journal = bin.join("journal");
     fs::write(&sol, b"old sol bytes").expect("seed sol");
     fs::write(&journal, b"old journal bytes").expect("seed journal");
@@ -158,7 +158,7 @@ fn wrapper_write_blocks_on_the_shared_lock_without_mutating_bytes() {
         .unwrap_or("");
     assert_eq!(last, "wrapper-write-lock");
 
-    assert_written_once(&sol, b"old sol bytes", &target, "/new/sol");
+    assert_written_once(&sol, b"old sol bytes", &target, "/new/solstone");
     assert_written_once(&journal, b"old journal bytes", &target, "/new/journal");
     let residue = fs::read_dir(&bin)
         .expect("bin directory")

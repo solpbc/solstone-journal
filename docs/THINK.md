@@ -13,7 +13,7 @@ no Python think package and `make install` does not install one.
 | `journal talent list` / `journal talent show <name>` | List or inspect talent configs; `--prompt` prints the composed prompt |
 | `journal brain status` / `journal brain refresh` | Active-brain status and one bounded check |
 | `journal indexer` | Rebuild the search index |
-| `sol call transcripts read` | Read audio and screen transcripts for a day |
+| `solstone call transcripts read` | Read audio and screen transcripts for a day |
 
 ```bash
 journal think [--day YYYYMMDD] [--segment HHMMSS_LEN] [--stream NAME] [--refresh] [--flush]
@@ -50,7 +50,7 @@ Owners:
 | Cortex events | [CORTEX.md](CORTEX.md) |
 | Callosum | [CALLOSUM.md](CALLOSUM.md) |
 
-Agents invoke journal data operations through `sol call <app> <verb>`. See
+Agents invoke journal data operations through `solstone call <app> <verb>`. See
 [SOLCLI.md](SOLCLI.md).
 
 ## Prompt Context Configuration

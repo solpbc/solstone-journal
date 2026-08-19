@@ -5,11 +5,11 @@ use crate::{COGITATE_DIAGNOSTIC_PREAMBLE, COGITATE_JOURNAL_COMMANDS, COGITATE_RU
 
 const READ_SCOPE_HINT: &str = "Limit filesystem reads to today's segment dir unless the task explicitly requires broader history. If you need broader scope, state what and why in your reasoning.";
 
-/// Return the model-visible command-routing hint for the native `sol` tool.
+/// Return the model-visible command-routing hint for the native `solstone` tool.
 pub fn cogitate_sol_tool_hint(tool_name: &str) -> String {
     let families = COGITATE_JOURNAL_COMMANDS.join(", ");
     format!(
-        "When the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `{tool_name}` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are {families} and must be run unprefixed as `journal <family> ...`. Examples: `{tool_name}(command=\"sol call activities list\")`, `{tool_name}(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+        "When the instructions tell you to run `solstone ...` or approved `journal ...` commands, invoke them through the `{tool_name}` tool. Normal journal access uses `solstone` / `solstone call ...`; the approved direct `journal` families are {families} and must be run unprefixed as `journal <family> ...`. Examples: `{tool_name}(command=\"solstone call activities list\")`, `{tool_name}(command=\"journal identity partner\")`. Do not invent or call a tool literally named `solstone`, and do not rewrite approved `journal` commands as `solstone call journal ...`."
     )
 }
 
@@ -153,9 +153,9 @@ mod tests {
 
     #[test]
     fn diagnostic_flip_replaces_runtime_and_suppresses_scope_hint() {
-        let instruction = compose_system_instruction(false, Some("RULES"), Some("sol"), true)
+        let instruction = compose_system_instruction(false, Some("RULES"), Some("solstone"), true)
             .expect("runtime instruction");
-        let diagnostic = compose_system_instruction(true, Some("RULES"), Some("sol"), true)
+        let diagnostic = compose_system_instruction(true, Some("RULES"), Some("solstone"), true)
             .expect("diagnostic instruction");
         assert!(instruction.contains(COGITATE_RUNTIME_PREAMBLE.trim_end_matches('\n')));
         assert!(instruction.contains(READ_SCOPE_HINT));
@@ -166,10 +166,11 @@ mod tests {
 
     #[test]
     fn removing_talent_instruction_removes_only_its_part() {
-        let with_instruction = compose_system_instruction(false, Some("RULES"), Some("sol"), false)
-            .expect("instruction");
+        let with_instruction =
+            compose_system_instruction(false, Some("RULES"), Some("solstone"), false)
+                .expect("instruction");
         let without_instruction =
-            compose_system_instruction(false, None, Some("sol"), false).expect("instruction");
+            compose_system_instruction(false, None, Some("solstone"), false).expect("instruction");
         assert!(with_instruction.contains("RULES"));
         assert!(!without_instruction.contains("RULES"));
         assert!(without_instruction.contains(COGITATE_RUNTIME_PREAMBLE.trim_end_matches('\n')));
@@ -186,14 +187,15 @@ mod tests {
 
     #[test]
     fn toggling_read_scope_changes_only_the_non_diagnostic_suffix() {
-        let without_scope = compose_system_instruction(false, Some("RULES"), Some("sol"), false)
-            .expect("instruction");
-        let with_scope = compose_system_instruction(false, Some("RULES"), Some("sol"), true)
+        let without_scope =
+            compose_system_instruction(false, Some("RULES"), Some("solstone"), false)
+                .expect("instruction");
+        let with_scope = compose_system_instruction(false, Some("RULES"), Some("solstone"), true)
             .expect("instruction");
         assert_eq!(with_scope, format!("{without_scope}\n\n{READ_SCOPE_HINT}"));
         assert_eq!(
-            compose_system_instruction(true, Some("RULES"), Some("sol"), false),
-            compose_system_instruction(true, Some("RULES"), Some("sol"), true),
+            compose_system_instruction(true, Some("RULES"), Some("solstone"), false),
+            compose_system_instruction(true, Some("RULES"), Some("solstone"), true),
         );
     }
 

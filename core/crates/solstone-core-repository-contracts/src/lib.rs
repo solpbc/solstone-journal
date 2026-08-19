@@ -18,6 +18,9 @@ mod distribution_install_basename;
 #[path = "contracts/distribution_install_tmpdir.rs"]
 mod distribution_install_tmpdir;
 #[cfg(test)]
+#[path = "contracts/distribution_launchers.rs"]
+mod distribution_launchers;
+#[cfg(test)]
 #[path = "contracts/distribution_model_digests.rs"]
 mod distribution_model_digests;
 #[cfg(test)]

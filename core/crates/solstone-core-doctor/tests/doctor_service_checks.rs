@@ -363,7 +363,7 @@ fn run_poison_battery_child(root: &Path) {
     assert_eq!(
         verdicts(&readiness),
         BTreeMap::from([
-            ("local_bin_sol_reachable", Status::Warn),
+            ("local_bin_solstone_reachable", Status::Warn),
             ("disk_space", Status::Skip),
             ("journal_dir_writable", Status::Ok),
             ("default_stt_ready", Status::Warn),
@@ -737,7 +737,7 @@ fn ac9_full_batteries_never_invoke_poisoned_interpreters() {
     }
     let aliases = staged.home_dir.join(".local/bin");
     fs::create_dir_all(&aliases).expect("create staged aliases");
-    for name in ["journal", "sol"] {
+    for name in ["journal", "solstone"] {
         fs::write(aliases.join(name), "fixture alias").expect("write staged alias");
     }
     let python_env = root.join("venv/bin");

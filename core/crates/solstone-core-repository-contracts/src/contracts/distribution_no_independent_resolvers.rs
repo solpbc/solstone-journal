@@ -29,6 +29,7 @@ fn allowed(relative: &str) -> bool {
         || relative == "core/crates/solstone-core-transcribe/src/model_assets.rs"
         || relative == "core/crates/solstone-core-journal-cli/src/layout.rs"
         || relative == "core/crates/solstone-core/src/config.rs"
+        || relative == "core/crates/solstone-core-setup/src/wrapper.rs"
         || relative == "core/crates/solstone-core-depict/src/lib.rs"
         || relative.contains("/tests/")
         || relative.contains("/contracts/")

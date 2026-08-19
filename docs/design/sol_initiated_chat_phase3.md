@@ -11,7 +11,7 @@ This change makes sol-initiated chat visible, configurable, and deliverable:
 - make self-mute clear markers per category
 - show where sol-initiated chat replies came from in chat history
 - preserve that origin tag for live SSE appends
-- deliver sol chat requests to iOS as APNs alerts
+- deliver solstone chat requests to iOS as APNs alerts
 - send silent APNs lifecycle updates when the owner opens or dismisses a request
 
 This change builds on the phase 1 event contract. The existing chat-stream events
@@ -33,7 +33,7 @@ In scope:
 
 Out of scope:
 
-- producer intelligence that decides when to call `sol call chat start`
+- producer intelligence that decides when to call `solstone call chat start`
 - new chat-stream event kinds
 - compatibility shims for the old scalar clear-marker field
 - migration of existing owner data beyond updating defaults and tests
@@ -354,7 +354,7 @@ Settings:
 - per-category clear marker isolates one category from another
 - `save_settings` round-trips nested mute-window, category caps, notification
   settings, and debug toggle
-- throttled endpoint filters only sol chat request rows whose outcome is not
+- throttled endpoint filters only solstone chat request rows whose outcome is not
   `written`
 
 Chat UI:
@@ -371,7 +371,7 @@ Chat UI:
 Push dispatch:
 
 - existing payload builders still produce alert headers by default
-- sol chat request alert payload has the expected APNs key set
+- solstone chat request alert payload has the expected APNs key set
 - silent lifecycle payload has no alert, sound, or category
 - `push_type="background"` reaches `apns-push-type: background`
 - alert callers retain `apns-push-type: alert`

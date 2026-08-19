@@ -14,7 +14,7 @@ Order:
 
 Who may set `SOLSTONE_JOURNAL`:
 
-- the installed `~/.local/bin/sol` / `journal` wrapper
+- the installed `~/.local/bin/solstone` / `journal` wrapper
 - a test, explicitly
 - `make sandbox` / `make dev`, explicitly
 
@@ -29,7 +29,7 @@ Use:
 
 ## Service Installation
 
-`journal setup` installs the `sol` and `journal` wrappers and the host service
+`journal setup` installs the `solstone` and `journal` wrappers and the host service
 (systemd user on Linux, launchd on macOS). Convey listens on port 5015.
 Installed services invoke `journal` from PATH. They do not write
 `SOLSTONE_JOURNAL` into the service env block; the wrapper exports it.

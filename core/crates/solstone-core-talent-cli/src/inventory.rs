@@ -27,7 +27,7 @@ struct InventoryRow {
     output: String,
     access_tier: String,
     finalize: String,
-    sol: bool,
+    solstone: bool,
     reads: bool,
     submit: bool,
     command_examples: Vec<String>,
@@ -36,7 +36,7 @@ struct InventoryRow {
 
 struct TierInfo {
     name: &'static str,
-    sol: bool,
+    solstone: bool,
     reads: bool,
     submit: bool,
     tools: Vec<&'static str>,
@@ -111,7 +111,7 @@ fn row_from_composed(
         } else {
             "FinishTool".to_owned()
         },
-        sol: capabilities.sol,
+        solstone: capabilities.solstone,
         reads: capabilities.reads,
         submit: capabilities.submit,
         command_examples: scan_command_examples(
@@ -133,7 +133,7 @@ fn error_row(name: &str, error: String) -> InventoryRow {
         output: "-".to_owned(),
         access_tier: "-".to_owned(),
         finalize: "-".to_owned(),
-        sol: false,
+        solstone: false,
         reads: false,
         submit: false,
         command_examples: Vec::new(),
@@ -183,7 +183,7 @@ fn scan_command_examples(body: &str) -> Vec<String> {
         .collect::<Vec<_>>()
         .join("|");
     let pattern = Regex::new(&format!(
-        r"`(?P<cmd>(?:sol\s+call\s+[^\n`]+|journal\s+(?:{commands})\b[^\n`]*))`"
+        r"`(?P<cmd>(?:solstone\s+call\s+[^\n`]+|journal\s+(?:{commands})\b[^\n`]*))`"
     ))
     .expect("static command example pattern");
     let mut seen = HashSet::new();
@@ -219,7 +219,7 @@ fn tier_table() -> Vec<TierInfo> {
                 .expect("each tier has a trailing finalization tool");
             TierInfo {
                 name,
-                sol: capabilities.sol,
+                solstone: capabilities.solstone,
                 reads: capabilities.reads,
                 submit: capabilities.submit,
                 tools: tools.iter().map(|tool| tool.name).collect(),
@@ -229,7 +229,7 @@ fn tier_table() -> Vec<TierInfo> {
 }
 
 fn tier_summary(reads: bool, submit: bool) -> String {
-    let base = if reads { "sol+reads" } else { "sol" };
+    let base = if reads { "solstone+reads" } else { "solstone" };
     if submit {
         format!("{base}+submit")
     } else {
@@ -324,7 +324,7 @@ fn render_json(rows: &[InventoryRow]) -> String {
     let mut tiers = Map::new();
     for tier in tier_table() {
         let mut value = Map::new();
-        value.insert("sol".to_owned(), Value::Bool(tier.sol));
+        value.insert("solstone".to_owned(), Value::Bool(tier.solstone));
         value.insert("reads".to_owned(), Value::Bool(tier.reads));
         value.insert("submit".to_owned(), Value::Bool(tier.submit));
         value.insert(
@@ -362,7 +362,7 @@ fn row_json(row: &InventoryRow) -> Value {
         Value::String(row.access_tier.clone()),
     );
     value.insert("finalize".to_owned(), Value::String(row.finalize.clone()));
-    value.insert("sol".to_owned(), Value::Bool(row.sol));
+    value.insert("solstone".to_owned(), Value::Bool(row.solstone));
     value.insert("reads".to_owned(), Value::Bool(row.reads));
     value.insert("submit".to_owned(), Value::Bool(row.submit));
     value.insert(
@@ -449,19 +449,19 @@ mod tests {
     #[test]
     fn scans_examples_with_python_normalization_rules() {
         let body = concat!(
-            "`sol call first one` `sol  call\tsecond two.` `sol call first one` ",
+            "`solstone call first one` `solstone  call\tsecond two.` `solstone call first one` ",
             "`journal frobnicate --now` `journal talent inventory;` ",
-            "`sol call fourth x` `sol call fifth x` `sol call sixth x` `sol call seventh x`"
+            "`solstone call fourth x` `solstone call fifth x` `solstone call sixth x` `solstone call seventh x`"
         );
         assert_eq!(
             scan_command_examples(body),
             vec![
-                "sol call first one",
-                "sol call second two",
+                "solstone call first one",
+                "solstone call second two",
                 "journal talent inventory",
-                "sol call fourth x",
-                "sol call fifth x",
-                "sol call sixth x",
+                "solstone call fourth x",
+                "solstone call fifth x",
+                "solstone call sixth x",
             ]
         );
     }
@@ -492,15 +492,17 @@ mod tests {
             output: "-".to_owned(),
             access_tier: "normal".to_owned(),
             finalize: "FinishTool".to_owned(),
-            sol: true,
+            solstone: true,
             reads: true,
             submit: false,
-            command_examples: vec!["sol call alpha supercalifragilisticexpialidocious".to_owned()],
+            command_examples: vec![
+                "solstone call alpha supercalifragilisticexpialidocious".to_owned(),
+            ],
             error: None,
         };
         let output = render_table(&[row]);
-        assert!(output.contains("sol call alpha supercalifragilistice"));
-        assert!(!output.contains("sol call alpha supercalifragilisticexpialidocious"));
+        assert!(output.contains("solstone call alpha supercalifragili"));
+        assert!(!output.contains("solstone call alpha supercalifragilisticexpialidocious"));
     }
 
     #[test]
@@ -513,7 +515,7 @@ mod tests {
                 let (_, tools) = tools.split_last().expect("final tool");
                 (
                     name,
-                    capabilities.sol,
+                    capabilities.solstone,
                     capabilities.reads,
                     capabilities.submit,
                     tools.iter().map(|tool| tool.name).collect::<Vec<_>>(),
@@ -522,7 +524,15 @@ mod tests {
             .collect::<Vec<_>>();
         let actual = tier_table()
             .into_iter()
-            .map(|tier| (tier.name, tier.sol, tier.reads, tier.submit, tier.tools))
+            .map(|tier| {
+                (
+                    tier.name,
+                    tier.solstone,
+                    tier.reads,
+                    tier.submit,
+                    tier.tools,
+                )
+            })
             .collect::<Vec<_>>();
         assert_eq!(actual, expected);
     }
@@ -536,7 +546,7 @@ mod tests {
             r#"{"title":"Mañana","description":"Résumé"}"#,
         )
         .expect("facet");
-        let command = "sol call alpha supercalifragilisticexpialidocious";
+        let command = "solstone call alpha supercalifragilisticexpialidocious";
         talent(
             root.path(),
             "rich",
@@ -561,7 +571,7 @@ mod tests {
                 "output",
                 "access_tier",
                 "finalize",
-                "sol",
+                "solstone",
                 "reads",
                 "submit",
                 "command_examples",
@@ -571,7 +581,9 @@ mod tests {
         assert_eq!(row["write"], json!("ro"));
         assert_eq!(row["command_examples"], json!([command]));
         assert!(row["command_examples"][0].as_str().expect("example").len() > 36);
-        assert!(row["sol"].is_boolean() && row["reads"].is_boolean() && row["submit"].is_boolean());
+        assert!(
+            row["solstone"].is_boolean() && row["reads"].is_boolean() && row["submit"].is_boolean()
+        );
         assert!(root["tiers"]["normal"]["tools"].is_array());
     }
 

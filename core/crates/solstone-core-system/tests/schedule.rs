@@ -220,7 +220,11 @@ fn schedule_entry_mutations_wait_for_the_existing_schedule_lock() {
 fn ac1_ac6_schedule_submission_is_explicitly_separate_from_bus_decode() {
     let bus = BusTaskRequest::decode(
         WireTaskRequest {
-            cmd: Some(vec!["sol".to_owned(), "call".to_owned(), "x".to_owned()]),
+            cmd: Some(vec![
+                "solstone".to_owned(),
+                "call".to_owned(),
+                "x".to_owned(),
+            ]),
             ..WireTaskRequest::default()
         },
         "bus-ref",
@@ -228,8 +232,12 @@ fn ac1_ac6_schedule_submission_is_explicitly_separate_from_bus_decode() {
     .expect("bus decode");
     let _: BusTaskRequest = bus;
     let scheduled = ScheduledRequest::new(
-        ScheduledArgv::from_wire(vec!["sol".to_owned(), "call".to_owned(), "x".to_owned()])
-            .expect("scheduled argv"),
+        ScheduledArgv::from_wire(vec![
+            "solstone".to_owned(),
+            "call".to_owned(),
+            "x".to_owned(),
+        ])
+        .expect("scheduled argv"),
         "sched:x:1",
         "x",
     );

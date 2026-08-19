@@ -190,7 +190,7 @@ fn resolve_tool_spec_round_trips_tool_names() {
             Some(tool.as_str())
         );
     }
-    for name in ["sol", "emit_final", "nope"] {
+    for name in ["solstone", "emit_final", "nope"] {
         assert_eq!(resolve_tool_spec(name), None, "{name}");
     }
 }
@@ -239,7 +239,7 @@ fn sol_and_raw_read_budgets_are_independent() {
     let mut slot = NoopSlotLease;
     let journal = temp_journal();
     let first = run_sol_command(
-        "sol call activities list",
+        "solstone call activities list",
         "normal",
         None,
         &journal,
@@ -248,7 +248,7 @@ fn sol_and_raw_read_budgets_are_independent() {
     )
     .expect("known tier");
     let second = run_sol_command(
-        "sol call activities list",
+        "solstone call activities list",
         "normal",
         None,
         &journal,
@@ -259,7 +259,7 @@ fn sol_and_raw_read_budgets_are_independent() {
     assert_eq!(first.budget_exhausted_event, None);
     assert_eq!(second.budget_exhausted_event.expect("first event").count, 2);
     let third = run_sol_command(
-        "sol call activities list",
+        "solstone call activities list",
         "normal",
         None,
         &journal,
@@ -321,7 +321,7 @@ fn slot_reacquire_branches_match_the_provider_sequence() {
     let mut exhausted_budget = SolCallBudget::new(0);
     let mut exhausted = FakeLease::ok();
     let exhausted_result = run_sol_command(
-        "sol call activities list",
+        "solstone call activities list",
         "normal",
         None,
         &journal,

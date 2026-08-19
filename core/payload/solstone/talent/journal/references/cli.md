@@ -7,15 +7,15 @@ Use these commands to explore journal content from the terminal.
 Common pattern:
 
 ```bash
-sol call journal <command> [args...]
+solstone call journal <command> [args...]
 ```
 
-**Typical workflow**: `search` to find content across all types → `facet` for project detail. For future scheduled items, use `sol call activities list`.
+**Typical workflow**: `search` to find content across all types → `facet` for project detail. For future scheduled items, use `solstone call activities list`.
 
 ## search
 
 ```bash
-sol call journal search [QUERY] [-n LIMIT] [--offset N] [-d DAY] [--day-from DAY] [--day-to DAY] [-f FACET] [-a AGENT] [--time-bucket BUCKET] [--json]
+solstone call journal search [QUERY] [-n LIMIT] [--offset N] [-d DAY] [--day-from DAY] [--day-to DAY] [-f FACET] [-a AGENT] [--time-bucket BUCKET] [--json]
 ```
 
 Search the journal index across insights, transcripts, historical event extracts, activity records, and entities.
@@ -39,22 +39,22 @@ Behavior notes:
 - Use `*` for prefix matching: `migrat*`.
 - Zero results means zero. These CLI and agent surfaces do not auto-broaden; broaden by dropping terms, changing to `term1 OR term2`, then adding `*`.
 - Use counts with `--facet`, `--agent`, `--day`, and `--time-bucket` to drill down.
-- Result ids are `path:idx`; read the underlying file with `sol call journal read --path <path>` after stripping the `:idx`.
+- Result ids are `path:idx`; read the underlying file with `solstone call journal read --path <path>` after stripping the `:idx`.
 - Use either `--day` or date range flags; do not combine exact day with range filters.
 
 Examples:
 
 ```bash
-sol call journal search "incident review" -n 20 -f work
-sol call journal search "standup OR sync" --day-from 20260101 --day-to 20260107
-sol call journal search "" -d 20260115 -a audio
-sol call journal search "weekly sync" --time-bucket morning --json
+solstone call journal search "incident review" -n 20 -f work
+solstone call journal search "standup OR sync" --day-from 20260101 --day-to 20260107
+solstone call journal search "" -d 20260115 -a audio
+solstone call journal search "weekly sync" --time-bucket morning --json
 ```
 
 ## facet show
 
 ```bash
-sol call journal facet show [NAME]
+solstone call journal facet show [NAME]
 ```
 
 Show a comprehensive facet summary.
@@ -64,14 +64,14 @@ Show a comprehensive facet summary.
 Example:
 
 ```bash
-sol call journal facet show work
-sol call journal facet show         # uses SOL_FACET
+solstone call journal facet show work
+solstone call journal facet show         # uses SOL_FACET
 ```
 
 ## facet create
 
 ```bash
-sol call journal facet create <title> [--emoji EMOJI] [--icon ICON] [--color COLOR] [--description DESC] [--consent]
+solstone call journal facet create <title> [--emoji EMOJI] [--icon ICON] [--color COLOR] [--description DESC] [--consent]
 ```
 
 Create a new facet directory and initial `facet.json`.
@@ -86,15 +86,15 @@ Create a new facet directory and initial `facet.json`.
 Examples:
 
 ```bash
-sol call journal facet create "Acme Project"
-sol call journal facet create "Personal" --emoji "🏠" --color "#ff6f61" --description "Life admin"
-sol call journal facet create "Research" --emoji "📚" --icon library
+solstone call journal facet create "Acme Project"
+solstone call journal facet create "Personal" --emoji "🏠" --color "#ff6f61" --description "Life admin"
+solstone call journal facet create "Research" --emoji "📚" --icon library
 ```
 
 ## facet update
 
 ```bash
-sol call journal facet update <name> [--title T] [--description D] [--emoji E] [--icon ICON] [--color C]
+solstone call journal facet update <name> [--title T] [--description D] [--emoji E] [--icon ICON] [--color C]
 ```
 
 Update facet metadata fields.
@@ -109,14 +109,14 @@ Update facet metadata fields.
 Example:
 
 ```bash
-sol call journal facet update work --description "Client work and planning" --emoji "🛠"
-sol call journal facet update work --icon brain
+solstone call journal facet update work --description "Client work and planning" --emoji "🛠"
+solstone call journal facet update work --icon brain
 ```
 
 ## facet rename
 
 ```bash
-sol call journal facet rename <name> <new-name> [--consent]
+solstone call journal facet rename <name> <new-name> [--consent]
 ```
 
 Rename a facet (directory and references in config/chat metadata).
@@ -128,13 +128,13 @@ Rename a facet (directory and references in config/chat metadata).
 Example:
 
 ```bash
-sol call journal facet rename personal personal-life
+solstone call journal facet rename personal personal-life
 ```
 
 ## facet mute
 
 ```bash
-sol call journal facet mute <name>
+solstone call journal facet mute <name>
 ```
 
 Hide a facet from default facet listings.
@@ -142,13 +142,13 @@ Hide a facet from default facet listings.
 Example:
 
 ```bash
-sol call journal facet mute personal
+solstone call journal facet mute personal
 ```
 
 ## facet unmute
 
 ```bash
-sol call journal facet unmute <name>
+solstone call journal facet unmute <name>
 ```
 
 Show a previously muted facet in default listings again.
@@ -156,13 +156,13 @@ Show a previously muted facet in default listings again.
 Example:
 
 ```bash
-sol call journal facet unmute personal
+solstone call journal facet unmute personal
 ```
 
 ## facet delete
 
 ```bash
-sol call journal facet delete <name> [--yes] [--consent]
+solstone call journal facet delete <name> [--yes] [--consent]
 ```
 
 Delete a facet directory and all its data.
@@ -173,8 +173,8 @@ Delete a facet directory and all its data.
 Example:
 
 ```bash
-sol call journal facet delete old-facet
-sol call journal facet delete old-facet --yes
+solstone call journal facet delete old-facet
+solstone call journal facet delete old-facet --yes
 ```
 
 ## facet merge
@@ -184,7 +184,7 @@ Facet merging is temporarily unavailable while this command migrates to the nati
 ## facets
 
 ```bash
-sol call journal facets [--all]
+solstone call journal facets [--all]
 ```
 
 List available facets.
@@ -194,7 +194,7 @@ List available facets.
 ## agents
 
 ```bash
-sol call journal agents [DAY] [-s SEGMENT]
+solstone call journal agents [DAY] [-s SEGMENT]
 ```
 
 List available agent outputs for a day.
@@ -207,14 +207,14 @@ Without `--segment`, lists daily agent outputs and per-segment outputs. With `--
 Example:
 
 ```bash
-sol call journal agents 20260115
-sol call journal agents -s 091500_300
+solstone call journal agents 20260115
+solstone call journal agents -s 091500_300
 ```
 
 ## read
 
 ```bash
-sol call journal read [AGENT] [-d DAY] [-s SEGMENT] [--path PATH] [--max BYTES]
+solstone call journal read [AGENT] [-d DAY] [-s SEGMENT] [--path PATH] [--max BYTES]
 ```
 
 Read full content of an agent output or a journal-relative file path.
@@ -230,16 +230,16 @@ Without `--segment`, reads from the daily agents directory. With `--segment`, re
 Examples:
 
 ```bash
-sol call journal read briefing -d 20260115
-sol call journal read briefing
-sol call journal read activity -s 091500_300
-sol call journal read --path 20260115/talents/briefing.md
+solstone call journal read briefing -d 20260115
+solstone call journal read briefing
+solstone call journal read activity -s 091500_300
+solstone call journal read --path 20260115/talents/briefing.md
 ```
 
 ## news
 
 ```bash
-sol call journal news [NAME] [-d DAY] [-n LIMIT] [--cursor CURSOR] [-w]
+solstone call journal news [NAME] [-d DAY] [-n LIMIT] [--cursor CURSOR] [-w]
 ```
 
 Read or write facet news entries.
@@ -258,24 +258,24 @@ Behavior notes:
 Examples:
 
 ```bash
-sol call journal news work -n 3
-sol call journal news -d 20260115          # uses SOL_FACET
-sol call journal news work --cursor 20260110 -n 5
+solstone call journal news work -n 3
+solstone call journal news -d 20260115          # uses SOL_FACET
+solstone call journal news work --cursor 20260110 -n 5
 ```
 
 ## Talent CLI Boundaries
 
-Cogitate talents have access to all `sol` commands. The following infrastructure commands must never be called by talents, because they manage services and data pipelines that should only be operated by the supervisor or a human operator:
+Cogitate talents have access to all `solstone` commands. The following infrastructure commands must never be called by talents, because they manage services and data pipelines that should only be operated by the supervisor or a human operator:
 
 - `journal supervisor` / `journal start`
 - `journal think`
-- `sol import`
+- `solstone import`
 - `journal config`
 - `journal cortex`
 - `journal brain refresh`
-- `journal observer` / `sol observe-*`
+- `journal observer` / `solstone observe-*`
 - `journal sense`
 - `journal transcribe` / `journal describe`
 - `journal indexer --reset`
 
-Talents should use `sol call` commands for journal interaction and `journal health` / `journal talent logs` for diagnostics.
+Talents should use `solstone call` commands for journal interaction and `journal health` / `journal talent logs` for diagnostics.

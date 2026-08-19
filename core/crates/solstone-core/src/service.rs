@@ -848,14 +848,17 @@ fn cleanup_stale_launchd(home: &Path) -> Result<(), String> {
             .or(program)
             .map(PathBuf::from)
             .ok_or_else(|| "stale launchd unit has no launcher".to_owned())?;
-        let current_launchers = [home.join(".local/bin/journal"), home.join(".local/bin/sol")];
+        let current_launchers = [
+            home.join(".local/bin/journal"),
+            home.join(".local/bin/solstone"),
+        ];
         if current_launchers.contains(&launcher) {
             continue;
         }
         let program_only = arguments.is_none();
         if !matches!(
             launcher.file_name().and_then(OsStr::to_str),
-            Some("journal" | "sol")
+            Some("journal" | "solstone")
         ) || !stale_launchd_managed(dictionary, label, &launcher)
         {
             return Err("stale launchd unit is foreign or unrecognized".to_owned());
@@ -1272,7 +1275,10 @@ fn expected_launchers(platform: Platform, unit: &Path) -> Option<[PathBuf; 2]> {
         Platform::Linux => unit.ancestors().nth(4),
         Platform::Darwin => unit.ancestors().nth(3),
     }?;
-    Some([home.join(".local/bin/journal"), home.join(".local/bin/sol")])
+    Some([
+        home.join(".local/bin/journal"),
+        home.join(".local/bin/solstone"),
+    ])
 }
 
 fn wait_launchd_absent(
@@ -1653,7 +1659,7 @@ mod tests {
 
     #[test]
     fn historical_wrappers_and_units_remain_managed() {
-        let sol = Path::new("/home/owner/.local/bin/sol");
+        let sol = Path::new("/home/owner/.local/bin/solstone");
         let legacy_systemd = concat!(
             "[Unit]\n",
             "Description=Solstone Supervisor\n",
@@ -1662,7 +1668,7 @@ mod tests {
             "Type=simple\n",
             "Environment=HOME=/home/owner\n",
             "Environment=PATH=/usr/bin:/bin\n",
-            "ExecStart=/home/owner/.local/bin/sol supervisor 5015\n",
+            "ExecStart=/home/owner/.local/bin/solstone supervisor 5015\n",
             "Restart=on-failure\n",
             "RestartSec=5\n",
             "\n[Install]\n",
@@ -1686,7 +1692,7 @@ mod tests {
             .unwrap()
             .replace(
                 "/home/owner/.local/bin/journal",
-                "/home/owner/.local/bin/sol",
+                "/home/owner/.local/bin/solstone",
             )
             .replace("<string>start</string>", "<string>supervisor</string>");
         assert!(launchd_managed(historical.as_bytes(), sol, LABEL));
@@ -1697,7 +1703,7 @@ mod tests {
         let canonical = Path::new("/home/owner/.config/systemd/user/solstone.service");
         let launchers = [
             PathBuf::from("/home/owner/.local/bin/journal"),
-            PathBuf::from("/home/owner/.local/bin/sol"),
+            PathBuf::from("/home/owner/.local/bin/solstone"),
         ];
         let absent = CommandResult {
             code: 0,
@@ -1728,7 +1734,7 @@ mod tests {
             "FragmentPath=/home/owner/.config/systemd/user/solstone.service\n",
             "SourcePath=\n",
             "DropInPaths=\n",
-            "ExecStart={ path=/home/owner/.local/bin/sol ; argv[]=/home/owner/.local/bin/sol supervisor 5015 ; ignore_errors=no }\n",
+            "ExecStart={ path=/home/owner/.local/bin/solstone ; argv[]=/home/owner/.local/bin/solstone supervisor 5015 ; ignore_errors=no }\n",
             "UnitFileState=enabled\n",
         );
         let loaded = CommandResult {
@@ -1784,16 +1790,16 @@ mod tests {
         let canonical = Path::new("/home/owner/Library/LaunchAgents/org.solpbc.solstone.plist");
         let launchers = [
             PathBuf::from("/home/owner/.local/bin/journal"),
-            PathBuf::from("/home/owner/.local/bin/sol"),
+            PathBuf::from("/home/owner/.local/bin/solstone"),
         ];
         let stdout = concat!(
             "gui/501/org.solpbc.solstone = {\n",
             "\tpath = /home/owner/Library/LaunchAgents/org.solpbc.solstone.plist\n",
             "\ttype = LaunchAgent\n",
             "\tstate = running\n",
-            "\tprogram = /home/owner/.local/bin/sol\n",
+            "\tprogram = /home/owner/.local/bin/solstone\n",
             "\targuments = {\n",
-            "\t\t/home/owner/.local/bin/sol\n",
+            "\t\t/home/owner/.local/bin/solstone\n",
             "\t\tsupervisor\n",
             "\t\t5015\n",
             "\t}\n",
@@ -1832,7 +1838,7 @@ mod tests {
 
     #[test]
     fn stale_launchd_truth_accepts_retained_program_shapes() {
-        let launcher = Path::new("/old/checkout/.venv/bin/sol");
+        let launcher = Path::new("/old/checkout/.venv/bin/solstone");
         for value in [
             plist::Value::Dictionary(plist::Dictionary::from_iter([
                 ("Label".to_owned(), plist::Value::String(LABEL.to_owned())),

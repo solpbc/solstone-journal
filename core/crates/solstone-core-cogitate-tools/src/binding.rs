@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub const KNOWN_TOOL_NAMES: [&str; 7] = [
-    "sol",
+    "solstone",
     "glob",
     "grep_search",
     "list_directory",
@@ -18,15 +18,16 @@ pub const KNOWN_TOOL_NAMES: [&str; 7] = [
     "finish",
 ];
 
-/// Bind only the tier's explicit tools. `sol` may persist domain state through
-/// policy-gated `sol call` verbs; there is no general-purpose write tool.
+/// Bind only the tier's explicit tools. `solstone` may persist domain state
+/// through policy-gated `solstone call` verbs; there is no general-purpose write
+/// tool.
 pub fn bound_tools(
     access_tier: &str,
     expects_emit_final: bool,
 ) -> Result<Vec<&'static ToolSpec>, AccessTierError> {
     let capabilities = capabilities_for_access_tier(access_tier)?;
     let mut tools = Vec::new();
-    if capabilities.sol {
+    if capabilities.solstone {
         tools.push(sol_tool());
     }
     if capabilities.reads {

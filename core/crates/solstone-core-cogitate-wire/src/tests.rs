@@ -27,7 +27,7 @@ fn request_value() -> Value {
         "outbound_approval": null,
         "diagnostic": false,
         "talent_instruction": "Be concise.",
-        "sol_tool_name": "sol",
+        "sol_tool_name": "solstone",
         "read_scope": [],
         "output_path": null,
         "schedule": "daily",
@@ -369,7 +369,7 @@ fn every_runtime_variant_maps_to_its_wire_kind_and_common_fields() {
         (
             RuntimeEvent::ToolStart {
                 call_id: "call-1".into(),
-                tool: "sol".into(),
+                tool: "solstone".into(),
                 arguments: json!({"command": "sol status"}),
                 correlation_id: "corr-1".into(),
             },
@@ -378,7 +378,7 @@ fn every_runtime_variant_maps_to_its_wire_kind_and_common_fields() {
         (
             RuntimeEvent::ToolEnd {
                 call_id: "call-1".into(),
-                tool: "sol".into(),
+                tool: "solstone".into(),
                 arguments: json!({"command": "sol status"}),
                 result: "ok".into(),
                 is_error: false,
@@ -430,7 +430,7 @@ fn event_field_renames_and_tool_error_flag_are_exact() {
     assert_eq!(reasoning["payload"], json!({"payload": true}));
     let start = serialize_event(RuntimeEvent::ToolStart {
         call_id: "call-1".into(),
-        tool: "sol".into(),
+        tool: "solstone".into(),
         arguments: json!({"command": "status"}),
         correlation_id: "corr-1".into(),
     });
@@ -438,7 +438,7 @@ fn event_field_renames_and_tool_error_flag_are_exact() {
     assert!(start.get("arguments").is_none());
     let end = serialize_event(RuntimeEvent::ToolEnd {
         call_id: "call-1".into(),
-        tool: "sol".into(),
+        tool: "solstone".into(),
         arguments: json!({"command": "status"}),
         result: "failed".into(),
         is_error: true,
@@ -600,7 +600,7 @@ fn tool_budget_and_budget_escalation_shapes_are_exact() {
         count: 6,
         correlation_id: "corr-1".into(),
     });
-    assert_eq!(budget["tool"], "sol");
+    assert_eq!(budget["tool"], "solstone");
     assert_eq!(budget["budget"], 5);
     assert_eq!(budget["count"], 6);
     assert!(budget.get("read_tools").is_none());
@@ -632,13 +632,13 @@ fn all_native_values() -> Vec<Value> {
         }),
         serialize_event(RuntimeEvent::ToolStart {
             call_id: "call-1".into(),
-            tool: "sol".into(),
+            tool: "solstone".into(),
             arguments: json!({}),
             correlation_id: "corr-1".into(),
         }),
         serialize_event(RuntimeEvent::ToolEnd {
             call_id: "call-1".into(),
-            tool: "sol".into(),
+            tool: "solstone".into(),
             arguments: json!({}),
             result: "ok".into(),
             is_error: false,

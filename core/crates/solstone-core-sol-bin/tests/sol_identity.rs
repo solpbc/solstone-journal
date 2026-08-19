@@ -117,7 +117,7 @@ fn sol_binary_owns_only_the_sol_identity() {
     assert!(
         String::from_utf8(version.stdout)
             .expect("version stdout should be utf-8")
-            .starts_with("sol (solstone) ")
+            .starts_with("solstone ")
     );
 
     let journal_marker = run_sol(&["__solstone_identity=journal", "--version"], &path, None);
@@ -129,7 +129,7 @@ fn sol_binary_owns_only_the_sol_identity() {
 #[test]
 fn cli_boundary_declares_the_complete_sol_partition() {
     let fixture = fixture();
-    let sol = &fixture["identities"]["sol"];
+    let sol = &fixture["identities"]["solstone"];
     let api = strings(sol, "api_commands");
     let device = strings(sol, "invoking_device_commands");
     let journal_leaves = strings(sol, "http_paths");
@@ -162,12 +162,12 @@ fn cli_boundary_declares_the_complete_sol_partition() {
         assert_eq!(output.status.code(), Some(0), "sol {command} --help");
         let stdout = String::from_utf8(output.stdout).expect("help stdout should be utf-8");
         assert!(
-            stdout.starts_with(&format!("Usage: sol {command}")),
-            "sol {command} --help did not reach generated help: {stdout}"
+            stdout.starts_with(&format!("Usage: solstone {command}")),
+            "solstone {command} --help did not reach generated help: {stdout}"
         );
         assert!(
-            !stdout.contains("Unsupported native sol command."),
-            "sol {command} --help fell through to unsupported output"
+            !stdout.contains("Unsupported native solstone command."),
+            "solstone {command} --help fell through to unsupported output"
         );
         assert_eq!(output.stderr, b"", "sol {command} --help");
     }
@@ -177,7 +177,7 @@ fn cli_boundary_declares_the_complete_sol_partition() {
 #[test]
 fn fixture_retired_sol_invocations_are_unsupported_without_spawning() {
     let fixture = fixture();
-    let retired = strings(&fixture["identities"]["sol"], "retired_invocations");
+    let retired = strings(&fixture["identities"]["solstone"], "retired_invocations");
     assert_eq!(retired.len(), 11);
     assert_unique(&retired, "retired_invocations");
 

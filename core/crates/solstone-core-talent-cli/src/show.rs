@@ -408,7 +408,7 @@ fn render_cogitate_prompt(
     let system_instruction = compose_system_instruction(
         diagnostic,
         composed.get("system_instruction").and_then(Value::as_str),
-        (!diagnostic).then_some("sol"),
+        (!diagnostic).then_some("solstone"),
         composed
             .get("read_scope")
             .and_then(Value::as_array)

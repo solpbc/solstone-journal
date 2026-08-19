@@ -28,7 +28,7 @@ use crate::wrapper::{
 
 const LOCAL_MODEL: &str = "local/qwen3.5-4b";
 const LOCAL_INSTALL_HINT: &str = "journal install-provider local";
-const SOL_ALREADY_KEEPS_JOURNAL_NARRATION: &str = "sol on this Mac already keeps this journal, so setup did not install a background launcher.\nRun journal doctor if something looks wrong.";
+const SOL_ALREADY_KEEPS_JOURNAL_NARRATION: &str = "solstone on this Mac already keeps this journal, so setup did not install a background launcher.\nRun journal doctor if something looks wrong.";
 
 pub const ALL_STEP_NAMES: [StepName; 8] = [
     StepName::Doctor,
@@ -242,7 +242,7 @@ impl<'a> SetupContext<'a> {
         match (self.already_keeps_journal_probe)(self) {
             Ok(value) => value,
             Err(error) => {
-                eprintln!("warning: could not inspect sol launcher ownership: {error}");
+                eprintln!("warning: could not inspect solstone launcher ownership: {error}");
                 false
             }
         }
@@ -252,8 +252,11 @@ impl<'a> SetupContext<'a> {
 /// macOS currently implements the app-owned-child signal; native supervisor conflict
 /// state has no reusable typed seam yet and deliberately remains a conservative false.
 pub fn native_already_keeps_journal_probe(context: &SetupContext<'_>) -> Result<bool, String> {
-    let paths = wrapper_paths(&context.home_dir);
-    Ok([paths.sol, paths.journal]
+    let journal = wrapper_paths(&context.home_dir).journal;
+    // solstone-macos still writes the app-owned-child marker at this path.
+    // Do not derive it from WrapperPaths; this repo only reads that file.
+    let macos_app_owned_sol = context.home_dir.join(".local/bin/sol");
+    Ok([macos_app_owned_sol, journal]
         .iter()
         .all(|path| is_live_app_owned_child_launcher(path)))
 }
@@ -1005,7 +1008,7 @@ fn command_for_step(context: &SetupContext<'_>, name: StepName) -> Option<Vec<St
         std::iter::once(
             context
                 .install_bin_dir
-                .join("sol")
+                .join("solstone")
                 .to_string_lossy()
                 .into_owned(),
         )
@@ -1398,9 +1401,9 @@ fn step_install_models(context: &mut SetupContext<'_>) -> Result<StepResult, Ste
 
 fn step_skills_user(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
     let paths = vec![
-        context.home_dir.join(".claude/skills/sol/SKILL.md"),
-        context.home_dir.join(".codex/skills/sol/SKILL.md"),
-        context.home_dir.join(".gemini/skills/sol/SKILL.md"),
+        context.home_dir.join(".claude/skills/solstone/SKILL.md"),
+        context.home_dir.join(".codex/skills/solstone/SKILL.md"),
+        context.home_dir.join(".gemini/skills/solstone/SKILL.md"),
     ];
     run_skill_step(
         context,
@@ -1459,7 +1462,7 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             Ok(StepResult::new(
                 StepName::Wrapper,
                 StepStatus::Ok,
-                vec![paths.sol, paths.journal],
+                vec![paths.solstone, paths.journal],
                 (context.now)(),
             ))
         }
@@ -1469,14 +1472,14 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             (context.now)(),
             WrapperWarning {
                 message: format!(
-                    "could not provision the sol/journal wrappers at {} ({}: {error})",
+                    "could not provision the solstone/journal wrappers at {} ({}: {error})",
                     context.home_dir.join(".local/bin").display(),
                     std::any::type_name::<WrapperError>()
                         .rsplit("::")
                         .next()
                         .unwrap_or("WrapperError")
                 ),
-                fix_hint: "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke sol/journal directly from the runtime".into(),
+                fix_hint: "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime".into(),
             },
         )),
     }
@@ -1726,7 +1729,7 @@ fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutio
     let output = context
         .runner
         .run(&CommandRequest {
-            program: context.install_bin_dir.join("sol"),
+            program: context.install_bin_dir.join("solstone"),
             args: vec![
                 "call".into(),
                 "thinking".into(),
@@ -1782,7 +1785,7 @@ fn run_skill_step(
     let output = context
         .runner
         .run(&CommandRequest {
-            program: context.install_bin_dir.join("sol"),
+            program: context.install_bin_dir.join("solstone"),
             args,
             timeout_seconds: Some(context.args.step_timeout_seconds.max(0) as u64),
         })
@@ -1953,18 +1956,18 @@ fn plan_install_models(context: &SetupContext<'_>) -> String {
 fn plan_skills_user(context: &SetupContext<'_>) -> String {
     format!(
         "would run: {} skills install --agent all",
-        context.install_bin_dir.join("sol").display()
+        context.install_bin_dir.join("solstone").display()
     )
 }
 fn plan_skills_journal(context: &SetupContext<'_>) -> String {
     format!(
         "would run: {} skills install --project {} --agent all",
-        context.install_bin_dir.join("sol").display(),
+        context.install_bin_dir.join("solstone").display(),
         context.journal_path.display()
     )
 }
 fn plan_wrapper(_context: &SetupContext<'_>) -> String {
-    "would provision managed sol and journal wrappers in-process".into()
+    "would provision managed solstone and journal wrappers in-process".into()
 }
 fn plan_service(_context: &SetupContext<'_>) -> String {
     "would install and start the journal service".into()
@@ -2335,7 +2338,7 @@ mod tests {
                 let outcome = run_setup(&mut setup, &service_spec);
                 (outcome, runner.requests.len(), ops.restarts)
             };
-        let (outcome, requests, _) = run("service-sol", &[], vec![], vec![], true);
+        let (outcome, requests, _) = run("service-solstone", &[], vec![], vec![], true);
         assert_eq!(outcome.exit_code, 0);
         assert_eq!(requests, 0);
         let (outcome, requests, _) = run("service-missing", &[], vec![false], vec![], false);
@@ -2519,11 +2522,11 @@ mod tests {
             serde_json::to_value(&warning).unwrap()["error"],
             json!({
                 "message": format!(
-                    "could not provision the sol/journal wrappers at {} (WrapperError: journal path contains shell-active character '$': {:?})",
+                    "could not provision the solstone/journal wrappers at {} (WrapperError: journal path contains shell-active character '$': {:?})",
                     home.join(".local/bin").display(),
                     root.join("bad$journal").to_string_lossy(),
                 ),
-                "fix_hint": "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke sol/journal directly from the runtime",
+                "fix_hint": "fix permissions on ~/.local/bin and re-run `journal setup`, or invoke solstone/journal directly from the runtime",
             })
         );
         fs::write(root.join("repo/.git"), "gitdir: x").unwrap();
@@ -2531,7 +2534,7 @@ mod tests {
         setup.journal_path = root.join("journal");
         let okay = step_wrapper(&mut setup).unwrap();
         assert_eq!(okay.status, StepStatus::Ok);
-        assert!(!home.join(".local/bin/sol").exists());
+        assert!(!home.join(".local/bin/solstone").exists());
         assert!(
             fs::read_to_string(home.join(".bashrc"))
                 .unwrap()
@@ -2988,5 +2991,46 @@ mod tests {
         assert_eq!(lines[4], "  variant: cuda (cli)");
         assert_eq!(lines[5], "  step_timeout_seconds: 1800 (default)");
         assert_eq!(lines[6], "  source checkout: False");
+    }
+
+    fn write_app_owned_child_marker(path: &Path, target: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        let escaped = target.to_string_lossy().replace('\'', "'\\''");
+        fs::write(
+            path,
+            format!("#!/bin/sh\n# managed-version: app-owned-child\nexec '{escaped}' \"$@\"\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn native_probe_detects_macos_app_owned_child_marker_at_literal_sol_path() {
+        let (args, resolved, root, home) = fixture("app-owned-child-probe", &[]);
+        let runtime = root.join("runtime");
+        fs::create_dir_all(&runtime).unwrap();
+        let target = runtime.join("child");
+        fs::write(&target, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        write_app_owned_child_marker(&home.join(".local/bin/sol"), &target);
+        write_app_owned_child_marker(&home.join(".local/bin/journal"), &target);
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let setup = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        assert_eq!(native_already_keeps_journal_probe(&setup).unwrap(), true);
+        assert!(!home.join(".local/bin/solstone").exists());
     }
 }

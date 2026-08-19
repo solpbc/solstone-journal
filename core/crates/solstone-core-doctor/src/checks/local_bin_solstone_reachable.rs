@@ -16,8 +16,9 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 
-const MISSING_LOCAL_BIN_SOL_FIX: &str = "run journal setup to install the managed sol wrapper";
-const PATH_SOL_FIX: &str =
+const MISSING_LOCAL_BIN_SOLSTONE_FIX: &str =
+    "run journal setup to install the managed solstone wrapper";
+const PATH_SOLSTONE_FIX: &str =
     "put ~/.local/bin earlier on PATH, or run journal setup to repoint the managed wrapper";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
@@ -27,8 +28,8 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
 }
 
 fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -> RunnerResult {
-    let local = context.home_dir.join(".local/bin/sol");
-    let which = which_sol(path.as_deref());
+    let local = context.home_dir.join(".local/bin/solstone");
+    let which = which_solstone(path.as_deref());
     if local.exists()
         && local.is_file()
         && let Some(which) = which.as_deref()
@@ -40,7 +41,7 @@ fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -
                 check,
                 Status::Ok,
                 format!(
-                    "~/.local/bin/sol symlinks to PATH sol at {}",
+                    "~/.local/bin/solstone symlinks to PATH solstone at {}",
                     which.display()
                 ),
                 None::<String>,
@@ -50,7 +51,7 @@ fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -
             return Ok(make_result(
                 check,
                 Status::Ok,
-                format!("~/.local/bin/sol is on PATH at {}", local.display()),
+                format!("~/.local/bin/solstone is on PATH at {}", local.display()),
                 None::<String>,
             ));
         }
@@ -67,9 +68,9 @@ fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -
         false
     };
     match which {
-        None => failures.push("sol is not on PATH".into()),
+        None => failures.push("solstone is not on PATH".into()),
         Some(which) => failures.push(format!(
-            "PATH sol resolves to {}, expected {}",
+            "PATH solstone resolves to {}, expected {}",
             resolve_non_strict(&which).display(),
             resolve_non_strict(&local).display()
         )),
@@ -79,16 +80,16 @@ fn run_with_path(context: &CheckContext, check: Check, path: Option<OsString>) -
         Status::Warn,
         failures.join("; "),
         Some(if local_problem {
-            MISSING_LOCAL_BIN_SOL_FIX
+            MISSING_LOCAL_BIN_SOLSTONE_FIX
         } else {
-            PATH_SOL_FIX
+            PATH_SOLSTONE_FIX
         }),
     ))
 }
 
-fn which_sol(path: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+fn which_solstone(path: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
     env::split_paths(path?)
-        .map(|directory| directory.join("sol"))
+        .map(|directory| directory.join("solstone"))
         .find(|candidate| is_executable(candidate))
 }
 
@@ -120,12 +121,12 @@ mod tests {
         let staged = context();
         let bin = staged.home_dir.join("path-bin");
         fs::create_dir_all(&bin).expect("create PATH fixture");
-        let target = bin.join("sol");
+        let target = bin.join("solstone");
         executable(&target);
-        let local = staged.home_dir.join(".local/bin/sol");
+        let local = staged.home_dir.join(".local/bin/solstone");
         fs::create_dir_all(local.parent().expect("local parent")).expect("create local parent");
-        symlink(&target, &local).expect("link local sol");
-        let check = check("local_bin_sol_reachable", Severity::Advisory);
+        symlink(&target, &local).expect("link local solstone");
+        let check = check("local_bin_solstone_reachable", Severity::Advisory);
         assert_eq!(
             run_with_path(&staged, check, Some(bin.clone().into()))
                 .unwrap()
@@ -133,15 +134,15 @@ mod tests {
             Status::Ok
         );
 
-        fs::remove_file(&local).expect("remove local sol");
+        fs::remove_file(&local).expect("remove local solstone");
         let result = run_with_path(&staged, check, Some(bin.into())).unwrap();
         assert_eq!(result.status, Status::Warn);
         assert!(result.detail.contains("is missing"));
-        assert_eq!(result.fix.as_deref(), Some(MISSING_LOCAL_BIN_SOL_FIX));
+        assert_eq!(result.fix.as_deref(), Some(MISSING_LOCAL_BIN_SOLSTONE_FIX));
 
         executable(&local);
         let result = run_with_path(&staged, check, None).unwrap();
         assert_eq!(result.status, Status::Warn);
-        assert_eq!(result.fix.as_deref(), Some(PATH_SOL_FIX));
+        assert_eq!(result.fix.as_deref(), Some(PATH_SOLSTONE_FIX));
     }
 }

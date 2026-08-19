@@ -71,7 +71,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Ok(make_result(
             check,
             Status::Ok,
-            "router skills sol, journal are installed and current",
+            "router skills solstone, journal are installed and current",
             None::<String>,
         ))
     } else {
@@ -79,7 +79,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             check,
             Status::Warn,
             problems.join("; "),
-            Some("run sol skills install --project ."),
+            Some("run solstone skills install --project ."),
         ))
     }
 }

@@ -15,7 +15,7 @@ fn decision_table() -> Vec<(&'static str, Vec<&'static str>, &'static str)> {
             vec!["journal", "indexer", "--rescan"],
             "indexer",
         ),
-        ("sol_head", vec!["sol", "heartbeat"], "heartbeat"),
+        ("sol_head", vec!["solstone", "heartbeat"], "heartbeat"),
         // the `think` flag ladder, in its declared first-hit order
         ("think_bare_is_daily", vec!["journal", "think"], "daily"),
         (
@@ -75,8 +75,8 @@ fn decision_table() -> Vec<(&'static str, Vec<&'static str>, &'static str)> {
         ),
         (
             "path_form_sol_is_basename",
-            vec!["/usr/local/bin/sol", "backup"],
-            "sol",
+            vec!["/usr/local/bin/solstone", "backup"],
+            "solstone",
         ),
         ("unrelated_binary", vec!["/usr/bin/rsync", "-av"], "rsync"),
         // degenerate shapes

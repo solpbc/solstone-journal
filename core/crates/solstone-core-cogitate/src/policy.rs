@@ -4,10 +4,12 @@
 use crate::access_tiers::{AccessTierError, COGITATE_ACCESS_TIERS, capabilities_for_access_tier};
 use crate::preambles::COGITATE_JOURNAL_COMMANDS;
 
-const SHELL_COMPOSITION_DENY: &str = "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution";
+const SHELL_COMPOSITION_DENY: &str = "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution";
 const EMPTY_COMMAND_DENY: &str = "policy_deny: empty command";
 const RESTRICTED_COMMAND_DENY: &str =
-    "policy_deny: run_shell_command restricted to sol or approved journal invocations";
+    "policy_deny: run_shell_command restricted to solstone or approved journal invocations";
+const RETIRED_SOL_CLI_DENY: &str =
+    "policy_deny: `sol` is not available; run `solstone` or an approved `journal` command";
 const SUPPORT_SEND_VERBS: [&str; 7] = [
     "create",
     "reply",
@@ -48,7 +50,7 @@ pub fn classify_command(
         prefix
             .iter()
             .map(String::as_str)
-            .eq(["sol", "call", "journal"])
+            .eq(["solstone", "call", "journal"])
     }) && argv.len() >= 4
         && COGITATE_JOURNAL_COMMANDS.contains(&argv[3].as_str())
     {
@@ -57,7 +59,10 @@ pub fn classify_command(
     if argv[0] == "journal" && argv.len() >= 2 && bare_journal_repair_prefix(&argv[1]).is_some() {
         return Ok(deny(&bare_journal_repair_deny(&argv)));
     }
-    if !(argv[0] == "sol"
+    if argv[0] == "sol" {
+        return Ok(deny(RETIRED_SOL_CLI_DENY));
+    }
+    if !(argv[0] == "solstone"
         || (argv[0] == "journal"
             && argv.len() >= 2
             && COGITATE_JOURNAL_COMMANDS.contains(&argv[1].as_str())))
@@ -69,12 +74,12 @@ pub fn classify_command(
         if !submit_allowed {
             let required = submit_tiers().join(" or ");
             return Ok(deny(&format!(
-                "policy_deny: 'sol call support {send_verb}' requires access_tier '{required}'; this run is '{access_tier}'"
+                "policy_deny: 'solstone call support {send_verb}' requires access_tier '{required}'; this run is '{access_tier}'"
             )));
         }
         if outbound_approval.is_none_or(str::is_empty) {
             return Ok(deny(&format!(
-                "policy_deny: 'sol call support {send_verb}' requires a per-send owner approval; this run was not launched with one"
+                "policy_deny: 'solstone call support {send_verb}' requires a per-send owner approval; this run was not launched with one"
             )));
         }
     }
@@ -212,7 +217,7 @@ fn hybrid_journal_deny(argv: &[String]) -> String {
             .collect(),
     );
     format!(
-        "policy_deny: `sol call journal {family}` is not a `sol call` verb; `{family}` is an approved host command family — run it directly as `{repair}`"
+        "policy_deny: `solstone call journal {family}` is not a `solstone call` verb; `{family}` is an approved host command family — run it directly as `{repair}`"
     )
 }
 
@@ -231,8 +236,8 @@ fn bare_journal_repair_deny(argv: &[String]) -> String {
 
 fn bare_journal_repair_prefix(family: &str) -> Option<[&str; 4]> {
     match family {
-        "search" => Some(["sol", "call", "journal", "search"]),
-        "facet" => Some(["sol", "call", "journal", "facet"]),
+        "search" => Some(["solstone", "call", "journal", "search"]),
+        "facet" => Some(["solstone", "call", "journal", "facet"]),
         _ => None,
     }
 }
@@ -242,7 +247,7 @@ fn support_send_verb(argv: &[String]) -> Option<&str> {
         if argv[index..index + 3]
             .iter()
             .map(String::as_str)
-            .eq(["sol", "call", "support"])
+            .eq(["solstone", "call", "support"])
         {
             let verb = argv[index + 3].as_str();
             if SUPPORT_SEND_VERBS.contains(&verb) {
@@ -318,10 +323,43 @@ mod tests {
 
     #[test]
     fn short_support_command_is_not_scanned_for_a_send_verb() {
-        let decision = classify_command("sol call support", "normal", None).expect("known tier");
+        let decision =
+            classify_command("solstone call support", "normal", None).expect("known tier");
         assert!(
             decision.allowed,
             "a three-token argv has range(0) in Python"
+        );
+    }
+
+    #[test]
+    fn retired_sol_argv0_is_denied_and_solstone_is_allowed() {
+        let retired_search =
+            classify_command("sol call journal search foo", "normal", None).expect("known tier");
+        assert!(
+            !retired_search.allowed,
+            "argv0 sol must be rejected after the CLI rename"
+        );
+        assert_eq!(retired_search.reason, RETIRED_SOL_CLI_DENY);
+        let current_search = classify_command("solstone call journal search foo", "normal", None)
+            .expect("known tier");
+        assert!(
+            current_search.allowed,
+            "argv0 solstone with the same suffix remains allowed"
+        );
+
+        let retired_version =
+            classify_command("sol --version", "normal", None).expect("known tier");
+        assert!(!retired_version.allowed);
+        assert_eq!(retired_version.reason, RETIRED_SOL_CLI_DENY);
+        let current_version =
+            classify_command("solstone --version", "normal", None).expect("known tier");
+        assert!(current_version.allowed);
+
+        let journal =
+            classify_command("journal identity partner", "normal", None).expect("known tier");
+        assert!(
+            journal.allowed,
+            "approved journal families do not key off solstone"
         );
     }
 }

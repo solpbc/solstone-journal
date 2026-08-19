@@ -31,7 +31,7 @@ Use the diagnostic command that matches the question:
   This is the health diagnosis view.
 - `journal health` — what live supervisor status is being reported right now?
 
-`journal`-prefixed commands, including `journal doctor` and `journal setup`, require a journal-host install because the `journal` executable ships in the `solstone-journal` distribution, not in the thin `sol` client.
+`journal`-prefixed commands, including `journal doctor` and `journal setup`, require a journal-host install because the `journal` executable ships in the `solstone-journal` distribution, not in the thin `solstone` client.
 
 Each doctor check is an independent observation. If a check raises
 an ordinary execution exception, the row is reported as `ERROR`, the check result
@@ -79,7 +79,7 @@ deletion advice with the conflict fix. If the topology or foreign-launcher scan
 is incomplete rather than proven, only service lifecycle actions are withheld
 until it can be determined.
 
-`journal setup` step 1 runs `journal doctor --readiness`: `local_bin_sol_reachable`,
+`journal setup` step 1 runs `journal doctor --readiness`: `local_bin_solstone_reachable`,
 `disk_space`, `journal_dir_writable`, `default_stt_ready`,
 `parakeet_cpp_stt_ready`, and `speakers_analyze_installation`.
 It does not run runtime service, sync, config-dir, or launchd checks. A blocker
@@ -88,10 +88,10 @@ stops setup early, even when that check is advisory.
 
 ⚠ **`make preflight` is gone.** It ran a stdlib-only source-checkout readiness
 battery (`python_version`, `uv_installed`, `venv_consistent`,
-`local_bin_sol_reachable`, `disk_space`, `config_dir_readable`) built on
+`local_bin_solstone_reachable`, `disk_space`, `config_dir_readable`) built on
 `solstone/think/probe.py`, and both went with the Python reference cut. Nothing
 checks source-checkout readiness before `.venv`/`uv` exist today. `journal
-doctor` still covers `local_bin_sol_reachable`, `disk_space` and
+doctor` still covers `local_bin_solstone_reachable`, `disk_space` and
 `config_dir_readable`, but it needs a working install to run, so it cannot answer
 the question preflight existed to answer.
 

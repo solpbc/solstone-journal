@@ -17,7 +17,7 @@ The HTTP surface is a `*-web` crate (`solstone-core-health-web`,
 Frontend conventions live in [CONVEY-FRONTEND.md](CONVEY-FRONTEND.md).
 Framework-level shell changes live in [CONVEY.md](CONVEY.md).
 
-`sol call <app> <verb>` authority lives under `core/native-sol/apps/<app>/`.
+`solstone call <app> <verb>` authority lives under `core/native-sol/apps/<app>/`.
 
 ## Journal storage
 
@@ -30,7 +30,7 @@ path is journal data, not the codebase. See
 1. Add a row to `APP_REGISTRY`.
 2. Add a `*-web` crate or assets under convey-shell.
 3. Wire the router into convey-shell.
-4. If the app has `sol call` verbs, add `core/native-sol/apps/<name>/`.
+4. If the app has `solstone call` verbs, add `core/native-sol/apps/<name>/`.
 
 Do not recreate `solstone/apps/` in this repository.
 

@@ -16,11 +16,11 @@ pub enum AccessTier {
 
 /// Whether a cogitate tier receives each decision-layer capability.
 ///
-/// Runtime enforcement of `sol` and raw-read access is performed by tool
+/// Runtime enforcement of `solstone` and raw-read access is performed by tool
 /// registration, which remains owned by the tools wave rather than this crate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AccessCapabilities {
-    pub sol: bool,
+    pub solstone: bool,
     pub reads: bool,
     pub submit: bool,
 }
@@ -70,22 +70,22 @@ impl AccessTier {
 pub fn capabilities_for_access_tier(tier: &str) -> Result<AccessCapabilities, AccessTierError> {
     match AccessTier::parse(tier)? {
         AccessTier::Normal | AccessTier::SystemRead => Ok(AccessCapabilities {
-            sol: true,
+            solstone: true,
             reads: true,
             submit: false,
         }),
         AccessTier::Outbound => Ok(AccessCapabilities {
-            sol: true,
+            solstone: true,
             reads: false,
             submit: true,
         }),
         AccessTier::Synthesis => Ok(AccessCapabilities {
-            sol: true,
+            solstone: true,
             reads: false,
             submit: false,
         }),
         AccessTier::Diagnostic => Ok(AccessCapabilities {
-            sol: false,
+            solstone: false,
             reads: false,
             submit: false,
         }),
@@ -132,7 +132,7 @@ mod tests {
         for tier in COGITATE_ACCESS_TIERS {
             let actual = capabilities_for_access_tier(tier).expect("known tier");
             let expected = &fixture.access_tiers.capabilities[tier];
-            assert_eq!(actual.sol, expected.sol, "{tier} sol");
+            assert_eq!(actual.solstone, expected.solstone, "{tier} solstone");
             assert_eq!(actual.reads, expected.reads, "{tier} reads");
             assert_eq!(actual.submit, expected.submit, "{tier} submit");
             assert!(

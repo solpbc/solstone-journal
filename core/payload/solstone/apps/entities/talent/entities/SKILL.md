@@ -4,20 +4,20 @@ description: >
   Tracked entities — people, companies, projects, tools — within facets.
   Detect, attach, move, merge/undo, resolve ambiguities, restore versions, update,
   alias, search, network, relationship history, entity history, overview.
-  TRIGGER: entity, person, company, relationship, who is, contact, sol call
+  TRIGGER: entity, person, company, relationship, who is, contact, solstone call
   entities detect/attach/merge/search/network/history/overview.
 ---
 
 # Entities CLI Skill
 
-Maintain facet-scoped entity memory. Invoke via Bash: `sol call entities <command> [args...]`.
+Maintain facet-scoped entity memory. Invoke via Bash: `solstone call entities <command> [args...]`.
 
 **Environment defaults**: When `SOL_FACET` is set, all commands use it automatically. Same for `SOL_DAY` where DAY is accepted.
 
 Common pattern:
 
 ```bash
-sol call entities <command> [args...]
+solstone call entities <command> [args...]
 ```
 
 ## Entity Lifecycle
@@ -32,7 +32,7 @@ Use `detect` for day-specific sightings and `attach` for long-term tracking.
 ## list
 
 ```bash
-sol call entities list [FACET] [-d DAY]
+solstone call entities list [FACET] [-d DAY]
 ```
 
 List entities for a facet.
@@ -48,14 +48,14 @@ Behavior notes:
 Examples:
 
 ```bash
-sol call entities list work
-sol call entities list work -d 20260115
+solstone call entities list work
+solstone call entities list work -d 20260115
 ```
 
 ## detect
 
 ```bash
-sol call entities detect TYPE ENTITY DESCRIPTION [-f FACET] [-d DAY]
+solstone call entities detect TYPE ENTITY DESCRIPTION [-f FACET] [-d DAY]
 ```
 
 Record a detected entity for a day.
@@ -75,13 +75,13 @@ Behavior notes:
 Example:
 
 ```bash
-sol call entities detect "Person" "Alicia Chen" "Led architecture review" -f work -d 20260115
+solstone call entities detect "Person" "Alicia Chen" "Led architecture review" -f work -d 20260115
 ```
 
 ## attach
 
 ```bash
-sol call entities attach TYPE ENTITY DESCRIPTION [-f FACET]
+solstone call entities attach TYPE ENTITY DESCRIPTION [-f FACET]
 ```
 
 Attach an entity permanently to a facet.
@@ -100,13 +100,13 @@ Behavior notes:
 Example:
 
 ```bash
-sol call entities attach "Company" "Acme Corp" "Primary platform vendor" -f work
+solstone call entities attach "Company" "Acme Corp" "Primary platform vendor" -f work
 ```
 
 ## update
 
 ```bash
-sol call entities update ENTITY DESCRIPTION [-f FACET] [-d DAY]
+solstone call entities update ENTITY DESCRIPTION [-f FACET] [-d DAY]
 ```
 
 Update entity description.
@@ -124,14 +124,14 @@ Behavior notes:
 Examples:
 
 ```bash
-sol call entities update "acme_corp" "Primary vendor for identity services" -f work
-sol call entities update "Alicia Chen" "Discussed migration plan" -f work -d 20260115
+solstone call entities update "acme_corp" "Primary vendor for identity services" -f work
+solstone call entities update "Alicia Chen" "Discussed migration plan" -f work -d 20260115
 ```
 
 ## move
 
 ```bash
-sol call entities move ENTITY --from FACET --to FACET [--merge] [--consent]
+solstone call entities move ENTITY --from FACET --to FACET [--merge] [--consent]
 ```
 
 Move an attached entity from one facet to another.
@@ -151,14 +151,14 @@ Behavior notes:
 Examples:
 
 ```bash
-sol call entities move "Alex Chen" --from personal --to work
-sol call entities move "Alex Chen" --from personal --to work --merge --consent
+solstone call entities move "Alex Chen" --from personal --to work
+solstone call entities move "Alex Chen" --from personal --to work --merge --consent
 ```
 
 ## aka
 
 ```bash
-sol call entities aka ENTITY AKA [-f FACET]
+solstone call entities aka ENTITY AKA [-f FACET]
 ```
 
 Add an alias to an attached entity.
@@ -176,13 +176,13 @@ Behavior notes:
 Example:
 
 ```bash
-sol call entities aka "Federal Aviation Administration" "FAA" -f work
+solstone call entities aka "Federal Aviation Administration" "FAA" -f work
 ```
 
 ## observations
 
 ```bash
-sol call entities observations ENTITY [-f FACET]
+solstone call entities observations ENTITY [-f FACET]
 ```
 
 List durable observations for an attached entity.
@@ -195,13 +195,13 @@ Output is numbered for quick review.
 Example:
 
 ```bash
-sol call entities observations "Alicia Chen" -f work
+solstone call entities observations "Alicia Chen" -f work
 ```
 
 ## observe
 
 ```bash
-sol call entities observe ENTITY CONTENT [-f FACET] [--source-day DAY]
+solstone call entities observe ENTITY CONTENT [-f FACET] [--source-day DAY]
 ```
 
 Add a durable observation to an attached entity.
@@ -232,13 +232,13 @@ Bad observations (day-specific activity; use `detect` instead):
 Example:
 
 ```bash
-sol call entities observe "Alicia Chen" "Prefers design docs before implementation" -f work --source-day 20260115
+solstone call entities observe "Alicia Chen" "Prefers design docs before implementation" -f work --source-day 20260115
 ```
 
 ## search
 
 ```bash
-sol call entities search [--query QUERY] [--type TYPE] [--facet FACET] [--since YYYYMMDD] [--limit N]
+solstone call entities search [--query QUERY] [--type TYPE] [--facet FACET] [--since YYYYMMDD] [--limit N]
 ```
 
 Search entities by text, type, facet, or detected activity since a day.
@@ -252,15 +252,15 @@ Search entities by text, type, facet, or detected activity since a day.
 Examples:
 
 ```bash
-sol call entities search --query "Chen"
-sol call entities search --type Person --facet work
-sol call entities search --since 20260115
+solstone call entities search --query "Chen"
+solstone call entities search --type Person --facet work
+solstone call entities search --since 20260115
 ```
 
 ## network
 
 ```bash
-sol call entities network ENTITY [--kinds KIND] [--facet FACET] [--day-from YYYYMMDD] [--day-to YYYYMMDD] [--limit N] [--evidence-limit N] [--include-principal] [--json]
+solstone call entities network ENTITY [--kinds KIND] [--facet FACET] [--day-from YYYYMMDD] [--day-to YYYYMMDD] [--limit N] [--evidence-limit N] [--include-principal] [--json]
 ```
 
 Show one-hop recorded connections for a journal entity.
@@ -283,14 +283,14 @@ Behavior notes:
 Examples:
 
 ```bash
-sol call entities network "Alicia Chen" --facet work
-sol call entities network romeo_montague --limit 10 --evidence-limit 2
+solstone call entities network "Alicia Chen" --facet work
+solstone call entities network romeo_montague --limit 10 --evidence-limit 2
 ```
 
 ## history
 
 ```bash
-sol call entities history ENTITY [PEER] [--kinds KIND] [--facet FACET] [--day-from YYYYMMDD] [--day-to YYYYMMDD] [--limit N] [--offset N] [--json]
+solstone call entities history ENTITY [PEER] [--kinds KIND] [--facet FACET] [--day-from YYYYMMDD] [--day-to YYYYMMDD] [--limit N] [--offset N] [--json]
 ```
 
 Show newest-first evidence rows for one entity pair.
@@ -313,14 +313,14 @@ Behavior notes:
 Examples:
 
 ```bash
-sol call entities history "Alicia Chen"
-sol call entities history "Alicia Chen" "Sam Rivera" --day-from 20260601
+solstone call entities history "Alicia Chen"
+solstone call entities history "Alicia Chen" "Sam Rivera" --day-from 20260601
 ```
 
 ## overview
 
 ```bash
-sol call entities overview [--kinds KIND] [--facet FACET] [--day-from YYYYMMDD] [--day-to YYYYMMDD] [--limit N] [--json]
+solstone call entities overview [--kinds KIND] [--facet FACET] [--day-from YYYYMMDD] [--day-to YYYYMMDD] [--limit N] [--json]
 ```
 
 Show the global recorded-connections overview.
@@ -340,13 +340,13 @@ Behavior notes:
 Example:
 
 ```bash
-sol call entities overview --facet work --limit 20
+solstone call entities overview --facet work --limit 20
 ```
 
 ## merge
 
 ```bash
-sol call entities merge SOURCE_SLUG TARGET_SLUG [--commit/--no-commit] [--keep-source-as-aka/--no-keep-source-as-aka]
+solstone call entities merge SOURCE_SLUG TARGET_SLUG [--commit/--no-commit] [--keep-source-as-aka/--no-keep-source-as-aka]
 ```
 
 Plan or execute a merge of two journal entities (e.g., collapse duplicate records after review).
@@ -365,14 +365,14 @@ Behavior notes:
 Examples:
 
 ```bash
-sol call entities merge raelyn-brooks raylyn-brooks
-sol call entities merge raelyn-brooks raylyn-brooks --commit
+solstone call entities merge raelyn-brooks raylyn-brooks
+solstone call entities merge raelyn-brooks raylyn-brooks --commit
 ```
 
 ## undo-merge
 
 ```bash
-sol call entities undo-merge MERGE_ID --yes [--json]
+solstone call entities undo-merge MERGE_ID --yes [--json]
 ```
 
 Deterministically undo one recorded merge. Use the `merge_id` returned by a
@@ -383,8 +383,8 @@ target changes. `--yes` is required.
 ## ambiguities and resolve-ambiguity
 
 ```bash
-sol call entities ambiguities [--status open|resolved] [--json]
-sol call entities resolve-ambiguity AMBIGUITY_ID ENTITY_ID --yes [--json]
+solstone call entities ambiguities [--status open|resolved] [--json]
+solstone call entities resolve-ambiguity AMBIGUITY_ID ENTITY_ID --yes [--json]
 ```
 
 List persisted low-confidence entity questions and choose an existing scoped
@@ -395,8 +395,8 @@ entity. `resolve-ambiguity` requires `--yes`.
 ## entity-history and restore-version
 
 ```bash
-sol call entities entity-history ENTITY_ID [--json]
-sol call entities restore-version ENTITY_ID VERSION_ID --yes [--json]
+solstone call entities entity-history ENTITY_ID [--json]
+solstone call entities restore-version ENTITY_ID VERSION_ID --yes [--json]
 ```
 
 `entity-history` shows durable identity versions (create, update, restore,

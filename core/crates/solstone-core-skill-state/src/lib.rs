@@ -7,7 +7,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-pub const ROUTER_SKILL_NAMES: [&str; 2] = ["sol", "journal"];
+pub const ROUTER_SKILL_NAMES: [&str; 2] = ["solstone", "journal"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RouterSkillLinkState {
@@ -186,8 +186,8 @@ mod tests {
         fs::create_dir_all(&links).unwrap();
         #[cfg(unix)]
         std::os::unix::fs::symlink(
-            expected_link_target(&root.join("solstone/talent/sol"), &links),
-            links.join("sol"),
+            expected_link_target(&root.join("solstone/talent/solstone"), &links),
+            links.join("solstone"),
         )
         .unwrap();
         #[cfg(unix)]
@@ -195,7 +195,7 @@ mod tests {
         let rows = inspect_router_skill_links(&root, &links).unwrap();
         assert!(
             rows.iter()
-                .any(|row| row.name == "sol" && row.state == RouterSkillLinkState::Installed)
+                .any(|row| row.name == "solstone" && row.state == RouterSkillLinkState::Installed)
         );
         assert_eq!(stale_router_skill_links(&links).unwrap().len(), 1);
         fs::remove_dir_all(root).unwrap();

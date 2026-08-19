@@ -27,7 +27,7 @@ pub struct TalentContract {
 #[derive(Serialize)]
 pub struct TierEntry {
     pub name: &'static str,
-    pub sol: bool,
+    pub solstone: bool,
     pub reads: bool,
     pub submit: bool,
     pub talent_facing: bool,
@@ -45,7 +45,7 @@ pub fn talent_contract() -> TalentContract {
                 .expect("each tier has a trailing finalization tool");
             TierEntry {
                 name,
-                sol: capabilities.sol,
+                solstone: capabilities.solstone,
                 reads: capabilities.reads,
                 submit: capabilities.submit,
                 talent_facing: TALENT_ACCESS_TIERS.contains(&name),

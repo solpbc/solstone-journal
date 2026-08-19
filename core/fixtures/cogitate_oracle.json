@@ -20,9 +20,9 @@
     "diagnostic": {
       "algorithm": "sha256",
       "encoding": "utf-8",
-      "byte_length": 517,
-      "digest": "6f164f70d2fb063b9e4ae6f0d3648b108d05a471f78ea34e93977f010c9901b0",
-      "text": "You are a bounded solstone diagnostic cogitate check. This runtime contract is authoritative; do not assume capabilities beyond it.\n\n- The only available tool is `emit_final`. Call it exactly once with a concise, non-empty diagnostic result.\n- No journal access is available: no `sol` command line, no read tools, no submit tools, no shell commands, no browser or web access, and no delegating to sub-agents.\n- Do not claim that you read or changed journal state. This check returns its final content in memory only.\n",
+      "byte_length": 522,
+      "digest": "48503ca1b2cc6a993a7bcc0fd5553cc5945405d1236c410bd8ba3b00008fae01",
+      "text": "You are a bounded solstone diagnostic cogitate check. This runtime contract is authoritative; do not assume capabilities beyond it.\n\n- The only available tool is `emit_final`. Call it exactly once with a concise, non-empty diagnostic result.\n- No journal access is available: no `solstone` command line, no read tools, no submit tools, no shell commands, no browser or web access, and no delegating to sub-agents.\n- Do not claim that you read or changed journal state. This check returns its final content in memory only.\n",
       "citation": "cogitate_contract.py:37-43"
     }
   },
@@ -88,27 +88,27 @@
     ],
     "capabilities": {
       "normal": {
-        "sol": true,
+        "solstone": true,
         "reads": true,
         "submit": false
       },
       "system-read": {
-        "sol": true,
+        "solstone": true,
         "reads": true,
         "submit": false
       },
       "outbound": {
-        "sol": true,
+        "solstone": true,
         "reads": false,
         "submit": true
       },
       "synthesis": {
-        "sol": true,
+        "solstone": true,
         "reads": false,
         "submit": false
       },
       "diagnostic": {
-        "sol": false,
+        "solstone": false,
         "reads": false,
         "submit": false
       }
@@ -136,31 +136,31 @@
   "policy_commands": [
     {
       "id": "sol_bare",
-      "command": "sol",
+      "command": "solstone",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:233-241",
-      "why": "a bare `sol` is admitted",
+      "why": "a bare `solstone` is admitted",
       "expect": {
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol"
+          "solstone"
         ]
       }
     },
     {
       "id": "sol_call",
-      "command": "sol call activities list",
+      "command": "solstone call activities list",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:233-241",
-      "why": "the documented `sol call` form",
+      "why": "the documented `solstone call` form",
       "expect": {
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "activities",
           "list"
@@ -169,7 +169,7 @@
     },
     {
       "id": "sol_call_quoted_arg",
-      "command": "sol call entities search --name 'Ada Lovelace'",
+      "command": "solstone call entities search --name 'Ada Lovelace'",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:212",
@@ -178,7 +178,7 @@
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "entities",
           "search",
@@ -189,7 +189,7 @@
     },
     {
       "id": "sol_call_double_quoted",
-      "command": "sol call entities search --name \"Ada Lovelace\"",
+      "command": "solstone call entities search --name \"Ada Lovelace\"",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:150-152",
@@ -198,7 +198,7 @@
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "entities",
           "search",
@@ -266,7 +266,7 @@
       "why": "bare `journal` has no family -> restricted",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: run_shell_command restricted to sol or approved journal invocations",
+        "reason": "policy_deny: run_shell_command restricted to solstone or approved journal invocations",
         "argv": null
       }
     },
@@ -279,52 +279,52 @@
       "why": "an unapproved family is restricted, not repaired",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: run_shell_command restricted to sol or approved journal invocations",
+        "reason": "policy_deny: run_shell_command restricted to solstone or approved journal invocations",
         "argv": null
       }
     },
     {
       "id": "hybrid_identity",
-      "command": "sol call journal identity partner",
+      "command": "solstone call journal identity partner",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:219-224",
       "why": "hybrid form is refused WITH a repair",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `sol call journal identity` is not a `sol call` verb; `identity` is an approved host command family \u2014 run it directly as `journal identity partner`",
+        "reason": "policy_deny: `solstone call journal identity` is not a `solstone call` verb; `identity` is an approved host command family \u2014 run it directly as `journal identity partner`",
         "argv": null
       }
     },
     {
       "id": "hybrid_health",
-      "command": "sol call journal health --json",
+      "command": "solstone call journal health --json",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:219-224",
       "why": "hybrid form, flags survive into the repair",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `sol call journal health` is not a `sol call` verb; `health` is an approved host command family \u2014 run it directly as `journal health --json`",
+        "reason": "policy_deny: `solstone call journal health` is not a `solstone call` verb; `health` is an approved host command family \u2014 run it directly as `journal health --json`",
         "argv": null
       }
     },
     {
       "id": "hybrid_talent",
-      "command": "sol call journal talent show read",
+      "command": "solstone call journal talent show read",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:219-224",
       "why": "hybrid form",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `sol call journal talent` is not a `sol call` verb; `talent` is an approved host command family \u2014 run it directly as `journal talent show read`",
+        "reason": "policy_deny: `solstone call journal talent` is not a `solstone call` verb; `talent` is an approved host command family \u2014 run it directly as `journal talent show read`",
         "argv": null
       }
     },
     {
       "id": "hybrid_not_a_family",
-      "command": "sol call journal search foo",
+      "command": "solstone call journal search foo",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:219-224",
@@ -333,7 +333,7 @@
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "journal",
           "search",
@@ -347,10 +347,10 @@
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:226-231",
-      "why": "bare `journal search` -> repair to `sol call journal search`",
+      "why": "bare `journal search` -> repair to `solstone call journal search`",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `journal search` is not a host command; run `sol call journal search sunlight` instead",
+        "reason": "policy_deny: `journal search` is not a host command; run `solstone call journal search sunlight` instead",
         "argv": null
       }
     },
@@ -363,7 +363,7 @@
       "why": "bare `journal facet` -> repair",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet list` instead",
+        "reason": "policy_deny: `journal facet` is not a host command; run `solstone call journal facet list` instead",
         "argv": null
       }
     },
@@ -376,7 +376,7 @@
       "why": "shlex.join re-quotes the repair suggestion",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set 'my facet'` instead",
+        "reason": "policy_deny: `journal facet` is not a host command; run `solstone call journal facet set 'my facet'` instead",
         "argv": null
       }
     },
@@ -386,10 +386,10 @@
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:233-241",
-      "why": "not sol, not journal",
+      "why": "not solstone, not journal",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: run_shell_command restricted to sol or approved journal invocations",
+        "reason": "policy_deny: run_shell_command restricted to solstone or approved journal invocations",
         "argv": null
       }
     },
@@ -399,10 +399,10 @@
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:233-241",
-      "why": "not sol, not journal",
+      "why": "not solstone, not journal",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: run_shell_command restricted to sol or approved journal invocations",
+        "reason": "policy_deny: run_shell_command restricted to solstone or approved journal invocations",
         "argv": null
       }
     },
@@ -412,10 +412,10 @@
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:233-241",
-      "why": "not sol, not journal",
+      "why": "not solstone, not journal",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: run_shell_command restricted to sol or approved journal invocations",
+        "reason": "policy_deny: run_shell_command restricted to solstone or approved journal invocations",
         "argv": null
       }
     },
@@ -428,143 +428,143 @@
       "why": "the native binary is NOT reachable from a talent",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: run_shell_command restricted to sol or approved journal invocations",
+        "reason": "policy_deny: run_shell_command restricted to solstone or approved journal invocations",
         "argv": null
       }
     },
     {
       "id": "shell_pipe",
-      "command": "sol call activities list | head",
+      "command": "solstone call activities list | head",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:129-158",
       "why": "pipe outside quotes",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_semicolon",
-      "command": "sol call activities list; sol call entities list",
+      "command": "solstone call activities list; solstone call entities list",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:129-158",
       "why": "chaining",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_and",
-      "command": "sol a && sol b",
+      "command": "solstone a && solstone b",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:129-158",
       "why": "chaining",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_redirect_out",
-      "command": "sol call activities list > /tmp/x",
+      "command": "solstone call activities list > /tmp/x",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:129-158",
       "why": "redirect",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_redirect_in",
-      "command": "sol call activities list < /tmp/x",
+      "command": "solstone call activities list < /tmp/x",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:129-158",
       "why": "redirect",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_subshell",
-      "command": "(sol call activities list)",
+      "command": "(solstone call activities list)",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:129-158",
       "why": "subshell",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_dollar_paren",
-      "command": "sol call entities show $(whoami)",
+      "command": "solstone call entities show $(whoami)",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:130-131",
       "why": "command substitution, checked before the scanner",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_backtick",
-      "command": "sol call entities show `whoami`",
+      "command": "solstone call entities show `whoami`",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:130-131",
       "why": "backtick substitution",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_newline",
-      "command": "sol call activities list\nsol call entities list",
+      "command": "solstone call activities list\nsolstone call entities list",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:132-133",
       "why": "newline is a composition character",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_carriage_return",
-      "command": "sol call activities list\rsol call entities list",
+      "command": "solstone call activities list\rsolstone call entities list",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:132-133",
       "why": "a lone CR is refused too",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_operator_in_single_quotes",
-      "command": "sol call entities search --name 'a|b'",
+      "command": "solstone call entities search --name 'a|b'",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:140-142",
@@ -573,7 +573,7 @@
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "entities",
           "search",
@@ -584,7 +584,7 @@
     },
     {
       "id": "shell_operator_in_double_quotes",
-      "command": "sol call entities search --name \"a|b\"",
+      "command": "solstone call entities search --name \"a|b\"",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:143-149",
@@ -593,7 +593,7 @@
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "entities",
           "search",
@@ -604,20 +604,20 @@
     },
     {
       "id": "shell_dollar_paren_in_single_quotes",
-      "command": "sol call entities search --name '$(x)'",
+      "command": "solstone call entities search --name '$(x)'",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:130-131",
       "why": "the $( check runs BEFORE quote tracking - refused even when quoted",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_backslash_escaped_pipe",
-      "command": "sol call entities search --name a\\|b",
+      "command": "solstone call entities search --name a\\|b",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:151-153",
@@ -626,7 +626,7 @@
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "entities",
           "search",
@@ -637,27 +637,27 @@
     },
     {
       "id": "shell_unterminated_single_quote",
-      "command": "sol call entities search --name 'oops",
+      "command": "solstone call entities search --name 'oops",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:158",
       "why": "an unterminated quote is a syntax violation",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "shell_unterminated_double_quote",
-      "command": "sol call entities search --name \"oops",
+      "command": "solstone call entities search --name \"oops",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:158",
       "why": "an unterminated quote is a syntax violation",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
@@ -689,20 +689,20 @@
     },
     {
       "id": "shlex_split_raises_trailing_backslash",
-      "command": "sol x\\",
+      "command": "solstone x\\",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:211-214",
       "why": "a trailing backslash passes _shell_syntax_violation (the index+1 guard) and then makes shlex.split RAISE - a distinct code path reaching the same refusal. A tolerant tokenizer ADMITS this command.",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: shell composition is not available; run one `sol` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
+        "reason": "policy_deny: shell composition is not available; run one `solstone` or approved `journal` command per call with no pipes, redirects, chaining, or command substitution",
         "argv": null
       }
     },
     {
       "id": "backslash_literal_inside_single_quotes",
-      "command": "sol call entities search --name 'a\\'",
+      "command": "solstone call entities search --name 'a\\'",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:140-142",
@@ -711,7 +711,7 @@
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "entities",
           "search",
@@ -722,7 +722,7 @@
     },
     {
       "id": "escaped_dquote_inside_dquotes",
-      "command": "sol call entities search --name \"a\\\"b\"",
+      "command": "solstone call entities search --name \"a\\\"b\"",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:143-149",
@@ -731,7 +731,7 @@
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "entities",
           "search",
@@ -749,7 +749,7 @@
       "why": "shlex.quote's apostrophe form is not the obvious one",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set 'it'\"'\"'s mine'` instead",
+        "reason": "policy_deny: `journal facet` is not a host command; run `solstone call journal facet set 'it'\"'\"'s mine'` instead",
         "argv": null
       }
     },
@@ -762,7 +762,7 @@
       "why": "an empty argument must survive as ''",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set ''` instead",
+        "reason": "policy_deny: `journal facet` is not a host command; run `solstone call journal facet set ''` instead",
         "argv": null
       }
     },
@@ -775,7 +775,7 @@
       "why": "shlex.quote leaves [-\\w@%+=:,./] UNQUOTED",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set a/b.c@d=e:f,g+h-i%j` instead",
+        "reason": "policy_deny: `journal facet` is not a host command; run `solstone call journal facet set a/b.c@d=e:f,g+h-i%j` instead",
         "argv": null
       }
     },
@@ -788,7 +788,7 @@
       "why": "a glob char forces quoting",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set 'a*b'` instead",
+        "reason": "policy_deny: `journal facet` is not a host command; run `solstone call journal facet set 'a*b'` instead",
         "argv": null
       }
     },
@@ -801,7 +801,7 @@
       "why": "a tilde forces quoting",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set 'a~b'` instead",
+        "reason": "policy_deny: `journal facet` is not a host command; run `solstone call journal facet set 'a~b'` instead",
         "argv": null
       }
     },
@@ -814,7 +814,7 @@
       "why": "a brace forces quoting",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `journal facet` is not a host command; run `sol call journal facet set 'a{b'` instead",
+        "reason": "policy_deny: `journal facet` is not a host command; run `solstone call journal facet set 'a{b'` instead",
         "argv": null
       }
     },
@@ -827,117 +827,117 @@
       "why": "the search family's repair prefix differs from facet's",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: `journal search` is not a host command; run `sol call journal search 'two words'` instead",
+        "reason": "policy_deny: `journal search` is not a host command; run `solstone call journal search 'two words'` instead",
         "argv": null
       }
     },
     {
       "id": "support_create_normal_noapproval",
-      "command": "sol call support create --body x",
+      "command": "solstone call support create --body x",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:243-251",
       "why": "submit verb denied for a non-submit tier",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: 'sol call support create' requires access_tier 'outbound'; this run is 'normal'",
+        "reason": "policy_deny: 'solstone call support create' requires access_tier 'outbound'; this run is 'normal'",
         "argv": null
       }
     },
     {
       "id": "support_reply_normal_noapproval",
-      "command": "sol call support reply --body x",
+      "command": "solstone call support reply --body x",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:243-251",
       "why": "submit verb denied for a non-submit tier",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: 'sol call support reply' requires access_tier 'outbound'; this run is 'normal'",
+        "reason": "policy_deny: 'solstone call support reply' requires access_tier 'outbound'; this run is 'normal'",
         "argv": null
       }
     },
     {
       "id": "support_attach_normal_noapproval",
-      "command": "sol call support attach --body x",
+      "command": "solstone call support attach --body x",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:243-251",
       "why": "submit verb denied for a non-submit tier",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: 'sol call support attach' requires access_tier 'outbound'; this run is 'normal'",
+        "reason": "policy_deny: 'solstone call support attach' requires access_tier 'outbound'; this run is 'normal'",
         "argv": null
       }
     },
     {
       "id": "support_feedback_normal_noapproval",
-      "command": "sol call support feedback --body x",
+      "command": "solstone call support feedback --body x",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:243-251",
       "why": "submit verb denied for a non-submit tier",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: 'sol call support feedback' requires access_tier 'outbound'; this run is 'normal'",
+        "reason": "policy_deny: 'solstone call support feedback' requires access_tier 'outbound'; this run is 'normal'",
         "argv": null
       }
     },
     {
       "id": "support_close_normal_noapproval",
-      "command": "sol call support close --body x",
+      "command": "solstone call support close --body x",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:243-251",
       "why": "submit verb denied for a non-submit tier",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: 'sol call support close' requires access_tier 'outbound'; this run is 'normal'",
+        "reason": "policy_deny: 'solstone call support close' requires access_tier 'outbound'; this run is 'normal'",
         "argv": null
       }
     },
     {
       "id": "support_resolved_normal_noapproval",
-      "command": "sol call support resolved --body x",
+      "command": "solstone call support resolved --body x",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:243-251",
       "why": "submit verb denied for a non-submit tier",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: 'sol call support resolved' requires access_tier 'outbound'; this run is 'normal'",
+        "reason": "policy_deny: 'solstone call support resolved' requires access_tier 'outbound'; this run is 'normal'",
         "argv": null
       }
     },
     {
       "id": "support_still-need-help_normal_noapproval",
-      "command": "sol call support still-need-help --body x",
+      "command": "solstone call support still-need-help --body x",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:243-251",
       "why": "submit verb denied for a non-submit tier",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: 'sol call support still-need-help' requires access_tier 'outbound'; this run is 'normal'",
+        "reason": "policy_deny: 'solstone call support still-need-help' requires access_tier 'outbound'; this run is 'normal'",
         "argv": null
       }
     },
     {
       "id": "support_create_outbound_noapproval",
-      "command": "sol call support create --body x",
+      "command": "solstone call support create --body x",
       "access_tier": "outbound",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:253-259",
       "why": "submit tier without a per-send approval",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: 'sol call support create' requires a per-send owner approval; this run was not launched with one",
+        "reason": "policy_deny: 'solstone call support create' requires a per-send owner approval; this run was not launched with one",
         "argv": null
       }
     },
     {
       "id": "support_create_outbound_approved",
-      "command": "sol call support create --body x",
+      "command": "solstone call support create --body x",
       "access_tier": "outbound",
       "outbound_approval": "owner-token",
       "citation": "cogitate_policy.py:243-261",
@@ -946,7 +946,7 @@
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "support",
           "create",
@@ -957,33 +957,33 @@
     },
     {
       "id": "support_create_synthesis",
-      "command": "sol call support create --body x",
+      "command": "solstone call support create --body x",
       "access_tier": "synthesis",
       "outbound_approval": "owner-token",
       "citation": "cogitate_policy.py:243-251",
-      "why": "synthesis has sol but not submit; approval does not help",
+      "why": "synthesis has solstone but not submit; approval does not help",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: 'sol call support create' requires access_tier 'outbound'; this run is 'synthesis'",
+        "reason": "policy_deny: 'solstone call support create' requires access_tier 'outbound'; this run is 'synthesis'",
         "argv": null
       }
     },
     {
       "id": "support_create_system_read",
-      "command": "sol call support create --body x",
+      "command": "solstone call support create --body x",
       "access_tier": "system-read",
       "outbound_approval": "owner-token",
       "citation": "cogitate_policy.py:243-251",
-      "why": "system-read has sol but not submit",
+      "why": "system-read has solstone but not submit",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: 'sol call support create' requires access_tier 'outbound'; this run is 'system-read'",
+        "reason": "policy_deny: 'solstone call support create' requires access_tier 'outbound'; this run is 'system-read'",
         "argv": null
       }
     },
     {
       "id": "support_read_verb_normal",
-      "command": "sol call support list",
+      "command": "solstone call support list",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:264-271",
@@ -992,7 +992,7 @@
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "support",
           "list"
@@ -1001,20 +1001,20 @@
     },
     {
       "id": "support_send_verb_not_at_head",
-      "command": "sol call entities note sol call support create",
+      "command": "solstone call entities note solstone call support create",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:265-266",
       "why": "the send-verb scan walks every offset, not just the command head",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: 'sol call support create' requires access_tier 'outbound'; this run is 'normal'",
+        "reason": "policy_deny: 'solstone call support create' requires access_tier 'outbound'; this run is 'normal'",
         "argv": null
       }
     },
     {
       "id": "support_send_verb_trailing_short",
-      "command": "sol call support",
+      "command": "solstone call support",
       "access_tier": "normal",
       "outbound_approval": null,
       "citation": "cogitate_policy.py:265-266",
@@ -1023,7 +1023,7 @@
         "allowed": true,
         "reason": "ok",
         "argv": [
-          "sol",
+          "solstone",
           "call",
           "support"
         ]
@@ -1123,7 +1123,7 @@
       "id": "check_run_shell_allowed",
       "tool": "run_shell_command",
       "args": {
-        "command": "sol call activities list"
+        "command": "solstone call activities list"
       },
       "access_tier": "normal",
       "citation": "cogitate_policy.py:198-200",
@@ -1142,7 +1142,7 @@
       "citation": "cogitate_policy.py:198-200",
       "expect": {
         "allowed": false,
-        "reason": "policy_deny: run_shell_command restricted to sol or approved journal invocations"
+        "reason": "policy_deny: run_shell_command restricted to solstone or approved journal invocations"
       }
     },
     {
@@ -4587,7 +4587,7 @@
       "config": {
         "prompt": "do the thing"
       },
-      "sol_tool_name": "sol",
+      "sol_tool_name": "solstone",
       "diagnostic": false,
       "citation": "cli.py:138-144 - preamble, then the talent instruction, then the hint",
       "expect": {
@@ -4600,7 +4600,7 @@
             },
             {
               "role": "sol_tool_hint",
-              "text": "When the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+              "text": "When the instructions tell you to run `solstone ...` or approved `journal ...` commands, invoke them through the `solstone` tool. Normal journal access uses `solstone` / `solstone call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `solstone(command=\"solstone call activities list\")`, `solstone(command=\"journal identity partner\")`. Do not invent or call a tool literally named `solstone`, and do not rewrite approved `journal` commands as `solstone call journal ...`."
             }
           ],
           "order": [
@@ -4608,8 +4608,8 @@
             "sol_tool_hint"
           ],
           "separator": "\n\n",
-          "byte_length": 2678,
-          "sha256": "c13c53d2b0770583bab9fe9cbee1f7bf2e2e8b00349b61c5ff0151bda58e02d8",
+          "byte_length": 2778,
+          "sha256": "659300b487856af37d10c66e9c1b5c51c2f14f059b53f5ef65f64f6be0664200",
           "note": "A part whose text is null is identified rather than duplicated: its bytes live in the preambles block, which is frozen against a recorded divergence. Reassemble by joining the parts with the separator, substituting the named constant."
         }
       }
@@ -4620,7 +4620,7 @@
         "prompt": "body",
         "system_instruction": "TALENT RULES"
       },
-      "sol_tool_name": "sol",
+      "sol_tool_name": "solstone",
       "diagnostic": false,
       "citation": "cli.py:138-144 - the talent's own instruction sits BETWEEN preamble and hint",
       "expect": {
@@ -4637,7 +4637,7 @@
             },
             {
               "role": "sol_tool_hint",
-              "text": "When the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+              "text": "When the instructions tell you to run `solstone ...` or approved `journal ...` commands, invoke them through the `solstone` tool. Normal journal access uses `solstone` / `solstone call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `solstone(command=\"solstone call activities list\")`, `solstone(command=\"journal identity partner\")`. Do not invent or call a tool literally named `solstone`, and do not rewrite approved `journal` commands as `solstone call journal ...`."
             }
           ],
           "order": [
@@ -4646,8 +4646,8 @@
             "sol_tool_hint"
           ],
           "separator": "\n\n",
-          "byte_length": 2692,
-          "sha256": "54f846089d86be03c7728c1fd6c38b285f65da189d6c54a347fc1247a4642938",
+          "byte_length": 2792,
+          "sha256": "1f311b59b0052bb3c2f0d2adca117928d10706f8c051099c66c380542bbb72be",
           "note": "A part whose text is null is identified rather than duplicated: its bytes live in the preambles block, which is frozen against a recorded divergence. Reassemble by joining the parts with the separator, substituting the named constant."
         }
       }
@@ -4660,7 +4660,7 @@
       },
       "sol_tool_name": null,
       "diagnostic": false,
-      "citation": "cli.py:138 - no sol tool name means no preamble and no hint at all",
+      "citation": "cli.py:138 - no solstone tool name means no preamble and no hint at all",
       "expect": {
         "prompt_body": "body",
         "system_instruction": {
@@ -4686,7 +4686,7 @@
         "prompt": "body",
         "system_instruction": "TALENT RULES"
       },
-      "sol_tool_name": "sol",
+      "sol_tool_name": "solstone",
       "diagnostic": true,
       "citation": "cli.py:133-137 - diagnostic swaps in the OTHER preamble and drops the hint",
       "expect": {
@@ -4707,8 +4707,8 @@
             "talent_system_instruction"
           ],
           "separator": "\n\n",
-          "byte_length": 530,
-          "sha256": "92b55cd7ce5ae0bc9f6bf78aacdc7c2bbe37a8368d6d4526ee630eb4ce0a983f",
+          "byte_length": 535,
+          "sha256": "91c7ea5598a3d0cd87bae6864c378d8e52e58c8ef4ee3258bd22813be6efa907",
           "note": "A part whose text is null is identified rather than duplicated: its bytes live in the preambles block, which is frozen against a recorded divergence. Reassemble by joining the parts with the separator, substituting the named constant."
         }
       }
@@ -4721,7 +4721,7 @@
           "chronicle/20260809"
         ]
       },
-      "sol_tool_name": "sol",
+      "sol_tool_name": "solstone",
       "diagnostic": false,
       "citation": "cli.py:145-153 - read_scope appends a prose hint; it is its ONLY live effect",
       "expect": {
@@ -4734,7 +4734,7 @@
             },
             {
               "role": "sol_tool_hint",
-              "text": "When the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+              "text": "When the instructions tell you to run `solstone ...` or approved `journal ...` commands, invoke them through the `solstone` tool. Normal journal access uses `solstone` / `solstone call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `solstone(command=\"solstone call activities list\")`, `solstone(command=\"journal identity partner\")`. Do not invent or call a tool literally named `solstone`, and do not rewrite approved `journal` commands as `solstone call journal ...`."
             },
             {
               "role": "read_scope_hint",
@@ -4747,8 +4747,8 @@
             "read_scope_hint"
           ],
           "separator": "\n\n",
-          "byte_length": 2843,
-          "sha256": "0c7f8fb1fe00471ba84e2f3c43dbb724435b95d8d39ecbbff00e61ea9e088583",
+          "byte_length": 2943,
+          "sha256": "1b8b92147df7ab1a28bb7b1ae5be9f1dcb058bc6c2989634f07a3e9443fc4cb9",
           "note": "A part whose text is null is identified rather than duplicated: its bytes live in the preambles block, which is frozen against a recorded divergence. Reassemble by joining the parts with the separator, substituting the named constant."
         }
       }
@@ -4761,7 +4761,7 @@
           "chronicle/20260809"
         ]
       },
-      "sol_tool_name": "sol",
+      "sol_tool_name": "solstone",
       "diagnostic": true,
       "citation": "cli.py:145 - diagnostic suppresses the read_scope hint",
       "expect": {
@@ -4777,8 +4777,8 @@
             "diagnostic_preamble"
           ],
           "separator": "\n\n",
-          "byte_length": 516,
-          "sha256": "d6229a246f09460901a33f0d36f96373a5380a0292ef67293a1a86b133bc64d2",
+          "byte_length": 521,
+          "sha256": "f92815ac01639b463249440219ed337f44077b8ee64ac4df489986357cc658ed",
           "note": "A part whose text is null is identified rather than duplicated: its bytes live in the preambles block, which is frozen against a recorded divergence. Reassemble by joining the parts with the separator, substituting the named constant."
         }
       }
@@ -4791,7 +4791,7 @@
         "user_instruction": "USER",
         "prompt": "PROMPT"
       },
-      "sol_tool_name": "sol",
+      "sol_tool_name": "solstone",
       "diagnostic": false,
       "citation": "cli.py:126-131 - the body joins these four keys in THIS order with blank lines",
       "expect": {
@@ -4804,7 +4804,7 @@
             },
             {
               "role": "sol_tool_hint",
-              "text": "When the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+              "text": "When the instructions tell you to run `solstone ...` or approved `journal ...` commands, invoke them through the `solstone` tool. Normal journal access uses `solstone` / `solstone call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `solstone(command=\"solstone call activities list\")`, `solstone(command=\"journal identity partner\")`. Do not invent or call a tool literally named `solstone`, and do not rewrite approved `journal` commands as `solstone call journal ...`."
             }
           ],
           "order": [
@@ -4812,8 +4812,8 @@
             "sol_tool_hint"
           ],
           "separator": "\n\n",
-          "byte_length": 2678,
-          "sha256": "c13c53d2b0770583bab9fe9cbee1f7bf2e2e8b00349b61c5ff0151bda58e02d8",
+          "byte_length": 2778,
+          "sha256": "659300b487856af37d10c66e9c1b5c51c2f14f059b53f5ef65f64f6be0664200",
           "note": "A part whose text is null is identified rather than duplicated: its bytes live in the preambles block, which is frozen against a recorded divergence. Reassemble by joining the parts with the separator, substituting the named constant."
         }
       }
@@ -4821,7 +4821,7 @@
     {
       "id": "prompt_empty",
       "config": {},
-      "sol_tool_name": "sol",
+      "sol_tool_name": "solstone",
       "diagnostic": false,
       "citation": "cli.py:126-131 - no parts means an empty body",
       "expect": {
@@ -4834,7 +4834,7 @@
             },
             {
               "role": "sol_tool_hint",
-              "text": "When the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+              "text": "When the instructions tell you to run `solstone ...` or approved `journal ...` commands, invoke them through the `solstone` tool. Normal journal access uses `solstone` / `solstone call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `solstone(command=\"solstone call activities list\")`, `solstone(command=\"journal identity partner\")`. Do not invent or call a tool literally named `solstone`, and do not rewrite approved `journal` commands as `solstone call journal ...`."
             }
           ],
           "order": [
@@ -4842,8 +4842,8 @@
             "sol_tool_hint"
           ],
           "separator": "\n\n",
-          "byte_length": 2678,
-          "sha256": "c13c53d2b0770583bab9fe9cbee1f7bf2e2e8b00349b61c5ff0151bda58e02d8",
+          "byte_length": 2778,
+          "sha256": "659300b487856af37d10c66e9c1b5c51c2f14f059b53f5ef65f64f6be0664200",
           "note": "A part whose text is null is identified rather than duplicated: its bytes live in the preambles block, which is frozen against a recorded divergence. Reassemble by joining the parts with the separator, substituting the named constant."
         }
       }
@@ -4851,7 +4851,7 @@
     {
       "id": "sol_tool_hint",
       "config": {},
-      "sol_tool_name": "sol",
+      "sol_tool_name": "solstone",
       "diagnostic": false,
       "citation": "cli.py:89-102 - the routing hint, derived from the approved family list",
       "expect": {
@@ -4860,7 +4860,7 @@
           "parts": [
             {
               "role": "sol_tool_hint",
-              "text": "When the instructions tell you to run `sol ...` or approved `journal ...` commands, invoke them through the `sol` tool. Normal journal access uses `sol` / `sol call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `sol(command=\"sol call activities list\")`, `sol(command=\"journal identity partner\")`. Do not invent or call a tool literally named `sol`, and do not rewrite approved `journal` commands as `sol call journal ...`."
+              "text": "When the instructions tell you to run `solstone ...` or approved `journal ...` commands, invoke them through the `solstone` tool. Normal journal access uses `solstone` / `solstone call ...`; the approved direct `journal` families are identity, health, talent and must be run unprefixed as `journal <family> ...`. Examples: `solstone(command=\"solstone call activities list\")`, `solstone(command=\"journal identity partner\")`. Do not invent or call a tool literally named `solstone`, and do not rewrite approved `journal` commands as `solstone call journal ...`."
             }
           ],
           "separator": "\n\n"
@@ -4871,13 +4871,13 @@
   "tool_surface": {
     "note": "Every name and description here reaches the model and is therefore contract. Built by calling the real constructors, not copied. NO WRITE TOOL APPEARS IN ANY TIER'S SET, and that structural fact -- not the dead policy gate -- is what makes 'there is no general-purpose write tool' true.",
     "tools": {
-      "sol": {
-        "name": "sol",
-        "description": "Run one policy-approved command directly, without a shell: use `sol`/`sol call ...` for normal journal access; run approved `journal` families (identity, health, talent) directly as `journal <family> ...`, never prefixed with `sol` or `sol call`.",
+      "solstone": {
+        "name": "solstone",
+        "description": "Run one policy-approved command directly, without a shell: use `solstone`/`solstone call ...` for normal journal access; run approved `journal` families (identity, health, talent) directly as `journal <family> ...`, never prefixed with `solstone` or `solstone call`.",
         "action_properties": {
           "command": {
             "type": "string",
-            "description": "Single command-line invocation to run directly, without a shell: use `sol`/`sol call ...` for normal journal access; run approved `journal` families (identity, health, talent) directly as `journal <family> ...`, never prefixed with `sol` or `sol call`."
+            "description": "Single command-line invocation to run directly, without a shell: use `solstone`/`solstone call ...` for normal journal access; run approved `journal` families (identity, health, talent) directly as `journal <family> ...`, never prefixed with `solstone` or `solstone call`."
           }
         },
         "sdk_injected_properties_excluded": [
@@ -5033,7 +5033,7 @@
     },
     "tier_bindings": {
       "normal": {
-        "sol": true,
+        "solstone": true,
         "reads": true,
         "submit": false,
         "model_tools_excluding_finalization": [
@@ -5041,11 +5041,11 @@
           "grep_search",
           "list_directory",
           "read_file",
-          "sol"
+          "solstone"
         ]
       },
       "system-read": {
-        "sol": true,
+        "solstone": true,
         "reads": true,
         "submit": false,
         "model_tools_excluding_finalization": [
@@ -5053,27 +5053,27 @@
           "grep_search",
           "list_directory",
           "read_file",
-          "sol"
+          "solstone"
         ]
       },
       "outbound": {
-        "sol": true,
+        "solstone": true,
         "reads": false,
         "submit": true,
         "model_tools_excluding_finalization": [
-          "sol"
+          "solstone"
         ]
       },
       "synthesis": {
-        "sol": true,
+        "solstone": true,
         "reads": false,
         "submit": false,
         "model_tools_excluding_finalization": [
-          "sol"
+          "solstone"
         ]
       },
       "diagnostic": {
-        "sol": false,
+        "solstone": false,
         "reads": false,
         "submit": false,
         "model_tools_excluding_finalization": []
@@ -5112,7 +5112,7 @@
     "citation": "openhands.py:1347-1380 - the whole binding sequence"
   },
   "sol_execution": {
-    "note": "The observation text the model reads back from the sol tool. Produced by executing the reference's own formatters, not transcribed. The seconds value in the timeout line and the caps are INTERPOLATED from constants, so a rebuild must derive them too.",
+    "note": "The observation text the model reads back from the solstone tool. Produced by executing the reference's own formatters, not transcribed. The seconds value in the timeout line and the caps are INTERPOLATED from constants, so a rebuild must derive them too.",
     "limits": {
       "stdout_cap_chars": 6000,
       "stderr_cap_chars": 6000,

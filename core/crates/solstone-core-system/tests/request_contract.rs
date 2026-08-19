@@ -119,7 +119,7 @@ fn ac5_every_production_argv_round_trips_byte_for_byte() {
     for cmd in corpus {
         assert_eq!(TaskArgv::from_wire(cmd.clone()).unwrap().as_wire(), cmd);
     }
-    let scheduled = words(&["sol", "call", "timeline", "rollup-day"]);
+    let scheduled = words(&["solstone", "call", "timeline", "rollup-day"]);
     assert_eq!(
         ScheduledArgv::from_wire(scheduled.clone())
             .unwrap()
@@ -130,7 +130,7 @@ fn ac5_every_production_argv_round_trips_byte_for_byte() {
 
 #[test]
 fn ac6_unknown_ordinary_bus_command_is_lossless_named_variant() {
-    let raw = words(&["sol", "call", "timeline", "rollup-day"]);
+    let raw = words(&["solstone", "call", "timeline", "rollup-day"]);
     let argv = TaskArgv::from_wire(raw.clone()).unwrap();
     assert!(matches!(argv, TaskArgv::Unknown { .. }));
     assert_eq!(argv.as_wire(), raw);
@@ -159,7 +159,7 @@ fn ac8_partition_resolution_matches_ordered_python_contract() {
         "maintenance"
     );
     assert_eq!(
-        partition_for(&words(&["sol", "think", "--segment", "x", "--flush"])).as_str(),
+        partition_for(&words(&["solstone", "think", "--segment", "x", "--flush"])).as_str(),
         partition_for(&words(&["journal", "think", "--segment", "x", "--flush"])).as_str()
     );
     assert_eq!(
@@ -354,7 +354,7 @@ fn ac9_cap_resolution_uses_override_or_default() {
 #[test]
 fn ac7_scheduler_construction_is_explicitly_separate_from_bus_decode() {
     let scheduled = ScheduledRequest::new(
-        ScheduledArgv::from_wire(words(&["sol", "call", "timeline", "rollup-day"])).unwrap(),
+        ScheduledArgv::from_wire(words(&["solstone", "call", "timeline", "rollup-day"])).unwrap(),
         "sched:timeline:1",
         "timeline",
     );
@@ -363,7 +363,7 @@ fn ac7_scheduler_construction_is_explicitly_separate_from_bus_decode() {
     assert!(
         BusTaskRequest::decode(
             WireTaskRequest {
-                cmd: Some(words(&["sol", "call", "timeline", "rollup-day"])),
+                cmd: Some(words(&["solstone", "call", "timeline", "rollup-day"])),
                 ..WireTaskRequest::default()
             },
             "ref"

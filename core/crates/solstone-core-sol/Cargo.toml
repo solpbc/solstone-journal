@@ -10,6 +10,7 @@ publish = false
 chrono = { workspace = true }
 nix = { workspace = true, features = ["signal"] }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 solstone-core-cli-boundary = { workspace = true }
 solstone-core-journal = { workspace = true }
 solstone-core-sol-client = { workspace = true }

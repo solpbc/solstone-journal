@@ -115,8 +115,8 @@ fn sol_skills_uses_relocated_installed_payload_root() {
         ""
     );
 
-    fs::remove_dir_all(moved_site_packages.join("solstone/talent/sol"))
-        .expect("remove moved sol payload");
+    fs::remove_dir_all(moved_site_packages.join("solstone/talent/solstone"))
+        .expect("remove moved solstone payload");
     let missing_payload = run_sol(&moved_binary, &unrelated_cwd, &home, &["skills", "list"]);
 
     assert_ne!(missing_payload.status.code(), Some(0));
@@ -127,9 +127,9 @@ fn sol_skills_uses_relocated_installed_payload_root() {
     assert_eq!(
         String::from_utf8(missing_payload.stderr).expect("skills stderr should be utf-8"),
         format!(
-            "error: expected bundled umbrella skill at solstone/talent/sol/SKILL.md ({})\n",
+            "error: expected bundled umbrella skill at solstone/talent/solstone/SKILL.md ({})\n",
             moved_site_packages
-                .join("solstone/talent/sol/SKILL.md")
+                .join("solstone/talent/solstone/SKILL.md")
                 .display()
         )
     );

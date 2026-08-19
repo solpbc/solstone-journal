@@ -24,8 +24,8 @@ pub(crate) const DIVERGENCES: &[PreambleDivergence] = &[PreambleDivergence {
         sha256: "6614e3fd060f29e7c3cb0ed063e43e370a7efefd2579974080fc8caec65ca591",
     },
     new: PreambleFingerprint {
-        byte_length: 2163,
-        sha256: "39011e2c0c5b2f144b082aaae9a9a5a564571b6346412902b8c349b41f67a75f",
+        byte_length: 2218,
+        sha256: "558a575fb2011d1255954d12d0d990c66db647b5e618ef9d87f5694fcd7e0ba8",
     },
     citation: "2026-08-09 operator ruling: the raw-read tier's runtime preamble corrects its broad-root framing to match glob/grep_search/list_directory's actual broad_root refusal rule; the frozen v8 oracle (core/fixtures/cogitate_oracle.json) retains the pre-correction text by design.",
 }];

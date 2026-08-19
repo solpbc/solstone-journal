@@ -142,7 +142,7 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
     push_line(&mut out, format!("{CLI_PAIR_LINK_LABEL}: {pair_link}"));
     push_line(&mut out, CLI_PAIR_JOIN_HINT);
     let mut join_cmd = vec![
-        "sol".to_string(),
+        "solstone".to_string(),
         "link".to_string(),
         "join".to_string(),
         "--code".to_string(),

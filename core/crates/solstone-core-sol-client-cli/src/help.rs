@@ -29,7 +29,7 @@ pub fn render_root_help() -> String {
             output.push('\n');
         }
     }
-    push_line(&mut output, "Apps (sol call <app>):");
+    push_line(&mut output, "Apps (solstone call <app>):");
     for group in root_call_groups() {
         push_line(&mut output, &format!("  call {group}"));
     }
@@ -39,7 +39,7 @@ pub fn render_root_help() -> String {
 
 #[must_use]
 pub fn render_call_root_help() -> String {
-    let mut output = String::from("Usage: sol call <app> <verb> [args...]\n\nCommands:\n");
+    let mut output = String::from("Usage: solstone call <app> <verb> [args...]\n\nCommands:\n");
     for group in root_call_groups() {
         push_line(&mut output, &format!("  {group}"));
     }
@@ -63,7 +63,7 @@ pub fn render_sol_call_help(args: &[String]) -> Option<CommandOutput> {
     let path = &args[..args.len() - 1];
     if let Some(entry) = leaf_for_path("sol-call", path) {
         return Some(CommandOutput::success(render_leaf_help(
-            &format!("sol call {}", path.join(" ")),
+            &format!("solstone call {}", path.join(" ")),
             entry,
         )));
     }
@@ -83,7 +83,9 @@ pub fn render_link_help(args: &[String]) -> Option<CommandOutput> {
         return None;
     }
     Some(CommandOutput::success(render_surface_group_help(
-        "sol-link", "sol link", &path,
+        "sol-link",
+        "solstone link",
+        &path,
     )))
 }
 
@@ -100,7 +102,7 @@ pub fn render_top_level_help(command: &str, args: &[String]) -> Option<CommandOu
     };
     let entry = leaf_for_path(surface, &[command.to_string()])?;
     Some(CommandOutput::success(render_leaf_help(
-        &format!("sol {command}"),
+        &format!("solstone {command}"),
         entry,
     )))
 }
@@ -143,7 +145,11 @@ pub fn render_leaf_help(invocation: &str, entry: &InventoryEntry) -> String {
 
 #[must_use]
 pub fn render_group_help(path: &[String]) -> String {
-    render_surface_group_help("sol-call", &format!("sol call {}", path.join(" ")), path)
+    render_surface_group_help(
+        "sol-call",
+        &format!("solstone call {}", path.join(" ")),
+        path,
+    )
 }
 
 #[must_use]
@@ -363,7 +369,7 @@ mod tests {
 
         assert_eq!(output.stderr, "");
         assert_eq!(output.exit, 0);
-        assert!(output.stdout.contains("Usage: sol status [args...]"));
+        assert!(output.stdout.contains("Usage: solstone status [args...]"));
         assert!(output.stdout.contains("Show journal network status."));
         assert!(
             output
@@ -388,7 +394,7 @@ mod tests {
         assert!(
             output
                 .stdout
-                .contains("Usage: sol link <command> [args...]")
+                .contains("Usage: solstone link <command> [args...]")
         );
         assert!(output.stdout.contains("  join"));
         assert!(
@@ -423,9 +429,9 @@ mod tests {
             let key = (entry.surface, entry.path);
             assert!(seen.insert(key), "duplicate inventory path: {key:?}");
             let invocation = if entry.surface == "sol-call" {
-                format!("sol call {}", entry.path.join(" "))
+                format!("solstone call {}", entry.path.join(" "))
             } else {
-                format!("sol {}", entry.path.join(" "))
+                format!("solstone {}", entry.path.join(" "))
             };
             let output = render_leaf_help(&invocation, entry);
             assert!(output.contains(entry.help), "missing help for {key:?}");

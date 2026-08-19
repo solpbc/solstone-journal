@@ -62,13 +62,13 @@ make install
 .venv/bin/journal setup
 ```
 
-`make install` creates `.venv/`, syncs dependencies from `pyproject.toml` and `uv.lock`, installs the package in editable mode, regenerates router skill references, and refreshes the `sol` + `journal` project skill symlinks into the journal.
+`make install` creates `.venv/`, syncs dependencies from `pyproject.toml` and `uv.lock`, installs the package in editable mode, regenerates router skill references, and refreshes the `solstone` + `journal` project skill symlinks into the journal.
 
 In a source checkout, bare `uv sync` removes the published speakers-analyze helper because the workspace config prunes that package from the active dev environment; the `make speakers-analyze-helper` target that restored it was removed with the Python reference cut, so the helper must currently be reinstalled by hand. Use `uv sync --inexact` when you intentionally need a prune-free sync, which avoids the prune and is now the cleaner route. ⚠ If you do reinstall the helper by hand, note that from inside this workspace `uv pip install` can report success with exit code 0 while installing nothing unless `--no-config` is passed.
 
-`.venv/bin/journal setup` runs doctor diagnostics, confirms the journal path, installs local transcription models, installs the `sol` user skill for Claude Code / Codex / Gemini when those agents are configured, installs the `sol` + `journal` router skills into the journal, creates or refreshes the source-checkout wrappers at `~/.local/bin/sol` and `~/.local/bin/journal`, and starts the background service. The default web interface listens on http://localhost:5015. Use `.venv/bin/journal setup --port 8000` to choose another port on the first run.
+`.venv/bin/journal setup` runs doctor diagnostics, confirms the journal path, installs local transcription models, installs the `solstone` user skill for Claude Code / Codex / Gemini when those agents are configured, installs the `solstone` + `journal` router skills into the journal, creates or refreshes the source-checkout wrappers at `~/.local/bin/solstone` and `~/.local/bin/journal`, and starts the background service. The default web interface listens on http://localhost:5015. Use `.venv/bin/journal setup --port 8000` to choose another port on the first run.
 
-After the first setup run, the wrapper lets you use `sol` from anywhere:
+After the first setup run, the wrapper lets you use `solstone` from anywhere:
 
 ```bash
 journal service status
@@ -175,7 +175,7 @@ If you change the helper source, rebuild it before testing the CoreML parakeet p
 
 Talent prompts live under `core/payload/solstone/talent/<name>.md`; apps may add app-specific talent files under `core/payload/solstone/apps/<app>/talent/`. Talent frontmatter declares type, schedule, provider/model behavior, hooks, priority, and output expectations.
 
-The installed project skills are the two router skills under `core/payload/solstone/talent/sol/` and `core/payload/solstone/talent/journal/`. App command fragments under `core/payload/solstone/apps/<app>/talent/<app>/SKILL.md` feed the generated router references; they are not installed as top-level skills.
+The installed project skills are the two router skills under `core/payload/solstone/talent/solstone/` and `core/payload/solstone/talent/journal/`. App command fragments under `core/payload/solstone/apps/<app>/talent/<app>/SKILL.md` feed the generated router references; they are not installed as top-level skills.
 
 After changing a router skill or an app command fragment, run:
 
@@ -183,17 +183,17 @@ After changing a router skill or an app command fragment, run:
 make skills
 ```
 
-That target first runs `scripts/build_skill_references.py` to regenerate the checked-in references, then refreshes the `sol` + `journal` router skill symlinks inside the journal. `make install` also runs this target. Run `make check-skill-references` directly, or use `make install-checks`, to catch stale generated references.
+That target first runs `scripts/build_skill_references.py` to regenerate the checked-in references, then refreshes the `solstone` + `journal` router skill symlinks inside the journal. `make install` also runs this target. Run `make check-skill-references` directly, or use `make install-checks`, to catch stale generated references.
 
 ## Migrating from a source install to a tree install
 
-A tree install puts `sol`, `solstone`, and `journal` on PATH directly. See [INSTALL.md](INSTALL.md). It does not use the source-checkout managed wrapper, and it does not use `.venv/bin/sol`.
+A tree install puts `solstone` and `journal` on PATH directly. See [INSTALL.md](INSTALL.md). It does not use the source-checkout managed wrapper, and it does not use `.venv/bin/solstone`.
 
 `make uninstall` is disabled by design. To migrate cleanly from a source checkout to a tree install, remove user-runtime artifacts explicitly:
 
 ```bash
 journal service uninstall
-sol skills uninstall
+solstone skills uninstall
 ```
 
 Then install the tree from [INSTALL.md](INSTALL.md) and run `journal setup`.

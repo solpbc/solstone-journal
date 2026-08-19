@@ -155,7 +155,7 @@ pub(crate) struct AccessTiersFixture {
 
 #[derive(Deserialize)]
 pub(crate) struct CapabilityFixture {
-    pub sol: bool,
+    pub solstone: bool,
     pub reads: bool,
     pub submit: bool,
 }

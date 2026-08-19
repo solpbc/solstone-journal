@@ -334,7 +334,7 @@ impl ServiceCommandRunner for RealServiceRunner {
     }
 }
 pub(crate) struct WrapperBins {
-    pub sol: PathBuf,
+    pub solstone: PathBuf,
     pub journal: PathBuf,
 }
 pub(crate) enum WrapperInstallError {
@@ -362,7 +362,10 @@ fn wrapper_paths() -> (PathBuf, PathBuf) {
     let base = env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"));
-    (base.join(".local/bin/sol"), base.join(".local/bin/journal"))
+    (
+        base.join(".local/bin/solstone"),
+        base.join(".local/bin/journal"),
+    )
 }
 fn parse_wrapper(text: &str) -> Option<(String, PathBuf)> {
     let marker = text.lines().any(|l| {
@@ -452,7 +455,10 @@ fn install_wrappers_at(
         .open(lock_path)?;
     let _lock = acquire_wrapper_lock(lock)?;
     let items = [
-        (sol.to_path_buf(), render_wrapper("sol", journal, &bins.sol)),
+        (
+            sol.to_path_buf(),
+            render_wrapper("solstone", journal, &bins.solstone),
+        ),
         (
             jrnl.to_path_buf(),
             render_wrapper("journal", journal, &bins.journal),
@@ -543,10 +549,10 @@ fn execute_wrapper_write_test_child(args: &[std::ffi::OsString]) -> ExitCode {
     }
     let bin_dir = Path::new(&args[0]);
     let target = Path::new(&args[1]);
-    let sol = bin_dir.join("sol");
+    let sol = bin_dir.join("solstone");
     let journal = bin_dir.join("journal");
     let bins = WrapperBins {
-        sol: PathBuf::from("/new/sol"),
+        solstone: PathBuf::from("/new/solstone"),
         journal: PathBuf::from("/new/journal"),
     };
     match install_wrappers_at(target, &bins, &sol, &journal, &RealCommitter) {
@@ -727,7 +733,7 @@ fn rewrite(
         .install(
             &change.target_path,
             &WrapperBins {
-                sol: sol_bin,
+                solstone: sol_bin,
                 journal: journal_bin.clone(),
             },
         )
@@ -1166,11 +1172,11 @@ mod tests {
         let source = root.join("source");
         let target = root.join("target");
         fs::create_dir_all(&source).unwrap();
-        let alias = root.join("bin/sol");
+        let alias = root.join("bin/solstone");
         fs::create_dir_all(alias.parent().unwrap()).unwrap();
         fs::write(
             &alias,
-            render_wrapper("sol", &source, Path::new("/service/sol")),
+            render_wrapper("solstone", &source, Path::new("/service/solstone")),
         )
         .unwrap();
         fs::write(
@@ -1182,7 +1188,7 @@ mod tests {
         c.current_path = source;
         c.target_path = target;
         c.alias = alias;
-        c.sol_bin = PathBuf::from("/service/sol");
+        c.sol_bin = PathBuf::from("/service/solstone");
         c.service_bin = PathBuf::from("/service/journal");
         c.yes = true;
         c
@@ -1206,9 +1212,9 @@ mod tests {
             action,
             yes: false,
             dry_run: false,
-            sol_bin: PathBuf::from("/bin/sol"),
+            sol_bin: PathBuf::from("/bin/solstone"),
             service_bin: PathBuf::from("/bin/journal"),
-            alias: PathBuf::from("/home/.local/bin/sol"),
+            alias: PathBuf::from("/home/.local/bin/solstone"),
         }
     }
 
@@ -1534,7 +1540,7 @@ mod tests {
     #[test]
     fn wrapper_commit_failure_restores_both_wrappers_and_cleans_staging() {
         let root = test_root("wrapper-rollback");
-        let sol = root.join("bin/sol");
+        let sol = root.join("bin/solstone");
         let journal_alias = root.join("bin/journal");
         fs::create_dir_all(sol.parent().unwrap()).unwrap();
         fs::write(&sol, b"old sol bytes").unwrap();
@@ -1542,7 +1548,7 @@ mod tests {
         fs::set_permissions(&sol, fs::Permissions::from_mode(0o700)).unwrap();
         fs::set_permissions(&journal_alias, fs::Permissions::from_mode(0o740)).unwrap();
         let bins = WrapperBins {
-            sol: PathBuf::from("/new/sol"),
+            solstone: PathBuf::from("/new/solstone"),
             journal: PathBuf::from("/new/journal"),
         };
         let committer = FailSecondCommit {
@@ -1575,13 +1581,13 @@ mod tests {
     #[test]
     fn wrapper_commit_success_replaces_both_wrappers_without_staging_artifacts() {
         let root = test_root("wrapper-commit");
-        let sol = root.join("bin/sol");
+        let sol = root.join("bin/solstone");
         let journal_alias = root.join("bin/journal");
         fs::create_dir_all(sol.parent().unwrap()).unwrap();
         fs::write(&sol, b"old sol bytes").unwrap();
         fs::write(&journal_alias, b"old journal bytes").unwrap();
         let bins = WrapperBins {
-            sol: PathBuf::from("/new/sol"),
+            solstone: PathBuf::from("/new/solstone"),
             journal: PathBuf::from("/new/journal"),
         };
         install_wrappers_at(
@@ -1594,7 +1600,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fs::read_to_string(&sol).unwrap(),
-            render_wrapper("sol", &root.join("target"), &bins.sol)
+            render_wrapper("solstone", &root.join("target"), &bins.solstone)
         );
         assert_eq!(
             fs::read_to_string(&journal_alias).unwrap(),
@@ -1607,7 +1613,7 @@ mod tests {
     #[test]
     fn wrapper_staging_does_not_follow_existing_symlinks() {
         let root = test_root("wrapper-stage-symlink");
-        let sol = root.join("bin/sol");
+        let sol = root.join("bin/solstone");
         let journal_alias = root.join("bin/journal");
         let canary = root.join("canary");
         fs::create_dir_all(sol.parent().unwrap()).unwrap();
@@ -1616,7 +1622,7 @@ mod tests {
         fs::write(&canary, "do not overwrite").unwrap();
         std::os::unix::fs::symlink(&canary, root.join("bin/.sol.tmp-0")).unwrap();
         let bins = WrapperBins {
-            sol: PathBuf::from("/new/sol"),
+            solstone: PathBuf::from("/new/solstone"),
             journal: PathBuf::from("/new/journal"),
         };
         install_wrappers_at(
@@ -1630,21 +1636,21 @@ mod tests {
         assert_eq!(fs::read_to_string(&canary).unwrap(), "do not overwrite");
         assert_eq!(
             fs::read_to_string(&sol).unwrap(),
-            render_wrapper("sol", &root.join("target"), &bins.sol)
+            render_wrapper("solstone", &root.join("target"), &bins.solstone)
         );
     }
 
     #[test]
     fn wrapper_staging_failure_cleans_previously_staged_files() {
         let root = test_root("wrapper-stage-cleanup");
-        let sol = root.join("bin/sol");
+        let sol = root.join("bin/solstone");
         let journal_alias = root.join("bin/journal");
         fs::create_dir_all(sol.parent().unwrap()).unwrap();
         fs::write(&sol, "old sol").unwrap();
         fs::write(&journal_alias, "old journal").unwrap();
         fs::create_dir(root.join("bin/.journal.tmp-1")).unwrap();
         let bins = WrapperBins {
-            sol: PathBuf::from("/new/sol"),
+            solstone: PathBuf::from("/new/solstone"),
             journal: PathBuf::from("/new/journal"),
         };
         assert!(
@@ -1724,14 +1730,18 @@ mod tests {
 
     #[test]
     fn native_wrapper_template_is_reference_compatible() {
-        let wrapper = render_wrapper("sol", Path::new("/journal"), Path::new("/venv/bin/sol"));
+        let wrapper = render_wrapper(
+            "solstone",
+            Path::new("/journal"),
+            Path::new("/venv/bin/solstone"),
+        );
         assert_eq!(
             wrapper,
-            "#!/bin/bash\n# sol — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${SOLSTONE_JOURNAL:=/journal}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='/venv/bin/sol'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${SOL_BIN%/.venv/bin/sol}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"sol: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf 'sol: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n"
+            "#!/bin/bash\n# solstone — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${SOLSTONE_JOURNAL:=/journal}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='/venv/bin/solstone'\n# Warn when pyproject.toml or uv.lock is newer than .installed.\n# Skipped silently if .installed is absent.\nREPO_ROOT=\"${SOL_BIN%/.venv/bin/solstone}\"\nif [ -f \"$REPO_ROOT/.installed\" ]; then\n  if [ \"$REPO_ROOT/pyproject.toml\" -nt \"$REPO_ROOT/.installed\" ] \\\n     || [ \"$REPO_ROOT/uv.lock\" -nt \"$REPO_ROOT/.installed\" ]; then\n    echo \"solstone: WARNING — venv is stale (pyproject.toml or uv.lock changed since last install). Run: cd $REPO_ROOT && make install\" >&2\n  fi\nfi\nif [ ! -x \"$SOL_BIN\" ]; then\n    printf 'solstone: venv binary missing or not executable: %s\\n' \"$SOL_BIN\" >&2\n    exit 127\nfi\nexec \"$SOL_BIN\" \"$@\"\n"
         );
         assert_eq!(
             parse_wrapper(&wrapper),
-            Some(("/journal".into(), PathBuf::from("/venv/bin/sol")))
+            Some(("/journal".into(), PathBuf::from("/venv/bin/solstone")))
         );
     }
 
@@ -1776,7 +1786,7 @@ mod tests {
         assert_eq!(wrapper_status(&alias), ("foreign", None));
         fs::remove_dir(&alias).unwrap();
 
-        let legacy = render_wrapper("sol", Path::new("/legacy"), Path::new("/bin/sol"))
+        let legacy = render_wrapper("solstone", Path::new("/legacy"), Path::new("/bin/solstone"))
             .replace("# managed-version: 7", "# managed-version: 5");
         fs::write(&alias, legacy).unwrap();
         assert_eq!(
@@ -1799,12 +1809,12 @@ mod tests {
     #[test]
     fn rewrite_always_emits_the_current_wrapper_marker() {
         let root = test_root("wrapper-version");
-        let sol = root.join("bin/sol");
+        let sol = root.join("bin/solstone");
         let journal_alias = root.join("bin/journal");
         fs::create_dir_all(sol.parent().unwrap()).unwrap();
         fs::write(
             &sol,
-            render_wrapper("sol", Path::new("/old"), Path::new("/bin/sol"))
+            render_wrapper("solstone", Path::new("/old"), Path::new("/bin/solstone"))
                 .replace("# managed-version: 7", "# managed-version: 5"),
         )
         .unwrap();
@@ -1816,7 +1826,7 @@ mod tests {
         install_wrappers_at(
             Path::new("/new"),
             &WrapperBins {
-                sol: PathBuf::from("/bin/sol"),
+                solstone: PathBuf::from("/bin/solstone"),
                 journal: PathBuf::from("/bin/journal"),
             },
             &sol,

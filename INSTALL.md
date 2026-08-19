@@ -11,10 +11,10 @@ the latest version of these instructions is at https://solstone.app/install.
 ### check whether solstone is already installed
 
 ```bash
-sol --version 2>&1 && journal service status 2>&1
+solstone --version 2>&1 && journal service status 2>&1
 ```
 
-if `sol` isn't on PATH, the install hasn't been done yet — proceed.
+if `solstone` isn't on PATH, the install hasn't been done yet — proceed.
 if solstone is running and healthy, skip to [install sol on your devices](#install-sol-on-your-devices).
 
 ### prerequisites
@@ -105,11 +105,11 @@ on Fedora or RHEL:
 sudo dnf install ./solstone-journal-<version>-linux-x86_64.rpm
 ```
 
-either one puts `sol`, `solstone` and `journal` on PATH for every account on the machine.
+either one puts `solstone` and `journal` on PATH for every account on the machine.
 
 ### one tree, whichever machine
 
-there is no separate download for talking to a journal running elsewhere. the tree carries `sol` and `solstone` alongside the journal binaries, so one install covers both roles. you carry a few binaries you will not run, and nothing else changes.
+there is no separate download for talking to a journal running elsewhere. the tree carries `solstone` alongside the journal binaries, so one install covers both roles. you carry a few binaries you will not run, and nothing else changes.
 
 ## install the journal on mac
 
@@ -169,7 +169,7 @@ sol on your mac still installs from its own signed bundle, under [install sol on
 journal setup
 ```
 
-this runs the setup readiness doctor battery and confirms the journal directory at `~/journal`. it fetches the local transcription model (~1 GB), installs the `sol` skill for Claude Code, Codex, and Gemini, and installs the journal-side `sol` and `journal` router skills so sol can tend the journal. it then starts a background service (`systemd` on linux, `launchd` on mac at `~/Library/LaunchAgents/org.solpbc.solstone.plist`) listening on http://localhost:5015. the default port is shared across logins. a second journal on that port, including one started under another login, cannot bind it.
+this runs the setup readiness doctor battery and confirms the journal directory at `~/journal`. it fetches the local transcription model (~1 GB), installs the `solstone` skill for Claude Code, Codex, and Gemini, and installs the journal-side `solstone` and `journal` router skills so sol can tend the journal. it then starts a background service (`systemd` on linux, `launchd` on mac at `~/Library/LaunchAgents/org.solpbc.solstone.plist`) listening on http://localhost:5015. the default port is shared across logins. a second journal on that port, including one started under another login, cannot bind it.
 
 let your human know: **open http://localhost:5015 in a browser**. the first-run wizard walks them through setting their identity and choosing how sol thinks: local by default (the local model runs right on the machine), or their own provider key if the machine can't run one.
 
@@ -259,8 +259,8 @@ with no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `
 **none of this removes your journal.** it is a folder of dated directories and it survives every step below.
 
 1. remove setup-managed runtime files: `journal setup --clean-uninstall --yes`
-   this removes the service unit, the managed `sol` and `journal` wrappers in `~/.local/bin`, its config, and the setup manifest. without `--yes` it asks first; in a non-interactive shell that form refuses and exits 2, and nothing is removed. if the service cannot be removed, uninstall stops there and leaves the wrappers in place so you still have `journal` to retry.
-2. optional: remove the installed `sol` agent skill: `sol skills uninstall`.
+   this removes the service unit, the managed `solstone` and `journal` wrappers in `~/.local/bin`, its config, and the setup manifest. without `--yes` it asks first; in a non-interactive shell that form refuses and exits 2, and nothing is removed. if the service cannot be removed, uninstall stops there and leaves the wrappers in place so you still have `journal` to retry.
+2. optional: remove the installed `solstone` agent skill: `solstone skills uninstall`.
 3. remove the tree, by the route you installed it:
    - `sudo apt remove solstone-journal` or `sudo dnf remove solstone-journal`
    - archive install: delete the prefix directory (`~/.local/solstone-journal` by default) and the PATH block `install.sh` added to `~/.profile` (and on mac, `~/.zprofile`), marked with `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`.

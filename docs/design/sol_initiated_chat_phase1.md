@@ -5,7 +5,7 @@
 
 ## Scope
 This change adds the producer-side primitive for sol-initiated chat starts:
-`sol call chat start`, four new chat-stream event kinds, prompt-context support
+`solstone call chat start`, four new chat-stream event kinds, prompt-context support
 for the new trigger, and a six-step policy gauntlet. It does not build the UI
 or any producer intelligence that decides when to call the primitive.
 
@@ -196,7 +196,7 @@ Add a docstring at the new append site documenting that legacy rows written by
 
 ## CLI
 
-Add `solstone/apps/chat/call.py`. It auto-mounts as `sol call chat` through the
+Add `solstone/apps/chat/call.py`. It auto-mounts as `solstone call chat` through the
 existing app discovery path.
 
 Command:

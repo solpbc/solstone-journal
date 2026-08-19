@@ -47,9 +47,12 @@ impl TaskArgv {
             return Err(WireRequestError::MissingCommand);
         }
 
-        let known = matches!(raw.first().map(String::as_str), Some("sol" | "journal"))
-            .then(|| raw.get(1).map(String::as_str))
-            .flatten();
+        let known = matches!(
+            raw.first().map(String::as_str),
+            Some("solstone" | "journal")
+        )
+        .then(|| raw.get(1).map(String::as_str))
+        .flatten();
         let task = KnownTaskArgv::new(raw.clone());
         match known {
             Some("think") => Ok(Self::Think(task)),

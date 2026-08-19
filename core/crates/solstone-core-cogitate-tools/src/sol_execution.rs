@@ -371,11 +371,31 @@ mod tests {
         let path = root.path().join("path");
         fs::create_dir_all(&sibling).expect("sibling directory");
         fs::create_dir_all(&path).expect("path directory");
-        fs::write(sibling.join("sol"), "sibling").expect("sibling fixture");
-        fs::write(path.join("sol"), "path").expect("path fixture");
+        fs::write(sibling.join("solstone"), "sibling").expect("sibling fixture");
+        fs::write(path.join("solstone"), "path").expect("path fixture");
         assert_eq!(
-            resolve_executable_in("sol", Some(&sibling), &[path]),
-            Some(sibling.join("sol"))
+            resolve_executable_in("solstone", Some(&sibling), &[path]),
+            Some(sibling.join("solstone"))
+        );
+    }
+
+    #[test]
+    fn stale_sol_executable_name_is_not_resolved() {
+        let root = unique_temp_dir("stale-sol");
+        let sibling = root.path().join("sibling");
+        let path = root.path().join("path");
+        fs::create_dir_all(&sibling).expect("sibling directory");
+        fs::create_dir_all(&path).expect("path directory");
+        fs::write(sibling.join("solstone"), "sibling").expect("current sibling");
+        fs::write(path.join("sol"), "stale-path-sol").expect("stale path sol");
+        assert_eq!(
+            resolve_executable_in("solstone", Some(&sibling), &[path.clone()]),
+            Some(sibling.join("solstone"))
+        );
+        assert_eq!(
+            resolve_executable_in("sol", Some(&sibling), &[]),
+            None,
+            "resolving sol as an executable name is command_not_found equivalent"
         );
     }
 

@@ -36,11 +36,11 @@ impl IsolatedHome {
 
     fn write_managed_wrapper(&self, current: &Path) {
         let wrapper = format!(
-            "#!/bin/bash\n# sol — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\n",
+            "#!/bin/bash\n# solstone — managed by 'journal config'. Edits will be overwritten.\n# managed-version: 7\n: \"${{SOLSTONE_JOURNAL:={}}}\"\nexport SOLSTONE_JOURNAL\nSOL_BIN='{}'\n",
             current.display(),
             env!("CARGO_BIN_EXE_solstone-core"),
         );
-        fs::write(self.home().join(".local/bin/sol"), wrapper).expect("write managed wrapper");
+        fs::write(self.home().join(".local/bin/solstone"), wrapper).expect("write managed wrapper");
     }
 }
 

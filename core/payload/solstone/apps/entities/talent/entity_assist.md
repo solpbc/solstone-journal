@@ -28,21 +28,21 @@ You receive:
 SOL_FACET is set in your environment. Entity and journal commands default to the current facet — only pass explicit values to override.
 
 Facet Context - always do this first:
-- `sol call journal facet show`
+- `solstone call journal facet show`
 
 Entity operations:
-- `sol call entities list` - check if entity already attached (returns entities with entity_id)
-- `sol call entities attach TYPE ENTITY DESCRIPTION` - add entity to attached list
-- `sol call entities update ENTITY DESCRIPTION` - update an attached entity description
+- `solstone call entities list` - check if entity already attached (returns entities with entity_id)
+- `solstone call entities attach TYPE ENTITY DESCRIPTION` - add entity to attached list
+- `solstone call entities update ENTITY DESCRIPTION` - update an attached entity description
   - If `entity` matches an existing attached entity (by id, name, or aka), returns that entity
   - Otherwise creates a new entity using `entity` as the name
 
 Research tools (use sparingly, be quick):
-- `sol call journal search QUERY -n 3` - find entity mentions in all journal content
-- `sol call journal search QUERY -a audio -n 3` - find entity in transcripts
-- `sol call journal search QUERY -a news -n 3` - find entity in facet news
-- `sol call journal search QUERY -d DAY -a meetings -n 3` - find entity in meetings for a specific day
-- `sol call journal read AGENT` - read full agent output when snippet search is insufficient
+- `solstone call journal search QUERY -n 3` - find entity mentions in all journal content
+- `solstone call journal search QUERY -a audio -n 3` - find entity in transcripts
+- `solstone call journal search QUERY -a news -n 3` - find entity in facet news
+- `solstone call journal search QUERY -d DAY -a meetings -n 3` - find entity in meetings for a specific day
+- `solstone call journal read AGENT` - read full agent output when snippet search is insufficient
 
 ## Quick Addition Process
 
@@ -64,18 +64,18 @@ Use context clues to derive the appropriate type:
 ### Step 2: Check Duplicates
 
 ```bash
-sol call entities list
+solstone call entities list
 ```
 
-If entity already exists (check by name or entity_id), consider if the request implies the description needs to be updated and do some research to build an updated description, then call `sol call entities update ENTITY DESCRIPTION`.
+If entity already exists (check by name or entity_id), consider if the request implies the description needs to be updated and do some research to build an updated description, then call `solstone call entities update ENTITY DESCRIPTION`.
 
 ### Step 3: Quick Research
 
 Execute a few targeted searches based on type:
-- **Person**: `sol call journal search "{name}" -n 3` or `sol call journal search "{name}" -a event -n 3`
-- **Company**: `sol call journal search "{name}" -a news -n 3` or `sol call journal search "{name}" -n 3`
-- **Project**: `sol call journal search "{name}" -n 3`
-- **Tool**: `sol call journal search "{name}" -n 3`
+- **Person**: `solstone call journal search "{name}" -n 3` or `solstone call journal search "{name}" -a event -n 3`
+- **Company**: `solstone call journal search "{name}" -a news -n 3` or `solstone call journal search "{name}" -n 3`
+- **Project**: `solstone call journal search "{name}" -n 3`
+- **Tool**: `solstone call journal search "{name}" -n 3`
 
 **Research goals:**
 - Confirm the entity is real and relevant
@@ -127,12 +127,12 @@ Synthesize a concise, timeless description relevant to the facet:
 
 ### Step 5: Attach or Update the entity
 
-Use `sol call entities update ENTITY DESCRIPTION` if the entity already exists (by id or name), otherwise attach the new entity:
+Use `solstone call entities update ENTITY DESCRIPTION` if the entity already exists (by id or name), otherwise attach the new entity:
 ```bash
-sol call entities attach Person "Alice Johnson" "Senior engineer on the platform team"
+solstone call entities attach Person "Alice Johnson" "Senior engineer on the platform team"
 ```
 
-Note: If the entity already exists, `sol call entities attach` will return it with `created: false`.
+Note: If the entity already exists, `solstone call entities attach` will return it with `created: false`.
 
 Report success, then conclude with the built-in finish tool (`FinishTool`) —
 this talent has no `emit_final`; the confirmation line is your final response:

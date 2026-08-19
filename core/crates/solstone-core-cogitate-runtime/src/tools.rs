@@ -82,7 +82,7 @@ impl ToolExecutor for CogitateToolExecutor<'_> {
             "list_directory" => self.list_directory(&call.arguments),
             "glob" => self.glob(&call.arguments),
             "grep_search" => self.grep_search(&call.arguments),
-            "sol" => self.sol(config, &call.arguments),
+            "solstone" => self.solstone(config, &call.arguments),
             _ => ToolExecution::error(solstone_core_cogitate_tools::REFUSAL_TOOL_NOT_BOUND),
         }
     }
@@ -158,7 +158,7 @@ impl CogitateToolExecutor<'_> {
         ))
     }
 
-    fn sol(&mut self, config: &RunConfig, arguments: &Value) -> ToolExecution {
+    fn solstone(&mut self, config: &RunConfig, arguments: &Value) -> ToolExecution {
         let Some(command) = string(arguments, "command") else {
             return ToolExecution::error(INVALID_ARGUMENTS);
         };

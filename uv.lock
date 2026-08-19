@@ -2124,7 +2124,7 @@ wheels = [
 
 [[package]]
 name = "solstone"
-version = "1.0.22"
+version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "psutil" },

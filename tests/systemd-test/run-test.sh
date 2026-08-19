@@ -388,7 +388,7 @@ PY
         # Upgrade-over-legacy-state cell (the path that hid Ryan Bennett's
         # 0.4.10->0.5.1 cutover bugs). Same as `install`, but BEFORE journal
         # setup we seed a LEGACY non-symlink regular-file wrapper at
-        # ~/.local/bin/sol — the accumulated manual-materialization state a
+        # ~/.local/bin/solstone — the accumulated manual-materialization state a
         # clean install never has. Then we assert setup self-heals the foreign
         # wrapper (managed wrapper + /tmp backup) through to a healthy
         # service_identity. A clean install classifies the alias OWNED and
@@ -397,21 +397,21 @@ PY
         log "legacy-upgrade: apt install solstone-journal .deb"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc "$install_solstone_cmd"
 
-        log "legacy-upgrade: seed legacy non-symlink wrapper at ~/.local/bin/sol"
+        log "legacy-upgrade: seed legacy non-symlink wrapper at ~/.local/bin/solstone"
         # rm the uv symlink first — `cat >` through a symlink writes the target,
         # not the alias. parse_wrapper has no managed-version marker to find, so
         # check_alias classifies this regular file FOREIGN. The exec target is a
         # deliberately-defunct path; provision_wrappers only READS the wrapper.
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
             set -euo pipefail
-            rm -f ~/.local/bin/sol
-            cat > ~/.local/bin/sol <<WRAP
+            rm -f ~/.local/bin/solstone
+            cat > ~/.local/bin/solstone <<WRAP
 #!/bin/bash
 # legacy hand-rolled wrapper from a prior manual materialization
 exec /opt/solstone-legacy-runtime/tools/solstone
 WRAP
-            chmod +x ~/.local/bin/sol
-            test ! -L ~/.local/bin/sol   # must be a regular file, not a symlink
+            chmod +x ~/.local/bin/solstone
+            test ! -L ~/.local/bin/solstone   # must be a regular file, not a symlink
         '
 
         log "legacy-upgrade: journal setup -y --skip-models --skip-skills"
@@ -435,9 +435,9 @@ WRAP
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
             set -euo pipefail
             # the foreign wrapper has been replaced by a managed solstone wrapper
-            grep -q "^# managed-version:" ~/.local/bin/sol
+            grep -q "^# managed-version:" ~/.local/bin/solstone
             # and the legacy wrapper was preserved, not destroyed
-            ls /tmp/sol.old-symlink-* >/dev/null 2>&1
+            ls /tmp/solstone.old-symlink-* >/dev/null 2>&1
         '
 
         log "verify: full journal doctor reports service_identity ok"

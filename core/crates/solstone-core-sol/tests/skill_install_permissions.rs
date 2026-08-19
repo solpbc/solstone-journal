@@ -15,7 +15,7 @@ use std::process::{Command, ExitCode, Stdio};
 #[test]
 fn mixed_writability_installs_writable_agent_and_reports_unwritable_agent() {
     let home_guard = tempfile::tempdir().expect("tempdir");
-    let claude_target = home_guard.path().join(".claude/skills/sol");
+    let claude_target = home_guard.path().join(".claude/skills/solstone");
     let output = Command::new(env::current_exe().unwrap())
         .args(["--exact", "mixed_writability_child", "--nocapture"])
         .env("HOME", home_guard.path())
@@ -43,7 +43,7 @@ fn mixed_writability_child() {
         return;
     }
     let home = PathBuf::from(env::var_os("HOME").expect("HOME"));
-    let claude_target = home.join(".claude/skills/sol");
+    let claude_target = home.join(".claude/skills/solstone");
     fs::create_dir_all(&claude_target).expect("claude target");
     fs::write(claude_target.join("marker.txt"), "pre-existing").expect("marker");
     let before = listing(&claude_target);
@@ -76,14 +76,14 @@ fn mixed_writability_child() {
 
     assert_eq!(exit, ExitCode::from(1));
     assert_eq!(listing(&claude_target), before);
-    let source =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../core/payload/solstone/talent/sol");
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../core/payload/solstone/talent/solstone");
     assert_eq!(
-        fs::read(home.join(".codex/skills/sol/SKILL.md")).unwrap(),
+        fs::read(home.join(".codex/skills/solstone/SKILL.md")).unwrap(),
         fs::read(source.join("SKILL.md")).unwrap()
     );
     assert_eq!(
-        fs::read(home.join(".codex/skills/sol/references/commands.md")).unwrap(),
+        fs::read(home.join(".codex/skills/solstone/references/commands.md")).unwrap(),
         fs::read(source.join("references/commands.md")).unwrap()
     );
 }

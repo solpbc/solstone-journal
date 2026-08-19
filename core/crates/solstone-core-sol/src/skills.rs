@@ -1,23 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use sha2::{Digest, Sha256};
 
 use solstone_core_sol_client::command::CommandOutput;
 
 use super::{EXIT_CONFIG, resolve_project_root};
 
 const EXIT_ARGPARSE_USAGE: i32 = 2;
-const USAGE: &str = "Usage: sol skills <install|uninstall|list> [args...]\n";
+const USAGE: &str = "Usage: solstone skills <install|uninstall|list> [args...]\n";
 const ALL_AGENTS: &str = "all";
 const PROJECT_MULTI_AGENT: &str = "agents";
 const PROJECT_CLAUDE_SKILLS_REL: &str = ".claude/skills";
 const PROJECT_AGENTS_SKILLS_REL: &str = ".agents/skills";
-const USER_SKILL_NAME: &str = "sol";
+const USER_SKILL_NAME: &str = "solstone";
+const RETIRED_USER_SKILL_NAME: &str = "sol";
+const RETIRED_SOL_USER_SKILL_JSON: &str =
+    include_str!("../../../fixtures/native-sol/retired-sol-user-skill-v1.json");
 const GLOBAL_SKIP_MESSAGE: &str =
     "no AI coding agent config directories found — skipping skill registration";
 
@@ -410,11 +417,128 @@ fn resolve_user_skill(project_root: &Path) -> Result<PathBuf, String> {
     let skill_file = skill_dir.join("SKILL.md");
     if !skill_file.is_file() {
         return Err(format!(
-            "expected bundled umbrella skill at solstone/talent/sol/SKILL.md ({})",
+            "expected bundled umbrella skill at solstone/talent/solstone/SKILL.md ({})",
             skill_file.display()
         ));
     }
     Ok(skill_dir)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RetiredSkillMatch {
+    Absent,
+    Match,
+    Mismatch,
+}
+
+fn retired_sol_user_skill_files() -> &'static BTreeMap<String, String> {
+    static FILES: OnceLock<BTreeMap<String, String>> = OnceLock::new();
+    FILES.get_or_init(|| {
+        let fixture: serde_json::Value = serde_json::from_str(RETIRED_SOL_USER_SKILL_JSON)
+            .expect("retired sol user skill fixture must be valid JSON");
+        fixture["files"]
+            .as_array()
+            .expect("retired sol user skill fixture files must be an array")
+            .iter()
+            .map(|entry| {
+                (
+                    entry["path"]
+                        .as_str()
+                        .expect("retired skill file path")
+                        .to_owned(),
+                    entry["sha256"]
+                        .as_str()
+                        .expect("retired skill file sha256")
+                        .to_owned(),
+                )
+            })
+            .collect()
+    })
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn resolve_one_symlink_hop(path: &Path) -> PathBuf {
+    match fs::read_link(path) {
+        Ok(target) if target.is_absolute() => target,
+        Ok(target) => path.parent().unwrap_or_else(|| Path::new(".")).join(target),
+        Err(_) => path.to_path_buf(),
+    }
+}
+
+fn matches_retired_sol_user_skill(path: &Path) -> RetiredSkillMatch {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return RetiredSkillMatch::Absent,
+        Err(_) => return RetiredSkillMatch::Mismatch,
+        Ok(_) => {}
+    }
+    let resolved = resolve_one_symlink_hop(path);
+    let Ok(files) = collect_file_rel_paths(&resolved) else {
+        return RetiredSkillMatch::Mismatch;
+    };
+    let expected = retired_sol_user_skill_files();
+    if files.len() != expected.len() {
+        return RetiredSkillMatch::Mismatch;
+    }
+    for rel in files {
+        let Some(expected_hash) = expected.get(&rel.to_string_lossy().replace('\\', "/")) else {
+            return RetiredSkillMatch::Mismatch;
+        };
+        let Ok(bytes) = fs::read(resolved.join(&rel)) else {
+            return RetiredSkillMatch::Mismatch;
+        };
+        if sha256_hex(&bytes) != *expected_hash {
+            return RetiredSkillMatch::Mismatch;
+        }
+    }
+    RetiredSkillMatch::Match
+}
+
+fn cleanup_retired_sol_user_skill(skills_root: &Path, agent: &str, report: &mut InstallReport) {
+    let leftover = skills_root.join(RETIRED_USER_SKILL_NAME);
+    match matches_retired_sol_user_skill(&leftover) {
+        RetiredSkillMatch::Absent => {}
+        RetiredSkillMatch::Match => {
+            let metadata = fs::symlink_metadata(&leftover);
+            let removed = match metadata {
+                Ok(metadata) if metadata.file_type().is_dir() => fs::remove_dir_all(&leftover),
+                Ok(_) => fs::remove_file(&leftover),
+                Err(error) => Err(error),
+            };
+            match removed {
+                Ok(()) => report.rows.push(ActionRow {
+                    agent: agent.to_string(),
+                    skill: RETIRED_USER_SKILL_NAME.to_string(),
+                    action: Action::Removed,
+                    path: leftover,
+                    reason: Some("retired product skill".to_string()),
+                }),
+                Err(error) => {
+                    append_error(
+                        &mut report.rows,
+                        agent,
+                        RETIRED_USER_SKILL_NAME,
+                        &leftover,
+                        error,
+                    );
+                }
+            }
+        }
+        RetiredSkillMatch::Mismatch => report.rows.push(ActionRow {
+            agent: agent.to_string(),
+            skill: RETIRED_USER_SKILL_NAME.to_string(),
+            action: Action::Warning,
+            path: leftover.clone(),
+            reason: Some(format!(
+                "does not match the retired sol skill; user content at {} preserved",
+                leftover.display()
+            )),
+        }),
+    }
 }
 
 fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> InstallReport {
@@ -422,6 +546,7 @@ fn install_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> Ins
     let mut report = InstallReport::default();
     for spec in selected {
         let skills_root = home.join(spec.skills_dir);
+        cleanup_retired_sol_user_skill(&skills_root, spec.name, &mut report);
         if let Err(error) = fs::create_dir_all(&skills_root) {
             append_error(&mut report.rows, spec.name, "", &skills_root, error);
             continue;
@@ -495,6 +620,7 @@ fn uninstall_user(skill_dir: &Path, home: &Path, selection: AgentSelection) -> I
     let (selected, default_all) = selection.user_agents();
     let mut report = InstallReport::default();
     for spec in selected {
+        cleanup_retired_sol_user_skill(&home.join(spec.skills_dir), spec.name, &mut report);
         let parent = home.join(spec.parent_dir);
         if !parent.exists() {
             if default_all && spec.silent_when_default_all {
@@ -1125,7 +1251,7 @@ mod tests {
                     }
                 }
                 "copy_user_skill" => {
-                    copy_tree_files(&source_root().join("solstone/talent/sol"), &path)
+                    copy_tree_files(&source_root().join("solstone/talent/solstone"), &path)
                         .expect("copy user skill setup");
                 }
                 "project_links" => {
@@ -1141,7 +1267,7 @@ mod tests {
                     };
                     for link_parent in link_parents {
                         fs::create_dir_all(&link_parent).expect("project link parent setup");
-                        for name in ["journal", "sol"] {
+                        for name in ["journal", "solstone"] {
                             let source = source_root().join("solstone/talent").join(name);
                             let target = solstone_core_skill_state::expected_link_target(
                                 &source,
@@ -1282,7 +1408,7 @@ mod tests {
         let output = run_with_context(command, &context);
 
         assert_eq!(output.exit, 0);
-        let mode = fs::metadata(home.join(".claude/skills/sol/SKILL.md"))
+        let mode = fs::metadata(home.join(".claude/skills/solstone/SKILL.md"))
             .expect("installed skill metadata")
             .permissions()
             .mode()
@@ -1308,7 +1434,7 @@ mod tests {
         ])
         .expect("parse install");
         assert_eq!(run_with_context(command.clone(), &context).exit, 0);
-        let file = home.join(".claude/skills/sol/SKILL.md");
+        let file = home.join(".claude/skills/solstone/SKILL.md");
         let before = fs::metadata(&file).expect("before metadata");
 
         assert_eq!(run_with_context(command, &context).exit, 0);
@@ -1360,7 +1486,7 @@ mod tests {
         let external = temp.path().join("external");
         fs::create_dir_all(&external).expect("external dir");
         fs::write(external.join("keep.txt"), "keep\n").expect("external content");
-        let link = home.join(".claude/skills/sol");
+        let link = home.join(".claude/skills/solstone");
         fs::create_dir_all(link.parent().unwrap()).expect("link parent");
         create_symlink(&external, &link).expect("setup symlink");
         let context = RuntimeContext {
@@ -1398,9 +1524,9 @@ mod tests {
         let real = temp.path().join("real");
         let linked = temp.path().join("linked");
         fs::create_dir_all(real.join("solstone/talent")).expect("real talent");
-        fs::create_dir_all(real.join("solstone/talent/sol")).expect("real sol");
+        fs::create_dir_all(real.join("solstone/talent/solstone")).expect("real solstone");
         fs::create_dir_all(real.join("solstone/talent/journal")).expect("real journal");
-        fs::write(real.join("solstone/talent/sol/SKILL.md"), "---\n").expect("sol skill");
+        fs::write(real.join("solstone/talent/solstone/SKILL.md"), "---\n").expect("solstone skill");
         fs::write(real.join("solstone/talent/journal/SKILL.md"), "---\n").expect("journal skill");
         create_symlink(&real, &linked).expect("linked checkout");
         let project = temp.path().join("project");
@@ -1455,7 +1581,7 @@ mod tests {
             .expect("parse project install"),
             &context,
         );
-        assert!(output.stdout.find("journal").unwrap() < output.stdout.find(" sol ").unwrap());
+        assert!(output.stdout.find("journal").unwrap() < output.stdout.find(" solstone ").unwrap());
     }
 
     #[cfg(unix)]
@@ -1469,7 +1595,7 @@ mod tests {
         fs::create_dir_all(&home).expect("create home");
         fs::write(&claude_config, "not a directory").expect("create regular file component");
         fs::create_dir_all(&codex_skills_root).expect("create writable codex skills root");
-        let skill_dir = source_root().join("solstone/talent/sol");
+        let skill_dir = source_root().join("solstone/talent/solstone");
 
         let report = install_user(&skill_dir, &home, AgentSelection::All);
 
@@ -1482,6 +1608,92 @@ mod tests {
         assert_eq!(error.path, claude_skills_root);
         let output = report_output(report, "install");
         assert_eq!(output.exit, 1);
-        assert!(home.join(".codex/skills/sol/SKILL.md").is_file());
+        assert!(home.join(".codex/skills/solstone/SKILL.md").is_file());
+    }
+
+    fn last_shipped_sol_skill_bytes(relative: &str) -> &'static [u8] {
+        match relative {
+            "SKILL.md" => {
+                include_bytes!("../../../fixtures/native-sol/retired-sol-user-skill/SKILL.md")
+            }
+            "references/commands.md" => include_bytes!(
+                "../../../fixtures/native-sol/retired-sol-user-skill/references/commands.md"
+            ),
+            other => panic!("unknown retired sol skill file {other}"),
+        }
+    }
+
+    fn write_last_shipped_sol_skill(dir: &Path) {
+        fs::create_dir_all(dir.join("references")).expect("retired skill dirs");
+        fs::write(
+            dir.join("SKILL.md"),
+            last_shipped_sol_skill_bytes("SKILL.md"),
+        )
+        .expect("write retired SKILL.md");
+        fs::write(
+            dir.join("references/commands.md"),
+            last_shipped_sol_skill_bytes("references/commands.md"),
+        )
+        .expect("write retired commands.md");
+    }
+
+    #[test]
+    fn retired_sol_user_skill_classifier_covers_absent_match_and_mismatch() {
+        let temp = unique_temp("retired-classifier");
+        let missing = temp.path().join("missing");
+        assert_eq!(
+            matches_retired_sol_user_skill(&missing),
+            RetiredSkillMatch::Absent
+        );
+
+        let matching = temp.path().join("matching");
+        write_last_shipped_sol_skill(&matching);
+        assert_eq!(
+            matches_retired_sol_user_skill(&matching),
+            RetiredSkillMatch::Match
+        );
+
+        fs::write(matching.join("extra.txt"), "nope").expect("extra file");
+        assert_eq!(
+            matches_retired_sol_user_skill(&matching),
+            RetiredSkillMatch::Mismatch
+        );
+
+        let foreign = temp.path().join("foreign");
+        fs::create_dir_all(&foreign).expect("foreign dir");
+        fs::write(foreign.join("SKILL.md"), "user skill").expect("foreign skill");
+        assert_eq!(
+            matches_retired_sol_user_skill(&foreign),
+            RetiredSkillMatch::Mismatch
+        );
+    }
+
+    #[test]
+    fn install_user_removes_matching_retired_sol_skill_and_preserves_foreign() {
+        let temp = unique_temp("retired-cleanup");
+        let home = temp.path().join("home");
+        let leftover = home.join(".claude/skills/sol");
+        write_last_shipped_sol_skill(&leftover);
+        let foreign = home.join(".codex/skills/sol");
+        fs::create_dir_all(&foreign).expect("foreign leftover");
+        fs::write(foreign.join("notes.md"), "keep").expect("foreign notes");
+        let skill_dir = source_root().join("solstone/talent/solstone");
+        let report = install_user(&skill_dir, &home, AgentSelection::All);
+        assert!(!leftover.exists());
+        assert!(foreign.join("notes.md").is_file());
+        assert!(home.join(".claude/skills/solstone/SKILL.md").is_file());
+        assert!(report.rows.iter().any(|row| {
+            row.skill == "sol"
+                && row.action == Action::Removed
+                && row.reason.as_deref() == Some("retired product skill")
+        }));
+        assert!(report.rows.iter().any(|row| {
+            row.skill == "sol"
+                && row.action == Action::Warning
+                && row
+                    .reason
+                    .as_deref()
+                    .is_some_and(|reason| reason.contains("does not match the retired sol skill"))
+        }));
     }
 }

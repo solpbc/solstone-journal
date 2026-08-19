@@ -17,7 +17,7 @@ pub fn detected(
 ) -> Map<String, Value> {
     let handler = if command
         .first()
-        .is_some_and(|v| v == "journal" || v == "sol")
+        .is_some_and(|v| v == "journal" || v == "solstone")
         && command.len() > 1
     {
         command[1].clone()

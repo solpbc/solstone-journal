@@ -29,7 +29,7 @@ pub fn partition_for(cmd: &[String]) -> Partition {
         return Partition::new("unknown");
     };
 
-    let recognized = matches!(first.as_str(), "sol" | "journal")
+    let recognized = matches!(first.as_str(), "solstone" | "journal")
         || Path::new(first).file_name().and_then(|name| name.to_str())
             == Some("solstone-core-journal");
     if recognized && cmd.len() > 1 {
@@ -85,13 +85,13 @@ mod tests {
     }
 
     #[test]
-    fn retains_exact_matching_for_bare_journal_and_sol() {
+    fn retains_exact_matching_for_bare_journal_and_solstone() {
         assert_eq!(
             partition_for(&["journal".to_owned(), "think".to_owned()]),
             Partition::new("daily")
         );
         assert_eq!(
-            partition_for(&["sol".to_owned(), "heartbeat".to_owned()]),
+            partition_for(&["solstone".to_owned(), "heartbeat".to_owned()]),
             Partition::new("heartbeat")
         );
     }

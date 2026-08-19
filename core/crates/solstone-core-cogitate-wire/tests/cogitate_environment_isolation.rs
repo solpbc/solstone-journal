@@ -72,7 +72,7 @@ fn request() -> CogitateRequest {
         "outbound_approval": null,
         "diagnostic": false,
         "talent_instruction": "Be concise.",
-        "sol_tool_name": "sol",
+        "sol_tool_name": "solstone",
         "read_scope": [],
         "output_path": null,
         "schedule": "daily",

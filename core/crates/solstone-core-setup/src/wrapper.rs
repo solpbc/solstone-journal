@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Managed `sol` and `journal` wrapper provisioning.
+//! Managed `solstone` and `journal` wrapper provisioning.
 
 use std::fs::{self, File, OpenOptions};
 use std::io;
@@ -93,7 +93,7 @@ impl WrapperEnvironment {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrapperPaths {
-    pub sol: PathBuf,
+    pub solstone: PathBuf,
     pub journal: PathBuf,
 }
 
@@ -101,7 +101,7 @@ pub struct WrapperPaths {
 pub fn wrapper_paths(home_dir: &Path) -> WrapperPaths {
     let bin_dir = home_dir.join(".local/bin");
     WrapperPaths {
-        sol: bin_dir.join("sol"),
+        solstone: bin_dir.join("solstone"),
         journal: bin_dir.join("journal"),
     }
 }
@@ -169,8 +169,8 @@ pub fn check_alias(
         return Ok((AliasState::Worktree, None));
     }
     let aliases = wrapper_paths(&environment.home_dir);
-    let alias = if binary == "sol" {
-        aliases.sol
+    let alias = if binary == "solstone" {
+        aliases.solstone
     } else {
         aliases.journal
     };
@@ -394,7 +394,7 @@ pub fn provision_wrappers(
     let paths = wrapper_paths(&environment.home_dir);
     let _lock = wrapper_lock(&environment.home_dir)?;
     let states = [
-        ("sol", check_alias(environment, "sol")?),
+        ("solstone", check_alias(environment, "solstone")?),
         ("journal", check_alias(environment, "journal")?),
     ];
     if states
@@ -408,8 +408,8 @@ pub fn provision_wrappers(
             state,
             AliasState::CrossRepo | AliasState::Dangling | AliasState::Foreign
         ) {
-            let alias = if *binary == "sol" {
-                &paths.sol
+            let alias = if *binary == "solstone" {
+                &paths.solstone
             } else {
                 &paths.journal
             };
@@ -418,8 +418,12 @@ pub fn provision_wrappers(
     }
     write_wrappers_atomically(&[
         (
-            paths.sol.clone(),
-            render_wrapper("sol", journal, &environment.executable_dir.join("sol")),
+            paths.solstone.clone(),
+            render_wrapper(
+                "solstone",
+                journal,
+                &environment.executable_dir.join("solstone"),
+            ),
         ),
         (
             paths.journal.clone(),
@@ -438,7 +442,7 @@ pub fn uninstall_wrappers(
     environment: &WrapperEnvironment,
 ) -> Result<(), (AliasState, Option<PathBuf>)> {
     let states = [
-        check_alias(environment, "sol").map_err(|_| (AliasState::Foreign, None))?,
+        check_alias(environment, "solstone").map_err(|_| (AliasState::Foreign, None))?,
         check_alias(environment, "journal").map_err(|_| (AliasState::Foreign, None))?,
     ];
     if let Some(blocked) = states
@@ -449,7 +453,7 @@ pub fn uninstall_wrappers(
     }
     let _lock = wrapper_lock(&environment.home_dir).map_err(|_| (AliasState::Foreign, None))?;
     let states = [
-        check_alias(environment, "sol").map_err(|_| (AliasState::Foreign, None))?,
+        check_alias(environment, "solstone").map_err(|_| (AliasState::Foreign, None))?,
         check_alias(environment, "journal").map_err(|_| (AliasState::Foreign, None))?,
     ];
     if let Some(blocked) = states
@@ -459,7 +463,7 @@ pub fn uninstall_wrappers(
         return Err(blocked.clone());
     }
     let paths = wrapper_paths(&environment.home_dir);
-    for path in [&paths.sol, &paths.journal] {
+    for path in [&paths.solstone, &paths.journal] {
         if path.exists() || path.is_symlink() {
             fs::remove_file(path).map_err(|_| (AliasState::Foreign, None))?;
         }
@@ -575,14 +579,17 @@ mod tests {
     #[test]
     fn parses_rendered_wrapper_and_unescapes_sol_bin() {
         let rendered = render_wrapper(
-            "sol",
+            "solstone",
             Path::new("/journal"),
-            Path::new("/a'quoted/.venv/bin/sol"),
+            Path::new("/a'quoted/.venv/bin/solstone"),
         );
         let parsed = parse_wrapper(&rendered).unwrap();
         assert_eq!(parsed.version, 7);
         assert_eq!(parsed.journal, "/journal");
-        assert_eq!(parsed.sol_bin, PathBuf::from("/a'quoted/.venv/bin/sol"));
+        assert_eq!(
+            parsed.sol_bin,
+            PathBuf::from("/a'quoted/.venv/bin/solstone")
+        );
     }
     #[test]
     fn backup_default_is_literal_tmp_and_collision_names_increment() {
@@ -594,13 +601,13 @@ mod tests {
         };
         assert_eq!(env.backup_dir(), PathBuf::from("/tmp"));
         let path = root("backup-names");
-        fs::write(path.join("sol.old-symlink-20260101000000"), "x").unwrap();
+        fs::write(path.join("solstone.old-symlink-20260101000000"), "x").unwrap();
         assert_eq!(
-            legacy_backup_path("sol", &path, "20260101000000")
+            legacy_backup_path("solstone", &path, "20260101000000")
                 .unwrap()
                 .file_name()
                 .unwrap(),
-            "sol.old-symlink-20260101000000-1"
+            "solstone.old-symlink-20260101000000-1"
         );
         assert_eq!(BACKUP_ATTEMPTS, 100);
     }
@@ -614,12 +621,12 @@ mod tests {
                 format!("-{index}")
             };
             fs::write(
-                path.join(format!("sol.old-symlink-20260101000000{suffix}")),
+                path.join(format!("solstone.old-symlink-20260101000000{suffix}")),
                 "x",
             )
             .unwrap();
         }
-        assert!(legacy_backup_path("sol", &path, "20260101000000").is_err());
+        assert!(legacy_backup_path("solstone", &path, "20260101000000").is_err());
     }
     #[test]
     fn shell_active_journal_path_is_refused_before_write() {
@@ -628,7 +635,7 @@ mod tests {
         fs::create_dir_all(&env.curdir).unwrap();
         let error = provision_wrappers(&env, Path::new("/bad$journal")).unwrap_err();
         assert!(error.to_string().contains('$'));
-        assert!(!wrapper_paths(&env.home_dir).sol.exists());
+        assert!(!wrapper_paths(&env.home_dir).solstone.exists());
     }
     #[test]
     fn dangling_alias_backup_preserves_the_link_target_then_is_overwritten() {
@@ -636,7 +643,7 @@ mod tests {
         let env = environment(&root);
         fs::create_dir_all(&env.curdir).unwrap();
         fs::create_dir_all(env.home_dir.join(".local/bin")).unwrap();
-        symlink("/missing-target", wrapper_paths(&env.home_dir).sol).unwrap();
+        symlink("/missing-target", wrapper_paths(&env.home_dir).solstone).unwrap();
         provision_wrappers(&env, Path::new("/journal")).unwrap();
         let backup = fs::read_dir(env.backup_dir())
             .unwrap()
@@ -645,7 +652,7 @@ mod tests {
                 entry
                     .file_name()
                     .to_string_lossy()
-                    .starts_with("sol.old-symlink-")
+                    .starts_with("solstone.old-symlink-")
             })
             .unwrap()
             .path();
@@ -655,7 +662,7 @@ mod tests {
             PathBuf::from("/missing-target")
         );
         assert!(
-            fs::read_to_string(wrapper_paths(&env.home_dir).sol)
+            fs::read_to_string(wrapper_paths(&env.home_dir).solstone)
                 .unwrap()
                 .contains(WRAPPER_MARKER)
         );
@@ -666,11 +673,11 @@ mod tests {
         let environment = environment(&root);
         fs::create_dir_all(&environment.curdir).unwrap();
         fs::create_dir_all(environment.home_dir.join(".local/bin")).unwrap();
-        let expected = environment.curdir.join(".venv/bin/sol");
+        let expected = environment.curdir.join(".venv/bin/solstone");
         assert!(!expected.exists());
-        symlink(&expected, wrapper_paths(&environment.home_dir).sol).unwrap();
+        symlink(&expected, wrapper_paths(&environment.home_dir).solstone).unwrap();
         assert_eq!(
-            check_alias(&environment, "sol").unwrap().0,
+            check_alias(&environment, "solstone").unwrap().0,
             AliasState::Owned
         );
     }
@@ -680,15 +687,15 @@ mod tests {
         let environment = environment(&root);
         fs::create_dir_all(&environment.curdir).unwrap();
         fs::create_dir_all(environment.home_dir.join(".local/bin")).unwrap();
-        let expected = environment.curdir.join(".venv/bin/sol");
+        let expected = environment.curdir.join(".venv/bin/solstone");
         assert!(!expected.exists());
         fs::write(
-            wrapper_paths(&environment.home_dir).sol,
-            render_wrapper("sol", Path::new("/journal"), &expected),
+            wrapper_paths(&environment.home_dir).solstone,
+            render_wrapper("solstone", Path::new("/journal"), &expected),
         )
         .unwrap();
         assert_eq!(
-            check_alias(&environment, "sol").unwrap().0,
+            check_alias(&environment, "solstone").unwrap().0,
             AliasState::Owned
         );
     }
@@ -699,9 +706,9 @@ mod tests {
         fs::create_dir_all(&env.curdir).unwrap();
         fs::create_dir_all(&env.executable_dir).unwrap();
         fs::create_dir_all(env.home_dir.join(".local/bin")).unwrap();
-        fs::write(env.executable_dir.join("sol"), "runtime").unwrap();
+        fs::write(env.executable_dir.join("solstone"), "runtime").unwrap();
         fs::write(env.executable_dir.join("journal"), "runtime").unwrap();
-        fs::write(wrapper_paths(&env.home_dir).sol, "foreign wrapper").unwrap();
+        fs::write(wrapper_paths(&env.home_dir).solstone, "foreign wrapper").unwrap();
         fs::write(
             wrapper_paths(&env.home_dir).journal,
             render_wrapper(
@@ -718,9 +725,9 @@ mod tests {
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect::<Vec<_>>();
         assert_eq!(backups.len(), 1);
-        assert!(backups[0].starts_with("sol.old-symlink-"));
+        assert!(backups[0].starts_with("solstone.old-symlink-"));
         assert!(
-            fs::read_to_string(wrapper_paths(&env.home_dir).sol)
+            fs::read_to_string(wrapper_paths(&env.home_dir).solstone)
                 .unwrap()
                 .contains(WRAPPER_MARKER)
         );
@@ -746,13 +753,13 @@ mod tests {
         let mut env = environment(&root);
         fs::create_dir_all(&env.curdir).unwrap();
         fs::create_dir_all(env.home_dir.join(".local/bin")).unwrap();
-        fs::write(wrapper_paths(&env.home_dir).sol, "foreign").unwrap();
+        fs::write(wrapper_paths(&env.home_dir).solstone, "foreign").unwrap();
         let blocked = root.join("blocked-backups");
         fs::write(&blocked, "not a directory").unwrap();
         env.backup_dir = Some(blocked);
         provision_wrappers(&env, Path::new("/journal")).unwrap();
         assert!(
-            fs::read_to_string(wrapper_paths(&env.home_dir).sol)
+            fs::read_to_string(wrapper_paths(&env.home_dir).solstone)
                 .unwrap()
                 .contains(WRAPPER_MARKER)
         );
@@ -764,7 +771,31 @@ mod tests {
         fs::create_dir_all(&env.curdir).unwrap();
         fs::write(env.curdir.join(".git"), "gitdir: x").unwrap();
         let paths = provision_wrappers(&env, Path::new("/journal")).unwrap();
-        assert!(!paths.sol.exists() && !paths.journal.exists());
+        assert!(!paths.solstone.exists() && !paths.journal.exists());
+    }
+    #[test]
+    fn provision_and_uninstall_leave_a_foreign_file_at_local_bin_sol() {
+        let root = root("leave-sol-path");
+        let env = environment(&root);
+        fs::create_dir_all(&env.curdir).unwrap();
+        fs::create_dir_all(&env.executable_dir).unwrap();
+        fs::create_dir_all(env.home_dir.join(".local/bin")).unwrap();
+        fs::write(env.executable_dir.join("solstone"), "runtime").unwrap();
+        fs::write(env.executable_dir.join("journal"), "runtime").unwrap();
+        let leftover = env.home_dir.join(".local/bin/sol");
+        fs::write(&leftover, "macos-app-owned-or-foreign").unwrap();
+        provision_wrappers(&env, Path::new("/journal")).unwrap();
+        assert_eq!(
+            fs::read_to_string(&leftover).unwrap(),
+            "macos-app-owned-or-foreign"
+        );
+        assert!(wrapper_paths(&env.home_dir).solstone.exists());
+        uninstall_wrappers(&env).unwrap();
+        assert_eq!(
+            fs::read_to_string(&leftover).unwrap(),
+            "macos-app-owned-or-foreign"
+        );
+        assert!(!wrapper_paths(&env.home_dir).solstone.exists());
     }
     #[test]
     fn atomic_failure_restores_every_snapshot_kind() {

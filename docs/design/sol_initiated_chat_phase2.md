@@ -54,7 +54,7 @@ The relevant existing anchors are:
 - No changes to `chat_stream._VALID_KINDS`.
 - No changes to `chat_stream._TRIGGER_KINDS`.
 - No changes to phase-1 policy checks, dedupe rules, rate limits, settings, or
-  `sol call chat start`.
+  `solstone call chat start`.
 - No producer intelligence that decides when to start a chat.
 - No phase-3 surfaces beyond the universal chat bar, `/app/chat`, `/app/observer`,
   and observer-side filtering helper.

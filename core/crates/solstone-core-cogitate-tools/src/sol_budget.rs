@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-/// The one-time notification emitted when the `sol` call budget is exceeded.
+/// The one-time notification emitted when the `solstone` call budget is exceeded.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BudgetExhaustedEvent {
     pub tool: &'static str,
@@ -9,8 +9,8 @@ pub struct BudgetExhaustedEvent {
     pub count: i64,
 }
 
-/// Per-run `sol` budget. This intentionally differs from `ReadBudget`:
-/// `sol` increments before testing `count > cap`, matching the provider loop.
+/// Per-run `solstone` budget. This intentionally differs from `ReadBudget`:
+/// `solstone` increments before testing `count > cap`, matching the provider loop.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SolCallBudget {
     cap: i64,
@@ -35,7 +35,7 @@ impl SolCallBudget {
         }
         self.exhaustion_emitted = true;
         Some(BudgetExhaustedEvent {
-            tool: "sol",
+            tool: "solstone",
             budget: self.cap,
             count: self.count,
         })

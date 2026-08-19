@@ -49,8 +49,8 @@ solstone/talent/screen.md
 solstone/talent/screen.schema.json
 solstone/talent/sense.md
 solstone/talent/sense.schema.json
-solstone/talent/sol/references/commands.md
-solstone/talent/sol/SKILL.md
+solstone/talent/solstone/references/commands.md
+solstone/talent/solstone/SKILL.md
 solstone/talent/speaker_attribution.md
 solstone/talent/speaker_attribution.schema.json
 solstone/talent/steward.md

@@ -85,7 +85,11 @@ const BASELINE_CHECK_NAMES: &[&str] = &[
 // None` now and so are indistinguishable from the baseline rows in the
 // registry — the classification cannot be derived after the fact and has to be
 // written down to keep the partition assertion below self-policing.
-const EARLIER_CHECK_NAMES: &[&str] = &["disk_space", "service_identity", "local_bin_sol_reachable"];
+const EARLIER_CHECK_NAMES: &[&str] = &[
+    "disk_space",
+    "service_identity",
+    "local_bin_solstone_reachable",
+];
 
 fn fixture() -> CheckContext {
     let root = std::env::temp_dir().join(format!(
@@ -314,7 +318,7 @@ fn stage_router_skills(context: &mut CheckContext, broken: bool) {
 
     let root = context.journal_path.parent().unwrap().join("checkout");
     let payload = root.join(solstone_core_journal::CHECKOUT_PAYLOAD_ROOT);
-    for name in ["sol", "journal"] {
+    for name in ["solstone", "journal"] {
         let source = payload.join("solstone/talent").join(name);
         fs::create_dir_all(&source).unwrap();
         fs::write(source.join("SKILL.md"), "x").unwrap();
@@ -324,7 +328,7 @@ fn stage_router_skills(context: &mut CheckContext, broken: bool) {
         context.journal_path.join(".agents/skills"),
     ] {
         fs::create_dir_all(&parent).unwrap();
-        for name in ["sol", "journal"] {
+        for name in ["solstone", "journal"] {
             let source = payload.join("solstone/talent").join(name);
             symlink(
                 solstone_core_skill_state::expected_link_target(&source, &parent),
@@ -337,7 +341,7 @@ fn stage_router_skills(context: &mut CheckContext, broken: bool) {
     context.payload_root = Some(payload);
     if broken {
         let parent = context.journal_path.join(".claude/skills");
-        fs::remove_file(parent.join("sol")).unwrap();
+        fs::remove_file(parent.join("solstone")).unwrap();
     }
 }
 
@@ -1231,23 +1235,23 @@ fn skill_state_fixture_branches() {
     assert_eq!(row.status, Status::Ok);
     assert_eq!(
         row.detail,
-        "router skills sol, journal are installed and current"
+        "router skills solstone, journal are installed and current"
     );
 
     let broken = installed.clone();
     let claude = broken.journal_path.join(".claude/skills");
-    fs::remove_file(claude.join("sol")).unwrap();
+    fs::remove_file(claude.join("solstone")).unwrap();
     fs::remove_file(claude.join("journal")).unwrap();
     symlink("foreign", claude.join("journal")).unwrap();
     symlink("old", claude.join("stale")).unwrap();
     let row = result("skill_state", &broken);
     assert_eq!(row.status, Status::Warn);
-    assert!(row.detail.contains("sol missing at"));
+    assert!(row.detail.contains("solstone missing at"));
     assert!(row.detail.contains("journal points elsewhere at"));
     assert!(row.detail.contains("stale router skill link at"));
     assert_eq!(
         row.fix.as_deref(),
-        Some("run sol skills install --project .")
+        Some("run solstone skills install --project .")
     );
 
     let no_root = fixture();

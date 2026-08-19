@@ -42,9 +42,9 @@ const EXIT_USAGE: u8 = 64;
 const EXIT_CONFIG: u8 = 78;
 const EXIT_TEMPFAIL: u8 = 75;
 const DEFAULT_CONVEY_PORT: i64 = 5015;
-const USAGE: &str = "Usage: sol <command> [args...]\n";
+const USAGE: &str = "Usage: solstone <command> [args...]\n";
 const SERVICE_MOVED_EXIT: i32 = 2;
-const SOL_SERVICE_CMD_REMOVED_ERROR_TAIL: &str = "('sol' is the journal-access surface; 'journal' surfaces journal-service commands; see 'journal --help'.)";
+const SOL_SERVICE_CMD_REMOVED_ERROR_TAIL: &str = "('solstone' is the journal-access surface; 'journal' surfaces journal-service commands; see 'journal --help'.)";
 pub fn run(public_argv0: &str, args: Vec<OsString>) -> ExitCode {
     run_with_stdin_provider(public_argv0, args, &RealStdinProvider)
 }
@@ -98,7 +98,7 @@ fn run_with_stdin_provider(
 }
 
 fn version_output() -> CommandOutput {
-    CommandOutput::success(format!("sol (solstone) {}\n", env!("CARGO_PKG_VERSION")))
+    CommandOutput::success(format!("solstone {}\n", env!("CARGO_PKG_VERSION")))
 }
 
 fn help_output() -> CommandOutput {
@@ -114,7 +114,10 @@ fn usage_error_output() -> CommandOutput {
 }
 
 fn unsupported_output() -> CommandOutput {
-    CommandOutput::failure("Unsupported native sol command.\n", i32::from(EXIT_USAGE))
+    CommandOutput::failure(
+        "Unsupported native solstone command.\n",
+        i32::from(EXIT_USAGE),
+    )
 }
 
 fn service_moved_output(command: &OsStr) -> CommandOutput {
@@ -149,11 +152,11 @@ impl std::fmt::Display for ProjectRootError {
         match self {
             ProjectRootError::CurrentExe(error) => write!(
                 formatter,
-                "native sol project root resolution failed: could not inspect current executable: {error}"
+                "native solstone project root resolution failed: could not inspect current executable: {error}"
             ),
             ProjectRootError::Unclassified(executable) => write!(
                 formatter,
-                "native sol project root resolution failed: could not locate source checkout or installed solstone package from {}",
+                "native solstone project root resolution failed: could not locate source checkout or installed solstone package from {}",
                 executable.display()
             ),
         }
@@ -237,7 +240,7 @@ fn run_top_level_link(
         Ok(Some(value)) => value,
         Ok(None) => String::new(),
         Err(error) => {
-            eprintln!("native sol stdin read failed: {error}");
+            eprintln!("native solstone stdin read failed: {error}");
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
@@ -331,7 +334,7 @@ fn run_dispatched(
         Ok(Some(value)) => value,
         Ok(None) => String::new(),
         Err(error) => {
-            eprintln!("native sol stdin read failed: {error}");
+            eprintln!("native solstone stdin read failed: {error}");
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
@@ -467,7 +470,7 @@ pub fn run_resident_command(handler: ResidentHandler, context: CommandContext<'_
         Ok(shutdown) => shutdown,
         Err(error) => {
             return render_output(CommandOutput::failure(
-                format!("native sol resident signal setup failed: {error}\n"),
+                format!("native solstone resident signal setup failed: {error}\n"),
                 i32::from(EXIT_TEMPFAIL),
             ));
         }
@@ -481,7 +484,7 @@ pub fn run_resident_command(handler: ResidentHandler, context: CommandContext<'_
     print!("{}", resident.startup());
     if let Err(error) = io::stdout().flush() {
         return render_output(CommandOutput::failure(
-            format!("native sol resident startup flush failed: {error}\n"),
+            format!("native solstone resident startup flush failed: {error}\n"),
             i32::from(EXIT_TEMPFAIL),
         ));
     }
@@ -761,32 +764,36 @@ mod tests {
             .keys()
             .cloned()
             .collect::<std::collections::BTreeSet<_>>();
-        if identity_names != string_values(&["journal", "sol"]) {
-            errors.push("identities must contain exactly journal and sol".to_owned());
+        if identity_names != string_values(&["journal", "solstone"]) {
+            errors.push("identities must contain exactly journal and solstone".to_owned());
         }
-        let Some(sol) = identities.get("sol") else {
-            errors.push("sol identity is missing".to_owned());
+        let Some(solstone) = identities.get("solstone") else {
+            errors.push("solstone identity is missing".to_owned());
             return errors;
         };
-        if sol.get("journal_reach").and_then(serde_json::Value::as_str) != Some("api-only") {
-            errors.push("sol journal reach must be api-only".to_owned());
+        if solstone
+            .get("journal_reach")
+            .and_then(serde_json::Value::as_str)
+            != Some("api-only")
+        {
+            errors.push("solstone journal reach must be api-only".to_owned());
         }
-        let api = string_set(sol, "api_commands", &mut errors);
+        let api = string_set(solstone, "api_commands", &mut errors);
         if api != string_values(&["call", "chat", "import", "status"]) {
-            errors.push("sol API command boundary drifted".to_owned());
+            errors.push("solstone API command boundary drifted".to_owned());
         }
-        let local = string_set(sol, "invoking_device_commands", &mut errors);
+        let local = string_set(solstone, "invoking_device_commands", &mut errors);
         if local != string_values(&["link", "root", "skills"]) {
-            errors.push("sol invoking-device command boundary drifted".to_owned());
+            errors.push("solstone invoking-device command boundary drifted".to_owned());
         }
         for duplicate in api.intersection(&local) {
-            errors.push(format!("sol command {duplicate} has two reaches"));
+            errors.push(format!("solstone command {duplicate} has two reaches"));
         }
-        let forbidden_sol = string_set(sol, "forbidden_direct_journal_commands", &mut errors);
+        let forbidden_sol = string_set(solstone, "forbidden_direct_journal_commands", &mut errors);
         if forbidden_sol != string_values(&["--path", "check", "doctor", "notify", "path"]) {
-            errors.push("sol forbidden direct-journal command boundary drifted".to_owned());
+            errors.push("solstone forbidden direct-journal command boundary drifted".to_owned());
         }
-        let http_journal_calls = string_set(sol, "http_paths", &mut errors);
+        let http_journal_calls = string_set(solstone, "http_paths", &mut errors);
         if http_journal_calls
             != string_values(&[
                 "call journal agents",
@@ -808,9 +815,9 @@ mod tests {
                 "call journal storage-summary",
             ])
         {
-            errors.push("sol HTTP journal-call boundary drifted".to_owned());
+            errors.push("solstone HTTP journal-call boundary drifted".to_owned());
         }
-        let http_bindings = http_binding_map(sol, &mut errors);
+        let http_bindings = http_binding_map(solstone, &mut errors);
         let expected_http_bindings = binding_values(&[
             ("status", &["GET /app/network/api/status"]),
             ("call journal agents", &["GET /app/search/api/agents"]),
@@ -865,9 +872,9 @@ mod tests {
             ),
         ]);
         if http_bindings != expected_http_bindings {
-            errors.push("sol HTTP method/route boundary drifted".to_owned());
+            errors.push("solstone HTTP method/route boundary drifted".to_owned());
         }
-        let retired_sol = string_set(sol, "retired_invocations", &mut errors);
+        let retired_sol = string_set(solstone, "retired_invocations", &mut errors);
         if retired_sol
             != string_values(&[
                 "--path",
@@ -883,7 +890,7 @@ mod tests {
                 "path",
             ])
         {
-            errors.push("retired sol invocation census drifted".to_owned());
+            errors.push("retired solstone invocation census drifted".to_owned());
         }
         let Some(journal) = identities.get("journal") else {
             errors.push("journal identity is missing".to_owned());
@@ -1036,19 +1043,19 @@ mod tests {
     fn cli_boundary_fixture_rejects_two_reaches_and_a_missing_identity() {
         let mut value: serde_json::Value =
             serde_json::from_str(CLI_BOUNDARY_JSON).expect("parse CLI boundary fixture");
-        value["identities"]["sol"]["invoking_device_commands"] =
+        value["identities"]["solstone"]["invoking_device_commands"] =
             serde_json::json!(["link", "status"]);
         value["identities"]["bridge"] = serde_json::json!({});
         let errors = cli_boundary_errors(&value);
         assert!(
             errors
                 .iter()
-                .any(|error| error == "sol command status has two reaches")
+                .any(|error| error == "solstone command status has two reaches")
         );
         assert!(
             errors
                 .iter()
-                .any(|error| error == "identities must contain exactly journal and sol")
+                .any(|error| error == "identities must contain exactly journal and solstone")
         );
     }
 
@@ -1080,7 +1087,7 @@ mod tests {
         assert_eq!(output.exit, 0);
         assert_eq!(
             output.stdout,
-            format!("sol (solstone) {}\n", env!("CARGO_PKG_VERSION"))
+            format!("solstone {}\n", env!("CARGO_PKG_VERSION"))
         );
     }
 
@@ -1100,11 +1107,15 @@ mod tests {
         assert!(
             output
                 .stdout
-                .starts_with("sol - journal access CLI (solstone)\n\n")
+                .starts_with("solstone - journal access CLI\n\n")
         );
-        assert!(output.stdout.contains("Usage: sol <command> [args...]\n"));
+        assert!(
+            output
+                .stdout
+                .contains("Usage: solstone <command> [args...]\n")
+        );
         assert!(output.stdout.contains("Conversation\n  chat\n"));
-        assert!(output.stdout.contains("Apps (sol call <app>):\n"));
+        assert!(output.stdout.contains("Apps (solstone call <app>):\n"));
         assert!(output.stdout.contains("  call journal\n"));
         assert!(!output.stdout.contains("Journal: "));
         assert!(!output.stdout.contains("Days: "));
@@ -1113,7 +1124,7 @@ mod tests {
     #[test]
     fn call_help_lists_native_groups_and_journal_compat() {
         let output = help::render_call_root_help();
-        assert!(output.contains("Usage: sol call <app> <verb> [args...]"));
+        assert!(output.contains("Usage: solstone call <app> <verb> [args...]"));
         assert!(output.contains("  activities\n"));
         assert!(output.contains("  journal\n"));
     }
@@ -1217,7 +1228,7 @@ mod tests {
         fs::create_dir_all(&bin).expect("create bin");
         let error = resolve_project_root_from_executable(&bin.join("sol")).unwrap_err();
         assert!(error.to_string().contains(
-            "native sol project root resolution failed: could not locate source checkout or installed solstone package"
+            "native solstone project root resolution failed: could not locate source checkout or installed solstone package"
         ));
     }
 
@@ -1259,7 +1270,7 @@ mod tests {
         assert_eq!(
             service_moved_output(OsStr::new("think")),
             CommandOutput::failure(
-                "'think' moved to 'journal think' — run that instead.\n('sol' is the journal-access surface; 'journal' surfaces journal-service commands; see 'journal --help'.)\n",
+                "'think' moved to 'journal think' — run that instead.\n('solstone' is the journal-access surface; 'journal' surfaces journal-service commands; see 'journal --help'.)\n",
                 SERVICE_MOVED_EXIT,
             )
         );
@@ -1269,7 +1280,10 @@ mod tests {
     fn unknown_command_is_explicitly_unsupported() {
         assert_eq!(
             unsupported_output(),
-            CommandOutput::failure("Unsupported native sol command.\n", i32::from(EXIT_USAGE))
+            CommandOutput::failure(
+                "Unsupported native solstone command.\n",
+                i32::from(EXIT_USAGE)
+            )
         );
     }
 
@@ -1278,7 +1292,7 @@ mod tests {
         let output = usage_error_output();
         assert_eq!(output.stdout, "");
         assert_eq!(output.exit, i32::from(EXIT_USAGE));
-        assert_eq!(output.stderr, "Usage: sol <command> [args...]\n");
+        assert_eq!(output.stderr, "Usage: solstone <command> [args...]\n");
     }
 
     #[test]

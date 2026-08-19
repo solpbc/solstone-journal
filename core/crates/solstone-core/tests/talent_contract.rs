@@ -36,7 +36,13 @@ fn talent_contract_reports_all_tiers_and_bound_tools() {
             true,
             false,
             true,
-            serde_json::json!(["sol", "read_file", "list_directory", "glob", "grep_search"]),
+            serde_json::json!([
+                "solstone",
+                "read_file",
+                "list_directory",
+                "glob",
+                "grep_search"
+            ]),
         ),
         (
             "system-read",
@@ -44,7 +50,13 @@ fn talent_contract_reports_all_tiers_and_bound_tools() {
             true,
             false,
             true,
-            serde_json::json!(["sol", "read_file", "list_directory", "glob", "grep_search"]),
+            serde_json::json!([
+                "solstone",
+                "read_file",
+                "list_directory",
+                "glob",
+                "grep_search"
+            ]),
         ),
         (
             "outbound",
@@ -52,7 +64,7 @@ fn talent_contract_reports_all_tiers_and_bound_tools() {
             false,
             true,
             true,
-            serde_json::json!(["sol"]),
+            serde_json::json!(["solstone"]),
         ),
         (
             "synthesis",
@@ -60,7 +72,7 @@ fn talent_contract_reports_all_tiers_and_bound_tools() {
             false,
             false,
             true,
-            serde_json::json!(["sol"]),
+            serde_json::json!(["solstone"]),
         ),
         (
             "diagnostic",
@@ -76,7 +88,7 @@ fn talent_contract_reports_all_tiers_and_bound_tools() {
             .find(|tier| tier["name"] == name)
             .expect("named tier");
         assert_eq!(tier["talent_facing"], talent_facing, "{name}");
-        assert_eq!(tier["sol"], sol, "{name}");
+        assert_eq!(tier["solstone"], sol, "{name}");
         assert_eq!(tier["reads"], reads, "{name}");
         assert_eq!(tier["submit"], submit, "{name}");
         assert_eq!(tier["tools"], tools, "{name}");

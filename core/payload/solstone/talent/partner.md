@@ -21,7 +21,7 @@ This is not a conversation. Gather data, observe patterns, update the profile, t
 ## Step 1: Read current state
 
 Read the current profile with `journal identity partner` through the provided
-`sol` tool — it is the approved direct host read command for `identity/partner.md`.
+`solstone` tool — it is the approved direct host read command for `identity/partner.md`.
 
 Note which sections have real observations vs `[observing]` placeholders.
 
@@ -31,16 +31,16 @@ Collect the past 7 days of journal activity. Calculate the date range from today
 and query each source. If a source returns empty or errors, skip it — gaps are fine.
 
 1. For each of the past 7 days:
-   - `sol call activities list --source anticipated --day YYYYMMDD` — scheduled activity patterns
-2. For each active facet (from `sol call journal facets`):
-   - `sol call journal news FACET --day YYYYMMDD` (most recent day available) — work themes
-3. `sol call journal search "" --day-from YYYYMMDD -a pulse -n 10` — pulse narratives for behavioral patterns
+   - `solstone call activities list --source anticipated --day YYYYMMDD` — scheduled activity patterns
+2. For each active facet (from `solstone call journal facets`):
+   - `solstone call journal news FACET --day YYYYMMDD` (most recent day available) — work themes
+3. `solstone call journal search "" --day-from YYYYMMDD -a pulse -n 10` — pulse narratives for behavioral patterns
 
 ## Step 3: Analyze and write observations
 
 For each of the five profile sections, analyze the gathered data and write
 observations if you have sufficient evidence. Use `journal identity partner --update-section`
-through the provided `sol` tool for each section you update — it is the approved
+through the provided `solstone` tool for each section you update — it is the approved
 direct host write command for `partner.md`.
 
 ### Section guidance

@@ -146,7 +146,7 @@ pub fn serialize_event(event: RuntimeEvent) -> Value {
             NativeEventKind::ToolBudgetExhausted,
             correlation_id,
             [
-                ("tool", Value::String("sol".to_owned())),
+                ("tool", Value::String("solstone".to_owned())),
                 ("budget", json!(budget)),
                 ("count", json!(count)),
             ],

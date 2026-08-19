@@ -522,7 +522,7 @@ fn journal_local_operations_fixture_is_the_boundary_census() {
         "journal local behavior corpus drifted from the identity boundary"
     );
 
-    let retired = boundary["identities"]["sol"]["retired_invocations"]
+    let retired = boundary["identities"]["solstone"]["retired_invocations"]
         .as_array()
         .expect("retired_invocations must be an array")
         .iter()

@@ -43,17 +43,16 @@
     "profile",
     "identity"
   ],
-  "expected_bare_sol_stdout": "sol - journal access CLI (solstone)\n\nUsage: sol <command> [args...]\n\nConversation\n  chat\n\nYour journal\n  call\n  import\n\nTools\n  skills\n  link\n\nApps (sol call <app>):\n  call activities\n  call awareness\n  call body\n  call chat\n  call entities\n  call facets\n  call import\n  call link\n  call settings\n  call sol\n  call speakers\n  call support\n  call thinking\n  call transcripts\n  call health\n  call journal\n  call ledger\n  call navigate\n  call profile\n  call identity\n\n",
-  "header": "sol - journal access CLI (solstone)",
+  "expected_bare_sol_stdout": "solstone - journal access CLI\n\nUsage: solstone <command> [args...]\n\nConversation\n  chat\n\nYour journal\n  call\n  import\n\nTools\n  skills\n  link\n\nApps (solstone call <app>):\n  call activities\n  call awareness\n  call body\n  call chat\n  call entities\n  call facets\n  call import\n  call link\n  call settings\n  call sol\n  call speakers\n  call support\n  call thinking\n  call transcripts\n  call health\n  call journal\n  call ledger\n  call navigate\n  call profile\n  call identity\n\n",
+  "header": "solstone - journal access CLI",
   "oracle": {
-    "blob": "a20570fc0994f6215a013e8c89ce7776ddec7d17",
-    "commit": "dd04f55c8",
-    "path": "solstone/think/sol_cli.py"
+    "generator": "scripts/build_native_sol_root_contract.py",
+    "status": "native"
   },
   "placeholders": {
     "journal": "${JOURNAL}",
     "version": "${VERSION}"
   },
   "schema": "native-sol-root-contract-v1",
-  "usage": "Usage: sol <command> [args...]"
+  "usage": "Usage: solstone <command> [args...]"
 }

@@ -810,7 +810,10 @@ fn slot_reacquire_other_is_a_distinct_terminal_runtime_outcome() {
     let mut tools = CogitateToolExecutor::new(&root, 200, &mut lease);
     let mut provider = ScriptedProvider::new([Ok(turn(
         "",
-        vec![call("sol", json!({"command":"sol --runtime-test-invalid"}))],
+        vec![call(
+            "solstone",
+            json!({"command":"solstone --runtime-test-invalid"}),
+        )],
         json!({}),
     ))]);
     let mut sink = RecordingEventSink::default();

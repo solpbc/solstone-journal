@@ -133,7 +133,7 @@ pub fn clean_uninstall_confirmation_lines(context: &CleanUninstallContext<'_>) -
             path.display()
         ));
     }
-    for path in [&wrappers.sol, &wrappers.journal] {
+    for path in [&wrappers.solstone, &wrappers.journal] {
         lines.push(format!(
             "  [{:<7}] wrapper: {}",
             marker(path),
@@ -168,7 +168,7 @@ pub fn clean_uninstall_has_managed_paths(context: &CleanUninstallContext<'_>) ->
     let wrappers = wrapper_paths(&context.home_dir);
     [
         service_artifact_path(&context.home_dir),
-        Some(wrappers.sol),
+        Some(wrappers.solstone),
         Some(wrappers.journal),
         Some(context.config_path.clone()),
         Some(context.manifest_path.clone()),
@@ -354,7 +354,7 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
                 result(
                     "wrapper",
                     CleanUninstallState::Skipped,
-                    Some(wrappers.sol),
+                    Some(wrappers.solstone),
                     Some(leftover.into()),
                 ),
                 result(
@@ -374,7 +374,7 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
     }
     let results = vec![
         service_result,
-        remove_wrappers(context, &(wrappers.sol, wrappers.journal)),
+        remove_wrappers(context, &(wrappers.solstone, wrappers.journal)),
         remove_path("config", context.config_path.clone()),
         remove_path("manifest", context.manifest_path.clone()),
     ];
@@ -474,7 +474,7 @@ mod tests {
             "nothing to remove (all paths already absent)"
         );
         fs::create_dir_all(context.home_dir.join(".local/bin")).unwrap();
-        fs::write(context.home_dir.join(".local/bin/sol"), "foreign").unwrap();
+        fs::write(context.home_dir.join(".local/bin/solstone"), "foreign").unwrap();
         let cancelled = run_clean_uninstall(&mut context);
         assert_eq!(cancelled.exit_code, 2);
         assert_eq!(
@@ -488,7 +488,7 @@ mod tests {
         let root = root("decline");
         let home = root.join("home");
         fs::create_dir_all(home.join(".local/bin")).unwrap();
-        fs::write(home.join(".local/bin/sol"), "foreign").unwrap();
+        fs::write(home.join(".local/bin/solstone"), "foreign").unwrap();
         let mut runner = Runner(VecDeque::new());
         let mut confirm = || false;
         let mut context = CleanUninstallContext {
@@ -513,7 +513,7 @@ mod tests {
         let root = root("foreign");
         let home = root.join("home");
         fs::create_dir_all(home.join(".local/bin")).unwrap();
-        fs::write(home.join(".local/bin/sol"), "foreign").unwrap();
+        fs::write(home.join(".local/bin/solstone"), "foreign").unwrap();
         let mut runner = Runner(VecDeque::from([0]));
         let mut confirm = || true;
         let mut context = CleanUninstallContext {
@@ -565,7 +565,7 @@ mod tests {
         fs::create_dir_all(home.join(".local/bin")).unwrap();
         let runtime = root.join("bin");
         fs::create_dir_all(&runtime).unwrap();
-        for binary in ["sol", "journal"] {
+        for binary in ["solstone", "journal"] {
             fs::write(
                 home.join(".local/bin").join(binary),
                 crate::wrapper::render_wrapper(
@@ -634,7 +634,7 @@ mod tests {
             "{}",
             outcome.message
         );
-        assert!(home.join(".local/bin/sol").exists());
+        assert!(home.join(".local/bin/solstone").exists());
         assert!(home.join(".local/bin/journal").exists());
         assert!(config.exists());
         assert!(manifest.exists());
@@ -647,7 +647,7 @@ mod tests {
         let config = root.join("config.toml");
         let manifest = root.join("journal/health/setup-state.json");
         fs::create_dir_all(home.join(".local/bin")).unwrap();
-        fs::write(home.join(".local/bin/sol"), "managed").unwrap();
+        fs::write(home.join(".local/bin/solstone"), "managed").unwrap();
         fs::write(&config, "journal = \"x\"\n").unwrap();
         let mut runner = Runner(VecDeque::new());
         let mut confirm = || true;

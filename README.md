@@ -87,7 +87,7 @@ journal setup
 
 on an Apple Silicon mac, the same command with `macos-arm64` in place of `linux-x86_64`. debian and fedora can install the `.deb` or `.rpm` instead. one tree covers running the journal and talking to a journal that already runs elsewhere; there is no separate client download.
 
-not sure a computer is up to running the journal? after the tree is on PATH, `sol check` gives a one-shot readiness verdict (gpu, memory, and disk) before you run setup.
+not sure a computer is up to running the journal? after the tree is on PATH, `solstone check` gives a one-shot readiness verdict (gpu, memory, and disk) before you run setup.
 
 then open http://localhost:5015 in a browser. the first-run wizard sets up your identity and gets sol thinking, locally by default, or on your own provider key if you'd rather.
 
@@ -97,17 +97,17 @@ see [INSTALL.md](INSTALL.md) for prerequisites, sol on your other devices, and t
 
 ## CLI
 
-solstone is operated through `sol` for day-to-day journal access and `journal` for host operations.
+solstone is operated through `solstone` for day-to-day journal access and `journal` for host operations.
 
 ```bash
-sol                    # Status overview and command list
+solstone                    # Status overview and command list
 journal supervisor         # Start the full stack (observe + processing + web)
-sol chat               # Interactive AI chat from the terminal
+solstone chat               # Interactive AI chat from the terminal
 journal transcribe <file>  # Transcribe an audio file
 journal indexer            # Rebuild the search index
 ```
 
-Run `sol help` for the full command reference.
+Run `solstone help` for the full command reference.
 
 ## documentation
 

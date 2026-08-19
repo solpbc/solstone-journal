@@ -4,20 +4,20 @@ description: >
   Browse and read transcript content from audio recordings, screen captures,
   and agent summaries. Check coverage, list segments, read transcripts with
   source filtering, review monthly stats. TRIGGER: transcript, recording,
-  audio, what was said, conversation, segment, screen capture, sol call
+  audio, what was said, conversation, segment, screen capture, solstone call
   transcripts scan/segments/read/stats.
 ---
 
 # Transcripts CLI Skill
 
-Inspect transcript availability and content. Invoke via Bash: `sol call transcripts <command> [args...]`.
+Inspect transcript availability and content. Invoke via Bash: `solstone call transcripts <command> [args...]`.
 
 **Environment defaults**: When `SOL_DAY` is set, commands that take a DAY argument will use it automatically. `SOL_SEGMENT` and `SOL_STREAM` provide defaults for `--segment` and `--stream` options.
 
 Common pattern:
 
 ```bash
-sol call transcripts <command> [args...]
+solstone call transcripts <command> [args...]
 ```
 
 **Typical workflow**: `scan` a day for recording windows → `segments` to get segment keys → `read` to retrieve transcript text.
@@ -25,7 +25,7 @@ sol call transcripts <command> [args...]
 ## scan
 
 ```bash
-sol call transcripts scan [DAY]
+solstone call transcripts scan [DAY]
 ```
 
 Show transcript and percept coverage ranges. Output groups ranges under `Transcripts:` (microphone/system audio) and `Percepts:` (screen activity).
@@ -37,13 +37,13 @@ Use this first to confirm what recording windows exist before running detailed r
 Example:
 
 ```bash
-sol call transcripts scan 20260115
+solstone call transcripts scan 20260115
 ```
 
 ## segments
 
 ```bash
-sol call transcripts segments [DAY]
+solstone call transcripts segments [DAY]
 ```
 
 List recording segments and their source types.
@@ -60,13 +60,13 @@ Use this when you want a specific segment key for targeted reads.
 Example:
 
 ```bash
-sol call transcripts segments 20260115
+solstone call transcripts segments 20260115
 ```
 
 ## read
 
 ```bash
-sol call transcripts read [DAY] [--start HHMMSS --length MINUTES] [--segment KEY] [--segments KEYS] [--stream NAME] [--full] [--raw] [--transcripts] [--percepts] [--agents]
+solstone call transcripts read [DAY] [--start HHMMSS --length MINUTES] [--segment KEY] [--segments KEYS] [--stream NAME] [--full] [--raw] [--transcripts] [--percepts] [--agents]
 ```
 
 Read transcript content for a day, time range, segment, or span.
@@ -106,17 +106,17 @@ Source type meanings:
 Examples:
 
 ```bash
-sol call transcripts read 20260115
-sol call transcripts read 20260115 --start 090000 --length 30 --raw
-sol call transcripts read 20260115 --segment 091500_300 --full
-sol call transcripts read 20260115 --segments 091500_300,092000_300,092500_300 --transcripts --agents
-sol call transcripts read 20260115 --transcripts
+solstone call transcripts read 20260115
+solstone call transcripts read 20260115 --start 090000 --length 30 --raw
+solstone call transcripts read 20260115 --segment 091500_300 --full
+solstone call transcripts read 20260115 --segments 091500_300,092000_300,092500_300 --transcripts --agents
+solstone call transcripts read 20260115 --transcripts
 ```
 
 ## stats
 
 ```bash
-sol call transcripts stats MONTH
+solstone call transcripts stats MONTH
 ```
 
 Show daily transcript coverage counts for a month.
@@ -128,5 +128,5 @@ Use this to understand recording density and coverage patterns across a month.
 Example:
 
 ```bash
-sol call transcripts stats 202601
+solstone call transcripts stats 202601
 ```

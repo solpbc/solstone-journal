@@ -17,7 +17,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "installed claude sol -> ${HOME}/.claude/skills/sol\ninstalled codex sol -> ${HOME}/.codex/skills/sol\ninstalled gemini sol -> ${HOME}/.gemini/skills/sol\n"
+        "stdout": "installed claude solstone -> ${HOME}/.claude/skills/solstone\ninstalled codex solstone -> ${HOME}/.codex/skills/solstone\ninstalled gemini solstone -> ${HOME}/.gemini/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/u_fresh",
       "id": "fresh_user_install",
@@ -43,15 +43,15 @@
       "setup": [
         {
           "op": "copy_user_skill",
-          "path": "${TEMP_ROOT}/u_idempotent/.claude/skills/sol"
+          "path": "${TEMP_ROOT}/u_idempotent/.claude/skills/solstone"
         },
         {
           "op": "copy_user_skill",
-          "path": "${TEMP_ROOT}/u_idempotent/.codex/skills/sol"
+          "path": "${TEMP_ROOT}/u_idempotent/.codex/skills/solstone"
         },
         {
           "op": "copy_user_skill",
-          "path": "${TEMP_ROOT}/u_idempotent/.gemini/skills/sol"
+          "path": "${TEMP_ROOT}/u_idempotent/.gemini/skills/solstone"
         }
       ]
     },
@@ -66,7 +66,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "replaced claude sol -> ${HOME}/.claude/skills/sol\n"
+        "stdout": "replaced claude solstone -> ${HOME}/.claude/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/u_replace_change",
       "id": "replace_on_change",
@@ -75,12 +75,12 @@
       "setup": [
         {
           "op": "copy_user_skill",
-          "path": "${TEMP_ROOT}/u_replace_change/.claude/skills/sol"
+          "path": "${TEMP_ROOT}/u_replace_change/.claude/skills/solstone"
         },
         {
           "content_b64": "Y2hhbmdlZAo=",
           "op": "mutate_file",
-          "path": "${TEMP_ROOT}/u_replace_change/.claude/skills/sol/SKILL.md"
+          "path": "${TEMP_ROOT}/u_replace_change/.claude/skills/solstone/SKILL.md"
         }
       ]
     },
@@ -95,7 +95,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "installed claude sol -> ${HOME}/.claude/skills/sol\n"
+        "stdout": "installed claude solstone -> ${HOME}/.claude/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/u_replace_change_initial",
       "id": "replace_on_change_initial",
@@ -114,7 +114,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "replaced claude sol -> ${HOME}/.claude/skills/sol\n"
+        "stdout": "replaced claude solstone -> ${HOME}/.claude/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/u_replace_symlink",
       "id": "replace_symlink_target",
@@ -128,7 +128,7 @@
         },
         {
           "op": "symlink",
-          "path": "${TEMP_ROOT}/u_replace_symlink/.claude/skills/sol",
+          "path": "${TEMP_ROOT}/u_replace_symlink/.claude/skills/solstone",
           "target": "${TEMP_ROOT}/external_populated"
         }
       ]
@@ -144,7 +144,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "replaced claude sol -> ${HOME}/.claude/skills/sol\n"
+        "stdout": "replaced claude solstone -> ${HOME}/.claude/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/u_replace_file",
       "id": "replace_regular_file_target",
@@ -154,7 +154,7 @@
         {
           "content_b64": "bm90IGEgZGlyCg==",
           "op": "write_file",
-          "path": "${TEMP_ROOT}/u_replace_file/.claude/skills/sol"
+          "path": "${TEMP_ROOT}/u_replace_file/.claude/skills/solstone"
         }
       ]
     },
@@ -169,7 +169,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "skipped claude sol (nothing to remove)\n"
+        "stdout": "skipped claude solstone (nothing to remove)\n"
       },
       "home": "${TEMP_ROOT}/u_uninstall_absent",
       "id": "user_uninstall_absent_target",
@@ -192,7 +192,7 @@
       "cwd": "${PROJECT_ROOT}",
       "expected": {
         "exit": 1,
-        "stderr": "error: uninstall ${HOME}/.claude/skills/sol: refusing to remove non-directory\n",
+        "stderr": "error: uninstall ${HOME}/.claude/skills/solstone: refusing to remove non-directory\n",
         "stdout": ""
       },
       "home": "${TEMP_ROOT}/u_uninstall_file",
@@ -203,7 +203,7 @@
         {
           "content_b64": "bm90IGEgZGlyCg==",
           "op": "write_file",
-          "path": "${TEMP_ROOT}/u_uninstall_file/.claude/skills/sol"
+          "path": "${TEMP_ROOT}/u_uninstall_file/.claude/skills/solstone"
         }
       ]
     },
@@ -217,7 +217,7 @@
       "cwd": "${PROJECT_ROOT}",
       "expected": {
         "exit": 1,
-        "stderr": "error: uninstall ${HOME}/.claude/skills/sol: refusing to remove non-directory\n",
+        "stderr": "error: uninstall ${HOME}/.claude/skills/solstone: refusing to remove non-directory\n",
         "stdout": ""
       },
       "home": "${TEMP_ROOT}/u_uninstall_symlink",
@@ -231,7 +231,7 @@
         },
         {
           "op": "symlink",
-          "path": "${TEMP_ROOT}/u_uninstall_symlink/.claude/skills/sol",
+          "path": "${TEMP_ROOT}/u_uninstall_symlink/.claude/skills/solstone",
           "target": "${TEMP_ROOT}/external_uninstall"
         }
       ]
@@ -247,7 +247,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "installed codex sol -> ${HOME}/.codex/skills/sol\n"
+        "stdout": "installed codex solstone -> ${HOME}/.codex/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/u_absent_install",
       "id": "user_install_absent_agent_config",
@@ -323,7 +323,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "installed claude journal -> ${TEMP_ROOT}/p_install/.claude/skills/journal\ninstalled claude sol -> ${TEMP_ROOT}/p_install/.claude/skills/sol\ninstalled agents journal -> ${TEMP_ROOT}/p_install/.agents/skills/journal\ninstalled agents sol -> ${TEMP_ROOT}/p_install/.agents/skills/sol\n"
+        "stdout": "installed claude journal -> ${TEMP_ROOT}/p_install/.claude/skills/journal\ninstalled claude solstone -> ${TEMP_ROOT}/p_install/.claude/skills/solstone\ninstalled agents journal -> ${TEMP_ROOT}/p_install/.agents/skills/journal\ninstalled agents solstone -> ${TEMP_ROOT}/p_install/.agents/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/p_home",
       "id": "project_install",
@@ -371,7 +371,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "replaced claude sol -> ${TEMP_ROOT}/p_link_changed/.claude/skills/sol\n"
+        "stdout": "replaced claude solstone -> ${TEMP_ROOT}/p_link_changed/.claude/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/p_home_link_changed",
       "id": "project_link_target_changed",
@@ -385,11 +385,11 @@
         },
         {
           "op": "remove",
-          "path": "${TEMP_ROOT}/p_link_changed/.claude/skills/sol"
+          "path": "${TEMP_ROOT}/p_link_changed/.claude/skills/solstone"
         },
         {
           "op": "symlink",
-          "path": "${TEMP_ROOT}/p_link_changed/.claude/skills/sol",
+          "path": "${TEMP_ROOT}/p_link_changed/.claude/skills/solstone",
           "target": "bogus-target"
         }
       ]
@@ -407,7 +407,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "installed claude sol -> ${TEMP_ROOT}/p_user_content/.claude/skills/sol\ninstalled agents journal -> ${TEMP_ROOT}/p_user_content/.agents/skills/journal\ninstalled agents sol -> ${TEMP_ROOT}/p_user_content/.agents/skills/sol\nWarnings:\nwarning claude journal -> ${TEMP_ROOT}/p_user_content/.claude/skills/journal (user content at target preserved)\n"
+        "stdout": "installed claude solstone -> ${TEMP_ROOT}/p_user_content/.claude/skills/solstone\ninstalled agents journal -> ${TEMP_ROOT}/p_user_content/.agents/skills/journal\ninstalled agents solstone -> ${TEMP_ROOT}/p_user_content/.agents/skills/solstone\nWarnings:\nwarning claude journal -> ${TEMP_ROOT}/p_user_content/.claude/skills/journal (user content at target preserved)\n"
       },
       "home": "${TEMP_ROOT}/p_home_user_content",
       "id": "project_user_content_preserved",
@@ -498,7 +498,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "removed claude journal -> ${TEMP_ROOT}/p_uninstall/.claude/skills/journal\nremoved claude sol -> ${TEMP_ROOT}/p_uninstall/.claude/skills/sol\nremoved agents journal -> ${TEMP_ROOT}/p_uninstall/.agents/skills/journal\nremoved agents sol -> ${TEMP_ROOT}/p_uninstall/.agents/skills/sol\n"
+        "stdout": "removed claude journal -> ${TEMP_ROOT}/p_uninstall/.claude/skills/journal\nremoved claude solstone -> ${TEMP_ROOT}/p_uninstall/.claude/skills/solstone\nremoved agents journal -> ${TEMP_ROOT}/p_uninstall/.agents/skills/journal\nremoved agents solstone -> ${TEMP_ROOT}/p_uninstall/.agents/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/p_home_uninstall",
       "id": "project_uninstall",
@@ -521,7 +521,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "agent      skill                state\nclaude     sol                  installed\ncodex      sol                  not installed\ngemini     sol                  not installed\n"
+        "stdout": "agent      skill                state\nclaude     solstone             installed\ncodex      solstone             not installed\ngemini     solstone             not installed\n"
       },
       "home": "${TEMP_ROOT}/u_list",
       "id": "list_user_mode",
@@ -530,7 +530,7 @@
       "setup": [
         {
           "op": "copy_user_skill",
-          "path": "${TEMP_ROOT}/u_list/.claude/skills/sol"
+          "path": "${TEMP_ROOT}/u_list/.claude/skills/solstone"
         }
       ]
     },
@@ -545,7 +545,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "agent      skill                state\nclaude     journal              installed\nclaude     sol                  installed\nagents     journal              installed\nagents     sol                  installed\n"
+        "stdout": "agent      skill                state\nclaude     journal              installed\nclaude     solstone             installed\nagents     journal              installed\nagents     solstone             installed\n"
       },
       "home": "${TEMP_ROOT}/p_home_list",
       "id": "list_project_mode",
@@ -633,7 +633,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "installed claude journal -> ${CWD}/.claude/skills/journal\ninstalled claude sol -> ${CWD}/.claude/skills/sol\n"
+        "stdout": "installed claude journal -> ${CWD}/.claude/skills/journal\ninstalled claude solstone -> ${CWD}/.claude/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/p_home_const_cwd",
       "id": "project_no_value_uses_cwd",
@@ -659,7 +659,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "installed claude journal -> ${HOME}/foo/.claude/skills/journal\ninstalled claude sol -> ${HOME}/foo/.claude/skills/sol\n"
+        "stdout": "installed claude journal -> ${HOME}/foo/.claude/skills/journal\ninstalled claude solstone -> ${HOME}/foo/.claude/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/p_home_tilde",
       "id": "project_tilde_expands",
@@ -680,7 +680,7 @@
       "expected": {
         "exit": 0,
         "stderr": "",
-        "stdout": "installed claude journal -> ${TEMP_ROOT}/p_nonexistent/deep/.claude/skills/journal\ninstalled claude sol -> ${TEMP_ROOT}/p_nonexistent/deep/.claude/skills/sol\n"
+        "stdout": "installed claude journal -> ${TEMP_ROOT}/p_nonexistent/deep/.claude/skills/journal\ninstalled claude solstone -> ${TEMP_ROOT}/p_nonexistent/deep/.claude/skills/solstone\n"
       },
       "home": "${TEMP_ROOT}/p_home_nonexistent",
       "id": "project_nonexistent_dir_created",
@@ -698,7 +698,7 @@
       "cwd": "${PROJECT_ROOT}",
       "expected": {
         "exit": 1,
-        "stderr": "error: expected bundled umbrella skill at solstone/talent/sol/SKILL.md (${FAKE_ROOT}/solstone/talent/sol/SKILL.md)\n",
+        "stderr": "error: expected bundled umbrella skill at solstone/talent/solstone/SKILL.md (${FAKE_ROOT}/solstone/talent/solstone/SKILL.md)\n",
         "stdout": ""
       },
       "home": "${TEMP_ROOT}/missing_user_home",
@@ -719,7 +719,7 @@
       "cwd": "${PROJECT_ROOT}",
       "expected": {
         "exit": 1,
-        "stderr": "error: expected project skill at ${FAKE_ROOT}/solstone/talent/sol/SKILL.md\n",
+        "stderr": "error: expected project skill at ${FAKE_ROOT}/solstone/talent/solstone/SKILL.md\n",
         "stdout": ""
       },
       "home": "${TEMP_ROOT}/missing_project_home",
