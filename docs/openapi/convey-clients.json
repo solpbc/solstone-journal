@@ -8677,7 +8677,7 @@
                 }
               }
             },
-            "description": "Observer is disabled or revoked.",
+            "description": "Observer is disabled, revoked, does not own this source, or ownership could not be established on a multi-observer journal.",
             "x-reason-codes": [
               "feature_unavailable",
               "pl_revoked"

@@ -660,7 +660,7 @@ The logic that decides what raw media is retained, and what logs are retained fo
 
 🆕 🔴 **Widened 2026-08-05 by operator ruling: this plate EXECUTES every removal of owner media, and it is the only plate that does.** Other plates **request**; retention removes. Three consequences that are not local to retention:
 
-1. ⛔ **The segment is the unit of deletion.** A segment is removed whole — every file, leaving a `tombstone.json` — or it is not removed. **There is no partial-segment delete.** The *mixed* classification and the reserved-name set that fed it existed only to serve a capability the product no longer offers.
+1. ⛔ **The segment is the unit of deletion.** A segment is removed whole — every file, leaving a `tombstone.json` — or it is not removed. **There is no partial-segment delete.** The *mixed* disposition (keep vs drop part of a segment) existed only to serve a capability the product no longer offers; the classification itself survives as the receipt's cost disclosure.
 2. ⛔ **`transcribe` stops unlinking VAD-empty raw audio.** It writes the terminal-empty marker exactly as it does today and hands the raw to retention. One subsystem, one policy, one place to look when owner media went.
 3. 🔴 **Retention notifies `P-index` of the paths it actually removed, after removing them.** ⛔ Ordering is the contract: the index is told about removals that have happened, never about removals that are intended. An index prune is not a removal — the index is rebuildable by design, so pruning it is a cache invalidation and a rebuild undoes it. **Anything an owner is told was removed must be removed from the chronicle first.**
 
