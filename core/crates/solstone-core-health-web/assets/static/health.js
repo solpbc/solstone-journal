@@ -1815,7 +1815,7 @@
 
   async function loadRegisteredObservers() {
     try {
-      const response = await fetch('/app/devices/api/list');
+      const response = await fetch('/app/network/api/observers');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
       renderRegisteredObservers(payload?.observers || []);

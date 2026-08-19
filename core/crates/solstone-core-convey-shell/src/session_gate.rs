@@ -57,7 +57,9 @@ fn is_exempt(path: &str) -> bool {
                     && segments.next().is_some_and(|name| {
                         // `/app/link` aliases `/app/network` and is not an app
                         // registry entry; it must stay session-gated.
-                        name != "link" && known_app(name).is_none()
+                        // `/app/devices` left the registry; leftover ingest
+                        // routes and the permanent redirects must stay gated.
+                        name != "link" && name != "devices" && known_app(name).is_none()
                     })
             }
             SessionExemption::ImportDoor => {
@@ -184,6 +186,13 @@ mod tests {
         assert!(is_exempt("/init/api/state"));
         assert!(!is_exempt("/initfoo"));
         assert!(!is_exempt("/app/link/workspace"));
+        assert!(!is_exempt("/app/devices"));
+        assert!(!is_exempt("/app/devices/"));
+        assert!(!is_exempt("/app/devices/workspace"));
+        assert!(!is_exempt("/app/devices/ingest"));
+        assert!(!is_exempt("/app/devices/ingest/manifest"));
+        assert!(!is_exempt("/app/devices/ingest/manifest/20260804"));
+        assert!(!is_exempt("/app/devices/ingest/segments/20260804"));
     }
 
     #[test]

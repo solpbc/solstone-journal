@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Native Devices workspace and observer-management routes.
+//! Native capture-device observer-management routes, mounted on Network.
 
 use std::cmp::Reverse;
 use std::sync::Arc;
 
 use axum::Json;
+use axum::Router;
 use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Redirect, Response};
+use axum::routing::{get, post};
 use serde_json::{Map, Value, json};
 use solstone_core_facets::append_action_log;
 use solstone_core_observer::store::record::ObserverRecord;
@@ -17,7 +19,6 @@ use solstone_core_observer::store::reload::{find_observer, load_observers};
 use solstone_core_observer::{ObserverCommand, ObserverError, execute, system_now_ms};
 
 use crate::JournalRoot;
-use crate::asset_response;
 
 const ACTIVE_THRESHOLD_MS: i64 = 30_000;
 const STALE_THRESHOLD_MS: i64 = 120_000;
@@ -53,12 +54,29 @@ const OBSERVER_ENTRY_FIELDS: [&str; 17] = [
     "failing",
 ];
 
-pub(crate) async fn shell() -> Response {
-    asset_response("/static/shell.html")
+pub(crate) fn router(prefix: &str) -> Router {
+    Router::new()
+        .route(&format!("{prefix}/api/observers"), get(list))
+        .route(
+            &format!("{prefix}/api/observers/{{key_prefix}}"),
+            axum::routing::delete(delete),
+        )
+        .route(
+            &format!("{prefix}/api/observers/{{key_prefix}}/key"),
+            get(key),
+        )
+        .route(
+            &format!("{prefix}/api/observers/create"),
+            post(create_retired),
+        )
 }
 
-pub(crate) async fn workspace() -> Response {
-    asset_response("/app/devices/workspace")
+pub(crate) async fn redirect_app() -> Redirect {
+    Redirect::permanent("/app/network/")
+}
+
+pub(crate) async fn redirect_workspace() -> Redirect {
+    Redirect::permanent("/app/network/workspace")
 }
 
 pub(crate) async fn list(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
@@ -423,11 +441,12 @@ mod tests {
     use std::fs;
 
     use axum::body::{Body, to_bytes};
-    use axum::http::{Request, StatusCode};
+    use axum::http::{Request, StatusCode, header};
     use serde_json::{Value, json};
     use tower::ServiceExt;
 
     use super::*;
+    use crate::network::NETWORK_ROUTE_PREFIXES;
 
     const INGEST_REJECTION_FIELDS: [&str; 7] = [
         "reason_code",
@@ -517,31 +536,162 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn api_observers_list_key_delete_and_create_on_both_prefixes() {
+        let journal = EstablishedJournal::new();
+        journal.observer("abcdefgh-key", "phone", None, false);
+        let app = crate::router(journal.0.path().to_path_buf());
+
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let (status, listed) = request(
+                app.clone(),
+                Request::get(format!("{prefix}/api/observers"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{prefix}/api/observers");
+            let row = &listed["observers"][0];
+            let actual_fields = row
+                .as_object()
+                .expect("row object")
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
+            let expected_fields = OBSERVER_ENTRY_FIELDS.into_iter().collect::<BTreeSet<_>>();
+            assert_eq!(actual_fields, expected_fields, "{prefix}");
+            let corpus: Value =
+                serde_json::from_str(include_str!("../../../fixtures/convey_devices_corpus.json"))
+                    .expect("devices corpus parses");
+            let environment_native = &corpus["environment_native"];
+            assert_eq!(row["live"], environment_native["live"], "{prefix}");
+            assert_eq!(
+                row["last_chat_request_at"], environment_native["last_chat_request_at"],
+                "{prefix}"
+            );
+            assert!(row["failing"].is_boolean(), "{prefix}");
+
+            let (status, refusal) = request(
+                app.clone(),
+                Request::post(format!("{prefix}/api/observers/create"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::GONE, "{prefix}/api/observers/create");
+            assert_eq!(refusal["reason_code"], "operation_no_longer_available");
+        }
+
+        let (status, key) = request(
+            app.clone(),
+            Request::get("/app/network/api/observers/abcdefgh/key")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(key["ingest_url"], "/app/devices/ingest");
+        assert_eq!(key["protocol_version"], OBSERVER_PROTOCOL_VERSION);
+        let actions = fs::read_dir(journal.0.path().join("config/actions"))
+            .expect("key view action directory")
+            .map(|entry| entry.expect("action entry").path())
+            .collect::<Vec<_>>();
+        assert_eq!(actions.len(), 1, "one key request appends one audit action");
+        let action: Value =
+            serde_json::from_str(&fs::read_to_string(&actions[0]).expect("key view action record"))
+                .expect("action JSON");
+        assert_eq!(action["source"], "app");
+        assert_eq!(action["actor"], "observer");
+        assert_eq!(action["action"], "observer_key_view");
+        assert_eq!(
+            action["params"],
+            json!({"name": "phone", "key_prefix": "abcdefgh"})
+        );
+
+        let (status, deleted) = request(
+            app.clone(),
+            Request::delete("/app/link/api/observers/abcdefgh")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(deleted["status"], "ok");
+        let (status, second) = request(
+            app,
+            Request::delete("/app/network/api/observers/abcdefgh")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(second["reason_code"], "pl_revoked");
+    }
+
+    #[tokio::test]
+    async fn devices_bare_slash_and_workspace_permanently_redirect_to_network() {
+        let journal = EstablishedJournal::new();
+        let app = crate::router(journal.0.path().to_path_buf());
+        for (path, location) in [
+            ("/app/devices", "/app/network/"),
+            ("/app/devices/", "/app/network/"),
+            ("/app/devices/workspace", "/app/network/workspace"),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .expect("redirect response");
+            assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT, "{path}");
+            assert_eq!(
+                response.headers().get(header::LOCATION).unwrap(),
+                location,
+                "{path}"
+            );
+        }
+
+        let unestablished = EstablishedJournal::unestablished();
+        let app = crate::router(unestablished.0.path().to_path_buf());
+        for path in ["/app/devices", "/app/devices/", "/app/devices/workspace"] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .expect("unestablished redirect");
+            assert_eq!(response.status(), StatusCode::FOUND, "{path}");
+            assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/init");
+        }
+    }
+
+    #[tokio::test]
+    async fn devices_non_redirect_tails_stay_404() {
+        let journal = EstablishedJournal::new();
+        let app = crate::router(journal.0.path().to_path_buf());
+        for path in [
+            "/app/devices/register",
+            "/app/devices/callosum",
+            concat!("/app/devices/", "api/list"),
+            concat!("/app/devices/", "api/abcdefgh"),
+            concat!("/app/devices/", "api/abcdefgh/key"),
+            concat!("/app/devices/", "api/create"),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .expect("leftover path");
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        }
+    }
+
+    #[tokio::test]
     async fn routes_project_manage_and_keep_the_observer_ingest_wire_literal() {
         let journal = EstablishedJournal::new();
         journal.observer("abcdefgh-key", "phone", None, false);
         let app = crate::router(journal.0.path().to_path_buf());
 
-        let root = app
-            .clone()
-            .oneshot(Request::get("/app/devices/").body(Body::empty()).unwrap())
-            .await
-            .expect("root response");
-        assert_eq!(root.status(), StatusCode::OK);
-        let workspace = app
-            .clone()
-            .oneshot(
-                Request::get("/app/devices/workspace")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .expect("workspace response");
-        assert_eq!(workspace.status(), StatusCode::OK);
-
         let (status, listed) = request(
             app.clone(),
-            Request::get("/app/devices/api/list")
+            Request::get("/app/network/api/observers")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -569,7 +719,7 @@ mod tests {
 
         let (status, key) = request(
             app.clone(),
-            Request::get("/app/devices/api/abcdefgh/key")
+            Request::get("/app/network/api/observers/abcdefgh/key")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -595,7 +745,7 @@ mod tests {
 
         let (status, deleted) = request(
             app.clone(),
-            Request::delete("/app/devices/api/abcdefgh")
+            Request::delete("/app/network/api/observers/abcdefgh")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -604,7 +754,7 @@ mod tests {
         assert_eq!(deleted["status"], "ok");
         let (status, second) = request(
             app,
-            Request::delete("/app/devices/api/abcdefgh")
+            Request::delete("/app/network/api/observers/abcdefgh")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -726,7 +876,7 @@ mod tests {
         journal.failing_observer("failing0-key");
         let (status, listed) = request(
             crate::router(journal.0.path().to_path_buf()),
-            Request::get("/app/devices/api/list")
+            Request::get("/app/network/api/observers")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -796,59 +946,60 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(observer.status(), StatusCode::NOT_FOUND);
-        let devices = app
+        let old_list = app
+            .clone()
             .oneshot(
-                Request::get("/app/devices/api/list")
+                Request::get(concat!("/app/devices/", "api/list"))
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(devices.status(), StatusCode::FOUND);
+        assert_eq!(old_list.status(), StatusCode::FOUND);
+        assert_eq!(old_list.headers()["location"], "/init");
+        let observers = app
+            .oneshot(
+                Request::get("/app/network/api/observers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(observers.status(), StatusCode::FOUND);
     }
 
     #[tokio::test]
     async fn retired_create_and_null_live_asset_are_explicit() {
         let journal = EstablishedJournal::new();
         let app = crate::router(journal.0.path().to_path_buf());
-        let (status, refusal) = request(
-            app.clone(),
-            Request::post("/app/devices/api/create")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await;
-        assert_eq!(status, StatusCode::GONE);
-        assert_eq!(refusal["reason_code"], "operation_no_longer_available");
-        let response = app
-            .oneshot(
-                Request::get("/app/devices/workspace")
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let (status, refusal) = request(
+                app.clone(),
+                Request::post(format!("{prefix}/api/observers/create"))
                     .body(Body::empty())
                     .unwrap(),
             )
-            .await
-            .unwrap();
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        assert!(
-            std::str::from_utf8(&body)
-                .unwrap()
-                .contains("observer.live === null")
-        );
-        assert!(
-            std::str::from_utf8(&body)
-                .unwrap()
-                .contains("data-live-status=\"unavailable\"")
-        );
-        assert!(
-            std::str::from_utf8(&body)
-                .unwrap()
-                .contains("live connection status unavailable")
-        );
-        assert!(
-            std::str::from_utf8(&body)
-                .unwrap()
-                .contains("function verdictAvailable")
-        );
+            .await;
+            assert_eq!(status, StatusCode::GONE, "{prefix}");
+            assert_eq!(refusal["reason_code"], "operation_no_longer_available");
+        }
+        for path in ["/app/network/workspace", "/app/link/workspace"] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let text = std::str::from_utf8(&body).unwrap();
+            assert!(text.contains("observer.live === null"), "{path}");
+            assert!(text.contains("data-live-status=\"unavailable\""), "{path}");
+            assert!(
+                text.contains("live connection status unavailable"),
+                "{path}"
+            );
+            assert!(text.contains("function verdictAvailable"), "{path}");
+        }
     }
 
     fn record(key: &str, last_seen: Option<i64>, revoked: bool) -> ObserverRecord {

@@ -283,7 +283,6 @@ fn main() {
     let favicon = root.join("favicon.ico");
     let workspace = speakers_root.join("workspace.html");
     let speakers_static = speakers_root.join("who_is_this.js");
-    let devices_workspace = manifest.join("assets/devices/workspace.html");
     let thinking_root = manifest.join("assets/thinking");
     let thinking_workspace = thinking_root.join("workspace.html");
     let mut thinking_static_files = Vec::new();
@@ -307,7 +306,6 @@ fn main() {
         &outcomes,
         &pairing_config,
         &body_workspace,
-        &devices_workspace,
         &entities_workspace,
         &thinking_workspace,
         &network_workspace,
@@ -327,7 +325,6 @@ fn main() {
     }
     assets.push(("/favicon.ico".to_owned(), favicon));
     assets.push(("/app/body/workspace".to_owned(), body_workspace));
-    assets.push(("/app/devices/workspace".to_owned(), devices_workspace));
     assets.push(("/app/entities/workspace".to_owned(), entities_workspace));
     assets.push(("/app/speakers/workspace".to_owned(), workspace));
     assets.push((

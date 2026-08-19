@@ -1285,7 +1285,10 @@ mod tests {
 
     #[test]
     fn network_shrunk_workspace_stays_in_the_size_band() {
-        assert!((900..=1800).contains(&NETWORK_WORKSPACE.lines().count()));
+        // Merged page absorbed the capture-device registry UI (~460 lines of
+        // distinct status-badge CSS + ~490 lines of distinct JS with negligible
+        // overlap with pairing/identity/status), not an arbitrary widening.
+        assert!((900..=2100).contains(&NETWORK_WORKSPACE.lines().count()));
     }
 
     #[test]
@@ -1362,6 +1365,7 @@ mod tests {
                 format!("{prefix}/api/identity"),
                 format!("{prefix}/api/private-link"),
                 format!("{prefix}/api/devices"),
+                format!("{prefix}/api/observers"),
             ] {
                 let response = get_response(app.clone(), &path).await;
                 assert_ne!(response.status(), StatusCode::NOT_FOUND, "{path}");
@@ -1385,6 +1389,7 @@ mod tests {
                 (format!("{prefix}/host-address"), json!({})),
                 (format!("{prefix}/private-link/enable"), json!({})),
                 (format!("{prefix}/private-link/disable"), json!({})),
+                (format!("{prefix}/api/observers/create"), json!({})),
             ] {
                 let mut request = Request::post(&path)
                     .header("content-type", "application/json")

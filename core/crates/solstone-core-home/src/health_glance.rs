@@ -53,7 +53,7 @@ pub fn build_health_glance(
     if status == "active" {
         json!({"verdict":"ok","severity":"green","headline":"everything's working","last_observation":last_observe,"cta":null,"issues":[]})
     } else {
-        json!({"verdict":"ok","severity":"green","headline":"no devices are running sol yet. set one up to start your journal.","last_observation":null,"cta":{"text":"set one up →","href":"/app/devices/"},"issues":[]})
+        json!({"verdict":"ok","severity":"green","headline":"no devices are running sol yet. set one up to start your journal.","last_observation":null,"cta":{"text":"set one up →","href":"/app/network/"},"issues":[]})
     }
 }
 

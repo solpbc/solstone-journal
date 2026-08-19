@@ -171,16 +171,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         converted: true,
     },
     AppDefinition {
-        name: "devices",
-        icon: "📡",
-        label: "devices",
-        lucide_icon: "antenna",
-        date_nav: None,
-        facets_enabled: false,
-        has_background: false,
-        converted: true,
-    },
-    AppDefinition {
         name: "search",
         icon: "🔍",
         label: "search",
@@ -386,6 +376,20 @@ mod tests {
                 .iter()
                 .any(|app| app.name == "network" && app.converted)
         );
+    }
+
+    #[test]
+    fn devices_is_removed_from_the_registry() {
+        assert!(!APP_REGISTRY.iter().any(|app| app.name == "devices"));
+        assert!(known_app("devices").is_none());
+    }
+
+    #[test]
+    fn shell_payload_omits_devices_entirely() {
+        let payload = shell_payload();
+        assert!(!payload.apps.iter().any(|app| {
+            app.name == "devices" || app.label == "devices" || app.workspace_url.contains("devices")
+        }));
     }
 
     #[test]

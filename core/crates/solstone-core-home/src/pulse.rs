@@ -568,11 +568,11 @@ mod tests {
         );
         assert_eq!(
             payload.pointer("/health_glance/cta/href"),
-            Some(&json!("/app/devices/"))
+            Some(&json!("/app/network/"))
         );
         *expected_pulse
             .pointer_mut("/health_glance/cta/href")
-            .unwrap() = json!("/app/devices/");
+            .unwrap() = json!("/app/network/");
         assert_payload_fields(
             &payload,
             &expected_pulse,
@@ -867,7 +867,7 @@ mod tests {
         );
         assert_eq!(
             pulse_payload(&context)["health_glance"]["cta"]["href"],
-            "/app/devices/"
+            "/app/network/"
         );
     }
 

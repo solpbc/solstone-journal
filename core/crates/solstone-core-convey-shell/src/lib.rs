@@ -40,7 +40,7 @@
 //!
 //! ## D6: converted workspaces, explicit named refusal for the rest
 //!
-//! Body, Devices, Entities, Health, Settings, Speakers, Stats, and Network are converted workspaces in this wave.
+//! Body, Entities, Health, Settings, Speakers, Stats, and Network are converted workspaces in this wave.
 //! Home's shell, workspace, and static script are natively served while its API routes remain unconverted.
 //! Each known app that remains unconverted receives a 501 `app_not_converted` JSON payload carrying its app name;
 //! unknown app paths remain the legacy HTML 404 fallback.
@@ -526,18 +526,13 @@ pub fn router(journal_root: PathBuf) -> Router {
                 route_journal_root.clone(),
                 prefix,
                 operation_registry.clone(),
-            ));
+            ))
+            .merge(devices::router(prefix));
     }
     let routes = routes
-        .route("/app/devices/", get(devices::shell))
-        .route("/app/devices/workspace", get(devices::workspace))
-        .route("/app/devices/api/list", get(devices::list))
-        .route(
-            "/app/devices/api/{key_prefix}",
-            axum::routing::delete(devices::delete),
-        )
-        .route("/app/devices/api/{key_prefix}/key", get(devices::key))
-        .route("/app/devices/api/create", post(devices::create_retired))
+        .route("/app/devices", get(devices::redirect_app))
+        .route("/app/devices/", get(devices::redirect_app))
+        .route("/app/devices/workspace", get(devices::redirect_workspace))
         .merge(solstone_core_ingest::api_router(journal_root.clone()))
         .merge(solstone_core_observer_web::router(journal_root.clone()))
         .route("/app/speakers/", get(speakers::shell))

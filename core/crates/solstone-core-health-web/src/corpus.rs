@@ -80,7 +80,7 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                             replace_text(
                                 &mut wanted,
                                 "/app/observer/api/list",
-                                "/app/devices/api/list",
+                                "/app/network/api/observers",
                             );
                             replace_text(
                                 &mut wanted,
@@ -345,7 +345,7 @@ async fn ac17_devices_payload_has_the_health_observer_fields() {
     std::fs::write(directory.join("failing0.json"), json!({"key":"failing0-key","name":"failing","created_at":1,"last_seen":1,"enabled":true,"health":{"ingest_rejection":{"reason_code":"ingest_rejected","active_count":1,"first_ts":10,"latest_ts":20,"summary":"bad segment","stream":"screen","version":"2"}}}).to_string()).unwrap();
     let response = solstone_core_convey_shell::router(root.path().to_path_buf())
         .oneshot(
-            Request::get("/app/devices/api/list")
+            Request::get("/app/network/api/observers")
                 .body(Body::empty())
                 .unwrap(),
         )

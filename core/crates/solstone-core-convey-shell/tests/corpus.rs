@@ -60,12 +60,6 @@ fn corpus() -> Value {
         .expect("corpus parses")
 }
 
-/// Permanent documented divergence, introduced 2026-08-13, with no expiry
-/// condition: the frozen corpus permanently records the deleted reference's
-/// `observer`, while the shell permanently serves `devices`. Because this
-/// cannot expire, narrowness is the safeguard: this is keyed to the one
-/// renamed entry and exactly two keys. Never generalize this into a rule over
-/// app names or other keys, and never retire it.
 /// Permanent documented divergence, introduced 2026-08-14, with no expiry
 /// condition: the frozen corpus permanently records the deleted reference's
 /// `reflections` app, which was dropped by ruling and whose Python surface no
@@ -147,6 +141,15 @@ fn permanent_sol_removal_divergence_requires_exactly_one_sol_row() {
     }
 }
 
+/// Permanent documented divergence, introduced 2026-08-13, with no expiry
+/// condition: the frozen corpus permanently records the deleted reference's
+/// `observer` app, which was dropped by ruling once its capture-device
+/// registry moved natively under Network. The corpus CANNOT be regenerated --
+/// its generator needs a runnable reference tree and this wave removes it --
+/// so the fixture is a frozen record and the divergence is absorbed here
+/// instead. Because this cannot expire, narrowness is the safeguard: it is
+/// keyed to the one dropped entry and removes exactly that element. Never
+/// generalize this into a rule over app names, and never retire it.
 fn apply_permanent_devices_shell_divergence(expected: &mut Value) {
     let apps = expected["apps"]
         .as_array_mut()
@@ -156,14 +159,7 @@ fn apply_permanent_devices_shell_divergence(expected: &mut Value) {
         1,
         "frozen shell contains exactly one observer app"
     );
-    let observer = apps
-        .iter_mut()
-        .find(|app| app["name"] == "observer")
-        .expect("frozen shell contains observer app");
-    assert_eq!(observer["name"], "observer");
-    assert_eq!(observer["workspace_url"], "/app/observer/workspace");
-    observer["name"] = Value::String("devices".to_owned());
-    observer["workspace_url"] = Value::String("/app/devices/workspace".to_owned());
+    apps.retain(|app| app["name"] != "observer");
 }
 
 fn journal_for_phase(phase: &str) -> TempDir {
@@ -350,7 +346,7 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
     let shell: Value = serde_json::from_slice(&shell_body).expect("shell parses");
     let apps = shell["apps"].as_array().expect("apps array");
     assert_eq!(shell["chat_bar"]["placeholder"], "send a message…");
-    assert_eq!(apps.len(), 20);
+    assert_eq!(apps.len(), 19);
     for app in apps {
         assert_eq!(app.as_object().unwrap().len(), 10);
         assert!(app["icon_svg"].is_string());

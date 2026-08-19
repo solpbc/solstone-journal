@@ -156,6 +156,49 @@
   <script>window.LinkCopy = window.LinkCopy || {};</script>
 
 
+  <div class="workspace-content">
+    <div id="wsErrorContainer" class="ws-error-container" role="alert" style="display: none">
+      <div class="ws-error-message" id="wsErrorMessage"></div>
+      <div class="ws-error-actions">
+        <button type="button" class="ws-error-retry" id="wsErrorRetry" style="display: none" onclick="loadObservers()">retry now</button>
+        <span class="ws-error-countdown" id="wsErrorCountdown"></span>
+        <button type="button" class="ws-error-dismiss" onclick="clearError()">dismiss</button>
+      </div>
+    </div>
+    <section aria-label="devices">
+      <h2 class="section-title">devices</h2>
+      <div id="observersList" role="list">
+        <div class="surface-state surface-state--loading" role="status" aria-busy="true">
+          <div class="surface-state-spinner" aria-hidden="true"></div>
+          <span class="surface-state-text" data-role="loading-status">loading devices…</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Observer Key Modal (for viewing existing keys) -->
+  <div id="keyModal" class="modal" role="dialog" aria-modal="true" aria-label="device key">
+    <div class="modal-content">
+      <button type="button" class="modal-close" id="keyModalClose" aria-label="close">&times;</button>
+      <h3 id="keyModalTitle">sol on <span id="modalObserverName"></span></h3>
+      <p>paste these into sol on that device, under settings. keep the key secret — anyone with it can add to your journal.</p>
+      <div class="credential-label">server URL</div>
+      <div class="command-box">
+        <code id="serverUrlText"></code>
+        <button class="copy-btn" id="copyServerUrlBtn">copy</button>
+      </div>
+      <div class="credential-label">key</div>
+      <div class="command-box">
+        <code id="keyText"></code>
+        <button class="copy-btn" id="revealKeyBtn">reveal</button>
+        <button class="copy-btn" id="copyKeyBtn">copy</button>
+      </div>
+      <div class="modal-actions">
+        <button id="doneBtn" class="modal-primary-btn">done</button>
+      </div>
+    </div>
+  </div>
+
   <div id="link-toast" class="link-toast" role="status" aria-live="polite" hidden></div>
   </div>
 </main>
@@ -273,6 +316,466 @@
   }
 
   .link-toast { position: fixed; bottom: 2em; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 0.75em 1.5em; border-radius: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1100; }
+
+.observer-card {
+  border: 1px solid var(--facet-border, #e5e0db);
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  background: #fafafa;
+  padding: 1em 1.25em;
+  margin-bottom: 1.5em;
+  transition: background-color 0.15s ease, border-left-color 0.15s ease;
+}
+.observer-card.stale {
+  background: color-mix(in srgb, var(--status-stale) 10%, white);
+  border-left-color: var(--status-stale);
+}
+.observer-card.revoked {
+  background: color-mix(in srgb, var(--status-inactive) 10%, white);
+  border-left-color: var(--status-inactive);
+}
+.observer-card.revoked .observer-name {
+  text-decoration: line-through;
+  color: #5a6268;
+}
+.observer-card.disconnected {
+  background: color-mix(in srgb, var(--status-error) 10%, white);
+  border-left-color: var(--status-error);
+}
+.observer-card.connected {
+  background: color-mix(in srgb, var(--status-active) 10%, white);
+  border-left-color: var(--status-active);
+}
+.observer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 0.5em;
+}
+.observer-name {
+  font-weight: 600;
+  font-size: 1.1em;
+}
+.observer-source {
+  color: var(--text-muted, #5a6268);
+  font-size: 0.9em;
+}
+.observer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  font-size: 0.8em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 4px;
+  transition: background-color 0.6s ease, color 0.15s ease;
+}
+
+/* ── Transition: ambient status dot ── */
+.observer-status::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transition: background-color 0.6s ease;
+}
+.observer-status::after {
+  font-size: 0.95em;
+  font-weight: 700;
+  line-height: 1;
+}
+.observer-status.connected {
+  background: color-mix(in srgb, var(--status-active) 12%, transparent);
+  color: var(--status-active);
+}
+.observer-status.connected::before {
+  background: var(--status-active);
+}
+.observer-status.connected::after {
+  content: '✓';
+}
+.observer-status.stale {
+  background: color-mix(in srgb, var(--status-stale) 12%, transparent);
+  color: var(--status-stale);
+}
+.observer-status.stale::before {
+  background: var(--status-stale);
+}
+.observer-status.stale::after {
+  content: '⚠';
+}
+.observer-status.disconnected {
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  color: var(--status-error);
+}
+.observer-status.disconnected::before {
+  background: var(--status-error);
+}
+.observer-status.disconnected::after {
+  content: '✗';
+}
+.observer-status.revoked {
+  background: color-mix(in srgb, var(--status-inactive) 12%, transparent);
+  color: var(--status-inactive);
+}
+.observer-status.revoked::before {
+  background: var(--status-inactive);
+}
+.observer-status.revoked::after {
+  content: '—';
+}
+.observer-live-pip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 9px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--status-active) 10%, transparent);
+  color: var(--status-active);
+  font-size: 0.75em;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.observer-live-pip::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-active);
+}
+.observer-stats {
+  font-size: 0.9em;
+  color: #666;
+  margin-bottom: 1em;
+}
+.observer-stats dl {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 2em;
+}
+.observer-stats dl > div {
+  display: flex;
+  gap: 0.3em;
+}
+.observer-stats dt {
+  color: #8a8078;
+  font-weight: 500;
+  font-size: 0.85em;
+}
+.observer-stats dt::after {
+  content: ':';
+}
+.observer-stats dd {
+  margin: 0;
+}
+.observer-actions {
+  display: flex;
+  gap: 8px;
+  min-height: 44px;
+}
+.observer-actions button {
+  padding: 8px 16px;
+  border: 1px solid var(--facet-border, #e5e0db);
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 500;
+  min-height: 44px;
+}
+.observer-actions button:hover {
+  background: rgba(0,0,0,0.05);
+}
+.observer-actions button.danger {
+  color: #dc3545;
+  border-color: #dc3545;
+}
+.observer-actions button.danger:hover {
+  background: #f8d7da;
+}
+.observer-actions button:active {
+  background: rgba(0,0,0,0.08);
+}
+.observer-actions button.danger:active {
+  background: #f1b0b7;
+}
+
+/* Observer key modal */
+#keyModal .modal-content {
+  max-width: 600px;
+  padding: 1.5em;
+}
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+  font-size: 24px;
+  color: #666;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-close:hover {
+  color: #333;
+}
+.modal-close:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--facet-color, #b06a1a) 85%, black);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.modal-close:active {
+  color: #000;
+}
+.modal h3 {
+  margin-top: 0;
+  margin-bottom: 1em;
+}
+.command-box {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 1em;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+  letter-spacing: 0.02em;
+  font-size: 0.9em;
+  overflow-x: auto;
+  margin: 1em 0;
+  position: relative;
+}
+.command-box code {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 8px;
+  background: #444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8em;
+  min-height: 44px;
+  min-width: 44px;
+}
+.copy-btn:hover {
+  background: #555;
+}
+.copy-btn:focus-visible {
+  outline: 2px solid #80bdff;
+  outline-offset: 2px;
+}
+.copy-btn:active {
+  background: #333;
+}
+.copy-btn.copied {
+  background: #28a745;
+}
+#revealKeyBtn {
+  right: 60px;
+}
+.credential-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.85em;
+  color: #333;
+  margin-bottom: 0.25em;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1em;
+}
+.modal-actions button {
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  min-height: 44px;
+}
+.modal-primary-btn {
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 14%, var(--paper));
+  color: var(--ink);
+  border: none;
+  box-shadow: inset 0 0 0 2px var(--facet-color, var(--orange));
+  font-weight: 600;
+}
+.modal-primary-btn:hover {
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 22%, var(--paper));
+}
+.modal-primary-btn:focus-visible {
+  outline: 2px solid var(--facet-color, var(--focus));
+  outline-offset: 2px;
+}
+.modal-primary-btn:active {
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 30%, var(--paper));
+}
+.modal-warning {
+  font-size: 0.85em;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.no-observers {
+  text-align: center;
+  padding: 3em 1em;
+  color: #666;
+}
+.no-observers-icon {
+  font-size: 3em;
+  margin-bottom: 1em;
+  opacity: 0.5;
+}
+.no-observers-text {
+  font-size: 1.1em;
+  margin-bottom: 0.5em;
+}
+.no-observers-hint {
+  font-size: 0.85em;
+  color: #999;
+  margin-bottom: 1.5em;
+}
+.section-title {
+  margin-bottom: 1em;
+  color: #333;
+  font-size: 1.1em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.observer-group-header {
+  margin: 0 0 0.75em;
+  color: #5a6268;
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.observer-group-header:not(:first-child) {
+  margin-top: 2em;
+}
+
+/* ── Responsive: Tablet (≤768px) ── */
+@media (max-width: 768px) {
+  .observer-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  #keyModal .modal-content {
+    margin: 16px;
+    max-width: calc(100vw - 32px);
+  }
+}
+
+/* ── Responsive: Mobile (≤480px) ── */
+@media (max-width: 480px) {
+  .observer-stats dl {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .observer-actions {
+    flex-wrap: wrap;
+  }
+  .command-box {
+    max-width: 100%;
+  }
+}
+
+/* ── Error container ── */
+.ws-error-container {
+  display: none;
+  background: #fff3cd;
+  border-left: 4px solid #ffc107;
+  color: #856404;
+  padding: 12px 16px;
+  margin-bottom: 1em;
+  border-radius: 4px;
+  position: relative;
+  font-size: 0.95em;
+  line-height: 1.4;
+}
+.ws-error-container[style*="display: flex"] {
+  display: flex !important;
+  flex-direction: column;
+  gap: 8px;
+}
+.ws-error-message {
+  flex: 1;
+}
+.ws-error-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ws-error-retry {
+  background: #856404;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 0.9em;
+  min-height: 44px;
+}
+.ws-error-retry:hover {
+  background: #6d5303;
+}
+.ws-error-retry:focus-visible {
+  outline: 2px solid #856404;
+  outline-offset: 2px;
+}
+.ws-error-retry:active {
+  background: #554303;
+}
+.ws-error-dismiss {
+  background: transparent;
+  border: 1px solid #856404;
+  color: #856404;
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.9em;
+  min-height: 44px;
+}
+.ws-error-dismiss:hover {
+  background: rgba(133, 100, 4, 0.1);
+}
+.ws-error-dismiss:focus-visible {
+  outline: 2px solid #856404;
+  outline-offset: 2px;
+}
+.ws-error-dismiss:active {
+  background: rgba(133, 100, 4, 0.15);
+}
+.ws-error-countdown {
+  color: #6d5303;
+  font-size: 0.85em;
+}
+
+/* ── Transitions: interactive elements ── */
+.observer-actions button,
+.copy-btn,
+.modal-close,
+.modal-actions button,
+.ws-error-retry,
+.ws-error-dismiss {
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
 </style>
 
 <script>
@@ -943,4 +1446,497 @@
     initLinkWorkspace();
   }
 })();
+</script>
+
+<script>
+const observersList = document.getElementById('observersList');
+const keyModal = document.getElementById('keyModal');
+const modalObserverName = document.getElementById('modalObserverName');
+const serverUrlText = document.getElementById('serverUrlText');
+const keyText = document.getElementById('keyText');
+const copyServerUrlBtn = document.getElementById('copyServerUrlBtn');
+const copyKeyBtn = document.getElementById('copyKeyBtn');
+const doneBtn = document.getElementById('doneBtn');
+const keyModalClose = document.getElementById('keyModalClose');
+const revealKeyBtn = document.getElementById('revealKeyBtn');
+
+function escapeHtml(value) {
+  return window.AppServices.escapeHtml(value);
+}
+
+let keyModalTrigger = null;
+// Error display state
+const wsErrorContainer = document.getElementById('wsErrorContainer');
+const wsErrorMessage = document.getElementById('wsErrorMessage');
+const wsErrorRetry = document.getElementById('wsErrorRetry');
+const wsErrorCountdown = document.getElementById('wsErrorCountdown');
+let errorAutoHideTimer = null;
+let countdownInterval = null;
+let lastPollTime = Date.now();
+const GROUP_ORDER = ['active', 'stale', 'inactive'];
+const GROUP_LABELS = {
+  active: 'Active',
+  stale: 'Stale',
+  inactive: 'Inactive'
+};
+
+function emptyStateHTML() {
+  return window.SurfaceState.empty({
+    heading: 'set up your first device',
+    headingLevel: 'h3',
+    desc: 'once you set one up, it\'ll show up here with what it\'s reported.'
+  });
+}
+
+function verdictAvailable(observer) {
+  return Boolean(observer.revoked) || observer.live !== null;
+}
+
+function statsHTML(observer, statusClass) {
+  const lastSeenBase = observer.last_seen ? `${relativeTime(Date.now() - observer.last_seen)} ago` : 'never';
+  const lastSolPing = observer.last_chat_request_at ? `${relativeTime(Date.now() - observer.last_chat_request_at)} ago` : '—';
+  const lastSeen = !verdictAvailable(observer)
+    ? lastSeenBase
+    : statusClass === 'stale'
+      ? `sol on this device last reported ${lastSeenBase}`
+      : statusClass === 'disconnected'
+        ? `${lastSeenBase} — offline`
+        : lastSeenBase;
+  return `<dl>
+    <div><dt>last reported</dt><dd data-last-seen="${observer.last_seen || ''}" data-state="${statusClass}">${lastSeen}</dd></div>
+    <div><dt>last sol-ping</dt><dd>${lastSolPing}</dd></div>
+    <div><dt>segments (5-min chunks)</dt><dd>${observer.stats?.segments_received ?? 0}</dd></div>
+    <div><dt>data</dt><dd>${formatBytes(observer.stats?.bytes_received || 0)}</dd></div>
+  </dl>`;
+}
+
+function showLocalError(message, opts = {}) {
+  wsErrorMessage.textContent = message;
+  wsErrorContainer.style.display = 'flex';
+  wsErrorRetry.style.display = opts.retry ? 'inline-block' : 'none';
+
+  // Clear any existing auto-hide timer
+  if (errorAutoHideTimer) clearTimeout(errorAutoHideTimer);
+
+  if (opts.retry) {
+    // For load errors: start countdown, no auto-hide (countdown stays until next load)
+    startCountdown();
+  } else {
+    // For action errors: auto-hide after 10 seconds, no countdown
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
+    wsErrorCountdown.textContent = '';
+    errorAutoHideTimer = setTimeout(clearError, 10000);
+  }
+}
+
+function clearError() {
+  wsErrorContainer.style.display = 'none';
+  wsErrorMessage.textContent = '';
+  wsErrorCountdown.textContent = '';
+  wsErrorRetry.style.display = 'none';
+  if (errorAutoHideTimer) {
+    clearTimeout(errorAutoHideTimer);
+    errorAutoHideTimer = null;
+  }
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
+}
+
+function startCountdown() {
+  if (countdownInterval) clearInterval(countdownInterval);
+  updateCountdownDisplay();
+  countdownInterval = setInterval(updateCountdownDisplay, 1000);
+}
+
+function updateCountdownDisplay() {
+  const elapsed = Math.floor((Date.now() - lastPollTime) / 1000);
+  const remaining = Math.max(0, 30 - elapsed);
+  wsErrorCountdown.textContent = remaining > 0 ? `retrying in ${remaining}s\u2026` : 'retrying\u2026';
+}
+
+let currentFullKey = null;
+let revealTimer = null;
+
+function statusMeta(state) {
+  const currentState = state || 'disconnected';
+  return {
+    statusClass: currentState,
+    cardClass: currentState
+  };
+}
+
+function groupFor(state) {
+  if (state === 'connected') return 'active';
+  if (state === 'stale') return 'stale';
+  return 'inactive';
+}
+
+function groupHeaderHTML(group) {
+  return `<h3 class="observer-group-header" data-group="${group}">${GROUP_LABELS[group]}</h3>`;
+}
+
+function observerCardHTML(observer, labels = {}) {
+  const hasVerdict = verdictAvailable(observer);
+  const { statusClass, cardClass } = hasVerdict ? statusMeta(observer.state) : { statusClass: '', cardClass: '' };
+  const label = hasVerdict ? observer.label : '';
+  const displayName = observer.display_name || observer.name;
+  const sourceLabel = observer.source_label || '';
+  const safeLabel = escapeHtml(label);
+  const liveLabel = observer.live === true ? (labels.live || '') : '';
+  // Replace this unavailable state when a native live-connection source is mounted
+  // and can determine device liveness.
+  const liveUnavailable = observer.live === null
+    ? '<span class="observer-live-unavailable" data-live-status="unavailable">live connection status unavailable</span>'
+    : '';
+  const safeLiveLabel = escapeHtml(liveLabel);
+  const livePip = liveLabel
+    ? `<span class="observer-live-pip">${safeLiveLabel}</span>`
+    : '';
+  const ariaLabel = [displayName, sourceLabel, label, liveLabel].filter(Boolean).join(', ');
+
+  return `
+    <div class="observer-card ${cardClass}" data-key="${observer.prefix}" role="listitem" aria-label="${escapeHtml(ariaLabel)}">
+      <div class="observer-header">
+        <span class="observer-name">${escapeHtml(displayName)}</span>
+        ${sourceLabel ? `<span class="observer-source">${escapeHtml(sourceLabel)}</span>` : ''}
+        ${hasVerdict ? `<span class="observer-status ${statusClass}">${safeLabel}</span>` : ''}
+        ${livePip}${liveUnavailable}
+      </div>
+      <div class="observer-stats">${statsHTML(observer, statusClass)}</div>
+      <div class="observer-actions">
+        ${hasVerdict && statusClass === 'stale' && !observer.revoked ? `<button onclick="restartObserver('${observer.prefix}', this)">${window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect'}</button><span class="observer-reconnect-result" data-reconnect-result="${observer.prefix}"></span>` : ''}
+        ${observer.revoked ? '' : `<button onclick="viewObserverKey('${observer.prefix}', this)">view key</button>`}
+        ${observer.revoked ? '' : `<button class="danger" onclick="revokeObserver('${observer.prefix}', this)">revoke</button>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderObservers(observers, labels = {}) {
+  if (!observers || observers.length === 0) {
+    return emptyStateHTML();
+  }
+
+  const groups = {
+    active: [],
+    stale: [],
+    inactive: []
+  };
+  const undecided = [];
+
+  for (const observer of observers) {
+    if (!verdictAvailable(observer)) {
+      undecided.push(observer);
+      continue;
+    }
+    const group = observer.group || groupFor(observer.state);
+    (groups[group] || groups.inactive).push(observer);
+  }
+
+  let html = undecided.map((observer) => observerCardHTML(observer, labels)).join('');
+  for (const group of GROUP_ORDER) {
+    if (!groups[group].length) continue;
+    html += groupHeaderHTML(group);
+    html += groups[group].map((observer) => observerCardHTML(observer, labels)).join('');
+  }
+
+  return html || emptyStateHTML();
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+async function loadObservers() {
+  lastPollTime = Date.now();
+  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+  try {
+    const payload = await window.apiJson('/app/network/api/observers');
+    if (!payload || typeof payload !== 'object' || !Array.isArray(payload.observers)) {
+      throw new window.ApiError({
+        status: 200,
+        statusText: 'OK',
+        serverMessage: '',
+        url: '/app/network/api/observers',
+        cause: 'parse',
+      });
+    }
+    if (payload.thresholds && typeof payload.thresholds !== 'object') {
+      throw new window.ApiError({
+        status: 200,
+        statusText: 'OK',
+        serverMessage: '',
+        url: '/app/network/api/observers',
+        cause: 'parse',
+      });
+    }
+    const observers = payload.observers;
+    const labels = payload.labels || {};
+
+    // Rebuild on every poll so grouped headers stay aligned with server ordering.
+    const activeEl = document.activeElement;
+    let focusSelector = null;
+    if (activeEl && observersList.contains(activeEl)) {
+      const card = activeEl.closest('.observer-card');
+      if (card) {
+        const key = card.getAttribute('data-key');
+        const buttons = [...card.querySelectorAll('button')];
+        const btnIndex = buttons.indexOf(activeEl);
+        if (btnIndex >= 0) {
+          focusSelector = `[data-key="${key}"] button:nth-child(${btnIndex + 1})`;
+        }
+      }
+    }
+    const scrollTop = observersList.scrollTop;
+
+    observersList.innerHTML = renderObservers(observers, labels);
+    clearError();
+    observersList.scrollTop = scrollTop;
+
+    if (focusSelector) {
+      const target = observersList.querySelector(focusSelector);
+      if (target) target.focus();
+    }
+  } catch (err) {
+    window.SurfaceState.replaceLoading('observersList', window.SurfaceState.error({
+      heading: 'i couldn\'t load your devices.',
+      desc: window.CONVEY_COPY.RELOAD_HINT,
+      serverMessage: err?.serverMessage || err?.message || '',
+      detail: err,
+    }));
+  }
+}
+
+function refreshTimestamps() {
+  const spans = observersList.querySelectorAll('[data-last-seen]');
+  for (const span of spans) {
+    const lastSeen = parseInt(span.getAttribute('data-last-seen'), 10);
+    if (!lastSeen) continue;
+	    const text = `${relativeTime(Date.now() - lastSeen)} ago`;
+	    const state = span.getAttribute('data-state');
+		    span.textContent = state === 'stale'
+	      ? `sol on this device last reported ${text}`
+	      : state === 'disconnected'
+	        ? `${text} — offline`
+	        : text;
+	  }
+	}
+
+	async function restartObserver(keyPrefix, button) {
+	  const result = observersList.querySelector(`[data-reconnect-result="${CSS.escape(keyPrefix)}"]`);
+	  button.disabled = true;
+	  button.textContent = 'reconnecting…';
+	  if (result) {
+	    result.textContent = '';
+	    result.style.color = '';
+	  }
+	  // Observer cards are per registration key; supervisor restarts the shared sense worker.
+	  try {
+	    await window.apiJson('/app/health/api/restart-observer', {
+	      method: 'POST',
+	      headers: { 'Content-Type': 'application/json' },
+	      body: JSON.stringify({ service: 'sense' })
+	    });
+	    button.textContent = window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect';
+	    if (result) result.textContent = 'reconnect requested';
+	  } catch (err) {
+	    window.logError(err, { context: 'observer: restart-observer failed' });
+	    button.disabled = false;
+	    button.textContent = window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect';
+	    if (result) {
+	      result.style.color = '#dc2626';
+	      result.textContent = err.serverMessage || "I couldn't reconnect.";
+	    }
+	  }
+	}
+
+function observerNameFor(button) {
+  return button.closest('.observer-card')?.querySelector('.observer-name')?.textContent || 'this device';
+}
+
+async function revokeObserver(keyPrefix, button) {
+  const name = observerNameFor(button);
+  if (!confirm(`Remove "${name}"? sol on that device won't be able to add to your journal.`)) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/app/network/api/observers/${keyPrefix}`, {
+      method: 'DELETE'
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to revoke');
+    }
+
+    loadObservers();
+  } catch (err) {
+    const msg = 'i couldn\'t remove that device — your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
+    if (window.showError) { showError(msg); } else { showLocalError(msg); }
+  }
+}
+
+async function viewObserverKey(keyPrefix, button) {
+  const name = observerNameFor(button);
+  if (!confirm(`Reveal key for "${name}"?`)) return;
+  try {
+    const response = await fetch(`/app/network/api/observers/${keyPrefix}/key`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get key');
+    }
+
+    showKeyModal(name, data.key, button);
+  } catch (err) {
+    const msg = 'i couldn\'t retrieve the key for that device — your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
+    if (window.showError) { showError(msg); } else { showLocalError(msg); }
+  }
+}
+
+function showKeyModal(name, key, trigger) {
+  modalObserverName.textContent = name;
+  serverUrlText.textContent = window.location.origin;
+  currentFullKey = key;
+  keyText.textContent = key.slice(0, 8) + '••••••••••••••••';
+  revealKeyBtn.textContent = 'reveal';
+  if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; }
+  keyModal.style.display = 'block';
+  keyModalTrigger = trigger || null;
+  keyModalClose.focus();
+  document.addEventListener('keydown', handleKeyModalKeys);
+}
+
+function handleKeyModalKeys(e) {
+  if (e.key === 'Escape') {
+    closeKeyModal();
+    return;
+  }
+  if (e.key === 'Tab') {
+    const focusable = [...keyModal.querySelectorAll('button:not([disabled]), [tabindex="0"]')];
+    if (focusable.length === 0) return;
+    const currentIndex = focusable.indexOf(document.activeElement);
+    if (e.shiftKey) {
+      e.preventDefault();
+      focusable[currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1].focus();
+    } else {
+      e.preventDefault();
+      focusable[currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1].focus();
+    }
+  }
+}
+
+function closeKeyModal() {
+  if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; }
+  currentFullKey = null;
+  revealKeyBtn.textContent = 'reveal';
+  keyModal.style.display = 'none';
+  document.removeEventListener('keydown', handleKeyModalKeys);
+  if (keyModalTrigger && document.contains(keyModalTrigger)) {
+    keyModalTrigger.focus();
+  }
+  keyModalTrigger = null;
+}
+
+// Modal controls
+keyModalClose.onclick = () => closeKeyModal();
+doneBtn.onclick = () => closeKeyModal();
+
+window.addEventListener('click', (e) => {
+  if (e.target === keyModal) {
+    closeKeyModal();
+  }
+});
+
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  // Fallback for non-HTTPS contexts (local solstone instances)
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  return Promise.resolve();
+}
+
+function setupCopyBtn(btn, codeEl) {
+  btn.onclick = () => {
+    copyText(codeEl.textContent).then(() => {
+      btn.textContent = 'copied!';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = 'copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    }, () => {
+      btn.textContent = 'failed';
+      setTimeout(() => { btn.textContent = 'copy'; }, 2000);
+    });
+  };
+}
+
+setupCopyBtn(copyServerUrlBtn, serverUrlText);
+copyKeyBtn.onclick = () => {
+  if (!currentFullKey) return;
+  copyText(currentFullKey).then(() => {
+    copyKeyBtn.textContent = 'copied!';
+    copyKeyBtn.classList.add('copied');
+    setTimeout(() => {
+      copyKeyBtn.textContent = 'copy';
+      copyKeyBtn.classList.remove('copied');
+    }, 2000);
+  }, () => {
+    copyKeyBtn.textContent = 'failed';
+    setTimeout(() => { copyKeyBtn.textContent = 'copy'; }, 2000);
+  });
+};
+revealKeyBtn.onclick = () => {
+  if (!currentFullKey) return;
+  const isRevealed = keyText.textContent === currentFullKey;
+  if (isRevealed) {
+    keyText.textContent = currentFullKey.slice(0, 8) + '••••••••••••••••';
+    revealKeyBtn.textContent = 'reveal';
+    if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; }
+  } else {
+    keyText.textContent = currentFullKey;
+    revealKeyBtn.textContent = 'hide';
+    if (revealTimer) clearTimeout(revealTimer);
+    revealTimer = setTimeout(() => {
+      if (currentFullKey && keyText.textContent === currentFullKey) {
+        keyText.textContent = currentFullKey.slice(0, 8) + '••••••••••••••••';
+        revealKeyBtn.textContent = 'reveal';
+      }
+      revealTimer = null;
+    }, 30000);
+  }
+};
+
+function initObserver() {
+  loadObservers();
+
+  // Refresh every 30 seconds to update connection status
+  setInterval(loadObservers, 30000);
+  setInterval(refreshTimestamps, 10000);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initObserver);
+} else {
+  initObserver();
+}
 </script>

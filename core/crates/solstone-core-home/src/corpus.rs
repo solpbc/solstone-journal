@@ -252,9 +252,9 @@ fn replay_convey_home_corpus() {
                 Some(&json!("/app/observer/"))
             );
             asserted += 1;
-            assert_eq!(actual.pointer("/cta/href"), Some(&json!("/app/devices/")));
+            assert_eq!(actual.pointer("/cta/href"), Some(&json!("/app/network/")));
             asserted += 1;
-            *expected.pointer_mut("/cta/href").unwrap() = json!("/app/devices/");
+            *expected.pointer_mut("/cta/href").unwrap() = json!("/app/network/");
         }
         eq(&actual, &expected, "health glance");
         asserted += 1;
