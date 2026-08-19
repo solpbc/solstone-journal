@@ -28,7 +28,7 @@ The identity derivation, the two fingerprint kinds, the `did`, and the mark's ex
 ### `S:device-ingest:segment-media`
 **Connects** `P-device-ingest` → `P-segment-media` · **Owner** `P-device-ingest` · **Tier** schema
 
-Segments arriving from a device. This is the **ingest envelope** — a wire shape, not bytes on disk: `observe/protocol.schema.json` carries `file_kind: "ingest_envelope"` and `producer_write_paths` of the ingest endpoint.
+Segments arriving from a device. This is the **ingest envelope** — a wire shape, not bytes on disk. 🔴 **CORRECTED 2026-08-19 — the citation was stale.** This entry named `observe/protocol.schema.json`, deleted along with the rest of the Python `observe/` tree in the conversion. The live, actively-validated (via `jsonschema` in `core/crates/solstone-core/src/contract/validate.rs`) successor is `core/crates/solstone-core/src/contract/schemas/protocol.schema.json`, confirmed by content match and by its membership in `contract/bundle.rs`'s `REQUIRED_SOURCES`; it carries `file_kind: "ingest_envelope"` and `producer_write_paths` of the ingest endpoint.
 
 ⛔ **The client no longer asserts its own identity.** The journal authenticates the certificate at the transport, derives the `did`, and records it. Nothing routes, authenticates, or names a stream from a client-supplied string.
 
@@ -70,7 +70,7 @@ Raw media landing durably, and the **segment sidecars**.
 
 Processed sense output written back.
 
-⚠ **The `_solstone_processing` header moved out of this strand 2026-08-05** — it is now `S:segment-sense:segment-processing`, below. What stays here is the analysis output itself: `<stem>.jsonl` rows and the `<stem>.npz` speaker-embedding sidecar, whose formats `observe/screen.schema.json` and `observe/transcribe/audio.schema.json` own.
+⚠ **The `_solstone_processing` header moved out of this strand 2026-08-05** — it is now `S:segment-sense:segment-processing`, below. What stays here is the analysis output itself: `<stem>.jsonl` rows and the `<stem>.npz` speaker-embedding sidecar. 🔴 **CORRECTED 2026-08-19 — the citations were stale.** This entry named `observe/screen.schema.json` and `observe/transcribe/audio.schema.json`, both deleted along with the rest of the Python `observe/` tree. The live, actively-validated successors, confirmed by content match and `contract/bundle.rs` `REQUIRED_SOURCES` membership, are `core/crates/solstone-core/src/contract/schemas/screen.schema.json` and `core/crates/solstone-core/src/contract/schemas/audio.schema.json`.
 
 ⚠ Both of those schemas **under-declare their own headers**, and both carry `additionalProperties: true`, so nothing ever fails validation. Undeclared but historically written by retired `describe.py:653-657`: `_solstone_thinking`; audio's live fields are `overlap_fraction`, `overlap_detector`, `device`, `compute_type`, `speaker_analysis_producer`, `noisy_rms`, `noisy_s`, `loud_windows`, `speech_loud_windows`, `loud_speech_ratio`.
 
