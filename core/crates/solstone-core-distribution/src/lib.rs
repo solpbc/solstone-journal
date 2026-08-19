@@ -18,6 +18,7 @@ pub mod pdfium;
 pub mod produce;
 pub mod promote;
 pub mod provenance;
+pub mod publish;
 pub mod record;
 pub mod relocate;
 pub mod rpm;

@@ -12,9 +12,10 @@ use solstone_core_distribution::cleanroom::{
 };
 use solstone_core_distribution::discover_and_validate_inventory;
 use solstone_core_distribution::produce::{self, ProduceArgs};
+use solstone_core_distribution::publish;
 
 fn usage() -> &'static str {
-    "usage: solstone-distribution <validate|produce|acquire|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
+    "usage: solstone-distribution <validate|produce|publish|acquire|cleanroom-plan|cleanroom-serve|cleanroom-generate-serve|help> [ARG]"
 }
 
 fn main() -> ExitCode {
@@ -46,6 +47,28 @@ fn main() -> ExitCode {
             let rest = args.collect::<Vec<_>>();
             match acquire::run(&rest) {
                 Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Some("publish") => {
+            let rest = args.collect::<Vec<_>>();
+            match publish::run_cli(&rest) {
+                Ok(report) => {
+                    println!(
+                        "published lane={} version={} dest={}",
+                        report.lane,
+                        report.version,
+                        report.dest.display()
+                    );
+                    for path in report.objects {
+                        println!("{}", path.display());
+                    }
+                    println!("{}", report.latest.display());
+                    ExitCode::SUCCESS
+                }
                 Err(error) => {
                     eprintln!("{error}");
                     ExitCode::from(2)
