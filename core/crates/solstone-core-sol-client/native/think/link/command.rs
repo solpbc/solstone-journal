@@ -381,7 +381,10 @@ fn take_raw_value<'a>(args: &'a [String], index: usize, option: &str) -> Result<
 }
 
 fn argparse_serve_error(error: String) -> CommandOutput {
-    CommandOutput::failure(format!("{SERVE_USAGE}solstone link serve: error: {error}\n"), 2)
+    CommandOutput::failure(
+        format!("{SERVE_USAGE}solstone link serve: error: {error}\n"),
+        2,
+    )
 }
 
 fn resolve_serve_bundle(
@@ -1554,7 +1557,9 @@ mod tests {
         let cases = [
             (
                 vec!["--unknown"],
-                format!("{SERVE_USAGE}solstone link serve: error: unrecognized arguments: --unknown\n"),
+                format!(
+                    "{SERVE_USAGE}solstone link serve: error: unrecognized arguments: --unknown\n"
+                ),
             ),
             (
                 vec!["--label"],
@@ -1821,7 +1826,9 @@ mod tests {
         let output = run(&[], &env, &root, &seam, &clock);
         assert_eq!(
             output.stderr,
-            format!("{USAGE}solstone link join: error: the following arguments are required: --code\n")
+            format!(
+                "{USAGE}solstone link join: error: the following arguments are required: --code\n"
+            )
         );
         assert_eq!(output.exit, 2);
         seam.assert_done();

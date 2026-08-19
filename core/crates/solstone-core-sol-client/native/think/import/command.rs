@@ -988,7 +988,8 @@ mod tests {
         assert_eq!(
             output,
             CommandOutput {
-                stdout: "solstone import: already staged as 20260101_150000; skipping\n".to_string(),
+                stdout: "solstone import: already staged as 20260101_150000; skipping\n"
+                    .to_string(),
                 stderr: String::new(),
                 exit: 0,
             }

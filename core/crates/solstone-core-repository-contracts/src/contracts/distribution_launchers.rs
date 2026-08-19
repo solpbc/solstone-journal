@@ -91,9 +91,8 @@ fn inventory_has_no_sol_launcher_and_keeps_solstone() {
         "core/distribution/macos.sh",
         "core/distribution/cleanroom.sh",
     ] {
-        let text = fs::read_to_string(root.join(rel)).unwrap_or_else(|error| {
-            panic!("read {rel}: {error}")
-        });
+        let text = fs::read_to_string(root.join(rel))
+            .unwrap_or_else(|error| panic!("read {rel}: {error}"));
         assert!(
             !text.contains("scripts/root-launchers/sol\""),
             "{rel} still names scripts/root-launchers/sol"
