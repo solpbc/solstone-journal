@@ -3832,7 +3832,7 @@ async fn generate_description_requires_type_and_name() {
 }
 
 #[tokio::test]
-async fn generate_description_reports_agent_unavailable_after_validation() {
+async fn generate_description_reports_talent_not_ported_after_validation() {
     let j = Journal::new();
     let (status, response) = post(
         j.path(),
@@ -3840,8 +3840,12 @@ async fn generate_description_reports_agent_unavailable_after_validation() {
         json!({"type":"Person","name":"Alice","current_description":""}),
     )
     .await;
-    assert_eq!(status, 503);
-    assert_eq!(response["reason_code"], "agent_unavailable");
+    assert_eq!(status, 501);
+    assert_eq!(response["reason_code"], "talent_not_ported");
+    let detail = response["detail"].as_str().unwrap();
+    assert!(detail.contains("not ported"), "{detail}");
+    assert!(!detail.contains("agent spawning"), "{detail}");
+    assert!(!detail.contains("unavailable"), "{detail}");
 }
 
 #[tokio::test]
@@ -3865,7 +3869,7 @@ async fn assist_requires_entity_name() {
 }
 
 #[tokio::test]
-async fn assist_reports_agent_unavailable_after_validation() {
+async fn assist_reports_talent_not_ported_after_validation() {
     let j = Journal::new();
     let (status, response) = post(
         j.path(),
@@ -3873,8 +3877,12 @@ async fn assist_reports_agent_unavailable_after_validation() {
         json!({"name":"Alice"}),
     )
     .await;
-    assert_eq!(status, 503);
-    assert_eq!(response["reason_code"], "agent_unavailable");
+    assert_eq!(status, 501);
+    assert_eq!(response["reason_code"], "talent_not_ported");
+    let detail = response["detail"].as_str().unwrap();
+    assert!(detail.contains("not ported"), "{detail}");
+    assert!(!detail.contains("agent spawning"), "{detail}");
+    assert!(!detail.contains("unavailable"), "{detail}");
 }
 
 #[test]
@@ -3987,6 +3995,9 @@ async fn refusal_sites_batch_1_validation_are_exact() {
         "missing_required_field",
         400,
     );
+    // Historical surface emitted agent_unavailable here. This port emits a
+    // not-ported code because the talent path is not native. The comment dies
+    // when that path lands.
     assert_oracle_refusal(
         "assist_add:1610",
         post(
@@ -3995,8 +4006,8 @@ async fn refusal_sites_batch_1_validation_are_exact() {
             json!({"name":"Alice"}),
         )
         .await,
-        "agent_unavailable",
-        503,
+        "talent_not_ported",
+        501,
     );
     assert_oracle_refusal(
         "attach_entity_for_call:607",
@@ -4432,6 +4443,9 @@ async fn refusal_sites_batch_2_detection_and_generation_are_exact() {
         "missing_required_field",
         400,
     );
+    // Historical surface emitted agent_unavailable here. This port emits a
+    // not-ported code because the talent path is not native. The comment dies
+    // when that path lands.
     assert_oracle_refusal(
         "generate_description:1578",
         post(
@@ -4440,8 +4454,8 @@ async fn refusal_sites_batch_2_detection_and_generation_are_exact() {
             json!({"type":"Person","name":"Alice"}),
         )
         .await,
-        "agent_unavailable",
-        503,
+        "talent_not_ported",
+        501,
     );
     assert_oracle_refusal(
         "detect_entity_route:552",

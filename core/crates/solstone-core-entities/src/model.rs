@@ -36,6 +36,8 @@ pub enum ReasonCode {
     ResolvedChoiceEntityBlocked,
     EntityAmbiguityCorrupt,
     IndexPlateNotPorted,
+    /// Native talent spawn is not ported; not a transient agent outage.
+    TalentNotPorted,
 }
 
 impl ReasonCode {
@@ -59,6 +61,7 @@ impl ReasonCode {
             Self::ResolvedChoiceEntityBlocked => "resolved_choice_entity_blocked",
             Self::EntityAmbiguityCorrupt => "entity_ambiguity_corrupt",
             Self::IndexPlateNotPorted => "index_plate_not_ported",
+            Self::TalentNotPorted => "talent_not_ported",
         }
     }
     pub const fn status(self) -> StatusCode {
@@ -71,7 +74,7 @@ impl ReasonCode {
             | Self::ResolvedChoiceEntityAbsent
             | Self::ResolvedChoiceEntityBlocked => StatusCode::NOT_FOUND,
             Self::OperationNoLongerAvailable => StatusCode::GONE,
-            Self::IndexPlateNotPorted => StatusCode::NOT_IMPLEMENTED,
+            Self::IndexPlateNotPorted | Self::TalentNotPorted => StatusCode::NOT_IMPLEMENTED,
             Self::EntityOperationFailed | Self::EntityAmbiguityCorrupt => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }

@@ -2245,8 +2245,8 @@ async fn generate_description_route(
         );
     }
     refusal(
-        ReasonCode::AgentUnavailable,
-        "agent spawning is not available from this route",
+        ReasonCode::TalentNotPorted,
+        "This entity talent route is not ported yet.",
     )
 }
 
@@ -2274,8 +2274,8 @@ async fn assist_route(
         return refusal(ReasonCode::MissingRequiredField, "Entity name is required");
     }
     refusal(
-        ReasonCode::AgentUnavailable,
-        "agent spawning is not available from this route",
+        ReasonCode::TalentNotPorted,
+        "This entity talent route is not ported yet.",
     )
 }
 
