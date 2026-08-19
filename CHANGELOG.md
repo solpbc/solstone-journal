@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- the journal-access command is now `solstone` only. `sol` as a command name is gone, with no alias: a script, cron job, or muscle memory that still types `sol` needs to type `solstone` instead. `journal` is unchanged — it is still the service CLI, separate from day-to-day journal access. `solstone call <app> <verb>` is the form that used to be `sol call`. the app on your devices is still sol.
+- the journal-access command is now `solstone` only. `sol` as a command name is gone, with no alias: a script, cron job, or muscle memory that still types `sol` needs to type `solstone` instead. `journal` is unchanged: it is still the journal's own command, separate from day-to-day journal access. `solstone call <app> <verb>` is the form that used to be `sol call`. the app on your devices is still sol.
 
 ## [1.0.22] - 2026-08-01
 
