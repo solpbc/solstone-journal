@@ -16,7 +16,8 @@ pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
 pub use log::DailyLogWriter;
 pub use observation::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
 pub use restart::{
-    EXIT_TEMPFAIL, RestartPolicy, TEMPFAIL_DELAY, describe_exit, exit_status_for_code,
+    EXIT_TEMPFAIL, GIVE_UP_AFTER, RestartDecision, RestartPolicy, TEMPFAIL_DELAY, describe_exit,
+    exit_status_for_code,
 };
 pub use spawn::{ManagedProcess, SpawnError, SpawnOptions};
 #[cfg(target_os = "macos")]

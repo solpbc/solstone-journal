@@ -39,7 +39,10 @@ use solstone_core_system::{
 
 use super::bus::{SupervisorProviderSink, SupervisorScheduleSink, emit};
 use super::config::{no_thinking_engine_chosen, processing_is_deferred};
-use super::runtime::{AppService, DailyState, FlushState, SupervisorState};
+use super::runtime::{
+    AppExit, AppService, DailyState, FlushState, ManagedAppProcess, RestartRequestOutcome,
+    SupervisorState, apply_app_exit,
+};
 
 const STATUS_INTERVAL: Duration = Duration::from_secs(5);
 const TICK_INTERVAL: Duration = Duration::from_secs(1);
@@ -93,6 +96,7 @@ impl ShutdownSignals {
 
 struct StatusEmissionInputs<'a> {
     app_observations: Vec<(AppService, SystemProcessObservation)>,
+    app_crashed: Vec<CrashedServiceCandidate>,
     local_observation: SystemProcessObservation,
     parakeet_observation: SystemProcessObservation,
     local_state: &'a ProviderRuntimeState,
@@ -158,7 +162,7 @@ fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan 
                 reason_code: provider.latest_reason_code.clone(),
             }),
     );
-    let crashed = providers
+    let mut crashed = providers
         .iter()
         .filter(|(provider, _)| is_crashed_phase(provider.latest_phase))
         .map(|(provider, _)| CrashedServiceCandidate {
@@ -167,7 +171,8 @@ fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan 
             phase: provider.latest_phase,
             reason_code: provider.latest_reason_code.clone(),
         })
-        .collect();
+        .collect::<Vec<_>>();
+    crashed.extend(inputs.app_crashed);
     StatusEmissionPlan::Status(SupervisorStatusWireInput {
         services,
         crashed,
@@ -250,6 +255,11 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
             });
             match plan_status_emission(StatusEmissionInputs {
                 app_observations,
+                app_crashed: state
+                    .app_processes
+                    .iter()
+                    .filter_map(ManagedAppProcess::crashed_candidate)
+                    .collect(),
                 local_observation,
                 parakeet_observation,
                 local_state: &state.local.state,
@@ -461,7 +471,7 @@ fn reconcile_app_processes(state: &mut SupervisorState) -> Vec<AppProcessSample>
                         app.service.as_str(),
                         exit_code
                     );
-                    app.record_exit(*exit_code);
+                    apply_app_exit(app, &journal, AppExit::Process { code: *exit_code });
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -493,7 +503,7 @@ fn reconcile_app_processes(state: &mut SupervisorState) -> Vec<AppProcessSample>
                 "supervisor: failed to restart {}: {error}",
                 app.service.as_str()
             );
-            app.record_exit(-1);
+            apply_app_exit(app, &journal, AppExit::SpawnFailure);
         }
         samples.push(AppProcessSample {
             service: app.service,
@@ -847,8 +857,8 @@ fn handle_supervisor_restart(state: &mut SupervisorState, message: &CallosumEnve
         .get("restart_id")
         .and_then(Value::as_str)
         .map(str::to_owned);
-    match app.request_restart() {
-        Ok(Some(pid)) => {
+    match app.request_restart(&state.journal) {
+        Ok(RestartRequestOutcome::Signaled { pid }) => {
             *app.restart_id
                 .lock()
                 .expect("restart correlation lock is not poisoned") = restart_id.clone();
@@ -861,7 +871,20 @@ fn handle_supervisor_restart(state: &mut SupervisorState, message: &CallosumEnve
             }
             emit(&state.server, "supervisor", "restarting", extra);
         }
-        Ok(None) => eprintln!("supervisor: restart request ignored for inactive service {service}"),
+        Ok(RestartRequestOutcome::Revived) => {
+            *app.restart_id
+                .lock()
+                .expect("restart correlation lock is not poisoned") = restart_id.clone();
+            eprintln!("supervisor: restarting given-up service {service}");
+            let mut extra = Map::from_iter([("service".into(), json!(service))]);
+            if let Some(restart_id) = restart_id {
+                extra.insert("restart_id".into(), json!(restart_id));
+            }
+            emit(&state.server, "supervisor", "restarting", extra);
+        }
+        Ok(RestartRequestOutcome::Ignored) => {
+            eprintln!("supervisor: restart request ignored for inactive service {service}")
+        }
         Err(error) => eprintln!("supervisor: failed to restart {service}: {error}"),
     }
 }
@@ -1425,6 +1448,7 @@ mod tests {
                 AppService::Convey,
                 live_observation("supervisor-app-convey", 11),
             )],
+            app_crashed: Vec::new(),
             local_observation: live_observation("local:12", 12),
             parakeet_observation: SystemProcessObservation::ConfirmedAbsent,
             local_state: &local,
@@ -1469,6 +1493,7 @@ mod tests {
         let parakeet = provider_state(ProviderName::Parakeet, RuntimePhase::Ready);
         let app_plan = plan_status_emission(StatusEmissionInputs {
             app_observations: vec![(AppService::Convey, SystemProcessObservation::Indeterminate)],
+            app_crashed: Vec::new(),
             local_observation: live_observation("local:12", 12),
             parakeet_observation: live_observation("parakeet:13", 13),
             local_state: &local,
@@ -1484,6 +1509,7 @@ mod tests {
 
         let provider_plan = plan_status_emission(StatusEmissionInputs {
             app_observations: Vec::new(),
+            app_crashed: Vec::new(),
             local_observation: SystemProcessObservation::Indeterminate,
             parakeet_observation: live_observation("parakeet:13", 13),
             local_state: &local,
@@ -1511,6 +1537,7 @@ mod tests {
 
         let plan = plan_status_emission(StatusEmissionInputs {
             app_observations: Vec::new(),
+            app_crashed: Vec::new(),
             local_observation: live_observation("local:12", 12),
             parakeet_observation: live_observation("parakeet:13", 13),
             local_state: &local,

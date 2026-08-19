@@ -248,20 +248,53 @@ fn ac16_managed_process_preserves_signal_exit_codes() {
 
 #[test]
 fn ac17_restart_policy_clamps_and_tempfail_does_not_consume_attempt() {
+    use solstone_core_system::process::{GIVE_UP_AFTER, RestartDecision};
+
     let mut policy = RestartPolicy::default();
+    for expected in 1..GIVE_UP_AFTER {
+        assert_eq!(
+            policy.decide_after_exit(75, Duration::ZERO),
+            RestartDecision::Retry(Duration::from_secs(15)),
+            "tempfail {expected} must keep the 15s delay"
+        );
+        assert_eq!(policy.attempts(), 0, "tempfail must not consume attempts");
+        assert_eq!(policy.unsuccessful_starts(), expected);
+    }
     assert_eq!(
-        policy.delay_after_exit(75, Duration::ZERO),
-        Duration::from_secs(15)
+        policy.decide_after_exit(75, Duration::ZERO),
+        RestartDecision::GiveUp
     );
     assert_eq!(policy.attempts(), 0);
-    assert_eq!(policy.next_delay(), Duration::ZERO);
-    assert_eq!(policy.next_delay(), Duration::from_secs(1));
-    assert_eq!(policy.next_delay(), Duration::from_secs(5));
-    assert_eq!(policy.next_delay(), Duration::from_secs(5));
+    assert_eq!(policy.unsuccessful_starts(), GIVE_UP_AFTER);
+
+    let mut schedule = RestartPolicy::default();
+    assert_eq!(schedule.next_delay(), Duration::ZERO);
+    assert_eq!(schedule.next_delay(), Duration::from_secs(1));
+    assert_eq!(schedule.next_delay(), Duration::from_secs(5));
+    assert_eq!(schedule.next_delay(), Duration::from_secs(5));
     assert_eq!(
-        policy.delay_after_exit(1, Duration::from_secs(60)),
-        Duration::ZERO
+        schedule.decide_after_exit(1, Duration::from_secs(60)),
+        RestartDecision::Retry(Duration::ZERO)
     );
+
+    let mut reset = RestartPolicy::default();
+    for _ in 0..(GIVE_UP_AFTER - 1) {
+        assert!(matches!(
+            reset.decide_after_exit(1, Duration::ZERO),
+            RestartDecision::Retry(_)
+        ));
+    }
+    assert_eq!(reset.unsuccessful_starts(), GIVE_UP_AFTER - 1);
+    assert_eq!(
+        reset.decide_after_exit(1, Duration::from_secs(60)),
+        RestartDecision::Retry(Duration::ZERO)
+    );
+    assert_eq!(reset.unsuccessful_starts(), 0);
+    assert_eq!(
+        reset.decide_after_exit(1, Duration::ZERO),
+        RestartDecision::Retry(Duration::from_secs(1))
+    );
+    assert_eq!(reset.unsuccessful_starts(), 1);
 }
 
 #[test]

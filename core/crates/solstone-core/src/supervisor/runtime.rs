@@ -9,22 +9,27 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use serde::Serialize;
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
 use solstone_core_cli::SupervisorOptions;
+use solstone_core_journal_io::{JsonWriteOptions, write_json};
 use solstone_core_local::plan::Platform;
 use solstone_core_system::cap::{DEFAULT_TASK_MAX_RUNTIME, DefaultCapResolver};
 use solstone_core_system::lifecycle::{
     ForeignWriter, ShutdownRegime, SupervisorLifecycle, SyncSnapshot,
 };
-use solstone_core_system::process::{ManagedProcess, RestartPolicy, SpawnError, SpawnOptions};
+use solstone_core_system::process::{
+    ManagedProcess, RestartDecision, RestartPolicy, SpawnError, SpawnOptions, describe_exit,
+};
 use solstone_core_system::provider_runtime::{
     FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
     LocalTruthSeam, ParakeetLifecycleSeam, ParakeetProbeSeam, ParakeetRuntimeShared,
     ParakeetTruthConfig, ParakeetTruthSeam, ProviderName, ProviderRuntimeCoordinator,
-    ProviderRuntimeState, SystemRuntimeClock, WedgeState,
+    ProviderRuntimeState, ReasonCode, RuntimePhase, SystemRuntimeClock, WedgeState,
 };
 use solstone_core_system::queue::{SystemProcessStateProbe, TaskQueue, TaskQueueOptions};
 use solstone_core_system::schedule::{ScheduleEngine, ScheduleNow};
+use solstone_core_system::status_wire::CrashedServiceCandidate;
 
 use super::bus::{SupervisorProcessSink, SupervisorScheduleSink, SupervisorTaskQueueSink};
 use super::shutdown::SupervisorShutdownDriver;
@@ -112,6 +117,31 @@ impl AppService {
     }
 }
 
+pub(crate) struct TerminalState {
+    pub reason: String,
+    pub exit_code: Option<i32>,
+    pub restart_attempts: u32,
+}
+
+pub(crate) enum AppExit {
+    Process { code: i32 },
+    SpawnFailure,
+}
+
+pub(crate) enum RestartRequestOutcome {
+    Signaled { pid: u32 },
+    Revived,
+    Ignored,
+}
+
+#[derive(Serialize)]
+struct FailedRecord {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_code: Option<i32>,
+    restart_attempts: u32,
+    reason: String,
+}
+
 pub(crate) struct ManagedAppProcess {
     pub service: AppService,
     pub enabled: bool,
@@ -123,6 +153,7 @@ pub(crate) struct ManagedAppProcess {
     pub restart_requested: bool,
     /// Correlates an accepted app restart with all ensuing app-process events.
     pub restart_id: Arc<Mutex<Option<String>>>,
+    pub terminal: Option<TerminalState>,
 }
 
 impl ManagedAppProcess {
@@ -152,27 +183,38 @@ impl ManagedAppProcess {
             restart_at: None,
             restart_requested: false,
             restart_id: Arc::new(Mutex::new(None)),
+            terminal: None,
         }
     }
 
     /// Signal a live service for restart without waiting for it to exit.
-    pub(crate) fn request_restart(&mut self) -> Result<Option<u32>, nix::errno::Errno> {
+    pub(crate) fn request_restart(
+        &mut self,
+        journal: &Path,
+    ) -> Result<RestartRequestOutcome, nix::errno::Errno> {
         if self.restart_requested {
-            return Ok(None);
+            return Ok(RestartRequestOutcome::Ignored);
         }
-        let Some(process) = self.process.as_ref() else {
-            return Ok(None);
-        };
-        let pid = process.pid();
-        nix::sys::signal::kill(
-            nix::unistd::Pid::from_raw(pid as i32),
-            nix::sys::signal::Signal::SIGTERM,
-        )?;
-        self.restart_requested = true;
-        Ok(Some(pid))
+        if let Some(process) = self.process.as_ref() {
+            let pid = process.pid();
+            nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(pid as i32),
+                nix::sys::signal::Signal::SIGTERM,
+            )?;
+            self.restart_requested = true;
+            return Ok(RestartRequestOutcome::Signaled { pid });
+        }
+        if self.terminal.is_some() {
+            clear_failed_record(journal, self.service);
+            self.terminal = None;
+            self.restart_policy.reset_unsuccessful_starts();
+            self.restart_at = Some(Instant::now());
+            return Ok(RestartRequestOutcome::Revived);
+        }
+        Ok(RestartRequestOutcome::Ignored)
     }
 
-    pub(crate) fn record_exit(&mut self, exit_code: i32) {
+    pub(crate) fn record_exit(&mut self, exit: AppExit) -> RestartDecision {
         let uptime = self
             .started_at
             .take()
@@ -180,8 +222,73 @@ impl ManagedAppProcess {
             .unwrap_or(Duration::ZERO);
         self.process = None;
         self.restart_requested = false;
-        let delay = self.restart_policy.delay_after_exit(exit_code, uptime);
-        self.restart_at = Some(Instant::now() + delay);
+        let (policy_code, reason, exit_code) = match exit {
+            AppExit::Process { code } => (code, describe_exit(code), Some(code)),
+            AppExit::SpawnFailure => (-1, "failed to spawn process".to_owned(), None),
+        };
+        match self.restart_policy.decide_after_exit(policy_code, uptime) {
+            RestartDecision::Retry(delay) => {
+                self.restart_at = Some(Instant::now() + delay);
+                self.terminal = None;
+                RestartDecision::Retry(delay)
+            }
+            RestartDecision::GiveUp => {
+                self.restart_at = None;
+                self.terminal = Some(TerminalState {
+                    reason,
+                    exit_code,
+                    restart_attempts: u32::try_from(self.restart_policy.unsuccessful_starts())
+                        .unwrap_or(u32::MAX),
+                });
+                RestartDecision::GiveUp
+            }
+        }
+    }
+
+    pub(crate) fn crashed_candidate(&self) -> Option<CrashedServiceCandidate> {
+        let terminal = self.terminal.as_ref()?;
+        Some(CrashedServiceCandidate {
+            name: self.service.as_str().to_owned(),
+            restart_attempts: terminal.restart_attempts,
+            phase: RuntimePhase::Failed,
+            reason_code: Some(ReasonCode::from_wire(terminal.reason.clone())),
+        })
+    }
+}
+
+fn failed_path(journal: &Path, service: AppService) -> PathBuf {
+    journal
+        .join("health")
+        .join(format!("{}.failed", service.as_str()))
+}
+
+fn write_failed_record(journal: &Path, app: &ManagedAppProcess) {
+    let Some(terminal) = app.terminal.as_ref() else {
+        return;
+    };
+    if let Err(error) = write_json(
+        failed_path(journal, app.service),
+        &FailedRecord {
+            exit_code: terminal.exit_code,
+            restart_attempts: terminal.restart_attempts,
+            reason: terminal.reason.clone(),
+        },
+        JsonWriteOptions::default(),
+    ) {
+        eprintln!(
+            "supervisor: failed to write {}.failed: {error}",
+            app.service.as_str()
+        );
+    }
+}
+
+fn clear_failed_record(journal: &Path, service: AppService) {
+    let _ = std::fs::remove_file(failed_path(journal, service));
+}
+
+pub(crate) fn apply_app_exit(app: &mut ManagedAppProcess, journal: &Path, exit: AppExit) {
+    if matches!(app.record_exit(exit), RestartDecision::GiveUp) {
+        write_failed_record(journal, app);
     }
 }
 
@@ -442,12 +549,13 @@ pub(crate) fn spawn_app_process(
 }
 
 fn start_app_process(app: &mut ManagedAppProcess, journal: &Path, sink: Arc<CallosumSocketServer>) {
+    clear_failed_record(journal, app.service);
     if let Err(error) = spawn_app_process(app, journal, sink) {
         eprintln!(
             "supervisor: failed to start {}: {error}",
             app.service.as_str()
         );
-        app.record_exit(-1);
+        apply_app_exit(app, journal, AppExit::SpawnFailure);
     }
 }
 
@@ -475,7 +583,7 @@ async fn wait_for_convey_ready(
             None => return false,
         };
         if let Some(exit_code) = exited {
-            app.record_exit(exit_code);
+            apply_app_exit(app, journal, AppExit::Process { code: exit_code });
             eprintln!(
                 "supervisor: convey exited during startup (exit {exit_code}); continuing into supervise loop"
             );

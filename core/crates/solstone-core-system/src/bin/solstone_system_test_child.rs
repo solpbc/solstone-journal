@@ -112,6 +112,10 @@ fn main() {
                 std::thread::sleep(Duration::from_millis(2));
             }
         }
+        "always-exit" => std::process::exit(1),
+        "never-ready" => loop {
+            std::thread::park();
+        },
         "restart-once" => {
             let state_path = args.next().expect("state path");
             if std::path::Path::new(&state_path).exists() {

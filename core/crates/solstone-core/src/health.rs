@@ -362,12 +362,24 @@ fn render_status(status: &SupervisorStatus) -> String {
     if !status.crashed.is_empty() {
         output.push_str("\nCrashed:\n");
         for service in &status.crashed {
-            let _ = writeln!(
-                output,
-                "  {:16} {} restart attempts",
-                sanitize_for_terminal(&format!("{:16}", service.name)),
-                service.restart_attempts
-            );
+            let name = sanitize_for_terminal(&format!("{:16}", service.name));
+            match service.reason_code.as_deref() {
+                None => {
+                    let _ = writeln!(
+                        output,
+                        "  {name:16} {} restart attempts",
+                        service.restart_attempts
+                    );
+                }
+                Some(code) => {
+                    let _ = writeln!(
+                        output,
+                        "  {name:16} {} restart attempts  {}",
+                        service.restart_attempts,
+                        sanitize_for_terminal(code)
+                    );
+                }
+            }
         }
     }
 
@@ -486,6 +498,43 @@ mod tests {
         assert_eq!(
             render_status(&status),
             "Services:\n  convey\\n          pid 3  uptime 1h 1m\n\nCrashed:\n  local            2 restart attempts\n\nTasks:\n  daily\\t           21s  SLOW (cap 20s)\n  queued z\\x1b        1\n\nHeartbeat: STALE (host (path\\r))\nCallosum: 2 clients\n"
+        );
+    }
+
+    #[test]
+    fn renderer_appends_sanitized_reason_code_on_the_same_crashed_line() {
+        let mut value = status_value();
+        value["crashed"] = json!([
+            {"name": "local", "restart_attempts": 2, "phase": "failed", "reason_code": null},
+            {"name": "convey", "restart_attempts": 5, "phase": "failed", "reason_code": "exit 1"},
+            {
+                "name": "sense",
+                "restart_attempts": 1,
+                "phase": "failed",
+                "reason_code": "bad\n\u{001b}"
+            }
+        ]);
+        let status: SupervisorStatus = serde_json::from_value(value).unwrap();
+        let rendered = render_status(&status);
+        assert!(
+            rendered.contains("  local            2 restart attempts\n"),
+            "null reason_code must keep the existing line: {rendered}"
+        );
+        assert!(
+            rendered.contains("  convey           5 restart attempts  exit 1\n"),
+            "plain reason_code must be a same-line suffix: {rendered}"
+        );
+        assert!(
+            rendered.contains("  sense            1 restart attempts  bad\\n\\x1b\n"),
+            "hostile reason_code must be sanitized on the same line: {rendered}"
+        );
+        assert_eq!(
+            rendered
+                .lines()
+                .filter(|line| line.contains("restart attempts"))
+                .count(),
+            3,
+            "each crashed row stays one line: {rendered}"
         );
     }
 
