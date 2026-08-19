@@ -7,7 +7,7 @@
 //! append-before-delete ordering in `apply::execute_plan`.
 
 mod apply;
-mod attribution;
+pub mod attribution;
 mod chain;
 mod history;
 mod identity;
@@ -21,6 +21,10 @@ use std::path::Path;
 use chrono::{Duration, NaiveDate};
 use solstone_core_segment::list_days;
 
+pub use attribution::observer_prefix_for_stream;
+pub use history::{
+    HistoryPruneFailure, HistoryPruneReport, has_history_for_stream, remove_history_rows_for_stream,
+};
 pub use types::{PruneCandidate, PruneGroup, PruneResult, Refusal, SegmentAnalysis};
 
 /// The mutually-exclusive `--day` / `--day-range` / `--all` selector.

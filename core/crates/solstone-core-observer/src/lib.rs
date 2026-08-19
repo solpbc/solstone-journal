@@ -19,6 +19,10 @@ pub use store::delivery::{
     OBSERVER_DELIVERY_STALL_MS, OBSERVER_STALE_MS, OwnerState, Reach, inspect_delivery,
     rollup_owner_states,
 };
+pub use store::prune::{
+    HistoryPruneFailure, HistoryPruneReport, has_history_for_stream, observer_prefix_for_stream,
+    remove_history_rows_for_stream,
+};
 pub use store::{
     RemoteObserverMigrationError, RemoteObserverMigrationReport, SyncEventKind, SyncPersistResult,
     migrate_remote_observer_storage, persist_sync,

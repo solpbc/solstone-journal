@@ -24,9 +24,9 @@
 //! retention executor invokes that seam. This crate's architecture test confines
 //! irreversible work to the door module.
 //!
-//! The `marks` register stores removal proposals only in this wave. It has no
-//! production caller yet: nothing invokes `reconcile`, `record_failure`, or
-//! `resolve` outside the register's own tests.
+//! The `marks` register stores removal proposals. The retention CLI records
+//! staged failures onto it; in-process door callers (transcripts-web,
+//! observer-web) report failures in their own receipts and do not write marks.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 // A panic destroys an outcome as surely as a lost return does, and the workspace lint

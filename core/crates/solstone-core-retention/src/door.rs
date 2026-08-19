@@ -9,11 +9,13 @@
 //! boundary's contained primitives, so containment is resolved immediately before
 //! each syscall rather than once for a batch.
 //!
-//! # What this module does not do yet
+//! # What this module does
 //!
-//! Only the raw-release verb. The whole-segment verb — with its staging rename,
-//! its tombstone, its lock and its crash-recovery pass — is a later wave, and it
-//! lands here, on an outcome model this verb will already have exercised.
+//! The raw-release verb and the whole-segment verb — with its staging rename,
+//! its tombstone, its lock and its crash-recovery pass — both live here. A
+//! caller that names a source (the observer-web location erase) resolves that
+//! name to a set of segments and hands the set to [`remove_segments`]; this
+//! module still resolves nothing.
 
 #![allow(
     clippy::disallowed_methods,
@@ -172,8 +174,9 @@ fn owner_reason(error: &solstone_core_journal_io::errors::PathError) -> String {
 /// stopped before reaching every target, ⛔ never that one target failed.
 ///
 /// ⛔ **This resolves nothing.** It receives targets the owner chose. There is no
-/// query anywhere in this crate from a source name to a set of segments, because
-/// there is no source-delete affordance to serve.
+/// query anywhere in this crate from a source name to a set of segments. The
+/// observer-web source-delete surface performs that selection and hands the set
+/// here.
 ///
 /// Duplicate targets are collapsed at entry: the second occurrence would meet the
 /// already-tombstoned guard and be reported as refused, telling an owner a segment

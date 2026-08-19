@@ -1,5 +1,5 @@
-# The removal surface is closed to one door module, and the door does not exist
-# yet. Everything below is a floor rather than live dependency-graph enforcement:
+# The removal surface is closed to one door module (`src/door.rs`). Everything
+# below is a floor rather than live dependency-graph enforcement:
 # the `tokio` namespace is absent from this crate's graph, and `libc` -- though
 # genuinely present transitively -- cannot be called at all, because the workspace
 # forbids `unsafe_code` unoverridably and the extern prelude lacks the crate.

@@ -3422,6 +3422,7 @@ dependencies = [
  "solstone-core-model-pricing",
  "solstone-core-npy",
  "solstone-core-observer",
+ "solstone-core-observer-web",
  "solstone-core-records-web",
  "solstone-core-settings-web",
  "solstone-core-sol-link",
@@ -3925,6 +3926,7 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-indexer",
  "solstone-core-journal-config",
+ "solstone-core-retention",
 ]
 
 [[package]]
@@ -4144,6 +4146,28 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-segment",
  "tempfile",
+]
+
+[[package]]
+name = "solstone-core-observer-web"
+version = "2.0.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "solstone-core-convey-http",
+ "solstone-core-convey-shell",
+ "solstone-core-facets",
+ "solstone-core-indexer-store",
+ "solstone-core-journal-io",
+ "solstone-core-observer",
+ "solstone-core-retention",
+ "solstone-core-segment",
+ "tempfile",
+ "tokio",
+ "tower",
 ]
 
 [[package]]

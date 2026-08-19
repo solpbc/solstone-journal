@@ -947,6 +947,18 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-observer-web"
+package = "solstone-core-observer-web"
+set = "component"
+areas = ["observation"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-offload"
 package = "solstone-core-offload"
 set = "component"
@@ -2868,6 +2880,20 @@ areas = ["observation"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "slow"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-observer-web::observer_source_delete"
+package = "solstone-core-observer-web"
+target = "observer_source_delete"
+set = "component"
+areas = ["observation"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
 serial_group = "local-services"
 default_full = true
 required_features = []

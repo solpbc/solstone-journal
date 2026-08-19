@@ -65,8 +65,9 @@ const OPERATION: &str = "dpv:Delete";
 pub enum RemovalReason {
     /// The owner asked for these segments to be deleted.
     ///
-    /// ⚠ Segments. There is no source-delete affordance and no partial
-    /// owner-directed delete, so there is no reason variant naming one.
+    /// ⚠ Segments. Source-delete resolves a source name to a set of whole
+    /// segments and still uses this reason. There is no partial owner-directed
+    /// delete, so there is no reason variant naming a file-level erase.
     OwnerSegmentDelete,
     /// The configured retention policy reached them.
     RetentionPolicy,

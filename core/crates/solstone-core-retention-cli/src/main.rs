@@ -45,7 +45,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use chrono::{DateTime, NaiveDate, Utc};
-use solstone_core_indexer_store::db::prune_by_paths;
+use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_retention::content::{ClosedHandlerSet, JournalMedia};
 use solstone_core_retention::door::{
     compact_log, notify_index, recover, release_raw, remove_logs, remove_segments,
@@ -59,9 +59,8 @@ use solstone_core_retention::marks::{
     Failure, MarkId, Proposal, RemovalClass, decline, load, preflight, reconcile,
     reconcile_recovered, record_failure, resolve_offload, upsert_offload,
 };
-use solstone_core_retention::notify::{IndexNotify, NotifyError, PruneCounts};
 use solstone_core_retention::policy::Policy;
-use solstone_core_retention::receipt::{Outcome, RemovedPath, Target};
+use solstone_core_retention::receipt::{Outcome, Target};
 use solstone_core_retention::remove_marked::remove_marked;
 use solstone_core_retention::scan::scan_segment;
 use solstone_core_retention::sweep::{Plan, Skip, execute as execute_sweep, plan as plan_sweep};
@@ -120,27 +119,6 @@ struct CompactionCounts {
     bytes_before: u64,
     bytes_after: u64,
     errors: Vec<PruneError>,
-}
-
-/// The real search index, behind the boundary the executor addresses it through.
-struct RealIndex<'a> {
-    journal: &'a Path,
-}
-
-impl IndexNotify for RealIndex<'_> {
-    fn paths_removed(&self, removed: &[RemovedPath]) -> Result<PruneCounts, NotifyError> {
-        let rels: Vec<&str> = removed.iter().map(RemovedPath::as_str).collect();
-        match prune_by_paths(self.journal, &rels) {
-            Ok(Some(counts)) => Ok(PruneCounts {
-                chunks: counts.chunks,
-                files: counts.files,
-            }),
-            Ok(None) => Ok(PruneCounts::default()),
-            Err(error) => Err(NotifyError {
-                reason: format!("the search index could not be updated: {error}"),
-            }),
-        }
-    }
 }
 
 /// A parsed command line: flags with values, repeatable.
@@ -257,7 +235,7 @@ fn finish(journal: &Path, outcome: Outcome, extra: serde_json::Value) -> ExitCod
         .get("verb")
         .cloned()
         .unwrap_or(serde_json::Value::Null);
-    let index = RealIndex { journal };
+    let index = RetentionIndex::new(journal);
     // ⚠ A failed notification does not undo a removal and must not be reported as
     // one. It is a separate field, and it does not change the exit code: the files
     // are gone either way, and a stale index row is self-announcing.

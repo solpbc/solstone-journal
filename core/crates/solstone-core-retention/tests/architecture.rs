@@ -7,8 +7,7 @@
 //! surface that can do it must be one named file rather than a habit. Three
 //! properties, asserted over the crate's own source text:
 //!
-//! 1. no module names a removal or rename primitive -- later waves carve out
-//!    exactly one door module, and until then the answer is none;
+//! 1. no module names a removal or rename primitive except the door module;
 //! 2. every module declared in `lib.rs` is registered below, so a module added
 //!    without registering it cannot become an unguarded removal surface;
 //! 3. no module silences `#[must_use]` on an outcome.

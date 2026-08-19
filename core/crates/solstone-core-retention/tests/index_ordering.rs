@@ -21,32 +21,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use solstone_core_indexer_store::db::{open_index, prune_by_paths};
+use solstone_core_indexer_store::RetentionIndex;
+use solstone_core_indexer_store::db::open_index;
 use solstone_core_retention::door::{notify_index, remove_segments};
-use solstone_core_retention::notify::{IndexNotify, NotifyError, PruneCounts};
-use solstone_core_retention::receipt::{RemovedPath, Target};
+use solstone_core_retention::notify::PruneCounts;
+use solstone_core_retention::receipt::Target;
 use solstone_core_retention::tombstone::RemovalReason;
-
-/// The real index, behind the boundary the executor addresses it through.
-struct RealIndex<'a> {
-    journal: &'a Path,
-}
-
-impl IndexNotify for RealIndex<'_> {
-    fn paths_removed(&self, removed: &[RemovedPath]) -> Result<PruneCounts, NotifyError> {
-        let rels: Vec<&str> = removed.iter().map(RemovedPath::as_str).collect();
-        match prune_by_paths(self.journal, &rels) {
-            Ok(Some(counts)) => Ok(PruneCounts {
-                chunks: counts.chunks,
-                files: counts.files,
-            }),
-            Ok(None) => Ok(PruneCounts::default()),
-            Err(error) => Err(NotifyError {
-                reason: format!("the search index could not be updated: {error}"),
-            }),
-        }
-    }
-}
 
 fn bed(name: &str) -> PathBuf {
     let root = std::env::temp_dir().join(format!(
@@ -126,7 +106,7 @@ fn a_removal_leaves_the_index_stale_until_it_is_told_and_never_before() {
         "nothing may touch the index before the removal is complete"
     );
 
-    let index = RealIndex { journal: &journal };
+    let index = RetentionIndex::new(&journal);
     let counts = notify_index(&index, &outcome).expect("the index accepts the notification");
     assert!(counts.files > 0, "the notification cleared file rows");
 
@@ -161,7 +141,7 @@ fn a_journal_without_an_index_accepts_a_notification_and_gains_none() {
     );
     assert!(outcome.targets[0].not_removed.is_empty());
 
-    let index = RealIndex { journal: &journal };
+    let index = RetentionIndex::new(&journal);
     assert_eq!(
         notify_index(&index, &outcome).expect("no index is not an error"),
         PruneCounts::default()
@@ -197,7 +177,7 @@ fn a_run_that_removed_nothing_makes_no_notification() {
     );
     assert_eq!(outcome.targets[0].not_removed.len(), 1, "refused");
 
-    let index = RealIndex { journal: &journal };
+    let index = RetentionIndex::new(&journal);
     assert_eq!(
         notify_index(&index, &outcome).expect("an empty notification is legal"),
         PruneCounts::default()

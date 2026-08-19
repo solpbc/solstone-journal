@@ -9,7 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, DEFAULT_STREAM, FileLock, JsonWriteOptions, LockOptions,
-    MalformedPolicy, ReadError, hold_lock, read_json, write_bytes_exclusive, write_json,
+    MalformedPolicy, ReadError, Removed, hold_lock, path_lexists, read_json, remove_file,
+    write_bytes_exclusive, write_json,
 };
 
 use crate::device::validate_did;
@@ -544,6 +545,25 @@ pub(crate) fn registry_json_paths(journal: &Path) -> Result<Vec<PathBuf>, Segmen
 
 pub(crate) fn stream_record_path(journal: &Path, name: &str) -> PathBuf {
     journal.join("streams").join(format!("{name}.json"))
+}
+
+/// Unlink `streams/{name}.json` after the owner has erased that source.
+///
+/// ⛔ Already-absent is reported as [`Removed::AlreadyAbsent`], never as a
+/// removal this call performed.
+pub fn delete_stream_record(journal: &Path, name: &str) -> Result<Removed, SegmentError> {
+    if !is_safe_stream_component(name) {
+        return Err(SegmentError::StreamInput(
+            "stream must be a plain path component",
+        ));
+    }
+    let rel = format!("streams/{name}.json");
+    let path = stream_record_path(journal, name);
+    if !path_lexists(&path)? {
+        return Ok(Removed::AlreadyAbsent);
+    }
+    let _lock = hold_lock(&path, LockOptions::default())?;
+    Ok(remove_file(journal, &rel)?)
 }
 
 fn read_typed_stream_record(path: &Path) -> Result<Option<StreamRecord>, SegmentError> {
@@ -1695,5 +1715,25 @@ mod tests {
         assert!(!has_unattributed_stream_record(temporary.path()).unwrap());
         write_record(temporary.path(), &record("desk", None, None, 2, 2));
         assert!(has_unattributed_stream_record(temporary.path()).unwrap());
+    }
+
+    #[test]
+    fn delete_stream_record_unlinks_and_reports_already_absent() {
+        let temporary = TempDir::new();
+        write_record(
+            temporary.path(),
+            &record("location", Some(DID_A), Some(""), 1, 1),
+        );
+        let path = stream_record_path(temporary.path(), "location");
+        assert!(path.is_file());
+        assert_eq!(
+            delete_stream_record(temporary.path(), "location").unwrap(),
+            Removed::Unlinked
+        );
+        assert!(!path.exists());
+        assert_eq!(
+            delete_stream_record(temporary.path(), "location").unwrap(),
+            Removed::AlreadyAbsent
+        );
     }
 }

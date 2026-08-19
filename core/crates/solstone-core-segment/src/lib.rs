@@ -33,7 +33,6 @@ mod stream_repair;
 mod supervisor;
 #[cfg(test)]
 pub(crate) mod test_support;
-mod tombstone;
 mod write;
 
 pub use chronicle_migration::{
@@ -69,7 +68,8 @@ pub use solstone_core_journal_io::{
 pub use stream_record::{
     BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord,
     UnboundStreamAdvanceError, advance_bound_stream, advance_unbound_stream, bind_named_stream,
-    bind_stream, has_unattributed_stream_record, lookup_stream, resolve_stream,
+    bind_stream, delete_stream_record, has_unattributed_stream_record, lookup_stream,
+    resolve_stream,
 };
 pub use stream_repair::{
     MarkerTail, RepairOutcome, StreamBackfillReport, StreamBackfillSignal, StreamClassification,
@@ -81,7 +81,6 @@ pub use supervisor::{
     SUPERVISOR_MESSAGE, SupervisorRefusal, is_solstone_up, read_convey_port, require_solstone,
     require_solstone_with,
 };
-pub use tombstone::write_tombstone;
 pub use write::{ContentDescriptor, ContentWriteOutcome, write_content};
 
 #[cfg(test)]
@@ -103,7 +102,6 @@ mod architecture_tests {
         StreamRepair,
         StreamRecord,
         Supervisor,
-        Tombstone,
         Write,
     }
 
@@ -127,7 +125,6 @@ mod architecture_tests {
         (Source::StreamRepair, include_str!("stream_repair.rs")),
         (Source::StreamRecord, include_str!("stream_record.rs")),
         (Source::Supervisor, include_str!("supervisor.rs")),
-        (Source::Tombstone, include_str!("tombstone.rs")),
         (Source::Write, include_str!("write.rs")),
     ];
 
@@ -153,7 +150,7 @@ mod architecture_tests {
     fn sidecar_write_surface_is_closed() {
         for (kind, source) in SOURCES {
             match kind {
-                Source::Write | Source::Tombstone => {
+                Source::Write => {
                     assert!(source.contains("write_bytes_exclusive"));
                 }
                 Source::Device => {
@@ -168,6 +165,7 @@ mod architecture_tests {
                 Source::StreamRecord => {
                     assert!(source.contains("hold_lock"));
                     assert!(source.contains("write_json"));
+                    assert!(source.contains("remove_file"));
                 }
                 Source::StreamRepair => {
                     for primitive in ["hold_lock", "write_stream_record", "atomic_replace"] {

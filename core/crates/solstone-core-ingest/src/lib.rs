@@ -15,9 +15,10 @@
 //! `ingestUpload`, `ingestSegments`, `ingestManifest`, and
 //! `ingestManifestDay`. `register` and bearer-credential issuance are removed
 //! by the hard cut; `ingestEvent` and `callosumStream` await a Rust Callosum
-//! client; `health` has no settled semantics; and `deleteSource` belongs to a
-//! later delete/tombstone wave. Those five deferred operations are an
-//! intentional strand delta, not missing routes.
+//! client; `health` has no settled semantics. `deleteSource` is served by
+//! `solstone-core-observer-web` as a whole-segment location erase through
+//! retention's door. The remaining deferred operations are an intentional
+//! strand delta, not missing routes.
 //!
 //! Segment bytes and sidecars are written only through `solstone-core-segment`.
 

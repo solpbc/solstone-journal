@@ -4,7 +4,10 @@
 pub mod db;
 pub mod merge;
 pub mod migrations;
+pub mod retention;
 pub mod scan;
+
+pub use retention::RetentionIndex;
 
 #[cfg(test)]
 mod test_support;
