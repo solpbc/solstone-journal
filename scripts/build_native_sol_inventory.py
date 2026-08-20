@@ -51,8 +51,8 @@ ENTRY_TYPES = {
 }
 COMMAND_KINDS = {"command", "callback", "top-level"}
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
-FINAL_ORACLE_TOTAL = 172
-FINAL_HTTP_TOTAL = 167
+FINAL_ORACLE_TOTAL = 170
+FINAL_HTTP_TOTAL = 165
 FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 2
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
 FINAL_TOP_LEVEL_LINK_TOTAL = 2
@@ -71,7 +71,7 @@ FINAL_HTTP_GROUP_COUNTS = {
     "link": 8,
     "profile": 4,
     "settings": 14,
-    "sol": 4,
+    "sol": 2,
     "speakers": 31,
     "support": 15,
     "thinking": 18,
@@ -105,6 +105,8 @@ RETIRED_JOURNAL_ORACLE_PATHS = {
     ("journal", "facet", "merge"),
     ("journal", "merge"),
     ("chat", "start"),
+    ("sol", "set-name"),
+    ("sol", "reset"),
 }
 
 

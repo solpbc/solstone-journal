@@ -196,7 +196,7 @@ the owner approved the call.
 - `--limit` / `--cursor` for lists.
 
 Command names are lowercase single words, or hyphenated multi-word
-(`list-nudges-due`, `set-name`).
+(`list-nudges-due`, `list-candidates`).
 
 ## Journal Doctor
 
@@ -358,7 +358,7 @@ not the codebase. See [APPS.md](APPS.md).
 | `speakers` | `core/native-sol/apps/speakers/native/authority.toml` | list, show, detect-owner, confirm-owner, clusters, suggest |
 | `transcripts` | `core/native-sol/apps/transcripts/native/authority.toml` | list, read, segments |
 | `support` | `core/native-sol/apps/support/native/authority.toml` | register, search, article, create, list, show, reply, attach, feedback, announcements, diagnose |
-| `sol` | `core/native-sol/apps/sol/native/authority.toml` | set-name, reset, set-owner, sol-init |
+| `sol` | `core/native-sol/apps/sol/native/authority.toml` | set-owner, sol-init |
 | `settings` | `core/native-sol/apps/settings/native/authority.toml` | personal service keys (show/set/delete). Thinking provider selection lives in the Thinking app; local provider install lives at `journal install-provider local`. |
 | `awareness` | `core/native-sol/apps/awareness/native/authority.toml` | status, imports, log, log-read |
 | `journal` | `core/native-sol/think/tools/native/journal/authority.toml` | agents, facet (create/delete/mute/rename/show/unmute/update), facets, import, imports, news, read, retention (config/list), search, storage-summary |

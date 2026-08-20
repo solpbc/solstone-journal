@@ -5,33 +5,6 @@ schema = "native-sol-authority-v1"
 source = "command.rs"
 
 [[entries]]
-path = ["sol", "set-name"]
-kind = "command"
-help = "Set the agent name."
-operation_id = "sol.set-name"
-entry_type = "http"
-method = "POST"
-route = "/app/thinking/api/set-name"
-contract_operation_id = "sol.set-name"
-handler = "set_name"
-params = [
-  { name = "name", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["name"], secondary = [], hidden = false, is_flag = false, count = false },
-  { name = "status", kind = "option", type = "text", required = false, nargs = 1, multiple = false, default = "chosen", options = ["--status", "-s"], secondary = [], hidden = false, is_flag = false, count = false },
-]
-
-[[entries]]
-path = ["sol", "reset"]
-kind = "command"
-help = "Reset the agent name to default."
-operation_id = "sol.reset"
-entry_type = "http"
-method = "POST"
-route = "/app/thinking/api/reset"
-contract_operation_id = "sol.reset"
-handler = "reset"
-params = []
-
-[[entries]]
 path = ["sol", "set-owner"]
 kind = "command"
 help = "Set the journal owner's name (and optional bio)."

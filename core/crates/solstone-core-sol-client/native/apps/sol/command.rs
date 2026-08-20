@@ -10,28 +10,6 @@ use crate::json_format::json_pretty_ascii;
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
 #[must_use]
-pub fn set_name(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[("--status", Some("-s"))]) {
-        Ok(parsed) => parsed,
-        Err(error) => return stderr(error),
-    };
-    let Some(name) = parsed.positionals.first() else {
-        return missing_argument("call sol set-name", "NAME");
-    };
-    let status = parsed.value("--status").unwrap_or("chosen");
-    post_json(
-        ctx,
-        "/app/thinking/api/set-name",
-        json!({"name": name, "status": status}),
-    )
-}
-
-#[must_use]
-pub fn reset(ctx: CommandContext<'_>) -> CommandOutput {
-    post_json(ctx, "/app/thinking/api/reset", Value::Null)
-}
-
-#[must_use]
 pub fn set_owner(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args, &[("--bio", Some("-b"))]) {
         Ok(parsed) => parsed,
