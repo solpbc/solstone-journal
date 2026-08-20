@@ -3,7 +3,7 @@
 
 use axum::{
     body::{Body, to_bytes},
-    http::{HeaderMap, Method, Request},
+    http::{HeaderMap, Method, Request, Uri},
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -1200,9 +1200,46 @@ async fn enable_hosted_returns_portal_url() {
     assert_eq!(body["operation"]["kind"], "enable_hosted");
     assert_eq!(body["operation"]["phase"], "setting_up");
     let url = body["operation"]["portal_url"].as_str().unwrap();
-    assert!(url.contains("/enable/spb"));
-    assert!(url.contains("nonce="));
-    assert!(url.contains("instance="));
+    assert_consent_url_contract(url);
+}
+
+fn assert_consent_url_contract(url: &str) {
+    let uri: Uri = url.parse().expect("consent URL parses");
+    assert_eq!(uri.scheme_str(), Some("https"));
+    assert_eq!(
+        uri.authority().map(axum::http::uri::Authority::as_str),
+        Some("services.solstone.app")
+    );
+    assert_eq!(uri.path(), "/enable/backup");
+
+    let pairs = uri
+        .query()
+        .expect("consent query")
+        .split('&')
+        .map(|pair| pair.split_once('=').expect("consent query pair"))
+        .collect::<Vec<_>>();
+    assert_eq!(pairs.len(), 2);
+    let nonce = pairs
+        .iter()
+        .find_map(|(key, value)| (*key == "nonce").then_some(*value))
+        .expect("nonce query");
+    let instance = pairs
+        .iter()
+        .find_map(|(key, value)| (*key == "instance").then_some(*value))
+        .expect("instance query");
+
+    assert_eq!(nonce.len(), 52);
+    assert!(
+        nonce
+            .bytes()
+            .all(|byte| b"23456789ABCDEFGHJKMNPQRSTUVWXYZ".contains(&byte))
+    );
+    assert_eq!(instance.len(), 32);
+    assert!(
+        instance
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    );
 }
 
 #[tokio::test]
@@ -1330,12 +1367,7 @@ async fn unbound_restore_hosted_returns_portal_and_restoring_phase() {
     assert_eq!(status, 200);
     assert_eq!(body["operation"]["kind"], "restore_hosted");
     assert_eq!(body["operation"]["phase"], "restoring");
-    assert!(
-        body["operation"]["portal_url"]
-            .as_str()
-            .unwrap()
-            .contains("/enable/spb")
-    );
+    assert_consent_url_contract(body["operation"]["portal_url"].as_str().unwrap());
 }
 
 #[tokio::test]

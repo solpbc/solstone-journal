@@ -14,6 +14,9 @@ use crate::response;
 
 pub const HANDOFF_TTL: Duration = Duration::from_secs(30 * 60);
 
+const CONSENT_NONCE_ALPHABET: &[u8] = b"23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+const CONSENT_NONCE_LENGTH: usize = 52;
+
 const TERMINAL: &[&str] = &["done", "error", "degraded", "needs_subscription", "refused"];
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -180,11 +183,31 @@ pub fn mint_hex() -> Result<String, getrandom::Error> {
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
+pub fn mint_consent_nonce() -> Result<String, getrandom::Error> {
+    let mut nonce = String::with_capacity(CONSENT_NONCE_LENGTH);
+    let unbiased_ceiling = u8::MAX - (u8::MAX % CONSENT_NONCE_ALPHABET.len() as u8);
+    let mut random = [0_u8; 64];
+    while nonce.len() < CONSENT_NONCE_LENGTH {
+        getrandom::fill(&mut random)?;
+        for byte in random {
+            if byte >= unbiased_ceiling {
+                continue;
+            }
+            nonce
+                .push(CONSENT_NONCE_ALPHABET[byte as usize % CONSENT_NONCE_ALPHABET.len()] as char);
+            if nonce.len() == CONSENT_NONCE_LENGTH {
+                break;
+            }
+        }
+    }
+    Ok(nonce)
+}
+
 pub fn portal_url(base: &str, nonce: &str, instance: &str) -> String {
-    // Origin matches hosted.manage_url; /enable/spb is the external portal path,
+    // Origin matches hosted.manage_url; /enable/backup is the external portal path,
     // not a local Convey route. Relative URLs would window.open onto this journal.
     format!(
-        "{}/enable/spb?nonce={nonce}&instance={instance}",
+        "{}/enable/backup?nonce={nonce}&instance={instance}",
         base.trim_end_matches('/')
     )
 }
