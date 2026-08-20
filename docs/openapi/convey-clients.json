@@ -7270,7 +7270,7 @@
                 }
               }
             },
-            "description": "Request exceeds 128 MiB or a part exceeds 64 MiB."
+            "description": "Request exceeds the 128 MiB total-body limit."
           },
           "426": {
             "content": {
