@@ -111,13 +111,13 @@
   }
 
   function validateFiles(files) {
-    if (files.length > MAX_ATTACHMENT_FILES) return 'Max 5 files per upload.';
+    if (files.length > MAX_ATTACHMENT_FILES) return 'max 5 files per upload.';
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (file.size > MAX_ATTACHMENT_BYTES) return file.name + ' exceeds 10 MB limit.';
       const suffix = suffixOf(file.name);
       if (ALLOWED_SUFFIXES.indexOf(suffix) === -1) {
-        return 'Unsupported file type: ' + (suffix || '(none)');
+        return 'unsupported file type: ' + (suffix || '(none)');
       }
     }
     return null;
@@ -1004,7 +1004,7 @@
     }
 
     if (!versionPlatformRows && serviceNames.length === 0 && (!data.recent_errors || data.recent_errors.length === 0) && (!data.config || Object.keys(data.config).length === 0)) {
-      html += '<div style="font-size:0.85rem;color:#666;">No diagnostic data available.</div>';
+      html += '<div style="font-size:0.85rem;color:#666;">no diagnostic data available.</div>';
     }
 
     container.innerHTML = html;
@@ -1030,7 +1030,7 @@
       if (!tickets.length) {
         list.innerHTML = window.SurfaceState.empty({
           icon: window.ConveyIcons.svg('life-buoy'),
-          heading: 'no tickets yet — that\'s a good thing',
+          heading: 'no tickets yet. that\'s a good thing',
           desc: 'start a support request on this tab if something comes up',
           action: '<button type="button" class="surface-state-secondary" id="empty-create-btn">start a request</button>'
         });

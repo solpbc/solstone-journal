@@ -1278,8 +1278,8 @@ fn copied_assets_are_byte_identical_to_the_frozen_hashes() {
     for (bytes, hash, size) in [
         (
             super::WORKSPACE,
-            "be56a51a1035dda1db07f7f5796ff348ca5dee833377cbb36bf8c650dade3c31",
-            33_958,
+            "61b325b43fca34e14a8621691f4a76cec2d6c6e17d9b5db734ffaf105971d5f3",
+            33_815,
         ),
         (
             super::BACKGROUND,
@@ -1288,8 +1288,8 @@ fn copied_assets_are_byte_identical_to_the_frozen_hashes() {
         ),
         (
             super::SUPPORT_JS,
-            "dc3e60dfef2e82cd460be2d96f7e9c8056db17fb3868fb11dc1fcb2bcd5b43a6",
-            43_266,
+            "07ec4f520b84e6d6701ae978a7aba34549233281bf6ca8b1d2bb93867afab6e6",
+            43_263,
         ),
         (
             super::SHELL,

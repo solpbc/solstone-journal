@@ -702,9 +702,9 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 33958,
+          "text_bytes": 33815,
           "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
-          "text_sha256": "be56a51a1035dda1db07f7f5796ff348ca5dee833377cbb36bf8c650dade3c31"
+          "text_sha256": "61b325b43fca34e14a8621691f4a76cec2d6c6e17d9b5db734ffaf105971d5f3"
         },
         "sends_idempotency_key": false
       },
@@ -736,9 +736,9 @@
             "Content-Type": "text/javascript; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 43266,
+          "text_bytes": 43263,
           "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES",
-          "text_sha256": "dc3e60dfef2e82cd460be2d96f7e9c8056db17fb3868fb11dc1fcb2bcd5b43a6"
+          "text_sha256": "07ec4f520b84e6d6701ae978a7aba34549233281bf6ca8b1d2bb93867afab6e6"
         },
         "sends_idempotency_key": false
       },
@@ -1405,9 +1405,9 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 33958,
+          "text_bytes": 33815,
           "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
-          "text_sha256": "be56a51a1035dda1db07f7f5796ff348ca5dee833377cbb36bf8c650dade3c31"
+          "text_sha256": "61b325b43fca34e14a8621691f4a76cec2d6c6e17d9b5db734ffaf105971d5f3"
         },
         "sends_idempotency_key": false
       },
@@ -1439,9 +1439,9 @@
             "Content-Type": "text/javascript; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 43266,
+          "text_bytes": 43263,
           "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES",
-          "text_sha256": "dc3e60dfef2e82cd460be2d96f7e9c8056db17fb3868fb11dc1fcb2bcd5b43a6"
+          "text_sha256": "07ec4f520b84e6d6701ae978a7aba34549233281bf6ca8b1d2bb93867afab6e6"
         },
         "sends_idempotency_key": false
       },
@@ -2618,9 +2618,9 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 33958,
+          "text_bytes": 33815,
           "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
-          "text_sha256": "be56a51a1035dda1db07f7f5796ff348ca5dee833377cbb36bf8c650dade3c31"
+          "text_sha256": "61b325b43fca34e14a8621691f4a76cec2d6c6e17d9b5db734ffaf105971d5f3"
         },
         "sends_idempotency_key": false
       }
@@ -3179,9 +3179,9 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 33958,
+          "text_bytes": 33815,
           "text_prefix": "<style>\n  .support-nav {\n    display: flex;\n    gap: 0.75rem;\n    margin-bottom: 1rem;\n    border-bottom: 1px solid var(--facet-border, #e5e0db);\n    padding-bottom: 0;\n  }\n  .support-nav button {\n   ",
-          "text_sha256": "be56a51a1035dda1db07f7f5796ff348ca5dee833377cbb36bf8c650dade3c31"
+          "text_sha256": "61b325b43fca34e14a8621691f4a76cec2d6c6e17d9b5db734ffaf105971d5f3"
         },
         "sends_idempotency_key": false
       },
@@ -3213,9 +3213,9 @@
             "Content-Type": "text/javascript; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 43266,
+          "text_bytes": 43263,
           "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES",
-          "text_sha256": "dc3e60dfef2e82cd460be2d96f7e9c8056db17fb3868fb11dc1fcb2bcd5b43a6"
+          "text_sha256": "07ec4f520b84e6d6701ae978a7aba34549233281bf6ca8b1d2bb93867afab6e6"
         },
         "sends_idempotency_key": false
       },
