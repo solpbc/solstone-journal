@@ -907,12 +907,7 @@ async fn session_gate_corrupt_and_unestablished_oracle() {
     let corrupt = Fixture::new();
     fs::create_dir_all(corrupt.0.join("config")).expect("config");
     fs::write(corrupt.0.join("config/journal.json"), "{not json\n").expect("corrupt");
-    let (status, body) = get(
-        router(corrupt.0.clone()),
-        "/app/thinking/api/state",
-        None,
-    )
-    .await;
+    let (status, body) = get(router(corrupt.0.clone()), "/app/thinking/api/state", None).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(body["reason_code"], "corrupt_config");
     let unestablished = Fixture::new();

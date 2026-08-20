@@ -440,10 +440,7 @@ async fn sol_cut_uses_unknown_app_404_and_router_405_without_session_gate_change
         }
     }
 
-    for path in [
-        "/app/sol/api/set-owner",
-        "/app/sol/api/sol-init",
-    ] {
+    for path in ["/app/sol/api/set-owner", "/app/sol/api/sol-init"] {
         let response = app
             .clone()
             .oneshot(

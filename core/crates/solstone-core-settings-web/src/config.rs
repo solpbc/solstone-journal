@@ -549,7 +549,8 @@ mod tests {
         assert_eq!(body["detail"], "Unknown section: agent");
         assert_eq!(std::fs::read(&config_path).expect("after"), before);
         let after: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&config_path).expect("after JSON")).expect("JSON");
+            serde_json::from_slice(&std::fs::read(&config_path).expect("after JSON"))
+                .expect("JSON");
         assert_eq!(after["agent"], leftover);
     }
 

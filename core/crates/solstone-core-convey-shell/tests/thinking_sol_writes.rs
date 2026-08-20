@@ -77,10 +77,7 @@ async fn write_routes_inherit_the_unestablished_session_gate() {
 #[tokio::test]
 async fn deleted_set_name_and_reset_routes_return_method_not_allowed() {
     let fixture = established();
-    for path in [
-        "/app/thinking/api/set-name",
-        "/app/thinking/api/reset",
-    ] {
+    for path in ["/app/thinking/api/set-name", "/app/thinking/api/reset"] {
         let (status, _value) = post(path, r#"{"name":"Nova"}"#, &fixture).await;
         // GET `/app/{app}/{*tail}` occupies these paths, so POST is 405 rather than 404.
         assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED, "{path}");
@@ -335,14 +332,12 @@ async fn absent_owned_state_persists_only_when_the_mutation_changes_something() 
 
 #[tokio::test]
 async fn non_object_owned_state_is_refused_without_replacement() {
-    for (path, body, config, key) in [
-        (
-            "/app/thinking/api/set-owner",
-            r#"{"name":"Ada"}"#,
-            json!({"setup":{"completed_at":1},"identity":7}),
-            "identity",
-        ),
-    ] {
+    for (path, body, config, key) in [(
+        "/app/thinking/api/set-owner",
+        r#"{"name":"Ada"}"#,
+        json!({"setup":{"completed_at":1},"identity":7}),
+        "identity",
+    )] {
         let fixture = Fixture::new();
         let config_path = fixture.0.join("config/journal.json");
         write_json(&config_path, config);
@@ -367,13 +362,11 @@ async fn non_object_owned_state_is_refused_without_replacement() {
 #[cfg(unix)]
 #[tokio::test]
 async fn populated_same_reset_and_set_owner_leave_bytes_inode_and_lock_mtime_unchanged() {
-    for (path, body, config) in [
-        (
-            "/app/thinking/api/set-owner",
-            r#"{"name":"Ada"}"#.to_owned(),
-            json!({"setup":{"completed_at":1},"identity":{"name":"Ada","bio":"kept","sibling":true}}),
-        ),
-    ] {
+    for (path, body, config) in [(
+        "/app/thinking/api/set-owner",
+        r#"{"name":"Ada"}"#.to_owned(),
+        json!({"setup":{"completed_at":1},"identity":{"name":"Ada","bio":"kept","sibling":true}}),
+    )] {
         let fixture = Fixture::new();
         let config_path = fixture.0.join("config/journal.json");
         write_json(&config_path, config);
