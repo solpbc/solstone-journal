@@ -16,7 +16,7 @@ export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover FORCE
+.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover brand-sync FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -906,6 +906,34 @@ check-rust-shipped-binaries: build
 audit:
 	@$(REQUIRE_CARGO)
 	cargo deny --manifest-path $(RUST_MANIFEST) check
+
+# Re-vendor brand assets from the canonical brand source. CI verifies the
+# committed output (it does not run brand-sync) — run this locally when the
+# brand spec updates, then commit the diff. Pure copy: every asset below has a
+# committed source in the brand tree, so no rasterizer is needed.
+#
+# SHELL_STATUS_HELD are shell status glyphs that intentionally diverge from the
+# brand source and are NOT synced: bang.svg and error.svg re-tint their alert
+# and error glyphs (#d97706 / #dc2626) so severity reads at a glance in the
+# shell, and degraded.svg has no brand counterpart at all. Each carries an
+# in-file comment saying so. Reverting them to the brand orange is a deliberate
+# design decision, not a sync — leave them out of this list until that decision
+# is made.
+SHELL_STATUS_DIR  = core/crates/solstone-core-convey-shell/assets/static/sol-status
+SHELL_STATUS_SYNC = active:sol-ring-icon half:sol-ring-icon-half paused:sol-ring-icon-paused question:sol-ring-icon-question x:sol-ring-icon-x
+SHELL_STATUS_HELD = bang.svg error.svg degraded.svg
+
+brand-sync:
+	@test -n "$(BRAND_DIR)" || { echo "brand: BRAND_DIR is required — point it at your brand asset directory (BRAND_DIR=/path/to/brand make brand-sync)"; exit 1; }
+	@test -d "$(BRAND_DIR)" || { echo "brand: BRAND_DIR=$(BRAND_DIR) not found"; exit 1; }
+	@set -e; for pair in $(SHELL_STATUS_SYNC); do \
+	  cp "$(BRAND_DIR)/$${pair#*:}.svg" "$(SHELL_STATUS_DIR)/$${pair%%:*}.svg"; \
+	done
+	cp "$(BRAND_DIR)/sol-wordmark.svg"            docs/static/sol-wordmark.svg
+	cp "$(BRAND_DIR)/png/sol-wordmark-512.png"    docs/static/logo.png
+	cp "$(BRAND_DIR)/web-favicon/favicon.ico"     favicon.ico
+	@echo "brand: held (not synced, intentionally divergent): $(SHELL_STATUS_HELD)"
+	@echo "brand: synced from $(BRAND_DIR)"
 
 # Setup skill symlinks
 skills:
