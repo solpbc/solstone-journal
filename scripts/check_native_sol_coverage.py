@@ -17,7 +17,6 @@ try:
     from scripts.build_native_sol_inventory import (
         FINAL_HTTP_TOTAL,
         FINAL_STUB_COUNTS,
-        FINAL_TOP_LEVEL_CHAT_TOTAL,
         FINAL_TOP_LEVEL_IMPORT_TOTAL,
         FINAL_TOP_LEVEL_LINK_TOTAL,
         FINAL_TOP_LEVEL_STATUS_TOTAL,
@@ -28,7 +27,6 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution path.
     from build_native_sol_inventory import (  # type: ignore[no-redef]
         FINAL_HTTP_TOTAL,
         FINAL_STUB_COUNTS,
-        FINAL_TOP_LEVEL_CHAT_TOTAL,
         FINAL_TOP_LEVEL_IMPORT_TOTAL,
         FINAL_TOP_LEVEL_LINK_TOTAL,
         FINAL_TOP_LEVEL_STATUS_TOTAL,
@@ -65,11 +63,6 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
         for entry in entries
         if entry.surface == "sol-call" and entry.entry_type in {"moved-stub", "local"}
     }
-    required_top_level_chat = {
-        entry.operation_id
-        for entry in entries
-        if entry.surface == "sol-chat" and entry.entry_type == "top-level-chat"
-    }
     required_top_level_import = {
         entry.operation_id
         for entry in entries
@@ -88,7 +81,6 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
     required_dispatch = (
         required
         | required_stubs
-        | required_top_level_chat
         | required_top_level_import
         | required_top_level_link
         | required_top_level_status
@@ -114,11 +106,6 @@ def check_coverage(root: Path = REPO_ROOT) -> list[str]:
                 f"current {entry_type} authority count {stub_counts[entry_type]} "
                 f"!= {expected}"
             )
-    if len(required_top_level_chat) != FINAL_TOP_LEVEL_CHAT_TOTAL:
-        errors.append(
-            f"current top-level chat authority count {len(required_top_level_chat)} "
-            f"!= {FINAL_TOP_LEVEL_CHAT_TOTAL}"
-        )
     if not applicability_errors:
         entries = applicability["entries"]
         keys = set(entries)

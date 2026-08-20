@@ -7,7 +7,6 @@
       "journal_reach": "api-only",
       "api_commands": [
         "call",
-        "chat",
         "import",
         "status"
       ],

@@ -95,7 +95,6 @@ pub fn render_top_level_help(command: &str, args: &[String]) -> Option<CommandOu
         return None;
     }
     let surface = match command {
-        "chat" => "sol-chat",
         "import" => "sol-import",
         "status" => "sol-status",
         _ => return None,
@@ -421,7 +420,7 @@ mod tests {
         for entry in aggregate::entries() {
             if !matches!(
                 entry.surface,
-                "sol-call" | "sol-chat" | "sol-import" | "sol-link"
+                "sol-call" | "sol-import" | "sol-link"
             ) {
                 continue;
             }

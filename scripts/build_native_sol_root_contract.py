@@ -18,7 +18,6 @@ HEADER = "solstone - journal access CLI"
 USAGE = "Usage: solstone <command> [args...]"
 APPS_HEADING = "Apps (solstone call <app>):"
 ACCESS_GROUPS: list[dict[str, Any]] = [
-    {"heading": "Conversation", "commands": ["chat"]},
     {"heading": "Your journal", "commands": ["call", "import"]},
     {"heading": "Tools", "commands": ["skills", "link"]},
 ]
@@ -26,7 +25,6 @@ CALL_GROUPS: list[str] = [
     "activities",
     "awareness",
     "body",
-    "chat",
     "entities",
     "facets",
     "import",
@@ -70,9 +68,9 @@ def render_stdout(
 
 
 def build() -> dict[str, Any]:
-    if len(CALL_GROUPS) != 20:
+    if len(CALL_GROUPS) != 19:
         raise RuntimeError(
-            f"root call group count {len(CALL_GROUPS)} != 20: {CALL_GROUPS!r}"
+            f"root call group count {len(CALL_GROUPS)} != 19: {CALL_GROUPS!r}"
         )
     if len(CALL_GROUPS) != len(set(CALL_GROUPS)):
         raise RuntimeError(f"duplicate root call groups: {CALL_GROUPS!r}")

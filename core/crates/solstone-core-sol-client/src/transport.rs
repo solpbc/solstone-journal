@@ -16,7 +16,6 @@ const API_TOTAL_SECONDS: u64 = 30;
 const UPLOAD_CONNECT_SECONDS: u64 = 2;
 const UPLOAD_READ_SECONDS: u64 = 120;
 const UPLOAD_TOTAL_SECONDS: u64 = 180;
-const CHAT_POST_SECONDS: u64 = 10;
 const SSE_CONNECT_SECONDS: u64 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,7 +42,6 @@ impl HttpMethod {
 pub enum TimeoutPolicy {
     Api,
     Upload,
-    ChatPost,
     SseOpen,
 }
 
@@ -61,11 +59,6 @@ impl TimeoutPolicy {
                 read: Some(Duration::from_secs(UPLOAD_READ_SECONDS)),
                 total: Some(Duration::from_secs(UPLOAD_TOTAL_SECONDS)),
             },
-            TimeoutPolicy::ChatPost => TimeoutSpec {
-                connect: Duration::from_secs(CHAT_POST_SECONDS),
-                read: Some(Duration::from_secs(CHAT_POST_SECONDS)),
-                total: None,
-            },
             TimeoutPolicy::SseOpen => TimeoutSpec {
                 connect: Duration::from_secs(SSE_CONNECT_SECONDS),
                 read: None,
@@ -79,7 +72,6 @@ impl TimeoutPolicy {
         match self {
             TimeoutPolicy::Api => "api",
             TimeoutPolicy::Upload => "upload",
-            TimeoutPolicy::ChatPost => "chat-post",
             TimeoutPolicy::SseOpen => "sse-open",
         }
     }
@@ -198,7 +190,6 @@ pub struct UreqHttpTransport {
     base_url: String,
     api_agent: ureq::Agent,
     upload_agent: ureq::Agent,
-    chat_post_agent: ureq::Agent,
     sse_agent: ureq::Agent,
     boundary_generator: Arc<dyn BoundaryGenerator>,
 }
@@ -223,7 +214,6 @@ impl UreqHttpTransport {
             base_url: base_url.into(),
             api_agent: agent_for(TimeoutPolicy::Api),
             upload_agent: agent_for(TimeoutPolicy::Upload),
-            chat_post_agent: agent_for(TimeoutPolicy::ChatPost),
             sse_agent: agent_for(TimeoutPolicy::SseOpen),
             boundary_generator,
         }
@@ -233,7 +223,6 @@ impl UreqHttpTransport {
         match policy {
             TimeoutPolicy::Api => &self.api_agent,
             TimeoutPolicy::Upload => &self.upload_agent,
-            TimeoutPolicy::ChatPost => &self.chat_post_agent,
             TimeoutPolicy::SseOpen => &self.sse_agent,
         }
     }
@@ -660,10 +649,6 @@ mod tests {
         assert_eq!(
             TimeoutPolicy::Upload.spec().read,
             Some(Duration::from_secs(120))
-        );
-        assert_eq!(
-            TimeoutPolicy::ChatPost.spec().read,
-            Some(Duration::from_secs(10))
         );
         assert_eq!(TimeoutPolicy::SseOpen.spec().read, None);
     }

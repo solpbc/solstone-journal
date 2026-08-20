@@ -10,8 +10,6 @@ mod apps_activities_native_command_rs;
 mod apps_awareness_native_command_rs;
 #[path = "../../native/apps/body/command.rs"]
 mod apps_body_native_command_rs;
-#[path = "../../native/apps/chat/command.rs"]
-mod apps_chat_native_command_rs;
 #[path = "../../native/apps/entities/command.rs"]
 mod apps_entities_native_command_rs;
 #[path = "../../native/apps/facets/command.rs"]
@@ -32,8 +30,6 @@ mod apps_support_native_command_rs;
 mod apps_thinking_native_command_rs;
 #[path = "../../native/apps/transcripts/command.rs"]
 mod apps_transcripts_native_command_rs;
-#[path = "../../native/think/chat/command.rs"]
-mod think_native_chat_command_rs;
 #[path = "../../native/think/import/command.rs"]
 mod think_native_import_command_rs;
 #[path = "../../native/think/link/command.rs"]
@@ -245,21 +241,6 @@ pub const ENTRIES: &[InventoryEntry] = &[
         route: Some("/app/body/api/window"),
         contract_operation_id: Some("body.window"),
         handler: "window",
-        resident: false,
-    },
-    InventoryEntry {
-        surface: "sol-call",
-        path: &["chat", "start"],
-        kind: "command",
-        help: "Start a sol-initiated chat request.",
-        authority_path: "core/native-sol/apps/chat/native/authority.toml",
-        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"summary\",\"nargs\":1,\"options\":[\"--summary\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"message\",\"nargs\":1,\"options\":[\"--message\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"category\",\"nargs\":1,\"options\":[\"--category\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"dedupe\",\"nargs\":1,\"options\":[\"--dedupe\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"dedupe_window\",\"nargs\":1,\"options\":[\"--dedupe-window\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"since_ts\",\"nargs\":1,\"options\":[\"--since-ts\"],\"required\":true,\"secondary\":[],\"type\":\"integer\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"trigger_talent\",\"nargs\":1,\"options\":[\"--trigger-talent\"],\"required\":true,\"secondary\":[],\"type\":\"text\"}]",
-        entry_type: "http",
-        operation_id: "chat.start",
-        method: Some("POST"),
-        route: Some("/api/chat/start"),
-        contract_operation_id: Some("chat.start"),
-        handler: "start",
         resident: false,
     },
     InventoryEntry {
@@ -2153,21 +2134,6 @@ pub const ENTRIES: &[InventoryEntry] = &[
         resident: false,
     },
     InventoryEntry {
-        surface: "sol-chat",
-        path: &["chat"],
-        kind: "top-level",
-        help: "Chat with your journal",
-        authority_path: "core/native-sol/think/native/chat/authority.toml",
-        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"message\",\"nargs\":-1,\"options\":[\"message\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"facet\",\"nargs\":1,\"options\":[\"--facet\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"verbose\",\"nargs\":1,\"options\":[\"-v\",\"--verbose\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"debug\",\"nargs\":1,\"options\":[\"-d\",\"--debug\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
-        entry_type: "top-level-chat",
-        operation_id: "chat.top_level",
-        method: None,
-        route: None,
-        contract_operation_id: None,
-        handler: "chat",
-        resident: false,
-    },
-    InventoryEntry {
         surface: "sol-import",
         path: &["import"],
         kind: "top-level",
@@ -2708,7 +2674,6 @@ pub const HANDLERS: &[Handler] = &[
     apps_body_native_command_rs::status,
     apps_body_native_command_rs::day,
     apps_body_native_command_rs::window,
-    apps_chat_native_command_rs::start,
     apps_entities_native_command_rs::accept_merge_candidate,
     apps_entities_native_command_rs::aka,
     apps_entities_native_command_rs::ambiguities,
@@ -2835,7 +2800,6 @@ pub const HANDLERS: &[Handler] = &[
     apps_transcripts_native_command_rs::segments,
     apps_transcripts_native_command_rs::speakers,
     apps_transcripts_native_command_rs::stats,
-    think_native_chat_command_rs::chat,
     think_native_import_command_rs::import_top_level,
     think_native_link_command_rs::link_join,
     think_native_moved_command_rs::identity,

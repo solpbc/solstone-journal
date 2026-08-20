@@ -5,8 +5,8 @@ use solstone_core_sol_client::aggregate;
 use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 use solstone_core_sol_client::resident::ResidentHandler;
 use solstone_core_sol_client::seam::{
-    BuildIdentityProvider, ChatEventSource, ClientItemIdProvider, Clock, FileProvider,
-    HttpTransport, LinkJoinPairingSeam, LinkServeRunner, NotificationSink,
+    BuildIdentityProvider, ClientItemIdProvider, Clock, FileProvider, HttpTransport,
+    LinkJoinPairingSeam, LinkServeRunner, NotificationSink,
 };
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -16,7 +16,6 @@ pub mod help;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Migrated { path: Vec<OsString> },
-    Chat { args: Vec<OsString> },
     Import { args: Vec<OsString> },
     Status { args: Vec<OsString> },
     MovedStub { name: OsString },
@@ -26,7 +25,6 @@ pub enum Outcome {
 pub struct DispatchSeams<'a> {
     pub transport: &'a dyn HttpTransport,
     pub clock: Option<&'a dyn Clock>,
-    pub chat_events: Option<&'a dyn ChatEventSource>,
     pub files: Option<&'a dyn FileProvider>,
     pub build_identity: Option<&'a dyn BuildIdentityProvider>,
     pub client_item_ids: Option<&'a dyn ClientItemIdProvider>,
@@ -53,16 +51,6 @@ pub enum LinkDispatch {
 pub fn evaluate_args(args: &[OsString]) -> Outcome {
     match args {
         [command, rest @ ..] if command == OsStr::new("call") => evaluate_call(rest),
-        [command, rest @ ..] if command == OsStr::new("chat") => {
-            match_generated_surface_path("sol-chat", &[String::from("chat")]).map_or_else(
-                || Outcome::Unsupported {
-                    args: args.to_vec(),
-                },
-                |_entry| Outcome::Chat {
-                    args: rest.to_vec(),
-                },
-            )
-        }
         [command, rest @ ..] if command == OsStr::new("import") => {
             match_generated_surface_path("sol-import", &[String::from("import")]).map_or_else(
                 || Outcome::Unsupported {
@@ -90,35 +78,6 @@ pub fn evaluate_args(args: &[OsString]) -> Outcome {
 }
 
 #[must_use]
-pub fn dispatch_sol_chat_with_seams(
-    args: &[String],
-    env: &BTreeMap<String, String>,
-    stdin: &str,
-    today: &str,
-    seams: DispatchSeams<'_>,
-) -> CommandOutput {
-    let Some((_, handler)) = match_generated_surface_path("sol-chat", &[String::from("chat")])
-    else {
-        return CommandOutput::failure("Unsupported native sol command.\n", 64);
-    };
-    handler(CommandContext {
-        args,
-        env,
-        stdin,
-        today,
-        transport: seams.transport,
-        clock: seams.clock,
-        chat_events: seams.chat_events,
-        files: seams.files,
-        build_identity: seams.build_identity,
-        client_item_ids: seams.client_item_ids,
-        notification_sink: None,
-        link_pairing: None,
-        link_serve: None,
-    })
-}
-
-#[must_use]
 pub fn dispatch_sol_import_with_seams(
     args: &[String],
     env: &BTreeMap<String, String>,
@@ -137,7 +96,6 @@ pub fn dispatch_sol_import_with_seams(
         today,
         transport: seams.transport,
         clock: seams.clock,
-        chat_events: None,
         files: seams.files,
         build_identity: seams.build_identity,
         client_item_ids: seams.client_item_ids,
@@ -166,7 +124,6 @@ pub fn dispatch_sol_status_with_seams(
         today,
         transport: seams.transport,
         clock: seams.clock,
-        chat_events: None,
         files: seams.files,
         build_identity: seams.build_identity,
         client_item_ids: seams.client_item_ids,
@@ -209,7 +166,6 @@ pub fn dispatch_sol_link_with_seams(
         today,
         transport: seams.transport,
         clock: seams.clock,
-        chat_events: None,
         files: seams.files,
         build_identity: None,
         client_item_ids: None,
@@ -254,7 +210,6 @@ pub fn dispatch_sol_call(
         DispatchSeams {
             transport,
             clock: None,
-            chat_events: None,
             files: None,
             build_identity: None,
             client_item_ids: None,
@@ -282,7 +237,6 @@ pub fn dispatch_sol_call_with_seams(
         today,
         transport: seams.transport,
         clock: seams.clock,
-        chat_events: None,
         files: seams.files,
         build_identity: seams.build_identity,
         client_item_ids: seams.client_item_ids,
@@ -413,16 +367,6 @@ mod tests {
             evaluate_args(&args(&["call", "activities", "list"])),
             Outcome::Migrated {
                 path: args(&["activities", "list"])
-            }
-        );
-    }
-
-    #[test]
-    fn routes_top_level_chat_to_chat_shell() {
-        assert_eq!(
-            evaluate_args(&args(&["chat", "hello"])),
-            Outcome::Chat {
-                args: args(&["hello"])
             }
         );
     }

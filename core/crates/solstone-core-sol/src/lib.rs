@@ -6,7 +6,6 @@ use std::ffi::{OsStr, OsString};
 use std::io::{self, IsTerminal, Read, Result as IoResult, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
-use std::sync::{Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{env, fs};
@@ -16,20 +15,19 @@ use serde_json::json;
 use solstone_core_sol_client::command::{CommandContext, CommandOutput};
 use solstone_core_sol_client::resident::{ResidentHandler, ShutdownSignal};
 use solstone_core_sol_client::seam::{
-    BuildIdentityProvider, ChatEventSource, ChatInput, ClientItemIdProvider, Clock, FileProvider,
-    HttpTransport, LinkJoinPairingSeam, LinkServeRunner, ProcessOutput, ProcessSpawner,
+    BuildIdentityProvider, ClientItemIdProvider, Clock, FileProvider, HttpTransport,
+    LinkJoinPairingSeam, LinkServeRunner, ProcessOutput, ProcessSpawner,
 };
 #[cfg(target_os = "ios")]
 use solstone_core_sol_client::seam::{
     LinkJoinDirectRequest, LinkJoinPairingError, LinkJoinPairingErrorKind, LinkJoinRelayRequest,
     LinkServeError, LinkServeErrorKind,
 };
-use solstone_core_sol_client::sse::SseDecoder;
 use solstone_core_sol_client::transport::UreqHttpTransport;
 use solstone_core_sol_client_cli::{
     DispatchSeams, LinkDispatch, LinkDispatchSeams, Outcome, dispatch_sol_call_with_seams,
-    dispatch_sol_chat_with_seams, dispatch_sol_import_with_seams, dispatch_sol_link_with_seams,
-    dispatch_sol_status_with_seams, evaluate_args, help,
+    dispatch_sol_import_with_seams, dispatch_sol_link_with_seams, dispatch_sol_status_with_seams,
+    evaluate_args, help,
 };
 #[cfg(not(target_os = "ios"))]
 use solstone_core_sol_link::{SplLinkJoinPairingSeam, SplLinkServeRunner};
@@ -77,9 +75,6 @@ fn run_with_stdin_provider(
         [command, rest @ ..] if command == OsStr::new("skills") => render_output(skills::run(rest)),
         [command, rest @ ..] if command == OsStr::new("call") => {
             run_call(&args, rest, stdin_provider)
-        }
-        [command, rest @ ..] if command == OsStr::new("chat") => {
-            run_top_level_native(&args, "chat", rest, stdin_provider)
         }
         [command, rest @ ..] if command == OsStr::new("import") => {
             run_top_level_native(&args, "import", rest, stdin_provider)
@@ -270,7 +265,6 @@ fn run_top_level_link(
                 today: &today,
                 transport: &transport,
                 clock: Some(&clock),
-                chat_events: None,
                 files: Some(&files),
                 build_identity: None,
                 client_item_ids: None,
@@ -338,11 +332,9 @@ fn run_dispatched(
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    let clock = SystemClock::default();
     let files = RealFileProvider;
     let build_identity = RealBuildIdentityProvider;
     let client_item_ids = RealClientItemIdProvider;
-    let chat_events = ChannelChatEventSource::default();
     let output = match outcome {
         Outcome::Migrated { .. } | Outcome::MovedStub { .. } => dispatch_sol_call_with_seams(
             &args,
@@ -352,22 +344,6 @@ fn run_dispatched(
             DispatchSeams {
                 transport: &transport,
                 clock: None,
-                chat_events: None,
-                files: Some(&files),
-                build_identity: Some(&build_identity),
-                client_item_ids: Some(&client_item_ids),
-                notification_sink: None,
-            },
-        ),
-        Outcome::Chat { .. } => dispatch_sol_chat_with_seams(
-            &args,
-            &env,
-            &stdin,
-            &today,
-            DispatchSeams {
-                transport: &transport,
-                clock: Some(&clock),
-                chat_events: Some(&chat_events),
                 files: Some(&files),
                 build_identity: Some(&build_identity),
                 client_item_ids: Some(&client_item_ids),
@@ -382,7 +358,6 @@ fn run_dispatched(
             DispatchSeams {
                 transport: &transport,
                 clock: None,
-                chat_events: None,
                 files: Some(&files),
                 build_identity: Some(&build_identity),
                 client_item_ids: Some(&client_item_ids),
@@ -397,7 +372,6 @@ fn run_dispatched(
             DispatchSeams {
                 transport: &transport,
                 clock: None,
-                chat_events: None,
                 files: Some(&files),
                 build_identity: Some(&build_identity),
                 client_item_ids: Some(&client_item_ids),
@@ -593,58 +567,6 @@ impl Clock for SystemClock {
     }
 }
 
-#[derive(Debug, Default)]
-struct ChannelChatEventSource {
-    receiver: Mutex<Option<mpsc::Receiver<ChatInput>>>,
-}
-
-impl ChatEventSource for ChannelChatEventSource {
-    fn open(
-        &self,
-        transport: &dyn HttpTransport,
-    ) -> Result<(), solstone_core_sol_client::error::ClientError> {
-        let mut stream = transport.open_sse(solstone_core_sol_client::transport::SseRequest {
-            path: "/sse/events".to_string(),
-            policy: solstone_core_sol_client::transport::TimeoutPolicy::SseOpen,
-        })?;
-        let (sender, receiver) = mpsc::channel();
-        *self.receiver.lock().expect("chat receiver lock") = Some(receiver);
-        thread::spawn(move || {
-            let mut decoder = SseDecoder::default();
-            let mut buffer = [0_u8; 8192];
-            loop {
-                match stream.body.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(count) => {
-                        decoder.push_chunk(&buffer[..count]);
-                        while let Some(event) = decoder.pop_event() {
-                            if sender.send(ChatInput::SseEvent(event)).is_err() {
-                                return;
-                            }
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            let _ = sender.send(ChatInput::SseEnded);
-        });
-        Ok(())
-    }
-
-    fn next(&self, timeout: Duration, clock: &dyn Clock) -> ChatInput {
-        let guard = self.receiver.lock().expect("chat receiver lock");
-        let Some(receiver) = guard.as_ref() else {
-            clock.sleep(timeout);
-            return ChatInput::PollTick;
-        };
-        match receiver.recv_timeout(timeout) {
-            Ok(input) => input,
-            Err(mpsc::RecvTimeoutError::Timeout) => ChatInput::PollTick,
-            Err(mpsc::RecvTimeoutError::Disconnected) => ChatInput::SseEnded,
-        }
-    }
-}
-
 #[derive(Debug)]
 struct RealFileProvider;
 
@@ -779,7 +701,7 @@ mod tests {
             errors.push("solstone journal reach must be api-only".to_owned());
         }
         let api = string_set(solstone, "api_commands", &mut errors);
-        if api != string_values(&["call", "chat", "import", "status"]) {
+        if api != string_values(&["call", "import", "status"]) {
             errors.push("solstone API command boundary drifted".to_owned());
         }
         let local = string_set(solstone, "invoking_device_commands", &mut errors);
@@ -1114,7 +1036,6 @@ mod tests {
                 .stdout
                 .contains("Usage: solstone <command> [args...]\n")
         );
-        assert!(output.stdout.contains("Conversation\n  chat\n"));
         assert!(output.stdout.contains("Apps (solstone call <app>):\n"));
         assert!(output.stdout.contains("  call journal\n"));
         assert!(!output.stdout.contains("Journal: "));
@@ -1313,7 +1234,6 @@ mod tests {
             os_args(&["call", "--help"]),
             os_args(&["call", "activities", "--help"]),
             os_args(&["call", "activities", "list", "--help"]),
-            os_args(&["chat", "--help"]),
             os_args(&["import", "--help"]),
         ] {
             let _ = run_with_stdin_provider("sol", args, &provider);
@@ -1362,7 +1282,6 @@ mod tests {
             DispatchSeams {
                 transport: &transport,
                 clock: None,
-                chat_events: None,
                 files: None,
                 build_identity: None,
                 client_item_ids: None,

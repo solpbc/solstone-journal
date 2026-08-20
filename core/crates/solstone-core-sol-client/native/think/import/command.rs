@@ -599,7 +599,6 @@ mod tests {
             today: "20260723",
             transport,
             clock: None,
-            chat_events: None,
             files: Some(files),
             build_identity: None,
             client_item_ids: Some(client_item_ids),

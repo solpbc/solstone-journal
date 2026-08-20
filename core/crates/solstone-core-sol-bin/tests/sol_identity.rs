@@ -134,7 +134,7 @@ fn cli_boundary_declares_the_complete_sol_partition() {
     let device = strings(sol, "invoking_device_commands");
     let journal_leaves = strings(sol, "http_paths");
 
-    assert_eq!(api.len(), 4);
+    assert_eq!(api.len(), 3);
     assert_eq!(device.len(), 3);
     assert_eq!(journal_leaves.len(), 17);
     assert_unique(&api, "api_commands");
@@ -142,7 +142,7 @@ fn cli_boundary_declares_the_complete_sol_partition() {
     assert_unique(&journal_leaves, "http_paths");
     assert_eq!(
         api.iter().copied().collect::<BTreeSet<_>>(),
-        BTreeSet::from(["call", "chat", "import", "status"])
+        BTreeSet::from(["call", "import", "status"])
     );
     assert_eq!(
         device.iter().copied().collect::<BTreeSet<_>>(),

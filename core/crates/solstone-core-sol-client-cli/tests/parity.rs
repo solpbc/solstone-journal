@@ -8,19 +8,17 @@ use serde_json::{Value, json};
 use solstone_core_sol_client::command::CommandContext;
 use solstone_core_sol_client::error::ClientError;
 use solstone_core_sol_client::seam::{
-    ChatInput, ExpectedHttpCall, FakeBuildIdentityProvider, FakeClientItemIdProvider, FakeClock,
-    FixtureFileProvider, RecordedHttpCall, ScriptedChatEventSource, ScriptedHttpTransport,
-    ScriptedLinkJoinPairingSeam, ScriptedLinkServeRunner,
+    ExpectedHttpCall, FakeBuildIdentityProvider, FakeClientItemIdProvider, FakeClock,
+    FixtureFileProvider, RecordedHttpCall, ScriptedHttpTransport, ScriptedLinkJoinPairingSeam,
+    ScriptedLinkServeRunner,
 };
-use solstone_core_sol_client::sse::iter_sse_events;
 use solstone_core_sol_client::transport::{
     ApiRequest, FormField, HttpMethod, HttpResponse, MultipartFile, QueryParam, SseRequest,
     TimeoutPolicy, UploadRequest,
 };
 use solstone_core_sol_client_cli::{
     DispatchSeams, LinkDispatch, LinkDispatchSeams, dispatch_sol_call_with_seams,
-    dispatch_sol_chat_with_seams, dispatch_sol_import_with_seams, dispatch_sol_link_with_seams,
-    dispatch_sol_status_with_seams,
+    dispatch_sol_import_with_seams, dispatch_sol_link_with_seams, dispatch_sol_status_with_seams,
 };
 
 const ACTIVITIES_VECTORS: &str =
@@ -29,9 +27,6 @@ const ACTIVITIES_COVERAGE_VECTORS: &str =
     include_str!("../../../fixtures/native-sol/parity/activities_coverage.jsonl");
 const AWARENESS_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/awareness.jsonl");
 const BODY_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/body.jsonl");
-const CHAT_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/chat.jsonl");
-const CHAT_START_VECTORS: &str =
-    include_str!("../../../fixtures/native-sol/parity/chat_start.jsonl");
 const ENTITIES_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/entities.jsonl");
 const FACETS_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/facets.jsonl");
 const HEALTH_VECTORS: &str = include_str!("../../../fixtures/native-sol/parity/health.jsonl");
@@ -65,8 +60,6 @@ fn native_matches_sol_call_parity_vectors() {
         .chain(load_vectors(ACTIVITIES_COVERAGE_VECTORS))
         .chain(load_vectors(AWARENESS_VECTORS))
         .chain(load_vectors(BODY_VECTORS))
-        .chain(load_vectors(CHAT_VECTORS))
-        .chain(load_vectors(CHAT_START_VECTORS))
         .chain(load_vectors(ENTITIES_VECTORS))
         .chain(load_vectors(FACETS_VECTORS))
         .chain(load_vectors(HEALTH_VECTORS))
@@ -99,7 +92,6 @@ fn run_vector(vector: &Value) {
     let today = vector["clock"]["today"].as_str().unwrap_or("20260723");
     let transport = ScriptedHttpTransport::new(scripted_calls(vector));
     let clock = FakeClock::at_unix(clock_unix_seconds(vector));
-    let chat_events = ScriptedChatEventSource::new(chat_inputs(vector));
     let files = fixture_files(vector);
     let build_identity = FakeBuildIdentityProvider::new(Some(json!({
         "version": "9.9.9",
@@ -120,23 +112,7 @@ fn run_vector(vector: &Value) {
     let link_pairing = ScriptedLinkJoinPairingSeam::new(vec![]);
     let link_serve = ScriptedLinkServeRunner::new(vec![]);
 
-    let output = if vector["surface"].as_str() == Some("sol-chat") {
-        dispatch_sol_chat_with_seams(
-            &argv,
-            &env,
-            stdin,
-            today,
-            DispatchSeams {
-                transport: &transport,
-                clock: Some(&clock),
-                chat_events: Some(&chat_events),
-                files: Some(&files),
-                build_identity: Some(&build_identity),
-                client_item_ids: Some(&client_item_ids),
-                notification_sink: None,
-            },
-        )
-    } else if vector["surface"].as_str() == Some("sol-import") {
+    let output = if vector["surface"].as_str() == Some("sol-import") {
         let import_args = argv.iter().skip(1).cloned().collect::<Vec<_>>();
         dispatch_sol_import_with_seams(
             &import_args,
@@ -146,7 +122,6 @@ fn run_vector(vector: &Value) {
             DispatchSeams {
                 transport: &transport,
                 clock: Some(&clock),
-                chat_events: None,
                 files: Some(&files),
                 build_identity: Some(&build_identity),
                 client_item_ids: Some(&client_item_ids),
@@ -162,7 +137,6 @@ fn run_vector(vector: &Value) {
             DispatchSeams {
                 transport: &transport,
                 clock: Some(&clock),
-                chat_events: None,
                 files: Some(&files),
                 build_identity: Some(&build_identity),
                 client_item_ids: Some(&client_item_ids),
@@ -193,7 +167,6 @@ fn run_vector(vector: &Value) {
                     today,
                     transport: &transport,
                     clock: Some(&clock),
-                    chat_events: None,
                     files: Some(&files),
                     build_identity: None,
                     client_item_ids: None,
@@ -216,7 +189,6 @@ fn run_vector(vector: &Value) {
             DispatchSeams {
                 transport: &transport,
                 clock: Some(&clock),
-                chat_events: None,
                 files: Some(&files),
                 build_identity: Some(&build_identity),
                 client_item_ids: Some(&client_item_ids),
@@ -264,45 +236,6 @@ fn scripted_calls(vector: &Value) -> Vec<ExpectedHttpCall> {
         .iter()
         .map(|request| scripted_call(vector_id, request))
         .collect()
-}
-
-fn chat_inputs(vector: &Value) -> Vec<ChatInput> {
-    if vector["surface"].as_str() != Some("sol-chat") {
-        return vec![];
-    }
-    if let Some(inputs) = vector.get("chat_inputs").and_then(Value::as_array) {
-        return inputs.iter().flat_map(chat_inputs_from_value).collect();
-    }
-    let chunks = vector["transport"]["requests"]
-        .as_array()
-        .and_then(|requests| requests.iter().find(|request| request["method"] == "SSE"))
-        .and_then(|request| request["chunks"].as_array())
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
-    let mut inputs = iter_sse_events(
-        chunks
-            .iter()
-            .map(|chunk| chunk.as_str().expect("SSE chunk").as_bytes().to_vec()),
-    )
-    .map(ChatInput::SseEvent)
-    .collect::<Vec<_>>();
-    inputs.push(ChatInput::SseEnded);
-    inputs
-}
-
-fn chat_input(value: &Value) -> ChatInput {
-    match value["kind"].as_str().expect("chat input kind") {
-        "sse-event" => ChatInput::SseEvent(value["value"].clone()),
-        "sse-ended" => ChatInput::SseEnded,
-        "poll" => ChatInput::PollTick,
-        "interrupt" => ChatInput::Interrupted,
-        other => panic!("unsupported chat input kind {other}"),
-    }
-}
-
-fn chat_inputs_from_value(value: &Value) -> Vec<ChatInput> {
-    let count = value.get("count").and_then(Value::as_u64).unwrap_or(1);
-    (0..count).map(|_| chat_input(value)).collect()
 }
 
 fn scripted_call(vector_id: &str, request: &Value) -> ExpectedHttpCall {
@@ -604,7 +537,6 @@ fn timeout_policy(value: &str) -> TimeoutPolicy {
     match value {
         "api" => TimeoutPolicy::Api,
         "upload" => TimeoutPolicy::Upload,
-        "chat-post" => TimeoutPolicy::ChatPost,
         "sse-open" => TimeoutPolicy::SseOpen,
         other => panic!("unsupported timeout policy {other}"),
     }

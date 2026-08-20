@@ -42,7 +42,6 @@ fn main() -> Result<(), String> {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let lookup_args = match surface {
-                "sol-chat" => vec!["chat".to_string()],
                 "sol-import" => vec!["import".to_string()],
                 "sol-status" => vec!["status".to_string()],
                 "sol-link" => link_lookup_args(&argv),

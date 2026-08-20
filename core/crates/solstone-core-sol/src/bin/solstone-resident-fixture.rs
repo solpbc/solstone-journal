@@ -71,7 +71,6 @@ fn main() -> ExitCode {
             today,
             transport: &transport,
             clock: None,
-            chat_events: None,
             files: None,
             build_identity: None,
             client_item_ids: None,

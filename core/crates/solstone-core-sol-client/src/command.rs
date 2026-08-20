@@ -2,8 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use crate::seam::{
-    BuildIdentityProvider, ChatEventSource, ClientItemIdProvider, Clock, FileProvider,
-    HttpTransport, LinkJoinPairingSeam, LinkServeRunner, NotificationSink,
+    BuildIdentityProvider, ClientItemIdProvider, Clock, FileProvider, HttpTransport,
+    LinkJoinPairingSeam, LinkServeRunner, NotificationSink,
 };
 use std::collections::BTreeMap;
 
@@ -15,7 +15,6 @@ pub struct CommandContext<'a> {
     pub today: &'a str,
     pub transport: &'a dyn HttpTransport,
     pub clock: Option<&'a dyn Clock>,
-    pub chat_events: Option<&'a dyn ChatEventSource>,
     pub files: Option<&'a dyn FileProvider>,
     pub build_identity: Option<&'a dyn BuildIdentityProvider>,
     pub client_item_ids: Option<&'a dyn ClientItemIdProvider>,

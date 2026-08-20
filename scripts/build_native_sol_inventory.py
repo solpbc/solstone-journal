@@ -44,7 +44,6 @@ ORACLE_PATH = REPO_ROOT / "core/fixtures/native-sol/sol-call-grammar-v1.json"
 ENTRY_TYPES = {
     "http",
     "moved-stub",
-    "top-level-chat",
     "top-level-import",
     "top-level-link",
     "top-level-status",
@@ -52,10 +51,9 @@ ENTRY_TYPES = {
 }
 COMMAND_KINDS = {"command", "callback", "top-level"}
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
-FINAL_ORACLE_TOTAL = 173
-FINAL_HTTP_TOTAL = 168
+FINAL_ORACLE_TOTAL = 172
+FINAL_HTTP_TOTAL = 167
 FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 2
-FINAL_TOP_LEVEL_CHAT_TOTAL = 1
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
 FINAL_TOP_LEVEL_LINK_TOTAL = 2
 FINAL_TOP_LEVEL_STATUS_TOTAL = 1
@@ -64,7 +62,6 @@ FINAL_HTTP_GROUP_COUNTS = {
     "activities": 6,
     "awareness": 4,
     "body": 3,
-    "chat": 1,
     "entities": 22,
     "facets": 3,
     "health": 4,
@@ -98,7 +95,7 @@ ORACLE_GRAMMAR_TRANSFORMS: dict[tuple[str, ...], dict[str, Any]] = {
     },
 }
 
-# These four compatibility leaves are deliberately retired, rather than
+# These compatibility leaves are deliberately retired, rather than
 # represented by a native authority.  They are excluded from the final native
 # grammar partition while their removal from the Python compatibility host is
 # completed in the later retirement round.
@@ -107,6 +104,7 @@ RETIRED_JOURNAL_ORACLE_PATHS = {
     ("journal", "facet", "doctor"),
     ("journal", "facet", "merge"),
     ("journal", "merge"),
+    ("chat", "start"),
 }
 
 
@@ -242,7 +240,6 @@ def parse_entry(
     surface = raw_entry.get("surface", "sol-call")
     if surface not in {
         "sol-call",
-        "sol-chat",
         "sol-import",
         "sol-link",
         "sol-status",
@@ -624,7 +621,6 @@ def check_complete_partition(
 def check_top_level_partition(entries: list[AuthorityEntry]) -> list[str]:
     errors: list[str] = []
     expected = {
-        ("sol-chat", "top-level-chat"): FINAL_TOP_LEVEL_CHAT_TOTAL,
         ("sol-import", "top-level-import"): FINAL_TOP_LEVEL_IMPORT_TOTAL,
         ("sol-link", "top-level-link"): FINAL_TOP_LEVEL_LINK_TOTAL,
         ("sol-status", "top-level-status"): FINAL_TOP_LEVEL_STATUS_TOTAL,
