@@ -506,7 +506,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{blocked_runtime_reason, named_failure, runtime};
+    use super::{blocked_runtime_reason, named_failure};
 
     #[test]
     fn blocked_runtime_reason_reads_the_same_health_record() {
@@ -542,19 +542,5 @@ mod tests {
             named_failure("daily_schedule", "gpu-unavailable"),
             "daily_schedule (gpu-unavailable)"
         );
-    }
-
-    #[test]
-    fn think_runtime_can_connect_a_unix_socket() {
-        let directory = tempfile::tempdir().expect("socket directory");
-        let path = directory.path().join("callosum.sock");
-        let listener = std::os::unix::net::UnixListener::bind(&path).expect("bind");
-        let runtime = runtime().expect("think runtime");
-        runtime.block_on(async {
-            tokio::net::UnixStream::connect(&path)
-                .await
-                .expect("think runtime must enable IO");
-        });
-        drop(listener);
     }
 }

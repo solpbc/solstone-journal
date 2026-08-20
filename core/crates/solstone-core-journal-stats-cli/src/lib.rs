@@ -46,8 +46,8 @@ pub use model::{
 };
 pub use run::{CliRun, run_cli};
 
-/// Read token usage keyed by the producer's UTC timestamp day without writing
-/// its optional cache sidecar.
+/// Read token usage keyed by the token-file filename day without writing
+/// its optional cache sidecar. A day is the local calendar day of the write.
 pub fn scan_token_usage_by_day(
     journal_root: &Path,
     now: DateTime<Utc>,

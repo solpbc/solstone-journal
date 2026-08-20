@@ -30,6 +30,10 @@ pub mod test_support {
     pub fn emit(journal: &Path, now_ms: i64, event: &str, fields: Map<String, Value>) -> bool {
         crate::helpers::emit(journal, now_ms, event, fields)
     }
+
+    pub fn runtime() -> Result<tokio::runtime::Runtime, String> {
+        crate::dispatch::runtime()
+    }
 }
 
 use std::path::Path;

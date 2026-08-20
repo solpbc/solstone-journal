@@ -3871,9 +3871,13 @@ fn index_plate_edge_filters(query: &IndexPlateQuery) -> EdgeFilters {
     }
 }
 
-fn required_index_plate_entity(query: &IndexPlateQuery) -> Result<String, Response> {
-    optional_query_text(query.entity.as_deref())
-        .ok_or_else(|| refusal(ReasonCode::MissingRequiredField, "entity is required"))
+fn required_index_plate_entity(query: &IndexPlateQuery) -> Result<String, Box<Response>> {
+    optional_query_text(query.entity.as_deref()).ok_or_else(|| {
+        Box::new(refusal(
+            ReasonCode::MissingRequiredField,
+            "entity is required",
+        ))
+    })
 }
 
 fn edge_query_error_response(error: EdgeQueryError) -> Response {
@@ -4299,7 +4303,7 @@ async fn index_plate_network(
     }
     let entity = match required_index_plate_entity(&query) {
         Ok(entity) => entity,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     finish_index_plate(solstone_core_serving::seam::run_blocking(move || {
         network_plate_work(&root, &query, &entity)
@@ -4321,7 +4325,7 @@ async fn index_plate_history(
     }
     let entity = match required_index_plate_entity(&query) {
         Ok(entity) => entity,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     finish_index_plate(solstone_core_serving::seam::run_blocking(move || {
         history_plate_work(&root, &query, &entity)

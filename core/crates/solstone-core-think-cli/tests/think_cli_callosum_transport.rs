@@ -57,3 +57,17 @@ fn think_emission_is_exact_write_only_newline_envelope_with_eof() {
         Map::new(),
     ));
 }
+
+#[test]
+fn think_runtime_can_connect_a_unix_socket() {
+    let directory = tempfile::tempdir().expect("socket directory");
+    let path = directory.path().join("callosum.sock");
+    let listener = UnixListener::bind(&path).expect("bind");
+    let runtime = solstone_core_think_cli::test_support::runtime().expect("think runtime");
+    runtime.block_on(async {
+        tokio::net::UnixStream::connect(&path)
+            .await
+            .expect("think runtime must enable IO");
+    });
+    drop(listener);
+}

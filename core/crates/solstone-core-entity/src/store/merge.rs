@@ -772,10 +772,10 @@ fn relationship_dir_for_entity_id(
         if link_id == Some(entity_id) {
             return Ok(Some(relationship_dir));
         }
-        if let Ok(Some(identity)) = read_entity_identity(journal, entity_id) {
-            if link_id == Some(identity.entity_id()) {
-                return Ok(Some(relationship_dir));
-            }
+        if let Ok(Some(identity)) = read_entity_identity(journal, entity_id)
+            && link_id == Some(identity.entity_id())
+        {
+            return Ok(Some(relationship_dir));
         }
     }
     Ok(None)

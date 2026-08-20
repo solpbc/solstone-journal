@@ -205,7 +205,7 @@ pub fn process_transcript_with_wire(
     let (segments, native_fallback) = match segment_transcript(wire, &text, start_time) {
         Ok(segments) => (segments, false),
         Err(ModelDetectionError::Unavailable) => (whole_file_segment(&text, start_time), true),
-        Err(ModelDetectionError::Failed(source)) if matches!(source, ClientError::Resolve(_)) => {
+        Err(ModelDetectionError::Failed(ClientError::Resolve(_))) => {
             (whole_file_segment(&text, start_time), true)
         }
         Err(ModelDetectionError::Failed(source)) => {

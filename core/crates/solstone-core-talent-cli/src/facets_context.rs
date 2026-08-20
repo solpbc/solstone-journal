@@ -120,11 +120,11 @@ fn render_capped_entities(
     let role = if include_descriptions {
         let mut role = None;
         leftover_principals.retain(|entity| {
-            if role.is_none() {
-                if let Some(line) = principal_role_line(journal_root, entity, indent) {
-                    role = Some(line);
-                    return false;
-                }
+            if role.is_none()
+                && let Some(line) = principal_role_line(journal_root, entity, indent)
+            {
+                role = Some(line);
+                return false;
             }
             true
         });

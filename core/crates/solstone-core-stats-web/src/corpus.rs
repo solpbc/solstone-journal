@@ -226,8 +226,10 @@ fn stats_background_is_composed_html_404_not_unconverted_refusal() {
 }
 
 #[test]
-fn ac7_disclosed_filename_day_fold_and_utc_stats_rollup_diverge() {
-    // Follow-up §8.2 owns reconciling these two intentionally different day keys.
+fn ac7_filename_day_fold_and_stats_rollup_agree() {
+    // 1786321800 is 2026-08-10 00:30 UTC. Token-usage days are the
+    // filename stem, so the live fold and the stats rollup both land
+    // on 20260809.
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -265,12 +267,13 @@ fn ac7_disclosed_filename_day_fold_and_utc_stats_rollup_diverge() {
                 root.path(),
                 Utc.with_ymd_and_hms(2026, 8, 10, 1, 0, 0).unwrap(),
             );
-            assert!(!by_day.contains_key("20260809"));
-            let utc_total = by_day["20260810"]
+            assert!(by_day.contains_key("20260809"));
+            assert!(!by_day.contains_key("20260810"));
+            let filename_total = by_day["20260809"]
                 .values()
                 .filter_map(|counts| counts.get("total_tokens"))
                 .sum::<i64>();
-            assert_eq!(utc_total, 148);
+            assert_eq!(filename_total, 148);
         });
 }
 
