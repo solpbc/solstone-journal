@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[path = "support/import_ingest_door.rs"]
+mod import_ingest_door;
 #[path = "support/stub_peer.rs"]
 mod stub_peer;
 
