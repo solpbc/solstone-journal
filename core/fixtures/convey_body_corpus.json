@@ -3840,8 +3840,8 @@
         "why": "trends cache state"
       },
       {
-        "body_bytes": 79096,
-        "body_sha256": "d7ac5fdbcbf327139af2a1a8cb9101b243e0eefd0e30ef217549638324908473",
+        "body_bytes": 77724,
+        "body_sha256": "a209c7df11366d97db940de03e79a8dd74e03269c5635329b85bd50e3b9e5ae7",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.workspace_fragment",
@@ -9910,8 +9910,8 @@
         "why": "trends cache state"
       },
       {
-        "body_bytes": 79096,
-        "body_sha256": "d7ac5fdbcbf327139af2a1a8cb9101b243e0eefd0e30ef217549638324908473",
+        "body_bytes": 77724,
+        "body_sha256": "a209c7df11366d97db940de03e79a8dd74e03269c5635329b85bd50e3b9e5ae7",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "endpoint": "app:body.workspace_fragment",

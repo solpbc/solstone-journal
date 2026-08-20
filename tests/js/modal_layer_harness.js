@@ -433,17 +433,15 @@ function shell(document) {
   const menu = el(document, 'nav', { id: 'menu-bar' });
   const facet = el(document, 'nav', { id: 'facet-bar' });
   const notifications = el(document, 'div', { id: 'notification-center' });
-  const talent = dialog(document, { id: 'talentViewModal', hidden: true });
   const workspace = el(document, 'main', { id: 'main-content', class: 'workspace' });
   const report = dialog(document, { class: 'modal report-error-modal', styleDisplay: 'block' });
   document.body.appendChild(skip);
   document.body.appendChild(menu);
   document.body.appendChild(facet);
   document.body.appendChild(notifications);
-  document.body.appendChild(talent);
   document.body.appendChild(workspace);
   document.body.appendChild(report);
-  return { skip, menu, facet, notifications, talent, workspace, report };
+  return { skip, menu, facet, notifications, workspace, report };
 }
 
 function makeWorkspaceShape(context, kind) {

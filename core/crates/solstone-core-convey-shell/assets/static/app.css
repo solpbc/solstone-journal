@@ -1,6 +1,6 @@
 /**
  * App System Styles
- * Styles for the app.html template system (facet bar, menu bar, app bar, etc.)
+ * Styles for the app.html template system (facet bar, menu bar, etc.)
  */
 
 /* ========================================
@@ -86,7 +86,7 @@ html {
   --status-pane-width: 280px;
 
   /* Z-index hierarchy (increasing order) */
-  --z-bars: 100;          /* Facet bar, menu bar, app bar */
+  --z-bars: 100;          /* Facet bar, menu bar */
   --z-modals: 200;        /* Modal overlays */
   --z-notifications: 300; /* Notifications, status pane, error log */
   --z-tags: 400;          /* Corner tags - topmost layer */
@@ -726,7 +726,7 @@ body:has(.status-pane.visible) .facet-bar::after {
   max-height: calc(100vh - var(--facet-bar-height));
   background: var(--paper);
   border-right: 1px solid var(--facet-border, #e5e0db); /* Container carries the border, not individual items */
-  z-index: calc(var(--z-bars) + 1);  /* Above app bar */
+  z-index: calc(var(--z-bars) + 1);  /* Above facet bar */
   transition: width 0.3s ease, background 0.3s ease, box-shadow 0.3s ease, border-radius 0.3s ease;
   overflow: hidden; /* Clip all content to rounded corner */
   border-bottom-right-radius: 8px;

@@ -889,7 +889,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn converted_transcripts_chat_and_search_routes_are_real_and_unserved_paths_are_404() {
+    async fn converted_transcripts_and_search_routes_are_real_and_unserved_paths_are_404() {
         let root = std::env::temp_dir().join(format!(
             "solstone-convey-shell-transcripts-{}-{}",
             std::process::id(),
@@ -1004,6 +1004,15 @@ mod tests {
             .await
             .unwrap();
         assert_ne!(search.status(), StatusCode::NOT_FOUND);
+
+        for path in ["/app/chat/", "/app/chat/api/state"] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        }
 
         let missing = app
             .oneshot(

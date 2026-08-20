@@ -125,6 +125,15 @@ fn apply_permanent_sol_removal_divergence(expected: &mut Value) {
     apps.retain(|app| app["name"] != "sol");
 }
 
+/// Permanent documented divergence, introduced 2026-08-20, with no expiry
+/// condition: the frozen corpus permanently records the deleted reference's
+/// `chat` app and `chat_bar` object, whose Convey chrome this wave removes. The
+/// corpus CANNOT be regenerated -- its generator needs a runnable reference
+/// tree and this wave removes it -- so the fixture is a frozen record and the
+/// divergence is absorbed here instead. Because this cannot expire,
+/// narrowness is the safeguard: it is keyed to the one dropped app row and
+/// the chat_bar object and removes exactly those elements. Never generalize
+/// this into a rule over app names, and never retire it.
 fn apply_permanent_chat_removal_divergence(expected: &mut Value) {
     let apps = expected["apps"]
         .as_array_mut()
