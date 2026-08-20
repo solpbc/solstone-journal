@@ -130,7 +130,7 @@ const SOURCES: &[SourceMetadata] = &[
         name: "image",
         display_name: "image",
         icon: "image",
-        description: "add a photo or screenshot and let sol describe what's in it",
+        description: "add a photo or screenshot and let a model describe what's in it",
         input_type: "file",
         upload_prompt: "upload an image (PNG, JPEG, WebP, GIF, TIFF)",
         has_guide: false,

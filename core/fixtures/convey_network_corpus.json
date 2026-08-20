@@ -251,7 +251,7 @@
             "SUCCESS_VERIFY_NOTE": "check the device you just paired \u2014 this fingerprint should match what it shows. didn't do this?",
             "SUCCESS_VERIFY_NOTE_ANYWHERE": "this device can now reach home from anywhere. check it now \u2014 this fingerprint should match what it shows. didn't do this?",
             "UNPAIR_AMBIGUOUS_LABEL_CANDIDATE_FORMAT": "- paired {paired_at}, fingerprint {short_fp}",
-            "UNPAIR_AMBIGUOUS_LABEL_COMMAND_FORMAT": "  sol call link unpair {fingerprint}",
+            "UNPAIR_AMBIGUOUS_LABEL_COMMAND_FORMAT": "  solstone call link unpair {fingerprint}",
             "UNPAIR_AMBIGUOUS_LABEL_HEADER_FORMAT": "more than one device is named '{label}'. pick the one you mean and run its command:",
             "UNPAIR_BODY": "this device loses access to your journal immediately and can't reconnect until you pair it again. anything stored on the device stays on the device.",
             "UNPAIR_FAIL_TOAST": "couldn't unpair this device",

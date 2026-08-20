@@ -256,7 +256,7 @@
   function renderWelcomeHtml() {
     return '<div class="pulse-welcome" data-home-surface="welcome">'
       + '<h2>welcome to your journal</h2>'
-      + '<p>this is where your day comes together — narrative summaries, calendar events, and tasks. as sol experiences your day with you and keeps it here in your journal, sections will appear automatically.</p>'
+      + '<p>this is where your day comes together: narrative summaries, calendar events, and tasks. as the solstone app takes in what you share with it, and all of it goes into your journal, sections will appear automatically.</p>'
       + '<a href="/app/health">check system health →</a>'
       + '</div>';
   }
@@ -284,7 +284,7 @@
     }
     return '<div class="pulse-empty-state" data-home-surface="narrative">'
       + '<h2 class="pulse-section-header">today\'s flow</h2>'
-      + '<div class="pulse-empty-message">no narrative yet — one will appear after sol takes in some audio. <a href="/app/health">check system health →</a></div>'
+      + '<div class="pulse-empty-message">no narrative yet. one will appear after some audio goes into your journal. <a href="/app/health">check system health →</a></div>'
       + '</div>';
   }
 
@@ -508,7 +508,7 @@
     if (connections.state === 'empty') {
       return '<div class="pulse-empty-state" data-home-surface="connections">'
         + '<h2 class="pulse-section-header">connections</h2>'
-        + '<div class="pulse-empty-message">no connections yet — sol builds this from the people and things your days involve.</div>'
+        + '<div class="pulse-empty-message">no connections yet. this is built from the people and things your days involve.</div>'
         + '</div>';
     }
     if (connections.state === 'unavailable') {
@@ -542,7 +542,7 @@
         + relationshipItems.join('')
         + '</div></div>';
     } else {
-      html += '<div class="pulse-connections-note">no direct evidence yet — sol is still learning who&#39;s who.</div>';
+      html += '<div class="pulse-connections-note">no direct evidence yet. who&#39;s who isn&#39;t named yet.</div>';
     }
 
     if (attendanceItems.length) {

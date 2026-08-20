@@ -68,7 +68,7 @@ pub fn render_health_body(facts: &Map<String, Value>) -> String {
         .and_then(Value::as_str)
         .unwrap_or("1970-01-01T00:00:00Z");
     format!(
-        "{STATUS}\n<!-- generated_at: {generated_at} -->\nsol is well.\n\n{ATTENTION}\n\n{REPAIRS}\n"
+        "{STATUS}\n<!-- generated_at: {generated_at} -->\nyour journal is well.\n\n{ATTENTION}\n\n{REPAIRS}\n"
     )
 }
 
@@ -91,8 +91,8 @@ pub fn validate_steward_health(body: &str) -> Option<String> {
 }
 
 pub fn default_summary_from_body(body: &str) -> Map<String, Value> {
-    let status = body.lines().nth(2).unwrap_or("sol is well.");
-    if status.starts_with("sol is well.") {
+    let status = body.lines().nth(2).unwrap_or("your journal is well.");
+    if status.starts_with("your journal is well.") {
         Map::from_iter([
             ("headline".to_owned(), json!("All clear")),
             ("summary_sentence".to_owned(), json!(status)),

@@ -242,7 +242,7 @@ fn identity_partner_write_is_supervisor_gated_natively() {
     assert_eq!(output.stdout, b"");
     assert_eq!(
         output.stderr,
-        b"sol: solstone isn't running. Start it with 'journal up' and retry.\n"
+        b"journal isn't running. start it with 'journal up' and retry.\n"
     );
     assert!(!harness.journal.join("identity").exists());
     assert_python_was_not_invoked(&harness.poison_marker);

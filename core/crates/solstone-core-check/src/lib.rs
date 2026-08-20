@@ -768,7 +768,7 @@ mod tests {
         let report = build_check_report(&inputs);
         assert_eq!(
             report.checks[1].detail,
-            "Vulkan GPU Test GPU with 6 GB; sol thinks on your GPU; transcription runs on your CPU on this machine"
+            "Vulkan GPU Test GPU with 6 GB; a model runs on your GPU; transcription runs on your CPU on this machine"
         );
     }
 }

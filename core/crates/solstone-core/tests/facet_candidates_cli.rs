@@ -184,7 +184,7 @@ fn supervisor_gate_blocks_before_any_candidate_write() {
     assert_eq!(output.stdout, b"");
     assert_eq!(
         String::from_utf8(output.stderr).expect("stderr is UTF-8"),
-        "sol: solstone isn't running. Start it with 'journal up' and retry.\n"
+        "journal isn't running. start it with 'journal up' and retry.\n"
     );
     assert!(!journal.path().join("facets").exists());
 }

@@ -23,12 +23,12 @@ const CONFIDENTIAL_TERMINAL_PHASES: &[&str] = &[
 ];
 const CONFIDENTIAL_RECHECK_WAIT_SECONDS: f64 = 15.0;
 const CONFIDENTIAL_RECHECK_POLL_INTERVAL_SECONDS: f64 = 5.0;
-const CONFIDENTIAL_RECHECK_TIMEOUT_GUIDANCE: &str = "no new confidential attestation result was observed within the wait; run sol call thinking confidential status.";
+const CONFIDENTIAL_RECHECK_TIMEOUT_GUIDANCE: &str = "no new confidential attestation result was observed within the wait; run solstone call thinking confidential status.";
 const CONFIDENTIAL_RECHECK_NOT_STARTED_GUIDANCE: &str =
-    "refresh was not started; run sol call thinking confidential status.";
+    "refresh was not started; run solstone call thinking confidential status.";
 const CONFIDENTIAL_RECHECK_POST_REFUSED_GUIDANCE: &str =
-    "no accepted refresh to wait for; run sol call thinking confidential status.";
-const CONFIDENTIAL_RECHECK_READ_FAILED_GUIDANCE: &str = "refresh was accepted, but no completed result could be read; run sol call thinking confidential status.";
+    "no accepted refresh to wait for; run solstone call thinking confidential status.";
+const CONFIDENTIAL_RECHECK_READ_FAILED_GUIDANCE: &str = "refresh was accepted, but no completed result could be read; run solstone call thinking confidential status.";
 
 #[must_use]
 pub fn confidential_status(ctx: CommandContext<'_>) -> CommandOutput {
@@ -84,18 +84,21 @@ pub fn confidential_enable(ctx: CommandContext<'_>) -> CommandOutput {
     if (outcome == "terminal" && phase.as_deref() == Some("not_verified"))
         || outcome == "swept_configured"
     {
-        push_line(&mut out, "next: sol call thinking confidential recheck");
+        push_line(
+            &mut out,
+            "next: solstone call thinking confidential recheck",
+        );
         return CommandOutput::success(out);
     }
     if outcome == "timeout" {
         push_line(
             &mut out,
-            "operation continues server-side; sol call thinking confidential status shows its progress.",
+            "operation continues server-side; solstone call thinking confidential status shows its progress.",
         );
     } else if outcome == "swept_unconfigured" {
         push_line(
             &mut out,
-            "operation ended without enabling confidential processing; check sol call thinking confidential status.",
+            "operation ended without enabling confidential processing; check solstone call thinking confidential status.",
         );
     }
     CommandOutput {

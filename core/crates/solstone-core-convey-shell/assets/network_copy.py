@@ -167,7 +167,7 @@ UNPAIR_BODY = (
 )
 UNPAIR_AMBIGUOUS_LABEL_HEADER_FORMAT = "more than one device is named '{label}'. pick the one you mean and run its command:"
 UNPAIR_AMBIGUOUS_LABEL_CANDIDATE_FORMAT = "- paired {paired_at}, fingerprint {short_fp}"
-UNPAIR_AMBIGUOUS_LABEL_COMMAND_FORMAT = "  sol call link unpair {fingerprint}"
+UNPAIR_AMBIGUOUS_LABEL_COMMAND_FORMAT = "  solstone call link unpair {fingerprint}"
 DEVICE_CLIENT_LABEL_META_FORMAT = "paired as {client_label}"
 DEVICE_STATUS_LABELS = {
     "online": "online",

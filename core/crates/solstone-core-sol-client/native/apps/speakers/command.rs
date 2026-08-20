@@ -291,7 +291,7 @@ pub fn correct(ctx: CommandContext<'_>) -> CommandOutput {
         emit(
             &mut out,
             format!(
-                "Preview with: sol call speakers propagate-correction {} {}",
+                "Preview with: solstone call speakers propagate-correction {} {}",
                 value_to_string(result.get("old_speaker")),
                 value_to_string(result.get("new_speaker")),
             ),
@@ -519,7 +519,7 @@ pub fn presence(ctx: CommandContext<'_>) -> CommandOutput {
         Err(error) if error.reason_code() == Some("speaker_review_unavailable") => {
             return CommandOutput::failure(
                 format!(
-                    "Cluster {cluster_id} was not found.\nRun 'sol call speakers discover' to produce valid cluster ids.\n"
+                    "Cluster {cluster_id} was not found.\nRun 'solstone call speakers discover' to produce valid cluster ids.\n"
                 ),
                 1,
             );
@@ -1370,13 +1370,13 @@ fn identify_error(error: ClientError, request_id: Option<&str>) -> CommandOutput
     }
     emit(
         &mut err,
-        "Inspect operations with: sol call speakers identify-operations",
+        "Inspect operations with: solstone call speakers identify-operations",
     );
     if let Some(operation_id) = operation_id {
         emit(
             &mut err,
             format!(
-                "Inspect this operation with: sol call speakers identify-operation {operation_id}"
+                "Inspect this operation with: solstone call speakers identify-operation {operation_id}"
             ),
         );
     }
@@ -1633,7 +1633,7 @@ fn render_propagate(out: &mut String, result: &Value, commit: bool) {
         emit(
             out,
             format!(
-                "Reverse with: sol call {} {} {} --commit",
+                "Reverse with: solstone call {} {} {} --commit",
                 value_to_string(reversal.get("verb")),
                 value_to_string(reversal.get("old_speaker")),
                 value_to_string(reversal.get("new_speaker")),

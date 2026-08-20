@@ -87,7 +87,7 @@ pub fn dispatch_sol_import_with_seams(
 ) -> CommandOutput {
     let Some((_, handler)) = match_generated_surface_path("sol-import", &[String::from("import")])
     else {
-        return CommandOutput::failure("Unsupported native sol command.\n", 64);
+        return CommandOutput::failure("unsupported command.\n", 64);
     };
     handler(CommandContext {
         args,
@@ -115,7 +115,7 @@ pub fn dispatch_sol_status_with_seams(
 ) -> CommandOutput {
     let Some((_, handler)) = match_generated_surface_path("sol-status", &[String::from("status")])
     else {
-        return CommandOutput::failure("Unsupported native sol command.\n", 64);
+        return CommandOutput::failure("unsupported command.\n", 64);
     };
     handler(CommandContext {
         args,
@@ -142,10 +142,7 @@ pub fn dispatch_sol_link_with_seams(
     seams: LinkDispatchSeams<'_>,
 ) -> LinkDispatch {
     let Some((path, remaining)) = link_lookup_path(args) else {
-        return LinkDispatch::Buffered(CommandOutput::failure(
-            "Unsupported native sol command.\n",
-            64,
-        ));
+        return LinkDispatch::Buffered(CommandOutput::failure("unsupported command.\n", 64));
     };
     if let Some((_, handler)) = match_generated_resident_surface_path("sol-link", &path) {
         return LinkDispatch::Resident {
@@ -154,10 +151,7 @@ pub fn dispatch_sol_link_with_seams(
         };
     }
     let Some((_, handler)) = match_generated_surface_path("sol-link", &path) else {
-        return LinkDispatch::Buffered(CommandOutput::failure(
-            "Unsupported native sol command.\n",
-            64,
-        ));
+        return LinkDispatch::Buffered(CommandOutput::failure("unsupported command.\n", 64));
     };
     LinkDispatch::Buffered(handler(CommandContext {
         args: remaining,
@@ -227,7 +221,7 @@ pub fn dispatch_sol_call_with_seams(
     seams: DispatchSeams<'_>,
 ) -> CommandOutput {
     let Some((_, handler, len)) = match_generated_str_path(args) else {
-        return CommandOutput::failure("Unsupported native sol command.\n", 64);
+        return CommandOutput::failure("unsupported command.\n", 64);
     };
     let remaining = args[len..].to_vec();
     handler(CommandContext {

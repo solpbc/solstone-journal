@@ -91,7 +91,7 @@ fn reason(day: &Map<String, Value>) -> &'static str {
         "setup" => "a setting's missing — check your journal's setup",
         "provider" | "startup" => "the AI provider was unreachable. try again",
         "request" => {
-            "the AI provider refused a request sol sent — retrying won't help; this is a defect in sol"
+            "the AI provider refused a request. retrying won't help; this is a defect to report."
         }
         _ => "a processing step keeps failing — try again",
     }
@@ -160,7 +160,7 @@ pub fn stuck_rows(backlog: Option<&Map<String, Value>>) -> Vec<Value> {
 }
 
 pub fn copy() -> Value {
-    json!({"bucket_heading":"days that need a hand","bucket_description":"these days stopped on their own and can't pick back up without you — here's why, and what to try.","day_badge":"stuck","action_process_now":"process now","action_redo_scratch":"redo from scratch","confirm_redo_scratch":"redo this whole day from scratch? this re-does the parts sol already finished, so it'll take longer. the day you see now won't change until it's done.","queued_feedback":"queued, working on it now"})
+    json!({"bucket_heading":"days that need a hand","bucket_description":"these days stopped on their own and can't pick back up without you — here's why, and what to try.","day_badge":"stuck","action_process_now":"process now","action_redo_scratch":"redo from scratch","confirm_redo_scratch":"redo this whole day from scratch? this re-does the parts already finished, so it'll take longer. the day you see now won't change until it's done.","queued_feedback":"queued, working on it now"})
 }
 
 #[cfg(test)]
@@ -217,7 +217,7 @@ mod tests {
         );
         assert_eq!(
             rows[2]["reason"],
-            "the AI provider refused a request sol sent — retrying won't help; this is a defect in sol"
+            "the AI provider refused a request. retrying won't help; this is a defect to report."
         );
         let generic = stuck_rows(
             json!({"days":[{"day":"20240104","state":"stuck","reason_code":"local_artifact_proof_unavailable"},{"day":"20240105","state":"stuck","reason_code":"not_in_taxonomy"}]}).as_object(),

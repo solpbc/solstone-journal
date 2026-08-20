@@ -364,7 +364,7 @@ fn install_provider_gates_on_the_supervisor_before_the_name() {
     assert!(interactive.stdout.is_empty(), "{:?}", interactive.stdout);
     assert_eq!(
         String::from_utf8(interactive.stderr).expect("UTF-8 stderr"),
-        "sol: solstone isn't running. Start it with 'journal up' and retry.\n"
+        "journal isn't running. start it with 'journal up' and retry.\n"
     );
 
     let spawned = run(true);

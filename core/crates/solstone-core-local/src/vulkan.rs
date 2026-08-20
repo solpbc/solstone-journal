@@ -29,7 +29,7 @@ const HELPER: &str = "solstone-core-vulkan-probe";
 
 /// Owner-facing advisory copy for forced CPU transcription placement.
 pub const CPU_PLACEMENT_COPY: &str =
-    "sol thinks on your GPU; transcription runs on your CPU on this machine";
+    "a model runs on your GPU; transcription runs on your CPU on this machine";
 
 static DETECT_CACHE: Mutex<Option<(Vec<VulkanDevice>, bool)>> = Mutex::new(None);
 

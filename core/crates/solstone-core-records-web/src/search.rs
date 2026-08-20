@@ -19,7 +19,7 @@ use solstone_core_indexer_query::{SearchRequest, search, search_counts};
 use crate::{journal_read, talent_outputs};
 
 const SHELL: &[u8] = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
-const WORKSPACE: &str = "<section class=\"search-app\"><p>search lives in the search box on the chat page, and in the CLI with <code>sol call journal search</code></p></section>";
+const WORKSPACE: &str = "<section class=\"search-app\"><p>search lives in the CLI with <code>solstone call journal search</code></p></section>";
 
 pub fn router(journal_root: PathBuf) -> Router {
     let search_root = journal_root.clone();

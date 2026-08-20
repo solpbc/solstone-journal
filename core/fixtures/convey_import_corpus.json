@@ -673,7 +673,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "94fe02fb8a980390059fc9609a6da168c982e18d900c7ed4aa6faccfd3ddd1c2",
+        "body_sha256": "0aa306edff58f80c113ad61e8b1de29643fcf4a3ec4071ef6e0c000682a7c2e8",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -779,7 +779,7 @@
             },
             {
               "accept": ".png,.jpg,.jpeg,.webp,.gif,.tiff",
-              "description": "add a photo or screenshot and let sol describe what's in it",
+              "description": "add a photo or screenshot and let a model describe what's in it",
               "display_name": "image",
               "has_guide": false,
               "icon": "image",
@@ -1308,7 +1308,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "94fe02fb8a980390059fc9609a6da168c982e18d900c7ed4aa6faccfd3ddd1c2",
+        "body_sha256": "0aa306edff58f80c113ad61e8b1de29643fcf4a3ec4071ef6e0c000682a7c2e8",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -1414,7 +1414,7 @@
             },
             {
               "accept": ".png,.jpg,.jpeg,.webp,.gif,.tiff",
-              "description": "add a photo or screenshot and let sol describe what's in it",
+              "description": "add a photo or screenshot and let a model describe what's in it",
               "display_name": "image",
               "has_guide": false,
               "icon": "image",

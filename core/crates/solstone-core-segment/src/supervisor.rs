@@ -10,8 +10,7 @@ use std::path::Path;
 use std::time::Duration;
 
 /// Interactive refusal text shared with the Python command contract.
-pub const SUPERVISOR_MESSAGE: &str =
-    "sol: solstone isn't running. Start it with 'journal up' and retry.";
+pub const SUPERVISOR_MESSAGE: &str = "journal isn't running. start it with 'journal up' and retry.";
 const SUPERVISOR_TIMEOUT: Duration = Duration::from_millis(200);
 
 /// The two unavailable-supervisor outcomes the CLI boundary distinguishes.

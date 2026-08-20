@@ -36,7 +36,7 @@ pub(crate) fn result_from_assessment(
         return make_result(
             check,
             Status::Skip,
-            "sol hasn't added anything to your journal yet",
+            "the solstone app hasn't added anything to your journal yet",
             None::<String>,
         );
     }
@@ -48,7 +48,7 @@ pub(crate) fn result_from_assessment(
         return make_result(
             check,
             Status::Ok,
-            "sol on every device that has added to your journal is current",
+            "the solstone app on every device that has added to your journal is current",
             None::<String>,
         );
     }
@@ -57,7 +57,9 @@ pub(crate) fn result_from_assessment(
         check,
         Status::Warn,
         truncate(&common::join_capped(&clauses, " | "), 400),
-        Some("restart sol on that device, then confirm something new is in your journal"),
+        Some(
+            "restart the solstone app on that device, then confirm something new is in your journal",
+        ),
     )
 }
 
@@ -65,7 +67,11 @@ fn stall_clause(row: &DeliveryAssessment) -> String {
     let added = row
         .last_segment_received_age_ms
         .expect("stalled device has a last-sent stamp");
-    let body = format!("sol on {} last added {}m ago", row.name, added / MINUTE_MS);
+    let body = format!(
+        "the solstone app on {} last added {}m ago",
+        row.name,
+        added / MINUTE_MS
+    );
     match row.last_seen_age_ms {
         Some(age) => format!("{body}; last contact {}m ago", age / MINUTE_MS),
         None => body,

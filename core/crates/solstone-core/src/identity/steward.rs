@@ -392,7 +392,7 @@ mod tests {
 
     fn health_body(stamp: &str) -> String {
         format!(
-            "## Status\n<!-- generated_at: {stamp} -->\nsol is well.\n\n## Needs your attention\n\n## Auto-repairs (last 7d)\n"
+            "## Status\n<!-- generated_at: {stamp} -->\nyour journal is well.\n\n## Needs your attention\n\n## Auto-repairs (last 7d)\n"
         )
     }
 
@@ -533,7 +533,7 @@ mod tests {
         );
         assert_eq!(
             is_already_fresh(
-                "# H1\n\n## Status\n<!-- generated_at: 2026-05-26T17:32:18Z -->\nsol is well.\n\n## Needs your attention\n\n## Auto-repairs (last 7d)\n",
+                "# H1\n\n## Status\n<!-- generated_at: 2026-05-26T17:32:18Z -->\nyour journal is well.\n\n## Needs your attention\n\n## Auto-repairs (last 7d)\n",
                 valid_journal.path(),
                 "20260526"
             ),

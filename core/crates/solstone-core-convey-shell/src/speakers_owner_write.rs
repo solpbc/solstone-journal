@@ -40,7 +40,7 @@ const STRONG_P25: f64 = 0.15;
 const COOLDOWN_DAYS: i64 = 14;
 const CANDIDATE_EXPANSION_MAX_EMBEDDINGS: usize = 3000;
 const OWNER_THRESHOLD: f32 = 0.43;
-const EXISTING_CENTROID_GUIDANCE: &str = "Owner centroid already exists. Run sol call speakers rebuild-owner to refresh it from current manual tags.";
+const EXISTING_CENTROID_GUIDANCE: &str = "Owner centroid already exists. Run solstone call speakers rebuild-owner to refresh it from current manual tags.";
 
 pub async fn detect(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
     let body = optional_json(request).await;
@@ -364,7 +364,7 @@ fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
     let state = awareness_voiceprint(root);
     if !force && cooldown(&state).is_some() {
         return Ok(
-            json!({"status":"no_cluster","reason":"cooldown","segments_checked":0,"segments_available":0,"embeddings_available":0,"recommendation":"no_cluster","manual_tags_count":manual_count(root, principal.as_deref()),"can_build_from_tags":manual_count(root, principal.as_deref()) >= MIN_STATEMENTS,"days_remaining":cooldown(&state),"next_step":"wait_for_cooldown","guidance":"Wait for the owner voice rejection cooldown before running detection again, or run sol call speakers detect --force to look now."}),
+            json!({"status":"no_cluster","reason":"cooldown","segments_checked":0,"segments_available":0,"embeddings_available":0,"recommendation":"no_cluster","manual_tags_count":manual_count(root, principal.as_deref()),"can_build_from_tags":manual_count(root, principal.as_deref()) >= MIN_STATEMENTS,"days_remaining":cooldown(&state),"next_step":"wait_for_cooldown","guidance":"Wait for the owner voice rejection cooldown before running detection again, or run solstone call speakers detect --force to look now."}),
         );
     }
     if let Ok(Some(candidate)) = load_owner_candidate(root)
@@ -728,7 +728,7 @@ fn candidate_low_quality(
     )?;
     let count = manual_count(root, principal);
     Ok(
-        json!({"status":"low_quality","source":"candidate_pool","recommendation":"low_quality","segments_available":value.segments,"embeddings_available":value.embeddings,"low_quality_reason":value.reason,"observed_value":value.observed,"threshold_value":value.threshold,"evidence_tier":value.tier,"intra_cosine_p25_bound":value.bound,"manual_tags_count":count,"can_build_from_tags":count>=MIN_STATEMENTS,"next_step":"seed_manual_tags","guidance":"Use sol call speakers tag-owner to add validated owner tags."}),
+        json!({"status":"low_quality","source":"candidate_pool","recommendation":"low_quality","segments_available":value.segments,"embeddings_available":value.embeddings,"low_quality_reason":value.reason,"observed_value":value.observed,"threshold_value":value.threshold,"evidence_tier":value.tier,"intra_cosine_p25_bound":value.bound,"manual_tags_count":count,"can_build_from_tags":count>=MIN_STATEMENTS,"next_step":"seed_manual_tags","guidance":"Use solstone call speakers tag-owner to add validated owner tags."}),
     )
 }
 fn no_cluster(
@@ -742,7 +742,7 @@ fn no_cluster(
     update_voiceprint(root, json!({"status":"no_cluster","reason":reason}))?;
     let count = manual_count(root, principal);
     Ok(
-        json!({"status":"no_cluster","reason":reason,"segments_checked":checked,"segments_available":segments,"embeddings_available":embeddings,"recommendation":"no_cluster","manual_tags_count":count,"can_build_from_tags":count>=MIN_STATEMENTS,"next_step":"seed_manual_tags","guidance":"Use sol call speakers tag-owner to add validated owner tags."}),
+        json!({"status":"no_cluster","reason":reason,"segments_checked":checked,"segments_available":segments,"embeddings_available":embeddings,"recommendation":"no_cluster","manual_tags_count":count,"can_build_from_tags":count>=MIN_STATEMENTS,"next_step":"seed_manual_tags","guidance":"Use solstone call speakers tag-owner to add validated owner tags."}),
     )
 }
 

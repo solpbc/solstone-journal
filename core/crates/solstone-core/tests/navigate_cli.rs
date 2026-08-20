@@ -98,7 +98,7 @@ fn navigate_preserves_gate_and_parser_ordering() {
     assert_eq!(interactive.stdout, b"");
     assert_eq!(
         interactive.stderr,
-        b"sol: solstone isn't running. Start it with 'journal up' and retry.\n"
+        b"journal isn't running. start it with 'journal up' and retry.\n"
     );
 
     let spawned = navigate_without_gate_override(journal.path(), &["/app/work"], true);

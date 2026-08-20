@@ -2738,8 +2738,8 @@
         "why": "\u26a0 an EMPTY-BODY 404, not the shared HTML 404 page"
       },
       {
-        "body_bytes": 65891,
-        "body_sha256": "e5632f88d6a727a30b12c6959a971aff8589dd332ec532cb6b7704b65f546148",
+        "body_bytes": 65905,
+        "body_sha256": "3c4f21a11e6b4e95d2f62ec8667c26698082f912280e8d92caa16c3ecf432695",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.js",
         "content_type": "text/javascript; charset=utf-8",
@@ -3110,13 +3110,13 @@
         "why": "news declares no background: 404"
       },
       {
-        "body_bytes": 1004,
-        "body_sha256": "605c7e0e406cea6d8d06025e97879b094ac2df8fc76c181a751e099555814250",
+        "body_bytes": 964,
+        "body_sha256": "d49ac9894df24cf585e78d580bd5ce3305cd06459b7ff8c6de2af7b6310bcf97",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "copy": {
-            "empty_body": "Every day, sol writes one newsletter per facet that had activity \u2014 your meetings, decisions, follow-ups, and what changed for that part of your life. A short read per facet, in your journal, with sol's notes.",
+            "empty_body": "every day, one newsletter is written per facet that had activity: your meetings, decisions, follow-ups, and what changed for that part of your life. a short read per facet, in your journal.",
             "empty_next": "Newsletters arrive as your journal fills.",
             "empty_until_then": "Until then, this page will be empty. Newsletters appear here every day, newest first, grouped by facet.",
             "grid_lede": null,
@@ -3126,12 +3126,12 @@
             "grid_unit_other": "newsletters",
             "index_h1": "newsletters",
             "kicker": "facet newsletter",
-            "populated_framing": "Every day, sol writes one newsletter per facet with activity \u2014 newest below.",
+            "populated_framing": "every day, one newsletter is written per facet with activity. newest below.",
             "populated_next_footer": "next newsletters: tomorrow morning",
             "populated_sample_link": "see a sample",
             "sample_link_label": "see a sample newsletter \u2192",
             "sample_url": "/app/news/sample",
-            "subtitle": "sol's daily per-facet summaries from your journal."
+            "subtitle": "daily per-facet summaries from your journal."
           },
           "newsletters": [],
           "total_count": 0
@@ -3966,8 +3966,8 @@
         "why": "\u26a0 an EMPTY-BODY 404, not the shared HTML 404 page"
       },
       {
-        "body_bytes": 65891,
-        "body_sha256": "e5632f88d6a727a30b12c6959a971aff8589dd332ec532cb6b7704b65f546148",
+        "body_bytes": 65905,
+        "body_sha256": "3c4f21a11e6b4e95d2f62ec8667c26698082f912280e8d92caa16c3ecf432695",
         "body_sha256_basis": "raw-body",
         "content_disposition": "inline; filename=timeline.js",
         "content_type": "text/javascript; charset=utf-8",
@@ -4672,13 +4672,13 @@
         "why": "news declares no background: 404"
       },
       {
-        "body_bytes": 1322,
-        "body_sha256": "50842391ba365e7dae960fae1bfa4094ff7ef1c3cef224063a7b46d0a9dc4325",
+        "body_bytes": 1282,
+        "body_sha256": "205fb65bc71df6db50abb03faca8151760880d7c5607ac39e0a2243d4d210a21",
         "body_sha256_basis": "normalized-json",
         "content_type": "application/json",
         "json": {
           "copy": {
-            "empty_body": "Every day, sol writes one newsletter per facet that had activity \u2014 your meetings, decisions, follow-ups, and what changed for that part of your life. A short read per facet, in your journal, with sol's notes.",
+            "empty_body": "every day, one newsletter is written per facet that had activity: your meetings, decisions, follow-ups, and what changed for that part of your life. a short read per facet, in your journal.",
             "empty_next": "Your first newsletters arrive tomorrow morning.",
             "empty_until_then": "Until then, this page will be empty. Newsletters appear here every day, newest first, grouped by facet.",
             "grid_lede": "3 newsletters since May 2026.",
@@ -4688,12 +4688,12 @@
             "grid_unit_other": "newsletters",
             "index_h1": "newsletters",
             "kicker": "facet newsletter",
-            "populated_framing": "Every day, sol writes one newsletter per facet with activity \u2014 newest below.",
+            "populated_framing": "every day, one newsletter is written per facet with activity. newest below.",
             "populated_next_footer": "next newsletters: tomorrow morning",
             "populated_sample_link": "see a sample",
             "sample_link_label": "see a sample newsletter \u2192",
             "sample_url": "/app/news/sample",
-            "subtitle": "sol's daily per-facet summaries from your journal."
+            "subtitle": "daily per-facet summaries from your journal."
           },
           "newsletters": [
             {
@@ -5081,7 +5081,7 @@
           "markdown": "# What happened\n\nA **short** newsletter body with a list:\n\n- one item\n- two item\n\n> and a blockquote, because the PDF stylesheet has a rule for it.",
           "pdf_url": "/app/news/work/20260510/pdf",
           "raw_url": "/app/news/work/20260510/raw",
-          "subtitle": "sol's notes for work on this day."
+          "subtitle": "notes for work on this day."
         },
         "method": "GET",
         "normalized_fields": [],

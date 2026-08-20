@@ -597,7 +597,7 @@ function renderErrorState() {
   return `
     <div class="timeline-empty-state" data-timeline-state="error" role="alert">
       <h2>couldn't reach the timeline service</h2>
-      <p>reload to try again, or check whether sol is running</p>
+      <p>reload to try again, or check whether the solstone app is running</p>
       <a href="/app/health">system health →</a>
     </div>
   `;
@@ -826,7 +826,7 @@ async function renderAllHistory() {
   if (summary.activeDays === 0) {
     timeline.innerHTML = renderEmptyState(
       "no timeline data yet",
-      "once sol experiences a day alongside you and keeps it in your journal, that day will show up here",
+      "once what you share from a day is in your journal, that day shows up here",
       { href: "/app/health", linkText: "system health →" },
     );
     return;
@@ -1184,7 +1184,7 @@ async function renderMinute(monthIndex, day, hour) {
   if (!buckets.some((bucket) => bucket && (bucket.best_origin || bucket.browser_origin))) {
     timeline.innerHTML = renderEmptyState(
       "nothing in this hour",
-      `sol kept nothing for ${formatTime(hour, 0)}.`,
+      `nothing in your journal for ${formatTime(hour, 0)}.`,
     );
     return;
   }
@@ -1407,7 +1407,7 @@ async function renderFiveMinute(monthIndex, day, hour, minute) {
       ${previous !== null ? renderEdgeSegment(monthIndex, day, hour, previous, "prev") : ""}
       ${next !== null ? renderEdgeSegment(monthIndex, day, hour, next, "next") : ""}
 
-      <section class="segment-panel" aria-label="${month.name} ${day}, ${month.year || ""} ${focusLabel} — what sol kept">
+      <section class="segment-panel" aria-label="${month.name} ${day}, ${month.year || ""} ${focusLabel} — what your journal kept">
         <div class="timeline-focus-heading">
           <button class="segment-focus-node" type="button"
                   data-month="${monthIndex}" data-day="${day}" data-hour="${hour}"
@@ -1427,7 +1427,7 @@ async function renderFiveMinute(monthIndex, day, hour, minute) {
         </header>
 
         <div class="segment-river">
-          <div class="river-screen" aria-label="screen frames sol kept">
+          <div class="river-screen" aria-label="screen frames your journal kept">
             ${screenMarks}
           </div>
           <div class="river-axis">

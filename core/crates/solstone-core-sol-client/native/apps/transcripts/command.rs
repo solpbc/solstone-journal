@@ -327,11 +327,11 @@ pub fn speakers(ctx: CommandContext<'_>) -> CommandOutput {
     }
     lines.push(String::new());
     lines.push(
-        "* actionable: sol call speakers correct <day> <stream> <segment> <source> <sentence-id> <new-speaker>"
+        "* actionable: solstone call speakers correct <day> <stream> <segment> <source> <sentence-id> <new-speaker>"
             .to_string(),
     );
     lines.push(
-        "- not actionable: sol call speakers tag-owner <day> <stream> <segment> <source> <sentence-id>"
+        "- not actionable: solstone call speakers tag-owner <day> <stream> <segment> <source> <sentence-id>"
             .to_string(),
     );
     stdout(lines)

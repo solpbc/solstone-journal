@@ -14,8 +14,7 @@ use std::time::Duration;
 
 use chrono::Local;
 
-const SUPERVISOR_MESSAGE: &str =
-    "sol: solstone isn't running. Start it with 'journal up' and retry.";
+const SUPERVISOR_MESSAGE: &str = "journal isn't running. start it with 'journal up' and retry.";
 const SUPERVISOR_TIMEOUT: Duration = Duration::from_millis(200);
 
 #[derive(Debug, PartialEq, Eq)]

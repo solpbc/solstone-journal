@@ -212,7 +212,7 @@
 	        button.disabled = false;
 	        button.textContent = window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect';
 	        resultEl.style.color = '#ef4444';
-	        resultEl.textContent = err?.serverMessage || "i couldn't restart sol's processing.";
+	        resultEl.textContent = err?.serverMessage || "couldn't restart processing.";
 	      });
 	  }
 
@@ -272,7 +272,7 @@
 		      appendLine(consequence, 'color: #b91c1c; font-size: 12px;');
 
 		      const recovery = rej.version
-		        ? (name || 'this device') + ' is running sol v' + rej.version + '. update or restart sol on that device, then the next upload clears this.'
+		        ? (name || 'this device') + ' is running the solstone app v' + rej.version + '. update or restart the solstone app on that device, then the next time it adds to your journal, this clears.'
 		        : 'update or restart it on that device, then a valid upload clears this.';
 		      appendLine(recovery, 'color: #6b7280; font-size: 12px;');
 
@@ -315,7 +315,7 @@
       text.style.color = '#9ca3af';
     }
 	    if (status === 'no_observers') {
-	      text.textContent = 'no devices are running sol yet. set one up to start your journal.';
+	      text.textContent = 'no devices are running the solstone app yet. set one up to start your journal.';
 	    } else if (status === 'active' || status === 'offline') {
 	      text.textContent = 'device ' + status;
 	    } else {

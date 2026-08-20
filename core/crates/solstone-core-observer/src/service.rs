@@ -17,7 +17,7 @@ use crate::store::record::ObserverRecord;
 use crate::store::reload::{find_observer, load_observers};
 use crate::store::write::save_observer;
 
-pub const CREATE_RETIRED_MESSAGE: &str = "journal observer create is retired. devices register themselves: from this machine directly, or from a paired device.\nfor a remote device, pair it first:  sol call link pair --device-label <name>\nif a device was re-paired and its sync is stuck, clear the old device first:\n  journal observer revoke <name>\n";
+pub const CREATE_RETIRED_MESSAGE: &str = "journal observer create is retired. devices register themselves: from this machine directly, or from a paired device.\nfor a remote device, pair it first:  solstone call link pair --device-label <name>\nif a device was re-paired and its sync is stuck, clear the old device first:\n  journal observer revoke <name>\n";
 
 #[derive(Debug)]
 pub enum ObserverError {

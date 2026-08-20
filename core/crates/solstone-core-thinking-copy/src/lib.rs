@@ -30,7 +30,7 @@ pub const LANES: [Lane; 3] = [
         id: "local",
         label: "Local",
         sub: "on your device",
-        description: "a model runs right on this computer — nothing leaves for sol to think.",
+        description: "a model runs right on this computer. nothing leaves this machine to be processed.",
     },
     Lane {
         id: "confidential",
@@ -42,7 +42,7 @@ pub const LANES: [Lane; 3] = [
         id: "byo",
         label: "your own AI engine",
         sub: "your key, or your own endpoint",
-        description: "bring a provider key — Claude, Gemini, or GPT — or point sol at your own endpoint. it stays in your journal; sol pbc is never in the path.",
+        description: "bring a provider key (Claude, Gemini, or GPT) or point processing at your own endpoint. the key stays in your journal; sol pbc is never in the path.",
     },
 ];
 
@@ -153,13 +153,13 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                         (
                             "egress_audio_on",
                             CopyValue::String(
-                                "what leaves your device: the text and images sol needs a model to work through, and your audio for transcription. your journal itself never leaves.",
+                                "what leaves your device: the text and images a model needs to work through, and your audio for transcription. your journal itself never leaves.",
                             ),
                         ),
                         (
                             "egress_audio_off",
                             CopyValue::String(
-                                "what leaves your device: the text and images sol needs a model to work through. your audio stays on your device — speech becomes text there.",
+                                "what leaves your device: the text and images a model needs to work through. your audio stays on your device; speech becomes text there.",
                             ),
                         ),
                         (
@@ -231,7 +231,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ),
                     (
                         "failed",
-                        CopyValue::String("couldn't verify the service — sol isn't sending."),
+                        CopyValue::String("couldn't verify the service. nothing is being sent."),
                     ),
                     (
                         "stale",
@@ -242,7 +242,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "unreachable",
                         CopyValue::String(
-                            "can't reach confidential processing right now — sol isn't sending.",
+                            "can't reach confidential processing right now. nothing is being sent.",
                         ),
                     ),
                 ]),
@@ -266,7 +266,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     ),
                     (
                         "repair_needed",
-                        CopyValue::String("couldn't verify the service — sol isn't sending."),
+                        CopyValue::String("couldn't verify the service. nothing is being sent."),
                     ),
                 ]),
             ),
@@ -286,7 +286,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
     (
         "glance",
         CopyValue::Object(&[
-            ("lane_label", CopyValue::String("sol is thinking with")),
+            ("lane_label", CopyValue::String("processing with")),
             (
                 "local",
                 CopyValue::Object(&[
@@ -294,7 +294,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "detail",
                         CopyValue::String(
-                            "runs right on this computer — nothing leaves for sol to think",
+                            "runs right on this computer. nothing leaves this machine to be processed",
                         ),
                     ),
                 ]),
@@ -306,7 +306,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "detail",
                         CopyValue::String(
-                            "thinking with {model} — a key you added, stays in your journal, never shared",
+                            "using {model}. a key you added, stays in your journal, never shared",
                         ),
                     ),
                 ]),
@@ -318,7 +318,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "detail",
                         CopyValue::String(
-                            "sol thinks at the endpoint you set — your server, your rules",
+                            "processing runs at the endpoint you set. your server, your rules",
                         ),
                     ),
                 ]),
@@ -326,7 +326,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "confidential_checking",
                 CopyValue::Object(&[
-                    ("label", CopyValue::String("sol is waiting on")),
+                    ("label", CopyValue::String("waiting on")),
                     ("value", CopyValue::String("confidential processing")),
                     ("detail", CopyValue::String("checking the hardware…")),
                 ]),
@@ -334,7 +334,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "confidential_verified",
                 CopyValue::Object(&[
-                    ("label", CopyValue::String("sol is thinking with")),
+                    ("label", CopyValue::String("processing with")),
                     ("value", CopyValue::String("confidential processing")),
                     (
                         "detail",
@@ -356,7 +356,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "confidential_blocked",
                 CopyValue::Object(&[
-                    ("label", CopyValue::String("sol is holding")),
+                    ("label", CopyValue::String("holding")),
                     ("value", CopyValue::String("confidential processing")),
                     ("detail", CopyValue::String("{message}")),
                 ]),
@@ -368,7 +368,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                     (
                         "detail",
                         CopyValue::String(
-                            "sol is keeping your journal — but it can't answer you until you choose how it thinks below.",
+                            "your journal is here. choose how processing runs below.",
                         ),
                     ),
                 ]),
@@ -401,7 +401,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "key_hint",
                 CopyValue::String(
-                    "it stays in your journal — sol pbc never sets it up or sees it. paste it once; sol uses it from here.",
+                    "the key stays in your journal. sol pbc never sets it up or sees it. paste it once; processing uses it from here.",
                 ),
             ),
             (
@@ -413,7 +413,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ("terms_link", CopyValue::String("terms ↗")),
             (
                 "endpoint_heading",
-                CopyValue::String("point sol at your own endpoint"),
+                CopyValue::String("point processing at your own endpoint"),
             ),
             (
                 "endpoint_sub",
@@ -422,7 +422,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "endpoint_honesty",
                 CopyValue::String(
-                    "sol checks the endpoint works before it relies on it. if it can't reach it, sol tells you — it never quietly falls back to anyone else.",
+                    "processing checks the endpoint works before relying on it. if it can't reach it, you'll see. it never quietly falls back to anyone else.",
                 ),
             ),
             ("paste_cta", CopyValue::String("check this key →")),
@@ -484,7 +484,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "tier_blurb_lite",
                 CopyValue::String(
-                    "light and quick — solstone tunes sol's thinking for small models, so this one does the job well. it's also the least expensive on your key.",
+                    "light and quick. tuned for small models, so this one does the job well. it's also the least expensive on your key.",
                 ),
             ),
             ("tier_tag_suggested", CopyValue::String("suggested")),
@@ -510,10 +510,10 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "custom_cost_note",
                 CopyValue::String(
-                    "a model we don't recognize still works — sol just may not be able to show what it costs per use yet.",
+                    "a model we don't recognize still works. the cost per use may not show yet.",
                 ),
             ),
-            ("model_save", CopyValue::String("think with {label}")),
+            ("model_save", CopyValue::String("use {label}")),
             ("model_save_restore", CopyValue::String("remember {label}")),
             (
                 "model_saving",
@@ -521,9 +521,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "model_saved_restore",
-                CopyValue::String(
-                    "remembered {label}. sol keeps thinking with confidential processing now.",
-                ),
+                CopyValue::String("remembered {label}. confidential processing stays on."),
             ),
             (
                 "probe_failed_save",
@@ -534,7 +532,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
     (
         "lane_switch",
         CopyValue::Object(&[
-            ("heading", CopyValue::String("switch how sol thinks?")),
+            ("heading", CopyValue::String("switch how processing runs?")),
             ("current_label", CopyValue::String("now")),
             ("target_label", CopyValue::String("switch to")),
             ("confirm", CopyValue::String("switch")),
@@ -542,12 +540,12 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             (
                 "to_local_note",
                 CopyValue::String(
-                    "sol will think right on this computer. your {current} setup stays saved — switch back anytime.",
+                    "processing will run right on this computer. your {current} setup stays saved. switch back anytime.",
                 ),
             ),
             (
                 "to_byo_note",
-                CopyValue::String("sol will think with your own engine. {setup} is still here."),
+                CopyValue::String("processing will use your own engine. {setup} is still here."),
             ),
             ("setup_key", CopyValue::String("a saved key")),
             ("setup_endpoint", CopyValue::String("your endpoint")),
@@ -597,9 +595,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                             ("verdict", CopyValue::String("checking local setup")),
                             (
                                 "reason",
-                                CopyValue::String(
-                                    "sol is checking the selected model and this computer.",
-                                ),
+                                CopyValue::String("checking the selected model and this computer."),
                             ),
                         ]),
                     ),
@@ -610,7 +606,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                             ("verdict", CopyValue::String("starting local thinking")),
                             (
                                 "reason",
-                                CopyValue::String("sol is checking the model before it uses it."),
+                                CopyValue::String("checking the model before using it."),
                             ),
                         ]),
                     ),
@@ -619,10 +615,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                         CopyValue::Object(&[
                             ("pill", CopyValue::String("recovering")),
                             ("verdict", CopyValue::String("local thinking is recovering")),
-                            (
-                                "reason",
-                                CopyValue::String("sol will try starting it again shortly."),
-                            ),
+                            ("reason", CopyValue::String("starting it again shortly.")),
                         ]),
                     ),
                     (
@@ -632,7 +625,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                             ("verdict", CopyValue::String("trying local thinking again")),
                             (
                                 "reason",
-                                CopyValue::String("sol is starting a new recovery attempt."),
+                                CopyValue::String("starting a new recovery attempt."),
                             ),
                         ]),
                     ),
@@ -686,9 +679,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                             ("verdict", CopyValue::String("finishing the local change")),
                             (
                                 "reason",
-                                CopyValue::String(
-                                    "sol is waiting for current local work to finish.",
-                                ),
+                                CopyValue::String("waiting for current local work to finish."),
                             ),
                         ]),
                     ),
@@ -703,7 +694,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "sol couldn't confirm that local thinking stopped. it will keep checking safely.",
+                                    "couldn't confirm that local processing stopped. it will keep checking safely.",
                                 ),
                             ),
                         ]),
@@ -756,7 +747,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                             ("verdict", CopyValue::String("local thinking is ready")),
                             (
                                 "reason",
-                                CopyValue::String("sol is thinking on this computer."),
+                                CopyValue::String("a model is running on this computer."),
                             ),
                         ]),
                     ),
@@ -771,7 +762,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
                             (
                                 "reason",
                                 CopyValue::String(
-                                    "sol couldn't refresh the local file check. it won't start a replacement until the check returns.",
+                                    "couldn't refresh the local file check. it won't start a replacement until the check returns.",
                                 ),
                             ),
                         ]),

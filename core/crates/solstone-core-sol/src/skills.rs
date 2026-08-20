@@ -255,15 +255,15 @@ fn real_context() -> Result<RuntimeContext, String> {
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .ok_or_else(|| {
-            "sol: native skills home is unavailable. Reinstall solstone and solstone-core.\n"
+            "solstone: native skills home is unavailable. Reinstall solstone and solstone-core.\n"
                 .to_string()
         })?;
     let cwd = std::env::current_dir().map_err(|error| {
-        format!("sol: native skills cwd is unavailable: {error}. Reinstall solstone and solstone-core.\n")
+        format!("solstone: native skills cwd is unavailable: {error}. Reinstall solstone and solstone-core.\n")
     })?;
     let root = resolve_project_root().map_err(|error| {
         format!(
-            "sol: native skills payload root is unavailable: {error}. Reinstall solstone and solstone-core.\n"
+            "solstone: native skills payload root is unavailable: {error}. Reinstall solstone and solstone-core.\n"
         )
     })?;
     let project_root = canonicalize_project_root_for_skills(root);
@@ -361,7 +361,7 @@ fn flag_value<'a>(arg: &'a OsStr, prefix: &str) -> Option<&'a str> {
 fn usage_error(message: String) -> CommandOutput {
     CommandOutput {
         stdout: String::new(),
-        stderr: format!("{USAGE}sol skills: error: {message}\n"),
+        stderr: format!("{USAGE}solstone skills: error: {message}\n"),
         exit: EXIT_ARGPARSE_USAGE,
     }
 }

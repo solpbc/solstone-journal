@@ -23,7 +23,7 @@ const OWNER_REJECTION_COOLDOWN_DAYS: i64 = 14;
 const OWNER_DETECT_CANDIDATE_GUIDANCE: &str =
     "Analyze available voice patterns to look for an owner voice candidate.";
 const OWNER_REJECTION_COOLDOWN_GUIDANCE: &str = "Wait for the owner voice rejection cooldown before running detection again, \
-or run sol call speakers detect --force to look now.";
+or run solstone call speakers detect --force to look now.";
 
 pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     Json(owner_status(&root.0)).into_response()
@@ -208,7 +208,7 @@ fn manual_guidance(stats: &ManualOwnerTagStats) -> ManualGuidance {
         return ManualGuidance {
             next_step: "build_from_tags",
             guidance: format!(
-                "You have {} validated owner tags (minimum {}). Run sol call speakers build-from-tags to save your owner voice; add more with sol call speakers tag-owner <day> <stream> <segment> <source> <sentence-id> if needed.",
+                "You have {} validated owner tags (minimum {}). Run solstone call speakers build-from-tags to save your owner voice; add more with solstone call speakers tag-owner <day> <stream> <segment> <source> <sentence-id> if needed.",
                 stats.manual_tags_count, OWNER_BOOTSTRAP_MIN_STATEMENTS,
             ),
         };
@@ -216,7 +216,7 @@ fn manual_guidance(stats: &ManualOwnerTagStats) -> ManualGuidance {
     ManualGuidance {
         next_step: "seed_manual_tags",
         guidance: format!(
-            "Use sol call speakers tag-owner <day> <stream> <segment> <source> <sentence-id> on owner sentences in raw media until you have {OWNER_BOOTSTRAP_MIN_STATEMENTS} validated owner tags; {} more needed. Then run sol call speakers build-from-tags.",
+            "Use solstone call speakers tag-owner <day> <stream> <segment> <source> <sentence-id> on owner sentences in raw media until you have {OWNER_BOOTSTRAP_MIN_STATEMENTS} validated owner tags; {} more needed. Then run solstone call speakers build-from-tags.",
             OWNER_BOOTSTRAP_MIN_STATEMENTS - stats.manual_tags_count,
         ),
     }

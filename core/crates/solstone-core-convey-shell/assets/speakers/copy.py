@@ -8,9 +8,9 @@ from __future__ import annotations
 from typing import Any
 
 SPK_OVERVIEW_YOUR_VOICE_HEADER = "your voice"
-SPK_OVERVIEW_YOUR_VOICE_LEARNING = "sol is still learning"
+SPK_OVERVIEW_YOUR_VOICE_LEARNING = "not confirmed yet"
 SPK_OVERVIEW_OWNER_PROGRESS_SUFFIX = "longer statements"
-SPK_OVERVIEW_OWNER_HELP_LABEL = "help sol learn faster"
+SPK_OVERVIEW_OWNER_HELP_LABEL = "teach your voice faster"
 SPK_OVERVIEW_OWNER_BUILD_FROM_TAGS_LABEL = "Build from manual tags"
 SPK_OVERVIEW_YOUR_VOICE_CONFIRMED = "confirmed"
 SPK_OVERVIEW_OWNER_PROGRESS_UNKNOWN = "learning progress unavailable"
@@ -21,10 +21,9 @@ SPK_OVERVIEW_OWNER_COHESION_LABEL = "consistency"
 SPK_OVERVIEW_OWNER_BUILT_PREFIX = "built"
 SPK_OVERVIEW_OWNER_REFRESHED_PREFIX = "refreshed"
 SPK_OVERVIEW_OWNER_BUILT_UNKNOWN = "unknown"
-SPK_OWNER_TEACH_TITLE = "teach sol your voice"
+SPK_OWNER_TEACH_TITLE = "teach your voice"
 SPK_OWNER_TEACH_BODY = (
-    "pick longer statements that are yours. sol uses them to keep your voice "
-    "separate from other speakers."
+    "pick longer statements that are yours. they keep your voice separate from other speakers."
 )
 SPK_OWNER_TEACH_START_LABEL = "start teaching"
 SPK_OWNER_TEACH_LOADING = "finding teachable statements..."
@@ -92,11 +91,11 @@ SPK_GRID_UNIT_NONE = "quiet day"
 SPK_GRID_ACTIVITY_ONE = "segment, all named"
 SPK_GRID_ACTIVITY_OTHER = "segments, all named"
 SPK_SHEET_TITLE = "someone keeps showing up"
-SPK_SHEET_LEDE_MANY = "sol has heard this voice in {count} conversations, all kept in your journal. tell sol who this is and it will recognize them from now on."
-SPK_SHEET_LEDE_ONE = "sol has heard this voice in 1 conversation, kept in your journal. tell sol who this is and it will recognize them from now on."
-SPK_SHELF_CANDIDATES = "sol noticed these people around this voice:"
+SPK_SHEET_LEDE_MANY = "this voice has shown up in {count} conversations, all kept in your journal. say who this is and they will be recognized from now on."
+SPK_SHEET_LEDE_ONE = "this voice has shown up in 1 conversation, kept in your journal. say who this is and they will be recognized from now on."
+SPK_SHELF_CANDIDATES = "these people were around this voice:"
 SPK_SHELF_NO_EVIDENCE = (
-    "sol didn't notice anyone around this voice. search your people:"
+    "nobody else was around this voice. search your people:"
 )
 SPK_EVIDENCE_SCREEN_MANY = "on screen in {count} of these conversations"
 SPK_EVIDENCE_SCREEN_ONE = "on screen in 1 of these conversations"
@@ -104,49 +103,48 @@ SPK_EVIDENCE_MEETING_MANY = "in your meeting notes on {count} of those days"
 SPK_EVIDENCE_MEETING_ONE = "in your meeting notes that day"
 SPK_SHELF_MENTIONS = "also nearby, from names that come up around this voice:"
 SPK_ANCHOR = "in your journal"
-SPK_ANCHOR_HAS_VOICE = "in your journal · sol already knows their voice"
+SPK_ANCHOR_HAS_VOICE = "in your journal · their voice is already there"
 SPK_SEARCH_LABEL = "someone else"
 SPK_SEARCH_PLACEHOLDER = "search your people"
 SPK_THIS_IS_ME = "this is me"
 SPK_THIS_IS_ME_GUIDANCE = (
-    "sol learns your voice separately. teach it in your voice settings."
+    "your voice is taught separately. teach it in your voice settings."
 )
 SPK_SEARCH_NO_RESULTS = 'no one in your journal matches "{query}"'
 SPK_CREATE_ROW = 'add "{query}" as someone new'
 SPK_NEAR_MATCH_BAND = "already in your journal?"
 SPK_KEEP_SEPARATE_TITLE = "different from {name}?"
-SPK_KEEP_SEPARATE_BODY = "{name} is already in your journal. if this is someone else, sol will keep them separate and never suggest mixing the two."
+SPK_KEEP_SEPARATE_BODY = "{name} is already in your journal. if this is someone else, they will stay separate and never be mixed."
 SPK_KEEP_SEPARATE_CONFIRM = "yes, someone new"
 SPK_KEEP_SEPARATE_DECLINE = "no, that's {name}"
 SPK_PREVIEW_TITLE = "this voice becomes {name}"
 SPK_PREVIEW_BODY_FRESH = (
-    "everywhere sol has heard it, in every conversation, now and from here on."
+    "everywhere this voice has shown up, in every conversation, now and from here on."
 )
-SPK_PREVIEW_BODY_HAS_VOICE = "{name} already has a voice in your journal. sol will treat this as another way they sound and keep them together."
+SPK_PREVIEW_BODY_HAS_VOICE = "{name} already has a voice in your journal. this will be kept as another way they sound."
 SPK_PREVIEW_FACTS = "{statements} statements across {conversations} conversations, all in your journal. you can undo this."
 SPK_PREVIEW_CONFIRM = "yes, this is {first_name}"
 SPK_PREVIEW_BACK = "back"
-SPK_RECEIPT_TITLE = "sol knows {name}'s voice now"
+SPK_RECEIPT_TITLE = "{name}'s voice is in your journal now"
 SPK_RECEIPT_BODY = "every conversation where this voice was heard now reads {name}."
 SPK_RECEIPT_UNDO = "undo"
 SPK_UNDO_DONE = "undone. this voice is back in new voices."
 SPK_UNDO_PARTIAL = "undo restored part of this voice. {restored} changed back; {skipped} stayed as they are. try again."
 SPK_EXIT_NOT_PERSON = "not a person"
 SPK_EXIT_NOT_NOW = "not now"
-SPK_NOT_PERSON_DONE = "got it, not a person. sol will leave this one alone and will not ask about it again."
+SPK_NOT_PERSON_DONE = "got it, not a person. this one will be left alone and will not be asked about again."
 SPK_NOT_NOW_DONE = "no rush. it waits quietly in new voices."
 SPK_ACTION_WHO_IS_THIS = "who is this?"
-SPK_LOAD_ERROR = "sol couldn't load this voice. try again."
-SPK_DISCOVERY_ERROR = "sol couldn't look for new voices right now."
+SPK_LOAD_ERROR = "couldn't load this voice. try again."
+SPK_DISCOVERY_ERROR = "couldn't look for new voices right now."
 SPK_DISCOVERY_DEGRADED_TEMPLATE = "some voice samples could not be used ({count})"
-SPK_SEARCH_ERROR = "sol couldn't search your people. try again."
-SPK_CHECK_NAME_ERROR = "sol couldn't check this name. try again."
+SPK_SEARCH_ERROR = "couldn't search your people. try again."
+SPK_CHECK_NAME_ERROR = "couldn't check this name. try again."
 SPK_SAMPLE_UNAVAILABLE = "this sample isn't available"
 SPK_ACTION_RETRY = "try again"
 SPK_CORRECT_SCOPE = "This fixes this one statement."
 SPK_CORRECT_PROPAGATE_OFFER = (
-    "Sol can look through segments where these two appear and show you what else "
-    "would change."
+    "these two can be looked up across segments to show you what else would change."
 )
 SPK_CORRECT_PROPAGATE_NONE = "Nothing else would change."
 SPK_CORRECT_PROPAGATE_APPLY = "Apply these changes"
@@ -162,18 +160,17 @@ OWNER_DETECT_CANDIDATE_GUIDANCE = (
 )
 OWNER_REJECTION_COOLDOWN_GUIDANCE = (
     "Wait for the owner voice rejection cooldown before running detection again, "
-    "or run sol call speakers detect --force to look now."
+    "or run solstone call speakers detect --force to look now."
 )
 OWNER_NEEDS_CONFIRM_VOICE_TEXT = (
-    "sol found a voice that sounds like you. confirm it in speakers"
+    "a voice that sounds like you showed up. confirm it in speakers"
 )
 NEEDS_YOU_RECURRING_MANY = (
-    "a voice keeps showing up. sol has heard it in {count} conversations, "
-    "kept in your journal."
+    "a voice keeps showing up. it has been in {count} conversations, kept in your journal."
 )
-NEEDS_YOU_RECURRING_ONE = "a voice keeps showing up. sol has heard it in 1 conversation, kept in your journal."
+NEEDS_YOU_RECURRING_ONE = "a voice keeps showing up. it has been in 1 conversation, kept in your journal."
 TR_NOT_IN_NEW_VOICES = (
-    "this voice isn't in new voices yet. sol needs to hear it a few more times."
+    "this voice isn't in new voices yet. it needs to show up a few more times."
 )
 
 

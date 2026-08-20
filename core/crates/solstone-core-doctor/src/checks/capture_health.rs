@@ -36,7 +36,7 @@ pub(crate) fn result_from_assessment(
         return make_result(
             check,
             Status::Skip,
-            "rollup=no_senders; sol hasn't added anything to your journal yet",
+            "rollup=no_senders; the solstone app hasn't added anything to your journal yet",
             None::<String>,
         );
     }
@@ -44,7 +44,7 @@ pub(crate) fn result_from_assessment(
         return make_result(
             check,
             Status::Ok,
-            "rollup=active; sol on every device that has added to your journal is current",
+            "rollup=active; the solstone app on every device that has added to your journal is current",
             None::<String>,
         );
     }
@@ -64,7 +64,11 @@ pub(crate) fn result_from_assessment(
 
 fn capture_clause(row: &DeliveryAssessment) -> String {
     match row.last_segment_received_age_ms {
-        Some(age) => format!("sol on {} last added {}h ago", row.name, age / HOUR_MS),
-        None => format!("sol on {} is having trouble adding", row.name),
+        Some(age) => format!(
+            "the solstone app on {} last added {}h ago",
+            row.name,
+            age / HOUR_MS
+        ),
+        None => format!("the solstone app on {} is having trouble adding", row.name),
     }
 }

@@ -15,7 +15,7 @@
   const HEALTH_GLANCE_COPY = {
     "HEALTH_GLANCE_CATCHING_UP": "i'm catching up on {n} task(s) in the background. last update {age} ago.",
     "HEALTH_GLANCE_OBSERVER_SILENT": "one of your devices hasn't reached your journal recently.",
-    "HEALTH_GLANCE_OK": "everything's working. sol last added to your journal {age} ago.",
+    "HEALTH_GLANCE_OK": "everything's working. the solstone app last added to your journal {age} ago.",
     "HEALTH_GLANCE_BRAIN_ATTENTION": "{headline}",
     "HEALTH_GLANCE_SERVICES_ATTENTION": "{n} service(s) need attention: {service_names}.",
     "HEALTH_GLANCE_SERVICES_UNREACHABLE": "i couldn't reach my own services. check that your journal is running."
@@ -1680,7 +1680,7 @@
 	        button.disabled = false;
 	        button.textContent = window.CONVEY_COPY?.ACTION_RESTART || 'Restart';
 	        errorEl.innerHTML = window.SurfaceState.error({
-	          heading: err.serverMessage || "i couldn't restart sol's processing.",
+	          heading: err.serverMessage || "couldn't restart processing.",
 	          desc: window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
 	          detail: err,
 	          headingLevel: 'h4'
@@ -1780,7 +1780,7 @@
         }
         const recoveryEl = document.createElement('span');
         recoveryEl.className = 'registered-observer-recovery';
-        recoveryEl.textContent = 'update or restart sol on ' + (observer.name || 'that device');
+        recoveryEl.textContent = 'update or restart the solstone app on ' + (observer.name || 'that device');
         row.appendChild(recoveryEl);
       }
 

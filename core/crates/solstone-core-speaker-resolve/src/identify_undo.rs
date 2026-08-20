@@ -305,7 +305,7 @@ fn not_found(operation_id: &str) -> Value {
     json!({
         "status":"not_found",
         "operation_id":operation_id,
-        "list_command":"sol call speakers identify-operations",
+        "list_command":"solstone call speakers identify-operations",
     })
 }
 

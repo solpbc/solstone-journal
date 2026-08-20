@@ -1349,7 +1349,7 @@ fn render_accept_merge_candidate(
             )];
             if let Some(merge_id) = result.get("merge_id").and_then(Value::as_str) {
                 lines.push(format!(
-                    "Undo with: sol call entities undo-merge {merge_id} --yes"
+                    "Undo with: solstone call entities undo-merge {merge_id} --yes"
                 ));
             }
             stdout(lines)
@@ -1367,7 +1367,7 @@ fn render_accept_merge_candidate(
                     .and_then(Value::as_str)
             {
                 lines.push(format!(
-                    "Undo with: sol call entities undo-merge {merge_id} --yes"
+                    "Undo with: solstone call entities undo-merge {merge_id} --yes"
                 ));
             } else if let Some(reason) = undo
                 .and_then(|undo| undo.get("reason"))

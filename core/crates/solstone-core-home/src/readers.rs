@@ -615,7 +615,7 @@ pub fn read_steward_health(context: &HomeContext) -> Option<Value> {
     }
     match (status, attention) {
         (Some(status), Some(message))
-            if !status.starts_with("sol is well.") || !message.is_empty() =>
+            if !status.starts_with("your journal is well.") || !message.is_empty() =>
         {
             Some(json!({"status":"warning","message":message}))
         }

@@ -859,7 +859,7 @@ fn unreadable_skip_is_not_never_sent() {
     assert!(capture.detail.contains("rollup=unknown"));
     assert_ne!(
         stall.detail,
-        "sol hasn't added anything to your journal yet"
+        "the solstone app hasn't added anything to your journal yet"
     );
 }
 
@@ -975,7 +975,7 @@ fn brain_ready_and_checking_records_are_healthy() {
     assert_eq!(row.status, Status::Ok, "{}", row.detail);
     assert_eq!(
         row.detail,
-        "sol can think; state=ready; reason=ok; component=none; evidence_age=1m"
+        "processing is ready; state=ready; reason=ok; component=none; evidence_age=1m"
     );
 
     let checking = fixture();
@@ -984,7 +984,7 @@ fn brain_ready_and_checking_records_are_healthy() {
     assert_eq!(row.status, Status::Ok, "{}", row.detail);
     assert_eq!(
         row.detail,
-        "checking how sol thinks; state=checking; reason=brain check in progress; component=none; evidence_age=unknown"
+        "checking how processing runs; state=checking; reason=brain check in progress; component=none; evidence_age=unknown"
     );
 }
 

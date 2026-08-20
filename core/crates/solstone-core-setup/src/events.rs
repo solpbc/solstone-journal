@@ -138,7 +138,7 @@ impl SkipReason {
             Self::ProviderConfigUnexpectedShape => "provider config is not in the expected shape",
             Self::LocalProviderUnavailable => "local provider unavailable on this host",
             Self::LocalBootstrapDidNotStart => "local bootstrap did not start",
-            Self::SolAlreadyKeepsJournal => "sol on this Mac already keeps this journal",
+            Self::SolAlreadyKeepsJournal => "the journal already lives on this mac",
             Self::PriorRunOk => "prior_run_ok",
             Self::ResumedAfterRestart => "resumed_after_restart",
         }

@@ -6,7 +6,7 @@ use std::fmt;
 pub const UNREACHABLE_MESSAGE: &str = "I couldn't reach the journal over HTTP.";
 pub const TIMEOUT_MESSAGE: &str = "The journal didn't answer in time.";
 pub const SERVICE_DOWN_MESSAGE: &str =
-    "sol: solstone isn't running. Start it with 'journal up' and retry.";
+    "journal isn't running. start it with 'journal up' and retry.";
 pub const MALFORMED_RESPONSE_MESSAGE: &str = "I couldn't read the journal response.";
 pub const SERVER_ERROR_MESSAGE: &str = "The journal returned an unreadable error.";
 pub const LOCAL_CONVEY_TIMEOUT_REASON: &str = "local_convey_timeout";

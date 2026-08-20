@@ -20,8 +20,7 @@ const VERBS: &[&str] = &[
     "reprocess",
     "backfill-processing-records",
 ];
-const SUPERVISOR_MESSAGE: &str =
-    "sol: solstone isn't running. Start it with 'journal up' and retry.\n";
+const SUPERVISOR_MESSAGE: &str = "journal isn't running. start it with 'journal up' and retry.\n";
 const DUMMY_JOURNAL: &str = "/nonexistent-storage-ops-dummy-journal";
 
 fn block(name: &str) -> &str {

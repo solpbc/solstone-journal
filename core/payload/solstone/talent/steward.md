@@ -17,7 +17,7 @@
 
 # Steward — health summary
 
-Write a short, human-friendly summary of sol's current health for the owner's home screen. The health state below is already computed deterministically — use it as ground truth; do not recompute it or invent problems it doesn't show. Your previous summary is included so you can keep continuity run-to-run.
+Write a short, human-friendly summary of journal health for the owner's home screen. The health state below is already computed deterministically — use it as ground truth; do not recompute it or invent problems it doesn't show. Your previous summary is included so you can keep continuity run-to-run.
 
 ## Today's health state
 
@@ -36,6 +36,6 @@ Return a JSON object with exactly these keys:
 - `suggested_action` — exactly one of:
   - `none` — nothing for the owner to do (use when the state is clear/healthy).
   - `open_health_detail` — there is an issue worth viewing on the health page, but no specific retry applies.
-  - `open_support` — sol already tried and couldn't resolve something (a repair escalated after failing twice, or a persistent issue) and the owner may want help from sol pbc support.
+  - `open_support` — a repair already tried and couldn't resolve something (a repair escalated after failing twice, or a persistent issue) and the owner may want help from sol pbc support.
 
 Output only the JSON object.

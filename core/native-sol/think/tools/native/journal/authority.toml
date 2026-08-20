@@ -172,7 +172,7 @@ params=[{name="stream",kind="option",type="text",required=false,nargs=1,multiple
 [[entries]]
 path=["journal","search"]
 kind="command"
-help="Search the journal index.\n\nUse 2-4 content terms instead of natural-language questions; question words\nlike what/how/did/when add noise in this keyword/BM25 index. Syntax: OR for\nany term, quoted phrases for exact text, and * for prefix matches. Zero\nresults means zero: broaden by dropping terms, using OR, then adding *.\nCounts help drill down with --facet, --agent, --day, and --time-bucket.\nResult ids are path:idx; read a hit with `sol call journal read --path\n<path>` after stripping the :idx suffix."
+help="Search the journal index.\n\nUse 2-4 content terms instead of natural-language questions; question words\nlike what/how/did/when add noise in this keyword/BM25 index. Syntax: OR for\nany term, quoted phrases for exact text, and * for prefix matches. Zero\nresults means zero: broaden by dropping terms, using OR, then adding *.\nCounts help drill down with --facet, --agent, --day, and --time-bucket.\nResult ids are path:idx; read a hit with `solstone call journal read --path\n<path>` after stripping the :idx suffix."
 operation_id="journal.search"
 entry_type="http"
 method="GET"

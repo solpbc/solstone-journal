@@ -35,7 +35,7 @@ const PAIR_LINK_PREFIX: &str = "https://go.solstone.app/p#";
 const LOCAL_ENDPOINTS_MAX_BYTES: usize = 16 * 1024;
 static BUNDLE_STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const PEER_JOIN_MOVED: &str =
-    "Peer joins require journal-device authority and are not available through 'sol'.\n";
+    "Peer joins require journal-device authority and are not available through this command.\n";
 const BUNDLE_FILES: &[&str] = &[
     "private.pem",
     "cert.pem",

@@ -71,7 +71,7 @@ where
     if !sent {
         return error_envelope(
             "observer_restart_failed",
-            "i couldn't restart sol's processing.",
+            "couldn't restart processing.",
             "Could not reach the supervisor",
             StatusCode::SERVICE_UNAVAILABLE,
         )
@@ -137,7 +137,7 @@ pub fn response(day: &str, outcome: DayOutcome) -> axum::response::Response {
     match outcome {
         DayOutcome::Submitted(_) => Json(json!({"status":"queued","day":day})).into_response(),
         DayOutcome::AlreadyComplete => Json(json!({"status":"already_complete","day":day,"message":"this day's already done. want to redo it from scratch?","reason_code":"reprocess_already_complete"})).into_response(),
-        DayOutcome::Held(epoch) => Json(json!({"status":"held_by_backoff","day":day,"message":format!("sol's not retrying this day until {}. to start it over right now, use redo from scratch.",format_retry_when(epoch)),"reason_code":"reprocess_held_by_backoff"})).into_response(),
+        DayOutcome::Held(epoch) => Json(json!({"status":"held_by_backoff","day":day,"message":format!("this day isn't being retried until {}. to start it over right now, use redo from scratch.",format_retry_when(epoch)),"reason_code":"reprocess_held_by_backoff"})).into_response(),
         DayOutcome::PastOnly => error_envelope("reprocess_past_only","you can only reprocess past days — today and future days aren't ready yet.","",StatusCode::BAD_REQUEST).into_response(),
         DayOutcome::Unreachable => error_envelope("reprocess_unreachable","your journal's background service isn't running. start it, then try again.","",StatusCode::SERVICE_UNAVAILABLE).into_response(),
         DayOutcome::Failed(cause) => error_envelope("reprocess_failed",format!("reprocess failed: {cause}"),"",StatusCode::INTERNAL_SERVER_ERROR).into_response(),

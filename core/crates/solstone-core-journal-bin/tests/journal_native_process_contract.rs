@@ -2050,7 +2050,7 @@ fn native_install_provider_bodies_never_reach_a_poisoned_interpreter() {
     assert_eq!(down.status.code(), Some(1));
     assert_eq!(
         down.stderr,
-        b"sol: solstone isn't running. Start it with 'journal up' and retry.\n"
+        b"journal isn't running. start it with 'journal up' and retry.\n"
     );
     assert!(down.stdout.is_empty());
     assert!(!context.poison_marker.exists(), "supervisor gate");

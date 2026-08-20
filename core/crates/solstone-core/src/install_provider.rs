@@ -1619,7 +1619,7 @@ mod tests {
         assert_eq!(interactive.exit_code, 1);
         assert_eq!(
             interactive.stderr,
-            ["sol: solstone isn't running. Start it with 'journal up' and retry."]
+            ["journal isn't running. start it with 'journal up' and retry."]
         );
         assert!(interactive.stdout.is_empty());
     }

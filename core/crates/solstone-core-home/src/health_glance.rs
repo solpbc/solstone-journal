@@ -53,7 +53,7 @@ pub fn build_health_glance(
     if status == "active" {
         json!({"verdict":"ok","severity":"green","headline":"everything's working","last_observation":last_observe,"cta":null,"issues":[]})
     } else {
-        json!({"verdict":"ok","severity":"green","headline":"no devices are running sol yet. set one up to start your journal.","last_observation":null,"cta":{"text":"set one up →","href":"/app/network/"},"issues":[]})
+        json!({"verdict":"ok","severity":"green","headline":"no devices are running the solstone app yet. set one up to start your journal.","last_observation":null,"cta":{"text":"set one up →","href":"/app/network/"},"issues":[]})
     }
 }
 
@@ -104,10 +104,10 @@ fn capture_issue(capture: &Value) -> Option<Value> {
             json!({"text":format_degraded_capture_line(capture).expect("degraded"),"severity":"red","href":"/app/health"}),
         ),
         Some("offline") => Some(
-            json!({"text":"sol hasn't added anything to your journal recently.","severity":"red","href":"/app/health"}),
+            json!({"text":"the solstone app hasn't added anything to your journal recently.","severity":"red","href":"/app/health"}),
         ),
         Some("stale") => Some(
-            json!({"text":"sol on one of your devices has not added anything to your journal recently.","severity":"amber","href":"/app/health"}),
+            json!({"text":"the solstone app on one of your devices has not added anything to your journal recently.","severity":"amber","href":"/app/health"}),
         ),
         _ => None,
     }

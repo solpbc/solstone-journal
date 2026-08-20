@@ -3,14 +3,14 @@
 
 pub const NEWS_KICKER: &str = "facet newsletter";
 pub const NEWS_INDEX_H1: &str = "newsletters";
-pub const NEWS_SUBTITLE: &str = "sol's daily per-facet summaries from your journal.";
-pub const NEWS_EMPTY_BODY: &str = "Every day, sol writes one newsletter per facet that had activity — your meetings, decisions, follow-ups, and what changed for that part of your life. A short read per facet, in your journal, with sol's notes.";
+pub const NEWS_SUBTITLE: &str = "daily per-facet summaries from your journal.";
+pub const NEWS_EMPTY_BODY: &str = "every day, one newsletter is written per facet that had activity: your meetings, decisions, follow-ups, and what changed for that part of your life. a short read per facet, in your journal.";
 pub const NEWS_EMPTY_TOMORROW_WITH_DATE: &str = "Your first newsletters arrive {tomorrow}.";
 pub const NEWS_EMPTY_NO_DATE: &str = "Newsletters arrive as your journal fills.";
 pub const NEWS_EMPTY_UNTIL_THEN: &str = "Until then, this page will be empty. Newsletters appear here every day, newest first, grouped by facet.";
 pub const NEWS_SAMPLE_LINK_LABEL: &str = "see a sample newsletter →";
 pub const NEWS_POPULATED_FRAMING: &str =
-    "Every day, sol writes one newsletter per facet with activity — newest below.";
+    "every day, one newsletter is written per facet with activity. newest below.";
 pub const NEWS_POPULATED_SAMPLE_LINK: &str = "see a sample";
 pub const NEWS_POPULATED_NEXT_FOOTER: &str = "next newsletters: {when}";
 pub const NEWS_GRID_TITLE: &str = "newsletter days";
@@ -19,7 +19,7 @@ pub const NEWS_GRID_LEDE_OTHER: &str = "{count} newsletters since {month}.";
 pub const NEWS_GRID_UNIT_ONE: &str = "newsletter";
 pub const NEWS_GRID_UNIT_OTHER: &str = "newsletters";
 pub const NEWS_GRID_UNIT_NONE: &str = "no newsletters";
-pub const NEWS_DETAIL_SUBTITLE: &str = "sol's notes for {facet} on this day.";
+pub const NEWS_DETAIL_SUBTITLE: &str = "notes for {facet} on this day.";
 pub const NEWS_DETAIL_DEBUG_LINK: &str = "see how this was generated →";
 pub const NEWS_DETAIL_EMPTY_TITLE: &str = "no {facet} newsletter";
 pub const NEWS_DETAIL_EMPTY_BODY: &str = "There is no {facet} newsletter for {date_label}.";

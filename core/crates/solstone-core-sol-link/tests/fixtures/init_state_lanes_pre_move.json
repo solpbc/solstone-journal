@@ -4,7 +4,7 @@
       "id": "local",
       "label": "Local",
       "sub": "on your device",
-      "description": "a model runs right on this computer — nothing leaves for sol to think."
+      "description": "a model runs right on this computer. nothing leaves this machine to be processed."
     },
     {
       "id": "confidential",
@@ -16,7 +16,7 @@
       "id": "byo",
       "label": "your own AI engine",
       "sub": "your key, or your own endpoint",
-      "description": "bring a provider key — Claude, Gemini, or GPT — or point sol at your own endpoint. it stays in your journal; sol pbc is never in the path."
+      "description": "bring a provider key (Claude, Gemini, or GPT) or point processing at your own endpoint. the key stays in your journal; sol pbc is never in the path."
     }
   ],
   "confidential": {

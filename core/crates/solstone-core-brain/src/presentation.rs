@@ -47,10 +47,10 @@ pub fn present_brain_inspection(
 
 fn headline(state: &str) -> &'static str {
     match state {
-        "ready" => "sol can think",
-        "checking" => "checking how sol thinks",
-        "blocked" => "sol needs a way to think",
-        "unhealthy" => "sol's thinking needs attention",
+        "ready" => "processing is ready",
+        "checking" => "checking how processing runs",
+        "blocked" => "processing needs a setup",
+        "unhealthy" => "processing needs attention",
         _ => "thinking status unavailable",
     }
 }
@@ -157,7 +157,7 @@ mod tests {
             &inspection,
             chrono::Utc.with_ymd_and_hms(2026, 1, 1, 1, 1, 0).unwrap(),
         );
-        assert_eq!(view.headline, "sol's thinking needs attention");
+        assert_eq!(view.headline, "processing needs attention");
         assert_eq!(view.reason_text, "configuration invalid");
         assert_eq!(view.failing_component.as_deref(), Some("generate"));
         assert_eq!(view.evidence.age_text.as_deref(), Some("1h"));

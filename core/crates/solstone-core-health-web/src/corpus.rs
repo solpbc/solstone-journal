@@ -539,7 +539,7 @@ async fn ac14_and_ac15_reprocess_handler_seam_submits_and_observes_holds() {
     assert_eq!(
         body["message"],
         format!(
-            "sol's not retrying this day until {}. to start it over right now, use redo from scratch.",
+            "this day isn't being retried until {}. to start it over right now, use redo from scratch.",
             crate::actions::format_retry_when(retry_at)
         )
     );

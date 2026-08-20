@@ -2052,7 +2052,7 @@ button:focus:not(:focus-visible) {
       </optgroup>
       <optgroup label="identity">
         <option value="profile">profile</option>
-        <option value="agent">sol&#32;identity</option>
+        <option value="agent">agent identity</option>
       </optgroup>
       <optgroup label="AI">
         <option value="apikeys">API keys</option>
@@ -2087,7 +2087,7 @@ button:focus:not(:focus-visible) {
     <div class="settings-nav-group">
       <div class="settings-nav-label">identity</div>
       <button class="settings-nav-item" data-section="profile" id="tab-profile" role="tab" aria-selected="false" aria-controls="section-profile" tabindex="-1">profile</button>
-      <button class="settings-nav-item" data-section="agent" id="tab-agent" role="tab" aria-selected="false" aria-controls="section-agent" tabindex="-1">sol&#32;identity</button>
+      <button class="settings-nav-item" data-section="agent" id="tab-agent" role="tab" aria-selected="false" aria-controls="section-agent" tabindex="-1">agent identity</button>
     </div>
     <div class="settings-nav-group">
       <div class="settings-nav-label">AI</div>
@@ -2658,7 +2658,7 @@ button:focus:not(:focus-visible) {
 
     <!-- Agent Identity Section -->
     <section class="settings-section" id="section-agent" role="tabpanel" aria-labelledby="tab-agent">
-      <h2>sol&#32;identity</h2>
+      <h2>agent identity</h2>
       <p class="settings-section-desc">your assistant's name and identity.</p>
 
       <form class="settings-form" onsubmit="return false;">
@@ -2683,7 +2683,7 @@ button:focus:not(:focus-visible) {
 
       <div class="settings-field">
         <button type="button" class="setup-btn" id="resetAgentName" style="background: #6c757d; font-size: 0.85em; padding: 0.4em 1em;">reset to default</button>
-        <small>reset the name back to "sol"</small>
+        <small>reset the name back to the default</small>
       </div>
       </form>
     </section>
@@ -5624,7 +5624,7 @@ if (resetAgentBtn) {
         if (statusEl) statusEl.textContent = 'default';
         const dateEl = document.getElementById('agent-named-date');
         if (dateEl) dateEl.textContent = '—';
-        notifySuccess('reset', 'name reset to sol');
+        notifySuccess('reset', 'name reset to the default');
       } else {
         notifyError('reset failed', result.error || 'could not reset name');
       }

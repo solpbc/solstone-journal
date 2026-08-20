@@ -89,7 +89,7 @@ fn write(path: impl AsRef<Path>, text: &str) {
 
 fn health_body(stamp: &str) -> String {
     format!(
-        "## Status\n<!-- generated_at: {stamp} -->\nsol is well.\n\n## Needs your attention\n\n## Auto-repairs (last 7d)\n"
+        "## Status\n<!-- generated_at: {stamp} -->\nyour journal is well.\n\n## Needs your attention\n\n## Auto-repairs (last 7d)\n"
     )
 }
 
@@ -141,7 +141,7 @@ fn gate_precedes_partner_write_and_help_stays_available() {
     assert_eq!(down.stdout, b"");
     assert_eq!(
         down.stderr,
-        b"sol: solstone isn't running. Start it with 'journal up' and retry.\n"
+        b"journal isn't running. start it with 'journal up' and retry.\n"
     );
     assert_eq!(fs::read_to_string(&partner).unwrap(), "before\n");
     assert!(!journal.identity().join("history.jsonl").exists());
@@ -484,7 +484,7 @@ fn refresh_is_gated_before_it_can_send_to_a_bound_socket() {
     assert_eq!(output.stdout, b"");
     assert_eq!(
         output.stderr,
-        b"sol: solstone isn't running. Start it with 'journal up' and retry.\n"
+        b"journal isn't running. start it with 'journal up' and retry.\n"
     );
     assert_eq!(
         listener.accept().unwrap_err().kind(),
