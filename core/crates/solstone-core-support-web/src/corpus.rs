@@ -11,7 +11,7 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use solstone_core_chat_append::resolve_draft_outcome;
+use solstone_core_support_drafts::resolve_draft_outcome;
 use solstone_core_support_portal::test_support::{RoutePortal, RouteReply};
 use solstone_core_support_portal::{Ledger, PortalClient};
 use std::collections::BTreeMap;
@@ -984,9 +984,12 @@ fn draft_event(root: &Path, draft_id: &str) -> Value {
         .as_str()
         .expect("captured day")
         .to_owned();
-    let chat = root.join("chronicle").join(day).join("chat");
-    for segment in std::fs::read_dir(chat).expect("chat segments").flatten() {
-        let path = segment.path().join("chat.jsonl");
+    let drafts = root.join("chronicle").join(day).join("support-drafts");
+    for segment in std::fs::read_dir(drafts)
+        .expect("support-draft segments")
+        .flatten()
+    {
+        let path = segment.path().join("support-drafts.jsonl");
         let Ok(contents) = std::fs::read_to_string(path) else {
             continue;
         };
@@ -2751,18 +2754,18 @@ fn write_locator(root: &Path, draft_id: &str, day: &str) {
     std::fs::write(path, format!("{{\"captured_day\":\"{day}\"}}\n")).expect("write locator");
 }
 
-fn write_chat_event(root: &Path, day: &str, segment: &str, event: &Value) {
+fn write_draft_event(root: &Path, day: &str, segment: &str, event: &Value) {
     let path = root
         .join("chronicle")
         .join(day)
-        .join("chat")
+        .join("support-drafts")
         .join(segment)
-        .join("chat.jsonl");
-    std::fs::create_dir_all(path.parent().expect("chat parent")).expect("chat parent");
+        .join("support-drafts.jsonl");
+    std::fs::create_dir_all(path.parent().expect("draft parent")).expect("draft parent");
     let mut contents = std::fs::read_to_string(&path).unwrap_or_default();
     contents.push_str(&event.to_string());
     contents.push('\n');
-    std::fs::write(path, contents).expect("write chat");
+    std::fs::write(path, contents).expect("write draft");
 }
 
 fn support_draft_line(draft_id: &str, day: &str, verb: &str, payload: Value) -> Value {
@@ -2782,12 +2785,15 @@ fn outcome_mark_path(root: &Path, draft_id: &str) -> PathBuf {
         .join(format!("{draft_id}.outcome.json"))
 }
 
-fn chat_file_for_draft(root: &Path, draft_id: &str) -> PathBuf {
+fn draft_file_for_draft(root: &Path, draft_id: &str) -> PathBuf {
     let event = draft_event(root, draft_id);
     let day = event["captured_day"].as_str().expect("captured day");
-    let chat = root.join("chronicle").join(day).join("chat");
-    for segment in std::fs::read_dir(chat).expect("chat segments").flatten() {
-        let path = segment.path().join("chat.jsonl");
+    let drafts = root.join("chronicle").join(day).join("support-drafts");
+    for segment in std::fs::read_dir(drafts)
+        .expect("support-draft segments")
+        .flatten()
+    {
+        let path = segment.path().join("support-drafts.jsonl");
         let Ok(contents) = std::fs::read_to_string(&path) else {
             continue;
         };
@@ -2799,7 +2805,7 @@ fn chat_file_for_draft(root: &Path, draft_id: &str) -> PathBuf {
             return path;
         }
     }
-    panic!("chat file for {draft_id}");
+    panic!("draft file for {draft_id}");
 }
 
 fn mutation_keys(portal: &RoutePortal) -> Vec<String> {
@@ -2889,7 +2895,7 @@ async fn confirm_lookup_walks_only_the_locator_day() {
     assert_eq!(body["outcome"], "not_found");
 
     write_locator(root.path(), "no-match", "20260815");
-    write_chat_event(
+    write_draft_event(
         root.path(),
         "20260815",
         "100000_300",
@@ -2906,7 +2912,7 @@ async fn confirm_lookup_walks_only_the_locator_day() {
 
     write_locator(root.path(), "first-id", "20260816");
     write_locator(root.path(), "second-id", "20260816");
-    write_chat_event(
+    write_draft_event(
         root.path(),
         "20260816",
         "100000_300",
@@ -2917,7 +2923,7 @@ async fn confirm_lookup_walks_only_the_locator_day() {
             serde_json::json!({"subject":"first subject","description":"first"}),
         ),
     );
-    write_chat_event(
+    write_draft_event(
         root.path(),
         "20260816",
         "100000_300",
@@ -3202,7 +3208,7 @@ async fn confirm_and_cancel_validate_without_an_idempotency_header() {
 }
 
 #[tokio::test]
-async fn confirm_and_cancel_do_not_append_chat_events() {
+async fn confirm_and_cancel_do_not_append_draft_events() {
     let portal = corpus_route_portal();
     let root = phase_root("established", Some(&portal));
     let _guard = install_route_portal(&portal);
@@ -3211,7 +3217,7 @@ async fn confirm_and_cancel_do_not_append_chat_events() {
         serde_json::json!({"subject":"keep","description":"keep"}),
     )
     .await;
-    let confirm_path = chat_file_for_draft(root.path(), &confirm_id);
+    let confirm_path = draft_file_for_draft(root.path(), &confirm_id);
     let before = std::fs::read(&confirm_path).expect("snapshot");
     let (status, _) = shell_response(root.path(), confirm_request(&confirm_id)).await;
     assert_eq!(status, 200);
@@ -3222,7 +3228,7 @@ async fn confirm_and_cancel_do_not_append_chat_events() {
         serde_json::json!({"subject":"drop","description":"drop"}),
     )
     .await;
-    let cancel_path = chat_file_for_draft(root.path(), &cancel_id);
+    let cancel_path = draft_file_for_draft(root.path(), &cancel_id);
     let before = std::fs::read(&cancel_path).expect("cancel snapshot");
     let (status, _) = shell_response(root.path(), cancel_request(&cancel_id)).await;
     assert_eq!(status, 200);

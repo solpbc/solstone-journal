@@ -336,8 +336,8 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
-id = "package::solstone-core-chat-append"
-package = "solstone-core-chat-append"
+id = "package::solstone-core-support-drafts"
+package = "solstone-core-support-drafts"
 set = "component"
 areas = ["core"]
 platforms = ["linux", "macos"]

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Native append path for support-draft chat events and their day locator.
+//! Native append path for support-draft events and their day locator.
 
 use std::fs;
 use std::io;
@@ -14,14 +14,13 @@ use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use chrono::{DateTime, Local, MappedLocalTime, NaiveDate, NaiveDateTime, TimeDelta, TimeZone};
 use regex::Regex;
 use serde_json::{Map, Value};
-use solstone_core_indexer_store::scan::rescan_file;
 use solstone_core_journal_io::{
     AtomicWriteError, AtomicWriteOptions, atomic_replace, write_bytes_exclusive, write_jsonl,
 };
 use solstone_core_segment::{Kind, SegmentDir, StreamHints, advance_unbound_stream};
 use thiserror::Error;
 
-const CHAT_STREAM: &str = "chat";
+const SUPPORT_DRAFTS_STREAM: &str = "support-drafts";
 const SUPPORT_DRAFT: &str = "support_draft";
 const SEGMENT_WINDOW_MS: i64 = 300_000;
 
@@ -48,9 +47,9 @@ impl Drop for TestChatLockScope {
     }
 }
 
-/// Failure while appending a support-draft chat event or its draft locator.
+/// Failure while appending a support-draft event or its draft locator.
 #[derive(Debug, Error)]
-pub enum ChatAppendError {
+pub enum SupportDraftError {
     /// The caller-supplied journal root does not exist.
     #[error("journal root does not exist: {path}")]
     JournalRootMissing { path: PathBuf },
@@ -64,46 +63,46 @@ pub enum ChatAppendError {
     #[error("invalid support draft id")]
     InvalidDraftId,
     /// The native path supports only the reference's support-draft event kind.
-    #[error("unknown chat event kind: {kind}")]
+    #[error("unknown support-draft event kind: {kind}")]
     UnknownKind { kind: String },
     /// A required support-draft field was absent.
     #[error("missing required support-draft field: {field}")]
     MissingField { field: &'static str },
     /// An event timestamp was not an integer milliseconds value.
-    #[error("chat event timestamp must be an integer")]
+    #[error("support-draft event timestamp must be an integer")]
     InvalidTimestamp,
     /// A timestamp could not be resolved as a local wall-clock time.
-    #[error("resolve local chat time for timestamp {timestamp}")]
+    #[error("resolve local support-draft time for timestamp {timestamp}")]
     LocalTime { timestamp: i64 },
-    /// A discovered chat segment was not a valid local timestamp key.
-    #[error("invalid chat segment key {segment} for day {day}")]
+    /// A discovered support-draft segment was not a valid local timestamp key.
+    #[error("invalid support-draft segment key {segment} for day {day}")]
     InvalidSegmentKey { day: String, segment: String },
-    /// Reading an existing chat file failed.
-    #[error("read chat file {path}: {source}")]
-    ChatRead { path: PathBuf, source: io::Error },
-    /// An existing nonblank chat line was not valid JSON.
-    #[error("malformed chat line {line} in {path}: {source}")]
-    MalformedChatLine {
+    /// Reading an existing support-draft file failed.
+    #[error("read support-draft file {path}: {source}")]
+    DraftRead { path: PathBuf, source: io::Error },
+    /// An existing nonblank support-draft line was not valid JSON.
+    #[error("malformed support-draft line {line} in {path}: {source}")]
+    MalformedDraftLine {
         path: PathBuf,
         line: usize,
         source: serde_json::Error,
     },
-    /// An existing nonblank chat line was valid JSON but not an object.
-    #[error("chat line {line} in {path} is not an object")]
-    ChatLineNotObject { path: PathBuf, line: usize },
-    /// Replacing the chat file or draft locator failed.
+    /// An existing nonblank support-draft line was valid JSON but not an object.
+    #[error("support-draft line {line} in {path} is not an object")]
+    DraftLineNotObject { path: PathBuf, line: usize },
+    /// Replacing the support-draft file or draft locator failed.
     #[error("atomic write {path}: {source}")]
     AtomicWrite {
         path: PathBuf,
         source: solstone_core_journal_io::AtomicWriteError,
     },
-    /// Resolving the chat segment path failed.
-    #[error("resolve chat segment: {source}")]
+    /// Resolving the support-draft segment path failed.
+    #[error("resolve support-draft segment: {source}")]
     SegmentPath {
         source: solstone_core_segment::SegmentError,
     },
-    /// Advancing the unbound chat stream or writing its marker failed.
-    #[error("advance chat stream: {source}")]
+    /// Advancing the unbound support-draft stream or writing its marker failed.
+    #[error("advance support-draft stream: {source}")]
     StreamAdvance {
         source: solstone_core_segment::UnboundStreamAdvanceError,
     },
@@ -116,7 +115,7 @@ pub enum ChatAppendError {
 pub fn append_support_draft(
     journal: &Path,
     event: Map<String, Value>,
-) -> Result<Value, ChatAppendError> {
+) -> Result<Value, SupportDraftError> {
     append_chat_event(journal, SUPPORT_DRAFT, event)
 }
 
@@ -124,7 +123,7 @@ fn append_chat_event(
     journal: &Path,
     kind: &str,
     event: Map<String, Value>,
-) -> Result<Value, ChatAppendError> {
+) -> Result<Value, SupportDraftError> {
     append_chat_event_at(journal, kind, event, Local::now())
 }
 
@@ -133,7 +132,7 @@ pub fn record_draft_captured(
     journal: &Path,
     draft_id: &str,
     captured_day: &str,
-) -> Result<(), ChatAppendError> {
+) -> Result<(), SupportDraftError> {
     validate_draft_id(draft_id)?;
     require_journal_root(journal)?;
     let path = support_draft_index_path(journal, draft_id);
@@ -141,14 +140,14 @@ pub fn record_draft_captured(
         .expect("serializing a Rust string for a support-draft locator cannot fail");
     let contents = format!("{{\"captured_day\":{captured_day}}}\n");
     atomic_replace(&path, contents.as_bytes(), AtomicWriteOptions::default())
-        .map_err(|source| ChatAppendError::AtomicWrite { path, source })
+        .map_err(|source| SupportDraftError::AtomicWrite { path, source })
 }
 
 /// Resolve a support draft's captured day without changing journal state.
 pub fn resolve_draft_day(
     journal: &Path,
     draft_id: &str,
-) -> Result<Option<String>, ChatAppendError> {
+) -> Result<Option<String>, SupportDraftError> {
     if validate_draft_id(draft_id).is_err() {
         return Ok(None);
     }
@@ -175,7 +174,7 @@ pub fn resolve_draft_day(
 ///
 /// Resolution is bounded to the locator's captured day. Invalid ids, a missing
 /// locator, and a day with no matching event all return `Ok(None)`.
-pub fn load_draft_event(journal: &Path, draft_id: &str) -> Result<Option<Value>, ChatAppendError> {
+pub fn load_draft_event(journal: &Path, draft_id: &str) -> Result<Option<Value>, SupportDraftError> {
     let Some(day) = resolve_draft_day(journal, draft_id)? else {
         return Ok(None);
     };
@@ -183,9 +182,9 @@ pub fn load_draft_event(journal: &Path, draft_id: &str) -> Result<Option<Value>,
         let path = journal
             .join("chronicle")
             .join(&day)
-            .join(CHAT_STREAM)
+            .join(SUPPORT_DRAFTS_STREAM)
             .join(segment)
-            .join("chat.jsonl");
+            .join("support-drafts.jsonl");
         for event in read_events_file(&path)? {
             if event.get("kind").and_then(Value::as_str) == Some(SUPPORT_DRAFT)
                 && event.get("draft_id").and_then(Value::as_str) == Some(draft_id)
@@ -204,7 +203,7 @@ pub fn load_draft_event(journal: &Path, draft_id: &str) -> Result<Option<Value>,
 pub fn resolve_draft_outcome(
     journal: &Path,
     draft_id: &str,
-) -> Result<Option<String>, ChatAppendError> {
+) -> Result<Option<String>, SupportDraftError> {
     if validate_draft_id(draft_id).is_err() {
         return Ok(None);
     }
@@ -232,7 +231,7 @@ pub fn resolve_draft_outcome(
 /// Create-only. If the mark file already exists — this verb or the other —
 /// this returns `Ok(())` without rewriting it. Callers that need to know which
 /// outcome actually won must re-read [`resolve_draft_outcome`] after this returns.
-pub fn mark_draft_submitted(journal: &Path, draft_id: &str) -> Result<(), ChatAppendError> {
+pub fn mark_draft_submitted(journal: &Path, draft_id: &str) -> Result<(), SupportDraftError> {
     mark_draft_outcome(journal, draft_id, "submitted")
 }
 
@@ -241,7 +240,7 @@ pub fn mark_draft_submitted(journal: &Path, draft_id: &str) -> Result<(), ChatAp
 /// Create-only. If the mark file already exists — this verb or the other —
 /// this returns `Ok(())` without rewriting it. Callers that need to know which
 /// outcome actually won must re-read [`resolve_draft_outcome`] after this returns.
-pub fn mark_draft_cancelled(journal: &Path, draft_id: &str) -> Result<(), ChatAppendError> {
+pub fn mark_draft_cancelled(journal: &Path, draft_id: &str) -> Result<(), SupportDraftError> {
     mark_draft_outcome(journal, draft_id, "cancelled")
 }
 
@@ -249,7 +248,7 @@ fn mark_draft_outcome(
     journal: &Path,
     draft_id: &str,
     outcome: &str,
-) -> Result<(), ChatAppendError> {
+) -> Result<(), SupportDraftError> {
     validate_draft_id(draft_id)?;
     require_journal_root(journal)?;
     let path = support_draft_outcome_path(journal, draft_id);
@@ -261,7 +260,7 @@ fn mark_draft_outcome(
         {
             Ok(())
         }
-        Err(source) => Err(ChatAppendError::AtomicWrite { path, source }),
+        Err(source) => Err(SupportDraftError::AtomicWrite { path, source }),
     }
 }
 
@@ -270,7 +269,7 @@ fn append_chat_event_at(
     kind: &str,
     mut event: Map<String, Value>,
     now: DateTime<Local>,
-) -> Result<Value, ChatAppendError> {
+) -> Result<Value, SupportDraftError> {
     if !event.contains_key("ts") {
         event.insert("ts".to_owned(), Value::from(now.timestamp_millis()));
     }
@@ -280,7 +279,7 @@ fn append_chat_event_at(
     let timestamp = event
         .get("ts")
         .and_then(Value::as_i64)
-        .ok_or(ChatAppendError::InvalidTimestamp)?;
+        .ok_or(SupportDraftError::InvalidTimestamp)?;
     let event_time = local_time(timestamp)?;
     append_validated_chat_event_at_local_time(
         journal,
@@ -297,29 +296,29 @@ fn append_validated_chat_event_at_local_time(
     event: Map<String, Value>,
     timestamp: i64,
     event_time: NaiveDateTime,
-) -> Result<Value, ChatAppendError> {
+) -> Result<Value, SupportDraftError> {
     let mut stored = Map::new();
     stored.insert("kind".to_owned(), Value::String(kind.to_owned()));
     stored.extend(event);
     let stored = Value::Object(stored);
 
-    let chat_path = {
-        pause_at("chat-before-lock");
+    {
+        pause_at("draft-before-lock");
         let _guard = CHAT_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         #[cfg(test)]
         let _test_lock_scope = TestChatLockScope::enter();
         let (day, segment) = current_segment_key(journal, timestamp, event_time)?;
-        let segment_dir = SegmentDir::resolve(journal, &day, &segment, CHAT_STREAM)
-            .map_err(|source| ChatAppendError::SegmentPath { source })?;
-        let chat_path = segment_dir.path().join("chat.jsonl");
+        let segment_dir = SegmentDir::resolve(journal, &day, &segment, SUPPORT_DRAFTS_STREAM)
+            .map_err(|source| SupportDraftError::SegmentPath { source })?;
+        let chat_path = segment_dir.path().join("support-drafts.jsonl");
         let existed = chat_path.exists();
         let mut events = read_events_file(&chat_path)?;
-        pause_at("chat-read-before-write");
+        pause_at("draft-read-before-write");
         events.push(stored.clone());
         write_jsonl(&chat_path, events, AtomicWriteOptions::default()).map_err(|source| {
-            ChatAppendError::AtomicWrite {
+            SupportDraftError::AtomicWrite {
                 path: chat_path.clone(),
                 source,
             }
@@ -327,7 +326,7 @@ fn append_validated_chat_event_at_local_time(
         if !existed {
             advance_unbound_stream(
                 journal,
-                CHAT_STREAM,
+                SUPPORT_DRAFTS_STREAM,
                 &day,
                 &segment,
                 StreamHints {
@@ -336,23 +335,16 @@ fn append_validated_chat_event_at_local_time(
                     platform: None,
                 },
             )
-            .map_err(|source| ChatAppendError::StreamAdvance { source })?;
+            .map_err(|source| SupportDraftError::StreamAdvance { source })?;
         }
-        chat_path
-    };
-
-    if let Err(error) = rescan_file(journal, &chat_path) {
-        log::warn!(
-            "support-draft chat rescan failed for {}: {error}",
-            chat_path.display()
-        );
     }
+
     Ok(stored)
 }
 
-fn validate_event(kind: &str, event: &Map<String, Value>) -> Result<(), ChatAppendError> {
+fn validate_event(kind: &str, event: &Map<String, Value>) -> Result<(), SupportDraftError> {
     if kind != SUPPORT_DRAFT {
-        return Err(ChatAppendError::UnknownKind {
+        return Err(SupportDraftError::UnknownKind {
             kind: kind.to_owned(),
         });
     }
@@ -364,36 +356,36 @@ fn validate_event(kind: &str, event: &Map<String, Value>) -> Result<(), ChatAppe
         "diagnostics_snapshot",
     ] {
         if !event.contains_key(field) {
-            return Err(ChatAppendError::MissingField { field });
+            return Err(SupportDraftError::MissingField { field });
         }
     }
     if !event.get("ts").is_some_and(Value::is_i64) {
-        return Err(ChatAppendError::InvalidTimestamp);
+        return Err(SupportDraftError::InvalidTimestamp);
     }
     Ok(())
 }
 
-fn require_journal_root(journal: &Path) -> Result<(), ChatAppendError> {
+fn require_journal_root(journal: &Path) -> Result<(), SupportDraftError> {
     match fs::metadata(journal) {
         Ok(metadata) if metadata.is_dir() => Ok(()),
-        Ok(_) => Err(ChatAppendError::JournalRootNotDirectory {
+        Ok(_) => Err(SupportDraftError::JournalRootNotDirectory {
             path: journal.to_path_buf(),
         }),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            Err(ChatAppendError::JournalRootMissing {
+            Err(SupportDraftError::JournalRootMissing {
                 path: journal.to_path_buf(),
             })
         }
-        Err(source) => Err(ChatAppendError::JournalRootIo {
+        Err(source) => Err(SupportDraftError::JournalRootIo {
             path: journal.to_path_buf(),
             source,
         }),
     }
 }
 
-fn validate_draft_id(draft_id: &str) -> Result<(), ChatAppendError> {
+fn validate_draft_id(draft_id: &str) -> Result<(), SupportDraftError> {
     if draft_id.is_empty() || draft_id.contains('/') || matches!(draft_id, "." | "..") {
-        return Err(ChatAppendError::InvalidDraftId);
+        return Err(SupportDraftError::InvalidDraftId);
     }
     Ok(())
 }
@@ -418,8 +410,8 @@ fn current_segment_key(
     journal: &Path,
     timestamp: i64,
     event_time: NaiveDateTime,
-) -> Result<(String, String), ChatAppendError> {
-    pause_at("chat-before-segment-selection");
+) -> Result<(String, String), SupportDraftError> {
+    pause_at("draft-before-segment-selection");
     let day = event_time.format("%Y%m%d").to_string();
     let mut existing = chat_segments(journal, &day)?;
     if existing.is_empty() {
@@ -435,15 +427,15 @@ fn current_segment_key(
     }
 }
 
-fn local_time(timestamp: i64) -> Result<DateTime<Local>, ChatAppendError> {
+fn local_time(timestamp: i64) -> Result<DateTime<Local>, SupportDraftError> {
     Local
         .timestamp_millis_opt(timestamp)
         .single()
-        .ok_or(ChatAppendError::LocalTime { timestamp })
+        .ok_or(SupportDraftError::LocalTime { timestamp })
 }
 
-fn chat_segments(journal: &Path, day: &str) -> Result<Vec<String>, ChatAppendError> {
-    let directory = journal.join("chronicle").join(day).join(CHAT_STREAM);
+fn chat_segments(journal: &Path, day: &str) -> Result<Vec<String>, SupportDraftError> {
+    let directory = journal.join("chronicle").join(day).join(SUPPORT_DRAFTS_STREAM);
     let entries = match fs::read_dir(&directory) {
         Ok(entries) => entries,
         Err(error)
@@ -455,7 +447,7 @@ fn chat_segments(journal: &Path, day: &str) -> Result<Vec<String>, ChatAppendErr
             return Ok(Vec::new());
         }
         Err(source) => {
-            return Err(ChatAppendError::ChatRead {
+            return Err(SupportDraftError::DraftRead {
                 path: directory,
                 source,
             });
@@ -463,13 +455,13 @@ fn chat_segments(journal: &Path, day: &str) -> Result<Vec<String>, ChatAppendErr
     };
     let mut segments = Vec::new();
     for entry in entries {
-        let entry = entry.map_err(|source| ChatAppendError::ChatRead {
+        let entry = entry.map_err(|source| SupportDraftError::DraftRead {
             path: directory.clone(),
             source,
         })?;
         if !entry
             .file_type()
-            .map_err(|source| ChatAppendError::ChatRead {
+            .map_err(|source| SupportDraftError::DraftRead {
                 path: entry.path(),
                 source,
             })?
@@ -503,9 +495,9 @@ fn segment_key_for_start(start: NaiveDateTime) -> String {
     format!("{}_300", start.format("%H%M%S"))
 }
 
-fn segment_start_timestamp(day: &str, segment: &str) -> Result<i64, ChatAppendError> {
+fn segment_start_timestamp(day: &str, segment: &str) -> Result<i64, SupportDraftError> {
     let date = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|_| {
-        ChatAppendError::InvalidSegmentKey {
+        SupportDraftError::InvalidSegmentKey {
             day: day.to_owned(),
             segment: segment.to_owned(),
         }
@@ -513,7 +505,7 @@ fn segment_start_timestamp(day: &str, segment: &str) -> Result<i64, ChatAppendEr
     let (time_text, duration_text) =
         segment
             .split_once('_')
-            .ok_or_else(|| ChatAppendError::InvalidSegmentKey {
+            .ok_or_else(|| SupportDraftError::InvalidSegmentKey {
                 day: day.to_owned(),
                 segment: segment.to_owned(),
             })?;
@@ -522,20 +514,20 @@ fn segment_start_timestamp(day: &str, segment: &str) -> Result<i64, ChatAppendEr
         || duration_text.is_empty()
         || !duration_text.bytes().all(|byte| byte.is_ascii_digit())
     {
-        return Err(ChatAppendError::InvalidSegmentKey {
+        return Err(SupportDraftError::InvalidSegmentKey {
             day: day.to_owned(),
             segment: segment.to_owned(),
         });
     }
     let time = chrono::NaiveTime::parse_from_str(time_text, "%H%M%S").map_err(|_| {
-        ChatAppendError::InvalidSegmentKey {
+        SupportDraftError::InvalidSegmentKey {
             day: day.to_owned(),
             segment: segment.to_owned(),
         }
     })?;
     resolve_local_datetime(NaiveDateTime::new(date, time))
         .map(|time| time.timestamp_millis())
-        .ok_or_else(|| ChatAppendError::InvalidSegmentKey {
+        .ok_or_else(|| SupportDraftError::InvalidSegmentKey {
             day: day.to_owned(),
             segment: segment.to_owned(),
         })
@@ -555,12 +547,12 @@ fn resolve_local_datetime(naive: NaiveDateTime) -> Option<DateTime<Local>> {
     None
 }
 
-fn read_events_file(path: &Path) -> Result<Vec<Value>, ChatAppendError> {
+fn read_events_file(path: &Path) -> Result<Vec<Value>, SupportDraftError> {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(source) => {
-            return Err(ChatAppendError::ChatRead {
+            return Err(SupportDraftError::DraftRead {
                 path: path.to_path_buf(),
                 source,
             });
@@ -572,13 +564,13 @@ fn read_events_file(path: &Path) -> Result<Vec<Value>, ChatAppendError> {
             continue;
         }
         let value: Value =
-            serde_json::from_str(line).map_err(|source| ChatAppendError::MalformedChatLine {
+            serde_json::from_str(line).map_err(|source| SupportDraftError::MalformedDraftLine {
                 path: path.to_path_buf(),
                 line: offset + 1,
                 source,
             })?;
         if !value.is_object() {
-            return Err(ChatAppendError::ChatLineNotObject {
+            return Err(SupportDraftError::DraftLineNotObject {
                 path: path.to_path_buf(),
                 line: offset + 1,
             });
@@ -622,7 +614,7 @@ mod tests {
     use serde_json::{Map, Value, json};
 
     use super::{
-        CHAT_LOCK_DEPTH, CHAT_STREAM, ChatAppendError, PAUSE_HOOK, append_chat_event_at,
+        CHAT_LOCK_DEPTH, SUPPORT_DRAFTS_STREAM, SupportDraftError, PAUSE_HOOK, append_chat_event_at,
         append_support_draft, append_validated_chat_event_at_local_time, load_draft_event,
         mark_draft_cancelled, mark_draft_submitted, record_draft_captured, resolve_draft_day,
         resolve_draft_outcome, resolve_local_datetime, support_draft_index_path,
@@ -630,6 +622,7 @@ mod tests {
     };
 
     static NEXT_JOURNAL: AtomicU64 = AtomicU64::new(0);
+    static PAUSE_TEST_GUARD: Mutex<()> = Mutex::new(());
 
     struct TestJournal {
         path: PathBuf,
@@ -639,7 +632,7 @@ mod tests {
         fn new() -> Self {
             let sequence = NEXT_JOURNAL.fetch_add(1, Ordering::Relaxed);
             let path = Path::new("/var/tmp").join(format!(
-                "solstone-core-chat-append-{}-{sequence}",
+                "solstone-core-support-drafts-{}-{sequence}",
                 std::process::id()
             ));
             fs::create_dir(&path).expect("create test journal");
@@ -704,9 +697,9 @@ mod tests {
         journal
             .join("chronicle")
             .join(day)
-            .join(CHAT_STREAM)
+            .join(SUPPORT_DRAFTS_STREAM)
             .join(segment)
-            .join("chat.jsonl")
+            .join("support-drafts.jsonl")
     }
 
     fn write_chat(path: &Path, contents: &str) {
@@ -927,7 +920,7 @@ mod tests {
                 route_event(now.timestamp_millis()),
                 now
             ),
-            Err(ChatAppendError::MalformedChatLine { .. })
+            Err(SupportDraftError::MalformedDraftLine { .. })
         ));
         assert_eq!(fs::read(&path).expect("read unchanged"), before);
         write_chat(&path, "{\"prior\":true}\n");
@@ -953,7 +946,7 @@ mod tests {
                 route_event(now.timestamp_millis()),
                 now
             ),
-            Err(ChatAppendError::InvalidSegmentKey { .. })
+            Err(SupportDraftError::InvalidSegmentKey { .. })
         ));
         assert_eq!(
             fs::read_to_string(path).expect("read unchanged chat"),
@@ -972,10 +965,10 @@ mod tests {
             now,
         )
         .expect("first append");
-        let state = journal.path.join("streams/chat.json");
+        let state = journal.path.join("streams/support-drafts.json");
         let marker = journal
             .path
-            .join("chronicle/20260815/chat/100347_300/stream.json");
+            .join("chronicle/20260815/support-drafts/100347_300/stream.json");
         let first_state = fs::read(&state).expect("stream state");
         let first_marker = fs::read(&marker).expect("stream marker");
         let value: Value = serde_json::from_slice(&first_state).expect("stream json");
@@ -1058,7 +1051,7 @@ mod tests {
         for draft_id in ["../x", "a/b", "", "."] {
             assert!(matches!(
                 record_draft_captured(&journal.path, draft_id, "20260815"),
-                Err(ChatAppendError::InvalidDraftId)
+                Err(SupportDraftError::InvalidDraftId)
             ));
             assert_eq!(
                 resolve_draft_day(&journal.path, draft_id).expect("resolve"),
@@ -1123,7 +1116,7 @@ mod tests {
                 route_event(now.timestamp_millis()),
                 now
             ),
-            Err(ChatAppendError::JournalRootMissing { .. })
+            Err(SupportDraftError::JournalRootMissing { .. })
         ));
         let file = journal.path.join("not-a-directory");
         fs::write(&file, "file").expect("write file root");
@@ -1134,7 +1127,7 @@ mod tests {
                 route_event(now.timestamp_millis()),
                 now
             ),
-            Err(ChatAppendError::JournalRootNotDirectory { .. })
+            Err(SupportDraftError::JournalRootNotDirectory { .. })
         ));
     }
 
@@ -1149,19 +1142,20 @@ mod tests {
                 route_event(now.timestamp_millis()),
                 now
             ),
-            Err(ChatAppendError::UnknownKind { .. })
+            Err(SupportDraftError::UnknownKind { .. })
         ));
         let mut event = route_event(now.timestamp_millis());
         event.insert("ts".to_owned(), json!("not-an-integer"));
         assert!(matches!(
             append_chat_event_at(&journal.path, "support_draft", event, now),
-            Err(ChatAppendError::InvalidTimestamp)
+            Err(SupportDraftError::InvalidTimestamp)
         ));
         assert!(!journal.path.join("chronicle").exists());
     }
 
     #[test]
     fn ac12_static_lock_keeps_two_concurrent_appends() {
+        let _pause_guard = PAUSE_TEST_GUARD.lock().expect("pause test guard");
         let journal = Arc::new(TestJournal::new());
         let now = local_at(2026, 8, 15, 10, 3, 47);
         let entered = Arc::new(Barrier::new(2));
@@ -1172,7 +1166,7 @@ mod tests {
         let hook_paused = Arc::clone(&paused);
         let hooks = PAUSE_HOOK.get_or_init(|| Mutex::new(None));
         *hooks.lock().expect("hook lock") = Some(Arc::new(move |point| {
-            if point == "chat-read-before-write" && !hook_paused.swap(true, Ordering::SeqCst) {
+            if point == "draft-read-before-write" && !hook_paused.swap(true, Ordering::SeqCst) {
                 hook_entered.wait();
                 hook_released.wait();
             }
@@ -1209,6 +1203,7 @@ mod tests {
 
     #[test]
     fn ac12_static_lock_serializes_segment_selection() {
+        let _pause_guard = PAUSE_TEST_GUARD.lock().expect("pause test guard");
         #[derive(Debug)]
         enum Event {
             FirstPaused,
@@ -1231,14 +1226,14 @@ mod tests {
         let (event_tx, event_rx) = mpsc::channel();
         let hooks = PAUSE_HOOK.get_or_init(|| Mutex::new(None));
         *hooks.lock().expect("hook lock") = Some(Arc::new(move |point| match point {
-            "chat-before-lock" => {
+            "draft-before-lock" => {
                 if hook_lock_attempts.fetch_add(1, Ordering::SeqCst) == 1 {
                     event_tx
                         .send(Event::SecondAwaitingSelection)
                         .expect("test receiver");
                 }
             }
-            "chat-before-segment-selection" => {
+            "draft-before-segment-selection" => {
                 if CHAT_LOCK_DEPTH.load(Ordering::SeqCst) != 1 {
                     hook_selection_outside_lock.store(true, Ordering::SeqCst);
                     event_tx
@@ -1246,7 +1241,7 @@ mod tests {
                         .expect("test receiver");
                 }
             }
-            "chat-read-before-write"
+            "draft-read-before-write"
                 if !hook_selection_outside_lock.load(Ordering::SeqCst)
                     && !hook_paused.swap(true, Ordering::SeqCst) =>
             {
@@ -1487,5 +1482,61 @@ mod tests {
             Some("submitted".to_owned())
         );
         assert_eq!(fs::read(locator).expect("locator untouched"), before);
+    }
+
+    #[test]
+    fn support_draft_round_trip_writes_support_drafts_stream() {
+        let journal = TestJournal::new();
+        let now = local_at(2026, 8, 15, 10, 3, 47);
+        append_chat_event_at(
+            &journal.path,
+            "support_draft",
+            route_event(now.timestamp_millis()),
+            now,
+        )
+        .expect("append");
+        record_draft_captured(&journal.path, "a1b2c3d4", "20260815").expect("locator");
+        let loaded = load_draft_event(&journal.path, "a1b2c3d4")
+            .expect("load")
+            .expect("present");
+        assert_eq!(loaded["draft_id"], "a1b2c3d4");
+        assert!(chat_path(&journal.path, "20260815", "100347_300").is_file());
+        assert!(
+            journal
+                .path
+                .join("chronicle/20260815/support-drafts")
+                .is_dir()
+        );
+        assert!(journal.path.join("streams/support-drafts.json").is_file());
+        assert!(!journal.path.join("streams/chat.json").exists());
+        assert!(
+            !journal
+                .path
+                .join("chronicle/20260815/chat/100347_300/chat.jsonl")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn load_draft_event_ignores_legacy_chat_jsonl() {
+        let journal = TestJournal::new();
+        record_draft_captured(&journal.path, "a1b2c3d4", "20260815").expect("locator");
+        let mut event = route_event(1);
+        event.insert("kind".to_owned(), json!("support_draft"));
+        let old = journal
+            .path
+            .join("chronicle/20260815/chat/100000_300/chat.jsonl");
+        fs::create_dir_all(old.parent().expect("legacy parent")).expect("legacy parent");
+        fs::write(&old, format!("{}\n", Value::Object(event))).expect("plant legacy chat");
+        assert_eq!(
+            load_draft_event(&journal.path, "a1b2c3d4").expect("load"),
+            None
+        );
+        assert!(
+            !journal
+                .path
+                .join("chronicle/20260815/support-drafts")
+                .exists()
+        );
     }
 }

@@ -7,7 +7,7 @@ members = [
     "crates/solstone-core-indexer",
     "crates/solstone-core-format",
     "crates/solstone-core-indexer-store",
-    "crates/solstone-core-chat-append",
+    "crates/solstone-core-support-drafts",
     "crates/solstone-core-indexer-query",
     "crates/solstone-core-entity",
     "crates/solstone-core-entity-matching",
@@ -152,7 +152,7 @@ solstone-core-observe-audio = { path = "crates/solstone-core-observe-audio" }
 solstone-core-indexer = { path = "crates/solstone-core-indexer" }
 solstone-core-format = { path = "crates/solstone-core-format" }
 solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
-solstone-core-chat-append = { path = "crates/solstone-core-chat-append" }
+solstone-core-support-drafts = { path = "crates/solstone-core-support-drafts" }
 solstone-core-indexer-query = { path = "crates/solstone-core-indexer-query" }
 solstone-core-ingest = { path = "crates/solstone-core-ingest" }
 solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }

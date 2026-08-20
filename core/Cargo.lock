@@ -3243,20 +3243,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "solstone-core-chat-append"
-version = "2.0.0"
-dependencies = [
- "chrono",
- "log",
- "regex",
- "serde_json",
- "solstone-core-indexer-store",
- "solstone-core-journal-io",
- "solstone-core-segment",
- "thiserror 2.0.20",
-]
-
-[[package]]
 name = "solstone-core-check"
 version = "2.0.0"
 dependencies = [
@@ -4671,6 +4657,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-support-drafts"
+version = "2.0.0"
+dependencies = [
+ "chrono",
+ "regex",
+ "serde_json",
+ "solstone-core-journal-io",
+ "solstone-core-segment",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "solstone-core-support-portal"
 version = "2.0.0"
 dependencies = [
@@ -4710,9 +4708,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "solstone-core-chat-append",
  "solstone-core-convey-http",
  "solstone-core-convey-shell",
+ "solstone-core-support-drafts",
  "solstone-core-support-portal",
  "tempfile",
  "tokio",
