@@ -110,18 +110,6 @@ fn template_vars(
     let identity = config.get("identity").and_then(Value::as_object);
     let mut vars = identity.map_or_else(BTreeMap::new, flatten_identity);
     vars.insert("now".to_owned(), format_current_datetime());
-    let agent_name = config
-        .get("agent")
-        .and_then(Value::as_object)
-        .and_then(|agent| agent.get("name"))
-        .and_then(python_string)
-        .filter(|name| {
-            let trimmed = name.trim();
-            !trimmed.is_empty() && !is_path_shaped_name(name)
-        })
-        .unwrap_or_else(|| "sol".to_owned());
-    vars.insert("agent_name".to_owned(), agent_name.clone());
-    vars.insert("Agent_name".to_owned(), python_capitalize(&agent_name));
     for (key, value) in context {
         vars.insert(key.clone(), value.clone());
         vars.insert(python_capitalize(key), python_capitalize(value));
@@ -392,45 +380,6 @@ mod tests {
         )
         .expect("compose");
         assert_eq!(result, "$first rendered");
-    }
-
-    fn compose_agent_name(name: Option<&str>) -> String {
-        let root = tempfile::tempdir().expect("root");
-        fs::create_dir_all(root.path().join("config")).expect("config");
-        let config = match name {
-            None => "{}".to_owned(),
-            Some(name) => format!(
-                r#"{{"agent":{{"name":{}}}}}"#,
-                serde_json::to_string(name).unwrap()
-            ),
-        };
-        fs::write(root.path().join("config/journal.json"), config).expect("config");
-        compose_prompt_body(
-            "$agent_name/$Agent_name",
-            root.path(),
-            &root.path().join("templates"),
-            &BTreeMap::new(),
-        )
-        .expect("compose")
-    }
-
-    #[test]
-    fn path_shaped_agent_name_is_treated_as_missing() {
-        for name in ["~/secret", "a/b", r"a\b"] {
-            assert_eq!(compose_agent_name(Some(name)), "sol/Sol", "{name}");
-        }
-    }
-
-    #[test]
-    fn usable_agent_name_is_interpolated() {
-        assert_eq!(compose_agent_name(Some("Ada")), "Ada/Ada");
-    }
-
-    #[test]
-    fn missing_empty_and_whitespace_agent_name_fall_back_to_sol() {
-        assert_eq!(compose_agent_name(None), "sol/Sol");
-        assert_eq!(compose_agent_name(Some("")), "sol/Sol");
-        assert_eq!(compose_agent_name(Some("   ")), "sol/Sol");
     }
 
     fn compose_identity_labels(identity: &str) -> String {

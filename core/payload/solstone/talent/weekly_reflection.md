@@ -14,7 +14,7 @@
 
 $facets
 
-You are generating the weekly reflection for $agent_name.
+You are generating the weekly reflection.
 
 This is not a conversation. Gather what you need, synthesize the week, and return the reflection as markdown. The system saves your response automatically.
 

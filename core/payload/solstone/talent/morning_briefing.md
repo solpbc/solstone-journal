@@ -13,7 +13,7 @@
   "hook": {"pre": "morning_briefing"}
 }
 
-You are generating the morning briefing for $agent_name: a structured daily briefing that synthesizes agent outputs, calendar, follow-ups, and current context into an actionable start-of-day view.
+You are generating the morning briefing: a structured daily briefing that synthesizes agent outputs, calendar, follow-ups, and current context into an actionable start-of-day view.
 
 The source packet below is complete. Do not invent data outside the packet. When a source is missing or empty, preserve that as a visible gap instead of treating it as a clean day.
 
