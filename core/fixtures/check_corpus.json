@@ -563,7 +563,7 @@
     },
     {
       "exit_code": 0,
-      "human_stdout": "sol check \u2014 can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [ok]      gpu       NVIDIA GPU with 6 GB; sol thinks on your GPU; transcription runs on your CPU on this machine\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\nReady \u2014 install the journal next:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch \u2014 https://github.com/solpbc/solstone-journal\n",
+      "human_stdout": "sol check \u2014 can this computer run the journal with the bundled local models?\n  [ok]      platform  Linux (x86_64)\n  [ok]      gpu       NVIDIA GPU with 6 GB; a model runs on your GPU; transcription runs on your CPU on this machine\n  [ok]      ram       64 GB of system memory\n  [ok]      disk      500 GB free at /journal (need 20 GB)\nReady \u2014 install the journal next:  see INSTALL.md\n\nThink this readout is wrong for your machine? We'd love a patch \u2014 https://github.com/solpbc/solstone-journal\n",
       "inputs": {
         "disk": {
           "free_bytes": 536870912000,
@@ -611,7 +611,7 @@
           },
           {
             "available_bytes": 6442450944,
-            "detail": "NVIDIA GPU with 6 GB; sol thinks on your GPU; transcription runs on your CPU on this machine",
+            "detail": "NVIDIA GPU with 6 GB; a model runs on your GPU; transcription runs on your CPU on this machine",
             "name": "gpu",
             "required_bytes": 6442450944,
             "severity": "ok"

@@ -85,7 +85,7 @@
       ],
       "exit": 1,
       "stderr": "journal isn't running. start it with 'journal up' and retry.\n",
-      "stderr_sha256": "3b302739586d0aa9360d6b4c9881297e12074b7872ee2c41a665f4f7d14d33c9",
+      "stderr_sha256": "c5ecdc64bece12bbe46c034abd21e8484f527b2878b9ed5979a9243bb4b65862",
       "stdout": "",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "supervisor": "solstone_down"
@@ -130,7 +130,7 @@
       ],
       "exit": 1,
       "stderr": "journal isn't running. start it with 'journal up' and retry.\n",
-      "stderr_sha256": "3b302739586d0aa9360d6b4c9881297e12074b7872ee2c41a665f4f7d14d33c9",
+      "stderr_sha256": "c5ecdc64bece12bbe46c034abd21e8484f527b2878b9ed5979a9243bb4b65862",
       "stdout": "",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "supervisor": "solstone_down"
@@ -142,7 +142,7 @@
       ],
       "exit": 1,
       "stderr": "journal isn't running. start it with 'journal up' and retry.\n",
-      "stderr_sha256": "3b302739586d0aa9360d6b4c9881297e12074b7872ee2c41a665f4f7d14d33c9",
+      "stderr_sha256": "c5ecdc64bece12bbe46c034abd21e8484f527b2878b9ed5979a9243bb4b65862",
       "stdout": "",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "supervisor": "solstone_down"
@@ -153,7 +153,7 @@
       ],
       "exit": 1,
       "stderr": "journal isn't running. start it with 'journal up' and retry.\n",
-      "stderr_sha256": "3b302739586d0aa9360d6b4c9881297e12074b7872ee2c41a665f4f7d14d33c9",
+      "stderr_sha256": "c5ecdc64bece12bbe46c034abd21e8484f527b2878b9ed5979a9243bb4b65862",
       "stdout": "",
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "supervisor": "solstone_down"
