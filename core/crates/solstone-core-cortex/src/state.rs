@@ -144,7 +144,7 @@ impl CortexState {
             .get("reason_code")
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
-            .unwrap_or("chat_watchdog_cancelled");
+            .unwrap_or("talent_watchdog_cancelled");
         let _ = self.cancel.send((use_id.to_owned(), reason.to_owned()));
     }
 
@@ -307,7 +307,7 @@ impl CortexState {
             .then_some(())?;
         let finalized = self.claim_finalize(use_id)?;
         let running = finalized.running?;
-        let mut event = synthesized_error(use_id, "Talent cancelled by chat watchdog");
+        let mut event = synthesized_error(use_id, "Talent cancelled by watchdog");
         event.insert("reason_code".into(), Value::String(reason.to_owned()));
         self.append_and_relay(use_id, &running.active, event);
         self.store

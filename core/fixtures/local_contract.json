@@ -41,8 +41,8 @@
       "brain_record_missing": {},
       "brain_record_stale": {},
       "brain_record_unavailable": {},
+      "brain_refresh_timeout": {},
       "brain_run_superseded": {},
-      "chat_timeout": {},
       "cogitate_terminal_error": {},
       "configuration_invalid": {
         "field": [
@@ -510,7 +510,7 @@
     },
     "evidence_reason_codes": {
       "cogitate": [
-        "chat_timeout",
+        "brain_refresh_timeout",
         "cogitate_terminal_error",
         "endpoint_contract_failed",
         "endpoint_unreachable",
@@ -529,7 +529,7 @@
         "thinking_engine_not_chosen"
       ],
       "generate": [
-        "chat_timeout",
+        "brain_refresh_timeout",
         "endpoint_contract_failed",
         "endpoint_unreachable",
         "local_server_unhealthy",
@@ -688,8 +688,8 @@
       "brain_record_missing",
       "brain_record_stale",
       "brain_record_unavailable",
+      "brain_refresh_timeout",
       "brain_run_superseded",
-      "chat_timeout",
       "cogitate_terminal_error",
       "configuration_invalid",
       "endpoint_configuration_incomplete",
@@ -732,8 +732,8 @@
       "brain_record_missing": "unknown",
       "brain_record_stale": "unknown",
       "brain_record_unavailable": "unknown",
+      "brain_refresh_timeout": "unhealthy",
       "brain_run_superseded": "unknown",
-      "chat_timeout": "unhealthy",
       "cogitate_terminal_error": "unhealthy",
       "configuration_invalid": "unknown",
       "endpoint_configuration_incomplete": "blocked",

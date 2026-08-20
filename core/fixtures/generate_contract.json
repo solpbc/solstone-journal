@@ -580,13 +580,7 @@
     },
     {
       "blocking": false,
-      "code": "chat_pipeline_unavailable",
-      "overrides_live_taxonomy": false,
-      "retryable": true
-    },
-    {
-      "blocking": false,
-      "code": "chat_timeout",
+      "code": "brain_refresh_timeout",
       "overrides_live_taxonomy": false,
       "retryable": true
     },
@@ -739,6 +733,12 @@
       "code": "non_responsive",
       "overrides_live_taxonomy": false,
       "retryable": false
+    },
+    {
+      "blocking": false,
+      "code": "pipeline_unavailable",
+      "overrides_live_taxonomy": false,
+      "retryable": true
     },
     {
       "blocking": true,

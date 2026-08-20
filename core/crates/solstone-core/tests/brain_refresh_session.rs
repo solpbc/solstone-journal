@@ -140,7 +140,7 @@ fn assert_abandoned(output: &Output, status: i32) {
     let result = parse_ready_and_result(output).expect("abandonment result");
     assert_eq!(result["schema"], RESULT_SCHEMA);
     assert_eq!(result["kind"], "abandoned");
-    assert_eq!(result["reason_code"], "chat_timeout");
+    assert_eq!(result["reason_code"], "brain_refresh_timeout");
     assert_eq!(result["component"], "generate");
 }
 
@@ -216,10 +216,10 @@ fn bare_eof_abandons_without_a_report_and_releases_the_lease() {
     )
     .expect("record JSON");
     assert!(record["checking"].is_null());
-    assert_eq!(record["reason_code"], "chat_timeout");
+    assert_eq!(record["reason_code"], "brain_refresh_timeout");
     assert_eq!(
         record["evidence"]["generate"]["reason_code"],
-        "chat_timeout"
+        "brain_refresh_timeout"
     );
     fs::remove_dir_all(root).expect("cleanup root");
 }

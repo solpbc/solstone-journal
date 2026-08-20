@@ -625,7 +625,7 @@ enum CogitateRunError {
 
 fn cogitate_run_error_reason(error: CogitateRunError) -> &'static str {
     match error {
-        CogitateRunError::Timeout => "chat_timeout",
+        CogitateRunError::Timeout => "brain_refresh_timeout",
         CogitateRunError::Io => "probe_internal_error",
     }
 }
@@ -1114,7 +1114,7 @@ mod tests {
     fn owner_cogitate_outer_timeout_is_distinct_from_process_failure() {
         assert_eq!(
             cogitate_run_error_reason(CogitateRunError::Timeout),
-            "chat_timeout"
+            "brain_refresh_timeout"
         );
         assert_eq!(
             cogitate_run_error_reason(CogitateRunError::Io),
@@ -1125,7 +1125,7 @@ mod tests {
     #[test]
     fn owner_probe_reason_vocabulary_and_cogitate_terminals_are_closed() {
         for reason in [
-            "chat_timeout",
+            "brain_refresh_timeout",
             "endpoint_contract_failed",
             "endpoint_unreachable",
             "local_server_unhealthy",

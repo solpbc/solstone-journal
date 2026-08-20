@@ -517,7 +517,7 @@
       provider_key_invalid: 'reason_rejected',
       provider_quota_exceeded: 'reason_quota',
       network_unreachable: 'reason_network',
-      chat_timeout: 'reason_network',
+      brain_refresh_timeout: 'reason_network',
     }[reasonCode || ''] || 'reason_unknown';
     return formatCopy(text?.[reasonKey] || text?.reason_unknown || '', {provider, model});
   }

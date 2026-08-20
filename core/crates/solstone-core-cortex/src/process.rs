@@ -658,7 +658,7 @@ mod tests {
             "Cortex stopped before spawn",
             "Recovered: Cortex restarted while talent was running",
             "Talent timed out after 7 seconds",
-            "Talent cancelled by chat watchdog",
+            "Talent cancelled by watchdog",
             "Talent exited with code 9 without finish event",
         ] {
             let event = crate::storage::synthesized_error("one", message);

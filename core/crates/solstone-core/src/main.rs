@@ -4296,7 +4296,7 @@ fn abandon_refresh_silently(
     if let Err(error) = solstone_core_brain::abandon_refresh(
         journal_path,
         permit,
-        "chat_timeout",
+        "brain_refresh_timeout",
         Map::new(),
         chrono::Utc::now(),
     ) {
@@ -4314,7 +4314,7 @@ fn abandon_refresh(
         && write_session_result(json!({
             "schema": REFRESH_RESULT_SCHEMA,
             "kind": "abandoned",
-            "reason_code": "chat_timeout",
+            "reason_code": "brain_refresh_timeout",
             "component": "generate",
         })) != ExitCode::SUCCESS
     {

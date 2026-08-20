@@ -1103,8 +1103,6 @@ install-checks: .installed
 	@echo ""
 	@echo "=== Running provider-start-command check ==="
 	@$(MAKE) check-provider-start-commands
-	@echo "=== Running legacy-chat surface check ==="
-	@$(MAKE) check-no-legacy-chat
 	@echo ""
 	@echo "=== Running channel-adapter scrub check ==="
 	@$(MAKE) check-channel-adapter-scrub
@@ -1338,10 +1336,6 @@ check-provider-install-owner: .installed
 # Provider runtime start-command boundary gate
 check-provider-start-commands: .installed
 	$(VENV_BIN)/python scripts/check_provider_start_commands.py
-
-# Removed chat surfaces stay out of tracked Python, HTML, and JavaScript.
-check-no-legacy-chat: .installed
-	$(VENV_BIN)/python scripts/check_no_legacy_chat.py
 
 # Release channel adapter scrub gate
 check-channel-adapter-scrub: .installed

@@ -120,7 +120,7 @@ fn main() {
                 ))
         {
             if mode == "selection_skips_failed_first" && id.starts_with("frame:1:") {
-                refused(&id, true, false, Some("chat_timeout"));
+                refused(&id, true, false, Some("brain_refresh_timeout"));
                 pause_after_response(pause_after, seen);
                 continue;
             }
@@ -129,7 +129,7 @@ fn main() {
             continue;
         }
         if mode == "always_retryable" || (mode == "retryable_then_generated" && seen == 1) {
-            refused(&id, true, false, Some("chat_timeout"));
+            refused(&id, true, false, Some("brain_refresh_timeout"));
         } else if mode == "blocking_retryable" {
             refused(&id, true, true, Some("binary_missing"));
         } else if mode == "no_engine_configured" {
@@ -186,7 +186,7 @@ fn extraction_response(id: &str, mode: &str, attempt: u64) {
         "extraction_json_retry_then_succeed" if attempt == 0 => generated_text(id, "not json"),
         "extraction_json_retry_then_succeed" => generated_text(id, r#"{"ok":true}"#),
         "extraction_json_unparseable" => generated_text(id, "not json"),
-        "extraction_refusal" => refused(id, true, false, Some("chat_timeout")),
+        "extraction_refusal" => refused(id, true, false, Some("brain_refresh_timeout")),
         "extraction_blocking_refusal" => refused(id, true, true, Some("binary_missing")),
         _ => generated_text(id, r#"{"ok":true}"#),
     }
@@ -199,7 +199,7 @@ fn selection_response(id: &str, mode: &str) {
         "selection_unparseable" => generated_text(id, "not JSON"),
         "selection_blocking_refusal" => refused(id, true, true, Some("binary_missing")),
         "selection_nonblocking_retryable_refusal" => {
-            refused(id, true, false, Some("chat_timeout"));
+            refused(id, true, false, Some("brain_refresh_timeout"));
         }
         "selection_unknown_code" => refused(id, false, false, Some("future_code")),
         _ => unreachable!("selection-only mode"),
