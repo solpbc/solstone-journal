@@ -23,6 +23,7 @@ use solstone_core_facets::{
     save_facet_entity_link, save_observations, write_activity_file, write_log_file,
     write_news_file,
 };
+use solstone_core_import::ImportPreview;
 use solstone_core_journal_io::{
     DEFAULT_STREAM, LockError, LockOptions, PathOrDay, StagedDirOptions, append_jsonl,
     contained_path, hold_lock, iter_segments, publish_staged_dir,
@@ -30,6 +31,23 @@ use solstone_core_journal_io::{
 use zip::ZipArchive;
 
 use crate::{ArchiveSafetyPhase, ImportSourcesError};
+
+/// Top-level tree names that portable export prunes. Ingest planning warns when
+/// a zip still carries them; merge does not apply them.
+const AUTHORED_TOP_LEVEL_PRUNES: &[&str] = &[
+    "config",
+    "link",
+    "tokens",
+    "awareness",
+    "apps",
+    "backup",
+    "solstone",
+];
+const JOURNAL_FAMILY_ROOTS: &[&str] = &["chronicle", "entities", "facets", "imports"];
+const ZIP_LOCAL: [u8; 4] = [b'P', b'K', 3, 4];
+const ZIP_EOCD: [u8; 4] = [b'P', b'K', 5, 6];
+const ZIP_SPAN: [u8; 4] = [b'P', b'K', 7, 8];
+const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
 
 const GIB: u64 = 1024 * 1024 * 1024;
 const DEFAULT_ARCHIVE_CAP: u64 = 50 * GIB;
@@ -170,6 +188,194 @@ pub struct ArchiveMergeResult {
     pub reindex_status: ReindexStatus,
     pub decision_log_path: PathBuf,
     pub staging_path: PathBuf,
+}
+
+/// Read-only listing of what a journal archive would copy. Never writes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArchivePlan {
+    pub date_range: (String, String),
+    pub day_count: u64,
+    pub entity_count: u64,
+    pub facet_count: u64,
+    pub warning_count: u64,
+    pub warnings: Vec<String>,
+    pub payload_files: usize,
+    pub summary: String,
+}
+
+impl From<ArchivePlan> for ImportPreview {
+    fn from(plan: ArchivePlan) -> Self {
+        Self {
+            date_range: plan.date_range,
+            item_count: plan.day_count,
+            entity_count: plan.entity_count,
+            summary: plan.summary,
+        }
+    }
+}
+
+/// Plan a journal-archive merge from the zip central directory. Creates nothing.
+pub fn plan_journal_archive(archive_path: &Path) -> Result<ArchivePlan, ImportSourcesError> {
+    refuse_non_zip_magic(archive_path)?;
+    let file = File::open(archive_path).map_err(|error| match error.kind() {
+        io::ErrorKind::NotFound => ImportSourcesError::ArchiveNotFound {
+            path: archive_path.to_path_buf(),
+        },
+        _ => ImportSourcesError::ArchiveInvalid {
+            path: archive_path.to_path_buf(),
+            detail: error.to_string(),
+        },
+    })?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|error| ImportSourcesError::ArchiveInvalid {
+            path: archive_path.to_path_buf(),
+            detail: error.to_string(),
+        })?;
+    let mut names = Vec::with_capacity(archive.len());
+    let mut directories = Vec::with_capacity(archive.len());
+    let mut root_candidates = BTreeSet::new();
+    for index in 0..archive.len() {
+        let entry =
+            archive
+                .by_index(index)
+                .map_err(|error| ImportSourcesError::ArchiveInvalid {
+                    path: archive_path.to_path_buf(),
+                    detail: error.to_string(),
+                })?;
+        let name = entry.name().replace('\\', "/");
+        let is_dir = entry.is_dir() || name.ends_with('/');
+        if let Some(first) = member_components(&name).first().copied()
+            && first != "__MACOSX"
+            && first != ".DS_Store"
+        {
+            root_candidates.insert(std::ffi::OsString::from(first));
+        }
+        directories.push(is_dir);
+        names.push(name);
+    }
+    let root = archive_root(&root_candidates)?;
+    let mut days = BTreeSet::new();
+    let mut entity_ids = BTreeSet::new();
+    let mut facet_ids = BTreeSet::new();
+    let mut prune_warnings = BTreeSet::new();
+    let mut has_macosx = false;
+    let mut has_ds_store = false;
+    let mut payload_files = 0_usize;
+    for (name, is_dir) in names.iter().zip(directories) {
+        let relative = strip_archive_root(name, &root);
+        let components = member_components(relative);
+        if components.iter().any(|part| *part == ".DS_Store")
+            || Path::new(relative)
+                .file_name()
+                .is_some_and(|file_name| file_name == ".DS_Store")
+        {
+            has_ds_store = true;
+        }
+        if components.first().copied() == Some("__MACOSX") {
+            has_macosx = true;
+        }
+        let Some(first) = components.first().copied() else {
+            continue;
+        };
+        if AUTHORED_TOP_LEVEL_PRUNES.contains(&first) {
+            prune_warnings.insert(first.to_owned());
+        }
+        if first == "chronicle" && components.get(1).copied().is_some_and(is_eight_digit_day) {
+            days.insert(components[1].to_owned());
+        }
+        if first == "entities" && components.len() == 3 && components[2] == "entity.json" && !is_dir
+        {
+            entity_ids.insert(components[1].to_owned());
+        }
+        if first == "facets" && components.len() == 3 && components[2] == "facet.json" && !is_dir {
+            facet_ids.insert(components[1].to_owned());
+        }
+        if !is_dir && JOURNAL_FAMILY_ROOTS.contains(&first) {
+            payload_files += 1;
+        }
+    }
+    let mut warnings = prune_warnings.into_iter().collect::<Vec<_>>();
+    if has_macosx {
+        warnings.push("__MACOSX".to_owned());
+    }
+    if has_ds_store {
+        warnings.push(".DS_Store".to_owned());
+    }
+    let day_count = days.len() as u64;
+    let entity_count = entity_ids.len() as u64;
+    let facet_count = facet_ids.len() as u64;
+    let warning_count = warnings.len() as u64;
+    let date_range = match (days.first(), days.last()) {
+        (Some(first), Some(last)) => (first.clone(), last.clone()),
+        _ => (String::new(), String::new()),
+    };
+    let summary = format!(
+        "Journal archive: {day_count} days, {entity_count} entities, {facet_count} facets ({warning_count} warnings)"
+    );
+    Ok(ArchivePlan {
+        date_range,
+        day_count,
+        entity_count,
+        facet_count,
+        warning_count,
+        warnings,
+        payload_files,
+        summary,
+    })
+}
+
+fn refuse_non_zip_magic(path: &Path) -> Result<(), ImportSourcesError> {
+    let mut file = File::open(path).map_err(|error| match error.kind() {
+        io::ErrorKind::NotFound => ImportSourcesError::ArchiveNotFound {
+            path: path.to_path_buf(),
+        },
+        _ => ImportSourcesError::ArchiveInvalid {
+            path: path.to_path_buf(),
+            detail: error.to_string(),
+        },
+    })?;
+    let mut magic = [0_u8; 4];
+    let read = file
+        .read(&mut magic)
+        .map_err(|error| ImportSourcesError::ArchiveInvalid {
+            path: path.to_path_buf(),
+            detail: error.to_string(),
+        })?;
+    if read >= 2 && magic[..2] == GZIP_MAGIC {
+        return Err(ImportSourcesError::ArchiveInvalid {
+            path: path.to_path_buf(),
+            detail: "unrecognized archive magic".to_owned(),
+        });
+    }
+    if read >= 4 && (magic == ZIP_LOCAL || magic == ZIP_EOCD || magic == ZIP_SPAN) {
+        return Ok(());
+    }
+    Err(ImportSourcesError::ArchiveInvalid {
+        path: path.to_path_buf(),
+        detail: "unrecognized archive magic".to_owned(),
+    })
+}
+
+fn member_components(name: &str) -> Vec<&str> {
+    name.trim_end_matches('/')
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect()
+}
+
+fn strip_archive_root<'a>(name: &'a str, root: &Path) -> &'a str {
+    let Some(root) = root.to_str().filter(|value| !value.is_empty()) else {
+        return name;
+    };
+    match name.strip_prefix(root) {
+        Some(rest) if rest.is_empty() => rest,
+        Some(rest) => rest.strip_prefix('/').unwrap_or(name),
+        None => name,
+    }
+}
+
+fn is_eight_digit_day(name: &str) -> bool {
+    name.len() == 8 && name.as_bytes().iter().all(|byte| byte.is_ascii_digit())
 }
 
 /// Validate, extract, and merge an archive while holding the target merge lock.
@@ -1420,4 +1626,198 @@ fn tree_digest(path: &Path) -> Result<Vec<u8>, ImportSourcesError> {
         detail: error.to_string(),
     })?;
     Ok(hasher.finalize().to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+    use std::ffi::OsString;
+    use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipWriter};
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn plan_dry_run_leaves_chronicle_day_absent_and_writes_nothing() {
+        let tree = PlanTree::new();
+        let day = "20260311";
+        let archive = write_zip(
+            &tree.path,
+            &[(&format!("chronicle/{day}/120000_60/value"), b"would copy")],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let before_target = collect_tree(&target);
+        let temp = std::env::temp_dir();
+        let before_temp = list_names(&temp);
+        let default_work = temp.join("solstone-archive-merge");
+        let default_work_existed = default_work.exists();
+        let before_work = if default_work_existed {
+            collect_tree(&default_work)
+        } else {
+            BTreeSet::new()
+        };
+
+        let plan = plan_journal_archive(&archive).unwrap();
+        assert_eq!(plan.day_count, 1);
+        assert_eq!(plan.date_range, (day.to_owned(), day.to_owned()));
+        assert!(!target.join("chronicle").join(day).exists());
+        assert_eq!(collect_tree(&target), before_target);
+        assert!(!target.join("health/locks/archive-merge").exists());
+        assert!(!target.join("health/locks/archive-merge.lock").exists());
+        assert!(
+            !target
+                .join("health/locks/archive-merge.owner.json")
+                .exists()
+        );
+        assert!(!target.join("imports/archive-merge-work").exists());
+        assert!(!target.join("working_root").exists());
+        assert!(
+            collect_tree(&target)
+                .iter()
+                .all(|path| !path.ends_with("decision-log.jsonl"))
+        );
+        if default_work_existed {
+            assert_eq!(collect_tree(&default_work), before_work);
+        } else {
+            assert!(!default_work.exists());
+        }
+        let gained = list_names(&temp)
+            .difference(&before_temp)
+            .cloned()
+            .collect::<Vec<_>>();
+        for name in &gained {
+            let text = name.to_string_lossy();
+            assert!(
+                !text.starts_with("extract-"),
+                "plan created extract member {text}"
+            );
+            assert!(
+                !text.contains("solstone-archive-merge"),
+                "plan created working_root {text}"
+            );
+            assert!(
+                !text.starts_with(".tmp"),
+                "plan created TempDir member {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn plan_summary_matches_oracle_wording() {
+        let tree = PlanTree::new();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260311/120000_60/value", b"day"),
+                ("config/journal.json", b"{}"),
+            ],
+        );
+        let plan = plan_journal_archive(&archive).unwrap();
+        assert_eq!(
+            plan.summary,
+            "Journal archive: 1 days, 0 entities, 0 facets (1 warnings)"
+        );
+        assert_eq!(
+            plan.date_range,
+            ("20260311".to_owned(), "20260311".to_owned())
+        );
+        assert_eq!(plan.day_count, 1);
+        assert_eq!(plan.entity_count, 0);
+        assert_eq!(plan.facet_count, 0);
+        assert_eq!(plan.warning_count, 1);
+        assert_eq!(plan.warnings, vec!["config".to_owned()]);
+        let preview: ImportPreview = plan.into();
+        assert_eq!(preview.item_count, 1);
+        assert_eq!(
+            preview.summary,
+            "Journal archive: 1 days, 0 entities, 0 facets (1 warnings)"
+        );
+    }
+
+    #[test]
+    fn plan_refuses_gzip_magic_without_writing() {
+        let tree = PlanTree::new();
+        let gzip = tree.path.join("archive.tar.gz");
+        fs::write(&gzip, [0x1f, 0x8b, 0x08, 0x00]).unwrap();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let error = plan_journal_archive(&gzip).unwrap_err();
+        match error {
+            ImportSourcesError::ArchiveInvalid { detail, .. } => {
+                assert_eq!(detail, "unrecognized archive magic");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+        assert!(collect_tree(&target).is_empty());
+    }
+
+    fn write_zip(tree: &Path, members: &[(&str, &[u8])]) -> PathBuf {
+        let archive = tree.join(format!("plan-{}.zip", NEXT.fetch_add(1, Ordering::Relaxed)));
+        let mut writer = ZipWriter::new(File::create(&archive).unwrap());
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        for (name, bytes) in members {
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+        writer.finish().unwrap();
+        archive
+    }
+
+    fn list_names(path: &Path) -> BTreeSet<OsString> {
+        fs::read_dir(path)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect()
+    }
+
+    fn collect_tree(path: &Path) -> BTreeSet<String> {
+        let mut names = BTreeSet::new();
+        fn visit(root: &Path, current: &Path, names: &mut BTreeSet<String>) {
+            let Ok(entries) = fs::read_dir(current) else {
+                return;
+            };
+            for entry in entries {
+                let entry = entry.unwrap();
+                let relative = entry
+                    .path()
+                    .strip_prefix(root)
+                    .expect("under root")
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                names.insert(relative);
+                if entry.file_type().unwrap().is_dir() {
+                    visit(root, &entry.path(), names);
+                }
+            }
+        }
+        visit(path, path, &mut names);
+        names
+    }
+
+    struct PlanTree {
+        path: PathBuf,
+    }
+
+    impl PlanTree {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "solstone-archive-plan-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&path).unwrap();
+            Self { path }
+        }
+    }
+
+    impl Drop for PlanTree {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 }

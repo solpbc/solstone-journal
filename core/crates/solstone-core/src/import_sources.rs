@@ -13,7 +13,7 @@ use solstone_core_import::{ImportResult, NativePublicationOperations, RegistrySo
 use solstone_core_import_host::cli_argv::RegistryDispatch;
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, ArchiveMergeResult, FullReindexRequester, ReindexStatus, RetryDisposition,
-    merge_journal_archive,
+    merge_journal_archive, plan_journal_archive,
 };
 use solstone_core_import_sources::{
     ImportSourcesError, chatgpt, claude, document, gemini, ics, image, kindle, obsidian,
@@ -140,7 +140,13 @@ fn run_image(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
 
 fn run_archive(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
     if dispatch.dry_run {
-        return failure(cli_render::source_dry_run_unsupported(dispatch.source));
+        return match plan_journal_archive(&dispatch.media) {
+            Ok(plan) => success(cli_render::source_preview(dispatch.source, &plan.into())),
+            Err(error) => failure(format!(
+                "{} preview failed: {error}\n",
+                dispatch.source.name()
+            )),
+        };
     }
     let options = ArchiveMergeOptions {
         working_root: journal.join("imports").join("archive-merge-work"),

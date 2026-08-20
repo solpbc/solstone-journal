@@ -220,13 +220,6 @@ pub fn source_import_failure(source: RegistrySource, result: &ImportResult) -> S
     format!("{} import failed: {detail}\n", source.name())
 }
 
-pub fn source_dry_run_unsupported(source: RegistrySource) -> String {
-    format!(
-        "{} import does not support --dry-run; rerun without --dry-run to merge the archive\n",
-        source.name()
-    )
-}
-
 pub fn source_archive_merge_complete(
     source: RegistrySource,
     segments_copied: usize,
