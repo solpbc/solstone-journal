@@ -1,26 +1,6 @@
 {
   "components": {
     "schemas": {
-      "CallosumEvent": {
-        "additionalProperties": true,
-        "properties": {
-          "event": {
-            "type": "string"
-          },
-          "tract": {
-            "type": "string"
-          },
-          "ts": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "tract",
-          "event",
-          "ts"
-        ],
-        "type": "object"
-      },
       "Error": {
         "additionalProperties": true,
         "properties": {
@@ -47,10 +27,12 @@
               "backup_operation_failed",
               "backup_unavailable",
               "config_busy",
+              "content_conflict",
               "convey_busy",
               "convey_operation_failed",
               "corrupt_config",
               "cross_origin_blocked",
+              "day_invalid",
               "edge_index_unavailable",
               "entity_alias_conflict",
               "entity_already_exists",
@@ -58,9 +40,11 @@
               "entity_busy",
               "entity_not_found",
               "entity_operation_failed",
+              "envelope_invalid",
               "facet_already_exists",
               "facet_not_found",
               "feature_unavailable",
+              "field_missing",
               "file_not_found",
               "file_read_failed",
               "health_report_failed",
@@ -91,9 +75,12 @@
               "invalid_state",
               "journal_source_problem",
               "ledger_item_not_found",
+              "linked_device_required",
               "local_request_only",
               "missing_request_body",
               "missing_required_field",
+              "multipart_malformed",
+              "multipart_part_too_large",
               "observer_restart_failed",
               "operation_erased",
               "operation_in_progress",
@@ -106,6 +93,10 @@
               "pl_revoked",
               "plaud_validation_unavailable",
               "principal_entity_protected",
+              "protocol_version_future",
+              "protocol_version_legacy",
+              "protocol_version_malformed",
+              "protocol_version_required",
               "provider_key_missing",
               "push_request_invalid",
               "raw_media_not_available",
@@ -115,6 +106,7 @@
               "reprocess_past_only",
               "reprocess_unreachable",
               "search_failed",
+              "segment_invalid",
               "service_busy",
               "service_operation_failed",
               "settings_operation_failed",
@@ -242,322 +234,38 @@
     }
   },
   "info": {
-    "description": "Generated OpenAPI projection for observer-owned client contract surfaces. Regenerate with make openapi.",
-    "title": "Solstone Observer Client Contract Projection",
-    "version": "1.0.0",
+    "description": "Generated from convey-clients.json. Covers only the four Rust-served linked-device devices/ingest operations.",
+    "title": "Linked-device v3 ingest client contract",
+    "version": "9.0.0",
     "x-generated": true,
-    "x-generated-by": "solstone.convey.contract.observer_bundle.v1"
+    "x-generated-by": "solstone-core-repository-contracts"
   },
   "openapi": "3.1.0",
   "paths": {
-    "/app/network/pair": {
+    "/app/devices/ingest": {
       "post": {
-        "description": "Accept a client CSR plus nonce, then return a signed certificate and home attestation.",
-        "operationId": "link.pair",
-        "parameters": [
-          {
-            "description": "Pairing nonce; the body nonce can be used instead.",
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "csr": "-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----\n",
-                "device_label": "Rae's iPhone",
-                "nonce": "5f0d8c8b9f1e48b0a5f80b98f3d5e9b0",
-                "sender_instance_id": "ios-01"
-              },
-              "schema": {
-                "additionalProperties": true,
-                "properties": {
-                  "csr": {
-                    "type": "string"
-                  },
-                  "device_label": {
-                    "type": "string"
-                  },
-                  "nonce": {
-                    "type": "string"
-                  },
-                  "sender_instance_id": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "csr"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "ca_chain": [
-                    "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
-                  ],
-                  "client_cert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
-                  "fingerprint": "sha256:abc123",
-                  "home_attestation": "eyJhbGciOi...",
-                  "home_label": "home",
-                  "instance_id": "4d1f3d57-4f39-4930-b8f8-5e6f2a84d51a",
-                  "local_endpoints": [
-                    {
-                      "ip": "192.168.1.10",
-                      "port": 7657,
-                      "scope": "lan"
-                    }
-                  ]
-                },
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "ca_chain": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    },
-                    "client_cert": {
-                      "type": "string"
-                    },
-                    "fingerprint": {
-                      "type": "string"
-                    },
-                    "home_attestation": {
-                      "type": "string"
-                    },
-                    "home_label": {
-                      "type": "string"
-                    },
-                    "instance_id": {
-                      "type": "string"
-                    },
-                    "local_endpoints": {
-                      "items": {
-                        "additionalProperties": true,
-                        "properties": {
-                          "ip": {
-                            "type": "string"
-                          },
-                          "port": {
-                            "type": "integer"
-                          },
-                          "scope": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "ip",
-                          "port",
-                          "scope"
-                        ],
-                        "type": "object"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "client_cert",
-                    "ca_chain",
-                    "instance_id",
-                    "home_label",
-                    "home_attestation",
-                    "fingerprint"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Signed link material for the paired client."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Pair request rejected by handler validation.",
-            "x-reason-codes": [
-              "missing_required_field",
-              "pairing_key_invalid",
-              "pairing_request_invalid"
-            ]
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Access gate rejected a revoked paired-link identity.",
-            "x-reason-codes": [
-              "pl_revoked"
-            ]
-          },
-          "410": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Nonce expired or was already used.",
-            "x-reason-codes": [
-              "operation_no_longer_available"
-            ]
-          }
-        },
-        "summary": "Complete link pairing",
-        "tags": [
-          "link"
-        ]
-      }
-    },
-    "/app/observer/callosum": {
-      "get": {
-        "description": "Open an observer-authenticated Server-Sent Events feed. Frames: data `data: {json}\\n\\n`; heartbeat `: heartbeat\\n\\n`; error `event: error\\ndata: {Error}\\n\\n`.",
-        "operationId": "observer.callosumStream",
-        "parameters": [
-          {
-            "description": "Observer handle. Preferred over Authorization when present.",
-            "in": "header",
-            "name": "X-Solstone-Observer",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Bearer observer handle.",
-            "in": "header",
-            "name": "Authorization",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/event-stream": {
-                "example": {
-                  "day": "20260618",
-                  "event": "observing",
-                  "segment": "143022_300",
-                  "tract": "observe",
-                  "ts": 1781803200000
-                },
-                "schema": {
-                  "$ref": "#/components/schemas/CallosumEvent"
-                }
-              }
-            },
-            "description": "Callosum event stream. Data frames carry CallosumEvent JSON; heartbeat frames are comments; error frames carry Error JSON.",
-            "x-sse-error-frame": {
-              "description": "In-stream `event: error` frames emit only these. auth_key_invalid is excluded here because key validity is established at stream open (routes.py:259-261); mid-stream re-checks only cover observer missing/revoked/disabled (routes.py:281-292).",
-              "schema": {
-                "$ref": "#/components/schemas/Error"
-              },
-              "x-reason-codes": [
-                "auth_required",
-                "feature_unavailable",
-                "pl_revoked"
-              ]
-            },
-            "x-sse-frame-kinds": {
-              "classification": "closed",
-              "id": "observer.callosumStream.sse_frames",
-              "unknown_value_behavior": "reject",
-              "values": [
-                "data",
-                "error",
-                "heartbeat"
-              ]
-            }
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Stream-open observer auth failure; codes include 401 and 403 outcomes.",
-            "x-reason-codes": [
-              "auth_key_invalid",
-              "auth_required",
-              "feature_unavailable",
-              "pl_revoked"
-            ]
-          }
-        },
-        "summary": "Stream Callosum events",
-        "tags": [
-          "observer"
-        ]
-      }
-    },
-    "/app/observer/ingest": {
-      "post": {
-        "description": "Upload one capture segment as multipart form data and trigger local observe processing. Media parts must use a registry container format \u2014 audio: flac (audio/flac), opus (audio/opus), ogg (audio/ogg), m4a (audio/mp4), mp3 (audio/mpeg), wav (audio/wav); video: webm (video/webm), mp4 (video/mp4), mov (video/quicktime); image: png (image/png), jpg (image/jpeg), jpeg (image/jpeg), heic (image/heic), heif (image/heif), gif (image/gif), webp (image/webp), tiff (image/tiff). Headerless raw streams are not accepted as media containers; raw PCM must be WAV-wrapped before upload. Video segment timestamps are boundary-relative real capture offsets (seconds from the segment start), never synthetic frame indices. Duplicate identity is derived from the segment directory, with terminal processing proof holding absent legacy raw media and a journal-authored ingest manifest adding hash-strength when present, not from the observer history log. `collision` means conflicting content at the requested key (same stored filename, different bytes); an occupied but non-conflicting key joins that segment. Reserved names such as `stream.json` and `ingest.json` are never written from client bytes and never appear in segment listings as held. Every `duplicate` appends a corroborating history record so `/ingest/segments/<day>` can prove the held files by filename and sha.",
+        "description": "Upload one capture segment from a linked device as multipart form data. Identity is the linked-device mTLS certificate. The body has one JSON `envelope` part plus repeated `files` parts. Envelope grammar is `core/crates/solstone-core/src/contract/schemas/protocol.schema.json` (required `day`, `segment`, `files`; optional `source`, `meta`; `stream` and `observer` are forbidden). Each multipart part is at most 64 MiB; the total request is at most 128 MiB.",
         "operationId": "observer.ingestUpload",
         "parameters": [
           {
-            "description": "Observer handle. Preferred over Authorization when present.",
+            "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
             "in": "header",
-            "name": "X-Solstone-Observer",
-            "required": false,
+            "name": "X-Solstone-Protocol-Version",
+            "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Bearer observer handle.",
-            "in": "header",
-            "name": "Authorization",
-            "required": false,
-            "schema": {
-              "type": "string"
+              "const": 3,
+              "type": "integer"
             }
           }
         ],
         "requestBody": {
           "content": {
             "multipart/form-data": {
-              "example": {
-                "day": "20260618",
-                "files": [
-                  "screen.png",
-                  "audio.flac"
-                ],
-                "host": "archon",
-                "meta": "{\"facet\":\"work\"}",
-                "platform": "linux",
-                "segment": "143022_300"
-              },
               "schema": {
-                "additionalProperties": true,
                 "properties": {
-                  "day": {
+                  "envelope": {
+                    "description": "JSON object. Grammar: core/crates/solstone-core/src/contract/schemas/protocol.schema.json",
+                    "format": "json",
                     "type": "string"
                   },
                   "files": {
@@ -566,23 +274,10 @@
                       "type": "string"
                     },
                     "type": "array"
-                  },
-                  "host": {
-                    "type": "string"
-                  },
-                  "meta": {
-                    "type": "string"
-                  },
-                  "platform": {
-                    "type": "string"
-                  },
-                  "segment": {
-                    "type": "string"
                   }
                 },
                 "required": [
-                  "segment",
-                  "day",
+                  "envelope",
                   "files"
                 ],
                 "type": "object"
@@ -599,7 +294,7 @@
                   "duplicate": {
                     "summary": "Duplicate segment",
                     "value": {
-                      "existing_segment": "143022_300",
+                      "existing_segment": "143000_1",
                       "message": "All files already received",
                       "status": "duplicate"
                     }
@@ -609,10 +304,9 @@
                     "value": {
                       "bytes": 524288,
                       "files": [
-                        "screen.png",
-                        "audio.flac"
+                        "audio.m4a"
                       ],
-                      "segment": "143022_300",
+                      "segment": "143000_1",
                       "status": "ok"
                     }
                   }
@@ -626,6 +320,9 @@
                     "existing_segment": {
                       "type": "string"
                     },
+                    "file_descriptors": {
+                      "type": "array"
+                    },
                     "files": {
                       "items": {
                         "type": "string"
@@ -634,6 +331,10 @@
                     },
                     "message": {
                       "type": "string"
+                    },
+                    "meta": {
+                      "additionalProperties": true,
+                      "type": "object"
                     },
                     "segment": {
                       "type": "string"
@@ -646,15 +347,9 @@
                         "ok",
                         "duplicate",
                         "collision",
-                        "conflict",
                         "failed"
                       ],
-                      "type": "string",
-                      "x-vocabulary": {
-                        "classification": "closed",
-                        "id": "observer.ingestUpload.status",
-                        "unknown_value_behavior": "reject"
-                      }
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -664,7 +359,7 @@
                 }
               }
             },
-            "description": "Upload accepted, collision-adjusted, or duplicate. On `duplicate`, `existing_segment` is the authoritative stored segment key the client must adopt (do not re-upload); the server also appends a history record so the segment listing corroborates the duplicate. On `collision`, the requested key held conflicting content (same stored filename, different bytes), and the returned `segment` is the authoritative remapped key the client must adopt for subsequent references. An occupied key without conflicting content is not a collision; the upload joins that segment."
+            "description": "Upload accepted, collision-adjusted, or duplicate."
           },
           "400": {
             "content": {
@@ -676,24 +371,14 @@
             },
             "description": "Upload request failed validation.",
             "x-reason-codes": [
-              "ingest_no_files",
-              "invalid_day",
-              "invalid_segment_or_stream",
-              "missing_required_field"
-            ]
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Observer handle missing or invalid.",
-            "x-reason-codes": [
-              "auth_key_invalid",
-              "auth_required"
+              "protocol_version_required",
+              "protocol_version_malformed",
+              "field_missing",
+              "envelope_invalid",
+              "day_invalid",
+              "segment_invalid",
+              "multipart_malformed",
+              "multipart_part_too_large"
             ]
           },
           "403": {
@@ -704,10 +389,9 @@
                 }
               }
             },
-            "description": "Observer is disabled or revoked.",
+            "description": "A linked-device identity is required.",
             "x-reason-codes": [
-              "feature_unavailable",
-              "pl_revoked"
+              "linked_device_required"
             ]
           },
           "409": {
@@ -718,12 +402,12 @@
                 }
               }
             },
-            "description": "Uploaded sidecar metadata conflicts with an existing segment. The journal already holds different bytes under the named filename; strip the conflicting file and re-send. The response names `conflicting_files` and the held `existing_segment`.",
+            "description": "Held sidecar bytes conflict.",
             "x-reason-codes": [
-              "ingest_sidecar_conflict"
+              "content_conflict"
             ]
           },
-          "422": {
+          "413": {
             "content": {
               "application/json": {
                 "schema": {
@@ -731,9 +415,20 @@
                 }
               }
             },
-            "description": "Uploaded contract-covered file failed journal contract validation.",
+            "description": "Request exceeds the 128 MiB total-body limit."
+          },
+          "426": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Protocol version is not 3.",
             "x-reason-codes": [
-              "ingest_contract_invalid"
+              "protocol_version_legacy",
+              "protocol_version_future"
             ]
           },
           "500": {
@@ -744,113 +439,75 @@
                 }
               }
             },
-            "description": "Uploaded file could not be stored.",
-            "x-reason-codes": [
-              "ingest_storage_failed"
-            ]
-          },
-          "507": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "No segment slot was available after collision handling.",
-            "x-reason-codes": [
-              "ingest_storage_failed"
-            ]
+            "description": "Journal write or notification failed."
           }
         },
-        "summary": "Upload observer segment files",
+        "summary": "Upload one capture segment from a linked device",
         "tags": [
           "observer"
         ]
       }
     },
-    "/app/observer/ingest/event": {
-      "post": {
-        "description": "Relay an observer-originated event onto the local Callosum bus.",
-        "operationId": "observer.ingestEvent",
+    "/app/devices/ingest/manifest": {
+      "get": {
+        "description": "Return days with uploaded linked-device segment history.",
+        "operationId": "observer.ingestManifest",
         "parameters": [
           {
-            "description": "Observer handle. Preferred over Authorization when present.",
+            "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
             "in": "header",
-            "name": "X-Solstone-Observer",
-            "required": false,
+            "name": "X-Solstone-Protocol-Version",
+            "required": true,
             "schema": {
-              "type": "string"
+              "const": 3,
+              "type": "integer"
             }
           },
           {
-            "description": "Bearer observer handle.",
-            "in": "header",
-            "name": "Authorization",
+            "description": "Optional device-chosen sub-stream discriminator.",
+            "in": "query",
+            "name": "source",
             "required": false,
             "schema": {
               "type": "string"
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "event": "status",
-                "state": "recording",
-                "tract": "observe"
-              },
-              "schema": {
-                "additionalProperties": true,
-                "properties": {
-                  "event": {
-                    "type": "string"
-                  },
-                  "tract": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "tract",
-                  "event"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "example": {
-                  "status": "ok"
+                  "days": {
+                    "20260815": {
+                      "segments": 3
+                    }
+                  }
                 },
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
-                    "status": {
-                      "enum": [
-                        "ok"
-                      ],
-                      "type": "string",
-                      "x-vocabulary": {
-                        "classification": "closed",
-                        "id": "observer.status.ok",
-                        "unknown_value_behavior": "reject"
-                      }
+                    "days": {
+                      "additionalProperties": {
+                        "additionalProperties": true,
+                        "properties": {
+                          "segments": {
+                            "type": "integer"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "object"
                     }
                   },
                   "required": [
-                    "status"
+                    "days"
                   ],
                   "type": "object"
                 }
               }
             },
-            "description": "Event relayed."
+            "description": "Available manifest days keyed by YYYYMMDD."
           },
           "400": {
             "content": {
@@ -860,23 +517,10 @@
                 }
               }
             },
-            "description": "Tract or event was missing.",
+            "description": "Protocol version missing or malformed.",
             "x-reason-codes": [
-              "missing_required_field"
-            ]
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Observer handle missing or invalid.",
-            "x-reason-codes": [
-              "auth_key_invalid",
-              "auth_required"
+              "protocol_version_required",
+              "protocol_version_malformed"
             ]
           },
           "403": {
@@ -887,40 +531,45 @@
                 }
               }
             },
-            "description": "Observer is disabled or revoked.",
+            "description": "A linked-device identity is required.",
             "x-reason-codes": [
-              "feature_unavailable",
-              "pl_revoked"
+              "linked_device_required"
+            ]
+          },
+          "426": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Protocol version is not 3.",
+            "x-reason-codes": [
+              "protocol_version_legacy",
+              "protocol_version_future"
             ]
           }
         },
-        "summary": "Relay observer event",
+        "summary": "List linked-device ingest manifest days",
         "tags": [
           "observer"
         ]
       }
     },
-    "/app/observer/ingest/segments/{day}": {
+    "/app/devices/ingest/manifest/{day}": {
       "get": {
-        "description": "Return segment upload history for one day. Protocol version 2 and newer receive a collection envelope; older or absent protocol headers receive a legacy bare array. Per-file `status` is `present` (file at its recorded path), `processed` (the recorded raw media is absent because journal processing terminally consumed it, proven by a validated `solstone.processing.v1` record in the same-stem sidecar at the recorded segment path), or `missing` (not found). A local file is proven held by the journal only when its listing entry is `present` or `processed` AND the entry `sha256` matches the local file; a `missing` status \u2014 or any local file the listing does not positively account for \u2014 is needs-upload, and the client must never delete a local copy on that basis. Confirm-before-delete matches every upload-eligible local file to a listing entry per (filename, sha256) \u2014 the listing filename is `submitted_name` when present, else `name` \u2014 and deletes only on a proven-held match. Re-uploading the same bytes for a `processed` entry returns `duplicate` and creates no new segment directory. A peer that does not recognize `processed` degrades safely: it treats the file as not-held, re-uploads, and the server answers `duplicate`. `submitted_name` appears only when the stored filename differs from the submitted one; segment-level `original_key` carries the client's originally requested segment key when a collision remapped it.",
-        "operationId": "observer.ingestSegments",
+        "description": "Return file names, sizes, sha256 hashes, and custody status for every segment on one day.",
+        "operationId": "observer.ingestManifestDay",
         "parameters": [
           {
-            "description": "Observer handle. Preferred over Authorization when present.",
+            "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
             "in": "header",
-            "name": "X-Solstone-Observer",
-            "required": false,
+            "name": "X-Solstone-Protocol-Version",
+            "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Bearer observer handle.",
-            "in": "header",
-            "name": "Authorization",
-            "required": false,
-            "schema": {
-              "type": "string"
+              "const": 3,
+              "type": "integer"
             }
           },
           {
@@ -933,21 +582,12 @@
             }
           },
           {
-            "description": "Fallback stream for legacy observer history rows.",
+            "description": "Optional device-chosen sub-stream discriminator.",
             "in": "query",
-            "name": "stream",
+            "name": "source",
             "required": false,
             "schema": {
               "type": "string"
-            }
-          },
-          {
-            "description": ">= current protocol version returns the collection envelope; lower or absent returns the legacy bare array.",
-            "in": "header",
-            "name": "X-Solstone-Protocol-Version",
-            "required": false,
-            "schema": {
-              "type": "integer"
             }
           }
         ],
@@ -955,210 +595,60 @@
           "200": {
             "content": {
               "application/json": {
-                "examples": {
-                  "legacy": {
-                    "summary": "Legacy bare array",
-                    "value": [
-                      {
-                        "files": [
-                          {
-                            "name": "screen.png",
-                            "sha256": "5f70bf18a086007016bb522ec180fd0b",
-                            "size": 2048,
-                            "status": "present"
-                          }
-                        ],
-                        "key": "143022_300",
-                        "observed": true
-                      }
-                    ]
-                  },
-                  "v2": {
-                    "summary": "Protocol v2 envelope",
-                    "value": {
-                      "items": [
-                        {
-                          "files": [
-                            {
-                              "name": "screen.png",
-                              "sha256": "5f70bf18a086007016bb522ec180fd0b",
-                              "size": 2048,
-                              "status": "present"
-                            }
-                          ],
-                          "key": "143022_300",
-                          "observed": true
-                        }
-                      ],
-                      "protocol_version": 2,
-                      "total": 1
-                    }
-                  }
-                },
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/SegmentsEnvelope"
-                    },
-                    {
-                      "items": {
-                        "$ref": "#/components/schemas/SegmentItem"
-                      },
-                      "type": "array"
-                    }
-                  ]
-                }
-              }
-            },
-            "description": "Segment verification response.",
-            "x-vocabularies": {
-              "X-Solstone-Protocol-Version": {
-                "absent_or_unparseable": 1,
-                "classification": "extensible_integer",
-                "current": 2,
-                "supported_response_variants": [
-                  1,
-                  2
-                ],
-                "unknown_value_behavior": "version_greater_or_equal_current_uses_v2"
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Day path parameter was invalid.",
-            "x-reason-codes": [
-              "invalid_day"
-            ]
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Observer handle missing or invalid.",
-            "x-reason-codes": [
-              "auth_key_invalid",
-              "auth_required"
-            ]
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Observer is disabled or revoked.",
-            "x-reason-codes": [
-              "feature_unavailable",
-              "pl_revoked"
-            ]
-          }
-        },
-        "summary": "List uploaded observer segments",
-        "tags": [
-          "observer"
-        ]
-      }
-    },
-    "/app/observer/register": {
-      "post": {
-        "description": "Register a trusted local or paired-link observer and lock its stream identity.",
-        "operationId": "observer.register",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "hostname": "archon",
-                "label": "Archon desktop",
-                "platform": "linux",
-                "stream_type": "desktop",
-                "version": "1.4.0"
-              },
-              "schema": {
-                "additionalProperties": true,
-                "properties": {
-                  "hostname": {
-                    "type": "string"
-                  },
-                  "label": {
-                    "type": "string"
-                  },
-                  "platform": {
-                    "type": "string"
-                  },
-                  "stream_type": {
-                    "type": "string"
-                  },
-                  "version": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "platform",
-                  "hostname",
-                  "stream_type",
-                  "version"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
                 "example": {
-                  "ingest_url": "/app/observer/ingest",
-                  "key": "x7J7k2observerHandle",
-                  "name": "archon",
-                  "prefix": "x7J7k2ob",
-                  "protocol_version": 2
+                  "day": "20260815",
+                  "segments": {
+                    "143000": {
+                      "files": [
+                        {
+                          "name": "audio.m4a",
+                          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          "size": 4096,
+                          "status": "present"
+                        }
+                      ]
+                    }
+                  },
+                  "version": 1
                 },
                 "schema": {
                   "additionalProperties": true,
                   "properties": {
-                    "ingest_url": {
+                    "day": {
                       "type": "string"
                     },
-                    "key": {
-                      "type": "string"
+                    "segments": {
+                      "additionalProperties": {
+                        "additionalProperties": true,
+                        "properties": {
+                          "files": {
+                            "items": {
+                              "$ref": "#/components/schemas/SegmentFile"
+                            },
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "files"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "object"
                     },
-                    "name": {
-                      "type": "string"
-                    },
-                    "prefix": {
-                      "type": "string"
-                    },
-                    "protocol_version": {
+                    "version": {
                       "type": "integer"
                     }
                   },
                   "required": [
-                    "key",
-                    "prefix",
-                    "name",
-                    "ingest_url",
-                    "protocol_version"
+                    "version",
+                    "day",
+                    "segments"
                   ],
                   "type": "object"
                 }
               }
             },
-            "description": "Observer registration descriptor."
+            "description": "Day transfer manifest."
           },
           "400": {
             "content": {
@@ -1168,10 +658,11 @@
                 }
               }
             },
-            "description": "Register request failed validation.",
+            "description": "Day path parameter or protocol version was invalid.",
             "x-reason-codes": [
-              "invalid_segment_or_stream",
-              "missing_required_field"
+              "day_invalid",
+              "protocol_version_required",
+              "protocol_version_malformed"
             ]
           },
           "403": {
@@ -1182,12 +673,12 @@
                 }
               }
             },
-            "description": "Register request did not satisfy local/device admission or targeted a stream already bound to another device.",
+            "description": "A linked-device identity is required.",
             "x-reason-codes": [
-              "local_request_only"
+              "linked_device_required"
             ]
           },
-          "500": {
+          "426": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1195,46 +686,96 @@
                 }
               }
             },
-            "description": "Observer record could not be saved.",
+            "description": "Protocol version is not 3.",
             "x-reason-codes": [
-              "settings_operation_failed"
+              "protocol_version_legacy",
+              "protocol_version_future"
             ]
           }
         },
-        "summary": "Register observer",
+        "summary": "Read linked-device transfer manifest for a day",
         "tags": [
           "observer"
         ]
       }
     },
-    "/sse/events": {
+    "/app/devices/ingest/segments/{day}": {
       "get": {
-        "description": "Open the root Server-Sent Events feed for Callosum events. Frames: heartbeat comments `: heartbeat\\n\\n`; data frames `data: {json}\\n\\n` carrying CallosumEvent JSON for all tracts. This stream emits no `event: error` frames.",
-        "operationId": "callosum.rootEvents",
+        "description": "Return segment upload history for one day as a protocol-version-3 collection envelope. Per-file `status` is `present`, `processed`, or `missing`. `submitted_name` appears only when the stored filename differs from the submitted one; segment-level `original_key` carries the client's originally requested segment key when a collision remapped it.",
+        "operationId": "observer.ingestSegments",
+        "parameters": [
+          {
+            "description": "Linked-device ingest protocol version. Must be 3. Values less than 3 are rejected with HTTP 426 Upgrade Required; values greater than 3 are rejected as unsupported. Identity is the linked-device mTLS certificate, not a request header.",
+            "in": "header",
+            "name": "X-Solstone-Protocol-Version",
+            "required": true,
+            "schema": {
+              "const": 3,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "YYYYMMDD day.",
+            "in": "path",
+            "name": "day",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional device-chosen sub-stream discriminator.",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
-              "text/event-stream": {
+              "application/json": {
                 "example": {
-                  "tract": "observe",
-                  "event": "status",
-                  "ts": 1781803200000
+                  "items": [
+                    {
+                      "files": [
+                        {
+                          "name": "audio.m4a",
+                          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          "size": 4096,
+                          "status": "present"
+                        }
+                      ],
+                      "key": "143000",
+                      "observed": true
+                    }
+                  ],
+                  "protocol_version": 3,
+                  "total": 1
                 },
                 "schema": {
-                  "$ref": "#/components/schemas/CallosumEvent"
+                  "$ref": "#/components/schemas/SegmentsEnvelope"
                 }
               }
             },
-            "description": "Callosum event stream. Heartbeat frames are comments `: heartbeat\\n\\n`; data frames are `data: {json}\\n\\n` and carry CallosumEvent JSON for all tracts.",
-            "x-sse-frame-kinds": {
-              "classification": "closed",
-              "id": "callosum.rootEvents.sse_frames",
-              "unknown_value_behavior": "reject",
-              "values": [
-                "data",
-                "heartbeat"
-              ]
-            }
+            "description": "Segment verification response."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Day path parameter or protocol version was invalid.",
+            "x-reason-codes": [
+              "day_invalid",
+              "protocol_version_required",
+              "protocol_version_malformed"
+            ]
           },
           "403": {
             "content": {
@@ -1244,242 +785,59 @@
                 }
               }
             },
-            "description": "Access gate rejected a revoked paired-link identity before stream open.",
+            "description": "A linked-device identity is required.",
             "x-reason-codes": [
-              "pl_revoked"
+              "linked_device_required"
+            ]
+          },
+          "426": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Protocol version is not 3.",
+            "x-reason-codes": [
+              "protocol_version_legacy",
+              "protocol_version_future"
             ]
           }
         },
-        "summary": "Stream root Callosum events",
+        "summary": "List uploaded linked-device segments",
         "tags": [
-          "callosum"
+          "observer"
         ]
       }
     }
   },
-  "x-callosum-registry": {
-    "activity": [
-      "live",
-      "recorded"
-    ],
-    "cortex": [
-      "request",
-      "start",
-      "thinking",
-      "tool_start",
-      "tool_end",
-      "finish",
-      "error",
-      "talent_updated",
-      "info",
-      "status",
-      "cancel",
-      "dry_run",
-      "progress",
-      "text_delta",
-      "tool_budget_exhausted",
-      "budget_escalation"
-    ],
-    "importer": [
-      "started",
-      "status",
-      "completed",
-      "error",
-      "file_imported",
-      "enrichment_ready"
-    ],
-    "link": [
-      "pair_complete",
-      "last_seen",
-      "stream_reset"
-    ],
-    "logs": [
-      "exec",
-      "line",
-      "exit"
-    ],
-    "navigate": [
-      "request"
-    ],
-    "notification": [
-      "*"
-    ],
-    "observe": [
-      "status",
-      "observing",
-      "detected",
-      "described",
-      "transcribed",
-      "observed",
-      "memory_throttle_started",
-      "memory_throttle_completed"
-    ],
-    "storage": [
-      "warning"
-    ],
-    "supervisor": [
-      "started",
-      "stopped",
-      "restarting",
-      "status",
-      "queue",
-      "scheduled",
-      "provider_runtime",
-      "request",
-      "restart",
-      "drain",
-      "skipped",
-      "sync_conflict"
-    ],
-    "support": [
-      "proactive_suggestion"
-    ],
-    "think": [
-      "started",
-      "status",
-      "group_started",
-      "group_completed",
-      "talent_started",
-      "talent_completed",
-      "completed",
-      "segments_started",
-      "segments_completed",
-      "memory_throttle_started",
-      "memory_throttle_completed",
-      "daily_complete"
-    ],
-    "work": [
-      "talent_queued",
-      "talent_spawned",
-      "talent_finished",
-      "talent_errored",
-      "result",
-      "reflection_ready",
-      "support_draft",
-      "support_submit_claim"
-    ]
-  },
   "x-vocabularies": {
-    "callosum.tract_event": {
-      "classification": "extensible",
-      "known_registry": {
-        "activity": [
-          "live",
-          "recorded"
-        ],
-        "cortex": [
-          "request",
-          "start",
-          "thinking",
-          "tool_start",
-          "tool_end",
-          "finish",
-          "error",
-          "talent_updated",
-          "info",
-          "status",
-          "cancel",
-          "dry_run",
-          "progress",
-          "text_delta",
-          "tool_budget_exhausted",
-          "budget_escalation"
-        ],
-        "importer": [
-          "started",
-          "status",
-          "completed",
-          "error",
-          "file_imported",
-          "enrichment_ready"
-        ],
-        "link": [
-          "pair_complete",
-          "last_seen",
-          "stream_reset"
-        ],
-        "logs": [
-          "exec",
-          "line",
-          "exit"
-        ],
-        "navigate": [
-          "request"
-        ],
-        "notification": [
-          "*"
-        ],
-        "observe": [
-          "status",
-          "observing",
-          "detected",
-          "described",
-          "transcribed",
-          "observed",
-          "memory_throttle_started",
-          "memory_throttle_completed"
-        ],
-        "storage": [
-          "warning"
-        ],
-        "supervisor": [
-          "started",
-          "stopped",
-          "restarting",
-          "status",
-          "queue",
-          "scheduled",
-          "provider_runtime",
-          "request",
-          "restart",
-          "drain",
-          "skipped",
-          "sync_conflict"
-        ],
-        "support": [
-          "proactive_suggestion"
-        ],
-        "think": [
-          "started",
-          "status",
-          "group_started",
-          "group_completed",
-          "talent_started",
-          "talent_completed",
-          "completed",
-          "segments_started",
-          "segments_completed",
-          "memory_throttle_started",
-          "memory_throttle_completed",
-          "daily_complete"
-        ],
-        "work": [
-          "talent_queued",
-          "talent_spawned",
-          "talent_finished",
-          "talent_errored",
-          "result",
-          "reflection_ready",
-          "support_draft",
-          "support_submit_claim"
-        ]
-      },
-      "unknown_value_behavior": "preserve"
-    },
-    "callosum.work.event": {
+    "SegmentFile.status": {
       "classification": "closed",
-      "id": "callosum.work.event",
-      "source_pointer": "/x-callosum-registry/work",
+      "id": "SegmentFile.status",
+      "source_pointer": "/components/schemas/SegmentFile/properties/status",
       "unknown_value_behavior": "reject",
       "values": [
-        "talent_queued",
-        "talent_spawned",
-        "talent_finished",
-        "talent_errored",
-        "result",
-        "reflection_ready",
-        "support_draft",
-        "support_submit_claim"
+        "present",
+        "missing",
+        "processed"
+      ]
+    },
+    "observer.ingestUpload.status": {
+      "classification": "closed",
+      "id": "observer.ingestUpload.status",
+      "source_pointers": [
+        "/paths/~1app~1devices~1ingest/post/responses/200/content/application~1json/schema/properties/status",
+        "/paths/~1app~1devices~1ingest/post/responses/409"
+      ],
+      "unknown_value_behavior": "reject",
+      "values": [
+        "ok",
+        "duplicate",
+        "collision",
+        "conflict",
+        "failed"
       ]
     }
   }

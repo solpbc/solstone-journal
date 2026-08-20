@@ -1,736 +1,79 @@
 {
   "fixtures": [
     {
-      "id": "declared.observer.ingestSegments.custody_unknown_rejected",
-      "kind": "declared-negative",
-      "payload": {
-        "items": [
-          {
-            "files": [
-              {
-                "name": "audio.flac",
-                "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-                "size": 1,
-                "status": "unknown"
-              }
-            ],
-            "key": "120000_300",
-            "observed": false
-          }
-        ],
-        "protocol_version": 2,
-        "total": 1
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "custody_unknown",
-        "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": false
-      }
-    },
-    {
-      "id": "declared.observer.ingestSegments.envelope_total_mismatch",
-      "kind": "declared-negative",
-      "payload": {
-        "items": [],
-        "protocol_version": 2,
-        "total": 1
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "envelope_total_mismatch",
-        "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "declared.observer.ingestUpload.status_unknown_rejected",
-      "kind": "declared-negative",
-      "payload": {
-        "status": "unknown"
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "status_unknown",
-        "operation_id": "observer.ingestUpload",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": false
-      }
-    },
-    {
-      "id": "example.callosum.rootEvents.response.200.text-event-stream.default",
-      "kind": "openapi-example",
-      "payload": {
-        "event": "status",
-        "tract": "observe",
-        "ts": 1781803200000
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "text/event-stream",
-        "named_variant": "default",
-        "operation_id": "callosum.rootEvents",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.link.pair.request.body.application-json.default",
-      "kind": "openapi-example",
-      "payload": {
-        "csr": "-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----\n",
-        "device_label": "Rae's iPhone",
-        "nonce": "5f0d8c8b9f1e48b0a5f80b98f3d5e9b0",
-        "sender_instance_id": "ios-01"
-      },
-      "provenance": {
-        "direction": "request",
-        "media_type": "application/json",
-        "named_variant": "default",
-        "operation_id": "link.pair",
-        "status": null
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.link.pair.response.200.application-json.default",
-      "kind": "openapi-example",
-      "payload": {
-        "ca_chain": [
-          "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
-        ],
-        "client_cert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
-        "fingerprint": "sha256:abc123",
-        "home_attestation": "eyJhbGciOi...",
-        "home_label": "home",
-        "instance_id": "4d1f3d57-4f39-4930-b8f8-5e6f2a84d51a",
-        "local_endpoints": [
-          {
-            "ip": "192.168.1.10",
-            "port": 7657,
-            "scope": "lan"
-          }
-        ]
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "default",
-        "operation_id": "link.pair",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.observer.callosumStream.response.200.text-event-stream.default",
-      "kind": "openapi-example",
-      "payload": {
-        "day": "20260618",
-        "event": "observing",
-        "segment": "143022_300",
-        "tract": "observe",
-        "ts": 1781803200000
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "text/event-stream",
-        "named_variant": "default",
-        "operation_id": "observer.callosumStream",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.observer.ingestEvent.request.body.application-json.default",
-      "kind": "openapi-example",
-      "payload": {
-        "event": "status",
-        "state": "recording",
-        "tract": "observe"
-      },
-      "provenance": {
-        "direction": "request",
-        "media_type": "application/json",
-        "named_variant": "default",
-        "operation_id": "observer.ingestEvent",
-        "status": null
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.observer.ingestEvent.response.200.application-json.default",
-      "kind": "openapi-example",
+      "id": "declared.observer.ingestUpload.status.ok",
+      "kind": "declared",
       "payload": {
         "status": "ok"
       },
       "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "default",
-        "operation_id": "observer.ingestEvent",
-        "status": 200
+        "http_status": 200,
+        "vocabulary": "observer.ingestUpload.status"
       },
       "schema_validation": {
-        "validates": true
+        "valid": true
       }
     },
     {
-      "id": "example.observer.ingestSegments.response.200.application-json.legacy",
-      "kind": "openapi-example",
-      "payload": [
-        {
-          "files": [
-            {
-              "name": "screen.png",
-              "sha256": "5f70bf18a086007016bb522ec180fd0b",
-              "size": 2048,
-              "status": "present"
-            }
-          ],
-          "key": "143022_300",
-          "observed": true
-        }
-      ],
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "legacy",
-        "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.observer.ingestSegments.response.200.application-json.v2",
-      "kind": "openapi-example",
+      "id": "declared.observer.ingestUpload.status.duplicate",
+      "kind": "declared",
       "payload": {
-        "items": [
-          {
-            "files": [
-              {
-                "name": "screen.png",
-                "sha256": "5f70bf18a086007016bb522ec180fd0b",
-                "size": 2048,
-                "status": "present"
-              }
-            ],
-            "key": "143022_300",
-            "observed": true
-          }
-        ],
-        "protocol_version": 2,
-        "total": 1
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "v2",
-        "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.observer.ingestUpload.request.body.multipart-form-data.default",
-      "kind": "openapi-example",
-      "payload": {
-        "day": "20260618",
-        "files": [
-          "screen.png",
-          "audio.flac"
-        ],
-        "host": "archon",
-        "meta": "{\"facet\":\"work\"}",
-        "platform": "linux",
-        "segment": "143022_300"
-      },
-      "provenance": {
-        "direction": "request",
-        "media_type": "multipart/form-data",
-        "named_variant": "default",
-        "operation_id": "observer.ingestUpload",
-        "status": null
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.observer.ingestUpload.response.200.application-json.duplicate",
-      "kind": "openapi-example",
-      "payload": {
-        "existing_segment": "143022_300",
-        "message": "All files already received",
         "status": "duplicate"
       },
       "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "duplicate",
-        "operation_id": "observer.ingestUpload",
-        "status": 200
+        "http_status": 200,
+        "vocabulary": "observer.ingestUpload.status"
       },
       "schema_validation": {
-        "validates": true
+        "valid": true
       }
     },
     {
-      "id": "example.observer.ingestUpload.response.200.application-json.normal",
-      "kind": "openapi-example",
+      "id": "declared.observer.ingestUpload.status.collision",
+      "kind": "declared",
       "payload": {
-        "bytes": 524288,
-        "files": [
-          "screen.png",
-          "audio.flac"
-        ],
-        "segment": "143022_300",
-        "status": "ok"
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "normal",
-        "operation_id": "observer.ingestUpload",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.observer.register.request.body.application-json.default",
-      "kind": "openapi-example",
-      "payload": {
-        "hostname": "archon",
-        "label": "Archon desktop",
-        "platform": "linux",
-        "stream_type": "desktop",
-        "version": "1.4.0"
-      },
-      "provenance": {
-        "direction": "request",
-        "media_type": "application/json",
-        "named_variant": "default",
-        "operation_id": "observer.register",
-        "status": null
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.observer.register.response.200.application-json.default",
-      "kind": "openapi-example",
-      "payload": {
-        "ingest_url": "/app/observer/ingest",
-        "key": "x7J7k2observerHandle",
-        "name": "archon",
-        "prefix": "x7J7k2ob",
-        "protocol_version": 2
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "default",
-        "operation_id": "observer.register",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.auth.bearer.segments",
-      "kind": "recorded-response",
-      "payload": {
-        "items": [],
-        "protocol_version": 2,
-        "total": 0
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "bearer",
-        "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.auth.handle.segments",
-      "kind": "recorded-response",
-      "payload": {
-        "items": [],
-        "protocol_version": 2,
-        "total": 0
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "observer_handle",
-        "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.ingestUpload.collision",
-      "kind": "recorded-response",
-      "payload": {
-        "bytes": 24,
-        "files": [
-          "audio.flac",
-          "screen.mp4"
-        ],
-        "segment": "120000_301",
-        "segment_original": "120000_300",
         "status": "collision"
       },
       "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "collision",
-        "operation_id": "observer.ingestUpload",
-        "status": 200
+        "http_status": 200,
+        "vocabulary": "observer.ingestUpload.status"
       },
       "schema_validation": {
-        "validates": true
+        "valid": true
       }
     },
     {
-      "id": "recorded.ingestUpload.conflict",
-      "kind": "recorded-response",
+      "id": "declared.observer.ingestUpload.status.conflict",
+      "kind": "declared",
       "payload": {
-        "conflicting_files": [
-          "notes.txt"
-        ],
-        "detail": "Conflicting sidecar metadata for existing segment",
-        "error": "I couldn't bring in those observer sidecars because they conflict with files already held.",
-        "existing_segment": "120000_300",
-        "reason_code": "ingest_sidecar_conflict",
+        "detail": "held sidecar bytes conflict",
+        "error": "Ingest request failed",
+        "reason_code": "content_conflict",
         "status": "conflict"
       },
       "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "conflict",
-        "operation_id": "observer.ingestUpload",
-        "status": 409
+        "http_status": 409,
+        "vocabulary": "observer.ingestUpload.status"
       },
       "schema_validation": {
-        "validates": true
+        "valid": true
       }
     },
     {
-      "id": "recorded.ingestUpload.duplicate",
-      "kind": "recorded-response",
+      "id": "declared.observer.ingestUpload.status.failed",
+      "kind": "declared",
       "payload": {
-        "existing_segment": "120000_300",
-        "message": "All files already received",
-        "status": "duplicate"
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "duplicate",
-        "operation_id": "observer.ingestUpload",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.ingestUpload.failed",
-      "kind": "recorded-response",
-      "payload": {
-        "detail": "Uploaded file did not match the journal contract",
-        "error": "I couldn't use those observer files because they don't match the journal contract.",
-        "failed_path": "20250107/observer/failed/120000_300/1700000000000",
-        "invalid_files": [
-          "audio.jsonl:2: 'text' is a required property"
-        ],
-        "reason_code": "ingest_contract_invalid",
         "status": "failed"
       },
       "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "failed",
-        "operation_id": "observer.ingestUpload",
-        "status": 422
+        "http_status": 500,
+        "vocabulary": "observer.ingestUpload.status"
       },
       "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.ingestUpload.ok",
-      "kind": "recorded-response",
-      "payload": {
-        "bytes": 8,
-        "files": [
-          "audio.flac"
-        ],
-        "segment": "120000_300",
-        "status": "ok"
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "ok",
-        "operation_id": "observer.ingestUpload",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.segments.custody_statuses",
-      "kind": "recorded-response",
-      "payload": {
-        "items": [
-          {
-            "files": [
-              {
-                "name": "audio.flac",
-                "sha256": "93a6beeb378a929f07f54d587e0d5fb2f33a121269aa31bf6ab87818b701d255",
-                "size": 13,
-                "status": "processed"
-              },
-              {
-                "name": "screen.mp4",
-                "sha256": "9e7a7350d9be4ef540e1cf03da8db61f4da22f31fc27f56bbc5bd3f88bd00e8a",
-                "size": 14,
-                "status": "missing"
-              },
-              {
-                "name": "notes.txt",
-                "sha256": "459e9e209d70522fb19bd418ba31d79562181e7bca54e85186b4c89f8d90c789",
-                "size": 13,
-                "status": "present"
-              }
-            ],
-            "key": "120000_300",
-            "observed": false
-          }
-        ],
-        "protocol_version": 2,
-        "total": 1
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "custody_statuses",
-        "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.segments.legacy.absent_header",
-      "kind": "recorded-response",
-      "payload": [],
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "legacy_array_absent_header",
-        "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.segments.legacy.unparseable_header",
-      "kind": "recorded-response",
-      "payload": [],
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "legacy_array_unparseable_header",
-        "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.segments.submitted_name_omitted",
-      "kind": "recorded-response",
-      "payload": {
-        "items": [
-          {
-            "files": [
-              {
-                "name": "audio.flac",
-                "sha256": "b4fae6d15a821dfcf135b6b44c6ee85f8250521a83ab757a36613a4327cf3075",
-                "size": 15,
-                "status": "present"
-              }
-            ],
-            "key": "120000_300",
-            "observed": false
-          }
-        ],
-        "protocol_version": 2,
-        "total": 1
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "submitted_name_omitted",
-        "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.segments.v2.envelope",
-      "kind": "recorded-response",
-      "payload": {
-        "items": [],
-        "protocol_version": 2,
-        "total": 0
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "v2_envelope",
-        "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.sse.observer.data",
-      "kind": "recorded-sse-frame",
-      "payload": {
-        "event": "status",
-        "extra": "value",
-        "tract": "observe",
-        "ts": 0
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "text/event-stream",
-        "named_variant": "data",
-        "operation_id": "observer.callosumStream",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.sse.observer.error",
-      "kind": "recorded-sse-frame",
-      "payload": {
-        "detail": "Observer revoked",
-        "error": "I couldn't use that paired device because it was revoked.",
-        "reason_code": "pl_revoked"
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "text/event-stream",
-        "named_variant": "error",
-        "operation_id": "observer.callosumStream",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.sse.observer.heartbeat",
-      "kind": "recorded-sse-frame",
-      "payload": ": heartbeat\n\n",
-      "provenance": {
-        "direction": "response",
-        "media_type": "text/event-stream",
-        "named_variant": "heartbeat",
-        "operation_id": "observer.callosumStream",
-        "status": 200
-      },
-      "schema_validation": {
-        "reason": "SSE heartbeat comments are not JSON schema payloads",
-        "validates": null
-      }
-    },
-    {
-      "id": "recorded.sse.root.data_unknown_event",
-      "kind": "recorded-sse-frame",
-      "payload": {
-        "event": "unknown",
-        "extra": "value",
-        "tract": "future",
-        "ts": 0
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "text/event-stream",
-        "named_variant": "data_unknown_event",
-        "operation_id": "callosum.rootEvents",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.sse.root.heartbeat",
-      "kind": "recorded-sse-frame",
-      "payload": ": heartbeat\n\n",
-      "provenance": {
-        "direction": "response",
-        "media_type": "text/event-stream",
-        "named_variant": "heartbeat",
-        "operation_id": "callosum.rootEvents",
-        "status": 200
-      },
-      "schema_validation": {
-        "reason": "SSE heartbeat comments are not JSON schema payloads",
-        "validates": null
+        "note": "vocabulary-only status value; the full Error payload requires error, reason_code, and detail, and the authority enumerates no HTTP 500 reason code",
+        "valid": false
       }
     }
   ],
-  "schema": "solstone.observer-client-contract-fixtures.v1"
+  "schema": "solstone.observer-client-contract-fixtures.v2"
 }

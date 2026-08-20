@@ -1,114 +1,104 @@
 {
   "audited_commits": [
     {
-      "commit": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
-      "consumer": "solstone-windows"
+      "commit": "998c1095cd8f766dd188bece5ad6527444f8dfac",
+      "consumer": "solstone-browser"
     },
     {
       "commit": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
       "consumer": "solstone-linux"
     },
     {
-      "commit": "998c1095cd8f766dd188bece5ad6527444f8dfac",
-      "consumer": "solstone-browser"
+      "commit": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
+      "consumer": "solstone-windows"
     }
   ],
   "direct_paths": [
     {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-browser",
-      "path": "/app/observer/register",
-      "rationale": "Projected as observer.register for browser observer enrollment.",
+      "legacy_surface": "observer_v2_register",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac",
       "source_files": [
         "extension/journal.js"
       ]
     },
     {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-browser",
-      "path": "/app/observer/ingest",
-      "rationale": "Projected as observer.ingestUpload for browser upload.",
+      "legacy_surface": "observer_ingest_v2_upload",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac",
       "source_files": [
         "extension/journal.js"
       ]
     },
     {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-browser",
-      "path": "/app/observer/ingest/event",
-      "rationale": "Projected as observer.ingestEvent for browser event relay.",
+      "legacy_surface": "observer_ingest_v2_event",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac",
       "source_files": [
         "extension/journal.js"
       ]
     },
     {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-browser",
-      "path": "/app/observer/ingest/segments/{day}",
-      "rationale": "Projected as observer.ingestSegments; browser reconcile consumes the legacy v1 array variant.",
+      "legacy_surface": "observer_ingest_v2_segments",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac",
       "source_files": [
         "extension/journal.js"
       ]
     },
     {
-      "classification": "relay_session_control_excluded_from_journal_projection",
-      "consumer": "solstone-browser",
-      "path": "/enroll/device",
-      "rationale": "Relay enrollment/session-control path, not journal-owned API.",
-      "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac",
-      "source_files": [
-        "extension/journal.js"
-      ]
-    },
-    {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-linux",
-      "path": "/app/observer/register",
-      "rationale": "Projected as observer.register for Linux observer enrollment.",
+      "legacy_surface": "observer_v2_register",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
       "source_files": [
         "crates/solstone-linux/src/upload.rs"
       ]
     },
     {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-linux",
-      "path": "/app/observer/ingest",
-      "rationale": "Projected as observer.ingestUpload for Linux segment upload.",
+      "legacy_surface": "observer_ingest_v2_upload",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
       "source_files": [
         "crates/solstone-linux/src/upload.rs"
       ]
     },
     {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-linux",
-      "path": "/app/observer/ingest/event",
-      "rationale": "Projected as observer.ingestEvent for Linux event relay.",
+      "legacy_surface": "observer_ingest_v2_event",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
       "source_files": [
         "crates/solstone-linux/src/upload.rs"
       ]
     },
     {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-linux",
-      "path": "/app/observer/ingest/segments/{day}",
-      "rationale": "Projected as observer.ingestSegments for Linux reconciliation.",
+      "legacy_surface": "observer_ingest_v2_segments",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
       "source_files": [
         "crates/solstone-linux/src/upload.rs"
       ]
     },
     {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-windows",
-      "path": "/app/network/pair",
-      "rationale": "Projected as link.pair for Windows pairing.",
+      "legacy_surface": "observer_v2_register",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
       "source_files": [
         "crates/observer-pl/src/lib.rs",
@@ -116,10 +106,10 @@
       ]
     },
     {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-windows",
-      "path": "/app/observer/register",
-      "rationale": "Projected as observer.register for Windows observer enrollment.",
+      "legacy_surface": "observer_ingest_v2_upload",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
       "source_files": [
         "crates/observer-pl/src/lib.rs",
@@ -127,10 +117,10 @@
       ]
     },
     {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-windows",
-      "path": "/app/observer/ingest",
-      "rationale": "Projected as observer.ingestUpload for Windows segment upload.",
+      "legacy_surface": "observer_ingest_v2_event",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
       "source_files": [
         "crates/observer-pl/src/lib.rs",
@@ -138,39 +128,18 @@
       ]
     },
     {
-      "classification": "bundled",
+      "classification": "legacy_v2_unmigrated",
       "consumer": "solstone-windows",
-      "path": "/app/observer/ingest/event",
-      "rationale": "Projected as observer.ingestEvent for Windows event relay.",
+      "legacy_surface": "observer_ingest_v2_segments",
+      "rationale": "Pinned revision calls a legacy v2 observer capability and is not verified against the linked-device v3 ingest surface.",
       "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
       "source_files": [
         "crates/observer-pl/src/lib.rs",
         "crates/observer-pl/src/wire.rs"
-      ]
-    },
-    {
-      "classification": "bundled",
-      "consumer": "solstone-windows",
-      "path": "/app/observer/ingest/segments/{day}",
-      "rationale": "Projected as observer.ingestSegments for Windows reconciliation.",
-      "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
-      "source_files": [
-        "crates/observer-pl/src/lib.rs",
-        "crates/observer-pl/src/wire.rs"
-      ]
-    },
-    {
-      "classification": "bundled",
-      "consumer": "solstone-windows",
-      "path": "/sse/events",
-      "rationale": "Projected as callosum.rootEvents for Windows journal bridge SSE.",
-      "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
-      "source_files": [
-        "crates/pl-transport-win/src/journal_bridge.rs"
       ]
     }
   ],
-  "schema": "solstone.observer-client-consumer-audit.v1",
+  "schema": "solstone.observer-client-contract-consumer-audit.v2",
   "searched_files": [
     {
       "consumer": "solstone-browser",
@@ -193,12 +162,6 @@
     {
       "consumer": "solstone-windows",
       "path": "crates/observer-pl/src/wire.rs",
-      "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
-      "role": "production"
-    },
-    {
-      "consumer": "solstone-windows",
-      "path": "crates/pl-transport-win/src/journal_bridge.rs",
       "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
       "role": "production"
     }

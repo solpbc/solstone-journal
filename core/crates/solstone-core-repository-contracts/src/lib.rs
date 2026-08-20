@@ -36,6 +36,9 @@ mod distribution_payload;
 #[path = "contracts/distribution_workspace_bins.rs"]
 mod distribution_workspace_bins;
 #[cfg(test)]
+#[path = "contracts/observer_client_contract_bundle.rs"]
+mod observer_client_contract_bundle;
+#[cfg(test)]
 #[path = "contracts/retention_client_contracts.rs"]
 mod retention_client_contracts;
 #[cfg(test)]

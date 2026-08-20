@@ -14,133 +14,59 @@
     }
   ],
   "bundle_schema_identity": "solstone.observer-client-contract-bundle.schema.v1",
-  "bundle_semver": "8.0.0",
+  "bundle_semver": "9.0.0",
   "component_closure": [
-    "CallosumEvent",
     "Error",
     "SegmentFile",
     "SegmentItem",
     "SegmentsEnvelope"
   ],
   "consumer_identifiers": [
-    "solstone-android",
     "solstone-browser",
     "solstone-linux",
-    "solstone-macos",
-    "solstone-swift",
-    "solstone-tmux",
     "solstone-windows"
   ],
   "files": [
     {
       "path": "consumer-audit.json",
-      "sha256": "3f9938b38994ea2a3a19ea154152e5dc8b3f24843e53eb1f14b6fb33d58e6ac9"
+      "sha256": "522a1d0417086a85d755e058b9043e519665c63eace50b146bab1f1157ff0cdf"
     },
     {
       "path": "fixtures/wire-behavior.json",
-      "sha256": "b9ed72f3c3de4a890978079fcf286ddad212c6ac99bd32d3e080afdd5a787dc4"
+      "sha256": "65917fe91620f517d9988664e24b559722acbd6fb798bc518d1e092ef8f8771c"
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "46eb05e6889f9176446fb315585a0e15a57600aead9ed1aaf948a93eee596c35"
+      "sha256": "7780c76380ae59504c069e388042401b050c60caf9027e1cf22a4cce0c19103e"
     },
     {
       "path": "vectors.json",
-      "sha256": "a4cb9712bf5a6679a2fefc6b94f1618dfbd8e7f227364103d70095a8dd6bce1f"
+      "sha256": "fd99f21f225573cd2aead2217e9716237e7b4f66bd36a225d0e7019ded4a222b"
     }
   ],
-  "generator_identity": "solstone.convey.contract.observer_bundle.v1",
+  "generator_identity": "solstone.repository_contracts.observer_client_contract_bundle.v1",
   "generator_inputs": [
     {
-      "id": "bundle.projection_builder",
-      "path": "solstone/convey/contract/observer_bundle.py",
-      "role": "projection_builder",
-      "sha256": "908e77f6eabfd1dbe951dcc9e0b523d3db2e8563c1a61c3a5dbfce8162fa671b"
-    },
-    {
-      "id": "bundle.recording",
-      "path": "solstone/convey/contract/observer_bundle_recording.py",
-      "role": "fixture_vector_builder",
-      "sha256": "37b44cf50b8e8fd791be330d86282f2fa59a93367925e9abd6d06683deaa78a3"
-    },
-    {
-      "id": "extension.observer_sse_error_frame",
-      "path": "solstone/apps/observer/contract.py",
-      "role": "code_adjacent_extension",
-      "sha256": "acfca9d0843a4c53b9db11c36d03c3a340d62f149fa50f6a3c934007c2a736f2"
-    },
-    {
-      "id": "fragment.link",
-      "path": "solstone/apps/network/contract.py",
-      "role": "code_adjacent_fragment",
-      "sha256": "e8be782b5e8333dfd796c5812bd5d61a645d9c8d09f25bd3d1893fc3ac0cd5ab"
-    },
-    {
-      "id": "fragment.observer",
-      "path": "solstone/apps/observer/contract.py",
-      "role": "code_adjacent_fragment",
-      "sha256": "acfca9d0843a4c53b9db11c36d03c3a340d62f149fa50f6a3c934007c2a736f2"
-    },
-    {
-      "id": "fragment.root",
-      "path": "solstone/convey/root_contract.py",
-      "role": "code_adjacent_fragment",
-      "sha256": "26e7fe79cf78aa0a3c09e5074ce51136ccfb86b7aa0e33a16c18c69c746e99aa"
-    },
-    {
-      "id": "openapi.assembler",
-      "path": "solstone/convey/contract/assemble.py",
+      "id": "openapi.convey_clients",
+      "path": "docs/openapi/convey-clients.json",
       "role": "openapi_source",
-      "sha256": "03f547c2d14d282f4ecf1c30ae754b241adbcf6ace0aae3298bd3ea27f9624a6"
-    },
-    {
-      "id": "producer.observer_routes",
-      "path": "solstone/apps/observer/routes.py",
-      "role": "producer",
-      "sha256": "c3685b7fba0fc039c3a6a4ad9047dd87598574f47f3bbd086715a33f50861fd8"
-    },
-    {
-      "id": "producer.observer_utils",
-      "path": "solstone/apps/observer/utils.py",
-      "role": "producer",
-      "sha256": "937aa9669c5b95bbc3c400a337f68e52bd0b783ed6579898ba75efb657b27e77"
-    },
-    {
-      "id": "producer.protocol",
-      "path": "solstone/observe/protocol.py",
-      "role": "producer",
-      "sha256": "21feb3b5e23eb9df37544bdecec8e96ba0ec56ae74f73a8f0962d2dcc522af9e"
-    },
-    {
-      "id": "producer.root_sse",
-      "path": "solstone/convey/root.py",
-      "role": "producer",
-      "sha256": "7286e8836eec5c957f137e8173e314deabda0f71f453fa27a34432a33cd4128f"
-    },
-    {
-      "id": "reason_codes",
-      "path": "solstone/convey/reasons.py",
-      "role": "vocabulary_source",
-      "sha256": "3ca67b324d3993d8fe0eedb05dcb0f88716deaff80b5a68611dae3ebc37b7a13"
+      "sha256": "434d103d7b2accc8d6244f9886884c6c05ce59096bd0b8ee9bfbc67d564f6563"
     }
   ],
-  "observer_protocol_version": 2,
+  "observer_protocol_version": 3,
   "openapi_document_version": "1.0.0",
   "openapi_spec_version": "3.1.0",
   "operation_ids": [
-    "callosum.rootEvents",
-    "link.pair",
-    "observer.callosumStream",
-    "observer.ingestEvent",
-    "observer.ingestSegments",
     "observer.ingestUpload",
-    "observer.register"
+    "observer.ingestManifest",
+    "observer.ingestManifestDay",
+    "observer.ingestSegments"
   ],
   "projection_path": "projection.openapi.json",
   "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
+  "scope_rationale": "This ingest-triad bundle projects only the four Rust-served linked-device devices/ingest operations. Pairing and root SSE are live but out of scope; deferred legacy observer operations are not projected.",
   "supported_response_variants": [
-    1,
-    2
+    3
   ],
   "vocabularies": [
     {
@@ -155,391 +81,12 @@
       ]
     },
     {
-      "absent_or_unparseable": 1,
-      "classification": "extensible_integer",
-      "current": 2,
-      "id": "X-Solstone-Protocol-Version",
-      "source_pointer": "/paths/~1app~1observer~1ingest~1segments~1{day}/get/responses/200",
-      "supported_response_variants": [
-        1,
-        2
-      ],
-      "unknown_value_behavior": "version_greater_or_equal_current_uses_v2"
-    },
-    {
-      "classification": "closed",
-      "id": "callosum.rootEvents.responses.403.reason_code",
-      "method": "GET",
-      "path": "/sse/events",
-      "source_pointer": "/paths/~1sse~1events/get/responses/403",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "pl_revoked"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "callosum.rootEvents.sse_frames",
-      "source_pointer": "/paths/~1sse~1events/get/responses/200",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "data",
-        "heartbeat"
-      ]
-    },
-    {
-      "classification": "extensible",
-      "id": "callosum.tract_event",
-      "known_registry": {
-        "activity": [
-          "live",
-          "recorded"
-        ],
-        "cortex": [
-          "request",
-          "start",
-          "thinking",
-          "tool_start",
-          "tool_end",
-          "finish",
-          "error",
-          "talent_updated",
-          "info",
-          "status",
-          "cancel",
-          "dry_run",
-          "progress",
-          "text_delta",
-          "tool_budget_exhausted",
-          "budget_escalation"
-        ],
-        "importer": [
-          "started",
-          "status",
-          "completed",
-          "error",
-          "file_imported",
-          "enrichment_ready"
-        ],
-        "link": [
-          "pair_complete",
-          "last_seen",
-          "stream_reset"
-        ],
-        "logs": [
-          "exec",
-          "line",
-          "exit"
-        ],
-        "navigate": [
-          "request"
-        ],
-        "notification": [
-          "*"
-        ],
-        "observe": [
-          "status",
-          "observing",
-          "detected",
-          "described",
-          "transcribed",
-          "observed",
-          "memory_throttle_started",
-          "memory_throttle_completed"
-        ],
-        "storage": [
-          "warning"
-        ],
-        "supervisor": [
-          "started",
-          "stopped",
-          "restarting",
-          "status",
-          "queue",
-          "scheduled",
-          "provider_runtime",
-          "request",
-          "restart",
-          "drain",
-          "skipped",
-          "sync_conflict"
-        ],
-        "support": [
-          "proactive_suggestion"
-        ],
-        "think": [
-          "started",
-          "status",
-          "group_started",
-          "group_completed",
-          "talent_started",
-          "talent_completed",
-          "completed",
-          "segments_started",
-          "segments_completed",
-          "memory_throttle_started",
-          "memory_throttle_completed",
-          "daily_complete"
-        ],
-        "work": [
-          "talent_queued",
-          "talent_spawned",
-          "talent_finished",
-          "talent_errored",
-          "result",
-          "reflection_ready",
-          "support_draft",
-          "support_submit_claim"
-        ]
-      },
-      "source_pointer": "/",
-      "unknown_value_behavior": "preserve"
-    },
-    {
-      "classification": "closed",
-      "id": "callosum.work.event",
-      "source_pointer": "/x-callosum-registry/work",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "talent_queued",
-        "talent_spawned",
-        "talent_finished",
-        "talent_errored",
-        "result",
-        "reflection_ready",
-        "support_draft",
-        "support_submit_claim"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "link.pair.responses.400.reason_code",
-      "method": "POST",
-      "path": "/app/network/pair",
-      "source_pointer": "/paths/~1app~1network~1pair/post/responses/400",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "missing_required_field",
-        "pairing_key_invalid",
-        "pairing_request_invalid"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "link.pair.responses.403.reason_code",
-      "method": "POST",
-      "path": "/app/network/pair",
-      "source_pointer": "/paths/~1app~1network~1pair/post/responses/403",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "pl_revoked"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "link.pair.responses.410.reason_code",
-      "method": "POST",
-      "path": "/app/network/pair",
-      "source_pointer": "/paths/~1app~1network~1pair/post/responses/410",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "operation_no_longer_available"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.callosumStream.responses.200.sse_error.reason_code",
-      "method": "GET",
-      "path": "/app/observer/callosum",
-      "source_pointer": "/paths/~1app~1observer~1callosum/get/responses/200/x-sse-error-frame",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "auth_required",
-        "feature_unavailable",
-        "pl_revoked"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.callosumStream.responses.401.reason_code",
-      "method": "GET",
-      "path": "/app/observer/callosum",
-      "source_pointer": "/paths/~1app~1observer~1callosum/get/responses/401",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "auth_key_invalid",
-        "auth_required",
-        "feature_unavailable",
-        "pl_revoked"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.callosumStream.sse_frames",
-      "source_pointer": "/paths/~1app~1observer~1callosum/get/responses/200",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "data",
-        "error",
-        "heartbeat"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestEvent.responses.400.reason_code",
-      "method": "POST",
-      "path": "/app/observer/ingest/event",
-      "source_pointer": "/paths/~1app~1observer~1ingest~1event/post/responses/400",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "missing_required_field"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestEvent.responses.401.reason_code",
-      "method": "POST",
-      "path": "/app/observer/ingest/event",
-      "source_pointer": "/paths/~1app~1observer~1ingest~1event/post/responses/401",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "auth_key_invalid",
-        "auth_required"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestEvent.responses.403.reason_code",
-      "method": "POST",
-      "path": "/app/observer/ingest/event",
-      "source_pointer": "/paths/~1app~1observer~1ingest~1event/post/responses/403",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "feature_unavailable",
-        "pl_revoked"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestSegments.responses.400.reason_code",
-      "method": "GET",
-      "path": "/app/observer/ingest/segments/{day}",
-      "source_pointer": "/paths/~1app~1observer~1ingest~1segments~1{day}/get/responses/400",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "invalid_day"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestSegments.responses.401.reason_code",
-      "method": "GET",
-      "path": "/app/observer/ingest/segments/{day}",
-      "source_pointer": "/paths/~1app~1observer~1ingest~1segments~1{day}/get/responses/401",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "auth_key_invalid",
-        "auth_required"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestSegments.responses.403.reason_code",
-      "method": "GET",
-      "path": "/app/observer/ingest/segments/{day}",
-      "source_pointer": "/paths/~1app~1observer~1ingest~1segments~1{day}/get/responses/403",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "feature_unavailable",
-        "pl_revoked"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestUpload.responses.400.reason_code",
-      "method": "POST",
-      "path": "/app/observer/ingest",
-      "source_pointer": "/paths/~1app~1observer~1ingest/post/responses/400",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "ingest_no_files",
-        "invalid_day",
-        "invalid_segment_or_stream",
-        "missing_required_field"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestUpload.responses.401.reason_code",
-      "method": "POST",
-      "path": "/app/observer/ingest",
-      "source_pointer": "/paths/~1app~1observer~1ingest/post/responses/401",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "auth_key_invalid",
-        "auth_required"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestUpload.responses.403.reason_code",
-      "method": "POST",
-      "path": "/app/observer/ingest",
-      "source_pointer": "/paths/~1app~1observer~1ingest/post/responses/403",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "feature_unavailable",
-        "pl_revoked"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestUpload.responses.409.reason_code",
-      "method": "POST",
-      "path": "/app/observer/ingest",
-      "source_pointer": "/paths/~1app~1observer~1ingest/post/responses/409",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "ingest_sidecar_conflict"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestUpload.responses.422.reason_code",
-      "method": "POST",
-      "path": "/app/observer/ingest",
-      "source_pointer": "/paths/~1app~1observer~1ingest/post/responses/422",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "ingest_contract_invalid"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestUpload.responses.500.reason_code",
-      "method": "POST",
-      "path": "/app/observer/ingest",
-      "source_pointer": "/paths/~1app~1observer~1ingest/post/responses/500",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "ingest_storage_failed"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.ingestUpload.responses.507.reason_code",
-      "method": "POST",
-      "path": "/app/observer/ingest",
-      "source_pointer": "/paths/~1app~1observer~1ingest/post/responses/507",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "ingest_storage_failed"
-      ]
-    },
-    {
       "classification": "closed",
       "id": "observer.ingestUpload.status",
-      "source_pointer": "/paths/~1app~1observer~1ingest/post/responses/200/content/application~1json/schema/properties/status",
+      "source_pointers": [
+        "/paths/~1app~1devices~1ingest/post/responses/200/content/application~1json/schema/properties/status",
+        "/paths/~1app~1devices~1ingest/post/responses/409"
+      ],
       "unknown_value_behavior": "reject",
       "values": [
         "ok",
@@ -548,58 +95,19 @@
         "conflict",
         "failed"
       ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.register.responses.400.reason_code",
-      "method": "POST",
-      "path": "/app/observer/register",
-      "source_pointer": "/paths/~1app~1observer~1register/post/responses/400",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "invalid_segment_or_stream",
-        "missing_required_field"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.register.responses.403.reason_code",
-      "method": "POST",
-      "path": "/app/observer/register",
-      "source_pointer": "/paths/~1app~1observer~1register/post/responses/403",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "local_request_only"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.register.responses.500.reason_code",
-      "method": "POST",
-      "path": "/app/observer/register",
-      "source_pointer": "/paths/~1app~1observer~1register/post/responses/500",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "settings_operation_failed"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "observer.status.ok",
-      "source_pointer": "/paths/~1app~1observer~1ingest~1event/post/responses/200/content/application~1json/schema/properties/status",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "ok"
-      ]
     }
   ],
   "windows_linux_rollout_targets": [
     {
-      "adoption_blocker_ids": [],
+      "adoption_blocker_ids": [
+        "solstone-linux-legacy-v2-unmigrated"
+      ],
       "consumer_identifier": "solstone-linux"
     },
     {
-      "adoption_blocker_ids": [],
+      "adoption_blocker_ids": [
+        "solstone-windows-legacy-v2-unmigrated"
+      ],
       "consumer_identifier": "solstone-windows"
     }
   ]
