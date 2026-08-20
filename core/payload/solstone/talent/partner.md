@@ -3,7 +3,7 @@
   "access_tier": "synthesis",
 
   "title": "your profile",
-  "description": "a weekly profile grounded in what you shared and what your journal holds: dated entries, repeated topics, recorded interactions, and decisions. your journal is always private, only yours.",
+  "description": "a weekly profile updated with evidence from the past 7 days: dated entries, repeated topics, recorded interactions, and decisions. your journal is always private, only yours.",
   "schedule": "weekly",
   "priority": 95,
   "max_turns": 100
