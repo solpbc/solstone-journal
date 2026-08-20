@@ -582,7 +582,7 @@ mod tests {
         );
         for expected in [
             r##"{"file": "talent/conversation.md", "type": "generate", "title": "Conversation Story", "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.", "color": "#00796b", "schedule": "activity", "activities": ["meeting", "call", "messaging", "email"], "priority": 20, "output": "json", "max_output_tokens": 12288, "schema": "story.schema.json", "hook": {"post": "story"}, "degradation_check": true, "load": {"transcripts": true, "percepts": true, "talents": false}, "source": "system"}"##,
-            r##"{"file": "talent/partner.md", "type": "cogitate", "access_tier": "synthesis", "title": "Partner Profile", "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise", "schedule": "weekly", "priority": 95, "max_turns": 100, "color": "#6c757d", "source": "system", "cwd": "journal"}"##,
+            r##"{"file": "talent/partner.md", "type": "cogitate", "access_tier": "synthesis", "title": "your profile", "description": "a weekly profile grounded in what you shared and what your journal holds: dated entries, repeated topics, recorded interactions, and decisions", "schedule": "weekly", "priority": 95, "max_turns": 100, "color": "#6c757d", "source": "system", "cwd": "journal"}"##,
             r##"{"file": "talent/weekly_reflection.md", "type": "cogitate", "access_tier": "synthesis", "title": "Weekly Reflection", "description": "Sunday-start weekly reflection synthesized from the journal", "schedule": "weekly", "priority": 90, "output": "md", "degradation_check": true, "read_scope_span": 7, "max_turns": 100, "max_run_cost_usd": 5.0, "color": "#6c757d", "source": "system", "cwd": "journal"}"##,
             r##"{"file": "apps/entities/talent/entity_assist.md", "type": "cogitate", "title": "Entity Assistant", "description": "Quick entity addition with intelligent type detection and automatic description generation", "color": "#00695c", "group": "Entities", "source": "app", "app": "entities", "access_tier": "normal", "cwd": "journal"}"##,
         ] {
@@ -655,7 +655,7 @@ mod tests {
         "  morning_briefing          Morning Briefing              -                   json pre\n",
         "  schedule                  Upcoming Schedule             -                   json post\n\n",
         "weekly:\n",
-        "  partner                   Partner Profile               -\n",
+        "  partner                   your profile                  -\n",
         "  weekly_reflection         Weekly Reflection             -                   md\n\n",
         "activity:\n",
         "  conversation              Conversation Story            -                   json post\n",

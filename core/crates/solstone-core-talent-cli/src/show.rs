@@ -612,7 +612,7 @@ mod tests {
             parsed.metadata.get("type"),
             Some(&Value::String("cogitate".to_owned()))
         );
-        assert!(parsed.body.contains("# Partner Profile"));
+        assert!(parsed.body.contains("# your profile"));
     }
 
     #[test]
