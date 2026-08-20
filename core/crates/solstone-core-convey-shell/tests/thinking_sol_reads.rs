@@ -41,7 +41,6 @@ impl Fixture {
             &self.0.join("config/journal.json"),
             json!({
                 "setup": {"completed_at": 1_700_000_000_000i64},
-                "agent": {"name": "Corpus Agent", "name_status": "named"},
                 "identity": {"name": "Corpus Owner", "timezone": "UTC"},
             }),
         );
@@ -890,43 +889,17 @@ fn marker(root: &Path, day: &str, daily_seconds: u64, stream_seconds: u64) {
     .expect("stream time");
 }
 
-#[cfg(unix)]
 #[tokio::test]
-async fn ac9_identity_read_leaves_config_bytes_inode_and_mtime_unchanged() {
-    use std::os::unix::fs::MetadataExt;
-
+async fn deleted_identity_route_returns_not_found() {
     let fixture = Fixture::new();
     fixture.established();
-    let path = fixture.0.join("config/journal.json");
-    let before = fs::read(&path).expect("bytes");
-    let metadata = fs::metadata(&path).expect("metadata");
-    let (status, identity) = get(
+    let (status, _body) = get(
         router(fixture.0.clone()),
         "/app/thinking/api/identity",
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(identity, corpus_body("established_empty", "api_identity"));
-    let after = fs::metadata(&path).expect("metadata");
-    assert_eq!(fs::read(&path).expect("bytes"), before);
-    assert_eq!(after.ino(), metadata.ino());
-    assert_eq!(after.mtime(), metadata.mtime());
-    assert_eq!(after.mtime_nsec(), metadata.mtime_nsec());
-
-    let populated = Fixture::new();
-    seed_populated(&populated, 3);
-    let (status, identity) = get(
-        router(populated.0.clone()),
-        "/app/thinking/api/identity",
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        identity,
-        corpus_body("established_populated", "api_identity")
-    );
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -936,7 +909,7 @@ async fn session_gate_corrupt_and_unestablished_oracle() {
     fs::write(corrupt.0.join("config/journal.json"), "{not json\n").expect("corrupt");
     let (status, body) = get(
         router(corrupt.0.clone()),
-        "/app/thinking/api/identity",
+        "/app/thinking/api/state",
         None,
     )
     .await;
@@ -945,7 +918,7 @@ async fn session_gate_corrupt_and_unestablished_oracle() {
     let unestablished = Fixture::new();
     let response = router(unestablished.0.clone())
         .oneshot(
-            Request::get("/app/thinking/api/identity")
+            Request::get("/app/thinking/api/state")
                 .body(Body::empty())
                 .expect("request"),
         )

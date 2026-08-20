@@ -307,17 +307,6 @@ pub(crate) async fn api_updated_days(Extension(journal): Extension<Arc<JournalRo
     }
 }
 
-pub(crate) async fn api_identity(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
-    match journal_config(&journal.0) {
-        Ok(config) => Json(json!({
-            "agent": config.get("agent").cloned().unwrap_or_else(|| json!({})),
-            "identity": config.get("identity").cloned().unwrap_or_else(|| json!({})),
-        }))
-        .into_response(),
-        Err(_) => talent_failure("Unable to load identity data"),
-    }
-}
-
 fn journal_config(journal: &Path) -> Result<Map<String, Value>, String> {
     read_journal_config(journal)
         .map_err(|error| error.to_string())

@@ -536,21 +536,6 @@
       padding: 10px 12px;
     }
 
-    .thinking-workspace .thinking-runs-identity-details {
-      display: grid;
-      gap: 6px 16px;
-      grid-template-columns: max-content minmax(0, 1fr);
-      margin: 0;
-    }
-
-    .thinking-workspace .thinking-runs-identity-details dt {
-      color: var(--muted);
-    }
-
-    .thinking-workspace .thinking-runs-identity-details dd {
-      margin: 0;
-    }
-
     .thinking-workspace .thinking-runs-retry {
       align-self: start;
       background: var(--paper);
@@ -745,7 +730,6 @@
       <div class="thinking-runs-tabs" id="thinkingSectionTabs" role="tablist">
         <button type="button" class="thinking-runs-tab" id="thinkingSetupTab" role="tab" aria-selected="true" aria-controls="thinkingSetupPanel" tabindex="0">setup</button>
         <button type="button" class="thinking-runs-tab" id="thinkingRunsTab" role="tab" aria-selected="false" aria-controls="thinkingRunsPanel" tabindex="-1">runs</button>
-        <button type="button" class="thinking-runs-tab" id="thinkingIdentityTab" role="tab" aria-selected="false" aria-controls="thinkingIdentityPanel" tabindex="-1">identity</button>
       </div>
       <p class="intro">processing needs an engine. choose one. you can switch anytime.</p>
     </header>
@@ -1064,12 +1048,6 @@
         <div id="thinkingRunsLogPanel" role="tabpanel" aria-labelledby="thinkingRunsLogTab"></div>
         <div id="thinkingRunsOutputPanel" role="tabpanel" aria-labelledby="thinkingRunsOutputTab" hidden></div>
       </section>
-    </section>
-
-    <section class="thinking-runs-panel" id="thinkingIdentityPanel" data-thinking-section="identity" role="tabpanel" aria-labelledby="thinkingIdentityTab" hidden>
-      <h2 id="thinkingIdentityHeading" tabindex="-1">identity</h2>
-      <p class="thinking-runs-status" id="thinkingIdentityStatus" role="status" aria-live="polite" hidden></p>
-      <div id="thinkingIdentityContent"></div>
     </section>
   </div>
 </div>

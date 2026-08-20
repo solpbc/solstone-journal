@@ -125,9 +125,6 @@ async function main() {
     thinkingRunsHash,
     activateThinkingSectionTab,
     runContextFromRecord,
-    renderIdentityLoading,
-    renderIdentity,
-    renderIdentityFailure,
     renderThinkingRunList,
     loadThinkingRuns,
     loadThinkingRun,
@@ -176,15 +173,13 @@ async function main() {
   const tablist = make('thinkingSectionTabs');
   const setupTab = make('thinkingSetupTab');
   const runsTab = make('thinkingRunsTab');
-  const identityTab = make('thinkingIdentityTab');
-  for (const tab of [setupTab, runsTab, identityTab]) {
+  for (const tab of [setupTab, runsTab]) {
     tab.setAttribute('role', 'tab');
     tablist.appendChild(tab);
   }
   const setupPanel = make('thinkingSetupPanel');
   const runsPanel = make('thinkingRunsPanel', {thinkingSection: 'runs'});
-  const identityPanel = make('thinkingIdentityPanel', {thinkingSection: 'identity'});
-  const panels = [runsPanel, identityPanel];
+  const panels = [runsPanel];
   const views = [
     setupPanel,
     make('thinkingByoSetup', {view: 'byo-setup'}),
@@ -195,7 +190,6 @@ async function main() {
   setupPanel.dataset.view = 'main';
   make('thinkingHeading');
   make('thinkingRunsHeading');
-  make('thinkingIdentityHeading');
   make('thinkingRunsStatus');
   make('thinkingRunsDate');
   make('thinkingRunsPrevious');
@@ -225,10 +219,7 @@ async function main() {
   promptModal.hidden = true;
   make('thinkingRunsPromptClose');
   make('thinkingRunsPromptContent');
-  make('thinkingIdentityStatus');
-  make('thinkingIdentityContent');
 
-  let identityResponse = deferred();
   const requests = [];
   const dayResponses = [];
   const runResponses = [];
@@ -255,7 +246,6 @@ async function main() {
     },
     apiJson(url) {
       requests.push(url);
-      if (url === '/app/thinking/api/identity') return identityResponse.promise;
       if (url.startsWith('/app/thinking/api/talents/')) return dayResponses.shift() || Promise.resolve({uses: [], facets: []});
       if (url === '/app/thinking/api/updated-days') return updatedResponses.shift() || Promise.resolve([]);
       if (url.startsWith('/app/thinking/api/run/')) return runResponses.shift() || Promise.resolve({id: 'use-id', name: 'talent', day: '20260815', events: []});
@@ -374,37 +364,15 @@ async function main() {
 
   document.activeElement = new Element('outside');
   document.activeElement.document = document;
-  window.location.hash = '#identity';
+  window.location.hash = '#main';
+  thinking.state.runsLastHash = '';
   thinking.routeThinkingHash('history');
-  assert.strictEqual(identityPanel.hidden, false, 'identity panel shown');
-  assert.strictEqual(nodes.get('thinkingIdentityHeading').focused, true, 'history focuses panel heading from outside tabs');
-  assert.strictEqual(nodes.get('thinkingIdentityStatus').textContent, 'loading identity…');
-
-  window.location.hash = '#runs/20260815';
-  thinking.routeThinkingHash('history');
-  identityResponse.resolve({agent: {name: 'stale', name_status: 'chosen'}, identity: {name: 'stale'}});
-  await settle();
-  await settle();
-  assert.strictEqual(thinking.state.runsCache.identity, null, 'stale identity response is not cached');
-  assert.strictEqual(nodes.get('thinkingIdentityContent').children.length, 0, 'stale identity response is not rendered');
-
-  thinking.renderIdentityLoading();
-  assert.strictEqual(nodes.get('thinkingIdentityStatus').textContent, 'loading identity…');
-  thinking.renderIdentity({agent: {name: 'sol', name_status: 'default'}, identity: {name: 'you'}});
-  assert.strictEqual(nodes.get('thinkingIdentityContent').dataset.state, 'default');
-  thinking.renderIdentity({agent: {}, identity: {}});
-  assert.strictEqual(nodes.get('thinkingIdentityContent').dataset.state, 'uninitialized');
-  thinking.renderIdentity({agent: {name: 'aria', name_status: 'chosen'}, identity: {name: 'you'}});
-  assert.strictEqual(nodes.get('thinkingIdentityContent').dataset.state, 'customized');
-  thinking.renderIdentityFailure(new Error('failed'));
-  assert.strictEqual(nodes.get('thinkingIdentityStatus').textContent, "couldn't load identity");
-
-  runsTab.emit('keydown', {key: 'End'});
-  assert.strictEqual(window.location.hash, '#identity', 'End activates final tab');
-  assert.strictEqual(document.activeElement, identityTab, 'keyboard activation keeps focus on selected tab');
-  identityTab.emit('keydown', {key: 'ArrowLeft'});
-  assert.match(window.location.hash, /^#runs\/\d{8}$/, 'arrow activation enters runs');
-  assert.strictEqual(document.activeElement, runsTab, 'arrow activation keeps focus on selected tab');
+  setupTab.emit('keydown', {key: 'End'});
+  assert.match(window.location.hash, /^#runs\/\d{8}$/, 'End activates final tab');
+  assert.strictEqual(document.activeElement, runsTab, 'keyboard activation keeps focus on selected tab');
+  runsTab.emit('keydown', {key: 'ArrowLeft'});
+  assert.strictEqual(window.location.hash, '#main', 'arrow activation enters setup');
+  assert.strictEqual(document.activeElement, setupTab, 'arrow activation keeps focus on selected tab');
   thinking.state.runsFacet = 'work';
   thinking.state.runsFacetExplicit = true;
   thinking.state.runsCache.run.set('run:use-id', {
@@ -413,17 +381,6 @@ async function main() {
   window.location.hash = '#runs/20260310/talent/use-id';
   thinking.routeThinkingHash('history');
   await settle();
-  identityTab.emit('click');
-  assert.strictEqual(window.location.hash, '#identity', 'pointer activation enters identity');
-  runsTab.emit('click');
-  await settle();
-  assert.strictEqual(
-    window.location.hash,
-    '#runs/20260310/talent/use-id',
-    'identity round-trip restores the prior Runs drill-down instead of resetting to today',
-  );
-  assert.strictEqual(thinking.state.runsFacet, 'work', 'identity round-trip retains the explicit facet');
-  assert.strictEqual(nodes.get('thinkingRunsFacet').value, 'work', 'identity round-trip restores the facet control');
   setupTab.emit('click');
   assert.strictEqual(window.location.hash, '#main', 'pointer activation pushes setup');
   assert.strictEqual(document.activeElement, setupTab, 'pointer activation keeps focus on selected tab');
@@ -575,12 +532,17 @@ async function main() {
   await settle();
   assert.strictEqual(thinking.state.runsDetail.id, 'run-b', 'new run detail renders after the prior prompt closes');
 
+  const identityRequestsBefore = requests.filter((url) => url === '/app/thinking/api/identity').length;
   window.location.hash = '#identity';
   thinking.routeThinkingHash('history');
-  assert.strictEqual(thinking.state.runsDetail, null, 'identity route clears the selected run');
-  assert.strictEqual(nodes.get('thinkingRunsDetail').hidden, true, 'identity route hides prior run detail');
-  assert.strictEqual(outputTab.hidden, true, 'identity route hides prior output tab');
-  assert.strictEqual(noOutput.hidden, true, 'identity route hides prior no-output notice');
+  assert.strictEqual(window.location.hash, '#main', '#identity falls through to setup');
+  assert.strictEqual(setupPanel.hidden, false, '#identity shows the setup view');
+  assert.strictEqual(runsPanel.hidden, true, '#identity does not show the runs panel');
+  assert.strictEqual(
+    requests.filter((url) => url === '/app/thinking/api/identity').length,
+    identityRequestsBefore,
+    '#identity does not fetch the deleted identity API',
+  );
 
   runResponses.push(Promise.resolve({reason_code: 'talent_run_pending'}));
   window.location.hash = '#runs/20260103/talent/active';

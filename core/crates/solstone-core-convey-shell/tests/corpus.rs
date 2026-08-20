@@ -441,8 +441,6 @@ async fn sol_cut_uses_unknown_app_404_and_router_405_without_session_gate_change
     }
 
     for path in [
-        "/app/sol/api/set-name",
-        "/app/sol/api/reset",
         "/app/sol/api/set-owner",
         "/app/sol/api/sol-init",
     ] {
@@ -468,7 +466,7 @@ async fn sol_cut_uses_unknown_app_404_and_router_405_without_session_gate_change
 
         let response = app
             .oneshot(
-                Request::post("/app/sol/api/set-name")
+                Request::post("/app/sol/api/set-owner")
                     .body(Body::empty())
                     .expect("request builds"),
             )

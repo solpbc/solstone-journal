@@ -310,24 +310,6 @@
             },
             "status": 500
           }
-        },
-        {
-          "contract": "reference-record",
-          "method": "GET",
-          "name": "api_identity",
-          "normalized": [],
-          "path": "/app/sol/api/identity",
-          "response": {
-            "body": {
-              "detail": "I couldn't read your settings file at /var/tmp/solstone-convey-system-corpus/corrupt/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-              "error": "I couldn't read your settings.",
-              "reason_code": "corrupt_config"
-            },
-            "headers": {
-              "Content-Type": "application/json"
-            },
-            "status": 500
-          }
         }
       ]
     },
@@ -1187,29 +1169,6 @@
           "path": "/app/sol/api/updated-days",
           "response": {
             "body": [],
-            "headers": {
-              "Content-Type": "application/json"
-            },
-            "status": 200
-          }
-        },
-        {
-          "contract": "reference-record",
-          "method": "GET",
-          "name": "api_identity",
-          "normalized": [],
-          "path": "/app/sol/api/identity",
-          "response": {
-            "body": {
-              "agent": {
-                "name": "Corpus Agent",
-                "name_status": "named"
-              },
-              "identity": {
-                "name": "Corpus Owner",
-                "timezone": "UTC"
-              }
-            },
             "headers": {
               "Content-Type": "application/json"
             },
@@ -2192,29 +2151,6 @@
             },
             "status": 200
           }
-        },
-        {
-          "contract": "reference-record",
-          "method": "GET",
-          "name": "api_identity",
-          "normalized": [],
-          "path": "/app/sol/api/identity",
-          "response": {
-            "body": {
-              "agent": {
-                "name": "Corpus Agent",
-                "name_status": "named"
-              },
-              "identity": {
-                "name": "Corpus Owner",
-                "timezone": "UTC"
-              }
-            },
-            "headers": {
-              "Content-Type": "application/json"
-            },
-            "status": 200
-          }
         }
       ]
     },
@@ -3187,29 +3123,6 @@
               "20260214",
               "20260315"
             ],
-            "headers": {
-              "Content-Type": "application/json"
-            },
-            "status": 200
-          }
-        },
-        {
-          "contract": "reference-record",
-          "method": "GET",
-          "name": "api_identity",
-          "normalized": [],
-          "path": "/app/sol/api/identity",
-          "response": {
-            "body": {
-              "agent": {
-                "name": "Corpus Agent",
-                "name_status": "named"
-              },
-              "identity": {
-                "name": "Corpus Owner",
-                "timezone": "UTC"
-              }
-            },
             "headers": {
               "Content-Type": "application/json"
             },
@@ -4191,29 +4104,6 @@
             },
             "status": 200
           }
-        },
-        {
-          "contract": "reference-record",
-          "method": "GET",
-          "name": "api_identity",
-          "normalized": [],
-          "path": "/app/sol/api/identity",
-          "response": {
-            "body": {
-              "agent": {
-                "name": "Corpus Agent",
-                "name_status": "named"
-              },
-              "identity": {
-                "name": "Corpus Owner",
-                "timezone": "UTC"
-              }
-            },
-            "headers": {
-              "Content-Type": "application/json"
-            },
-            "status": 200
-          }
         }
       ]
     },
@@ -5190,29 +5080,6 @@
             },
             "status": 200
           }
-        },
-        {
-          "contract": "reference-record",
-          "method": "GET",
-          "name": "api_identity",
-          "normalized": [],
-          "path": "/app/sol/api/identity",
-          "response": {
-            "body": {
-              "agent": {
-                "name": "Corpus Agent",
-                "name_status": "named"
-              },
-              "identity": {
-                "name": "Corpus Owner",
-                "timezone": "UTC"
-              }
-            },
-            "headers": {
-              "Content-Type": "application/json"
-            },
-            "status": 200
-          }
         }
       ]
     },
@@ -5472,21 +5339,6 @@
             },
             "status": 302
           }
-        },
-        {
-          "contract": "reference-record",
-          "method": "GET",
-          "name": "api_identity",
-          "normalized": [],
-          "path": "/app/sol/api/identity",
-          "response": {
-            "body": "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"/init\">/init</a>. If not, click the link.\n",
-            "headers": {
-              "Content-Type": "text/html; charset=utf-8",
-              "Location": "/init"
-            },
-            "status": 302
-          }
         }
       ]
     }
@@ -5510,14 +5362,6 @@
       {
         "reason": "deliberately uncaptured unknown-talent branch",
         "route": "/api/preview/<name> unknown"
-      },
-      {
-        "reason": "POST route pinned by shipped native authority",
-        "route": "/api/set-name"
-      },
-      {
-        "reason": "POST route pinned by shipped native authority",
-        "route": "/api/reset"
       },
       {
         "reason": "POST route pinned by shipped native authority",

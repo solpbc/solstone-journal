@@ -10,7 +10,6 @@ use axum::body::to_bytes;
 use axum::extract::{Extension, Request};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_identity::{IdentityError, ensure_identity_directory};
@@ -23,83 +22,6 @@ use crate::JournalRoot;
 
 const IDENTITY_BUSY: &str =
     "I couldn't update my identity right now because it was busy. Try again in a moment.";
-
-pub(crate) async fn api_set_name(
-    Extension(journal): Extension<Arc<JournalRoot>>,
-    request: Request,
-) -> Response {
-    let body = match json_body(request).await {
-        Ok(body) => body,
-        Err(response) => return response,
-    };
-    let Some(name) = required(&body, "name") else {
-        return required_field("name");
-    };
-    if is_path_shaped_name(name) {
-        return invalid_config_value("agent name must not be a path");
-    }
-    let status = body
-        .get("status")
-        .filter(|value| truthy(value))
-        .cloned()
-        .unwrap_or_else(|| json!("chosen"));
-
-    match mutate_journal_config_cas(&journal.0, |config| {
-        let mut agent = match object_or_default(config.get("agent"), "agent", default_agent) {
-            Ok(agent) => agent,
-            Err(detail) => {
-                return JournalConfigMutation {
-                    changed: false,
-                    value: Err(detail),
-                };
-            }
-        };
-        let today = Utc::now().format("%Y-%m-%d").to_string();
-        let changed = apply_set_name(&mut agent, name, status.clone(), &today);
-        config.insert("agent".to_owned(), Value::Object(agent.clone()));
-        JournalConfigMutation {
-            changed,
-            value: Ok(agent),
-        }
-    }) {
-        Ok(transaction) => match transaction.value {
-            Ok(agent) => Json(Value::Object(agent)).into_response(),
-            Err(detail) => operation_failed(detail),
-        },
-        Err(CasConfigMutationError::Timeout(_)) => identity_busy(),
-        Err(error) => operation_failed(error.to_string()),
-    }
-}
-
-pub(crate) async fn api_reset(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
-    match mutate_journal_config_cas(&journal.0, |config| {
-        let mut agent = match object_or_default(config.get("agent"), "agent", default_agent) {
-            Ok(agent) => agent,
-            Err(detail) => {
-                return JournalConfigMutation {
-                    changed: false,
-                    value: Err(detail),
-                };
-            }
-        };
-        let previous = agent.clone();
-        agent.insert("name".to_owned(), json!("sol"));
-        agent.insert("name_status".to_owned(), json!("default"));
-        agent.insert("named_date".to_owned(), Value::Null);
-        config.insert("agent".to_owned(), Value::Object(agent.clone()));
-        JournalConfigMutation {
-            changed: agent != previous,
-            value: Ok(agent),
-        }
-    }) {
-        Ok(transaction) => match transaction.value {
-            Ok(agent) => Json(Value::Object(agent)).into_response(),
-            Err(detail) => operation_failed(detail),
-        },
-        Err(CasConfigMutationError::Timeout(_)) => identity_busy(),
-        Err(error) => operation_failed(error.to_string()),
-    }
-}
 
 pub(crate) async fn api_set_owner(
     Extension(journal): Extension<Arc<JournalRoot>>,
@@ -179,16 +101,6 @@ fn required<'a>(body: &'a Map<String, Value>, field: &str) -> Option<&'a str> {
         .filter(|value| !value.is_empty())
 }
 
-fn default_agent() -> Map<String, Value> {
-    [
-        ("name".to_owned(), json!("sol")),
-        ("name_status".to_owned(), json!("default")),
-        ("named_date".to_owned(), Value::Null),
-    ]
-    .into_iter()
-    .collect()
-}
-
 fn object_or_default(
     value: Option<&Value>,
     key: &str,
@@ -199,14 +111,6 @@ fn object_or_default(
         None => Ok(default()),
         Some(_) => Err(format!("{key} must be a JSON object")),
     }
-}
-
-fn apply_set_name(agent: &mut Map<String, Value>, name: &str, status: Value, today: &str) -> bool {
-    let previous = agent.clone();
-    agent.insert("name".to_owned(), json!(name));
-    agent.insert("name_status".to_owned(), status);
-    agent.insert("named_date".to_owned(), json!(today));
-    agent != &previous
 }
 
 fn truthy(value: &Value) -> bool {
@@ -291,7 +195,7 @@ fn operation_failed(detail: String) -> Response {
 mod tests {
     use serde_json::{Value, json};
 
-    use super::{apply_set_name, truthy};
+    use super::truthy;
 
     #[test]
     fn truthy_matches_python_json_value_truthiness() {
@@ -310,30 +214,5 @@ mod tests {
         for value in [json!(123), json!(u64::MAX), json!("x"), json!(["x"])] {
             assert!(truthy(&value), "{value}");
         }
-    }
-
-    #[test]
-    fn set_name_is_a_same_day_no_op_and_changes_on_the_next_day() {
-        let mut agent = serde_json::from_value(json!({
-            "name": "Nova",
-            "name_status": "chosen",
-            "named_date": "2026-08-15",
-            "sibling": true,
-        }))
-        .unwrap();
-
-        assert!(!apply_set_name(
-            &mut agent,
-            "Nova",
-            json!("chosen"),
-            "2026-08-15"
-        ));
-        assert!(apply_set_name(
-            &mut agent,
-            "Nova",
-            json!("chosen"),
-            "2026-08-16"
-        ));
-        assert_eq!(agent["sibling"], json!(true));
     }
 }

@@ -23,14 +23,13 @@
     runsNavigationGeneration: 0,
     runsRouteKey: '',
     runsLastHash: '',
-    runsRequestGenerations: {day: 0, run: 0, prompt: 0, output: 0, identity: 0},
-    runsInFlight: {day: null, run: null, prompt: null, output: null, identity: null},
+    runsRequestGenerations: {day: 0, run: 0, prompt: 0, output: 0},
+    runsInFlight: {day: null, run: null, prompt: null, output: null},
     runsCache: {
       day: new Map(),
       run: new Map(),
       prompt: new Map(),
       output: new Map(),
-      identity: null,
     },
     runsFacet: '',
     runsFacetExplicit: false,
@@ -908,7 +907,6 @@
 
   function parseThinkingHash() {
     const hash = window.location.hash.replace(/^#/, '');
-    if (hash === 'identity') return {kind: 'identity', key: 'identity'};
     if (!hash.startsWith('runs')) return null;
     const parts = hash.split('/');
     if (parts[0] !== 'runs') return null;
@@ -965,7 +963,7 @@
     if (kind === 'run') return `run:${values.useId}`;
     if (kind === 'prompt') return `prompt:${values.talent}`;
     if (kind === 'output') return `output:${values.day}:${values.file}`;
-    return 'identity';
+    return kind;
   }
 
   function beginThinkingRequest(kind) {
@@ -990,17 +988,12 @@
   }
 
   function readThinkingCache(kind, key) {
-    if (kind === 'identity') return state.runsCache.identity;
     return state.runsCache[kind].get(key) || null;
   }
 
   function writeThinkingCache(kind, key, value, token) {
     if (!isCurrentThinkingRequest(token)) return false;
-    if (kind === 'identity') {
-      state.runsCache.identity = value;
-    } else {
-      state.runsCache[kind].set(key, value);
-    }
+    state.runsCache[kind].set(key, value);
     return true;
   }
 
@@ -1029,79 +1022,6 @@
     status.hidden = !message;
   }
 
-  function identityDisplayState(payload) {
-    const agent = payload?.agent || {};
-    const identity = payload?.identity || {};
-    if (agent.name_status === 'default') return 'default';
-    if (!agent.name && !agent.name_status && !identity.name) return 'uninitialized';
-    return 'customized';
-  }
-
-  function renderIdentityLoading() {
-    const content = $('thinkingIdentityContent');
-    if (content) content.replaceChildren();
-    setThinkingStatus('thinkingIdentityStatus', 'loading identity…');
-  }
-
-  function renderIdentity(payload) {
-    const content = $('thinkingIdentityContent');
-    if (!content) return;
-    const agent = payload?.agent || {};
-    const identity = payload?.identity || {};
-    content.replaceChildren();
-    content.dataset.state = identityDisplayState(payload);
-    const details = document.createElement('dl');
-    details.className = 'thinking-runs-identity-details';
-    for (const [label, value] of [
-      ['name', agent.name || 'not set'],
-      ['naming status', agent.name_status || 'not set'],
-      ['you', identity.name || 'not set'],
-    ]) {
-      const term = document.createElement('dt');
-      term.textContent = label;
-      const description = document.createElement('dd');
-      description.textContent = value;
-      details.append(term, description);
-    }
-    content.appendChild(details);
-    setThinkingStatus('thinkingIdentityStatus', '');
-  }
-
-  function renderIdentityFailure(err) {
-    window.logError?.(err, {context: 'thinking identity load'});
-    const content = $('thinkingIdentityContent');
-    if (!content) return;
-    content.replaceChildren();
-    const detail = document.createElement('p');
-    detail.textContent = "identity details aren't available right now.";
-    const retry = document.createElement('button');
-    retry.type = 'button';
-    retry.className = 'thinking-runs-retry';
-    retry.textContent = 'try again';
-    retry.addEventListener('click', () => loadIdentity());
-    content.append(detail, retry);
-    setThinkingStatus('thinkingIdentityStatus', "couldn't load identity");
-  }
-
-  function loadIdentity() {
-    const key = thinkingCacheKey('identity');
-    const cached = readThinkingCache('identity', key);
-    if (cached) {
-      const token = beginThinkingRequest('identity');
-      if (isCurrentThinkingRequest(token)) renderIdentity(cached);
-      if (isCurrentThinkingRequest(token)) state.runsInFlight.identity = null;
-      return Promise.resolve();
-    }
-    renderIdentityLoading();
-    return loadThinkingRequest(
-      'identity',
-      key,
-      () => window.apiJson('/app/thinking/api/identity'),
-      renderIdentity,
-      renderIdentityFailure,
-    );
-  }
-
   function runContextFromRecord(route, record) {
     const day = record?.day;
     const talent = record?.name;
@@ -1116,7 +1036,6 @@
 
   function thinkingPanelHeading(tabId) {
     if (tabId === 'thinkingRunsTab') return $('thinkingRunsHeading');
-    if (tabId === 'thinkingIdentityTab') return $('thinkingIdentityHeading');
     return $('thinkingHeading');
   }
 
@@ -1151,9 +1070,7 @@
     document.querySelectorAll('[data-thinking-section]').forEach((panel) => {
       panel.hidden = panel.dataset.thinkingSection !== section;
     });
-    const tabId = section === 'runs' ? 'thinkingRunsTab' : 'thinkingIdentityTab';
-    activateThinkingSectionTab(tabId, origin);
-    if (section === 'identity') loadIdentity();
+    activateThinkingSectionTab('thinkingRunsTab', origin);
     if (section === 'runs') {
       if (route.kind === 'runs') loadThinkingRuns(route);
       if (route.useId) loadThinkingRun(route);
@@ -1163,7 +1080,7 @@
   function navigateThinkingSection(section, origin) {
     const hash = section === 'setup'
       ? '#main'
-      : (section === 'runs' ? state.runsLastHash || '#runs' : '#identity');
+      : (state.runsLastHash || '#runs');
     if (window.location.hash !== hash) window.history.pushState(null, '', hash);
     routeThinkingHash(origin);
   }
@@ -1185,10 +1102,6 @@
       return;
     }
     const route = parseThinkingHash();
-    if (route?.kind === 'identity') {
-      showThinkingSection('identity', route, origin);
-      return;
-    }
     if (route?.kind === 'runs-root') {
       const canonical = {kind: 'runs', day: todayThinkingDay(), talent: '', useId: '', key: ''};
       canonical.key = `runs:${canonical.day}::`;
@@ -1238,7 +1151,6 @@
     const thinkingSectionForTab = (tab) => ({
       thinkingSetupTab: 'setup',
       thinkingRunsTab: 'runs',
-      thinkingIdentityTab: 'identity',
     })[tab.id];
     bindThinkingTablist('thinkingSectionTabs', (tab, origin) => {
       navigateThinkingSection(thinkingSectionForTab(tab), origin);

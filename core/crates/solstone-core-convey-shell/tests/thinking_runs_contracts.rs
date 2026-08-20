@@ -46,14 +46,6 @@ fn authored_workspace_copy(source: &str) -> String {
         .expect("Runs panel ends")
         + runs_start
         + "    </section>".len();
-    let identity_start = source
-        .find("    <section class=\"thinking-runs-panel\" id=\"thinkingIdentityPanel\"")
-        .expect("Identity panel starts");
-    let identity_end = source[identity_start..]
-        .find("    </section>")
-        .expect("Identity panel ends")
-        + identity_start
-        + "    </section>".len();
     let modal_start = source
         .find("<div class=\"thinking-runs-modal\"")
         .expect("Runs modal starts");
@@ -63,11 +55,10 @@ fn authored_workspace_copy(source: &str) -> String {
         + modal_start
         + "</div>\n</div>".len();
     format!(
-        "{}{}{}{}{}",
+        "{}{}{}{}",
         &source[css_start..css_end],
         &source[header_start..header_end],
         &source[runs_start..runs_end],
-        &source[identity_start..identity_end],
         &source[modal_start..modal_end],
     )
 }
@@ -120,7 +111,6 @@ fn thinking_runs_tab_markup_has_roving_tabs_and_labelled_panels() {
         "aria-selected=\"true\"",
         "aria-labelledby=\"thinkingSetupTab\"",
         "aria-labelledby=\"thinkingRunsTab\"",
-        "aria-labelledby=\"thinkingIdentityTab\"",
         "id=\"thinkingRunsNoOutput\"",
         "this run doesn't have a saved output.",
     ] {

@@ -267,18 +267,6 @@ pub fn router(journal: Arc<JournalRoot>) -> Router {
             get(crate::thinking_sol_reads::api_updated_days),
         )
         .route(
-            "/app/thinking/api/identity",
-            get(crate::thinking_sol_reads::api_identity),
-        )
-        .route(
-            "/app/thinking/api/set-name",
-            post(crate::thinking_sol_writes::api_set_name),
-        )
-        .route(
-            "/app/thinking/api/reset",
-            post(crate::thinking_sol_writes::api_reset),
-        )
-        .route(
             "/app/thinking/api/set-owner",
             post(crate::thinking_sol_writes::api_set_owner),
         )
