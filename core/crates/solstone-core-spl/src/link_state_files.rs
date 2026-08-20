@@ -3,8 +3,10 @@
 
 //! Read-only access to the local SPL link identity and service-token files.
 //!
-//! The owning Python link modules provision these files. This module never
-//! creates, updates, or retains their contents after a failed read.
+//! Legacy link services provision state at `link/state.json`; native identity
+//! establishment publishes it atomically at `link/ca/state.json`. This module
+//! accepts either committed layout and never creates, updates, or retains their
+//! contents after a failed read.
 
 use std::{fs, io::ErrorKind, path::Path};
 
@@ -21,7 +23,7 @@ pub struct LinkState {
     pub locked_at: Option<i64>,
 }
 
-/// The result of loading `link/state.json` without mutating the journal.
+/// The result of loading committed link state without mutating the journal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LinkStateRead {
     /// A valid identity was read.
@@ -64,12 +66,38 @@ enum JsonRead {
     Malformed,
 }
 
-/// Reads `link/state.json` beneath a journal root without creating any path.
+/// Reads committed link state beneath a journal root without creating any path.
+///
+/// The legacy top-level path remains authoritative when present. The native
+/// bundle is consulted only when the legacy path is absent, so malformed or
+/// unreadable legacy state cannot be masked by a valid fallback.
 pub fn load_link_state(journal_root: &Path, default_label: &str) -> LinkStateRead {
-    let path = journal_root.join("link").join("state.json");
-    let raw = match read_json(&path) {
+    load_link_state_with(journal_root, default_label, read_json)
+}
+
+fn load_link_state_with(
+    journal_root: &Path,
+    default_label: &str,
+    mut read: impl FnMut(&Path) -> JsonRead,
+) -> LinkStateRead {
+    let link = journal_root.join("link");
+    let primary = link.join("state.json");
+    let raw = match read(&primary) {
         JsonRead::Value(raw) => raw,
-        JsonRead::Missing => return LinkStateRead::Missing,
+        JsonRead::Missing => {
+            let fallback = read(&link.join("ca").join("state.json"));
+            match read(&primary) {
+                JsonRead::Value(raw) => raw,
+                JsonRead::Missing => match fallback {
+                    JsonRead::Value(raw) => raw,
+                    JsonRead::Missing => return LinkStateRead::Missing,
+                    JsonRead::Unreadable => return LinkStateRead::Unreadable,
+                    JsonRead::Malformed => return LinkStateRead::Malformed,
+                },
+                JsonRead::Unreadable => return LinkStateRead::Unreadable,
+                JsonRead::Malformed => return LinkStateRead::Malformed,
+            }
+        }
         JsonRead::Unreadable => return LinkStateRead::Unreadable,
         JsonRead::Malformed => return LinkStateRead::Malformed,
     };
@@ -146,7 +174,14 @@ fn json_truthy(value: &Value) -> bool {
 fn read_json(path: &Path) -> JsonRead {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
-        Err(error) if error.kind() == ErrorKind::NotFound => return JsonRead::Missing,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return match fs::symlink_metadata(path) {
+                Err(metadata_error) if metadata_error.kind() == ErrorKind::NotFound => {
+                    JsonRead::Missing
+                }
+                Ok(_) | Err(_) => JsonRead::Unreadable,
+            };
+        }
         Err(_) => return JsonRead::Unreadable,
     };
 
@@ -165,7 +200,10 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use super::{LinkServiceTokenRead, LinkStateRead, load_link_service_token, load_link_state};
+    use super::{
+        JsonRead, LinkServiceTokenRead, LinkStateRead, load_link_service_token, load_link_state,
+        load_link_state_with, read_json,
+    };
 
     struct TempJournal {
         path: PathBuf,
@@ -231,6 +269,140 @@ mod tests {
             _ => return Err("valid state was not loaded".into()),
         }
         assert_eq!(fs::read(state_path)?, before);
+        Ok(())
+    }
+
+    #[test]
+    fn native_state_is_read_only_when_legacy_state_is_absent() -> Result<(), Box<dyn Error>> {
+        let journal = TempJournal::new()?;
+        let state =
+            r#"{"instance_id":"native-home","home_label":"Native Study","locked_at":1700000001}"#;
+        journal.write("link/ca/state.json", state)?;
+        let state_path = journal.path().join("link/ca/state.json");
+        let before = fs::read(&state_path)?;
+
+        let loaded = load_link_state(journal.path(), "solstone");
+
+        match loaded {
+            LinkStateRead::Present(value) => {
+                assert_eq!(value.instance_id, "native-home");
+                assert_eq!(value.home_label, "Native Study");
+                assert_eq!(value.locked_at, Some(1_700_000_001));
+            }
+            _ => return Err("valid native state was not loaded".into()),
+        }
+        assert_eq!(fs::read(state_path)?, before);
+        assert!(!journal.path().join("link/state.json").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_state_precedes_native_and_invalid_legacy_state_fails_closed()
+    -> Result<(), Box<dyn Error>> {
+        let journal = TempJournal::new()?;
+        journal.write(
+            "link/ca/state.json",
+            r#"{"instance_id":"native-home","home_label":"Native Study"}"#,
+        )?;
+        journal.write(
+            "link/state.json",
+            r#"{"instance_id":"legacy-home","home_label":"Legacy Study"}"#,
+        )?;
+
+        match load_link_state(journal.path(), "solstone") {
+            LinkStateRead::Present(value) => {
+                assert_eq!(value.instance_id, "legacy-home");
+                assert_eq!(value.home_label, "Legacy Study");
+            }
+            _ => return Err("valid legacy state was not loaded".into()),
+        }
+
+        journal.write("link/state.json", "not json")?;
+        assert!(matches!(
+            load_link_state(journal.path(), "solstone"),
+            LinkStateRead::Malformed
+        ));
+
+        fs::remove_file(journal.path().join("link/state.json"))?;
+        fs::create_dir_all(journal.path().join("link/state.json"))?;
+        assert!(matches!(
+            load_link_state(journal.path(), "solstone"),
+            LinkStateRead::Unreadable
+        ));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_legacy_state_symlink_does_not_enable_native_fallback() -> Result<(), Box<dyn Error>>
+    {
+        use std::os::unix::fs::symlink;
+
+        let journal = TempJournal::new()?;
+        journal.write(
+            "link/ca/state.json",
+            r#"{"instance_id":"native-home","home_label":"Native Study"}"#,
+        )?;
+        symlink("missing-state.json", journal.path().join("link/state.json"))?;
+
+        assert!(matches!(
+            load_link_state(journal.path(), "solstone"),
+            LinkStateRead::Unreadable
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_state_appearing_during_fallback_selection_takes_precedence() {
+        let journal_root = Path::new("/journal");
+        let primary = journal_root.join("link/state.json");
+        let fallback = journal_root.join("link/ca/state.json");
+        let legacy = serde_json::json!({
+            "instance_id": "legacy-home",
+            "home_label": "Legacy Study"
+        });
+        let native = serde_json::json!({
+            "instance_id": "native-home",
+            "home_label": "Native Study"
+        });
+        let mut primary_reads = 0;
+
+        let loaded = load_link_state_with(journal_root, "solstone", |path| {
+            if path == primary {
+                primary_reads += 1;
+                if primary_reads == 1 {
+                    JsonRead::Missing
+                } else {
+                    JsonRead::Value(legacy.clone())
+                }
+            } else if path == fallback {
+                JsonRead::Value(native.clone())
+            } else {
+                panic!("unexpected path: {}", path.display());
+            }
+        });
+
+        match loaded {
+            LinkStateRead::Present(value) => {
+                assert_eq!(value.instance_id, "legacy-home");
+                assert_eq!(value.home_label, "Legacy Study");
+            }
+            _ => panic!("legacy state did not take precedence"),
+        }
+        assert_eq!(primary_reads, 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_json_symlink_is_unreadable_not_missing() -> Result<(), Box<dyn Error>> {
+        use std::os::unix::fs::symlink;
+
+        let journal = TempJournal::new()?;
+        let path = journal.path().join("link/state.json");
+        fs::create_dir_all(path.parent().ok_or("state path has no parent")?)?;
+        symlink("missing-state.json", &path)?;
+
+        assert!(matches!(read_json(&path), JsonRead::Unreadable));
         Ok(())
     }
 
