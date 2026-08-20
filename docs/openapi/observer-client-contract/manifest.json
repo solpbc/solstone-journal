@@ -33,7 +33,7 @@
     },
     {
       "path": "fixtures/wire-behavior.json",
-      "sha256": "89c529bc4505c6850459489a684086cb6174d3851d30e8b2a6d23708e741717a"
+      "sha256": "65917fe91620f517d9988664e24b559722acbd6fb798bc518d1e092ef8f8771c"
     },
     {
       "path": "projection.openapi.json",

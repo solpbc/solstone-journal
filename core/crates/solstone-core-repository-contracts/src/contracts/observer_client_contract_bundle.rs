@@ -281,22 +281,41 @@ fn wire_behavior() -> Value {
     let fixtures = statuses
         .into_iter()
         .map(|(status, http_status)| {
+            let (payload, schema_validation) = match status {
+                "conflict" => (
+                    json!({
+                        "status": "conflict",
+                        "error": "Ingest request failed",
+                        "reason_code": "content_conflict",
+                        "detail": "held sidecar bytes conflict",
+                    }),
+                    json!({"valid": true}),
+                ),
+                "failed" => (
+                    json!({"status": "failed"}),
+                    json!({
+                        "valid": false,
+                        "note": "vocabulary-only status value; the full Error payload requires error, reason_code, and detail, and the authority enumerates no HTTP 500 reason code"
+                    }),
+                ),
+                _ => (json!({"status": status}), json!({"valid": true})),
+            };
             json!({
                 "id": format!("declared.observer.ingestUpload.status.{status}"),
                 "kind": "declared",
-                "payload": {"status": status},
+                "payload": payload,
                 "provenance": {
                     "http_status": http_status,
                     "vocabulary": "observer.ingestUpload.status",
                 },
-                "schema_validation": {"valid": true},
+                "schema_validation": schema_validation,
             })
         })
         .collect::<Vec<_>>();
     json!({"schema": "solstone.observer-client-contract-fixtures.v2", "fixtures": fixtures})
 }
 
-fn manifest(authority_bytes: &[u8], artifacts: &ArtifactMap) -> Value {
+fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &ArtifactMap) -> Value {
     let files = [
         "consumer-audit.json",
         "fixtures/wire-behavior.json",
@@ -326,7 +345,7 @@ fn manifest(authority_bytes: &[u8], artifacts: &ArtifactMap) -> Value {
         }],
         "observer_protocol_version": 3,
         "openapi_document_version": "1.0.0",
-        "openapi_spec_version": "3.1.0",
+        "openapi_spec_version": openapi_spec_version,
         "operation_ids": OPERATION_SPECS.map(|(_, _, id)| id),
         "projection_path": "projection.openapi.json",
         "schema_dialect_uri": "https://json-schema.org/draft/2020-12/schema",
@@ -341,6 +360,11 @@ fn manifest(authority_bytes: &[u8], artifacts: &ArtifactMap) -> Value {
 }
 
 fn generate_bundle(authority: &Value, authority_bytes: &[u8]) -> ArtifactMap {
+    let authority_root = object(authority, "authority document");
+    let openapi_spec_version = string(
+        member(authority_root, "openapi", "authority document"),
+        "openapi",
+    );
     let mut artifacts = ArtifactMap::new();
     artifacts.insert(
         "projection.openapi.json",
@@ -351,7 +375,7 @@ fn generate_bundle(authority: &Value, authority_bytes: &[u8]) -> ArtifactMap {
     artifacts.insert("consumer-audit.json", render_json(&consumer_audit()));
     artifacts.insert(
         "manifest.json",
-        render_json(&manifest(authority_bytes, &artifacts)),
+        render_json(&manifest(authority_bytes, openapi_spec_version, &artifacts)),
     );
     artifacts
 }

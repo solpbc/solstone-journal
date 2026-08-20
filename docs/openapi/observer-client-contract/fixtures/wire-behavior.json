@@ -46,6 +46,9 @@
       "id": "declared.observer.ingestUpload.status.conflict",
       "kind": "declared",
       "payload": {
+        "detail": "held sidecar bytes conflict",
+        "error": "Ingest request failed",
+        "reason_code": "content_conflict",
         "status": "conflict"
       },
       "provenance": {
@@ -67,7 +70,8 @@
         "vocabulary": "observer.ingestUpload.status"
       },
       "schema_validation": {
-        "valid": true
+        "note": "vocabulary-only status value; the full Error payload requires error, reason_code, and detail, and the authority enumerates no HTTP 500 reason code",
+        "valid": false
       }
     }
   ],
