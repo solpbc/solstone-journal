@@ -4263,6 +4263,7 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
+ "sha2",
  "solstone-core-journal",
  "syn 2.0.119",
  "tempfile",

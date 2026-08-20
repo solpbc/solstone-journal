@@ -1,430 +1,72 @@
 {
-  "schema": "solstone.observer-client-contract-vectors.v1",
-  "tmp_token": "$TMP",
+  "schema": "solstone.observer-client-contract-vectors.v2",
   "vectors": [
     {
       "decision": {
-        "action": "pass_through",
-        "frame_kind": "data",
-        "kind": "sse_frame",
-        "unknown_event_behavior": "preserve"
-      },
-      "fixture_id": "recorded.sse.root.data_unknown_event",
-      "frame_kind": "data",
-      "id": "callosum.rootEvents.sse.data_unknown_event",
-      "kind": "recorded",
-      "pointer_hashes": {
-        "/event": "53331ee8a3d89d5e956086b9c9ffaa709efef795a17c43bbc9666bb622947f8e",
-        "/tract": "7d75b7beeeecfafd1fdf1c465813c01f0c794acf8e1b60a65b74a8675ad64215"
-      },
-      "pointers": [
-        "/tract",
-        "/event"
-      ]
-    },
-    {
-      "decision": {
-        "action": "ignore_keepalive",
-        "frame_kind": "heartbeat",
-        "kind": "sse_frame"
-      },
-      "fixture_id": "recorded.sse.root.heartbeat",
-      "frame_kind": "heartbeat",
-      "id": "callosum.rootEvents.sse.heartbeat",
-      "kind": "recorded",
-      "pointer_hashes": {
-        "": "d9526400820634cc9e4cd9ecc2b579ed41723071a82af69f696eda332bc17a89"
-      },
-      "pointers": [
-        ""
-      ]
-    },
-    {
-      "decision": {
         "accepted": true,
-        "auth_form": "authorization_bearer",
-        "kind": "auth_header_form",
-        "precedence": "x_solstone_observer_preferred_when_both_present"
-      },
-      "fixture_id": "recorded.auth.bearer.segments",
-      "id": "observer.auth.bearer",
-      "kind": "recorded",
-      "observed_status": 200,
-      "pointer_hashes": {
-        "/items": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
-        "/protocol_version": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
-        "/total": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
-      },
-      "pointers": [
-        "/items",
-        "/total",
-        "/protocol_version"
-      ]
-    },
-    {
-      "decision": {
-        "accepted": true,
-        "auth_form": "x_solstone_observer",
-        "kind": "auth_header_form",
-        "precedence": "x_solstone_observer_preferred_when_both_present"
-      },
-      "fixture_id": "recorded.auth.handle.segments",
-      "id": "observer.auth.handle",
-      "kind": "recorded",
-      "observed_status": 200,
-      "pointer_hashes": {
-        "/items": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
-        "/protocol_version": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
-        "/total": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
-      },
-      "pointers": [
-        "/items",
-        "/total",
-        "/protocol_version"
-      ]
-    },
-    {
-      "decision": {
-        "action": "dispatch_callosum_event",
-        "frame_kind": "data",
-        "kind": "sse_frame",
-        "unknown_event_behavior": "preserve"
-      },
-      "fixture_id": "recorded.sse.observer.data",
-      "frame_kind": "data",
-      "id": "observer.callosumStream.sse.data",
-      "kind": "recorded",
-      "pointer_hashes": {
-        "/event": "bedca5f5c3450db9f398aa7a86904a16e6fa794bdb256baadca050d80d4e7534",
-        "/tract": "137c165f7fe3ec3dfb24fffbefea32ad3186836233e02ebe226870cc6c1bd470"
-      },
-      "pointers": [
-        "/tract",
-        "/event"
-      ]
-    },
-    {
-      "decision": {
-        "action": "surface_error_and_close",
-        "frame_kind": "error",
-        "kind": "sse_frame",
-        "reason_code": "pl_revoked"
-      },
-      "fixture_id": "recorded.sse.observer.error",
-      "frame_kind": "error",
-      "id": "observer.callosumStream.sse.error",
-      "kind": "recorded",
-      "pointer_hashes": {
-        "/reason_code": "dcc3c59606299c038b842d61569ff85c6b57b9da41032257dc4e57a016972018"
-      },
-      "pointers": [
-        "/reason_code"
-      ]
-    },
-    {
-      "decision": {
-        "action": "ignore_keepalive",
-        "frame_kind": "heartbeat",
-        "kind": "sse_frame"
-      },
-      "fixture_id": "recorded.sse.observer.heartbeat",
-      "frame_kind": "heartbeat",
-      "id": "observer.callosumStream.sse.heartbeat",
-      "kind": "recorded",
-      "pointer_hashes": {
-        "": "d9526400820634cc9e4cd9ecc2b579ed41723071a82af69f696eda332bc17a89"
-      },
-      "pointers": [
-        ""
-      ]
-    },
-    {
-      "decision": {
-        "holding_by_status": {
-          "missing": "not_held",
-          "present": "held",
-          "processed": "held"
-        },
-        "kind": "custody_status",
-        "unknown_status": "reject"
-      },
-      "fixture_id": "recorded.segments.custody_statuses",
-      "id": "observer.ingestSegments.custody_statuses",
-      "kind": "recorded",
-      "observed_status": 200,
-      "pointer_hashes": {
-        "/items/0/files/0/status": "16412508f5322b160fca89f86f8cd0f11d71deeb6dc114bd2fbfec57731d95e3",
-        "/items/0/files/1/status": "2781cbb6c3c0ce779a2e503364db12cb9f92bad3c740951e24e919e58b9e1186",
-        "/items/0/files/2/status": "87f7439876e4033adb5735dd9e8a4031ef2be2239574b1a83398efca11784151"
-      },
-      "pointers": [
-        "/items/0/files/0/status",
-        "/items/0/files/1/status",
-        "/items/0/files/2/status"
-      ]
-    },
-    {
-      "decision": {
-        "kind": "custody_unknown",
-        "status": "unknown",
-        "unknown_status": "reject"
-      },
-      "fixture_id": "declared.observer.ingestSegments.custody_unknown_rejected",
-      "id": "observer.ingestSegments.custody_unknown_rejected",
-      "kind": "declared",
-      "pointer_hashes": {
-        "/items/0/files/0/status": "53331ee8a3d89d5e956086b9c9ffaa709efef795a17c43bbc9666bb622947f8e"
-      },
-      "pointers": [
-        "/items/0/files/0/status"
-      ]
-    },
-    {
-      "decision": {
-        "expected": "total_equals_items_length",
-        "kind": "envelope_integrity",
-        "valid": false
-      },
-      "fixture_id": "declared.observer.ingestSegments.envelope_total_mismatch",
-      "id": "observer.ingestSegments.envelope_total_mismatch",
-      "kind": "declared",
-      "pointer_hashes": {
-        "/total": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
-      },
-      "pointers": [
-        "/total"
-      ]
-    },
-    {
-      "decision": {
-        "absent_or_unparseable_uses": 1,
-        "header": "absent",
-        "kind": "protocol_variant",
-        "parsed_version": 1,
-        "response_variant": "legacy_array"
-      },
-      "fixture_id": "recorded.segments.legacy.absent_header",
-      "id": "observer.ingestSegments.legacy_array.absent_header",
-      "kind": "recorded",
-      "observed_status": 200,
-      "pointer_hashes": {
-        "": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
-      },
-      "pointers": [
-        ""
-      ]
-    },
-    {
-      "decision": {
-        "absent_or_unparseable_uses": 1,
-        "header": "unparseable",
-        "kind": "protocol_variant",
-        "parsed_version": 1,
-        "response_variant": "legacy_array"
-      },
-      "fixture_id": "recorded.segments.legacy.unparseable_header",
-      "id": "observer.ingestSegments.legacy_array.unparseable_header",
-      "kind": "recorded",
-      "observed_status": 200,
-      "pointer_hashes": {
-        "": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
-      },
-      "pointers": [
-        ""
-      ]
-    },
-    {
-      "decision": {
-        "fallback": "name",
-        "kind": "submitted_name_fallback",
-        "submitted_name_present": false
-      },
-      "fixture_id": "recorded.segments.submitted_name_omitted",
-      "id": "observer.ingestSegments.submitted_name_fallback",
-      "kind": "recorded",
-      "observed_status": 200,
-      "pointer_hashes": {
-        "/items/0/files/0/name": "7773c30a843bf694ca3b00e7ba5ead99e6042ba78dadfe75431c0138f5b78287"
-      },
-      "pointers": [
-        "/items/0/files/0/name"
-      ]
-    },
-    {
-      "decision": {
-        "current_protocol_version": 2,
-        "header": "2",
-        "kind": "protocol_variant",
-        "parsed_version": 2,
-        "response_variant": "v2_envelope"
-      },
-      "fixture_id": "recorded.segments.v2.envelope",
-      "id": "observer.ingestSegments.v2_envelope",
-      "kind": "recorded",
-      "observed_status": 200,
-      "pointer_hashes": {
-        "/items": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
-        "/protocol_version": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
-        "/total": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
-      },
-      "pointers": [
-        "/items",
-        "/total",
-        "/protocol_version"
-      ]
-    },
-    {
-      "decision": {
-        "accepted": true,
-        "client_action": "adopt_remapped_segment",
         "http_status": 200,
         "kind": "ingest_status",
-        "original_key_source": "segment_original",
-        "status": "collision",
-        "stored_key_precedence": [
-          "segment",
-          "segment_original"
-        ],
-        "stored_key_source": "segment"
+        "status": "ok"
       },
-      "fixture_id": "recorded.ingestUpload.collision",
-      "id": "observer.ingestUpload.status.collision",
-      "kind": "recorded",
-      "observed_status": 200,
-      "pointer_hashes": {
-        "/segment": "fbd10688be6ee217abeacd21b42137e77be6a7445d4d7d30bf8c2e8b5f3453d9",
-        "/segment_original": "a7c937bcf529de76a07597c2f37951b1b775ae759c0446eb7335960f15c86a1b",
-        "/status": "130b3c5ac14097b6f596f0470a7a985e0582b8fca45e668fc0040590c306b305"
-      },
+      "fixture_id": "declared.observer.ingestUpload.status.ok",
+      "id": "observer.ingestUpload.status.ok",
+      "kind": "declared",
       "pointers": [
-        "/status",
-        "/segment",
-        "/segment_original"
+        "/status"
+      ]
+    },
+    {
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "ingest_status",
+        "status": "duplicate"
+      },
+      "fixture_id": "declared.observer.ingestUpload.status.duplicate",
+      "id": "observer.ingestUpload.status.duplicate",
+      "kind": "declared",
+      "pointers": [
+        "/status"
+      ]
+    },
+    {
+      "decision": {
+        "accepted": true,
+        "http_status": 200,
+        "kind": "ingest_status",
+        "status": "collision"
+      },
+      "fixture_id": "declared.observer.ingestUpload.status.collision",
+      "id": "observer.ingestUpload.status.collision",
+      "kind": "declared",
+      "pointers": [
+        "/status"
       ]
     },
     {
       "decision": {
         "accepted": false,
-        "client_action": "preserve_local_and_surface_conflict",
         "http_status": 409,
         "kind": "ingest_status",
-        "status": "conflict",
-        "stored_key_precedence": [
-          "existing_segment"
-        ],
-        "stored_key_source": "existing_segment"
+        "status": "conflict"
       },
-      "fixture_id": "recorded.ingestUpload.conflict",
+      "fixture_id": "declared.observer.ingestUpload.status.conflict",
       "id": "observer.ingestUpload.status.conflict",
-      "kind": "recorded",
-      "observed_status": 409,
-      "pointer_hashes": {
-        "/conflicting_files": "41e76925274ddd172048699de40403b63a622b77ae075614db1f0039ba91af0b",
-        "/existing_segment": "a7c937bcf529de76a07597c2f37951b1b775ae759c0446eb7335960f15c86a1b",
-        "/reason_code": "c9cf4aec1407ba979c729691832dc66ddbfcebc87b3dd0b030de3ff8b2f6500f",
-        "/status": "2ebfc71bdbe3659bffaa77f7dd86fad4bf90586c93ad995d676dc1e5d4165b0b"
-      },
+      "kind": "declared",
       "pointers": [
-        "/status",
-        "/reason_code",
-        "/conflicting_files",
-        "/existing_segment"
-      ]
-    },
-    {
-      "decision": {
-        "accepted": true,
-        "client_action": "adopt_existing_segment_without_reupload",
-        "http_status": 200,
-        "kind": "ingest_status",
-        "status": "duplicate",
-        "stored_key_precedence": [
-          "existing_segment"
-        ],
-        "stored_key_source": "existing_segment"
-      },
-      "fixture_id": "recorded.ingestUpload.duplicate",
-      "id": "observer.ingestUpload.status.duplicate",
-      "kind": "recorded",
-      "observed_status": 200,
-      "pointer_hashes": {
-        "/existing_segment": "a7c937bcf529de76a07597c2f37951b1b775ae759c0446eb7335960f15c86a1b",
-        "/message": "0e36bda88535e7cb2adc89ff06e730fbb87ac70f227a20a0bc279798060f2194",
-        "/status": "d949ce0c1c1a0ca6a9b37ca25e0fbd04bf25f9788767975e54ad48b8d36cc335"
-      },
-      "pointers": [
-        "/status",
-        "/existing_segment",
-        "/message"
+        "/status"
       ]
     },
     {
       "decision": {
         "accepted": false,
-        "client_action": "preserve_local_and_surface_failure",
-        "http_status": 422,
+        "http_status": 500,
         "kind": "ingest_status",
-        "status": "failed",
-        "stored_key_precedence": [],
-        "stored_key_source": null
+        "status": "failed"
       },
-      "fixture_id": "recorded.ingestUpload.failed",
+      "fixture_id": "declared.observer.ingestUpload.status.failed",
       "id": "observer.ingestUpload.status.failed",
-      "kind": "recorded",
-      "observed_status": 422,
-      "pointer_hashes": {
-        "/failed_path": "d876240f5ba88940fb6ff0ba0142ff98deac01464429e87783648aabbdda1078",
-        "/reason_code": "9ad60b11f8bc9e9f5f55d955b9e5a00be65d59b15fd9f93cc25ecd5950d5bb3f",
-        "/status": "e9c6c7eab63b97ace1ed584f168beaba80eb77c85e4aef9d014e7242bef77f8e"
-      },
-      "pointers": [
-        "/status",
-        "/reason_code",
-        "/failed_path"
-      ]
-    },
-    {
-      "decision": {
-        "accepted": true,
-        "client_action": "adopt_segment",
-        "http_status": 200,
-        "kind": "ingest_status",
-        "status": "ok",
-        "stored_key_precedence": [
-          "segment"
-        ],
-        "stored_key_source": "segment"
-      },
-      "fixture_id": "recorded.ingestUpload.ok",
-      "id": "observer.ingestUpload.status.ok",
-      "kind": "recorded",
-      "observed_status": 200,
-      "pointer_hashes": {
-        "/bytes": "aa67a169b0bba217aa0aa88a65346920c84c42447c36ba5f7ea65f422c1fe5d8",
-        "/files": "6959e999efaf728120be19b4161634a371611fe883b12033e02d97fd3f97641b",
-        "/segment": "a7c937bcf529de76a07597c2f37951b1b775ae759c0446eb7335960f15c86a1b",
-        "/status": "24a279376551117f31ed9d92797023d0f89b376a6392801c7d6626e4cb7877e5"
-      },
-      "pointers": [
-        "/status",
-        "/segment",
-        "/files",
-        "/bytes"
-      ]
-    },
-    {
-      "decision": {
-        "kind": "closed_vocabulary_unknown",
-        "status": "unknown",
-        "unknown_value_behavior": "reject",
-        "vocabulary": "observer.ingestUpload.status"
-      },
-      "fixture_id": "declared.observer.ingestUpload.status_unknown_rejected",
-      "id": "observer.ingestUpload.status_unknown_rejected",
       "kind": "declared",
-      "pointer_hashes": {
-        "/status": "53331ee8a3d89d5e956086b9c9ffaa709efef795a17c43bbc9666bb622947f8e"
-      },
       "pointers": [
         "/status"
       ]
