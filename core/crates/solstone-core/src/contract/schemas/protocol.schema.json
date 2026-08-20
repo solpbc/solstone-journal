@@ -4,7 +4,10 @@
   "title": "Observer ingest envelope",
   "type": "object",
   "additionalProperties": true,
-  "required": ["day", "segment", "stream", "observer", "files"],
+  "propertyNames": {
+    "not": { "enum": ["stream", "observer"] }
+  },
+  "required": ["day", "segment", "files"],
   "properties": {
     "day": {
       "type": "string",
@@ -16,10 +19,12 @@
       "pattern": "^\\d{6}_\\d+$",
       "description": "Device-local wall-clock capture window keyed HHMMSS_LEN: HHMMSS is the wall-clock start time on the observing device; LEN is the real captured whole-second media duration, stamped when the capture window finishes. LEN is bounded by the segment rotation ceiling (300 seconds standard) and, after crash recovery, never exceeds the real media duration. These bounds are descriptive; the envelope grammar does not enforce them."
     },
-    "stream": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
-    "observer": {"type": "string"},
-    "host": {"type": "string"},
-    "platform": {"type": "string"},
+    "source": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^([a-z0-9][a-z0-9_-]*)?$",
+      "description": "Optional device-chosen sub-stream discriminator; omitted or empty selects the primary capture. Not identity and authenticates nothing. At most 64 bytes; nonempty values match [a-z0-9][a-z0-9_-]* and must not contain NUL, '.', '/', or '\\'."
+    },
     "meta": {"type": "object", "additionalProperties": true},
     "files": {
       "type": "array",
@@ -27,30 +32,31 @@
       "items": {
         "type": "object",
         "additionalProperties": true,
-        "required": ["submitted", "written", "size", "sha256"],
+        "required": ["submitted"],
         "properties": {
-          "submitted": {"type": "string"},
-          "written": {"type": "string"},
-          "size": {"type": "integer", "minimum": 1},
-          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          "submitted": {"type": "string"}
         }
       }
     }
   },
   "x-journal-contract": {
     "format_id": "observer-ingest-envelope",
-    "schema_owner": "observe.protocol",
+    "schema_owner": "solstone-core-ingest",
     "reference_writer": "solstone-core-ingest",
     "allowed_producers": ["native observers", "solstone observe transfer"],
     "write_discipline": "multipart envelope validated before segment write",
     "file_kind": "ingest_envelope",
-    "key_fields": ["day", "segment", "stream", "observer", "files[].written", "files[].sha256"],
+    "key_fields": ["day", "segment", "source", "files[].submitted"],
     "key_semantics": {
       "timezone": "device-local wall-clock; not UTC-normalized",
       "day": "YYYYMMDD device-local calendar day at capture start",
       "segment": "HHMMSS_LEN; HHMMSS device-local wall-clock start",
-      "segment_len": "real captured whole-second media duration; stamped at capture finish; bounded by the segment rotation ceiling (300 seconds standard); crash-recovered LEN <= real media duration; descriptive only, not grammar-enforced"
+      "segment_len": "real captured whole-second media duration; stamped at capture finish; bounded by the segment rotation ceiling (300 seconds standard); crash-recovered LEN <= real media duration; descriptive only, not grammar-enforced",
+      "source": "optional device-chosen sub-stream discriminator, empty for the primary capture; not identity; authenticates nothing; selects within an already-authenticated device's own namespace",
+      "stream": "legacy envelope field; presence is refused",
+      "observer": "legacy envelope field; presence is refused"
     },
-    "producer_write_paths": ["POST /app/observer/ingest"]
+    "producer_write_paths": ["POST /app/devices/ingest"],
+    "protocol_version": 3
   }
 }

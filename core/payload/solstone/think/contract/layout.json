@@ -12,7 +12,7 @@
     {
       "stage": "upload-envelope",
       "producer_write_paths": [
-        "POST /app/observer/ingest multipart fields day, segment, stream/meta, files[]"
+        "POST /app/devices/ingest multipart fields day, segment, source/meta, files[]"
       ],
       "notes": "Native observers submit a normalized segment envelope plus files; the journal validates before writing."
     },

@@ -17,7 +17,7 @@
       {
         "notes": "Native observers submit a normalized segment envelope plus files; the journal validates before writing.",
         "producer_write_paths": [
-          "POST /app/observer/ingest multipart fields day, segment, stream/meta, files[]"
+          "POST /app/devices/ingest multipart fields day, segment, source/meta, files[]"
         ],
         "stage": "upload-envelope"
       },
@@ -362,60 +362,45 @@
             "items": {
               "additionalProperties": true,
               "properties": {
-                "sha256": {
-                  "pattern": "^[0-9a-f]{64}$",
-                  "type": "string"
-                },
-                "size": {
-                  "minimum": 1,
-                  "type": "integer"
-                },
                 "submitted": {
-                  "type": "string"
-                },
-                "written": {
                   "type": "string"
                 }
               },
               "required": [
-                "submitted",
-                "written",
-                "size",
-                "sha256"
+                "submitted"
               ],
               "type": "object"
             },
             "minItems": 1,
             "type": "array"
           },
-          "host": {
-            "type": "string"
-          },
           "meta": {
             "additionalProperties": true,
             "type": "object"
-          },
-          "observer": {
-            "type": "string"
-          },
-          "platform": {
-            "type": "string"
           },
           "segment": {
             "description": "Device-local wall-clock capture window keyed HHMMSS_LEN: HHMMSS is the wall-clock start time on the observing device; LEN is the real captured whole-second media duration, stamped when the capture window finishes. LEN is bounded by the segment rotation ceiling (300 seconds standard) and, after crash recovery, never exceeds the real media duration. These bounds are descriptive; the envelope grammar does not enforce them.",
             "pattern": "^\\d{6}_\\d+$",
             "type": "string"
           },
-          "stream": {
-            "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "source": {
+            "description": "Optional device-chosen sub-stream discriminator; omitted or empty selects the primary capture. Not identity and authenticates nothing. At most 64 bytes; nonempty values match [a-z0-9][a-z0-9_-]* and must not contain NUL, '.', '/', or '\\'.",
+            "maxLength": 64,
+            "pattern": "^([a-z0-9][a-z0-9_-]*)?$",
             "type": "string"
+          }
+        },
+        "propertyNames": {
+          "not": {
+            "enum": [
+              "stream",
+              "observer"
+            ]
           }
         },
         "required": [
           "day",
           "segment",
-          "stream",
-          "observer",
           "files"
         ],
         "title": "Observer ingest envelope",
@@ -430,22 +415,24 @@
           "key_fields": [
             "day",
             "segment",
-            "stream",
-            "observer",
-            "files[].written",
-            "files[].sha256"
+            "source",
+            "files[].submitted"
           ],
           "key_semantics": {
             "day": "YYYYMMDD device-local calendar day at capture start",
+            "observer": "legacy envelope field; presence is refused",
             "segment": "HHMMSS_LEN; HHMMSS device-local wall-clock start",
             "segment_len": "real captured whole-second media duration; stamped at capture finish; bounded by the segment rotation ceiling (300 seconds standard); crash-recovered LEN <= real media duration; descriptive only, not grammar-enforced",
+            "source": "optional device-chosen sub-stream discriminator, empty for the primary capture; not identity; authenticates nothing; selects within an already-authenticated device's own namespace",
+            "stream": "legacy envelope field; presence is refused",
             "timezone": "device-local wall-clock; not UTC-normalized"
           },
           "producer_write_paths": [
-            "POST /app/observer/ingest"
+            "POST /app/devices/ingest"
           ],
+          "protocol_version": 3,
           "reference_writer": "solstone-core-ingest",
-          "schema_owner": "observe.protocol",
+          "schema_owner": "solstone-core-ingest",
           "write_discipline": "multipart envelope validated before segment write"
         }
       },
