@@ -28,7 +28,7 @@
       "reads_stdin": false,
       "retired_spellings": ["sol call journal export"],
       "capabilities": [
-        "export the journal tree minus PORTABLE_DENY (restic-copied globs, *.key, and top-level config/, link/, tokens/, awareness/, apps/, backup/, solstone/, plus imports/archive-merge-work/)",
+        "export membership is the journal tree minus a named deny-list: no-slash patterns match a basename at any depth, and a trailing-slash entry prunes only that top-level tree",
         "an unsliced empty journal contains only _export.json; present included-root directories are emitted when they exist, with no placeholder four-root members",
         "when any of --day, --from, or --to is present, membership is exactly matching chronicle/<YYYYMMDD>/ trees plus _export.json; entities, facets, imports, extra roots, and days outside the window are absent",
         "a valid window with zero matching days writes a zip that contains _export.json only, exit 0, with day_count, entity_count, and facet_count all 0",
@@ -72,7 +72,7 @@
       "reads_stdin": false,
       "retired_spellings": ["journal merge", "sol call journal merge"],
       "capabilities": [
-        "SOURCE is a regular zip file; a directory SOURCE is unsafe input (exit 65) and names a zip or supported archive file",
+        "SOURCE is a regular zip file; a directory SOURCE is unsafe input (exit 65) and names a zip file; a missing SOURCE is unsafe input (exit 65) and names the path that does not exist",
         "no contains/disjointness check on the archive path, extract path, or working_root; a zip at target/imports/<ts>/file.zip merges",
         "merge applies chronicle, entities, facets, and imports only; extra zip members are skipped and logged in the decision log",
         "never overwrite an existing segment or import; destination-wins is recorded",
@@ -102,7 +102,7 @@
           "fixture": "merge_directory_source",
           "expected_exit": 65,
           "expected_stdout": "",
-          "expected_stderr_contains": "zip or supported archive file"
+          "expected_stderr_contains": "SOURCE must be a zip file"
         }
       ]
     },

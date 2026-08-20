@@ -723,13 +723,13 @@ fn archive_merge(args: &[OsString]) -> Outcome {
 fn regular_archive_file(source: &Path) -> Result<PathBuf, String> {
     let metadata = fs::symlink_metadata(source).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
-            "SOURCE must be a zip or supported archive file".to_owned()
+            format!("SOURCE does not exist: {}", source.display())
         } else {
             error.to_string()
         }
     })?;
     if !metadata.file_type().is_file() {
-        return Err("SOURCE must be a zip or supported archive file".to_owned());
+        return Err("SOURCE must be a zip file".to_owned());
     }
     fs::canonicalize(source).map_err(|error| error.to_string())
 }
@@ -1587,5 +1587,35 @@ fn failure(token: &str, message: &str, exit: u8) -> Outcome {
         stdout: String::new(),
         stderr: format!("journal {token}: {message}\n"),
         exit,
+    }
+}
+
+#[cfg(all(test, not(target_os = "ios")))]
+mod archive_merge_source_kind_tests {
+    use super::*;
+
+    #[test]
+    fn missing_source_names_the_absent_path() {
+        let path = PathBuf::from("/no/such/solstone-archive-source.zip");
+        let error = regular_archive_file(&path).unwrap_err();
+        assert!(error.contains("SOURCE does not exist"), "{error}");
+        assert!(error.contains("solstone-archive-source.zip"), "{error}");
+        assert!(!error.contains("must be a zip file"), "{error}");
+    }
+
+    #[test]
+    fn directory_source_names_a_zip_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "solstone-archive-merge-src-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let error = regular_archive_file(&dir).unwrap_err();
+        let _ = fs::remove_dir(&dir);
+        assert_eq!(error, "SOURCE must be a zip file");
     }
 }

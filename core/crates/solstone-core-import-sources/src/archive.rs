@@ -34,8 +34,12 @@ use zip::ZipArchive;
 
 use crate::{ArchiveSafetyPhase, ImportSourcesError};
 
-/// Top-level tree names that portable export prunes. Ingest planning warns when
-/// a zip still carries them; merge does not apply them.
+/// Trailing-slash authored tree prunes, copied from `PORTABLE_DENY` in
+/// `solstone-core-journal-archive/src/deny.rs` (the `config/` … `solstone/`
+/// entries, stored here without the slash).
+/// Intentionally independent of that list: import-sources must not depend on
+/// the export crate (capability-safe inventory + zip encode) just to warn when
+/// a zip still carries those trees. Do not pin the two together in a test.
 const AUTHORED_TOP_LEVEL_PRUNES: &[&str] = &[
     "config",
     "link",
@@ -467,6 +471,7 @@ fn validate_archive(
             maximum: options.max_archive_bytes,
         });
     }
+    refuse_non_zip_magic(path)?;
     let file = File::open(path).map_err(|error| ImportSourcesError::ArchiveInvalid {
         path: path.to_path_buf(),
         detail: error.to_string(),
@@ -1670,6 +1675,11 @@ fn publish_transaction(target: &Path, state: &mut MergeState) -> Result<(), Impo
         path: state.publish_undo.clone(),
         detail: error.to_string(),
     })?;
+    // Entity and facet locks were held for stage and dropped; re-acquire them
+    // here for publish. Holding them across staging would overlap the two
+    // locks (forbidden) because all four families stage before any publish.
+    // The archive-merge lock still excludes a concurrent merge for the whole
+    // operation. Do not "fix" this by holding both.
     let result: Result<(), ImportSourcesError> = (|| {
         publish_units(target, state, &units)?;
         {
@@ -1701,10 +1711,13 @@ fn publish_transaction(target: &Path, state: &mut MergeState) -> Result<(), Impo
         Ok(())
     })();
     if let Err(error) = result {
-        undo_publish(target, state);
-        return Err(ImportSourcesError::MergePublishFailed {
-            detail: error.to_string(),
-        });
+        let undo_failures = undo_publish(target, state);
+        let detail = if undo_failures.is_empty() {
+            error.to_string()
+        } else {
+            format!("{error}; undo incomplete: {}", undo_failures.join("; "))
+        };
+        return Err(ImportSourcesError::MergePublishFailed { detail });
     }
     Ok(())
 }
@@ -1895,30 +1908,41 @@ fn publish_pending_ambiguities(
     Ok(())
 }
 
-fn undo_publish(target: &Path, state: &mut MergeState) {
+fn undo_publish(target: &Path, state: &mut MergeState) -> Vec<String> {
+    #[cfg(test)]
+    maybe_drop_undo_preimages(state);
+    let mut failures = Vec::new();
     let mut undone = 0_usize;
     for record in state.published.iter().rev() {
         let destination = target.join(&record.relative);
         match record.kind {
             UndoKind::UnlinkNew => {
-                if destination.is_dir() {
-                    let _ = fs::remove_dir_all(&destination);
+                let result = if destination.is_dir() {
+                    fs::remove_dir_all(&destination)
                 } else {
-                    let _ = fs::remove_file(&destination);
+                    fs::remove_file(&destination)
+                };
+                if let Err(error) = result {
+                    failures.push(format!("unlink {}: {error}", record.relative));
                 }
                 remove_empty_parents(target, &record.relative);
             }
             UndoKind::Restore => {
                 let undo = state.publish_undo.join(&record.relative);
-                let _ = fs::rename(&undo, &destination);
+                if let Err(error) = fs::rename(&undo, &destination) {
+                    failures.push(format!("restore {}: {error}", record.relative));
+                }
             }
         }
         undone += 1;
         maybe_crash_undo(undone);
     }
-    if state.published_entity_json {
-        let _ = rewrite_identity_map_cache(target);
+    if state.published_entity_json
+        && let Err(error) = rewrite_identity_map_cache(target)
+    {
+        failures.push(format!("rewrite identity map: {error}"));
     }
+    failures
 }
 
 fn extra_files(path: &Path) -> Vec<PathBuf> {
@@ -1974,6 +1998,7 @@ thread_local! {
     static PUBLISH_CRASH_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
     static PUBLISH_FAIL_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
     static UNDO_CRASH_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    static UNDO_DROP_PREIMAGES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 #[cfg(test)]
@@ -1989,6 +2014,18 @@ pub fn inject_publish_fail_after(count: Option<usize>) {
 #[cfg(test)]
 pub fn inject_undo_crash_after(count: Option<usize>) {
     UNDO_CRASH_AFTER.with(|cell| cell.set(count));
+}
+
+#[cfg(test)]
+pub fn inject_undo_drop_preimages(drop: bool) {
+    UNDO_DROP_PREIMAGES.with(|cell| cell.set(drop));
+}
+
+#[cfg(test)]
+fn maybe_drop_undo_preimages(state: &MergeState) {
+    if UNDO_DROP_PREIMAGES.with(|cell| cell.replace(false)) {
+        let _ = fs::remove_dir_all(&state.publish_undo);
+    }
 }
 
 fn maybe_crash_publish(count: usize) {
@@ -2217,6 +2254,7 @@ mod tests {
             inject_publish_crash_after(None);
             inject_publish_fail_after(None);
             inject_undo_crash_after(None);
+            inject_undo_drop_preimages(false);
         }
     }
 
@@ -2338,6 +2376,38 @@ mod tests {
     }
 
     #[test]
+    fn merge_refuses_gzip_magic_with_the_same_wording_as_plan() {
+        let tree = PlanTree::new();
+        let gzip = tree.path.join("archive.tar.gz");
+        fs::write(&gzip, [0x1f, 0x8b, 0x08, 0x00]).unwrap();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let options = ArchiveMergeOptions {
+            working_root: tree.path.join("work"),
+            ..ArchiveMergeOptions::default()
+        };
+        let planned = plan_journal_archive(&gzip).unwrap_err();
+        let applied = merge_journal_archive(&gzip, &target, &options, None).unwrap_err();
+        match (&planned, &applied) {
+            (
+                ImportSourcesError::ArchiveInvalid {
+                    detail: plan_detail,
+                    ..
+                },
+                ImportSourcesError::ArchiveInvalid {
+                    detail: apply_detail,
+                    ..
+                },
+            ) => {
+                assert_eq!(plan_detail, "unrecognized archive magic");
+                assert_eq!(apply_detail, plan_detail);
+            }
+            other => panic!("unexpected errors: {other:?}"),
+        }
+        assert!(collect_tree(&target).is_empty());
+    }
+
+    #[test]
     fn crash_mid_publish_leaves_undo_and_does_not_auto_resume() {
         let _reset = FaultReset;
         let tree = PlanTree::new();
@@ -2422,6 +2492,46 @@ mod tests {
             Some(first_run)
         );
         assert!(first_undo.is_dir());
+    }
+
+    #[test]
+    fn failed_undo_is_carried_in_merge_publish_failed_detail() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        fs::create_dir_all(tree.path.join("target/entities/person")).unwrap();
+        fs::write(
+            tree.path.join("target/entities/person/entity.json"),
+            br#"{"id":"person","name":"Person","type":"Person"}"#,
+        )
+        .unwrap();
+        let archive = write_zip(
+            &tree.path,
+            &[(
+                "entities/person/entity.json",
+                br#"{"id":"person","name":"Person","type":"Person","aka":["Alias"]}"#,
+            )],
+        );
+        let target = tree.path.join("target");
+        let options = ArchiveMergeOptions {
+            working_root: tree.path.join("work"),
+            ..ArchiveMergeOptions::default()
+        };
+        inject_publish_fail_after(Some(1));
+        inject_undo_drop_preimages(true);
+        let error = merge_journal_archive(&archive, &target, &options, None).unwrap_err();
+        match error {
+            ImportSourcesError::MergePublishFailed { detail } => {
+                assert!(
+                    detail.contains("undo incomplete"),
+                    "expected nested undo failures in {detail}"
+                );
+                assert!(
+                    detail.contains("restore entities/person/entity.json"),
+                    "{detail}"
+                );
+            }
+            other => panic!("expected MergePublishFailed, got {other:?}"),
+        }
     }
 
     fn find_named(root: &Path, name: &str) -> Option<PathBuf> {
