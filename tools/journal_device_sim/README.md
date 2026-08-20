@@ -159,7 +159,8 @@ handler's boundary tests: see
 [`legacy_fields_and_protocol_versions_are_refused`](../../core/crates/solstone-core-ingest/src/router.rs)
 and
 [`protocol_validation_distinguishes_every_version_refusal`](../../core/crates/solstone-core-ingest/src/validation.rs).
-The native bridge supplies the protocol header named by
-[`bridge_names`](../../core/crates/solstone-core-sol-link/src/serve.rs), so varying
-that header in the simulator would bypass the maintained transport boundary this
-tool exercises.
+The simulator supplies `X-Solstone-Protocol-Version: 3`, and the native bridge
+forwards it unchanged. That seam is covered by
+[`proxy_headers_forwards_caller_headers_unchanged`](../../core/crates/solstone-core-sol-link/src/serve.rs)
+and
+[`v3_multipart_ingest_request_reaches_carrier_unchanged`](../../core/crates/solstone-core-sol-link/tests/sol_link_serving.rs).
