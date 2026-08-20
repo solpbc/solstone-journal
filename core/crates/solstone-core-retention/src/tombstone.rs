@@ -110,6 +110,7 @@ pub struct TombstoneBody {
 #[derive(Serialize)]
 struct Written<'a> {
     deleted_at: &'a str,
+    #[serde(rename = "cid")]
     did: &'a str,
     reason: RemovalReason,
     manifest: &'a [String],

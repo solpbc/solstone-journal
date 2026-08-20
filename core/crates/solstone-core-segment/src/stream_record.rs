@@ -31,7 +31,12 @@ pub struct StreamRecord {
     pub last_day: Option<String>,
     pub last_segment: Option<String>,
     pub seq: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "cid",
+        alias = "did",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub did: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
@@ -764,7 +769,7 @@ mod tests {
     use std::fs;
     use std::thread;
 
-    use serde_json::Value;
+    use serde_json::{Value, json};
     use solstone_core_journal_io::{hold_lock, write_json};
 
     use crate::test_support::TempDir;
@@ -1047,7 +1052,7 @@ mod tests {
         let bytes =
             serde_json::to_vec(&record("workstation", Some(DID_A), Some("camera"), 1, 7)).unwrap();
         let value: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(value["did"], DID_A);
+        assert_eq!(value["cid"], DID_A);
         assert_eq!(value["source"], "camera");
     }
 
@@ -1660,6 +1665,47 @@ mod tests {
             fs::read(stream_record_path(temporary.path(), "desk")).unwrap(),
             before
         );
+        assert!(!stream_record_path(temporary.path(), "desk_2").exists());
+    }
+
+    #[test]
+    fn bind_named_stream_refuses_foreign_legacy_did_key_without_writing() {
+        let temporary = TempDir::new();
+        let path = stream_record_path(temporary.path(), "desk");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({
+                "name": "desk",
+                "kind": "observer",
+                "host": null,
+                "platform": null,
+                "created_at": 9,
+                "last_day": null,
+                "last_segment": null,
+                "seq": 3,
+                "did": DID_B,
+                "source": "",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let before = fs::read(&path).unwrap();
+        let error = bind_named_stream(
+            temporary.path(),
+            "20260804",
+            "120000_60",
+            "desk",
+            DID_A,
+            "",
+            &hints(),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            SegmentError::StreamBindingConflict { name } if name == "desk"
+        ));
+        assert_eq!(fs::read(&path).unwrap(), before);
         assert!(!stream_record_path(temporary.path(), "desk_2").exists());
     }
 

@@ -50,6 +50,19 @@ fn holds_tombstone(entries: &[DirEntry]) -> bool {
     })
 }
 
+fn device_json_fingerprint(value: &Value) -> Option<&str> {
+    value
+        .get("cid")
+        .and_then(Value::as_str)
+        .filter(|fingerprint| !fingerprint.is_empty())
+        .or_else(|| {
+            value
+                .get("did")
+                .and_then(Value::as_str)
+                .filter(|fingerprint| !fingerprint.is_empty())
+        })
+}
+
 fn segment_did(path: &Path) -> String {
     let Ok(bytes) = fs::read(path.join("device.json")) else {
         return "unknown".to_owned();
@@ -57,10 +70,7 @@ fn segment_did(path: &Path) -> String {
     let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
         return "unknown".to_owned();
     };
-    value
-        .get("did")
-        .and_then(Value::as_str)
-        .filter(|did| !did.is_empty())
+    device_json_fingerprint(&value)
         .map(str::to_owned)
         .unwrap_or_else(|| "unknown".to_owned())
 }

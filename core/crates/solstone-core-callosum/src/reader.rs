@@ -276,4 +276,23 @@ mod tests {
         assert_eq!(report.unrecognized, 1);
         let _ = fs::remove_dir_all(segment);
     }
+
+    #[test]
+    fn legacy_did_key_is_accepted_as_device_ingest() {
+        let segment = segment_path("legacy-did");
+        let event = device_event(json!({}));
+        write_events(&segment, format!("{event}\n").as_bytes());
+
+        let report = read_device_ingest_events(&segment).unwrap();
+        assert_eq!(report.records.len(), 1);
+        assert_eq!(
+            report.records[0].did,
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert!(report.records[0].extra.get("did").is_none());
+        assert_eq!(report.unparseable, 0);
+        assert_eq!(report.unrecognized, 0);
+        assert_eq!(report.wrong_family, 0);
+        let _ = fs::remove_dir_all(segment);
+    }
 }

@@ -1254,7 +1254,7 @@ mod tests {
             fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
                 .unwrap();
         let event: Value = serde_json::from_str(&events).unwrap();
-        assert_eq!(event["did"], DID_A);
+        assert_eq!(event["cid"], DID_A);
         assert_eq!(event["meta"]["did"], DID_B);
     }
 
@@ -2222,7 +2222,7 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        assert_eq!(event["did"], DID_A);
+        assert_eq!(event["cid"], DID_A);
         let (_, read_body) = call(
             &app,
             "GET",
@@ -2495,7 +2495,7 @@ mod tests {
         assert_eq!(record["seq"], SEEDED_SEQ + 1);
         assert_eq!(record["last_day"], "20260804");
         assert_eq!(record["last_segment"], body["segment"]);
-        assert_eq!(record["did"], DID_A);
+        assert_eq!(record["cid"], DID_A);
         assert_eq!(record["source"], "");
         let landed = body["segment"].as_str().unwrap();
         let marker: Value = serde_json::from_str(
@@ -2540,7 +2540,7 @@ mod tests {
         assert!(!root.join("streams/device.json").exists());
         let record = stream_record(&root, "desk");
         assert_eq!(record["seq"], SEEDED_SEQ + 1);
-        assert_eq!(record["did"], DID_A);
+        assert_eq!(record["cid"], DID_A);
     }
 
     #[tokio::test]

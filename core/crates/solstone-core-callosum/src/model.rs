@@ -33,6 +33,7 @@ pub struct DeviceIngestEvent {
     pub record_version: u8,
     pub outcome: String,
     pub protocol_version: u8,
+    #[serde(rename = "cid", alias = "did")]
     pub did: String,
     pub source: String,
     pub stream: String,

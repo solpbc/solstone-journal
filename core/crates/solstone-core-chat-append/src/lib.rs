@@ -980,6 +980,7 @@ mod tests {
         let first_marker = fs::read(&marker).expect("stream marker");
         let value: Value = serde_json::from_slice(&first_state).expect("stream json");
         assert_eq!(value["kind"], "chat");
+        assert!(value.get("cid").is_none());
         assert!(value.get("did").is_none());
         assert!(value.get("source").is_none());
         append_chat_event_at(

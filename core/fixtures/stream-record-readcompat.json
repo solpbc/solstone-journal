@@ -29,6 +29,17 @@
       "platform": "linux",
       "seq": 3,
       "type": "observer"
+    },
+    "iphone.json": {
+      "created_at": 1785891124,
+      "did": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "host": "iphone.local",
+      "last_day": "20260804",
+      "last_segment": "090000_60",
+      "name": "iphone",
+      "platform": "ios",
+      "seq": 2,
+      "type": "observer"
     }
   },
   "x-journal-contract": {

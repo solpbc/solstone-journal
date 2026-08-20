@@ -559,6 +559,7 @@ struct RebuiltStreamState<'a> {
     last_day: &'a str,
     last_segment: &'a str,
     seq: u64,
+    #[serde(rename = "cid")]
     did: Value,
     source: Value,
 }
@@ -583,6 +584,14 @@ fn decide_action(entry: &BackfillEntry) -> BackfillAction {
     } else {
         BackfillAction::FixLinkage
     }
+}
+
+fn existing_fingerprint(existing: &Map<String, Value>) -> Value {
+    existing
+        .get("cid")
+        .or_else(|| existing.get("did"))
+        .cloned()
+        .unwrap_or(Value::Null)
 }
 
 fn rebuild_stream_state(
@@ -627,7 +636,7 @@ fn rebuild_stream_state(
             last_day: &last.day,
             last_segment: &last.segment,
             seq: last.seq,
-            did: existing.get("did").cloned().unwrap_or(Value::Null),
+            did: existing_fingerprint(&existing),
             source: existing.get("source").cloned().unwrap_or(Value::Null),
         },
     )?;
@@ -1524,13 +1533,13 @@ mod backfill_tests {
             record(root, "desk"),
             json!({"name": "desk", "type": "observer", "host": "desk", "platform": null,
                 "created_at": 0, "last_day": "20260402", "last_segment": "080000_60", "seq": 3,
-                "did": null, "source": null})
+                "cid": null, "source": null})
         );
         assert_eq!(
             record(root, "import.apple"),
             json!({"name": "import.apple", "type": "import", "host": null, "platform": null,
                 "created_at": 0, "last_day": "20260401", "last_segment": "093000_60", "seq": 1,
-                "did": null, "source": null})
+                "cid": null, "source": null})
         );
     }
 
@@ -1631,17 +1640,17 @@ mod backfill_tests {
             record(root, "desk"),
             json!({"name": "desk", "type": "capture", "host": "elsewhere",
                 "platform": "linux", "created_at": 7, "last_day": "20260401",
-                "last_segment": "100000_60", "seq": 1, "did": "did:plc:desk",
+                "last_segment": "100000_60", "seq": 1, "cid": "did:plc:desk",
                 "source": "iphone"})
         );
         // A `.tmux` name is always an observer, and an explicit null host is a
-        // recorded value rather than a missing one. Missing did/source become
+        // recorded value rather than a missing one. Missing cid/source become
         // null, matching host/platform — they must not disappear.
         assert_eq!(
             record(root, "desk.tmux"),
             json!({"name": "desk.tmux", "type": "observer", "host": null, "platform": null,
                 "created_at": 0, "last_day": "20260401", "last_segment": "090000_60", "seq": 1,
-                "did": null, "source": null})
+                "cid": null, "source": null})
         );
     }
 

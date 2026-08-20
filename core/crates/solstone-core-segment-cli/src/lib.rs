@@ -574,6 +574,7 @@ mod tests {
             serde_json::to_string(&json!({
                 "name": stream, "kind": "capture", "host": "desk", "platform": "linux",
                 "created_at": 7, "last_day": day, "last_segment": key, "seq": seq,
+                // Tail repair never rewrites identity keys; a legacy "did" stays "did".
                 "did": "device-1", "source": "microphone", "unknown": {"kept": true}
             }))
             .unwrap(),
@@ -1104,6 +1105,7 @@ mod tests {
         assert_eq!(patched["prev_segment"], "090000_60");
         assert_eq!(patched["unknown"], "kept");
         let repaired: Value = serde_json::from_str(&fs::read_to_string(state).unwrap()).unwrap();
+        // Tail repair patches last_day/last_segment/seq in place; "did" is preserved verbatim.
         for key in [
             "did",
             "source",

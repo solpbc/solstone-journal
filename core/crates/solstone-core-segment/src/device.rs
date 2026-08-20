@@ -140,6 +140,7 @@ fn validate_device_jid_value(jid: Option<&Value>) -> Result<Option<&str>, Segmen
 
 #[derive(Serialize)]
 struct DeviceDocument<'a> {
+    #[serde(rename = "cid")]
     did: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     jid: Option<&'a str>,
@@ -221,7 +222,7 @@ mod tests {
                 })
         );
         let parsed: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(parsed["did"], DID);
+        assert_eq!(parsed["cid"], DID);
     }
 
     #[test]

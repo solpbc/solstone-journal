@@ -51,7 +51,7 @@ fn python_stream_record_fixture_loads_and_advances_monotonically() {
         .values()
         .map(|value| serde_json::from_value(value.clone()).unwrap())
         .collect();
-    assert_eq!(parsed.len(), 3);
+    assert_eq!(parsed.len(), 4);
     let import_apple = parsed
         .iter()
         .find(|record| record.name == "import.apple")
@@ -84,8 +84,30 @@ fn python_stream_record_fixture_loads_and_advances_monotonically() {
     assert!(
         parsed
             .iter()
+            .filter(|record| record.name != "iphone")
             .all(|record| record.did.is_none() && record.source.is_none())
     );
+
+    let iphone = parsed
+        .iter()
+        .find(|record| record.name == "iphone")
+        .unwrap();
+    assert_eq!(iphone.kind, "observer");
+    assert_eq!(iphone.host.as_deref(), Some("iphone.local"));
+    assert_eq!(iphone.platform.as_deref(), Some("ios"));
+    assert_eq!(iphone.created_at, 1_785_891_124);
+    assert_eq!(iphone.seq, 2);
+    assert_eq!(
+        iphone.did.as_deref(),
+        Some("sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+    );
+    assert!(iphone.source.is_none());
+    let emitted = serde_json::to_value(iphone).unwrap();
+    assert_eq!(
+        emitted["cid"],
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    );
+    assert!(emitted.get("did").is_none());
 
     let temporary = TempDir::new();
     let first = resolve_stream(
