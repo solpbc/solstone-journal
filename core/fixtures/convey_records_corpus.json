@@ -5532,7 +5532,7 @@
   "rev": "2c486f43cdb903aaab24e2b4b89b37cb9acdfbfe",
   "schema": "solstone-convey-records-corpus-v1",
   "seeder_manifest": {
-    "agent_name_present": true,
+    "record_agent_producer_present": true,
     "api_read_agents_source_present": true,
     "api_read_percepts_source_present": true,
     "api_read_source_family_count": 3,

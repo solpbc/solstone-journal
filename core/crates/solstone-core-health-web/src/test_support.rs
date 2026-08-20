@@ -27,7 +27,7 @@ pub fn phase_root(phase: &str) -> tempfile::TempDir {
 }
 
 fn config(root: &Path, disabled_chat: bool) {
-    let mut value = json!({"setup":{"completed_at":1700000000000_i64},"agent":{"name":"Corpus Agent","name_status":"named"},"identity":{"name":"Corpus Owner","timezone":"UTC"}});
+    let mut value = json!({"setup":{"completed_at":1700000000000_i64},"identity":{"name":"Corpus Owner","timezone":"UTC"}});
     if disabled_chat {
         value["talent_overrides"] = json!({"chat":{"disabled":true}});
     }
