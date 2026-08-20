@@ -375,10 +375,16 @@ First-run journal establishment. **Creates the identity root** that `S:device-li
 
 ⚠ **Owner assigned 2026-08-19, alongside adopting `P-peer-exchange` as a plate covering `transfer` and `export`.** The **archive manifest v1** — the durable format `transfer export` writes and `transfer import` reads: segments, sha256 + size per file. Cross-instance — the far end may be running a different journal version — which is the one-to-many shape rule 1 puts the contract at the receiving end for.
 
+✅ **Published 2026-08-19** — `schema/archive-manifest.v1.schema.json` in `solstone-core-transfer`, JSON Schema draft 2020-12 with an `x-journal-contract` block and hand-verified examples validated by a committed test. Publishes the contract only; no runtime validation is wired into `transfer export`/`transfer import`.
+
 ### `S:device-link:peer-exchange`
 **Connects** `P-device-link` → `P-peer-exchange` · **Owner** `P-peer-exchange` · **Tier** schema
 
-⚠ **Owner assigned 2026-08-19, alongside adopting `P-peer-exchange` as a plate.** The **peer-ingest HTTP surface**, `/app/import/journal/{prefix}/…` — nine operations across five areas. Rides the paired-peer transport `S:device-link:journal` already authenticates.
+⚠ **Owner assigned 2026-08-19, alongside adopting `P-peer-exchange` as a plate.** The **peer-ingest HTTP surface**, `/app/import/journal/{prefix}/…` — six operations across five areas (`config` · `entities` · `facets` · `imports` · `segments`, each a POST, plus one GET `manifest/{area}`). Rides the paired-peer transport `S:device-link:journal` already authenticates.
+
+🔴 **CORRECTED 2026-08-19 — this entry originally said "nine operations."** That figure was inherited unverified from a lane workspace and appears to have been conflated with `P-device-ingest`'s separately-cited *9 published operations* — a different plate. Re-counted directly against `solstone-core-import-web/src/lib.rs`'s route table (6 routes under this prefix) and cross-checked against the published contract below.
+
+✅ **Published 2026-08-19** — `schema/peer-ingest.v1.schema.json` in `solstone-core-import-web`, JSON Schema draft 2020-12, one subschema per operation, with an `x-journal-contract` block and hand-verified examples validated by a committed test. Publishes the contract only; no runtime validation is wired into the HTTP path.
 
 ---
 
