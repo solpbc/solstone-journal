@@ -32,6 +32,7 @@ use solstone_core_journal_io::{
 };
 use solstone_core_transfer_manifest::{
     ExpectedMember, MANIFEST_NAME, TransferManifest, expected_members, parse_manifest,
+    validate_expected_members,
 };
 use tar::{Archive, EntryType};
 use zip::ZipArchive;
@@ -818,6 +819,7 @@ fn validate_v1_gzip_tar(
         .map_err(|_| invalid_v1_gzip(path))?;
     let manifest = read_v1_manifest(first, path)?;
     let expected = expected_members(&manifest).map_err(|error| invalid_v1_manifest(path, error))?;
+    validate_expected_members(&expected).map_err(|error| invalid_v1_manifest(path, error))?;
     let declared = declared_v1_size(&manifest, path)?;
     if declared > max_uncompressed_bytes {
         return Err(ImportSourcesError::ArchiveUncompressedTooLarge {

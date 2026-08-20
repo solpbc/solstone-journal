@@ -56,7 +56,7 @@ pub struct ManifestFile {
     pub size: u64,
 }
 
-/// Validated stream and segment-key route.
+/// Parsed stream and segment-key route.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SegmentRoute {
     pub stream: String,
@@ -76,8 +76,6 @@ impl SegmentRoute {
                 "segment key {value:?} contains an empty component"
             )));
         }
-        validate_route_component(stream)?;
-        validate_segment_key(key)?;
         Ok(Self {
             stream: stream.to_owned(),
             key: key.to_owned(),
@@ -96,7 +94,7 @@ pub struct ExpectedMember {
     pub file: ManifestFile,
 }
 
-/// Decode JSON and validate every v1 control-data field before any path use.
+/// Decode JSON and validate v1 structure and integrity fields before path use.
 pub fn parse_manifest(bytes: &[u8]) -> Result<TransferManifest, ManifestError> {
     let manifest: TransferManifest =
         serde_json::from_slice(bytes).map_err(|error| ManifestError::Invalid(error.to_string()))?;
@@ -119,7 +117,6 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<TransferManifest, ManifestError> {
                     route.archive_key()
                 )));
             }
-            validate_relative_file_name(&file.name)?;
             validate_sha256(&file.sha256)?;
         }
     }
@@ -153,6 +150,23 @@ pub fn expected_members(
         }
     }
     Ok(expected)
+}
+
+/// Validate the route and file-name fields for already expected members.
+///
+/// Callers that materialize below a journal root can perform their target
+/// containment checks before this validation so their established path errors
+/// remain authoritative. Callers without a destination root validate these
+/// fields directly before planning or materializing.
+pub fn validate_expected_members(
+    expected: &BTreeMap<String, ExpectedMember>,
+) -> Result<(), ManifestError> {
+    for member in expected.values() {
+        validate_route_component(&member.route.stream)?;
+        validate_segment_key(&member.route.key)?;
+        validate_relative_file_name(&member.file.name)?;
+    }
+    Ok(())
 }
 
 pub fn is_day(value: &str) -> bool {
@@ -238,6 +252,7 @@ mod tests {
         let manifest = br#"{"version":1,"day":"20260203","segments":{"audio/120000_30":{"files":[{"name":"stream.json","sha256":"dca83e717b1f64eb141057a7415a330ad1361f51703efa2e4776f40047898a04","size":6}]}}}"#;
         let parsed = parse_manifest(manifest).unwrap();
         let members = expected_members(&parsed).unwrap();
+        validate_expected_members(&members).unwrap();
         assert_eq!(members.len(), 1);
         assert!(members.contains_key("audio/120000_30/stream.json"));
     }

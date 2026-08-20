@@ -18,7 +18,8 @@ use solstone_core_journal_io::{
     publish_staged_dir,
 };
 use solstone_core_transfer_manifest::{
-    ExpectedMember, MANIFEST_NAME, SegmentRoute, TransferManifest, expected_members, parse_manifest,
+    ExpectedMember, MANIFEST_NAME, SegmentRoute, TransferManifest, expected_members,
+    parse_manifest, validate_expected_members,
 };
 use tar::{Archive, EntryType};
 use tempfile::TempDir;
@@ -81,6 +82,7 @@ pub fn import(journal: &Path, request: ImportRequest) -> Result<ImportReport, Im
             .map_err(TransferError::from)?;
         contained_path(&segment_directory, &member.file.name).map_err(TransferError::from)?;
     }
+    validate_expected_members(&expected).map_err(map_manifest_error)?;
     let scratch = TempDir::new().map_err(TransferError::from)?;
     let buffered = buffer_members(entries, &expected, scratch.path())?;
     let plans = plan_segments(&manifest, &day_directory, &expected, &buffered)?;
