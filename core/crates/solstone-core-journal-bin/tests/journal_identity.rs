@@ -17,7 +17,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const LOCAL_OPS_JSON: &str = include_str!("../../../fixtures/journal-cli/local-ops-v1.json");
-const LOCAL_OPS_SHA256: &str = "e95144e8e7320a18f5dd731e3d9a125022ead77da3d2be97377c988a07aef53c";
+const LOCAL_OPS_SHA256: &str = "8f6d2ddaf44118f1b591b8dca817fa4ee3b1e806f04fee3124cb4820b1dd7180";
 const CLI_BOUNDARY_JSON: &str = include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
 
 struct TempDir {
@@ -1060,6 +1060,6 @@ fn archive_merge_directory_source_is_unsafe() {
     );
     assert_eq!(merge.status.code(), Some(65));
     let stderr = String::from_utf8_lossy(&merge.stderr);
-    assert!(stderr.contains("SOURCE must be a zip file"), "{stderr}");
+    assert!(stderr.contains("SOURCE must be a regular file"), "{stderr}");
     assert_sentinel_untouched(&sentinel);
 }

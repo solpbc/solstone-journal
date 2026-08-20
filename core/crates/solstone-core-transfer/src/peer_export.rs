@@ -13,10 +13,10 @@ use sha2::{Digest, Sha256};
 use solstone_core_entity::load_all_journal_entities;
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_io::{PathOrDay, iter_segments};
+use solstone_core_transfer_manifest::{ManifestFile, SegmentManifest};
 
 use crate::TransferError;
 use crate::export::hash_file;
-use crate::manifest::{ManifestFile, SegmentManifest};
 use crate::peer::resolve_peer;
 use crate::peer::{
     MultipartFile, PeerHttpResponse, PeerLoopbackClient, multipart_body, with_peer_bridge,

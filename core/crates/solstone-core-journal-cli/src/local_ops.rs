@@ -729,7 +729,7 @@ fn regular_archive_file(source: &Path) -> Result<PathBuf, String> {
         }
     })?;
     if !metadata.file_type().is_file() {
-        return Err("SOURCE must be a zip file".to_owned());
+        return Err("SOURCE must be a regular file".to_owned());
     }
     fs::canonicalize(source).map_err(|error| error.to_string())
 }
@@ -1421,11 +1421,19 @@ fn archive_error(token: &str, message: &str) -> Outcome {
 
 #[cfg(not(target_os = "ios"))]
 fn archive_merge_plan(plan: &ArchivePlan, source: &Path, json_output: bool) -> Outcome {
+    if !json_output {
+        return success(format!(
+            "Archive merge (days: {}): 0 committed, {} skipped, 0 failed.\n",
+            plan.days.join(", "),
+            plan.payload_files,
+        ));
+    }
     emit_merge_json(
         true,
         "ok",
         source,
         true,
+        Some(&plan.days),
         0,
         plan.payload_files,
         0,
@@ -1475,6 +1483,7 @@ fn archive_merge_json(
                 code,
                 source,
                 dry_run,
+                None,
                 committed,
                 skipped,
                 failed,
@@ -1502,6 +1511,7 @@ fn archive_merge_json(
                     code,
                     source,
                     dry_run,
+                    None,
                     0,
                     0,
                     0,
@@ -1525,6 +1535,7 @@ fn emit_merge_json(
     code: &str,
     source: &Path,
     dry_run: bool,
+    days: Option<&[String]>,
     committed: usize,
     skipped: usize,
     failed: usize,
@@ -1540,6 +1551,7 @@ fn emit_merge_json(
             "code": code,
             "source": source.display().to_string(),
             "dry_run": dry_run,
+            "days": days,
             "committed": committed,
             "skipped": skipped,
             "failed": failed,
@@ -1601,11 +1613,11 @@ mod archive_merge_source_kind_tests {
         let error = regular_archive_file(&path).unwrap_err();
         assert!(error.contains("SOURCE does not exist"), "{error}");
         assert!(error.contains("solstone-archive-source.zip"), "{error}");
-        assert!(!error.contains("must be a zip file"), "{error}");
+        assert!(!error.contains("must be a regular file"), "{error}");
     }
 
     #[test]
-    fn directory_source_names_a_zip_file() {
+    fn directory_source_names_a_regular_file_requirement() {
         let dir = std::env::temp_dir().join(format!(
             "solstone-archive-merge-src-{}-{}",
             std::process::id(),
@@ -1617,6 +1629,6 @@ mod archive_merge_source_kind_tests {
         fs::create_dir(&dir).unwrap();
         let error = regular_archive_file(&dir).unwrap_err();
         let _ = fs::remove_dir(&dir);
-        assert_eq!(error, "SOURCE must be a zip file");
+        assert_eq!(error, "SOURCE must be a regular file");
     }
 }
