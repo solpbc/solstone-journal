@@ -4089,6 +4089,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "serde_json",
+ "solstone-core-artifact-download",
  "solstone-core-backup",
  "solstone-core-backup-runtime",
  "solstone-core-brain",

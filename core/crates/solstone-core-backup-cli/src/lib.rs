@@ -7,17 +7,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{Datelike, NaiveDate, Utc};
 use serde_json::{Map, Value, json};
-use solstone_core_artifact_download::UreqByteDownload;
+use solstone_core_artifact_download::{ByteDownload, UreqByteDownload};
 use solstone_core_backup::{
     Destination, HostedBinding, confirm_recovery_key, format_recovery_key_display,
     generate_and_store_keys, generate_daily_key, get_backup_config, get_destination, get_keys,
     save_hosted_binding, set_destination, set_enabled, set_recovery_key_confirmed, status_view,
 };
 use solstone_core_backup_runtime::{
-    BackupResult, BackupServices, Clock, NativeJournalMaintenance, PruneResult, ResticKeyError,
-    RotationResult, SystemToolRunner, TeardownResult, UreqHttpTransport, ensure_restic,
-    restore_journal, rotate_recovery_key, run_backup, run_prune, teardown_backup,
-    validate_destination,
+    BackupResult, BackupServices, Clock, HttpTransport, NativeJournalMaintenance, PruneResult,
+    ResticKeyError, RestoreResult, RotationResult, SystemToolRunner, TeardownResult,
+    ToolInstallDirs, ToolRunner, UreqHttpTransport, ensure_restic, record_backup_error,
+    resolve_operational_tools, restore_journal, rotate_recovery_key, run_backup, run_prune,
+    teardown_backup, validate_destination,
 };
 use solstone_core_offload::{
     OffloadResult, RestoreResult as OffloadRestoreResult, build_offload_status,
@@ -48,20 +49,165 @@ impl std::fmt::Debug for CliRun {
 }
 
 pub fn run_cli(args: &[String], journal: &Path) -> CliRun {
-    let runner = SystemToolRunner;
     let http = UreqHttpTransport;
+    run_cli_with_deps(
+        args,
+        journal,
+        &SystemToolRunner,
+        &UreqByteDownload,
+        &http,
+        ToolInstallDirs::default(),
+    )
+}
+
+fn run_cli_with_deps(
+    args: &[String],
+    journal: &Path,
+    runner: &dyn ToolRunner,
+    downloader: &dyn ByteDownload,
+    http: &dyn HttpTransport,
+    dirs: ToolInstallDirs<'_>,
+) -> CliRun {
     let clock = ProductionClock;
     let maintenance = NativeJournalMaintenance;
-    let services = BackupServices {
-        runner: &runner,
-        http: &http,
+    let placeholder = BackupServices {
+        runner,
+        http,
         clock: &clock,
         restic_path: Path::new("restic"),
         rclone_path: None,
         version: env!("CARGO_PKG_VERSION"),
         journal_maintenance: &maintenance,
     };
-    run_cli_with(args, journal, &services)
+    match classify_tool_resolution(args) {
+        None => run_cli_with(args, journal, &placeholder),
+        Some(append_only) => {
+            match resolve_operational_tools(runner, downloader, journal, append_only, dirs) {
+                Ok(tools) => {
+                    let services = BackupServices {
+                        restic_path: &tools.restic_path,
+                        rclone_path: tools.rclone_path.as_deref(),
+                        ..placeholder
+                    };
+                    run_cli_with(args, journal, &services)
+                }
+                Err(reason) => format_resolution_error(args, journal, &clock, &reason),
+            }
+        }
+    }
+}
+
+fn format_resolution_error(
+    args: &[String],
+    journal: &Path,
+    clock: &dyn Clock,
+    reason: &str,
+) -> CliRun {
+    let args = normalize_global_flags(args);
+    match args.first().map(String::as_str) {
+        Some("run") => backup_run_result(record_backup_error(journal, clock, reason)),
+        Some("prune") => backup_prune_result(PruneResult {
+            status: "error".into(),
+            error_reason: Some(reason.to_owned()),
+        }),
+        Some("restore") => restore_result(RestoreResult {
+            status: "error".into(),
+            reason_code: Some(reason.to_owned()),
+            integrity_ok: false,
+            resumable: false,
+            bytes_restored: None,
+        }),
+        Some("recovery-key") => recovery_key_rotate_result(RotationResult {
+            status: "error".into(),
+            reason_code: Some(reason.to_owned()),
+            recovery_key: None,
+            recovery_key_display: None,
+        }),
+        Some("off") => teardown_result(TeardownResult {
+            status: "error".into(),
+            reason_code: Some(reason.to_owned()),
+        }),
+        Some("offload") => match args.get(1).map(String::as_str) {
+            Some("run") => offload_run_result(OffloadResult {
+                status: "stalled".into(),
+                reason: Some(reason.to_owned()),
+                files_marked: 0,
+                bytes_marked: 0,
+                files_already_marked: 0,
+                bytes_already_marked: 0,
+                ran_out_of_markable_media: false,
+                dry_run: false,
+                details: vec![],
+            }),
+            Some("restore") => offload_restore_result(
+                OffloadRestoreResult {
+                    status: "error".into(),
+                    reason: Some(reason.to_owned()),
+                    scope: "day".into(),
+                    day: None,
+                    segments_selected: 0,
+                    segments_restored: 0,
+                    files_expected: 0,
+                    files_restored: 0,
+                    bytes_expected: 0,
+                    bytes_restored: 0,
+                    details: vec![],
+                },
+                false,
+            ),
+            _ => runtime_error(reason.to_owned()),
+        },
+        _ => runtime_error(reason.to_owned()),
+    }
+}
+
+/// Keep in sync with the `run_cli_with` match below. `Some(append_only)` means
+/// this argv reaches an operational restic/rclone verb and must resolve pinned
+/// tools first.
+fn classify_tool_resolution(args: &[String]) -> Option<bool> {
+    let args = normalize_global_flags(args);
+    if has_help(&args) {
+        return None;
+    }
+    let (command, rest) = args.split_first()?;
+    match command.as_str() {
+        "run" if no_positionals(rest) => Some(true),
+        "prune" if no_positionals(rest) => Some(false),
+        "restore" if no_positionals(rest) => Some(false),
+        "recovery-key" => {
+            let (options, positionals) = split_terminator(rest);
+            match options {
+                [subcommand] if subcommand == "rotate" && positionals.is_empty() => Some(false),
+                _ => None,
+            }
+        }
+        "off" => {
+            let (options, positionals) = split_terminator(rest);
+            if !positionals.is_empty() || options.iter().any(|argument| argument != "--yes") {
+                return None;
+            }
+            options
+                .iter()
+                .any(|argument| argument == "--yes")
+                .then_some(false)
+        }
+        "offload" => {
+            let (subcommand, options) = rest.split_first()?;
+            match subcommand.as_str() {
+                "run" => {
+                    let (flags, positionals) = split_terminator(options);
+                    if !positionals.is_empty() || flags.iter().any(|flag| flag != "--dry-run") {
+                        None
+                    } else {
+                        Some(true)
+                    }
+                }
+                "restore" => Some(false),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 struct ProductionClock;
@@ -2009,5 +2155,522 @@ mod tests {
         );
         assert_eq!(positional.exit_code, 2);
         assert!(positional.stderr.starts_with(USAGE));
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use super::*;
+    use serde_json::{Value, json};
+    use solstone_core_artifact_download::ByteDownloadError;
+    use solstone_core_backup::{
+        record_backup_result, record_verification_result, set_mode, set_offload,
+    };
+    use solstone_core_backup_runtime::hosted_runtime::{HttpError, HttpRequest, HttpResponse};
+    use solstone_core_backup_runtime::rclone_install::{
+        RCLONE_SCHEMA_VERSION, RCLONE_TOOL, RCLONE_VERSION,
+    };
+    use solstone_core_backup_runtime::readiness::{
+        RESTIC_SCHEMA_VERSION, RESTIC_TOOL, RESTIC_VERSION, binary_path, file_sha256,
+        platform_info, sentinel_path,
+    };
+    use solstone_core_backup_runtime::{HttpTransport, ToolInstallDirs, ToolOutput, ToolRequest};
+    use std::cell::{Cell, RefCell};
+    use std::ffi::OsString;
+    use std::fs;
+    use std::io;
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    struct RecordingRunner {
+        programs: RefCell<Vec<OsString>>,
+        argvs: RefCell<Vec<Vec<String>>>,
+    }
+
+    impl RecordingRunner {
+        fn new() -> Self {
+            Self {
+                programs: RefCell::new(vec![]),
+                argvs: RefCell::new(vec![]),
+            }
+        }
+    }
+
+    impl ToolRunner for RecordingRunner {
+        fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            self.programs.borrow_mut().push(request.program.clone());
+            self.argvs.borrow_mut().push(
+                request
+                    .argv
+                    .iter()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .collect(),
+            );
+            let name = Path::new(&request.program)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy();
+            let version = request.argv.iter().any(|value| value == "version");
+            let stdout = if version && name == RCLONE_TOOL {
+                format!("rclone v{RCLONE_VERSION}\n")
+            } else if version {
+                format!("restic {RESTIC_VERSION}\n")
+            } else {
+                "{\"message_type\":\"summary\",\"snapshot_id\":\"snap\"}\n".to_owned()
+            };
+            Ok(ToolOutput {
+                returncode: 0,
+                stdout: stdout.into_bytes(),
+                stderr: vec![],
+            })
+        }
+    }
+
+    struct PanicDownload;
+
+    impl ByteDownload for PanicDownload {
+        fn fetch(&self, _: &str, _: Duration) -> Result<Vec<u8>, ByteDownloadError> {
+            panic!("must not download")
+        }
+    }
+
+    struct FailingDownload {
+        calls: Cell<u32>,
+    }
+
+    impl ByteDownload for FailingDownload {
+        fn fetch(&self, _: &str, _: Duration) -> Result<Vec<u8>, ByteDownloadError> {
+            self.calls.set(self.calls.get() + 1);
+            Err(ByteDownloadError::Transport)
+        }
+    }
+
+    struct UnusedHttp;
+
+    impl HttpTransport for UnusedHttp {
+        fn execute(&self, _: &HttpRequest) -> Result<HttpResponse, HttpError> {
+            panic!("BYO must not fetch broker credentials")
+        }
+    }
+
+    struct BrokerHttp;
+
+    impl HttpTransport for BrokerHttp {
+        fn execute(&self, _: &HttpRequest) -> Result<HttpResponse, HttpError> {
+            Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: serde_json::to_vec(&json!({
+                    "access_key_id": "access",
+                    "secret_access_key": "secret",
+                    "session_token": "token",
+                    "endpoint": "https://example.invalid",
+                    "expires_at": "2099-01-01T00:00:00Z",
+                }))
+                .unwrap(),
+            })
+        }
+    }
+
+    fn write_ready_restic(dir: &Path) -> PathBuf {
+        let binary = binary_path(dir);
+        fs::write(&binary, b"restic-fixture").unwrap();
+        let digest = file_sha256(&binary).unwrap();
+        let (os, arch) = platform_info().unwrap();
+        fs::write(
+            sentinel_path(dir),
+            serde_json::to_vec(&serde_json::json!({
+                "schema_version": RESTIC_SCHEMA_VERSION,
+                "tool": RESTIC_TOOL,
+                "version": RESTIC_VERSION,
+                "sha256": digest,
+                "platform": {"os": os, "arch": arch},
+                "binary_path": binary,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        binary
+    }
+
+    fn write_ready_rclone(dir: &Path) -> PathBuf {
+        let binary = dir.join(RCLONE_TOOL);
+        fs::write(&binary, b"rclone-fixture").unwrap();
+        let digest = file_sha256(&binary).unwrap();
+        let (os, arch) = platform_info().unwrap();
+        fs::write(
+            dir.join(".install-complete"),
+            serde_json::to_vec(&serde_json::json!({
+                "schema_version": RCLONE_SCHEMA_VERSION,
+                "tool": RCLONE_TOOL,
+                "version": RCLONE_VERSION,
+                "sha256": digest,
+                "platform": {"os": os, "arch": arch},
+                "binary_path": binary,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        binary
+    }
+
+    fn dirs<'a>(restic: &'a Path, rclone: Option<&'a Path>) -> ToolInstallDirs<'a> {
+        ToolInstallDirs {
+            restic: Some(restic),
+            rclone,
+        }
+    }
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    fn rclone_program(argvs: &[Vec<String>]) -> Option<String> {
+        argvs.iter().find_map(|argv| {
+            argv.windows(2).find_map(|pair| {
+                pair[1]
+                    .strip_prefix("rclone.program=")
+                    .filter(|_| pair[0] == "-o")
+                    .map(str::to_owned)
+            })
+        })
+    }
+
+    fn last_backup_reason(journal: &Path) -> Option<String> {
+        get_backup_config(journal)
+            .unwrap()
+            .get("last_backup")
+            .and_then(Value::as_object)
+            .and_then(|backup| backup.get("error_reason"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    }
+
+    fn last_backup_status(journal: &Path) -> Option<String> {
+        get_backup_config(journal)
+            .unwrap()
+            .get("last_backup")
+            .and_then(Value::as_object)
+            .and_then(|backup| backup.get("status"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    }
+
+    fn operated_journal() -> tempfile::TempDir {
+        let journal = tempfile::tempdir().unwrap();
+        set_mode(journal.path(), "operated").unwrap();
+        set_enabled(journal.path(), true).unwrap();
+        generate_and_store_keys(journal.path()).unwrap();
+        save_hosted_binding(
+            journal.path(),
+            &HostedBinding {
+                broker_endpoint: "https://broker.example.invalid".into(),
+                account_id: "account".into(),
+                instance_id: "instance".into(),
+                bucket: "bucket".into(),
+                prefix: "prefix".into(),
+                broker_token: "token".into(),
+            },
+        )
+        .unwrap();
+        journal
+    }
+
+    fn configure_offload(journal: &Path) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        record_backup_result(journal, "ok", json!(now), json!("ready"), Value::Null).unwrap();
+        record_verification_result(journal, "ok", json!(now), Value::Null, json!("1/52")).unwrap();
+        set_offload(
+            journal,
+            json!({"enabled": true, "budget_bytes": 1, "floor_bytes": 1})
+                .as_object()
+                .unwrap(),
+        )
+        .unwrap();
+        let raw = journal.join("chronicle/20260101/010000_001/raw.webm");
+        fs::create_dir_all(raw.parent().unwrap()).unwrap();
+        fs::write(&raw, b"one").unwrap();
+        let size = raw.metadata().unwrap().len();
+        fs::write(
+            raw.with_extension("jsonl"),
+            format!(
+                "{}\n",
+                json!({"_solstone_processing": {
+                    "schema": "solstone.processing.v1",
+                    "state": "empty",
+                    "reason_code": "no_decodable_frames",
+                    "handler": "describe",
+                    "attempted_at": "2026-01-01T00:00:00Z",
+                    "input_size": size
+                }})
+            ),
+        )
+        .unwrap();
+    }
+
+    fn assert_resolved_restic(programs: &[OsString], expected: &Path, decoy: &Path) {
+        assert!(
+            programs
+                .iter()
+                .any(|program| program == expected.as_os_str()),
+            "missing restic spawn at {expected:?}: {programs:?}"
+        );
+        assert!(programs.iter().all(|program| program != decoy.as_os_str()));
+        assert!(programs.iter().all(|program| program != "restic"));
+    }
+
+    #[test]
+    fn ac1_backup_run_uses_pinned_restic_not_decoy() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let decoy_dir = tempfile::tempdir().unwrap();
+        let expected = write_ready_restic(restic_dir.path());
+        let decoy = decoy_dir.path().join("restic");
+        fs::write(&decoy, b"decoy").unwrap();
+        let journal = tempfile::tempdir().unwrap();
+        let runner = RecordingRunner::new();
+        run_cli_with_deps(
+            &args(&["run"]),
+            journal.path(),
+            &runner,
+            &PanicDownload,
+            &UnusedHttp,
+            dirs(restic_dir.path(), None),
+        );
+        assert_resolved_restic(&runner.programs.borrow(), &expected, &decoy);
+    }
+
+    #[test]
+    fn ac3_backup_run_persists_restic_unavailable() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let journal = tempfile::tempdir().unwrap();
+        record_backup_result(journal.path(), "ok", json!(1), json!("prior"), Value::Null).unwrap();
+        let runner = RecordingRunner::new();
+        let downloader = FailingDownload {
+            calls: Cell::new(0),
+        };
+        let output = run_cli_with_deps(
+            &args(&["run"]),
+            journal.path(),
+            &runner,
+            &downloader,
+            &UnusedHttp,
+            dirs(restic_dir.path(), None),
+        );
+        assert_eq!(output.exit_code, 1);
+        assert!(output.stderr.contains("restic_unavailable"));
+        assert_eq!(
+            last_backup_reason(journal.path()).as_deref(),
+            Some("restic_unavailable")
+        );
+        assert_eq!(last_backup_status(journal.path()).as_deref(), Some("error"));
+        assert!(downloader.calls.get() > 0);
+        assert!(runner.programs.borrow().is_empty());
+    }
+
+    #[test]
+    fn ac4_operated_run_passes_absolute_rclone_program() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let rclone_dir = tempfile::tempdir().unwrap();
+        let decoy_dir = tempfile::tempdir().unwrap();
+        write_ready_restic(restic_dir.path());
+        let expected_rclone = write_ready_rclone(rclone_dir.path());
+        let decoy = decoy_dir.path().join("rclone");
+        fs::write(&decoy, b"decoy").unwrap();
+        let journal = operated_journal();
+        let runner = RecordingRunner::new();
+        run_cli_with_deps(
+            &args(&["run"]),
+            journal.path(),
+            &runner,
+            &PanicDownload,
+            &BrokerHttp,
+            dirs(restic_dir.path(), Some(rclone_dir.path())),
+        );
+        let program = rclone_program(&runner.argvs.borrow()).expect("rclone.program");
+        assert_eq!(program, expected_rclone.display().to_string());
+        assert_ne!(program, decoy.display().to_string());
+        assert_ne!(program, "rclone");
+    }
+
+    #[test]
+    fn ac5_offload_run_passes_absolute_rclone_program() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let rclone_dir = tempfile::tempdir().unwrap();
+        let decoy_dir = tempfile::tempdir().unwrap();
+        write_ready_restic(restic_dir.path());
+        let expected_rclone = write_ready_rclone(rclone_dir.path());
+        let decoy = decoy_dir.path().join("rclone");
+        fs::write(&decoy, b"decoy").unwrap();
+        let journal = operated_journal();
+        configure_offload(journal.path());
+        let runner = RecordingRunner::new();
+        run_cli_with_deps(
+            &args(&["offload", "run"]),
+            journal.path(),
+            &runner,
+            &PanicDownload,
+            &BrokerHttp,
+            dirs(restic_dir.path(), Some(rclone_dir.path())),
+        );
+        let program = rclone_program(&runner.argvs.borrow()).expect("rclone.program");
+        assert_eq!(program, expected_rclone.display().to_string());
+        assert_ne!(program, decoy.display().to_string());
+        assert_ne!(program, "rclone");
+    }
+
+    #[test]
+    fn ac6_operated_run_persists_rclone_unavailable() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let rclone_dir = tempfile::tempdir().unwrap();
+        write_ready_restic(restic_dir.path());
+        let journal = operated_journal();
+        record_backup_result(journal.path(), "ok", json!(1), json!("prior"), Value::Null).unwrap();
+        let runner = RecordingRunner::new();
+        let downloader = FailingDownload {
+            calls: Cell::new(0),
+        };
+        let output = run_cli_with_deps(
+            &args(&["run"]),
+            journal.path(),
+            &runner,
+            &downloader,
+            &BrokerHttp,
+            dirs(restic_dir.path(), Some(rclone_dir.path())),
+        );
+        assert_eq!(output.exit_code, 1);
+        assert!(output.stderr.contains("rclone_unavailable"));
+        assert_eq!(
+            last_backup_reason(journal.path()).as_deref(),
+            Some("rclone_unavailable")
+        );
+        assert!(downloader.calls.get() > 0);
+        assert!(
+            runner
+                .argvs
+                .borrow()
+                .iter()
+                .all(|argv| rclone_program(std::slice::from_ref(argv)).is_none())
+        );
+        assert!(
+            runner
+                .programs
+                .borrow()
+                .iter()
+                .all(|program| program != "rclone")
+        );
+    }
+
+    #[test]
+    fn ac7_byo_operational_verbs_resolve_restic_without_rclone() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let decoy_dir = tempfile::tempdir().unwrap();
+        let expected = write_ready_restic(restic_dir.path());
+        let decoy = decoy_dir.path().join("restic");
+        fs::write(&decoy, b"decoy").unwrap();
+        let journal = tempfile::tempdir().unwrap();
+        for argv in [
+            args(&["run"]),
+            args(&["prune"]),
+            args(&["restore"]),
+            args(&["recovery-key", "rotate"]),
+            args(&["off", "--yes"]),
+            args(&["offload", "run"]),
+        ] {
+            let runner = RecordingRunner::new();
+            run_cli_with_deps(
+                &argv,
+                journal.path(),
+                &runner,
+                &PanicDownload,
+                &UnusedHttp,
+                dirs(restic_dir.path(), None),
+            );
+            assert_resolved_restic(&runner.programs.borrow(), &expected, &decoy);
+        }
+    }
+
+    #[test]
+    fn ac8_operated_prune_does_not_resolve_rclone() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let decoy_dir = tempfile::tempdir().unwrap();
+        let expected = write_ready_restic(restic_dir.path());
+        let decoy = decoy_dir.path().join("restic");
+        fs::write(&decoy, b"decoy").unwrap();
+        let journal = operated_journal();
+        let runner = RecordingRunner::new();
+        run_cli_with_deps(
+            &args(&["prune"]),
+            journal.path(),
+            &runner,
+            &PanicDownload,
+            &BrokerHttp,
+            dirs(restic_dir.path(), None),
+        );
+        assert_resolved_restic(&runner.programs.borrow(), &expected, &decoy);
+    }
+
+    #[test]
+    fn ac9_offload_restore_uses_pinned_restic() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let decoy_dir = tempfile::tempdir().unwrap();
+        let expected = write_ready_restic(restic_dir.path());
+        let decoy = decoy_dir.path().join("restic");
+        fs::write(&decoy, b"decoy").unwrap();
+        let journal = tempfile::tempdir().unwrap();
+        let runner = RecordingRunner::new();
+        run_cli_with_deps(
+            &args(&["offload", "restore", "--all"]),
+            journal.path(),
+            &runner,
+            &PanicDownload,
+            &UnusedHttp,
+            dirs(restic_dir.path(), None),
+        );
+        assert_resolved_restic(&runner.programs.borrow(), &expected, &decoy);
+    }
+
+    #[test]
+    fn ac10_operated_run_reaches_ensure_rclone_through_run_cli_with_deps() {
+        let restic_dir = tempfile::tempdir().unwrap();
+        let rclone_dir = tempfile::tempdir().unwrap();
+        write_ready_restic(restic_dir.path());
+        write_ready_rclone(rclone_dir.path());
+        let journal = operated_journal();
+        let runner = RecordingRunner::new();
+        run_cli_with_deps(
+            &args(&["run"]),
+            journal.path(),
+            &runner,
+            &PanicDownload,
+            &BrokerHttp,
+            dirs(restic_dir.path(), Some(rclone_dir.path())),
+        );
+        assert!(rclone_program(&runner.argvs.borrow()).is_some());
+    }
+
+    #[test]
+    fn ac11_read_only_verbs_do_not_resolve_tools() {
+        let journal = tempfile::tempdir().unwrap();
+        let runner = RecordingRunner::new();
+        for argv in [
+            args(&["status"]),
+            args(&["destination", "show"]),
+            args(&["recovery-key", "show"]),
+            args(&["--help"]),
+            args(&["offload", "status"]),
+        ] {
+            run_cli_with_deps(
+                &argv,
+                journal.path(),
+                &runner,
+                &PanicDownload,
+                &UnusedHttp,
+                ToolInstallDirs::default(),
+            );
+        }
+        assert!(runner.programs.borrow().is_empty());
     }
 }

@@ -13,7 +13,7 @@ use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 
 use crate::install::DOWNLOAD_ATTEMPTS;
 use crate::readiness::{file_sha256, platform_info};
-use crate::runner::{SystemToolRunner, ToolRunner, run_restic};
+use crate::runner::{ToolRunner, run_restic};
 
 pub const RCLONE_VERSION: &str = "1.74.4";
 pub const RCLONE_SCHEMA_VERSION: u64 = 1;
@@ -85,6 +85,7 @@ pub fn rclone_tool_dir(os: &str) -> Result<PathBuf, String> {
     }
 }
 pub fn ensure_rclone(
+    runner: &dyn crate::runner::ToolRunner,
     force: bool,
     requested_dir: Option<&Path>,
     downloader: &dyn ByteDownload,
@@ -93,7 +94,7 @@ pub fn ensure_rclone(
     let dir = requested_dir
         .map(Path::to_path_buf)
         .unwrap_or(rclone_tool_dir(&os)?);
-    if !force && let Some(path) = check_rclone_ready(&SystemToolRunner, &dir, &os, &arch) {
+    if !force && let Some(path) = check_rclone_ready(runner, &dir, &os, &arch) {
         return Ok(path);
     }
     let (filename, url, expected) = select_rclone_asset(Some(&os), Some(&arch))?;

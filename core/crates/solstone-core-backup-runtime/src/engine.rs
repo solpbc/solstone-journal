@@ -274,6 +274,18 @@ fn record_backup(journal: &Path, clock: &dyn Clock, result: &BackupResult) {
             .map_or(Value::Null, Value::String),
     );
 }
+
+/// Persist a backup-run failure that happened before `run_backup` was invoked.
+pub fn record_backup_error(journal: &Path, clock: &dyn Clock, reason: &str) -> BackupResult {
+    let result = BackupResult {
+        status: "error".into(),
+        snapshot_id: None,
+        error_reason: Some(reason.to_owned()),
+    };
+    record_backup(journal, clock, &result);
+    result
+}
+
 fn record_prune(journal: &Path, clock: &dyn Clock, result: &PruneResult) {
     let _ = record_prune_result(
         journal,
