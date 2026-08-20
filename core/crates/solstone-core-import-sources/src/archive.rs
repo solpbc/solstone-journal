@@ -838,7 +838,7 @@ fn read_v1_manifest<R: Read>(
             "first archive member must be regular manifest.json",
         ));
     }
-    let member = tar_member_name(&mut entry, ArchiveSafetyPhase::Validation)?;
+    let member = tar_member_name(&mut entry, ArchiveSafetyPhase::Validation, path)?;
     if member != MANIFEST_NAME {
         return Err(invalid_v1_manifest(
             path,
@@ -935,7 +935,7 @@ fn materialize_v1_gzip_tar(
         let day_root = run_dir.join("chronicle").join(&manifest.day);
         for entry in entries {
             let mut entry = entry.map_err(|_| invalid_v1_gzip(path))?;
-            let name = tar_member_name(&mut entry, ArchiveSafetyPhase::Extraction)?;
+            let name = tar_member_name(&mut entry, ArchiveSafetyPhase::Extraction, path)?;
             if entry.header().entry_type() != EntryType::Regular {
                 return Err(ImportSourcesError::ArchiveUnsafeEntry {
                     phase: ArchiveSafetyPhase::Extraction,
@@ -978,6 +978,8 @@ fn materialize_v1_gzip_tar(
                 &mut output_file,
                 &mut copied,
                 options.max_uncompressed_bytes,
+                path,
+                run_dir,
             )?;
             output_file
                 .sync_all()
@@ -1027,6 +1029,8 @@ fn copy_v1_member(
     output: &mut File,
     copied: &mut u64,
     maximum: u64,
+    archive_path: &Path,
+    extraction_dir: &Path,
 ) -> Result<(String, u64), ImportSourcesError> {
     let mut digest = Sha256::new();
     let mut size = 0_u64;
@@ -1036,8 +1040,8 @@ fn copy_v1_member(
             reader
                 .read(&mut buffer)
                 .map_err(|error| ImportSourcesError::ArchiveInvalid {
-                    path: PathBuf::new(),
-                    detail: error.to_string(),
+                    path: archive_path.to_path_buf(),
+                    detail: format!("read v1 archive member: {error}"),
                 })?;
         if read == 0 {
             break;
@@ -1054,12 +1058,13 @@ fn copy_v1_member(
                 maximum,
             });
         }
-        output
-            .write_all(&buffer[..read])
-            .map_err(|error| ImportSourcesError::ArchiveInvalid {
-                path: PathBuf::new(),
-                detail: error.to_string(),
-            })?;
+        output.write_all(&buffer[..read]).map_err(|error| {
+            ImportSourcesError::ExtractionFailed {
+                archive: archive_path.to_path_buf(),
+                extraction_dir: extraction_dir.to_path_buf(),
+                detail: format!("write extracted v1 archive member: {error}"),
+            }
+        })?;
         digest.update(&buffer[..read]);
         size += read as u64;
     }
@@ -1069,12 +1074,13 @@ fn copy_v1_member(
 fn tar_member_name<R: Read>(
     entry: &mut tar::Entry<'_, R>,
     phase: ArchiveSafetyPhase,
+    archive_path: &Path,
 ) -> Result<String, ImportSourcesError> {
     let path = entry
         .path()
         .map_err(|error| ImportSourcesError::ArchiveInvalid {
-            path: PathBuf::new(),
-            detail: error.to_string(),
+            path: archive_path.to_path_buf(),
+            detail: format!("read v1 archive member path: {error}"),
         })?;
     let name = path
         .to_str()

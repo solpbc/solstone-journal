@@ -30,7 +30,7 @@ impl fmt::Display for ManifestError {
 
 impl std::error::Error for ManifestError {}
 
-/// The v1 archive manifest emitted by Python and native transfer.
+/// The v1 archive manifest emitted by native transfer export.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TransferManifest {
     pub version: u64,
