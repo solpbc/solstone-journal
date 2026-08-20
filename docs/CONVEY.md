@@ -25,8 +25,8 @@ These conventions apply to every native app router. The browser client
 `saveControl`) is the consumer side.
 
 **Namespacing.** JSON APIs live under `/api/`: `/app/{name}/api/<resource>` for an
-app, `/api/<domain>` for a core blueprint (`/api/config`, `/api/system`,
-`/api/chat`, …). HTML pages live at `/app/{name}/<view>` with no `/api/` infix. The
+app, `/api/<domain>` for a core blueprint (`/api/shell`, `/api/system/status`,
+…). HTML pages live at `/app/{name}/<view>` with no `/api/` infix. The
 unauthenticated setup wizard lives under `/init/...`. The `/api/` infix is the
 JSON-vs-HTML discriminator: never put JSON at a non-`/api/` path, never put a page
 under `/api/`.
@@ -76,9 +76,8 @@ Observer clients can open a server-sent events feed at
 `/app/observer/callosum`. The observer key is supplied in the
 `X-Solstone-Observer` header or the `Authorization: Bearer` header. The feed is
 a passive view of the Callosum bus: each `data:` frame is the same event-shaped
-payload the bridge saw (`tract`, `event`, `ts`, plus event fields). Chat events
-appear only after the chat append path has written its JSONL record, so
-subscribers see post-disk state rather than speculative messages.
+payload the bridge saw (`tract`, `event`, `ts`, plus event fields). Frames are
+post-disk rather than speculative.
 
 This endpoint is inside the observer trust boundary. It performs no redaction
 or per-field filtering because observers are treated as part of the local
@@ -95,7 +94,6 @@ facet or scope set before forwarding any event.
 | Tract | Events |
 |---|---|
 | `activity` | `live`, `recorded` |
-| `chat` | `owner_message`, `sol_message`, `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`, `reflection_ready`, `chat_queue_depth`, `chat_error`, `sol_chat_request`, `sol_chat_request_superseded`, `owner_chat_open`, `owner_chat_dismissed`, `support_draft`, `result`, `support_submit_claim` |
 | `cortex` | `request`, `start`, `thinking`, `tool_start`, `tool_end`, `finish`, `error`, `talent_updated`, `info`, `status`, `cancel`, `dry_run`, `progress`, `text_delta`, `tool_budget_exhausted`, `budget_escalation` |
 | `importer` | `started`, `status`, `completed`, `error`, `file_imported`, `enrichment_ready` |
 | `link` | `pair_complete`, `last_seen`, `stream_reset` |
@@ -107,6 +105,7 @@ facet or scope set before forwarding any event.
 | `supervisor` | `started`, `stopped`, `restarting`, `status`, `queue`, `scheduled`, `provider_runtime`, `request`, `restart`, `drain`, `skipped`, `sync_conflict` |
 | `support` | `proactive_suggestion` |
 | `think` | `started`, `status`, `group_started`, `group_completed`, `talent_started`, `talent_completed`, `completed`, `segments_started`, `segments_completed`, `memory_throttle_started`, `memory_throttle_completed`, `daily_complete` |
+| `work` | `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`, `result`, `reflection_ready`, `support_draft`, `support_submit_claim` |
 <!-- END GENERATED callosum-registry -->
 
 The observer SSE feed is exercised by the convey-shell SSE tests; a

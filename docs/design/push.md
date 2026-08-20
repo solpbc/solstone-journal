@@ -1,6 +1,6 @@
 # Push Registry And Relay
 
-> Not shipped. No crate route. Treat this as an unbuilt spec; ignore Python paths.
+> Paused. Device registry, relay, and transport survive; the chat-trigger path is retired. No crate route. Treat surviving sections as an unbuilt spec; ignore Python paths.
 
 
 ## Summary
@@ -10,8 +10,11 @@ The journal's push role is deliberately narrow:
 - Keep a device registry keyed by each paired device's link fingerprint.
 - Self-provision a reach relay token from the hosted services portal.
 - Provide a test-push endpoint that goes through the hosted relay.
-- Relay sol-initiated chat push events to the hosted service through
-  `portal_dispatch`.
+
+Push is paused, not gone. **Retired (historical):** relaying sol-initiated chat
+push events to the hosted service through `portal_dispatch`. Future payload
+direction: notify owners of journal states and if their devices stopped checking
+in.
 
 The journal does not contact Apple. Device delivery and platform-specific
 delivery details live outside this repository.
@@ -22,8 +25,8 @@ delivery details live outside this repository.
 |---|---|
 | `solstone/think/push/devices.py` | Sole writer for `journal/config/push_devices.json`. Stores one row per link fingerprint. Re-registering a fingerprint replaces that row, and registering a token under another fingerprint drops the older holder so one token maps to exactly one device. |
 | `solstone/convey/push.py` | Root Flask blueprint for `/api/push/register`, `/api/push/status`, and `/api/push/test`. Registration and deregistration source the fingerprint from `g.identity.fingerprint`, never from request JSON. |
-| `solstone/think/push/triggers.py` | Relay-only callosum handlers for direct chat requests and chat lifecycle events, plus the nudge-log writer used by sol-initiated chat accounting. |
-| `solstone/think/push/runtime.py` | Runtime singleton that starts a callosum listener and routes each message through the two push trigger handlers. |
+| `solstone/think/push/triggers.py` | **Retired (historical).** Relay-only callosum handlers for direct chat requests and chat lifecycle events, plus the nudge-log writer used by sol-initiated chat accounting. No native replacement is asserted here. |
+| `solstone/think/push/runtime.py` | **Retired (historical).** Runtime singleton that started a callosum listener and routed each message through the two push trigger handlers. |
 | `solstone/think/push/portal_dispatch.py` | HTTP relay client for the hosted `/push/dispatch` and `/push/dedup` endpoints. |
 | `solstone/think/push/reach.py` | Reach relay-token client. Enrolls with the hosted reach endpoint, stores the opaque token under journal config, and refreshes before dispatch. |
 
@@ -116,7 +119,8 @@ Optional request body:
 
 The handler requires at least one registered device. It creates a
 `push-test-<hex>` request id and calls `dispatch_via_portal(...)` with the test
-summary and sol-chat-request category. Dispatch self-provisions or refreshes the
+summary. **Retired (historical):** the test dispatch used a `sol-chat-request`
+category. Dispatch self-provisions or refreshes the
 reach relay token as needed. If no devices are registered, the route returns
 `503 feature_unavailable` with detail `no devices to reach`. If token enrollment
 or the relay call fails, it returns `503 feature_unavailable` with detail
@@ -128,36 +132,41 @@ Success response:
 {"dispatched": true, "request_id": "push-test-abc123def456"}
 ```
 
-## Relay Triggers
+## Relay Triggers — retired (historical)
 
-`runtime._on_callosum_message(...)` calls:
+The chat-trigger path is retired. The listening behavior below is a snapshot of
+what `triggers.py` used to do; it does not describe a current capability.
+
+`runtime._on_callosum_message(...)` called:
 
 1. The direct chat request trigger handler.
 2. `triggers.handle_chat_lifecycle(message)`
 
-The direct chat request handler listens for:
+The direct chat request handler listened for:
 
 - `tract == "chat"`
 - `event == KIND_SOL_CHAT_REQUEST`
 - non-empty `request_id`
 
-With registered devices, it calls `dispatch_via_portal(request_id, summary,
+With registered devices, it called `dispatch_via_portal(request_id, summary,
 category)`. Dispatch provisions or refreshes the reach relay token internally.
 
-`handle_chat_lifecycle` listens for:
+`handle_chat_lifecycle` listened for:
 
 - `tract == "chat"`
 - `event in {KIND_OWNER_CHAT_OPEN, KIND_OWNER_CHAT_DISMISSED}`
 - non-empty `request_id`
 
-With registered devices, it calls
+With registered devices, it called
 `dispatch_dedup_via_portal(request_id, action=event)`. Dispatch provisions or
 refreshes the reach relay token internally.
 
 ## Nudge Log
 
-`triggers.py` remains the writer for `journal/push/nudge_log.jsonl`. Rows are
-append-only JSON objects.
+The append-only JSONL row shape at `journal/push/nudge_log.jsonl` survives.
+**Retired (historical):** `triggers.py` was the writer, used by sol-initiated
+chat accounting. Chat-specific `kind` values in the examples below are
+historical.
 
 Successful relay row:
 
@@ -198,11 +207,12 @@ Relay unavailable row, including reach-token enrollment or refresh failure:
 }
 ```
 
-Lifecycle rows use `kind == "sol_chat_lifecycle_push"` and store the lifecycle
-event name in `category`.
+Lifecycle rows used `kind == "sol_chat_lifecycle_push"` and stored the lifecycle
+event name in `category`. **Retired (historical):** silent chat-lifecycle
+payloads.
 
 Chat-fold rows may also skip with `reason == "owner_viewing_chat"` when the
-owner already has a recent open chat view. There is no token-specific skipped
+owner already has a recent open chat view. **Retired (historical).** There is no token-specific skipped
 reason; token acquisition failures collapse into `portal_unavailable`.
 
 ## Reach Token Enrollment
@@ -277,8 +287,8 @@ Response body:
 ## Domain Ownership
 
 Per AGENTS.md L2, `solstone/think/push/devices.py` is the sole writer for
-`journal/config/push_devices.json`. `solstone/think/push/triggers.py` is the
-sole writer for `journal/push/nudge_log.jsonl`.
+`journal/config/push_devices.json`. **Retired (historical):** `solstone/think/push/triggers.py` was the
+sole writer for `journal/push/nudge_log.jsonl`. No native replacement is asserted here.
 
 `solstone/convey/push.py` validates HTTP input and delegates mutations to the
 think layer: device registry changes go through `devices.py`, and reach token

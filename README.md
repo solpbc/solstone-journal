@@ -102,7 +102,6 @@ Use `solstone` for day-to-day journal access and `journal` for host operations.
 ```bash
 solstone                    # Status overview and command list
 journal supervisor         # Start the full stack (intake + processing + web)
-solstone chat               # Interactive AI chat from the terminal
 journal transcribe <file>  # Transcribe an audio file
 journal indexer            # Rebuild the search index
 ```

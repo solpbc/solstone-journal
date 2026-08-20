@@ -1,5 +1,6 @@
 # Sol-Initiated Chat Phase 1 Design
 
+> Retired 2026-08-20. Sol-initiated chat was designed here and later removed entirely. This document is the snapshot of that design. It does not describe a current capability.
 > Partial. `sol` `chat.start` exists; there is no Rust `/api/chat/start` handler. Ignore Python paths.
 
 

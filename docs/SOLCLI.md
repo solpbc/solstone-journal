@@ -17,7 +17,7 @@ The CLI has two tiers with distinct purposes:
 
 **If it's system plumbing or local-only host control → `journal <cmd>`.** Processing pipelines, supervisor, services, capture — things that cron or systemd runs.
 
-**Interactive entry points** (`solstone chat`, `solstone help`, `journal engage`) are top-level for discoverability even though they're user-facing. Agents don't invoke these.
+**Interactive entry points** (`solstone help`, `journal engage`) are top-level for discoverability even though they're user-facing. Agents don't invoke these.
 
 Launchers are split. `solstone` execs `solstone-core-sol` (API
 transport, no journal filesystem authority). `journal` execs
@@ -33,7 +33,7 @@ sibling native `solstone-core-sol` binary. Authority declarations live under
 `core/native-sol/think/native/<command>/authority.toml`. Rust handlers live under
 `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`.
 
-The public API-root commands are `solstone call`, `solstone chat`, `solstone import`, and
+The public API-root commands are `solstone call`, `solstone import`, and
 `solstone status`. `solstone status` queries journal network status through the native
 HTTP boundary; it is distinct from `journal status`, which reports local
 journal state.
@@ -341,7 +341,7 @@ not the codebase. See [APPS.md](APPS.md).
 | Schedule (read-only) | `schedule` |
 | Specialized | `config`, `skills`, `streams`, `journal-stats`, `reprocess`, `formatter` |
 | Installation | `doctor` |
-| Help | `help`, `chat` |
+| Help | `help` |
 
 `journal install-provider local` and `journal install-provider parakeet` are native.
 

@@ -45,10 +45,8 @@ const html = marked.parse(markdown, {
 });
 ```
 
-**Currently Used By** (legacy references):
-- `solstone/convey/templates/chat.html` (via `core/crates/solstone-core-convey-shell/assets/static/marked.min.js`)
-- `solstone/convey/templates/facet_detail.html` (via CDN)
-- `solstone/convey/templates/agents.html` (via CDN)
+**Currently Used By**:
+- `AppServices.renderMarkdown` at `core/crates/solstone-core-convey-shell/assets/static/app.js` — part of the shared client runtime used across apps (home, transcripts, import, news/timeline)
 
 ### DOMPurify (v3.4.0)
 

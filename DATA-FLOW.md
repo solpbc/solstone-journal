@@ -14,7 +14,7 @@ if you point solstone at a local model through the local provider, model calls g
 
 if you connect a hosted provider, solstone sends — for each task it runs — that task's prompt plus the journal context relevant to *that task* directly to that provider's API, using **your own API key under your own provider account**.
 
-- it is per task, not a bulk upload. for an analysis task that's the transcript or screen text being analyzed; for chat it's your prompt plus the relevant slice of your journal for that turn. solstone does not ship your whole journal anywhere.
+- it is per task, not a bulk upload. for an analysis task that's the transcript or screen text being analyzed. solstone does not ship your whole journal anywhere.
 - it goes **straight from your machine to the provider**. solstone does not proxy model calls through any sol pbc server — ever. sol pbc is never in the middle and never sees the request, the content, or the response.
 - it uses **your key, your account**. you create the key in the provider's own developer console; solstone just stores it locally and uses it. the relationship is between you and the provider.
 

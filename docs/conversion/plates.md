@@ -1,3 +1,5 @@
+> Historical. This document predates the chat removal (2026-08-20) and describes conversion planning against a tree that still had chat. Treat plated/deferred status as of that snapshot, not current.
+
 # plates — the boundaries strands connect to
 
 **A plate is a boundary of the journal where strands connect from other plates.** ⛔ It has no "sides" — the contract lives at one *end of a strand*, and by convention that is the second plate named in `S:a:b`.
@@ -249,6 +251,7 @@ Consistent formatting of **structured journal data** for its consumers — the i
 ⚠ **The rendered-value half is complete; storage and serving remain open.** `produce_chunks` now carries the full formatter contract: document `header`, chunk `occurrence_time_ms`, and originating `source` record. The index/SQLite layer still stores only content, and the convey read path still cannot serve the added fields for speaker attribution, audio seek, or frame overlays. `S:web:format` has no implementation here at all. ⚠ Rule 1 says the one-to-many end cannot negotiate per-consumer, and an output shape chosen for the indexer is exactly that.
 
 ⚠ **Corrections to the 2026-08-05 defect note, measured rather than inherited.** **10 of 36** patterns pin a stream name, not 9 — `*/chat/*/chat.jsonl` was missed because the enumeration scanned the `import.*` family; it is projection-stable, which is why nothing caught it. ⛔ **"Projected names are now being written" was not true** — the projection landed after the last release and no projected stream name has reached a journal. Against the largest journal available, a cutover changes **18 of 538,647** formatted files, all `*_transcript.md` under two import streams, and swaps none. ⛔ **And the failure mode is not a silent `None`:** six of the nine import patterns fall through to a *different* formatter — an AI-chat transcript lands on the audio formatter at `indexed=False`, so it stays formatted and silently stops being searchable. A `None` at least raises.
+<!-- historical; chat surface removed 2026-08-20 -->
 
 📌 **The same shape is reachable with no projection involved:** `browser_*_screen.jsonl` matches `*/*/*/*_screen.jsonl` (`indexed=False`) before `*/*/*/browser_*.jsonl` (`indexed=True`), so discovery finds it as one shape and dispatch renders it as another. Latent today.
 
@@ -641,7 +644,7 @@ by answering as though the file were *absent* when it was present and unreadable
 | Reader | What it used to answer on a config that would not parse |
 |---|---|
 | the edge indexer's owner-timezone read | `Tz::UTC` — and the owner timezone buckets a segment into a **day**, so records filed under the wrong date with no signal |
-| the chat-label caller | substitute speaker labels, **erasing the owner's own name from indexed chat** — the same harm `P-format` had just closed on a different path. ⚠ Its helper distinguished missing from malformed *and said so in a doc comment*; only the caller threw the answer away |
+| the chat-label caller | substitute speaker labels, **erasing the owner's own name from indexed chat** — the same harm `P-format` had just closed on a different path. ⚠ Its helper distinguished missing from malformed *and said so in a doc comment*; only the caller threw the answer away | <!-- historical; chat surface removed 2026-08-20 -->
 | `journal_is_active()` | `False`, so an onboarded journal presented as un-onboarded and the owner was sent to the first-run wizard |
 | `doctor`'s two STT checks | the *default* backend, and *"not applicable"* — the diagnostic tool answering about a file it could not read |
 
@@ -781,10 +784,11 @@ the set-aside directory is finished.
 | `P-web-body` | `body` | ⛔ owner **body** data — never "health" |
 | `P-web-entities` | `entities` | |
 | `P-web-settings` | `settings` | |
-| `P-web-transcripts` | `transcripts` | Reference renders owner-local times; is_supervisor_up() is a seedable branch rather than an irreducible host artifact; chat-state reads synthesize sol_message_origins with stringified list-index keys and are not the persisted chat log; this is a deliberate, pinned reproduction of the existing read-only on-disk shape rather than a new writer-derived naming violation. |
+| `P-web-transcripts` | `transcripts` | Reference renders owner-local times; is_supervisor_up() is a seedable branch rather than an irreducible host artifact; chat-state reads synthesize sol_message_origins with stringified list-index keys and are not the persisted chat log; this is a deliberate, pinned reproduction of the existing read-only on-disk shape rather than a new writer-derived naming violation. | <!-- historical; chat surface removed 2026-08-20 -->
 | `P-web-import` | `import` | |
 
 ⏸ **Deferred, to be grouped rather than plated one-for-one** — decided when the work gets closer: `support` · `backup` · `timeline` · `sol` · `health` · `chat` · `search` · `tokens` · `activities` · `news` · `reflections` · `stats` · `facets`. ⚠ Several are smaller than their own handoff would be.
+<!-- chat's deferral is resolved by deletion, not conversion -->
 
 **Measured facts about the deferred apps and awareness, 2026-08-13** — engineering findings, not a grouping decision:
 
@@ -792,6 +796,7 @@ the set-aside directory is finished.
 - 🔴 **`solstone/apps/{activities,awareness}/native/command.rs` are `#[path]`-compiled into `solstone-core-sol-client`**, and all four files under those `native/` directories are pinned by `scripts/check_wheel_contents.py`. ⛔ Deleting either app directory wholesale yields a tree that does not build — and a binary that does not build can go neither green nor red.
 - ⚠ **`awareness` is API-only**: no `workspace.html`, no `app.json`, no registry row, and `GET /app/awareness/` is deliberately a 404. Its five native routes serve the CLI, so it is not an owner-visible surface in the reserved sense.
 - ⚠ **`reflections` the APP and `reflections` the CONTENT FAMILY are separable.** `reflections/weekly/*.md` is produced by the thinking pipeline, registered as a content family, and indexed; none of that is the app. ⚠ Two things outside the app link to `/app/reflections/{day}`: the home surface's latest-weekly card, and **convey core's chat source attribution** — the second is shell code, not an app.
+<!-- historical; chat surface removed 2026-08-20 -->
 - ⚠ **A `maint/` directory inside an app is not necessarily app machinery.** `activities`' one-shot icon migration operates on facet activity **definitions** and is not reached by the maintenance registry at all, which discovers `apps/*/maintenance.py`.
 - 📌 **Directory counts over-state these four by roughly 8×.** The six directories total 18,539 lines; the real owner-visible web surface across the four survivors is ~7,470, of which 3,878 is `timeline`'s JS and CSS that relocates rather than being rewritten — leaving ~2,278 lines of route code actually replaced by Rust.
 
@@ -986,3 +991,4 @@ Journal and devices are **one secure environment**. No per-plate privacy trackin
 **Blind by construction, therefore not egress:** relay transit · push notifications · encrypted backups.
 
 🔴 **Push is only reimplemented in an end-to-end encrypted form** — the journal encrypting and the receiving device decrypting with the link cryptographic identities. ⛔ The current plaintext path, which carries journal-derived chat content to a push service and which unpairing does not revoke, does **not** come across.
+<!-- historical; push paused, chat trigger retired — future payload is journal state / device check-in -->

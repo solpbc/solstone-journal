@@ -1,3 +1,5 @@
+> Historical. This document predates the chat removal (2026-08-20) and describes conversion planning against a tree that still had chat. Treat strand status as of that snapshot, not current.
+
 # strands — the work units
 
 **A strand is the minimum viable path connecting two plates, in Rust, robust.** It may be bi-directional; its contract lives at exactly **one end**, and by convention that end is written second in the name.
@@ -346,11 +348,13 @@ shapes were measured to do.
   to go.
 
 ### `S:web:thinking` — chat
+<!-- strand resolved by deletion, not conversion (2026-08-20) -->
 **Owner** `P-thinking` · **Tier** schema
 
 The primary owner-facing use of the model. `convey/chat.py` (2,532 lines) + `chat_stream.py` (512) + `convey/sol_initiated/` (1,034). It **spawns talents**, so it is a producer into `P-thinking`, and it is in the audited native-client bundle — the capture clients depend on it.
 
 ⚠ **Push cannot be scoped until this exists** — push's trigger is the **chat tract** (`push/triggers.py:63-64`), so push is a callosum consumer downstream of the chat orchestrator, not a standalone journal→device path.
+<!-- historical; push paused, chat trigger retired — future payload is journal state / device check-in -->
 
 ### `S:*:system` — the command channel
 **Owner** `P-system` · **Tier** schema
@@ -467,6 +471,7 @@ Where retention is the provider it owns the contract — it is the one-to-many e
 ## Not yet placed
 
 - **push** — ⚠ cannot be scoped until `S:web:thinking` exists; its trigger is the chat tract. Only reimplemented end-to-end encrypted.
+<!-- historical; push paused, chat trigger retired — future payload is journal state / device check-in -->
 - **encrypted backup** — blind by construction, but ⚠ **retention imports it**, so a core deletion path depends on it. 🔴 The 64-char recovery key **is** the repository password. **Carry forward:** the exclusion-list comment records a paid-for lesson about basename-at-any-depth matching that a rebuild would otherwise re-learn; and `brain.json` / `scheduler.json` / the supervisor-ready marker are excluded deliberately, so post-restore provider and scheduler state is an intentional blank.
 - **support request** — ⛔ real egress; the `_SECRET_*` redaction is the last thing before an external service.
 - **merge / transfer** — deferred. ⚠ `think/merge.py:30-33` imports three **private** functions out of `think/entities/merge.py`, so the frozen thing depends on the unstranded store.

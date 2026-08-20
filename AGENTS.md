@@ -90,11 +90,11 @@ Top-level dirs intentionally not in the table: `.venv/`, `scratch/`, `logs/`, `t
 
 Two surfaces:
 
-- **`solstone <command>`** — native access commands declared under `core/native-sol/think/native/<command>/authority.toml` and implemented by `core/crates/solstone-core-sol-client/native/think/<command>/command.rs` (e.g., `solstone import`, `solstone chat`).
+- **`solstone <command>`** — native access commands declared under `core/native-sol/think/native/<command>/authority.toml` and implemented by `core/crates/solstone-core-sol-client/native/think/<command>/command.rs` (e.g., `solstone import`).
 - **`journal <command>`** — same-device commands owned by `solstone-core-journal`. Local writers execute in Rust; service commands use the native closed process table (e.g., `journal think`, `journal supervisor`, `journal heartbeat`). `journal up/down` are fixed aliases for `journal service up/down`.
 - **`solstone call <app> <verb>`** — native app commands declared under `solstone/apps/<app>/native/` or `solstone/think/tools/native/` and implemented under `core/crates/solstone-core-sol-client/native/{apps,tools}/`. `solstone call journal` exposes its native 17-leaf journal group through this boundary.
 
-**Adding a top-level `solstone` command:** add a native authority under `core/native-sol/think/native/<command>/authority.toml` and implement the handler at `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`. Use `core/native-sol/think/native/chat/authority.toml` with `core/crates/solstone-core-sol-client/native/think/chat/command.rs` as the current pattern.
+**Adding a top-level `solstone` command:** add a native authority under `core/native-sol/think/native/<command>/authority.toml` and implement the handler at `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`. Use `core/native-sol/think/native/import/authority.toml` with `core/crates/solstone-core-sol-client/native/think/import/command.rs` as the current pattern.
 
 **Adding a `solstone call` sub-verb:** update `core/native-sol/apps/<app>/native/authority.toml`, implement the handler in `core/crates/solstone-core-sol-client/native/apps/<app>/command.rs`, and regenerate the native inventory.
 Portable journal archive export is temporarily unavailable while archive support migrates; read-only archive validation lives in `solstone/think/importers/journal_archive.py`.
@@ -273,7 +273,6 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Awareness activity state (`awareness/activity_state.json`) | `solstone/think/thinking.py` |
 | Identity (`identity/*.md`, `identity/history.jsonl` audit log) | `solstone/think/identity.py` |
 | Todos (`facets/*/todos/*.jsonl`) | `solstone/apps/todos/todo.py` |
-| Chronicle chat stream (`chronicle/**/chat/<seg>/chat.jsonl`) | `solstone/convey/chat_stream.py` |
 | Day talent-output accumulator (`chronicle/<day>/talents/<name>.jsonl`) | `solstone/think/day_accumulator.py` |
 | Talent provenance sidecars (`chronicle/<day>/health/talent-provenance/**`) | `solstone/think/talent_provenance.py` |
 | Config (`config/journal.json`) | `solstone/think/journal_config.py` |
@@ -292,7 +291,6 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Parakeet server placement record (`health/parakeet-cpp.placement`) | `solstone/think/providers/parakeet_server.py` |
 | Hosted backup binding (`backup/hosted/binding.json`) | `solstone/think/backup/hosted.py` |
 | Convey config (`config/convey.json`) | `solstone/convey/config.py` + `solstone/think/facets.py` |
-| Chat config (`config/chat.json`) | `solstone/apps/chat/config.py` |
 | Speaker labels (`chronicle/**/talents/speaker_labels.json`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/apps/speakers/attribution.py` prepares requests only; `attribution.py` remains only for the entity-merge flow through `update_speaker_labels`. |
 | Speaker corrections (`chronicle/**/talents/speaker_corrections.json`) | `core/crates/solstone-core-speaker-resolve/` via `solstone-core speaker-resolve <verb>`; `solstone/apps/speakers/speaker_resolve_transport.py` is the sole Python transport. `solstone/apps/speakers/attribution.py` prepares requests only; `attribution.py` remains only for the entity-merge flow through `remap_speaker_corrections_for_entity_merge` and `apply_entity_merge_segment_inverse`. |
 | Stream identity (`chronicle/**/<seg>/stream.json` marker + `streams/<name>.json` state) | `solstone-core-segment` (`advance_unbound_stream` / `advance_bound_stream`); observer prune repairs a survivor's predecessor pointers locally |

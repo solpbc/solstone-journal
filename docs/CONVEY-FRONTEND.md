@@ -30,10 +30,10 @@ server.
 
 ## Shell boot sequence
 
-1. Static shell parses; chrome (menu, facet bar, status pane, chat bar,
+1. Static shell parses; chrome (menu, facet bar, status pane,
    diagnostic console) renders in skeleton/loading state.
 2. `GET /api/shell` returns the app registry and shell state; chrome hydrates
-   (menu items, facet pills, chat bar seed).
+   (menu items, facet pills).
 3. The workspace fragment for the current app is fetched and mounted.
 4. The fragment's script(s) run; each app makes **at most one initial-state
    fetch** before first meaningful paint (see below), then subscribes to its
@@ -66,11 +66,6 @@ them in HTML.
   ],
   "facets": [{ "name": "work", "title": "Work", "color": "#4A90D9" }],
   "selected_facet": "work",
-  "chat_bar": {
-    "placeholder": "send a message…",
-    "attention": null,
-    "sol_request": null
-  },
   "settings": { "reporting_enabled": true }
 }
 ```

@@ -1,5 +1,6 @@
 # Sol-Initiated Chat Phase 3 Design
 
+> Retired 2026-08-20. Sol-initiated chat was designed here and later removed entirely. This document is the snapshot of that design. It does not describe a current capability.
 > Partial. `sol_voice` settings API exists; APNs/portal_dispatch is not shipped. Ignore Python paths.
 
 

@@ -41,10 +41,10 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 
 **`info` note:** `info` remains the correct vocabulary for cortex telemetry. The current non-JSON stdout fallback in `_monitor_stdout()` writes an `info` record to the durable use-log through `_append_use_event()`; it does not broadcast that fallback record to Callosum. This is a bus-wiring gap, not a naming mismatch.
 
-### `chat` - Owner and assistant conversation events
-**Source:** `solstone-core-convey-shell` (chat)
-**Events:** `owner_message`, `sol_message`, `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`, `reflection_ready`, `chat_queue_depth`, `chat_error`, `sol_chat_request`, `sol_chat_request_superseded`, `owner_chat_open`, `owner_chat_dismissed`, `support_draft`, `result`, `support_submit_claim`
-**Purpose:** Record the closed chat-event vocabulary in the journal's chat stream, then broadcast each finalized event on the `chat` tract for real-time consumers.
+### `work` - Talent run and support-draft events
+**Source:** `solstone-core-convey-shell`
+**Events:** `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`, `result`, `reflection_ready`, `support_draft`, `support_submit_claim`
+**Purpose:** Broadcast the closed work-event vocabulary on the `work` tract for real-time consumers. The `work` tract and the `work` facet (`journal/facets/work/`) are separate namespaces.
 
 ### `supervisor` - Process lifecycle management
 **Source:** `solstone-core-system` (supervisor)

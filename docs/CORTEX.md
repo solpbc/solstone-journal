@@ -43,7 +43,6 @@ Requests are Callosum messages on the `cortex` tract. The request message follow
   "max_output_tokens": 8192,        // Optional: maximum response tokens
   "thinking_budget": 10000,         // Optional: thinking token budget (ignored by OpenAI)
   "session_id": "sess-abc123",       // Optional: CLI session ID for continuation
-  "chat_id": "1234567890122",        // Optional: chat ID for reverse lookup
   "facet": "my-project",          // Optional: project context
   "output": "md",                     // Optional: output format ("md" or "json"), writes to talents/
   "day": "20250109",                  // Optional: YYYYMMDD format, defaults to current day
@@ -96,9 +95,8 @@ Conversation continuation is owned by the active provider runtime. Include a
 `session_id` field in the request with the session ID from a previous talent's
 finish event; the native provider runtime continues the conversation.
 
-Chats are locked to their original provider — continuations must use the same provider
-that started the conversation. The `chat_id` field enables reverse lookup from an
-talent back to its parent chat.
+Continuations must use the same provider that started the conversation.
+`session_id` is the continuation handle.
 
 ## Agent Event Format
 
@@ -126,7 +124,7 @@ the receive thread and terminalizes the use with an error carrying `reason_code`
 {
   "event": "cancel",
   "use_id": "1234567890123",
-  "reason_code": "chat_watchdog_cancelled"
+  "reason_code": "talent_watchdog_cancelled"
 }
 ```
 
@@ -139,8 +137,7 @@ Emitted when a talent run begins.
   "use_id": "1234567890123",
   "name": "default",
   "model": "gpt-4o",
-  "session_id": "sess-abc",
-  "chat_id": "1234567890122"
+  "session_id": "sess-abc"
 }
 ```
 

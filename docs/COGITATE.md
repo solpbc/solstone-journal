@@ -1,7 +1,7 @@
 # Cogitate runtime contract
 
 The canonical contract for **cogitate talents** — the LLM agents Cortex spawns to
-read and update the journal (chat, the entity / activity / import talents, and
+read and update the journal (the entity / activity / import talents, and
 the rest). It is the single place a talent
 author can point at and say what a fresh cogitate run's working directory,
 context, tools, finalization, and persistence are — instead of reverse-engineering
@@ -129,7 +129,7 @@ enforcement are layered on top of it.
 |---|---|---|
 | `normal` | default cogitate talents | the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one), the bounded raw-read tier, a finalization tool |
 | `system-read` | diagnostics boundary for scoped operational evidence | no cogitate talent claims it today (steward was demoted to a deterministic renderer + `lite` generate); when used, the declared surface is the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one), the bounded raw-read tier, and a finalization tool, with scoped evidence arriving through a talent pre-hook rather than an extra model read tool |
-| `outbound` | comms-like talents that may submit something that leaves the machine (e.g. `support`) | the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one) and a finalization tool, plus submit-capable support commands gated on per-send owner approval supplied only by a human-initiated chat launch; no raw-read tier — drafts and evidence go through `solstone` domain commands |
+| `outbound` | comms-like talents that may submit something that leaves the machine | `outbound` — comms-like talents that may submit something that leaves the machine. The tier remains in `TALENT_ACCESS_TIERS` (count 4) with no current occupant. A run in this tier may use the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one) and a finalization tool; `solstone call support` send verbs are still gated on a per-send owner-approval token supplied on the run (`outbound_approval`). That token is no longer produced by a human-initiated chat launch — chat as a launch path is gone. Drafts and evidence still go through `solstone` domain commands, not a raw-read tier. |
 | `synthesis` | pure command-surface synthesis talents (e.g. `weekly_reflection`, `partner`) whose source of record is a documented command form, not the raw journal tree | the `solstone` tool (`solstone` / `solstone call`, plus approved direct `journal` families when a prompt names one) and a finalization tool; **no raw-read tier and no submit** — same as `outbound` minus the outbound submit capability. Removing the raw-read tools keeps a synthesis talent from spelunking `chronicle/` / `talents/` / `facets/` and burning its budget instead of using documented commands |
 
 Policy denies support send verbs (`create`, `reply`, `attach`, `feedback`) for
@@ -217,7 +217,7 @@ against the captured Python classifier surface:
 | `QuotaExhaustedError` | `provider_quota_exceeded` | Yes for the reason code: provider-failure events emit `provider_quota_exceeded`, and the thin client recreates the typed Python quota exception. Native provider failures do not retain the raw response body, so a parsed `retryDelayMs` is unavailable. |
 | `ProviderKeyMissingError` | `unknown` | No exact reproduction: native emits the more specific `provider_key_missing`, not `unknown`. |
 | `LocalProviderError` | `unknown` | No exact reproduction: this is a Python wrapper type; native emits the concrete local/provider failure reason instead. |
-| `TimeoutError` | `chat_timeout` | No exact reproduction: native cogitate uses `wall_clock_exceeded`, not `chat_timeout`. |
+| `TimeoutError` | `brain_refresh_timeout` | No exact reproduction: native cogitate uses `wall_clock_exceeded`, not `brain_refresh_timeout`. |
 | `ValueError` | `unknown` | No: Python's catch-all type arm has no native analog; malformed native requests fail at the CLI boundary. |
 | `RuntimeError` | `unknown` | No: Python's catch-all type arm has no native analog; provider/runtime failures use concrete reason codes. |
 

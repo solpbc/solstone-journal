@@ -1,5 +1,6 @@
 # Sol-Initiated Chat Phase 2 Design
 
+> Retired 2026-08-20. Sol-initiated chat was designed here and later removed entirely. This document is the snapshot of that design. It does not describe a current capability.
 > Partial. Client chrome exists; the `/api/chat` server is not in convey-shell. Ignore Python paths.
 
 
