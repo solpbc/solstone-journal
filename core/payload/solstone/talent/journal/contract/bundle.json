@@ -214,7 +214,7 @@
             "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/audio.jsonl"
           ],
           "reference_writer": "solstone-core speaker-transcript-write",
-          "schema_owner": "observe.transcribe",
+          "schema_owner": "solstone-core-speaker-id",
           "write_discipline": "headered_jsonl atomic whole-file replace"
         }
       },
@@ -341,7 +341,7 @@
             "chronicle/YYYYMMDD/{host}.browser/HHMMSS_LEN/browser_{host-slug}.jsonl"
           ],
           "reference_writer": "none (external solstone-browser extension via observer ingest)",
-          "schema_owner": "think.browser",
+          "schema_owner": "solstone-core-format",
           "write_discipline": "append-only JSONL via observer ingest"
         }
       },
@@ -603,7 +603,7 @@
             "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/screen.jsonl"
           ],
           "reference_writer": "solstone-core-describe",
-          "schema_owner": "observe.describe",
+          "schema_owner": "solstone-core-describe",
           "write_discipline": "headered_jsonl temp line-write plus atomic promote"
         }
       },
@@ -661,7 +661,7 @@
             "chronicle/YYYYMMDD/{stream}/HHMMSS_LEN/stream.json"
           ],
           "reference_writer": "solstone-core-segment",
-          "schema_owner": "think.streams",
+          "schema_owner": "solstone-core-segment",
           "write_discipline": "atomic JSON replace"
         }
       },

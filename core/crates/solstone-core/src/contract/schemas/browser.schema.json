@@ -102,7 +102,7 @@
   },
   "x-journal-contract": {
     "format_id": "browser-jsonl",
-    "schema_owner": "think.browser",
+    "schema_owner": "solstone-core-format",
     "reference_writer": "none (external solstone-browser extension via observer ingest)",
     "allowed_producers": [
       "solstone-browser extension via ingest"

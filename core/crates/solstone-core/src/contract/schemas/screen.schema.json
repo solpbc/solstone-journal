@@ -36,7 +36,7 @@
   },
   "x-journal-contract": {
     "format_id": "screen-jsonl",
-    "schema_owner": "observe.describe",
+    "schema_owner": "solstone-core-describe",
     "reference_writer": "solstone-core-describe",
     "allowed_producers": ["journal screen describer", "native observers via ingest"],
     "write_discipline": "headered_jsonl temp line-write plus atomic promote",

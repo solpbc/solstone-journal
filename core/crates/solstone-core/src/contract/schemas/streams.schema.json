@@ -13,7 +13,7 @@
   },
   "x-journal-contract": {
     "format_id": "stream-json",
-    "schema_owner": "think.streams",
+    "schema_owner": "solstone-core-segment",
     "reference_writer": "solstone-core-segment",
     "allowed_producers": ["journal stream writer", "native observers via ingest"],
     "write_discipline": "atomic JSON replace",

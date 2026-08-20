@@ -72,7 +72,7 @@
   },
   "x-journal-contract": {
     "format_id": "audio-jsonl",
-    "schema_owner": "observe.transcribe",
+    "schema_owner": "solstone-core-speaker-id",
     "reference_writer": "solstone-core speaker-transcript-write",
     "allowed_producers": ["journal transcriber", "native observers via ingest"],
     "write_discipline": "headered_jsonl atomic whole-file replace",
