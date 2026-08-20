@@ -27,7 +27,9 @@ use solstone_core_system::provider_runtime::{
     RuntimeStore, RuntimeStoreError, cancel_start, store_error_phase,
 };
 use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, TaskArgv};
-use solstone_core_system::schedule::{ScheduleNow, ScheduleStatus};
+use solstone_core_system::schedule::{
+    CheckReport, ScheduleEngine, ScheduleError, ScheduleNow, ScheduleStatus, ScheduleSubmissionSink,
+};
 use solstone_core_system::status_wire::{
     CrashedServiceCandidate, ProcessObservation as WireProcessObservation, ServiceCandidate,
     StaleHeartbeatWireInput, SupervisorStatusWireInput, project_supervisor_status,
@@ -220,7 +222,8 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
             queue: state.queue.clone(),
             server: state.server.clone(),
         };
-        let _ = state.scheduler.check(
+        let _ = check_schedule_tick(
+            state.scheduler.as_mut(),
             ScheduleNow {
                 local: wall.naive_local(),
                 unix_millis: wall.timestamp_millis(),
@@ -249,9 +252,11 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
                 .observe_current_process(&state.parakeet.processes, status_now);
             let queue = state.queue.collect_status_snapshot(status_now);
             let wall = chrono::Local::now();
-            let schedules = state.scheduler.collect_status(ScheduleNow {
-                local: wall.naive_local(),
-                unix_millis: wall.timestamp_millis(),
+            let schedules = state.scheduler.as_ref().map_or_else(Vec::new, |scheduler| {
+                scheduler.collect_status(ScheduleNow {
+                    local: wall.naive_local(),
+                    unix_millis: wall.timestamp_millis(),
+                })
             });
             match plan_status_emission(StatusEmissionInputs {
                 app_observations,
@@ -564,6 +569,9 @@ fn stale_heartbeat_wire_input(
 }
 
 fn record_schedule_completions(state: &mut SupervisorState) {
+    let Some(scheduler) = state.scheduler.as_mut() else {
+        return;
+    };
     let history = state.queue.history();
     let retained = history
         .iter()
@@ -586,15 +594,23 @@ fn record_schedule_completions(state: &mut SupervisorState) {
             .ended_at
             .duration_since(UNIX_EPOCH)
             .map_or(0.0, |value| value.as_secs_f64());
-        if let Err(error) = state.scheduler.record_completion(
-            &name,
-            ended_at,
-            &record.exit_status,
-            &record.reference,
-        ) {
+        if let Err(error) =
+            scheduler.record_completion(&name, ended_at, &record.exit_status, &record.reference)
+        {
             eprintln!("supervisor: failed to record schedule completion for {name}: {error}");
         }
     }
+}
+
+fn check_schedule_tick(
+    scheduler: Option<&mut ScheduleEngine>,
+    now: ScheduleNow,
+    sink: &dyn ScheduleSubmissionSink,
+) -> Result<CheckReport, ScheduleError> {
+    let Some(scheduler) = scheduler else {
+        return Ok(CheckReport::default());
+    };
+    scheduler.check(now, sink)
 }
 
 pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
@@ -1283,8 +1299,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use chrono::NaiveDate;
@@ -1293,6 +1309,7 @@ mod tests {
     use solstone_core_system::queue::{
         ProcessState, ProcessStateProbe, TaskQueue, TaskQueueOptions,
     };
+    use solstone_core_system::request::ScheduledRequest;
 
     use super::*;
 
@@ -1360,6 +1377,55 @@ mod tests {
             ready: false,
             before_deadline_commit: None,
         })
+    }
+
+    #[derive(Default)]
+    struct RecordingScheduleSink(Mutex<Vec<String>>);
+
+    impl ScheduleSubmissionSink for RecordingScheduleSink {
+        fn submit(&self, request: ScheduledRequest) -> bool {
+            self.0
+                .lock()
+                .expect("schedule sink")
+                .push(request.scheduler_name);
+            true
+        }
+    }
+
+    #[test]
+    fn schedule_tick_requires_an_initialized_scheduler_across_a_minute_edge() {
+        let bed = Bed::new("schedule-disabled");
+        fs::write(
+            bed.root.join("config/schedules.json"),
+            br#"{"minute":{"cmd":["journal","heartbeat"],"every":"1m"}}"#,
+        )
+        .expect("schedule config");
+        let at = |hour, minute| {
+            let local = NaiveDate::from_ymd_opt(2026, 8, 20)
+                .expect("date")
+                .and_hms_opt(hour, minute, 0)
+                .expect("time");
+            ScheduleNow {
+                local,
+                unix_millis: local.and_utc().timestamp_millis(),
+            }
+        };
+        let (mut scheduler, _) = ScheduleEngine::init(
+            bed.root.join("config/schedules.json"),
+            bed.root.join("health/scheduler.json"),
+            at(10, 0),
+        )
+        .expect("scheduler");
+        let sink = RecordingScheduleSink::default();
+
+        let disabled = check_schedule_tick(None, at(10, 1), &sink).expect("disabled tick");
+        assert!(disabled.submitted.is_empty());
+        assert!(sink.0.lock().expect("schedule sink").is_empty());
+
+        let enabled =
+            check_schedule_tick(Some(&mut scheduler), at(10, 1), &sink).expect("enabled tick");
+        assert_eq!(enabled.submitted, ["minute"]);
+        assert_eq!(*sink.0.lock().expect("schedule sink"), ["minute"]);
     }
 
     #[test]

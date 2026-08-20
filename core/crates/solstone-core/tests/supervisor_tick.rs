@@ -156,10 +156,19 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
 }
 
 fn start(journal: &TempJournal, cap_seconds: Option<u64>) -> SupervisorGuard {
+    start_with_flags(journal, cap_seconds, &[])
+}
+
+fn start_with_flags(
+    journal: &TempJournal,
+    cap_seconds: Option<u64>,
+    flags: &[&str],
+) -> SupervisorGuard {
     let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
     command
         .args(["supervisor", "--journal"])
         .arg(&journal.0)
+        .args(flags)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
@@ -666,7 +675,7 @@ fn ac10_due_schedule_entry_runs_through_real_engine() {
         .expect("schedule JSON"),
     )
     .expect("write schedule");
-    let mut child = start(&journal, None);
+    let mut child = start_with_flags(&journal, None, &["--no-daily"]);
     wait_for_socket(&mut child, &journal.0.join("health/callosum.sock"));
     let scheduler = journal.0.join("health/scheduler.json");
     let outcome = await_outcome(
@@ -687,6 +696,93 @@ fn ac10_due_schedule_entry_runs_through_real_engine() {
         thread::sleep,
     );
     panic_for_wait("scheduled work did not write completion state", outcome);
+}
+
+#[test]
+fn ordinary_supervisor_rejects_non_object_scheduler_state() {
+    let journal = TempJournal::new();
+    fs::create_dir_all(journal.0.join("health")).expect("health directory");
+    fs::write(journal.0.join("health/scheduler.json"), b"[]").expect("scheduler state");
+    let mut child = start(&journal, None);
+    let mut exit = None;
+    let outcome = await_outcome(
+        WaitPolarity::Positive,
+        Duration::from_millis(10),
+        800,
+        Instant::now,
+        || match child.try_wait() {
+            Ok(Some(status)) => {
+                exit = Some(status);
+                PollState::Held
+            }
+            Ok(None) => PollState::Pending,
+            Err(error) => panic!("supervisor status: {error}"),
+        },
+        thread::sleep,
+    );
+    panic_for_wait(
+        "ordinary supervisor accepted non-object scheduler state",
+        outcome,
+    );
+    assert!(!exit.expect("supervisor exit").success());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_schedule_skips_catch_up_ticks_status_and_completion_state() {
+    let journal = TempJournal::new();
+    let marker = journal.0.join("scheduled-command-ran");
+    fs::write(
+        journal.0.join("config/schedules.json"),
+        serde_json::to_vec(&json!({"disabled": {
+            "cmd": [
+                env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+                "ready-sleep",
+                marker,
+                "1"
+            ],
+            "every": "1m"
+        }}))
+        .expect("schedule JSON"),
+    )
+    .expect("write schedule");
+    fs::create_dir_all(journal.0.join("health")).expect("health directory");
+    let scheduler_state = b"[]";
+    fs::write(journal.0.join("health/scheduler.json"), scheduler_state).expect("scheduler state");
+
+    let mut child = start_with_flags(&journal, None, &["--no-schedule"]);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    let (mut reader, mut write) = connect(&socket).await;
+    send_message(
+        &mut write,
+        json!({
+            "tract": "supervisor",
+            "event": "request",
+            "cmd": [env!("CARGO_BIN_EXE_solstone-core-system-test-child"), "lines"],
+            "ref": "disabled-scheduler-completion",
+            "scheduler_name": "disabled",
+        }),
+    )
+    .await;
+    let _ = receive_until(&mut reader, "disabled-scheduler-completion", "started").await;
+    let stopped = receive_until(&mut reader, "disabled-scheduler-completion", "stopped").await;
+    assert_eq!(stopped["exit_code"], json!(0));
+    let status = await_bounded_read(
+        "no-schedule supervisor status",
+        Duration::from_millis(10),
+        800,
+        receive_status(&mut reader),
+    )
+    .await;
+
+    assert!(child.try_wait().expect("supervisor status").is_none());
+    assert!(!marker.exists(), "disabled schedule command ran");
+    assert_eq!(status["schedules"], json!([]));
+    assert_eq!(
+        fs::read(journal.0.join("health/scheduler.json")).expect("scheduler state"),
+        scheduler_state,
+        "disabled scheduler changed completion state"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

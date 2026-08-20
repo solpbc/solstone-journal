@@ -60,7 +60,7 @@ pub(crate) struct SupervisorState {
     pub stale_heartbeats: Vec<ForeignWriter>,
     pub shutdown_started: AtomicBool,
     pub started: Instant,
-    pub scheduler: ScheduleEngine,
+    pub scheduler: Option<ScheduleEngine>,
     pub recorded_schedule_completions: BTreeSet<String>,
     pub app_processes: Vec<ManagedAppProcess>,
     pub local: LocalProvider,
@@ -765,23 +765,28 @@ pub(crate) async fn boot_and_tick(
         state: ProviderRuntimeState::new(ProviderName::Parakeet),
         processes: Vec::new(),
     };
-    let wall = chrono::Local::now();
-    let now = ScheduleNow {
-        local: wall.naive_local(),
-        unix_millis: wall.timestamp_millis(),
+    let scheduler = if options.no_schedule {
+        None
+    } else {
+        let wall = chrono::Local::now();
+        let now = ScheduleNow {
+            local: wall.naive_local(),
+            unix_millis: wall.timestamp_millis(),
+        };
+        let mut scheduler = ScheduleEngine::init(
+            journal.join("config/schedules.json"),
+            journal.join("health/scheduler.json"),
+            now,
+        )
+        .map_err(|error| error.to_string())?
+        .0;
+        let schedule_sink = SupervisorScheduleSink {
+            queue: queue.clone(),
+            server: server.clone(),
+        };
+        let _ = scheduler.catch_up(now, &schedule_sink);
+        Some(scheduler)
     };
-    let mut scheduler = ScheduleEngine::init(
-        journal.join("config/schedules.json"),
-        journal.join("health/scheduler.json"),
-        now,
-    )
-    .map_err(|error| error.to_string())?
-    .0;
-    let schedule_sink = SupervisorScheduleSink {
-        queue: queue.clone(),
-        server: server.clone(),
-    };
-    let _ = scheduler.catch_up(now, &schedule_sink);
     let fixture_binary = app_fixture_binary();
     let journal_binary = if fixture_binary.is_none() && !remote {
         match resolve_journal_binary() {
