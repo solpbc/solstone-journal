@@ -1,5 +1,3 @@
-#![allow(clippy::result_large_err)] // Validation returns the exact HTTP refusal envelope.
-
 use axum::{body::Bytes, response::Response};
 use serde_json::{Map, Value};
 

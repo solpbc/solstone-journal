@@ -152,6 +152,13 @@ pub fn degraded_offload_root() -> TempDir {
     root
 }
 
+pub fn unreadable_offload_root() -> TempDir {
+    let root = offload_inventory_root();
+    let path = ledger_path_for_day(root.path(), "20260104").expect("ledger path");
+    fs::create_dir_all(&path).expect("ledger path as directory");
+    root
+}
+
 pub fn write_ready_restic(dir: &Path) -> PathBuf {
     let binary = binary_path(dir);
     fs::write(&binary, b"restic-fixture").expect("restic fixture");

@@ -501,7 +501,6 @@ fn hosted_preconditions(root: &Path) -> Result<(), axum::response::Response> {
 }
 
 fn init_and_enable(
-    _journal: &Path,
     runner: &dyn ToolRunner,
     destination: &Destination,
     daily_key: &str,
@@ -626,7 +625,6 @@ async fn enable_backup(deps: BackupWebDeps) -> axum::response::Response {
             }
         };
         if let Err(reason) = init_and_enable(
-            &worker.journal_root,
             worker.runner.as_ref(),
             &destination,
             &keys.daily_key,
@@ -1052,9 +1050,13 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
     }
     let binding = match hosted_binding_from_payload(&payload) {
         Ok(binding) => binding,
-        Err(error) => return error,
+        Err(error) => {
+            operation::finish(&deps.operations, generation, "error", Some("failed".into()));
+            return error;
+        }
     };
     if save_hosted_binding(&deps.journal_root, &binding).is_err() {
+        operation::finish(&deps.operations, generation, "error", Some("failed".into()));
         return internal_error();
     }
     let worker = deps.clone();
@@ -1125,7 +1127,6 @@ fn consume_hosted(
             }
         };
         if let Err(reason) = init_and_enable(
-            &deps.journal_root,
             deps.runner.as_ref(),
             &destination,
             &keys.daily_key,

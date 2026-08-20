@@ -121,4 +121,48 @@ mod tests {
         );
         assert!(reasons.get("integrity_failed").is_none());
     }
+
+    #[test]
+    fn teardown_gate_conservation_is_pinned() {
+        let source = std::str::from_utf8(JS).expect("embedded backup.js is UTF-8");
+        let copy = embedded_js_object("  const BACKUP_COPY = ");
+        let management = &copy["management"];
+        assert_eq!(
+            management["teardown_gate_lead"],
+            "{days} days of your journal ({size}) exist only in this backup. deleting the backup deletes them everywhere, forever."
+        );
+        assert_eq!(
+            management["teardown_gate_unavailable_lead"],
+            "can't verify what exists only in this backup right now. deleting the backup may destroy days of your journal that exist nowhere else."
+        );
+        assert_eq!(
+            management["teardown_gate_zero_lead"],
+            "nothing exists only in this backup right now. every day is still on your device."
+        );
+        let start = source
+            .find("function backupOnlyTotalsForTeardown()")
+            .expect("backupOnlyTotalsForTeardown");
+        let end = source[start..]
+            .find("function renderTeardownGate(")
+            .expect("renderTeardownGate");
+        let totals_fn = &source[start..start + end];
+        assert!(
+            totals_fn.contains("if (backupOnly.degraded !== false) return null;"),
+            "{totals_fn}"
+        );
+        let render_start = start + end;
+        let render_end = source[render_start..]
+            .find("\n  function ")
+            .expect("next function after renderTeardownGate");
+        let render_fn = &source[render_start..render_start + render_end];
+        assert!(
+            render_fn.contains("if (totals.days === 0 && totals.bytes === 0)"),
+            "{render_fn}"
+        );
+        assert!(
+            !totals_fn.contains("if (totals.days > 0)")
+                && !render_fn.contains("if (totals.days > 0)"),
+            "banned days>0 gate form"
+        );
+    }
 }

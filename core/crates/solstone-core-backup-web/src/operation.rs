@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#![allow(clippy::result_large_err)] // Route helpers return the exact HTTP refusal envelope on the Err path.
-
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -56,18 +54,38 @@ pub fn running_phase(kind: &str) -> &'static str {
     }
 }
 
+fn hosted_wait_expired(slot: &Slot) -> bool {
+    !is_terminal(&slot.view.phase)
+        && matches!(slot.view.kind.as_str(), "enable_hosted" | "restore_hosted")
+        && slot.nonce.is_some()
+        && slot.started.elapsed() > HANDOFF_TTL
+}
+
+fn expire_hosted_wait_in_place(slot: &mut Slot) {
+    if !hosted_wait_expired(slot) {
+        return;
+    }
+    slot.view.phase = "error".into();
+    slot.view.reason_code = Some("expired".into());
+    slot.view.portal_url = None;
+    slot.nonce = None;
+    slot.restore_key = None;
+}
+
+fn observe(slot: &mut Option<Slot>) -> Option<&Slot> {
+    if let Some(current) = slot.as_mut() {
+        expire_hosted_wait_in_place(current);
+    }
+    slot.as_ref()
+}
+
 pub fn is_busy(slot: &SharedOperationSlot) -> bool {
-    slot.lock()
-        .expect("operation slot lock")
-        .as_ref()
+    observe(&mut slot.lock().expect("operation slot lock"))
         .is_some_and(|slot| !is_terminal(&slot.view.phase))
 }
 
 pub fn current(slot: &SharedOperationSlot) -> Option<Operation> {
-    slot.lock()
-        .expect("operation slot lock")
-        .as_ref()
-        .map(|slot| slot.view.clone())
+    observe(&mut slot.lock().expect("operation slot lock")).map(|slot| slot.view.clone())
 }
 
 pub fn busy_response() -> Response {
@@ -91,10 +109,7 @@ pub fn begin(
     restore_key: Option<String>,
 ) -> Result<Begin, Response> {
     let mut guard = slot.lock().expect("operation slot lock");
-    if guard
-        .as_ref()
-        .is_some_and(|slot| !is_terminal(&slot.view.phase))
-    {
+    if observe(&mut guard).is_some_and(|slot| !is_terminal(&slot.view.phase)) {
         return Err(busy_response());
     }
     let generation = guard
@@ -188,21 +203,26 @@ pub fn match_handoff(
     slot: &SharedOperationSlot,
     nonce: &str,
 ) -> Result<HandoffMatch, HandoffError> {
-    let guard = slot.lock().expect("operation slot lock");
-    let Some(current) = guard.as_ref() else {
+    let mut guard = slot.lock().expect("operation slot lock");
+    let Some(current) = guard.as_mut() else {
         return Err(HandoffError::Invalid);
     };
+    expire_hosted_wait_in_place(current);
+    if is_terminal(&current.view.phase) {
+        return if current.view.reason_code.as_deref() == Some("expired") {
+            Err(HandoffError::Expired)
+        } else {
+            Err(HandoffError::Invalid)
+        };
+    }
     if !matches!(
         current.view.kind.as_str(),
         "enable_hosted" | "restore_hosted"
     ) || current.nonce.as_deref() != Some(nonce)
-        || is_terminal(&current.view.phase)
     {
         return Err(HandoffError::Invalid);
     }
-    if current.started.elapsed() > HANDOFF_TTL {
-        return Err(HandoffError::Expired);
-    }
+    let _ = current.nonce.take();
     Ok(HandoffMatch {
         kind: current.view.kind.clone(),
         restore_key: current.restore_key.clone(),
@@ -233,4 +253,12 @@ pub fn generation_of(slot: &SharedOperationSlot) -> Option<u64> {
         .expect("operation slot lock")
         .as_ref()
         .map(|slot| slot.generation)
+}
+
+#[cfg(test)]
+pub fn backdate_started(slot: &SharedOperationSlot, age: Duration) {
+    let mut guard = slot.lock().expect("operation slot lock");
+    if let Some(current) = guard.as_mut() {
+        current.started = Instant::now().checked_sub(age).unwrap_or_else(Instant::now);
+    }
 }
