@@ -929,7 +929,7 @@ brand-sync:
 	cp "$(BRAND_DIR)/sol-wordmark.svg"            docs/static/sol-wordmark.svg
 	cp "$(BRAND_DIR)/png/sol-wordmark-512.png"    docs/static/logo.png
 	cp "$(BRAND_DIR)/web-favicon/favicon.ico"     favicon.ico
-	@echo "brand: held (not synced, intentionally divergent): $(SHELL_STATUS_HELD)"
+	@if [ -n "$(SHELL_STATUS_HELD)" ]; then echo "brand: held (not synced, intentionally divergent): $(SHELL_STATUS_HELD)"; fi
 	@echo "brand: synced from $(BRAND_DIR)"
 
 # Setup skill symlinks
