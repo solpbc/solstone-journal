@@ -24,12 +24,16 @@
     {
       "path": ["archive", "export"],
       "owner": "journal-direct",
-      "grammar": "journal archive export [--out PATH] [--quiet]",
+      "grammar": "journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]",
       "reads_stdin": false,
       "retired_spellings": ["sol call journal export"],
       "capabilities": [
-        "export only chronicle, entities, facets, and imports",
-        "include explicit chronicle/, entities/, facets/, imports/ members and _export.json",
+        "export the journal tree minus PORTABLE_DENY (restic-copied globs, *.key, and top-level config/, link/, tokens/, awareness/, apps/, backup/, solstone/, plus imports/archive-merge-work/)",
+        "an unsliced empty journal contains only _export.json; present included-root directories are emitted when they exist, with no placeholder four-root members",
+        "when any of --day, --from, or --to is present, membership is exactly matching chronicle/<YYYYMMDD>/ trees plus _export.json; entities, facets, imports, extra roots, and days outside the window are absent",
+        "a valid window with zero matching days writes a zip that contains _export.json only, exit 0, with day_count, entity_count, and facet_count all 0",
+        "sliced manifest day_count is the number of matching days; entity_count and facet_count are 0",
+        "--day cannot be combined with --from or --to; --from after --to is a usage error (exit 64); a non-Gregorian day token is unsafe input (exit 65)",
         "manifest keys are solstone_version, exported_at, source_journal, day_count, entity_count, and facet_count",
         "default output is JOURNAL.exports/YYYYMMDDTHHMMSSZ.zip beside the journal",
         "publish from a unique mode-0600 create-new no-follow sibling and leave no temporary residue on failure",
@@ -47,7 +51,7 @@
           "expected_exit": 0,
           "expected_stdout": "${OUT_CANONICAL}\n",
           "expected_stderr": "",
-          "expected_archive_members": ["chronicle/", "entities/", "facets/", "imports/", "_export.json"]
+          "expected_archive_members": ["_export.json"]
         },
         {
           "name": "symlink_member_rejected",

@@ -34,7 +34,7 @@ use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
 };
 use solstone_core_journal_archive::{
-    ArchiveSource, EncodeArchiveRequest, ExplicitArchiveOutputRequest,
+    ArchiveSource, DayWindow, EncodeArchiveRequest, ExplicitArchiveOutputRequest,
     acquire_explicit_output_target, publish_archive,
 };
 use solstone_core_journal_io::{
@@ -494,6 +494,9 @@ fn format_count_column(entries: Vec<(&String, &u64)>, total: usize, top: usize) 
 fn archive_export(args: &[OsString]) -> Outcome {
     let mut output: Option<PathBuf> = None;
     let mut quiet = false;
+    let mut day: Option<String> = None;
+    let mut from: Option<String> = None;
+    let mut to: Option<String> = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].to_str() {
@@ -508,14 +511,75 @@ fn archive_export(args: &[OsString]) -> Outcome {
                 quiet = true;
                 index += 1;
             }
+            Some("--day") if day.is_none() => {
+                let Some(value) = args.get(index + 1).and_then(|value| value.to_str()) else {
+                    return usage("archive export", "--day requires YYYYMMDD");
+                };
+                if !valid_day(value) {
+                    return failure(
+                        "archive export",
+                        "DAY must be a real YYYYMMDD date",
+                        EXIT_DATA,
+                    );
+                }
+                day = Some(value.to_owned());
+                index += 2;
+            }
+            Some("--from") if from.is_none() => {
+                let Some(value) = args.get(index + 1).and_then(|value| value.to_str()) else {
+                    return usage("archive export", "--from requires YYYYMMDD");
+                };
+                if !valid_day(value) {
+                    return failure(
+                        "archive export",
+                        "FROM must be a real YYYYMMDD date",
+                        EXIT_DATA,
+                    );
+                }
+                from = Some(value.to_owned());
+                index += 2;
+            }
+            Some("--to") if to.is_none() => {
+                let Some(value) = args.get(index + 1).and_then(|value| value.to_str()) else {
+                    return usage("archive export", "--to requires YYYYMMDD");
+                };
+                if !valid_day(value) {
+                    return failure(
+                        "archive export",
+                        "TO must be a real YYYYMMDD date",
+                        EXIT_DATA,
+                    );
+                }
+                to = Some(value.to_owned());
+                index += 2;
+            }
             Some("--help" | "-h") if args.len() == 1 => {
                 return success(
-                    "Usage: journal archive export [--out PATH] [--quiet]\n".to_owned(),
+                    "Usage: journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n".to_owned(),
                 );
             }
             _ => return usage("archive export", "unexpected argument"),
         }
     }
+    if day.is_some() && (from.is_some() || to.is_some()) {
+        return usage(
+            "archive export",
+            "--day cannot be combined with --from or --to",
+        );
+    }
+    if let (Some(from_day), Some(to_day)) = (&from, &to)
+        && from_day > to_day
+    {
+        return usage("archive export", "--from must not be after --to");
+    }
+    let day_window = if day.is_some() || from.is_some() || to.is_some() {
+        Some(DayWindow {
+            from: day.clone().or(from),
+            to: day.or(to),
+        })
+    } else {
+        None
+    };
 
     let journal = match journal_root("archive export") {
         Ok(path) => path,
@@ -552,6 +616,7 @@ fn archive_export(args: &[OsString]) -> Outcome {
         source: &source,
         solstone_version: env!("CARGO_PKG_VERSION"),
         exported_at: &exported_at,
+        day_window,
     };
     if let Err(error) = publish_archive(&target, &request) {
         return archive_error("archive export", &error.to_string());
