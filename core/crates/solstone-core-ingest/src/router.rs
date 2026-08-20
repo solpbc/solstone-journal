@@ -16,6 +16,7 @@ use solstone_core_callosum::{
 };
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_ingest_contract::{CONNECTION_BODY_LIMIT, MAX_PART_BYTES};
 use solstone_core_ingest_resolve::{
     AppliedDisposition, AppliedFile, ApplyError, ApplyResult, ConflictPlan, FailedPlan, IngestFile,
     IngestNotice, IngestNotifier, LoggingIngestNotifier, Resolution, apply_plan, quarantine_failed,
@@ -34,8 +35,6 @@ use crate::validation::{
     validate_access, validate_day, validate_protocol, validate_segment, validate_source,
 };
 
-const MAX_PART_BYTES: usize = 64 * 1024 * 1024;
-const CONNECTION_BODY_LIMIT: usize = 128 * 1024 * 1024;
 const MAX_FILES: usize = 8;
 const MAX_PARTS: usize = 12;
 const MAX_FILENAME_BYTES: usize = 128;

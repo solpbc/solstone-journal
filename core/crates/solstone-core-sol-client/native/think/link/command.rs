@@ -207,12 +207,6 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
         Some(port) => port,
         None => DEFAULT_SERVE_PORT,
     };
-    if port == 0 {
-        return Err(CommandOutput::failure(
-            "--port must be between 1 and 65535\n",
-            2,
-        ));
-    }
     let selection = match resolve_serve_bundle(parsed.label.as_deref(), ctx.env) {
         Ok(selection) => selection,
         Err(error) => return Err(CommandOutput::failure(format!("{error}\n"), 1)),
@@ -357,10 +351,13 @@ fn parse_serve_port(value: &str) -> Result<u16, String> {
     let parsed = value
         .parse::<i64>()
         .map_err(|_| format!("argument --port: invalid int value: '{value}'"))?;
-    if !(1..=65535).contains(&parsed) {
-        return Ok(0);
+    match parsed {
+        0 => Ok(0),
+        1..=65535 => {
+            u16::try_from(parsed).map_err(|_| "--port must be between 1 and 65535".to_string())
+        }
+        _ => Err("--port must be between 1 and 65535".to_string()),
     }
-    u16::try_from(parsed).map_err(|_| "--port must be between 1 and 65535".to_string())
 }
 
 fn take_value<'a>(args: &'a [String], index: usize, option: &str) -> Result<&'a str, String> {
@@ -1572,8 +1569,16 @@ mod tests {
                 ),
             ),
             (
-                vec!["--port", "0"],
-                "--port must be between 1 and 65535\n".to_string(),
+                vec!["--port", "-1"],
+                format!(
+                    "{SERVE_USAGE}solstone link serve: error: --port must be between 1 and 65535\n"
+                ),
+            ),
+            (
+                vec!["--port", "65536"],
+                format!(
+                    "{SERVE_USAGE}solstone link serve: error: --port must be between 1 and 65535\n"
+                ),
             ),
         ];
         for (args, expected_stderr) in cases {
@@ -1666,6 +1671,34 @@ mod tests {
             "forwarding 127.0.0.1:5015 -> home alpha over pl\n"
         );
         default_runner.assert_done();
+    }
+
+    #[test]
+    fn serve_port_zero_requests_ephemeral_and_prints_bound_port() {
+        let temp = temp_dir("serve-port-zero");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let bundle = serve_bundle(
+            &config,
+            "alpha",
+            json!([{"ip": "192.168.1.10", "port": 7657}]),
+        );
+        let runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
+            expected: expected_serve_request("alpha", 0, false, Some(DEFAULT_RELAY_URL), bundle),
+            result: Ok(ExpectedLinkServeSession {
+                bound_port: 54321,
+                serve_result: Ok(()),
+            }),
+        }]);
+        let resident = match run_serve(&["--port", "0"], &env, &runner) {
+            Ok(resident) => resident,
+            Err(output) => panic!("port 0 must enter resident serve: {output:?}"),
+        };
+        assert_eq!(
+            resident.startup(),
+            "forwarding 127.0.0.1:54321 -> home alpha over pl\n"
+        );
+        runner.assert_done();
     }
 
     #[test]
