@@ -253,9 +253,9 @@
       await window.SupportUI.loadTickets(deps());
       assert(
         'tickets empty',
-        text('#tickets-list .surface-state-heading') === 'no tickets yet — that\'s a good thing' &&
+        !!document.querySelector('#tickets-list .surface-state--empty') &&
           !document.getElementById('tab-tickets-badge') &&
-          tabCalls.includes('help')
+          !tabCalls.includes('help')
       );
     });
 

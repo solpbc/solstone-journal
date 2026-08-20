@@ -109,7 +109,7 @@
     border-color: var(--facet-color, #3b82f6);
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
   }
-  .support-reply-form label, .support-feedback-form label { display: block; margin-bottom: 0.35rem; }
+  .support-reply-form label, .support-feedback-form label, .support-create-form label { display: block; margin-bottom: 0.35rem; }
 
   /* Feedback */
   .support-feedback-form textarea {
@@ -476,11 +476,139 @@
       gap: 0.25rem;
     }
   }
+
+  /* Create request */
+  .support-create-form {
+    border: 1px solid var(--facet-border, #e5e0db);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .support-create-form textarea,
+  .support-create-form input[type="text"],
+  .support-create-form input[type="email"],
+  .support-create-form select {
+    width: 100%;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--facet-border, #e5e0db);
+    border-radius: 6px;
+    font: inherit;
+    box-sizing: border-box;
+    margin-bottom: 0.5rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .support-create-form textarea {
+    min-height: 100px;
+    resize: vertical;
+  }
+  .support-create-form textarea:hover,
+  .support-create-form input:hover,
+  .support-create-form select:hover { border-color: #bbb; }
+  .support-create-form textarea:focus,
+  .support-create-form input:focus,
+  .support-create-form select:focus {
+    outline: none;
+    border-color: var(--facet-color, #3b82f6);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  }
+  .support-create-options {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  /* Review surface */
+  #support-main.support-main--reviewing .support-section {
+    display: none;
+  }
+  .support-review-card {
+    border: 1px solid var(--facet-border, #e5e0db);
+    border-radius: 8px;
+    padding: 1rem;
+  }
+  .support-review-header { margin-bottom: 1rem; }
+  .support-review-title {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+  .support-review-route { font-size: 0.85rem; color: #666; }
+  .support-review-route-arrow { margin: 0 0.35rem; }
+  .support-review-kindrow { margin-bottom: 0.5rem; }
+  .support-review-kind { font-weight: 600; }
+  .support-review-ticket { margin-left: 0.5rem; color: #666; font-size: 0.9rem; }
+  .support-review-field {
+    display: flex;
+    gap: 1rem;
+    padding: 0.35rem 0;
+  }
+  .support-review-label { color: #888; min-width: 8rem; }
+  .support-review-fieldval { flex: 1; }
+  .support-review-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+  }
+  .support-review-pill { font-size: 0.85rem; color: #666; }
+  .support-review-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+  #support-review-send,
+  #support-review-discard {
+    min-height: 44px;
+  }
+  #support-review-send:focus-visible,
+  #support-review-discard:focus-visible {
+    outline: 2px solid var(--facet-color, #3b82f6);
+    outline-offset: 2px;
+  }
+  .support-review-floor { font-size: 0.85rem; color: #666; }
+  .support-review-diagnostics { margin-top: 1rem; }
+  .support-review-diagnostics-title { font-weight: 500; }
+  .support-review-diagnostics-note,
+  .support-review-omitted,
+  .support-review-attach-note {
+    font-size: 0.85rem;
+    color: #666;
+    margin: 0.25rem 0 0.5rem;
+  }
+  .support-review-diagnostic-row {
+    display: flex;
+    gap: 1rem;
+    padding: 0.2rem 0;
+  }
+  .support-review-diagnostic-subrow {
+    display: flex;
+    gap: 1rem;
+    padding: 0.15rem 0 0.15rem 1rem;
+  }
+  .support-review-diagnostic-subrows { flex: 1; }
+  .support-review-diagnostic-toggle {
+    background: none;
+    border: 1px solid var(--facet-border, #e5e0db);
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85rem;
+  }
+  .support-review-diagnostic-toggle:focus-visible {
+    outline: 2px solid var(--facet-color, #3b82f6);
+    outline-offset: 2px;
+  }
+  .support-review-diagnostic-array-item { padding: 0.15rem 0; }
 </style>
 
 <div class="workspace-content" id="support-root">
   <div id="support-disabled" class="support-disabled" style="display:none;">
-    <p>Support agent is disabled. Enable it in Settings to file tickets and give feedback.</p>
+    <p>support is turned off. turn it on in settings to file tickets and send feedback.</p>
     <p style="font-size:0.85rem;">tickets, feedback, and diagnostics all live here once it's on.</p>
   </div>
 
@@ -495,8 +623,58 @@
       <button type="button" role="tab" id="tab-help" data-section="help" aria-selected="false" aria-controls="section-help" tabindex="-1">help &amp; guidance</button>
     </nav>
 
+    <div id="support-review" class="support-review" hidden>
+      <div class="support-review-card" role="group">
+        <div class="support-review-header">
+          <span class="support-review-title">review before this goes to solstone support</span>
+          <span class="support-review-route">
+            <span class="support-review-route-from">this machine</span>
+            <span class="support-review-route-arrow" aria-hidden="true">→</span>
+            <span class="support-review-route-to">solstone support</span>
+          </span>
+        </div>
+        <div id="support-review-body" class="support-review-body"></div>
+        <div class="support-review-actions">
+          <button id="support-review-send" class="support-btn" type="button" disabled>send to solstone support</button>
+          <button id="support-review-discard" class="support-btn support-btn-secondary" type="button">discard</button>
+          <span class="support-review-floor">nothing is sent until you choose</span>
+        </div>
+        <div id="support-review-status" class="support-status-msg"></div>
+      </div>
+    </div>
+
     <!-- Section: Active Tickets -->
     <div id="section-tickets" class="support-section active" role="tabpanel" aria-labelledby="tab-tickets">
+      <div class="support-create-form" id="support-create">
+        <form id="create-form" novalidate>
+          <label for="create-subject">subject</label>
+          <input type="text" id="create-subject" required>
+          <div class="support-field-error" id="create-subject-error">please write something</div>
+          <label for="create-description">what's happening</label>
+          <textarea id="create-description" required></textarea>
+          <div class="support-field-error" id="create-description-error">please write something</div>
+          <label for="create-severity">severity</label>
+          <select id="create-severity">
+            <option value=""></option>
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
+          <label for="create-category">area</label>
+          <input type="text" id="create-category">
+          <div class="support-create-options">
+            <label><input type="checkbox" id="create-anonymous" checked> submit anonymously</label>
+          </div>
+          <div class="support-feedback-email-row" id="create-email-row" hidden>
+            <label for="create-email">your email</label>
+            <input type="email" id="create-email" autocomplete="email" required>
+            <div class="support-field-error" id="create-email-error"></div>
+          </div>
+          <button class="support-btn" id="create-submit" type="submit">review request</button>
+          <span class="support-keyboard-hint">ctrl+enter to review</span>
+          <div id="create-status" class="support-status-msg"></div>
+        </form>
+      </div>
       <div id="tickets-list">
         <div class="surface-state surface-state--loading" role="status" aria-busy="true">
           <div class="surface-state-spinner" aria-hidden="true"></div>
@@ -513,7 +691,7 @@
         <form id="feedback-form" novalidate>
           <label for="feedback-text">your feedback</label>
           <textarea id="feedback-text" placeholder="what's on your mind?" required></textarea>
-          <div class="support-field-error" id="feedback-error">please write something before sending</div>
+          <div class="support-field-error" id="feedback-error">please write something</div>
           <div class="support-feedback-options">
             <label><input type="checkbox" id="feedback-anonymous" checked> submit anonymously</label>
           </div>
@@ -526,8 +704,8 @@
               <a href="https://solpbc.org/privacy" target="_blank" rel="noopener">privacy policy</a>.
             </small>
           </div>
-          <button class="support-btn" id="feedback-submit" type="submit">send feedback</button>
-          <span class="support-keyboard-hint">ctrl+enter to send</span>
+          <button class="support-btn" id="feedback-submit" type="submit">review feedback</button>
+          <span class="support-keyboard-hint">ctrl+enter to review</span>
           <div id="feedback-status" class="support-status-msg"></div>
         </form>
       </div>
@@ -537,11 +715,7 @@
     <div id="section-help" class="support-section" role="tabpanel" aria-labelledby="tab-help">
       <div class="support-help-card">
         <h3>getting help</h3>
-        <p>just say "I need help" or "something's not working" in the chat bar. your sol will handle everything — searching for answers, running diagnostics, and filing a ticket if needed.</p>
-      </div>
-      <div class="support-help-card">
-        <h3>search the knowledge base</h3>
-        <p>ask your question in the chat bar. your sol will search the knowledge base and bring back the most relevant help.</p>
+        <p>start a support request from the tickets tab, or send feedback from the feedback tab. you'll review exactly what leaves this machine before anything is sent.</p>
       </div>
       <div class="support-help-card">
         <h3>run diagnostics</h3>
@@ -557,7 +731,7 @@
       </div>
       <div class="support-help-card">
         <h3>privacy</h3>
-        <p>nothing leaves your device without your explicit approval. you review every ticket before it's sent and can edit or redact anything. journal content is never included unless you attach it yourself.</p>
+        <p>nothing leaves this machine without your ok. you'll see every field and every diagnostic value that will be sent. journal content is never included unless you attach it yourself.</p>
       </div>
     </div>
   </div>
@@ -566,11 +740,24 @@
 <script src="/app/support/static/support.js"></script>
 <script>
 (function() {
+  const esc = (...args) => window.SupportUI.esc(...args);
+  const formatSize = (...args) => window.SupportUI.formatSize(...args);
+
   let announcementsFirstPaintDone = false;
   let announcementsLastSuccessAt = null;
 
-  // Tab navigation
+  function showCreateForm() {
+    const create = document.getElementById('support-create');
+    if (create) create.style.display = '';
+  }
+
+  function hideCreateForm() {
+    const create = document.getElementById('support-create');
+    if (create) create.style.display = 'none';
+  }
+
   function activateTab(sectionName) {
+    if (window.SupportUI.isReviewInFlight()) return;
     document.querySelectorAll('.support-nav button').forEach(b => {
       const isActive = b.dataset.section === sectionName;
       b.classList.toggle('active', isActive);
@@ -579,12 +766,12 @@
     });
     document.querySelectorAll('.support-section').forEach(s => s.classList.remove('active'));
     document.getElementById('section-' + sectionName).classList.add('active');
-    // Reset ticket detail when switching to tickets
     if (sectionName === 'tickets') {
       document.getElementById('ticket-detail').classList.remove('active');
+      document.getElementById('ticket-detail').innerHTML = '';
       document.getElementById('tickets-list').style.display = '';
+      showCreateForm();
     }
-    // Update tab badge visibility
     const badge = document.getElementById('tab-tickets-badge');
     if (badge) {
       const show = sectionName !== 'tickets' && (parseInt(badge.textContent, 10) || 0) > 0;
@@ -616,11 +803,11 @@
     activateTab(tabs[next].dataset.section);
   });
 
-  // Open ticket detail
   async function openTicket(id) {
     const detail = document.getElementById('ticket-detail');
     const list = document.getElementById('tickets-list');
     list.style.display = 'none';
+    hideCreateForm();
     detail.classList.add('active');
     detail.innerHTML = '<p>Loading...</p>';
 
@@ -668,16 +855,16 @@
           <form id="reply-form" novalidate>
             <label for="reply-text">your reply</label>
             <textarea id="reply-text" placeholder="write a reply..." required></textarea>
-            <div class="support-field-error" id="reply-error">please write something before sending</div>
+            <div class="support-field-error" id="reply-error">please write something</div>
             <div class="support-drop-zone" id="attach-zone" role="button" tabindex="0" aria-label="attach files — drop files here or click to browse">
               <input type="file" id="attach-input" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.txt,.csv,.html,.md,.xml,.json">
               Drop files here or click to attach (max 10 MB each, up to 5 files)
             </div>
             <div class="support-file-list" id="attach-file-list"></div>
             <div style="display:flex;gap:0.5rem;margin-top:0.5rem;align-items:center;">
-              <button class="support-btn" id="reply-submit" type="submit">send reply</button>
-              <button class="support-btn support-btn-secondary" id="attach-only-submit" type="button" style="display:none;">upload files only</button>
-              <span class="support-keyboard-hint">ctrl+enter to send</span>
+              <button class="support-btn" id="reply-submit" type="submit">review reply</button>
+              <button class="support-btn support-btn-secondary" id="attach-only-submit" type="button" style="display:none;">review files</button>
+              <span class="support-keyboard-hint">ctrl+enter to review</span>
             </div>
             <div id="reply-status" class="support-status-msg"></div>
           </form>
@@ -690,174 +877,12 @@
         detail.classList.remove('active');
         detail.innerHTML = '';
         list.style.display = '';
+        showCreateForm();
       });
       const backBtn = document.getElementById('back-to-list');
       if (backBtn) backBtn.focus();
 
-      // -- Attachment handling --
-      let pendingFiles = [];
-      const zone = document.getElementById('attach-zone');
-      const fileInput = document.getElementById('attach-input');
-      const fileList = document.getElementById('attach-file-list');
-      const attachOnlyBtn = document.getElementById('attach-only-submit');
-
-      function addFiles(newFiles) {
-        for (const f of newFiles) {
-          if (f.size > 10 * 1024 * 1024) {
-            showStatus('reply-status', f.name + ' exceeds 10 MB limit.', 'error');
-            continue;
-          }
-          if (pendingFiles.length >= 5) {
-            showStatus('reply-status', 'Max 5 files per upload.', 'error');
-            break;
-          }
-          if (!pendingFiles.some(p => p.name === f.name && p.size === f.size)) {
-            pendingFiles.push(f);
-          }
-        }
-        renderFileList();
-      }
-
-      function renderFileList() {
-        if (!fileList) return;
-        if (!pendingFiles.length) {
-          fileList.innerHTML = '';
-          if (attachOnlyBtn) attachOnlyBtn.style.display = 'none';
-          return;
-        }
-        if (attachOnlyBtn) attachOnlyBtn.style.display = '';
-        fileList.innerHTML = pendingFiles.map((f, i) =>
-          `<div class="support-file-entry">
-            <span>\u{1F4CE} ${esc(f.name)} (${formatSize(f.size)})</span>
-            <button class="remove-file" data-idx="${i}">\u00d7</button>
-          </div>`
-        ).join('');
-        fileList.querySelectorAll('.remove-file').forEach(btn => {
-          btn.addEventListener('click', () => {
-            pendingFiles.splice(parseInt(btn.dataset.idx), 1);
-            renderFileList();
-          });
-        });
-      }
-
-      if (zone) {
-        zone.addEventListener('click', () => fileInput && fileInput.click());
-        zone.addEventListener('keydown', e => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            fileInput && fileInput.click();
-          }
-        });
-        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
-        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
-        zone.addEventListener('drop', e => {
-          e.preventDefault();
-          zone.classList.remove('dragover');
-          if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
-        });
-      }
-      if (fileInput) {
-        fileInput.addEventListener('change', () => {
-          if (fileInput.files.length) addFiles(fileInput.files);
-          fileInput.value = '';
-        });
-      }
-
-      async function uploadPendingFiles(ticketId) {
-        let uploaded = 0;
-        for (const f of pendingFiles) {
-          const form = new FormData();
-          form.append('file', f);
-          const r = await fetch('/app/support/api/tickets/' + ticketId + '/attachments', {
-            method: 'POST',
-            body: form
-          });
-          if (!r.ok) {
-            const err = await r.json().catch(() => ({}));
-            throw new Error(err.error || 'Upload failed for ' + f.name);
-          }
-          uploaded++;
-        }
-        return uploaded;
-      }
-
-      const replyForm = document.getElementById('reply-form');
-      const replyError = document.getElementById('reply-error');
-      const replyText = document.getElementById('reply-text');
-      const replyBtn = document.getElementById('reply-submit');
-      if (replyForm) {
-        replyForm.addEventListener('submit', async e => {
-          e.preventDefault();
-          const text = replyText.value.trim();
-          if (!text && !pendingFiles.length) {
-            replyError.style.display = 'block';
-            replyText.focus();
-            return;
-          }
-          replyError.style.display = 'none';
-          replyBtn.disabled = true;
-          if (attachOnlyBtn) attachOnlyBtn.disabled = true;
-          const status = document.getElementById('reply-status');
-          try {
-            // Send reply text if present
-            if (text) {
-              const r = await fetch('/app/support/api/tickets/' + id + '/reply', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({content: text})
-              });
-              if (!r.ok) throw new Error('Failed to send reply');
-            }
-            // Upload attachments if any
-            if (pendingFiles.length) {
-              await uploadPendingFiles(id);
-              pendingFiles = [];
-              renderFileList();
-            }
-            status.textContent = text ? 'reply sent.' : 'files uploaded.';
-            status.className = 'support-status-msg success';
-            document.getElementById('reply-text').value = '';
-            setTimeout(() => openTicket(id), 500);
-          } catch (e) {
-            status.textContent = "couldn't send your reply — check your connection and try again";
-            status.className = 'support-status-msg error';
-          }
-          replyBtn.disabled = false;
-          if (attachOnlyBtn) attachOnlyBtn.disabled = false;
-        });
-        replyText.addEventListener('input', () => {
-          replyError.style.display = 'none';
-        });
-        replyText.addEventListener('keydown', e => {
-          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-            e.preventDefault();
-            replyForm.requestSubmit();
-          }
-        });
-      }
-
-      // Upload files only (no reply text)
-      if (attachOnlyBtn) {
-        attachOnlyBtn.addEventListener('click', async () => {
-          if (!pendingFiles.length) return;
-          replyBtn.disabled = true;
-          attachOnlyBtn.disabled = true;
-          const status = document.getElementById('reply-status');
-          try {
-            await uploadPendingFiles(id);
-            pendingFiles = [];
-            renderFileList();
-            status.textContent = 'files uploaded.';
-            status.className = 'support-status-msg success';
-            setTimeout(() => openTicket(id), 500);
-          } catch (e) {
-            status.textContent = e.message || 'Failed to upload.';
-            status.className = 'support-status-msg error';
-          }
-          replyBtn.disabled = false;
-          attachOnlyBtn.disabled = false;
-        });
-      }
+      window.SupportUI.bindReplyForm(id, { onSubmitted: () => openTicket(id) });
     } catch (err) {
       detail.innerHTML = window.SurfaceState.error({
         heading: 'Couldn\'t load ticket.',
@@ -872,98 +897,11 @@
         detail.classList.remove('active');
         detail.innerHTML = '';
         list.style.display = '';
+        showCreateForm();
       });
     }
   }
 
-  // Feedback submission
-  const feedbackForm = document.getElementById('feedback-form');
-  const feedbackError = document.getElementById('feedback-error');
-  const feedbackTextEl = document.getElementById('feedback-text');
-  const feedbackAnonymous = document.getElementById('feedback-anonymous');
-  const feedbackEmailRow = document.getElementById('feedback-email-row');
-  const feedbackEmailInput = document.getElementById('feedback-email');
-  const feedbackEmailError = document.getElementById('feedback-email-error');
-  feedbackAnonymous.addEventListener('change', () => {
-    if (feedbackAnonymous.checked) {
-      feedbackEmailRow.hidden = true;
-      feedbackEmailInput.value = '';
-      feedbackEmailError.textContent = '';
-    } else {
-      feedbackEmailRow.hidden = false;
-      feedbackEmailInput.focus();
-    }
-  });
-  feedbackForm.addEventListener('submit', async e => {
-    e.preventDefault();
-    const text = feedbackTextEl.value.trim();
-    if (!text) {
-      feedbackError.textContent = 'please write something before sending';
-      feedbackError.style.display = 'block';
-      feedbackTextEl.focus();
-      return;
-    }
-    feedbackError.style.display = 'none';
-    feedbackEmailError.textContent = '';
-    let email = '';
-    if (!feedbackAnonymous.checked) {
-      email = feedbackEmailInput.value.trim();
-      if (!email) {
-        feedbackEmailError.textContent = 'enter an email or check submit anonymously';
-        feedbackEmailInput.focus();
-        return;
-      }
-      if (!feedbackEmailInput.checkValidity()) {
-        feedbackEmailError.textContent = "that doesn't look like a valid email";
-        feedbackEmailInput.focus();
-        return;
-      }
-    }
-    const status = document.getElementById('feedback-status');
-    document.getElementById('feedback-submit').disabled = true;
-    const payload = {body: text, anonymous: feedbackAnonymous.checked};
-    if (!feedbackAnonymous.checked) {
-      payload.user_email = email;
-    }
-
-    try {
-      const resp = await fetch('/app/support/api/feedback', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload)
-      });
-      if (resp.ok) {
-        feedbackTextEl.value = '';
-        feedbackAnonymous.checked = true;
-        feedbackEmailRow.hidden = true;
-        feedbackEmailInput.value = '';
-        feedbackEmailError.textContent = '';
-        feedbackError.textContent = '';
-        status.textContent = 'thanks for your feedback!';
-        status.className = 'support-status-msg success';
-      } else {
-        throw new Error('Failed');
-      }
-    } catch (e) {
-      status.textContent = "couldn't send your feedback — " + window.CONVEY_COPY.RELOAD_HINT;
-      status.className = 'support-status-msg error';
-    }
-    document.getElementById('feedback-submit').disabled = false;
-  });
-  feedbackTextEl.addEventListener('input', () => {
-    feedbackError.style.display = 'none';
-  });
-  feedbackEmailInput.addEventListener('input', () => {
-    feedbackEmailError.textContent = '';
-  });
-  feedbackTextEl.addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      feedbackForm.requestSubmit();
-    }
-  });
-
-  // Load announcements
   function clearAnnouncementsStale() {
     const stale = document.getElementById('support-announcements-stale');
     if (stale) stale.remove();
@@ -1004,29 +942,10 @@
     }
   }
 
-  // Helpers
-  function esc(s) {
-    const el = document.createElement('span');
-    el.textContent = s;
-    return el.innerHTML;
-  }
-
-  function formatSize(bytes) {
-    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-    if (bytes >= 1024) return Math.round(bytes / 1024) + ' KB';
-    return bytes + ' bytes';
-  }
-
-  function showStatus(elId, msg, type) {
-    const el = document.getElementById(elId);
-    if (el) {
-      el.textContent = msg;
-      el.className = 'support-status-msg ' + type;
-    }
-  }
-
   function initSupport() {
     document.getElementById('diagnostics-btn').addEventListener('click', window.SupportUI.runDiagnostics);
+    window.SupportUI.bindCreateForm();
+    window.SupportUI.bindFeedbackForm();
     window.SupportUI.loadTickets({ openTicket, activateTab });
     loadAnnouncements();
   }

@@ -1,0 +1,751 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>support draft review</title>
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; }
+  .pass { color: #166534; }
+  .fail { color: #b91c1c; }
+</style>
+<h1>support draft review</h1>
+<div id="results"></div>
+<div id="fixture"></div>
+<script>
+  window.ConveyIcons = {
+    svg: name => `<svg data-icon="${name}"></svg>`
+  };
+  window.SurfaceState = {
+    loading({ text = '' } = {}) {
+      return `<div class="surface-state surface-state--loading" role="status" aria-busy="true">`
+        + `<div class="surface-state-spinner" aria-hidden="true"></div>`
+        + `${text ? `<span class="surface-state-text" data-role="loading-status">${text}</span>` : ''}`
+        + `</div>`;
+    },
+    empty({ icon = '', heading = '', desc = '', action = '' } = {}) {
+      return `<div class="surface-state surface-state--empty">`
+        + `${icon ? `<div class="surface-state-icon" aria-hidden="true">${icon}</div>` : ''}`
+        + `${heading ? `<h2 class="surface-state-heading">${heading}</h2>` : ''}`
+        + `${desc ? `<p class="surface-state-desc">${desc}</p>` : ''}`
+        + `${action ? `<div class="surface-state-action">${action}</div>` : ''}`
+        + `</div>`;
+    },
+    error({ heading = '', desc = '', retry = false, retryLabel = 'try again' } = {}) {
+      return `<div class="surface-state surface-state--error" role="alert">`
+        + `${heading ? `<h2 class="surface-state-heading">${heading}</h2>` : ''}`
+        + `${desc ? `<p class="surface-state-desc">${desc}</p>` : ''}`
+        + `${retry ? `<button type="button" class="surface-state-retry">${retryLabel}</button>` : ''}`
+        + `</div>`;
+    }
+  };
+  window.relativeTime = () => '0 seconds';
+  window.logError = function() {};
+  window.CONVEY_COPY = { RELOAD_HINT: 'reload to try again.' };
+  window.CONVEY_SETTINGS = { reportingEnabled: true };
+</script>
+<script src="../support.js"></script>
+<script>
+  const results = document.getElementById('results');
+  const fixture = document.getElementById('fixture');
+  let failures = 0;
+  let calls = [];
+  let navigatedTo = null;
+  let draftSeq = 0;
+
+  const DIAG = {
+    version: '2.0.0',
+    revision: null,
+    platform: { system: 'Linux', release: '1', machine: 'x86_64' },
+    services: {},
+    recent_errors: [],
+    config: {},
+    brain_health: { snapshot: { state: 'unknown' }, lines: [] },
+    unknown_key: 'visible',
+    empty_list: []
+  };
+
+  function assert(name, condition, detail) {
+    const row = document.createElement('div');
+    row.className = condition ? 'pass' : 'fail';
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  function text(selector) {
+    const el = typeof selector === 'string' ? document.querySelector(selector) : selector;
+    return el ? el.textContent : '';
+  }
+
+  function response({ status = 200, body = {} }) {
+    return { status, ok: status >= 200 && status < 300, json: async () => body };
+  }
+
+  function recordCall(url, opts) {
+    const method = (opts && opts.method) || 'GET';
+    const body = opts && opts.body;
+    const entry = { url, method, body };
+    if (typeof body === 'string') {
+      try { entry.json = JSON.parse(body); } catch (err) { entry.json = null; }
+    }
+    if (body && typeof FormData !== 'undefined' && body instanceof FormData) {
+      const file = body.get('file');
+      entry.form = {
+        verb: body.get('verb'),
+        ticket_id: body.get('ticket_id'),
+        fileName: file && file.name
+      };
+    }
+    calls.push(entry);
+    return entry;
+  }
+
+  function forbiddenMutation(entry) {
+    return entry.url.indexOf('/app/support/api/feedback') !== -1
+      || entry.url.indexOf('/reply') !== -1
+      || entry.url.indexOf('/attachments') !== -1
+      || (entry.method === 'POST' && entry.url.indexOf('/app/support/api/tickets') !== -1);
+  }
+
+  window.apiJson = async function(url, opts) {
+    const noAuthRedirect = !!(opts && opts.noAuthRedirect);
+    const resp = await window.fetch(url, opts || {});
+    if ((resp.status === 401 || resp.status === 403) && !noAuthRedirect) {
+      navigatedTo = '/';
+      throw new Error('Authentication required');
+    }
+    return resp.json();
+  };
+
+  async function withFetch(impl, fn) {
+    const originalFetch = window.fetch;
+    window.fetch = async function(url, opts) {
+      recordCall(url, opts);
+      return impl(url, opts);
+    };
+    try {
+      return await fn();
+    } finally {
+      window.fetch = originalFetch;
+    }
+  }
+
+  function resetFixture() {
+    calls = [];
+    navigatedTo = null;
+    draftSeq = 0;
+    window.CONVEY_SETTINGS = { reportingEnabled: true };
+    fixture.innerHTML = `
+      <div id="support-disabled" style="display:none;"></div>
+      <div id="support-main">
+        <nav class="support-nav">
+          <button type="button" id="tab-tickets" class="active" data-section="tickets">active tickets</button>
+          <button type="button" id="tab-feedback" data-section="feedback">feedback</button>
+        </nav>
+        <div id="support-review" class="support-review" hidden>
+          <div class="support-review-card" role="group">
+            <div class="support-review-header">
+              <span class="support-review-title">review before this goes to solstone support</span>
+              <span class="support-review-route">
+                <span class="support-review-route-from">this machine</span>
+                <span class="support-review-route-arrow">→</span>
+                <span class="support-review-route-to">solstone support</span>
+              </span>
+            </div>
+            <div id="support-review-body" class="support-review-body"></div>
+            <div class="support-review-actions">
+              <button id="support-review-send" class="support-btn" type="button" disabled>send to solstone support</button>
+              <button id="support-review-discard" class="support-btn support-btn-secondary" type="button">discard</button>
+              <span class="support-review-floor">nothing is sent until you choose</span>
+            </div>
+            <div id="support-review-status" class="support-status-msg"></div>
+          </div>
+        </div>
+        <div id="section-tickets" class="support-section active">
+          <div class="support-create-form" id="support-create">
+            <form id="create-form" novalidate>
+              <label for="create-subject">subject</label>
+              <input type="text" id="create-subject">
+              <div class="support-field-error" id="create-subject-error">please write something</div>
+              <label for="create-description">what's happening</label>
+              <textarea id="create-description"></textarea>
+              <div class="support-field-error" id="create-description-error">please write something</div>
+              <select id="create-severity"><option value=""></option><option value="low">low</option><option value="high">high</option></select>
+              <input type="text" id="create-category">
+              <label><input type="checkbox" id="create-anonymous" checked> submit anonymously</label>
+              <div id="create-email-row" hidden>
+                <input type="email" id="create-email">
+                <div class="support-field-error" id="create-email-error"></div>
+              </div>
+              <button id="create-submit" type="submit">review request</button>
+              <div id="create-status" class="support-status-msg"></div>
+            </form>
+          </div>
+          <div id="tickets-list"></div>
+          <div id="ticket-detail" class="support-detail">
+            <form id="reply-form" novalidate>
+              <textarea id="reply-text"></textarea>
+              <div class="support-field-error" id="reply-error">please write something</div>
+              <div class="support-drop-zone" id="attach-zone">
+                <input type="file" id="attach-input" multiple>
+              </div>
+              <div id="attach-file-list"></div>
+              <button id="reply-submit" type="submit">review reply</button>
+              <button id="attach-only-submit" type="button" style="display:none;">review files</button>
+              <div id="reply-status" class="support-status-msg"></div>
+            </form>
+          </div>
+        </div>
+        <div id="section-feedback" class="support-section">
+          <form id="feedback-form" novalidate>
+            <textarea id="feedback-text"></textarea>
+            <div class="support-field-error" id="feedback-error">please write something</div>
+            <label><input type="checkbox" id="feedback-anonymous" checked></label>
+            <div id="feedback-email-row" hidden>
+              <input type="email" id="feedback-email">
+              <div id="feedback-email-error" class="support-field-error"></div>
+            </div>
+            <button id="feedback-submit" type="submit">review feedback</button>
+            <div id="feedback-status" class="support-status-msg"></div>
+          </form>
+        </div>
+      </div>
+    `;
+    window.SupportUI.bindCreateForm();
+    window.SupportUI.bindFeedbackForm();
+    window.SupportUI.bindReplyForm(42);
+  }
+
+  function nextDraftId() {
+    draftSeq += 1;
+    return 'draft-' + draftSeq;
+  }
+
+  function captureOk() {
+    return async function(url, opts) {
+      const method = (opts && opts.method) || 'GET';
+      if (method === 'GET' && url.indexOf('/app/support/api/diagnostics') !== -1) {
+        return response({ body: DIAG });
+      }
+      if (method === 'POST' && url.indexOf('/draft/confirm') !== -1) {
+        return response({ body: { ok: true, outcome: 'submitted' } });
+      }
+      if (method === 'POST' && url.indexOf('/draft/cancel') !== -1) {
+        return response({ body: { ok: true, outcome: 'cancelled' } });
+      }
+      if (method === 'POST' && url.indexOf('/app/support/api/draft') !== -1) {
+        return response({ body: { draft_id: nextDraftId() } });
+      }
+      return response({ status: 404, body: { error: 'unhandled', reason_code: 'not_found' } });
+    };
+  }
+
+  function postsTo(path) {
+    return calls.filter(function(entry) {
+      return entry.method === 'POST' && entry.url.indexOf(path) !== -1;
+    });
+  }
+
+  function reviewVisible() {
+    const el = document.getElementById('support-review');
+    return el && !el.hidden;
+  }
+
+  async function waitFor(pred, label) {
+    for (let i = 0; i < 50; i++) {
+      if (pred()) return;
+      await new Promise(function(resolve) { setTimeout(resolve, 0); });
+    }
+    throw new Error('timeout waiting for ' + label);
+  }
+
+  async function run() {
+    resetFixture();
+    assert(
+      'exports',
+      typeof window.SupportUI.startReview === 'function'
+        && typeof window.SupportUI.confirmReview === 'function'
+        && typeof window.SupportUI.discardReview === 'function'
+        && typeof window.SupportUI.bindCreateForm === 'function'
+        && typeof window.SupportUI.bindReplyForm === 'function'
+        && typeof window.SupportUI.formatSize === 'function'
+        && typeof window.SupportUI.isReviewInFlight === 'function'
+    );
+
+    resetFixture();
+    const send0 = document.getElementById('support-review-send');
+    assert('send starts disabled', send0.disabled);
+    await withFetch(captureOk(), async () => {
+      await window.SupportUI.startReview({
+        kind: 'create',
+        payload: {
+          subject: 'Cannot start',
+          description: 'The service exits',
+          product: 'solstone',
+          severity: 'medium',
+          anonymous: true
+        }
+      }, { statusEl: document.getElementById('create-status') });
+      const capture = postsTo('/app/support/api/draft').filter(function(entry) {
+        return entry.url.indexOf('/confirm') === -1 && entry.url.indexOf('/cancel') === -1;
+      });
+      assert(
+        'create first mutation is draft json',
+        capture.length === 1
+          && capture[0].json
+          && capture[0].json.verb === 'create'
+          && capture[0].json.payload
+          && capture[0].json.payload.product === 'solstone'
+          && capture[0].json.payload.severity === 'medium'
+          && Object.prototype.hasOwnProperty.call(capture[0].json, 'diagnostics_snapshot')
+      );
+      assert(
+        'create diagnostics fetched',
+        calls.some(function(entry) {
+          return entry.method === 'GET' && entry.url.indexOf('/app/support/api/diagnostics') !== -1;
+        })
+      );
+      assert(
+        'send enabled after render',
+        document.getElementById('support-review-body').getAttribute('data-rendered') === 'true'
+          && !document.getElementById('support-review-send').disabled
+      );
+      assert('create kind', text('.support-review-kind').indexOf('new support request') !== -1);
+      assert('no forbidden mutation after create capture', !calls.some(forbiddenMutation));
+      document.getElementById('support-review-send').click();
+      await waitFor(function() { return !reviewVisible(); }, 'create review cleared');
+      assert(
+        'create send confirms',
+        postsTo('/draft/confirm').length === 1
+          && postsTo('/draft/confirm')[0].json.draft_id === 'draft-1'
+      );
+      assert('create submitted copy', text('#create-status').indexOf('sent to solstone support') !== -1);
+      assert('create review cleared', !reviewVisible());
+    });
+
+    resetFixture();
+    await withFetch(captureOk(), async () => {
+      document.getElementById('feedback-text').value = 'The flow is confusing';
+      document.getElementById('feedback-form').requestSubmit();
+      await waitFor(reviewVisible, 'feedback review');
+      const capture = postsTo('/app/support/api/draft').filter(function(entry) {
+        return entry.url.indexOf('/confirm') === -1 && entry.url.indexOf('/cancel') === -1;
+      });
+      assert(
+        'feedback capture',
+        capture.length === 1 && capture[0].json && capture[0].json.verb === 'feedback'
+          && capture[0].json.payload.body === 'The flow is confusing'
+      );
+      assert('feedback kind', text('.support-review-kind').indexOf('send feedback') !== -1);
+      const bodyText = text('#support-review-body');
+      assert('feedback portal subject', bodyText.indexOf('Feedback') !== -1);
+      assert('feedback portal severity', bodyText.indexOf('low') !== -1);
+      assert('feedback portal area', bodyText.indexOf('feedback') !== -1);
+    });
+
+    resetFixture();
+    const evidence = new File(['hello'], 'evidence.txt', { type: 'text/plain' });
+    await withFetch(captureOk(), async () => {
+      await window.SupportUI.startReview({
+        kind: 'reply',
+        ticketId: 42,
+        payload: { ticket_id: 42, content: 'More detail' },
+        files: [evidence]
+      }, { statusEl: document.getElementById('reply-status') });
+      const captures = postsTo('/app/support/api/draft').filter(function(entry) {
+        return entry.url.indexOf('/confirm') === -1 && entry.url.indexOf('/cancel') === -1;
+      });
+      assert(
+        'reply then attach capture order',
+        captures.length === 2
+          && captures[0].json && captures[0].json.verb === 'reply'
+          && captures[1].form && captures[1].form.verb === 'attach'
+          && captures[1].form.ticket_id === '42'
+          && captures[1].form.fileName === 'evidence.txt'
+      );
+      assert('reply ticket', text('#support-review-body').indexOf('ticket #42') !== -1);
+      await window.SupportUI.confirmReview();
+      const confirms = postsTo('/draft/confirm');
+      assert(
+        'confirm reply then attach',
+        confirms.length === 2
+          && confirms[0].json.draft_id === 'draft-1'
+          && confirms[1].json.draft_id === 'draft-2'
+      );
+    });
+
+    resetFixture();
+    await withFetch(captureOk(), async () => {
+      await window.SupportUI.startReview({
+        kind: 'files-only',
+        ticketId: 42,
+        files: [evidence]
+      }, { statusEl: document.getElementById('reply-status') });
+      const captures = postsTo('/app/support/api/draft').filter(function(entry) {
+        return entry.url.indexOf('/confirm') === -1 && entry.url.indexOf('/cancel') === -1;
+      });
+      assert(
+        'files-only has no reply json',
+        captures.length === 1 && captures[0].form && captures[0].form.verb === 'attach'
+      );
+      assert('files-only kind', text('.support-review-kind').indexOf('attach a file') !== -1);
+      assert('files-only has no content_b64', text('#support-review-body').indexOf('content_b64') === -1);
+    });
+
+    resetFixture();
+    await withFetch(captureOk(), async () => {
+      await window.SupportUI.startReview({
+        kind: 'reply',
+        ticketId: 42,
+        payload: { ticket_id: 42, content: 'More detail' },
+        files: [evidence]
+      }, { statusEl: document.getElementById('reply-status') });
+      document.getElementById('support-review-discard').click();
+      await waitFor(function() { return !reviewVisible(); }, 'discard cleared review');
+      const cancels = postsTo('/draft/cancel');
+      assert(
+        'discard cancels every id',
+        cancels.length === 2
+          && cancels[0].json.draft_id === 'draft-1'
+          && cancels[1].json.draft_id === 'draft-2'
+      );
+      assert('discard copy', text('#reply-status').indexOf('discarded. nothing was sent.') !== -1);
+      assert('discard clears review', !reviewVisible());
+    });
+
+    resetFixture();
+    window.CONVEY_SETTINGS = { reportingEnabled: false };
+    await withFetch(captureOk(), async () => {
+      await window.SupportUI.startReview({
+        kind: 'create',
+        payload: {
+          subject: 's',
+          description: 'd',
+          product: 'solstone',
+          severity: 'medium',
+          anonymous: true
+        }
+      }, { statusEl: document.getElementById('create-status') });
+      assert(
+        'diagnostics off skips GET',
+        !calls.some(function(entry) {
+          return entry.url.indexOf('/app/support/api/diagnostics') !== -1;
+        })
+      );
+      const capture = postsTo('/app/support/api/draft')[0];
+      assert(
+        'diagnostics off sends null key',
+        capture.json && capture.json.diagnostics_snapshot === null
+          && Object.prototype.hasOwnProperty.call(capture.json, 'diagnostics_snapshot')
+      );
+      assert(
+        'diagnostics omitted copy',
+        text('#support-review-body').indexOf('diagnostic context is not included') !== -1
+      );
+    });
+
+    resetFixture();
+    delete window.CONVEY_SETTINGS;
+    await withFetch(captureOk(), async () => {
+      await window.SupportUI.startReview({
+        kind: 'feedback',
+        payload: { body: 'hi', product: 'solstone', anonymous: true }
+      }, { statusEl: document.getElementById('feedback-status') });
+      assert(
+        'missing settings fetches diagnostics',
+        calls.some(function(entry) {
+          return entry.method === 'GET' && entry.url.indexOf('/app/support/api/diagnostics') !== -1;
+        })
+      );
+      const capture = postsTo('/app/support/api/draft')[0];
+      assert(
+        'snapshot deep-equals GET body',
+        capture.json && JSON.stringify(capture.json.diagnostics_snapshot) === JSON.stringify(DIAG)
+      );
+      const rendered = text('#support-review-body');
+      assert('journal version label', rendered.indexOf('journal version') !== -1);
+      assert('null diagnostic scalar', rendered.indexOf('—') !== -1);
+      assert('empty object diagnostic', rendered.indexOf('(none)') !== -1);
+      assert('empty array count', rendered.indexOf('empty_list (0)') !== -1);
+      assert('unknown diagnostic key', rendered.indexOf('unknown_key') !== -1);
+      assert('no raw object dump', rendered.indexOf('{"') === -1);
+    });
+    window.CONVEY_SETTINGS = { reportingEnabled: true };
+
+    resetFixture();
+    await withFetch(async function(url) {
+      if (url.indexOf('/app/support/api/diagnostics') !== -1) {
+        return response({ status: 500, body: { error: 'diag down', reason_code: 'support_portal_failed' } });
+      }
+      return response({ body: { draft_id: 'should-not' } });
+    }, async () => {
+      await window.SupportUI.startReview({
+        kind: 'create',
+        payload: { subject: 's', description: 'd', product: 'solstone', severity: 'medium', anonymous: true }
+      }, { statusEl: document.getElementById('create-status') });
+      assert(
+        'diag failure does not capture',
+        postsTo('/app/support/api/draft').length === 0
+      );
+      assert('diag failure keeps compose', !reviewVisible());
+      assert('diag failure shows error', text('#create-status').indexOf('diag down') !== -1);
+      assert('diag failure releases guard', window.SupportUI.isReviewInFlight() === false);
+    });
+
+    resetFixture();
+    let draftPosts = 0;
+    await withFetch(async function(url, opts) {
+      const method = (opts && opts.method) || 'GET';
+      if (method === 'POST' && url.indexOf('/draft/cancel') !== -1) {
+        return response({ body: { ok: true, outcome: 'cancelled' } });
+      }
+      if (method === 'POST' && url.indexOf('/app/support/api/draft') !== -1) {
+        draftPosts += 1;
+        if (draftPosts === 1) return response({ body: { draft_id: 'keep-me' } });
+        return response({ status: 500, body: { error: 'second failed', reason_code: 'support_portal_failed' } });
+      }
+      return response({ status: 404, body: { error: 'unhandled' } });
+    }, async () => {
+      await window.SupportUI.startReview({
+        kind: 'reply',
+        ticketId: 42,
+        payload: { ticket_id: 42, content: 'More detail' },
+        files: [evidence]
+      }, { statusEl: document.getElementById('reply-status') });
+      const cancels = postsTo('/draft/cancel');
+      assert(
+        'second capture failure cancels first',
+        cancels.length === 1 && cancels[0].json.draft_id === 'keep-me'
+      );
+      assert('second capture failure stays on compose', !reviewVisible());
+      assert('second capture failure shows error', text('#reply-status').indexOf('second failed') !== -1);
+    });
+
+    resetFixture();
+    const six = {
+      version: '2.0.0',
+      recent_errors: [1, 2, 3, 4, 5, 6]
+    };
+    await withFetch(async function(url) {
+      if (url.indexOf('/diagnostics') !== -1) return response({ body: six });
+      if (url.indexOf('/app/support/api/draft') !== -1) return response({ body: { draft_id: 'd1' } });
+      return response({ status: 404, body: {} });
+    }, async () => {
+      await window.SupportUI.startReview({
+        kind: 'create',
+        payload: {
+          subject: 's',
+          description: 'd',
+          product: 'solstone',
+          severity: 'high',
+          category: 'runtime',
+          anonymous: false,
+          user_email: 'owner@example.com'
+        }
+      }, { statusEl: document.getElementById('create-status') });
+      const rendered = text('#support-review-body');
+      assert('email when present', rendered.indexOf('owner@example.com') !== -1);
+      assert('create meta severity', rendered.indexOf('severity') !== -1 && rendered.indexOf('high') !== -1);
+      assert('create meta area', rendered.indexOf('runtime') !== -1);
+      const toggle = document.querySelector('.support-review-diagnostic-toggle');
+      const items = document.querySelector('.support-review-diagnostic-array-items');
+      assert('array toggle is button', toggle && toggle.tagName === 'BUTTON');
+      assert('large array collapsed', toggle && toggle.getAttribute('aria-expanded') === 'false' && items.hidden);
+      toggle.click();
+      assert('array click toggles', toggle.getAttribute('aria-expanded') === 'true' && !items.hidden);
+    });
+
+    resetFixture();
+    await withFetch(captureOk(), async () => {
+      await window.SupportUI.startReview({
+        kind: 'create',
+        payload: { subject: 's', description: 'd', product: 'solstone', severity: 'medium', anonymous: true }
+      }, { statusEl: document.getElementById('create-status') });
+      assert('anonymous has no email field', text('#support-review-body').indexOf('your email') === -1);
+      assert('name attached no', text('#support-review-body').indexOf('name attached: no') !== -1);
+    });
+
+    resetFixture();
+    await withFetch(async function(url) {
+      if (url.indexOf('/diagnostics') !== -1) return response({ body: DIAG });
+      if (url.indexOf('/draft/confirm') !== -1) {
+        return response({ body: { ok: true, outcome: 'already_submitted' } });
+      }
+      if (url.indexOf('/app/support/api/draft') !== -1) return response({ body: { draft_id: 'd1' } });
+      return response({ status: 404, body: {} });
+    }, async () => {
+      await window.SupportUI.startReview({
+        kind: 'create',
+        payload: { subject: 's', description: 'd', product: 'solstone', severity: 'medium', anonymous: true }
+      }, { statusEl: document.getElementById('create-status') });
+      await window.SupportUI.confirmReview();
+      assert('already_submitted copy', text('#create-status').indexOf('sent to solstone support') !== -1);
+      assert('already_submitted clears', !reviewVisible());
+    });
+
+    resetFixture();
+    await withFetch(async function(url) {
+      if (url.indexOf('/diagnostics') !== -1) return response({ body: DIAG });
+      if (url.indexOf('/draft/confirm') !== -1) {
+        return response({ body: { ok: true, outcome: 'not_found' } });
+      }
+      if (url.indexOf('/app/support/api/draft') !== -1) return response({ body: { draft_id: 'd1' } });
+      return response({ status: 404, body: {} });
+    }, async () => {
+      await window.SupportUI.startReview({
+        kind: 'create',
+        payload: { subject: 's', description: 'd', product: 'solstone', severity: 'medium', anonymous: true }
+      }, { statusEl: document.getElementById('create-status') });
+      await window.SupportUI.confirmReview();
+      assert('not_found copy', text('#create-status').indexOf('that draft is gone. nothing was sent.') !== -1);
+      assert('not_found clears', !reviewVisible());
+    });
+
+    resetFixture();
+    await withFetch(async function(url) {
+      if (url.indexOf('/diagnostics') !== -1) return response({ body: DIAG });
+      if (url.indexOf('/draft/confirm') !== -1) {
+        return response({
+          status: 500,
+          body: { error: 'portal down', reason_code: 'support_portal_failed' }
+        });
+      }
+      if (url.indexOf('/app/support/api/draft') !== -1) return response({ body: { draft_id: 'd1' } });
+      return response({ status: 404, body: {} });
+    }, async () => {
+      await window.SupportUI.startReview({
+        kind: 'create',
+        payload: { subject: 's', description: 'd', product: 'solstone', severity: 'medium', anonymous: true }
+      }, { statusEl: document.getElementById('create-status') });
+      await window.SupportUI.confirmReview();
+      assert('portal failed keeps review', reviewVisible());
+      assert('portal failed shows error', text('#support-review-status').indexOf('portal down') !== -1);
+      assert('portal failed re-enables send', !document.getElementById('support-review-send').disabled);
+      assert('portal failed re-enables discard', !document.getElementById('support-review-discard').disabled);
+      assert('portal failed has no retry button', !document.querySelector('#support-review button.support-review-retry'));
+    });
+
+    resetFixture();
+    await withFetch(async function(url) {
+      if (url.indexOf('/diagnostics') !== -1) return response({ body: DIAG });
+      if (url.indexOf('/draft/confirm') !== -1) {
+        return response({
+          status: 401,
+          body: { error: 'tos changed', reason_code: 'tos_changed' }
+        });
+      }
+      if (url.indexOf('/app/support/api/draft') !== -1) return response({ body: { draft_id: 'd1' } });
+      return response({ status: 404, body: {} });
+    }, async () => {
+      await window.SupportUI.startReview({
+        kind: 'create',
+        payload: { subject: 's', description: 'd', product: 'solstone', severity: 'medium', anonymous: true }
+      }, { statusEl: document.getElementById('create-status') });
+      await window.SupportUI.confirmReview();
+      assert('tos_changed keeps review', reviewVisible());
+      assert('tos_changed shows error', text('#support-review-status').indexOf('tos changed') !== -1);
+      assert('401 does not navigate', navigatedTo === null);
+    });
+
+    resetFixture();
+    await withFetch(async function(url, opts) {
+      const method = (opts && opts.method) || 'GET';
+      if (method === 'POST' && url.indexOf('/draft/confirm') !== -1) {
+        return response({
+          status: 500,
+          body: { error: 'reply failed', reason_code: 'support_portal_failed' }
+        });
+      }
+      if (method === 'POST' && url.indexOf('/app/support/api/draft') !== -1) {
+        return response({ body: { draft_id: nextDraftId() } });
+      }
+      return response({ status: 404, body: {} });
+    }, async () => {
+      await window.SupportUI.startReview({
+        kind: 'reply',
+        ticketId: 42,
+        payload: { ticket_id: 42, content: 'More detail' },
+        files: [evidence]
+      }, { statusEl: document.getElementById('reply-status') });
+      await window.SupportUI.confirmReview();
+      assert('reply confirm failure does not confirm attach', postsTo('/draft/confirm').length === 1);
+      assert('reply confirm failure keeps review', reviewVisible());
+    });
+
+    resetFixture();
+    await withFetch(captureOk(), async () => {
+      await window.SupportUI.startReview({
+        kind: 'files-only',
+        ticketId: 42,
+        files: [{ name: 'big.png', size: 10 * 1024 * 1024 + 1 }]
+      }, { statusEl: document.getElementById('reply-status') });
+      assert('oversize rejected before capture', postsTo('/app/support/api/draft').length === 0);
+      assert('oversize stays on compose', !reviewVisible());
+    });
+
+    resetFixture();
+    await withFetch(captureOk(), async () => {
+      await window.SupportUI.startReview({
+        kind: 'files-only',
+        ticketId: 42,
+        files: [
+          new File(['a'], 'a.txt', { type: 'text/plain' }),
+          new File(['b'], 'b.txt', { type: 'text/plain' }),
+          new File(['c'], 'c.txt', { type: 'text/plain' }),
+          new File(['d'], 'd.txt', { type: 'text/plain' }),
+          new File(['e'], 'e.txt', { type: 'text/plain' }),
+          new File(['f'], 'f.txt', { type: 'text/plain' })
+        ]
+      }, { statusEl: document.getElementById('reply-status') });
+      assert('over-count rejected before capture', postsTo('/app/support/api/draft').length === 0);
+    });
+
+    resetFixture();
+    await withFetch(captureOk(), async () => {
+      await window.SupportUI.startReview({
+        kind: 'files-only',
+        ticketId: 42,
+        files: [new File(['x'], 'notes.exe', { type: 'application/octet-stream' })]
+      }, { statusEl: document.getElementById('reply-status') });
+      assert('bad suffix rejected before capture', postsTo('/app/support/api/draft').length === 0);
+    });
+
+    resetFixture();
+    await withFetch(captureOk(), async () => {
+      await window.SupportUI.startReview({
+        kind: 'create',
+        payload: { subject: 's', description: 'd', product: 'solstone', severity: 'medium', anonymous: true }
+      }, { statusEl: document.getElementById('create-status') });
+      const before = calls.length;
+      await window.SupportUI.startReview({
+        kind: 'create',
+        payload: { subject: 'other', description: 'nope', product: 'solstone', severity: 'medium', anonymous: true }
+      }, { statusEl: document.getElementById('create-status') });
+      assert('in-flight blocks second capture', calls.length === before);
+      assert('in-flight observable', window.SupportUI.isReviewInFlight() === true);
+    });
+
+    resetFixture();
+    await withFetch(async function(url, opts) {
+      recordCall(url, opts);
+      return response({
+        status: 403,
+        body: { error: 'off', reason_code: 'feature_unavailable' }
+      });
+    }, async () => {
+      try {
+        await window.apiJson('/app/support/api/draft', { method: 'POST' });
+      } catch (err) { /* expected */ }
+      assert('apiJson 403 navigates without noAuthRedirect', navigatedTo === '/');
+    });
+
+    assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+  }
+
+  run().catch(function(err) {
+    assert('uncaught', false, err && err.message ? err.message : String(err));
+    assert('summary', false, 'uncaught exception');
+  });
+</script>
+</html>

@@ -1244,12 +1244,42 @@ fn diagnostics_divergences_are_named_and_corpus_referenced() {
 }
 
 #[test]
+fn workspace_and_support_js_use_draft_routes_not_direct_mutation() {
+    let workspace = std::str::from_utf8(super::WORKSPACE).expect("workspace is utf-8");
+    let js = std::str::from_utf8(super::SUPPORT_JS).expect("support js is utf-8");
+    for hay in [workspace, js] {
+        assert!(
+            !hay.contains("/app/support/api/feedback"),
+            "direct feedback mutation remains"
+        );
+        assert!(!hay.contains("/reply"), "direct reply mutation remains");
+        assert!(
+            !hay.contains("/attachments"),
+            "direct attachment mutation remains"
+        );
+    }
+    let combined = format!("{workspace}{js}");
+    assert!(
+        combined.contains("/app/support/api/draft"),
+        "draft capture route missing"
+    );
+    assert!(
+        combined.contains("/draft/confirm"),
+        "draft confirm route missing"
+    );
+    assert!(
+        combined.contains("/draft/cancel"),
+        "draft cancel route missing"
+    );
+}
+
+#[test]
 fn copied_assets_are_byte_identical_to_the_frozen_hashes() {
     for (bytes, hash, size) in [
         (
             super::WORKSPACE,
-            "ca70f29ba5345d5374c23be877eb52fc1e421f0eec088d9b9cd31032016e1deb",
-            37_261,
+            "be56a51a1035dda1db07f7f5796ff348ca5dee833377cbb36bf8c650dade3c31",
+            33_958,
         ),
         (
             super::BACKGROUND,
@@ -1258,8 +1288,8 @@ fn copied_assets_are_byte_identical_to_the_frozen_hashes() {
         ),
         (
             super::SUPPORT_JS,
-            "dc56041242732fbd1e54cbc16c02735ef325ce99c8d9bcf1c851f9f412af0b55",
-            10_629,
+            "7479e111097a6f847c846689d6febf26ec1628924fee5b0ac09887d07baf08b2",
+            42_655,
         ),
         (
             super::SHELL,
