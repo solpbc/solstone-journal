@@ -58,7 +58,7 @@ fn classify_attention(value: &Value) -> Option<Value> {
         .get("placeholder_text")
         .and_then(Value::as_str)?
         .trim();
-    (!text.is_empty()).then(|| chat(text, &format!("what happened with {text}?")))
+    (!text.is_empty()).then(|| note(text))
 }
 fn classify_pulse(value: &Value) -> Option<Value> {
     if let Some(object) = value.as_object() {
@@ -67,26 +67,17 @@ fn classify_pulse(value: &Value) -> Option<Value> {
             return None;
         }
         match object.get("kind").and_then(Value::as_str) {
-            Some("chat") => { let prompt = object.get("payload").and_then(|value| value.get("prompt")).and_then(Value::as_str).filter(|prompt| !prompt.trim().is_empty()).map(str::to_owned).unwrap_or_else(|| format!("let's dig into {text}")); Some(chat(text, &prompt)) }
-            Some("confirm") => Some(chat(text, &format!("let's dig into {text}"))),
+            Some("chat") | Some("confirm") => Some(note(text)),
             Some("route") => object.get("payload").and_then(|value| value.get("href")).and_then(Value::as_str).filter(|href| href.starts_with('/') && !href.starts_with("//")).map(|href| json!({"text":text,"kind":"route","payload":{"href":href},"disabled":false,"reason":""})).or_else(|| Some(disabled(text, "route", "this link isn't available from here."))),
             _ => None,
         }
     } else {
         let text = value.as_str()?.trim();
-        (!text.is_empty()).then(|| chat(text, &format!("let's dig into {text}")))
+        (!text.is_empty()).then(|| note(text))
     }
 }
-fn chat(text: &str, prompt: &str) -> Value {
-    if prompt.trim().is_empty() {
-        disabled(
-            text,
-            "chat",
-            "this item needs a prompt before chat can open.",
-        )
-    } else {
-        json!({"text":text,"kind":"chat","payload":{"prompt":prompt},"disabled":false,"reason":""})
-    }
+fn note(text: &str) -> Value {
+    json!({"text":text,"kind":"note","disabled":false,"reason":""})
 }
 fn disabled(text: &str, kind: &str, reason: &str) -> Value {
     json!({"text":text,"kind":kind,"payload":{},"disabled":true,"reason":reason})
@@ -112,12 +103,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn injected_needs_cover_chat_and_disabled_route() {
+    fn injected_needs_cover_note_and_disabled_route() {
         let items = classify_needs_you(
             &json!({"placeholder_text":"the invoice"}),
             &[json!({"text":"unsafe","kind":"route","payload":{"href":"//elsewhere"}})],
         );
-        assert_eq!(items[0]["kind"], "chat");
+        assert_eq!(items[0]["kind"], "note");
+        assert_eq!(items[0]["disabled"], false);
+        assert!(items[0].get("payload").is_none());
         assert_eq!(items[1]["disabled"], true);
         assert_eq!(items[1]["reason"], "this link isn't available from here.");
         assert_eq!(

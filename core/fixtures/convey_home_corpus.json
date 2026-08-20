@@ -54035,10 +54035,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "let's dig into a plain string need"
-            },
+            "kind": "note",
             "reason": "",
             "text": "a plain string need"
           }
@@ -54060,10 +54057,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "dig in"
-            },
+            "kind": "note",
             "reason": "",
             "text": "chat need"
           }
@@ -54083,10 +54077,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "let's dig into chat need"
-            },
+            "kind": "note",
             "reason": "",
             "text": "chat need"
           }
@@ -54106,10 +54097,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "let's dig into confirm need"
-            },
+            "kind": "note",
             "reason": "",
             "text": "confirm need"
           }
@@ -54221,10 +54209,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "what happened with the invoice from sam?"
-            },
+            "kind": "note",
             "reason": "",
             "text": "the invoice from sam"
           }
@@ -54242,19 +54227,13 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "what happened with the invoice from sam?"
-            },
+            "kind": "note",
             "reason": "",
             "text": "the invoice from sam"
           },
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "let's dig into a plain string need"
-            },
+            "kind": "note",
             "reason": "",
             "text": "a plain string need"
           }
@@ -54278,19 +54257,13 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "what happened with the invoice from sam?"
-            },
+            "kind": "note",
             "reason": "",
             "text": "the invoice from sam"
           },
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "dig in"
-            },
+            "kind": "note",
             "reason": "",
             "text": "chat need"
           }
@@ -54312,19 +54285,13 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "what happened with the invoice from sam?"
-            },
+            "kind": "note",
             "reason": "",
             "text": "the invoice from sam"
           },
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "let's dig into chat need"
-            },
+            "kind": "note",
             "reason": "",
             "text": "chat need"
           }
@@ -54346,19 +54313,13 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "what happened with the invoice from sam?"
-            },
+            "kind": "note",
             "reason": "",
             "text": "the invoice from sam"
           },
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "let's dig into confirm need"
-            },
+            "kind": "note",
             "reason": "",
             "text": "confirm need"
           }
@@ -54382,10 +54343,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "what happened with the invoice from sam?"
-            },
+            "kind": "note",
             "reason": "",
             "text": "the invoice from sam"
           },
@@ -54418,10 +54376,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "what happened with the invoice from sam?"
-            },
+            "kind": "note",
             "reason": "",
             "text": "the invoice from sam"
           },
@@ -54452,10 +54407,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "what happened with the invoice from sam?"
-            },
+            "kind": "note",
             "reason": "",
             "text": "the invoice from sam"
           },
@@ -54484,10 +54436,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "what happened with the invoice from sam?"
-            },
+            "kind": "note",
             "reason": "",
             "text": "the invoice from sam"
           }
@@ -54508,10 +54457,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "what happened with the invoice from sam?"
-            },
+            "kind": "note",
             "reason": "",
             "text": "the invoice from sam"
           }
@@ -54538,10 +54484,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "let's dig into a plain string need"
-            },
+            "kind": "note",
             "reason": "",
             "text": "a plain string need"
           }
@@ -54565,10 +54508,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "dig in"
-            },
+            "kind": "note",
             "reason": "",
             "text": "chat need"
           }
@@ -54590,10 +54530,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "let's dig into chat need"
-            },
+            "kind": "note",
             "reason": "",
             "text": "chat need"
           }
@@ -54615,10 +54552,7 @@
         "output": [
           {
             "disabled": false,
-            "kind": "chat",
-            "payload": {
-              "prompt": "let's dig into confirm need"
-            },
+            "kind": "note",
             "reason": "",
             "text": "confirm need"
           }

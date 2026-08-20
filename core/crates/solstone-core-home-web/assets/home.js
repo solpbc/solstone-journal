@@ -4,7 +4,6 @@
 (function () {
   const PULSE_URL = '/app/home/api/pulse';
   const BRIEFING_URL = '/app/home/api/briefing';
-  const NEEDS_YOU_PENDING_KEY = 'solstone:needs-you-pending-prompt';
   const SECTION_STATE_KEY = 'pulse-section-state';
   const SECTION_IDS = ['pulse-narrative', 'pulse-today', 'pulse-needs'];
   const SECTION_DEFAULTS = {
@@ -272,7 +271,7 @@
         + '</div>'
         + '<div class="pulse-section-body">'
         + '<div class="pulse-narrative-content" id="pulse-narrative-content">' + markdown(pulse.narrative_content || '') + '</div>'
-        + '<a href="#" class="pulse-tell-more" data-conversation="Tell me more about what&#39;s happening today">tell me more →</a>'
+        + '<span class="pulse-tell-more">tell me more →</span>'
         + updated
         + '</div>'
         + '</div>';
@@ -336,7 +335,7 @@
         const title = event.title || 'Untitled';
         const start = String(event.start || '').substring(0, 5);
         const isPast = Boolean(event.occurred) || Boolean(event.end && String(event.end) < nowTime);
-        html += '<div class="pulse-event' + (isPast ? ' past' : '') + '" role="button" tabindex="0" data-conversation="Tell me about ' + esc(title) + ' at ' + esc(start) + '">'
+        html += '<div class="pulse-event' + (isPast ? ' past' : '') + '">'
           + '<span class="pulse-event-time">' + esc(start) + '</span>'
           + '<span class="pulse-event-title">' + esc(title) + '</span>'
           + '</div>';
@@ -347,7 +346,7 @@
       html += '<div class="pulse-activities-label">recent activity</div><div class="pulse-activities">';
       activities.slice(0, 6).forEach(function (activity) {
         const description = activity.description || activity.activity || '';
-        html += '<div class="pulse-activity" role="button" tabindex="0" data-conversation="Tell me about ' + esc(description) + '">'
+        html += '<div class="pulse-activity">'
           + '<span class="pulse-activity-time">' + esc(activity.display_time || '') + '</span>'
           + '<span>' + esc(description) + '</span>'
           + '</div>';
@@ -410,8 +409,11 @@
       const reason = typeof item.reason === 'string' && item.reason ? '<span class="pulse-needs-reason">' + esc(item.reason) + '</span>' : '';
       return '<div class="pulse-needs-item pulse-needs-item-disabled">' + esc(text) + reason + '</div>';
     }
-    const encoded = esc(JSON.stringify(item || {}));
-    return '<div class="pulse-needs-item" role="button" tabindex="0" data-needs-you-item="' + encoded + '">' + esc(text) + '</div>';
+    if (item && item.kind === 'route') {
+      const encoded = esc(JSON.stringify(item || {}));
+      return '<div class="pulse-needs-item" role="button" tabindex="0" data-needs-you-item="' + encoded + '">' + esc(text) + '</div>';
+    }
+    return '<div class="pulse-needs-item">' + esc(text) + '</div>';
   }
 
   function renderNeedsYouHtml(pulse) {
@@ -638,7 +640,7 @@
           ? '<div class="pulse-briefing-section-body" data-section-key="needs_attention"><ul>'
             + needs.map(function (item) {
               const text = String(item || '');
-              return '<li role="button" tabindex="0" data-conversation="What&#39;s the status of: ' + esc(text) + '">' + esc(text) + '</li>';
+              return '<li>' + esc(text) + '</li>';
             }).join('')
             + '</ul></div>'
           : '';
@@ -679,31 +681,7 @@
           li.textContent = '';
           li.appendChild(link);
         });
-        return;
       }
-      const promptPrefix = {
-        your_day: 'Brief me on my meeting with ',
-        yesterday: 'Tell me more about ',
-        forward_look: 'Tell me more about '
-      };
-      if (!promptPrefix[key]) return;
-      el.querySelectorAll('li').forEach(function (li) {
-        const text = li.textContent.trim();
-        if (!text) return;
-        if (key === 'your_day') {
-          const timeMatch = text.match(/(\d{1,2}:\d{2})/);
-          const title = text.replace(/^\d{1,2}:\d{2}\s*[—–-]\s*/, '').substring(0, 60);
-          if (timeMatch) {
-            li.setAttribute('data-conversation', 'Brief me on my meeting with ' + title + ' at ' + timeMatch[1]);
-          } else {
-            li.setAttribute('data-conversation', "What's the status of: " + text.substring(0, 80));
-          }
-        } else {
-          li.setAttribute('data-conversation', promptPrefix[key] + text.substring(0, 80));
-        }
-        li.setAttribute('role', 'button');
-        li.setAttribute('tabindex', '0');
-      });
     });
   }
 
@@ -781,39 +759,12 @@
   function dispatchNeedsYouItem(item) {
     if (!item || typeof item !== 'object') return;
     if (item.disabled) return;
-    const payload = item.payload || {};
-    if (item.kind === 'chat') {
-      if (typeof payload.prompt !== 'string' || !payload.prompt.trim()) return;
-      try {
-        sessionStorage.setItem(NEEDS_YOU_PENDING_KEY, JSON.stringify({
-          prompt: payload.prompt,
-          item_text: item.text || ''
-        }));
-      } catch (_err) {
-        return;
-      }
-      window.location.href = '/app/chat/';
-      return;
-    }
     if (item.kind === 'route') {
-      const href = payload.href;
+      const href = item.payload && item.payload.href;
       if (typeof href === 'string' && href.startsWith('/') && !href.startsWith('//')) {
         window.location.href = href;
       }
-      return;
     }
-    if (item.kind === 'confirm') {
-      logError(new Error('unsupported confirm needs-you item'), 'home: needs-you dispatch');
-    }
-  }
-
-  function dispatchConversationElement(el) {
-    if (!el?.dataset?.conversation) return;
-    if (typeof window.fillChat === 'function') {
-      window.fillChat(el.dataset.conversation);
-      return;
-    }
-    logError(new Error('fillChat unavailable'), 'home: conversation dispatch');
   }
 
   function toggleBriefingCard() {
@@ -910,13 +861,6 @@
       }
       return;
     }
-    const plainLink = closest(target, 'a[href]');
-    if (plainLink && !plainLink.matches('[data-conversation]')) return;
-    const conversationEl = closest(target, '[data-conversation]');
-    if (conversationEl) {
-      event.preventDefault();
-      dispatchConversationElement(conversationEl);
-    }
   }
 
   function handleDashboardKeydown(event) {
@@ -955,13 +899,6 @@
         logError(error, 'home: needs-you parse');
       }
       return;
-    }
-    const plainLink = closest(target, 'a[href]');
-    if (plainLink && !plainLink.matches('[data-conversation]')) return;
-    const conversationEl = closest(target, '[data-conversation]');
-    if (conversationEl) {
-      event.preventDefault();
-      dispatchConversationElement(conversationEl);
     }
   }
 

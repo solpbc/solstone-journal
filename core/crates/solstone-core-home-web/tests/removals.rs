@@ -555,6 +555,22 @@ fn removal_card_escapes_journal_values_before_rendering_markup() {
     );
 }
 
+#[test]
+fn needs_you_items_render_informational_without_affordances() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("node")
+        .arg(manifest_dir.join("tests/needs_you_render.js"))
+        .arg(manifest_dir)
+        .output()
+        .expect("needs-you render harness");
+    assert!(
+        output.status.success(),
+        "needs-you render harness: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn run_retention(binary: &Path, args: &[&str]) -> Value {
     let output = Command::new(binary)
         .args(args)
