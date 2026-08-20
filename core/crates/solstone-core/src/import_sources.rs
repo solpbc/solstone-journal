@@ -18,6 +18,20 @@ use solstone_core_import_sources::archive::{
 use solstone_core_import_sources::{
     ImportSourcesError, chatgpt, claude, document, gemini, ics, image, kindle, obsidian,
 };
+use solstone_core_transfer::{RescanOutcome, send_indexer_rescan};
+
+struct SupervisorRescan {
+    journal: PathBuf,
+}
+
+impl FullReindexRequester for SupervisorRescan {
+    fn request_full_reindex(&self) -> Result<bool, String> {
+        match send_indexer_rescan(&self.journal) {
+            RescanOutcome::Queued => Ok(true),
+            RescanOutcome::Unavailable | RescanOutcome::NotNeeded => Ok(false),
+        }
+    }
+}
 
 const PDF_WORKER_TIMEOUT: Duration = Duration::from_secs(90);
 
@@ -156,7 +170,9 @@ fn run_archive(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         &dispatch.media,
         journal,
         &options,
-        None::<&dyn FullReindexRequester>,
+        Some(&SupervisorRescan {
+            journal: journal.to_path_buf(),
+        }),
     ) {
         Ok(outcome) => match outcome.retry_disposition {
             RetryDisposition::Applied => success(cli_render::source_archive_merge_complete(

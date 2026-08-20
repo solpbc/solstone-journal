@@ -4000,6 +4000,7 @@ dependencies = [
  "solstone-core-cli-boundary",
  "solstone-core-convey-config",
  "solstone-core-facets",
+ "solstone-core-import-sources",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",

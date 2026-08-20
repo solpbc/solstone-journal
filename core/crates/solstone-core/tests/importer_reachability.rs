@@ -4,9 +4,11 @@
 //! Spawned-binary reachability coverage for the native journal importer.
 
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::thread;
 
 use serde_json::Value;
 use solstone_core_segment::SUPERVISOR_MESSAGE;
@@ -676,6 +678,14 @@ fn run_case(
                 .writes_journal_state()
                 .then(|| TempDir::new().expect("pristine journal"));
             let target_journal = isolated_journal.as_ref().unwrap_or(journal);
+            let _rescan = matches!(
+                invocation,
+                Invocation::Structured {
+                    source: "journal_archive",
+                    ..
+                }
+            )
+            .then(|| swallow_rescans(target_journal.path()));
             (
                 expected,
                 run_in_column(
@@ -713,10 +723,23 @@ fn every_mode_has_its_promised_observable() {
     }
 }
 
+fn swallow_rescans(journal: &Path) -> thread::JoinHandle<()> {
+    let health = journal.join("health");
+    fs::create_dir_all(&health).expect("health");
+    let listener = UnixListener::bind(health.join("callosum.sock")).expect("bind callosum");
+    thread::spawn(move || {
+        while let Ok((mut stream, _)) = listener.accept() {
+            let mut line = String::new();
+            let _ = stream.read_to_string(&mut line);
+        }
+    })
+}
+
 #[test]
 fn journal_archive_remerge_reports_already_present() {
     let journal = TempDir::new().expect("journal");
     let inputs = Inputs::create(&journal);
+    let _rescans = swallow_rescans(journal.path());
     let args = Invocation::Structured {
         source: "journal_archive",
         input: Input::Archive,
@@ -735,6 +758,48 @@ fn journal_archive_remerge_reports_already_present() {
         b"journal_archive import did not merge anything: archive content is already present\n"
     );
     assert!(second.stderr.is_empty());
+}
+
+#[test]
+fn journal_archive_import_requests_supervisor_indexer_rescan() {
+    let journal = TempDir::new().expect("journal");
+    let inputs = Inputs::create(&journal);
+    let health = journal.path().join("health");
+    fs::create_dir_all(&health).expect("health");
+    let listener = UnixListener::bind(health.join("callosum.sock")).expect("bind callosum");
+    let receiver = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept rescan");
+        let mut line = String::new();
+        stream.read_to_string(&mut line).expect("read envelope");
+        line
+    });
+    let args = Invocation::Structured {
+        source: "journal_archive",
+        input: Input::Archive,
+    }
+    .args(&inputs);
+    let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+        .arg("importer")
+        .args(&args)
+        .env("SOLSTONE_JOURNAL", journal.path())
+        .env("SOL_SKIP_SUPERVISOR_CHECK", "1")
+        .env_remove("SOL_SUPERVISOR_SPAWNED")
+        .output()
+        .expect("run journal_archive importer");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let line = receiver.join().expect("receiver");
+    let envelope: Value = serde_json::from_str(line.trim()).expect("rescan json");
+    assert_eq!(envelope["tract"], "supervisor");
+    assert_eq!(envelope["event"], "request");
+    assert_eq!(
+        envelope["cmd"],
+        serde_json::json!(["journal", "indexer", "--rescan"])
+    );
 }
 
 #[test]
