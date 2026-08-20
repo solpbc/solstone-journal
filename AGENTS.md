@@ -61,6 +61,7 @@ Read, in order, when you enter the repo for a coding task:
 | `core/payload/solstone/talent/` | AI talent configs (markdown prompts) + installed router skills (`solstone`, `journal`); app fragments feed generated router references. **The `.py` post-hooks are not here** — they are not shipped data and stay at `solstone/talent/` | defining or tuning a talent; updating router guidance | `core/payload/solstone/talent/journal/SKILL.md`, `docs/PROMPT_TEMPLATES.md` |
 | `core/` | Rust workspace — thin `solstone-core` bin plus library-first adapter crates | Rust scaffold, gates, workspace rules | `docs/PORTING.md` |
 | `scripts/` | Repo maintenance scripts. ⚠ Reduced with the Python reference cut — anything whose oracle was the Python implementation is gone, so treat a script here as build tooling, not as a source of truth about behaviour | tooling that guards the codebase; reached by `make install-checks`, never by `make ci` | channel adapters: `docs/CHANNEL_ADAPTERS.md` |
+| `tools/journal_device_sim/` | Dependency-free linked-device fixture simulator; native `solstone link` remains the PL/SPL and identity boundary | composed ingest, reconciliation, recovery, and field-journal validation through a disposable receiver | `tools/journal_device_sim/README.md` |
 | `tests/` | `tests/fixtures/journal/` mock journal. ⚠ **No Python suites remain** — the pytest tree went with the reference cut, and Rust tests live beside their crates under `core/crates/*/tests/` | `make dev` / `make sandbox` use the fixtures as the journal | `docs/testing.md` |
 | `tests/js/` | JavaScript harnesses driven by Python node tests | testing browser scripts without a real browser | `docs/testing.md` |
 | `docs/` | All longform documentation | reference lookups; never your first stop | §10 below |
@@ -132,6 +133,7 @@ Verified against `Makefile`. Grouped by use.
 | `make format` | Format the Rust workspace with Cargo fmt; modifies Rust source. |
 | `make format-check` | Cargo fmt dry-run (`cargo fmt --all -- --check`); one of the Rust-only CI checks. |
 | `make test` | Alias for `make check-rust-test`: Rust workspace tests only, excluding the three host-native helper packages covered by the default `onnx-host-tests` full-gate leg. |
+| `make check-journal-device-sim` | Standard-library tests for the repository-local Python device simulator; no journal, external network, credentials, or product runtime. |
 | `make test-cov` / `test-integration` / `test-performance` / `test-app` / `test-only` / `coverage` / `watch` | Gone with the Python suite. Use `make ci` or `make ci-full`. |
 | `make ci` | Efficient Rust-only routine gate: formatting, topology validation, library/binary Clippy, and serialized library/binary unit tests. It does not run Cargo integration-test targets or heavyweight native/platform/policy legs. |
 | `make ci-full` | Registry-driven full operator gate. It runs selected entries independently, continues after failures, applies per-entry timeouts, and writes a revision-bound receipt. Run it on the exact final-tree SHA after `make ci-full-prep`. |
