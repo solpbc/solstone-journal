@@ -270,7 +270,7 @@ pub fn plan_journal_archive(archive_path: &Path) -> Result<ArchivePlan, ImportSo
     for (name, is_dir) in names.iter().zip(directories) {
         let relative = strip_archive_root(name, &root);
         let components = member_components(relative);
-        if components.iter().any(|part| *part == ".DS_Store")
+        if components.contains(&".DS_Store")
             || Path::new(relative)
                 .file_name()
                 .is_some_and(|file_name| file_name == ".DS_Store")

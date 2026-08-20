@@ -1519,6 +1519,7 @@ fn archive_merge_json(
 }
 
 #[cfg(not(target_os = "ios"))]
+#[allow(clippy::too_many_arguments)] // JSON line keys are independently specified by the local-ops census.
 fn emit_merge_json(
     ok: bool,
     code: &str,
