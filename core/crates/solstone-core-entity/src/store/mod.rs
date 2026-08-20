@@ -76,7 +76,7 @@ pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,
     EntityOperationKind, EntitySaveResult, EntityWriteError, IdentityMapCacheLoad,
     record_ambiguity_choice, record_ambiguity_observation, refresh_identity_map_cache,
-    save_entity_identity,
+    rewrite_identity_map_cache, save_entity_identity,
 };
 
 #[cfg(test)]

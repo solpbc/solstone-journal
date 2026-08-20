@@ -3844,6 +3844,7 @@ dependencies = [
  "sha2",
  "solstone-core-depict",
  "solstone-core-entity",
+ "solstone-core-entity-matching",
  "solstone-core-facets",
  "solstone-core-generate",
  "solstone-core-import",

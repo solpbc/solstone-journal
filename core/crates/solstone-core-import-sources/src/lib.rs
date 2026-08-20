@@ -120,6 +120,9 @@ pub enum ImportSourcesError {
         path: PathBuf,
         detail: String,
     },
+    MergePublishFailed {
+        detail: String,
+    },
 }
 
 impl fmt::Display for ImportSourcesError {
@@ -225,6 +228,9 @@ impl fmt::Display for ImportSourcesError {
                 "import merge failed at {}: {detail}",
                 path.display()
             ),
+            Self::MergePublishFailed { detail } => {
+                write!(formatter, "archive merge publish failed: {detail}")
+            }
         }
     }
 }

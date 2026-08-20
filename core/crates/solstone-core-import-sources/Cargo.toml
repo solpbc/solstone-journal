@@ -42,6 +42,7 @@ serde_json.workspace = true
 sha2.workspace = true
 solstone-core-depict.workspace = true
 solstone-core-entity.workspace = true
+solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-import.workspace = true

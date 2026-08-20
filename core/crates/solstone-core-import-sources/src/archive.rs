@@ -14,19 +14,21 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_entity::{
-    EntityResolutionOutcome, archive_dedupe_akas, archive_dedupe_emails,
-    archive_dedupe_observations, load_all_journal_entities, read_journal_principal,
-    record_entity_resolution_from_name_evidence, save_entity_identity,
+    AmbiguityObservation, EntityResolutionOutcome, archive_dedupe_akas, archive_dedupe_emails,
+    archive_dedupe_observations, hold_entity_trust_lock, load_all_journal_entities,
+    read_journal_principal, record_ambiguity_observation,
+    record_entity_resolution_from_name_evidence, rewrite_identity_map_cache,
 };
+use solstone_core_entity_matching::normalize_resolution_query;
 use solstone_core_facets::{
-    load_observations, read_activity_file, read_facet_entity_link, read_log_file, read_news_file,
-    save_facet_entity_link, save_observations, write_activity_file, write_log_file,
-    write_news_file,
+    hold_facet_trust_lock, load_observations, read_activity_file, read_facet_entity_link,
+    read_log_file, read_news_file,
 };
 use solstone_core_import::ImportPreview;
 use solstone_core_journal_io::{
-    DEFAULT_STREAM, LockError, LockOptions, PathOrDay, StagedDirOptions, append_jsonl,
-    contained_path, hold_lock, iter_segments, publish_staged_dir,
+    AtomicWriteOptions, DEFAULT_STREAM, LockError, LockOptions, PathOrDay, StagedDirOptions,
+    append_jsonl, atomic_replace, contained_path, hold_lock, iter_segments, publish_staged_dir,
+    write_bytes_exclusive,
 };
 use zip::ZipArchive;
 
@@ -793,11 +795,40 @@ fn merge_extracted(
 ) -> Result<ArchiveMergeResult, ImportSourcesError> {
     let decision_log_path = run_dir.join("decision-log.jsonl");
     let staging_path = run_dir.join("staged-entities");
-    let mut state = MergeState::new(decision_log_path.clone(), staging_path.clone());
-    merge_segments(source, target, &mut state)?;
-    merge_entities(source, target, &mut state)?;
-    merge_facets(source, target, &mut state)?;
-    merge_imports(source, target, &mut state)?;
+    let staged_publish = run_dir.join("staged-publish");
+    let publish_undo = run_dir.join("publish-undo");
+    let mut state = MergeState::new(
+        decision_log_path.clone(),
+        staging_path.clone(),
+        staged_publish,
+        publish_undo,
+    );
+    fs::create_dir_all(&state.staged_publish).map_err(|error| {
+        ImportSourcesError::StagingWrite {
+            path: state.staged_publish.clone(),
+            detail: error.to_string(),
+        }
+    })?;
+    log_skipped_extras(source, &mut state)?;
+    stage_segments(source, target, &mut state)?;
+    {
+        let _entity_lock =
+            hold_entity_trust_lock(target).map_err(|error| ImportSourcesError::EntityMerge {
+                entity_id: "lock".to_owned(),
+                detail: error.to_string(),
+            })?;
+        stage_entities(source, target, &mut state)?;
+    }
+    {
+        let _facet_lock =
+            hold_facet_trust_lock(target).map_err(|error| ImportSourcesError::FacetMerge {
+                facet: "lock".to_owned(),
+                detail: error.to_string(),
+            })?;
+        stage_facets(source, target, &mut state)?;
+    }
+    stage_imports(source, target, &mut state)?;
+    publish_transaction(target, &mut state)?;
     let reindex_status = match reindexer {
         None => ReindexStatus::NotRequested,
         Some(reindexer) => match reindexer.request_full_reindex() {
@@ -837,6 +868,31 @@ fn merge_extracted(
     })
 }
 
+#[derive(Clone)]
+enum PublishUnit {
+    Tree { relative: String },
+    File { relative: String },
+}
+
+impl PublishUnit {
+    fn relative(&self) -> &str {
+        match self {
+            Self::Tree { relative } | Self::File { relative } => relative,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum UndoKind {
+    UnlinkNew,
+    Restore,
+}
+
+struct UndoRecord {
+    kind: UndoKind,
+    relative: String,
+}
+
 struct MergeState {
     summary: MergeSummary,
     entity_dispositions: Vec<EntityDisposition>,
@@ -845,13 +901,27 @@ struct MergeState {
     principal_collision: Option<PrincipalCollision>,
     decision_log_path: PathBuf,
     staging_path: PathBuf,
+    staged_publish: PathBuf,
+    publish_undo: PathBuf,
+    chronicle_units: Vec<PublishUnit>,
+    entity_units: Vec<PublishUnit>,
+    facet_units: Vec<PublishUnit>,
+    import_units: Vec<PublishUnit>,
+    pending_ambiguities: Vec<AmbiguityObservation>,
+    published: Vec<UndoRecord>,
+    published_entity_json: bool,
     writes: usize,
     has_conflict: bool,
     has_staged: bool,
 }
 
 impl MergeState {
-    fn new(decision_log_path: PathBuf, staging_path: PathBuf) -> Self {
+    fn new(
+        decision_log_path: PathBuf,
+        staging_path: PathBuf,
+        staged_publish: PathBuf,
+        publish_undo: PathBuf,
+    ) -> Self {
         Self {
             summary: MergeSummary::default(),
             entity_dispositions: Vec::new(),
@@ -860,6 +930,15 @@ impl MergeState {
             principal_collision: None,
             decision_log_path,
             staging_path,
+            staged_publish,
+            publish_undo,
+            chronicle_units: Vec::new(),
+            entity_units: Vec::new(),
+            facet_units: Vec::new(),
+            import_units: Vec::new(),
+            pending_ambiguities: Vec::new(),
+            published: Vec::new(),
+            published_entity_json: false,
             writes: 0,
             has_conflict: false,
             has_staged: false,
@@ -871,7 +950,7 @@ impl MergeState {
     }
 }
 
-fn merge_segments(
+fn stage_segments(
     source: &Path,
     target: &Path,
     state: &mut MergeState,
@@ -909,21 +988,22 @@ fn merge_segments(
                 });
                 continue;
             }
+            let relative = segment_relative(&day_name, &segment.stream, &segment.key);
             state.decision(
                 "prepared",
                 "segments",
                 json!({"day": day_name, "stream": segment.stream, "key": segment.key}),
             )?;
-            publish_staged_dir(&destination, StagedDirOptions::default(), |staging| {
-                copy_tree(&segment.path, staging)
-            })
-            .map_err(|error| ImportSourcesError::SegmentMerge {
-                path: destination.clone(),
-                detail: error.to_string(),
+            stage_tree(state, &segment.path, &relative, |error| {
+                ImportSourcesError::SegmentMerge {
+                    path: destination.clone(),
+                    detail: error.to_string(),
+                }
             })?;
-            state.decision("committed", "segments", json!({"destination": destination}))?;
+            state.decision("committed", "segments", json!({"destination": relative}))?;
             state.summary.segments_copied += 1;
             state.writes += 1;
+            state.chronicle_units.push(PublishUnit::Tree { relative });
             state.segment_dispositions.push(SegmentDisposition {
                 day: day_name.clone(),
                 stream: segment.stream,
@@ -935,7 +1015,7 @@ fn merge_segments(
     Ok(())
 }
 
-fn merge_entities(
+fn stage_entities(
     source: &Path,
     target: &Path,
     state: &mut MergeState,
@@ -973,7 +1053,7 @@ fn merge_entities(
             json!({"kind":"journal"}),
             json!({"source_entity_id": source_id, "lane":"archive_merge"}),
             0.86,
-            false,
+            true,
         )
         .map_err(|error| ImportSourcesError::EntityMerge {
             entity_id: source_id.clone(),
@@ -1010,16 +1090,13 @@ fn merge_entities(
                 let target_id = target_entity.id.clone();
                 state.decision("prepared", "entities", json!({"source_id": source_id, "target_id": target_id, "fields_changed": fields_changed, "principal_adoption": principal_adoption}))?;
                 if !fields_changed.is_empty() {
-                    save_entity_identity(target, &target_id, &merged, None).map_err(|error| {
-                        ImportSourcesError::EntityMerge {
-                            entity_id: target_id.clone(),
-                            detail: error.to_string(),
-                        }
-                    })?;
+                    let relative = format!("entities/{target_id}/entity.json");
+                    stage_json_file(state, &relative, &merged)?;
                     target_entity.value = merged.clone();
                     state.summary.entities_merged += 1;
                     state.writes += 1;
                     state.owner_entity_after = Some(merged);
+                    state.entity_units.push(PublishUnit::File { relative });
                 } else {
                     state.summary.entities_skipped += 1;
                 }
@@ -1044,13 +1121,42 @@ fn merge_entities(
                     staging_path: None,
                 });
             }
-            EntityResolutionOutcome::Ambiguous => stage_entity(
-                &source_id,
-                &source_value,
-                EntityDispositionKind::StagedAmbiguous,
-                PrincipalAdoption::NotClaimed,
-                state,
-            )?,
+            EntityResolutionOutcome::Ambiguous => {
+                if resolution
+                    .tier
+                    .is_some_and(|tier| !tier.is_high_confidence())
+                {
+                    state.pending_ambiguities.push(AmbiguityObservation {
+                        scope: json!({"kind":"journal"}),
+                        query: name.to_owned(),
+                        normalized_query: normalize_resolution_query(name),
+                        observed_tier: resolution
+                            .tier
+                            .map(|tier| i64::from(tier as u8))
+                            .unwrap_or_default(),
+                        ranked_candidates: resolution
+                            .candidates
+                            .iter()
+                            .map(|candidate| {
+                                json!({
+                                    "id": candidate.id,
+                                    "name": candidate.name,
+                                    "tier": i64::from(candidate.tier as u8),
+                                    "score": candidate.score,
+                                })
+                            })
+                            .collect(),
+                        origin: json!({"source_entity_id": source_id, "lane":"archive_merge"}),
+                    });
+                }
+                stage_entity(
+                    &source_id,
+                    &source_value,
+                    EntityDispositionKind::StagedAmbiguous,
+                    PrincipalAdoption::NotClaimed,
+                    state,
+                )?;
+            }
             EntityResolutionOutcome::NoMatch => {
                 if target_entities.iter().any(|entity| entity.id == source_id) {
                     stage_entity(
@@ -1093,12 +1199,8 @@ fn merge_entities(
                         .remove("is_principal");
                 }
                 state.decision("prepared", "entities", json!({"source_id": source_id, "create": true, "principal_adoption": principal_adoption}))?;
-                save_entity_identity(target, &source_id, &created, None).map_err(|error| {
-                    ImportSourcesError::EntityMerge {
-                        entity_id: source_id.clone(),
-                        detail: error.to_string(),
-                    }
-                })?;
+                let relative = format!("entities/{source_id}/entity.json");
+                stage_json_file(state, &relative, &created)?;
                 state.decision(
                     "committed",
                     "entities",
@@ -1108,6 +1210,7 @@ fn merge_entities(
                     id: source_id.clone(),
                     value: created,
                 });
+                state.entity_units.push(PublishUnit::File { relative });
                 state.summary.entities_created += 1;
                 state.writes += 1;
                 state.entity_dispositions.push(EntityDisposition {
@@ -1196,7 +1299,7 @@ fn stage_entity(
     Ok(())
 }
 
-fn merge_facets(
+fn stage_facets(
     source: &Path,
     target: &Path,
     state: &mut MergeState,
@@ -1214,17 +1317,17 @@ fn merge_facets(
         let facet = file_name(&facet_path)?;
         let target_facet = target.join("facets").join(&facet);
         if !target_facet.exists() {
+            let relative = format!("facets/{facet}");
             state.decision(
                 "prepared",
                 "facets",
                 json!({"facet": facet, "create": true}),
             )?;
-            publish_staged_dir(&target_facet, StagedDirOptions::default(), |staging| {
-                copy_tree(&facet_path, staging)
-            })
-            .map_err(|error| ImportSourcesError::FacetMerge {
-                facet: facet.clone(),
-                detail: error.to_string(),
+            stage_tree(state, &facet_path, &relative, |error| {
+                ImportSourcesError::FacetMerge {
+                    facet: facet.clone(),
+                    detail: error.to_string(),
+                }
             })?;
             state.decision(
                 "committed",
@@ -1233,6 +1336,7 @@ fn merge_facets(
             )?;
             state.summary.facets_created += 1;
             state.writes += 1;
+            state.facet_units.push(PublishUnit::Tree { relative });
             continue;
         }
         merge_facet_relationships(source, target, &facet, state)?;
@@ -1295,12 +1399,14 @@ fn merge_facet_relationships(
                         "facets",
                         json!({"facet": facet, "relationship": entity_dir, "observations": true}),
                     )?;
-                    save_observations(target, facet, &entity_dir, &observations).map_err(
-                        |error| ImportSourcesError::FacetMerge {
-                            facet: facet.to_owned(),
-                            detail: error.to_string(),
-                        },
+                    let relative =
+                        format!("facets/{facet}/entities/{entity_dir}/observations.jsonl");
+                    stage_bytes(
+                        state,
+                        &relative,
+                        observations_jsonl(&observations).as_bytes(),
                     )?;
+                    state.facet_units.push(PublishUnit::File { relative });
                     state.decision(
                         "committed",
                         "facets",
@@ -1311,23 +1417,21 @@ fn merge_facet_relationships(
                 let _ = (source_link, target_link); // Target link fields intentionally win.
             }
             (Some(source_link), None) => {
-                let fields = source_link.value().as_object().cloned().unwrap_or_default();
+                let mut fields = source_link.value().as_object().cloned().unwrap_or_default();
+                fields.insert(
+                    "entity_id".to_owned(),
+                    Value::String(source_link.entity_id().to_owned()),
+                );
                 state.decision(
                     "prepared",
                     "facets",
                     json!({"facet": facet, "relationship": entity_dir, "create": true}),
                 )?;
-                save_facet_entity_link(
-                    target,
-                    facet,
-                    &entity_dir,
-                    source_link.entity_id(),
-                    &fields,
-                )
-                .map_err(|error| ImportSourcesError::FacetMerge {
-                    facet: facet.to_owned(),
-                    detail: error.to_string(),
-                })?;
+                let link_relative = format!("facets/{facet}/entities/{entity_dir}/entity.json");
+                stage_json_file(state, &link_relative, &Value::Object(fields))?;
+                state.facet_units.push(PublishUnit::File {
+                    relative: link_relative,
+                });
                 let source_observations =
                     load_observations(source, facet, &entity_dir).map_err(|error| {
                         ImportSourcesError::FacetMerge {
@@ -1336,12 +1440,14 @@ fn merge_facet_relationships(
                         }
                     })?;
                 if !source_observations.is_empty() {
-                    save_observations(target, facet, &entity_dir, &source_observations).map_err(
-                        |error| ImportSourcesError::FacetMerge {
-                            facet: facet.to_owned(),
-                            detail: error.to_string(),
-                        },
+                    let relative =
+                        format!("facets/{facet}/entities/{entity_dir}/observations.jsonl");
+                    stage_bytes(
+                        state,
+                        &relative,
+                        observations_jsonl(&source_observations).as_bytes(),
                     )?;
+                    state.facet_units.push(PublishUnit::File { relative });
                 }
                 state.decision(
                     "committed",
@@ -1413,16 +1519,11 @@ fn merge_facet_content(
                 "facets",
                 json!({"facet": facet, "file": relative_file}),
             )?;
-            match relative {
-                "activities" => write_activity_file(target, facet, &relative_file, &merged),
-                "logs" => write_log_file(target, facet, &relative_file, &merged),
-                "news" => write_news_file(target, facet, &relative_file, &merged),
-                _ => unreachable!(),
-            }
-            .map_err(|error| ImportSourcesError::FacetMerge {
-                facet: facet.to_owned(),
-                detail: error.to_string(),
-            })?;
+            let staged_relative = format!("facets/{facet}/{relative}/{relative_file}");
+            stage_bytes(state, &staged_relative, merged.as_bytes())?;
+            state.facet_units.push(PublishUnit::File {
+                relative: staged_relative,
+            });
             state.decision(
                 "committed",
                 "facets",
@@ -1434,7 +1535,7 @@ fn merge_facet_content(
     Ok(())
 }
 
-fn merge_imports(
+fn stage_imports(
     source: &Path,
     target: &Path,
     state: &mut MergeState,
@@ -1447,24 +1548,494 @@ fn merge_imports(
         path: imports.clone(),
         detail: error.to_string(),
     })? {
-        let destination = target.join("imports").join(file_name(&source_import)?);
+        let name = file_name(&source_import)?;
+        let destination = target.join("imports").join(&name);
         if destination.exists() {
             state.summary.imports_skipped += 1;
             continue;
         }
-        state.decision("prepared", "imports", json!({"destination": destination}))?;
-        publish_staged_dir(&destination, StagedDirOptions::default(), |staging| {
-            copy_tree(&source_import, staging)
-        })
-        .map_err(|error| ImportSourcesError::ImportMerge {
-            path: destination.clone(),
-            detail: error.to_string(),
+        let relative = format!("imports/{name}");
+        state.decision("prepared", "imports", json!({"destination": relative}))?;
+        stage_tree(state, &source_import, &relative, |error| {
+            ImportSourcesError::ImportMerge {
+                path: destination.clone(),
+                detail: error.to_string(),
+            }
         })?;
-        state.decision("committed", "imports", json!({"destination": destination}))?;
+        state.decision("committed", "imports", json!({"destination": relative}))?;
         state.summary.imports_copied += 1;
         state.writes += 1;
+        state.import_units.push(PublishUnit::Tree { relative });
     }
     Ok(())
+}
+
+fn log_skipped_extras(source: &Path, state: &mut MergeState) -> Result<(), ImportSourcesError> {
+    let Ok(entries) = fs::read_dir(source) else {
+        return Ok(());
+    };
+    let mut names = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    names.sort();
+    for path in names {
+        let name = file_name(&path)?;
+        if JOURNAL_FAMILY_ROOTS.contains(&name.as_str()) {
+            continue;
+        }
+        state.decision("skipped", "extra", json!({"path": name}))?;
+        if path.is_dir() {
+            for file in extra_files(&path) {
+                let relative = file
+                    .strip_prefix(source)
+                    .expect("under source")
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                state.decision("skipped", "extra", json!({"path": relative}))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn stage_tree(
+    state: &MergeState,
+    source: &Path,
+    relative: &str,
+    map_error: impl FnOnce(io::Error) -> ImportSourcesError,
+) -> Result<(), ImportSourcesError> {
+    stage_tree_inner(state, source, relative).map_err(map_error)
+}
+
+fn stage_tree_inner(state: &MergeState, source: &Path, relative: &str) -> io::Result<()> {
+    let destination = join_contained(&state.staged_publish, relative)
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    fs::create_dir_all(&destination)?;
+    copy_tree(source, &destination)
+}
+
+fn stage_json_file(
+    state: &MergeState,
+    relative: &str,
+    value: &Value,
+) -> Result<(), ImportSourcesError> {
+    let bytes = serde_json::to_vec_pretty(value).expect("Value serializes");
+    stage_bytes(state, relative, &bytes)
+}
+
+fn stage_bytes(state: &MergeState, relative: &str, bytes: &[u8]) -> Result<(), ImportSourcesError> {
+    let path = join_contained(&state.staged_publish, relative).map_err(|error| {
+        ImportSourcesError::StagingWrite {
+            path: state.staged_publish.clone(),
+            detail: error.to_string(),
+        }
+    })?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| ImportSourcesError::StagingWrite {
+            path: path.clone(),
+            detail: error.to_string(),
+        })?;
+    }
+    fs::write(&path, bytes).map_err(|error| ImportSourcesError::StagingWrite {
+        path: path.clone(),
+        detail: error.to_string(),
+    })
+}
+
+fn observations_jsonl(observations: &[Value]) -> String {
+    let mut content = String::new();
+    for observation in observations {
+        content.push_str(&serde_json::to_string(observation).expect("Value serializes"));
+        content.push('\n');
+    }
+    content
+}
+
+fn publish_transaction(target: &Path, state: &mut MergeState) -> Result<(), ImportSourcesError> {
+    let mut units = Vec::new();
+    units.extend(sorted_units(&state.chronicle_units));
+    let entity_units = sorted_units(&state.entity_units);
+    let facet_units = sorted_units(&state.facet_units);
+    let import_units = sorted_units(&state.import_units);
+    if entity_units.is_empty()
+        && facet_units.is_empty()
+        && import_units.is_empty()
+        && units.is_empty()
+        && state.pending_ambiguities.is_empty()
+    {
+        return Ok(());
+    }
+    fs::create_dir_all(&state.publish_undo).map_err(|error| ImportSourcesError::StagingWrite {
+        path: state.publish_undo.clone(),
+        detail: error.to_string(),
+    })?;
+    let result: Result<(), ImportSourcesError> = (|| {
+        publish_units(target, state, &units)?;
+        {
+            let _entity_lock = hold_entity_trust_lock(target).map_err(|error| {
+                ImportSourcesError::EntityMerge {
+                    entity_id: "lock".to_owned(),
+                    detail: error.to_string(),
+                }
+            })?;
+            publish_units(target, state, &entity_units)?;
+            if state.published_entity_json {
+                rewrite_identity_map_cache(target).map_err(|error| {
+                    ImportSourcesError::MergePublishFailed {
+                        detail: error.to_string(),
+                    }
+                })?;
+            }
+            publish_pending_ambiguities(target, state)?;
+        }
+        {
+            let _facet_lock =
+                hold_facet_trust_lock(target).map_err(|error| ImportSourcesError::FacetMerge {
+                    facet: "lock".to_owned(),
+                    detail: error.to_string(),
+                })?;
+            publish_units(target, state, &facet_units)?;
+        }
+        publish_units(target, state, &import_units)?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        undo_publish(target, state);
+        return Err(ImportSourcesError::MergePublishFailed {
+            detail: error.to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn sorted_units(units: &[PublishUnit]) -> Vec<PublishUnit> {
+    let mut units = units.to_vec();
+    units.sort_by(|left, right| left.relative().cmp(right.relative()));
+    units
+}
+
+fn publish_units(
+    target: &Path,
+    state: &mut MergeState,
+    units: &[PublishUnit],
+) -> Result<(), ImportSourcesError> {
+    for unit in units {
+        publish_one(target, state, unit)?;
+    }
+    Ok(())
+}
+
+fn publish_one(
+    target: &Path,
+    state: &mut MergeState,
+    unit: &PublishUnit,
+) -> Result<(), ImportSourcesError> {
+    let relative = unit.relative().to_owned();
+    let destination = join_contained(target, &relative).map_err(|error| {
+        ImportSourcesError::MergePublishFailed {
+            detail: error.to_string(),
+        }
+    })?;
+    let staged = join_contained(&state.staged_publish, &relative).map_err(|error| {
+        ImportSourcesError::MergePublishFailed {
+            detail: error.to_string(),
+        }
+    })?;
+    match unit {
+        PublishUnit::Tree { .. } => {
+            if destination.exists() {
+                return Ok(());
+            }
+            publish_staged_dir(&destination, StagedDirOptions::default(), |staging| {
+                copy_tree(&staged, staging)
+            })
+            .map_err(|error| ImportSourcesError::MergePublishFailed {
+                detail: error.to_string(),
+            })?;
+            state.published.push(UndoRecord {
+                kind: UndoKind::UnlinkNew,
+                relative,
+            });
+        }
+        PublishUnit::File { .. } => match fs::symlink_metadata(&destination) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let bytes =
+                    fs::read(&staged).map_err(|error| ImportSourcesError::MergePublishFailed {
+                        detail: error.to_string(),
+                    })?;
+                write_bytes_exclusive(
+                    &destination,
+                    &bytes,
+                    AtomicWriteOptions { mode: Some(0o600) },
+                )
+                .map_err(|error| ImportSourcesError::MergePublishFailed {
+                    detail: error.to_string(),
+                })?;
+                mark_entity_json(state, &relative);
+                state.published.push(UndoRecord {
+                    kind: UndoKind::UnlinkNew,
+                    relative,
+                });
+            }
+            Ok(metadata) if metadata.is_file() => {
+                let undo = join_contained(&state.publish_undo, &relative).map_err(|error| {
+                    ImportSourcesError::MergePublishFailed {
+                        detail: error.to_string(),
+                    }
+                })?;
+                if let Some(parent) = undo.parent() {
+                    fs::create_dir_all(parent).map_err(|error| {
+                        ImportSourcesError::MergePublishFailed {
+                            detail: error.to_string(),
+                        }
+                    })?;
+                }
+                fs::copy(&destination, &undo).map_err(|error| {
+                    ImportSourcesError::MergePublishFailed {
+                        detail: error.to_string(),
+                    }
+                })?;
+                let bytes =
+                    fs::read(&staged).map_err(|error| ImportSourcesError::MergePublishFailed {
+                        detail: error.to_string(),
+                    })?;
+                atomic_replace(
+                    &destination,
+                    &bytes,
+                    AtomicWriteOptions { mode: Some(0o600) },
+                )
+                .map_err(|error| ImportSourcesError::MergePublishFailed {
+                    detail: error.to_string(),
+                })?;
+                mark_entity_json(state, &relative);
+                state.published.push(UndoRecord {
+                    kind: UndoKind::Restore,
+                    relative,
+                });
+            }
+            Ok(_) => {
+                return Err(ImportSourcesError::MergePublishFailed {
+                    detail: format!("kind mismatch at {relative}"),
+                });
+            }
+            Err(error) => {
+                return Err(ImportSourcesError::MergePublishFailed {
+                    detail: error.to_string(),
+                });
+            }
+        },
+    }
+    maybe_crash_publish(state.published.len());
+    maybe_fail_publish(state.published.len())?;
+    Ok(())
+}
+
+fn mark_entity_json(state: &mut MergeState, relative: &str) {
+    if relative.starts_with("entities/") && relative.ends_with("/entity.json") {
+        state.published_entity_json = true;
+    }
+}
+
+fn publish_pending_ambiguities(
+    target: &Path,
+    state: &mut MergeState,
+) -> Result<(), ImportSourcesError> {
+    if state.pending_ambiguities.is_empty() {
+        return Ok(());
+    }
+    let live = target.join("entities/ambiguities.jsonl");
+    let relative = "entities/ambiguities.jsonl";
+    match fs::symlink_metadata(&live) {
+        Ok(metadata) if metadata.is_file() => {
+            let undo = join_contained(&state.publish_undo, relative).map_err(|error| {
+                ImportSourcesError::MergePublishFailed {
+                    detail: error.to_string(),
+                }
+            })?;
+            if let Some(parent) = undo.parent() {
+                fs::create_dir_all(parent).map_err(|error| {
+                    ImportSourcesError::MergePublishFailed {
+                        detail: error.to_string(),
+                    }
+                })?;
+            }
+            fs::copy(&live, &undo).map_err(|error| ImportSourcesError::MergePublishFailed {
+                detail: error.to_string(),
+            })?;
+            state.published.push(UndoRecord {
+                kind: UndoKind::Restore,
+                relative: relative.to_owned(),
+            });
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            state.published.push(UndoRecord {
+                kind: UndoKind::UnlinkNew,
+                relative: relative.to_owned(),
+            });
+        }
+        Ok(_) => {
+            return Err(ImportSourcesError::MergePublishFailed {
+                detail: "kind mismatch at entities/ambiguities.jsonl".to_owned(),
+            });
+        }
+        Err(error) => {
+            return Err(ImportSourcesError::MergePublishFailed {
+                detail: error.to_string(),
+            });
+        }
+    }
+    for observation in &state.pending_ambiguities {
+        record_ambiguity_observation(target, observation).map_err(|error| {
+            ImportSourcesError::MergePublishFailed {
+                detail: error.to_string(),
+            }
+        })?;
+    }
+    Ok(())
+}
+
+fn undo_publish(target: &Path, state: &mut MergeState) {
+    let mut undone = 0_usize;
+    for record in state.published.iter().rev() {
+        let destination = target.join(&record.relative);
+        match record.kind {
+            UndoKind::UnlinkNew => {
+                if destination.is_dir() {
+                    let _ = fs::remove_dir_all(&destination);
+                } else {
+                    let _ = fs::remove_file(&destination);
+                }
+                remove_empty_parents(target, &record.relative);
+            }
+            UndoKind::Restore => {
+                let undo = state.publish_undo.join(&record.relative);
+                let _ = fs::rename(&undo, &destination);
+            }
+        }
+        undone += 1;
+        maybe_crash_undo(undone);
+    }
+    if state.published_entity_json {
+        let _ = rewrite_identity_map_cache(target);
+    }
+}
+
+fn extra_files(path: &Path) -> Vec<PathBuf> {
+    let mut output = Vec::new();
+    fn visit(current: &Path, output: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(current) else {
+            return;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let ty = entry.file_type().ok();
+            if ty.as_ref().is_some_and(std::fs::FileType::is_dir) {
+                visit(&entry.path(), output);
+            } else if ty.as_ref().is_some_and(std::fs::FileType::is_file) {
+                output.push(entry.path());
+            }
+        }
+    }
+    visit(path, &mut output);
+    output.sort();
+    output
+}
+
+fn remove_empty_parents(target: &Path, relative: &str) {
+    let mut current = target.join(relative);
+    while let Some(parent) = current.parent() {
+        if parent == target {
+            break;
+        }
+        if fs::remove_dir(parent).is_err() {
+            break;
+        }
+        current = parent.to_path_buf();
+    }
+}
+
+fn join_contained(root: &Path, relative: &str) -> Result<PathBuf, ImportSourcesError> {
+    contained_path(root, relative).map_err(|error| ImportSourcesError::StagingWrite {
+        path: root.to_path_buf(),
+        detail: error.to_string(),
+    })
+}
+
+fn segment_relative(day: &str, stream: &str, key: &str) -> String {
+    if stream == DEFAULT_STREAM {
+        format!("chronicle/{day}/{key}")
+    } else {
+        format!("chronicle/{day}/{stream}/{key}")
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static PUBLISH_CRASH_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    static PUBLISH_FAIL_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    static UNDO_CRASH_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+pub fn inject_publish_crash_after(count: Option<usize>) {
+    PUBLISH_CRASH_AFTER.with(|cell| cell.set(count));
+}
+
+#[cfg(test)]
+pub fn inject_publish_fail_after(count: Option<usize>) {
+    PUBLISH_FAIL_AFTER.with(|cell| cell.set(count));
+}
+
+#[cfg(test)]
+pub fn inject_undo_crash_after(count: Option<usize>) {
+    UNDO_CRASH_AFTER.with(|cell| cell.set(count));
+}
+
+fn maybe_crash_publish(count: usize) {
+    #[cfg(test)]
+    {
+        PUBLISH_CRASH_AFTER.with(|cell| {
+            if cell.get() == Some(count) {
+                cell.set(None);
+                panic!("injected crash mid-publish");
+            }
+        });
+    }
+    let _ = count;
+}
+
+fn maybe_fail_publish(count: usize) -> Result<(), ImportSourcesError> {
+    #[cfg(test)]
+    {
+        let fail = PUBLISH_FAIL_AFTER.with(|cell| {
+            if cell.get() == Some(count) {
+                cell.set(None);
+                true
+            } else {
+                false
+            }
+        });
+        if fail {
+            return Err(ImportSourcesError::MergePublishFailed {
+                detail: "injected publish failure".to_owned(),
+            });
+        }
+    }
+    let _ = count;
+    Ok(())
+}
+
+fn maybe_crash_undo(count: usize) {
+    #[cfg(test)]
+    {
+        UNDO_CRASH_AFTER.with(|cell| {
+            if cell.get() == Some(count) {
+                cell.set(None);
+                panic!("injected crash mid-undo");
+            }
+        });
+    }
+    let _ = count;
 }
 
 fn strings(value: Option<&Value>) -> Vec<String> {
@@ -1634,10 +2205,20 @@ mod tests {
     use std::collections::BTreeSet;
     use std::ffi::OsString;
     use std::io::Write;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use zip::write::SimpleFileOptions;
     use zip::{CompressionMethod, ZipWriter};
+
+    struct FaultReset;
+    impl Drop for FaultReset {
+        fn drop(&mut self) {
+            inject_publish_crash_after(None);
+            inject_publish_fail_after(None);
+            inject_undo_crash_after(None);
+        }
+    }
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
 
@@ -1754,6 +2335,111 @@ mod tests {
             other => panic!("unexpected error: {other:?}"),
         }
         assert!(collect_tree(&target).is_empty());
+    }
+
+    #[test]
+    fn crash_mid_publish_leaves_undo_and_does_not_auto_resume() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260311/120000_60/value", b"day"),
+                (
+                    "entities/new-person/entity.json",
+                    br#"{"id":"new-person","name":"Qxjvplmzt","type":"Person"}"#,
+                ),
+            ],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let options = ArchiveMergeOptions {
+            working_root: tree.path.join("work"),
+            ..ArchiveMergeOptions::default()
+        };
+        inject_publish_crash_after(Some(1));
+        let panicked = catch_unwind(AssertUnwindSafe(|| {
+            merge_journal_archive(&archive, &target, &options, None)
+        }));
+        assert!(panicked.is_err());
+        let undo = find_named(&tree.path.join("work"), "publish-undo");
+        assert!(
+            undo.is_some(),
+            "crash mid-publish must leave publish-undo visible"
+        );
+        let first_run = undo
+            .as_ref()
+            .and_then(|path| path.parent())
+            .unwrap()
+            .to_path_buf();
+        inject_publish_crash_after(None);
+        let second = merge_journal_archive(&archive, &target, &options, None).unwrap();
+        assert_ne!(
+            second.staging_path.parent().map(Path::to_path_buf),
+            Some(first_run),
+            "second merge must be a new transaction, not a resume"
+        );
+        assert!(find_named(&tree.path.join("work"), "publish-undo").is_some());
+    }
+
+    #[test]
+    fn crash_mid_undo_leaves_operator_visible_undo() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260311/120000_60/value", b"day"),
+                (
+                    "entities/new-person/entity.json",
+                    br#"{"id":"new-person","name":"Qxjvplmzt","type":"Person"}"#,
+                ),
+            ],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let options = ArchiveMergeOptions {
+            working_root: tree.path.join("work"),
+            ..ArchiveMergeOptions::default()
+        };
+        inject_publish_fail_after(Some(1));
+        inject_undo_crash_after(Some(1));
+        let panicked = catch_unwind(AssertUnwindSafe(|| {
+            merge_journal_archive(&archive, &target, &options, None)
+        }));
+        assert!(panicked.is_err());
+        assert!(
+            find_named(&tree.path.join("work"), "publish-undo").is_some(),
+            "crash mid-undo must leave publish-undo visible"
+        );
+        inject_publish_fail_after(None);
+        inject_undo_crash_after(None);
+        let first_undo = find_named(&tree.path.join("work"), "publish-undo").unwrap();
+        let first_run = first_undo.parent().unwrap().to_path_buf();
+        let second = merge_journal_archive(&archive, &target, &options, None).unwrap();
+        assert_ne!(
+            second.staging_path.parent().map(Path::to_path_buf),
+            Some(first_run)
+        );
+        assert!(first_undo.is_dir());
+    }
+
+    fn find_named(root: &Path, name: &str) -> Option<PathBuf> {
+        fn visit(current: &Path, name: &str) -> Option<PathBuf> {
+            let entries = fs::read_dir(current).ok()?;
+            for entry in entries.filter_map(Result::ok) {
+                if entry.file_name() == name {
+                    return Some(entry.path());
+                }
+                if entry.file_type().ok()?.is_dir()
+                    && let Some(found) = visit(&entry.path(), name)
+                {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        visit(root, name)
     }
 
     fn write_zip(tree: &Path, members: &[(&str, &[u8])]) -> PathBuf {
