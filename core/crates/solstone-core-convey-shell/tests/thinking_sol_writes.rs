@@ -290,6 +290,37 @@ async fn populated_different_mutations_preserve_siblings_and_reference_responses
 }
 
 #[tokio::test]
+async fn leftover_agent_object_survives_set_owner() {
+    let leftover = json!({
+        "name": "Ada",
+        "name_status": "chosen",
+        "named_date": "2026-01-02",
+        "sibling": true,
+    });
+    let fixture = Fixture::new();
+    write_json(
+        &fixture.0.join("config/journal.json"),
+        json!({
+            "setup": {"completed_at": 1},
+            "agent": leftover.clone(),
+            "identity": {
+                "name": "Old",
+                "bio": "old bio",
+            },
+        }),
+    );
+    let (status, value) = post(
+        "/app/thinking/api/set-owner",
+        r#"{"name":"Ada","bio":"new bio"}"#,
+        &fixture,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(value, json!({"name":"Ada","bio":"new bio"}));
+    assert_eq!(journal_config(&fixture)["agent"], leftover);
+}
+
+#[tokio::test]
 async fn absent_owned_state_persists_only_when_the_mutation_changes_something() {
     let fixture = Fixture::new();
     write_json(

@@ -56,7 +56,6 @@ fn rich_config() -> Value {
         "setup": {"completed_at": 1_700_000_000_000_i64},
         "identity": {"name":"Ada Lovelace", "preferred":"Ada", "bio":"first programmer", "pronouns":{"subject":"she","object":"her","possessive":"her","reflexive":"herself"}, "aliases":["ada","AAL"], "email_addresses":["ada@example.org"], "timezone":"Europe/London"},
         "journal":{"name":"Analytical Engine"},
-        "agent":{"name":"sol","name_status":"named","named_date":"2026-01-02"},
         "support":{"enabled":true,"proactive":false,"anonymous_feedback":true,"portal_url":"https://support.example.org"},
         "env":{"PLAUD_ACCESS_TOKEN":""},
         "transcribe":{"backend":"parakeet","preserve_all":true,"confidential_audio":false,"parakeet":{"model_version":"v3","device":"auto","timeout_sec":120.0},"whisper":{"model":"large-v3"},"not_a_real_key":"should not survive projection"},

@@ -234,7 +234,7 @@ fn ac1_mutations_replay_status_digest_config_and_key_deltas() {
     let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations");
-    assert_eq!(cases.len(), 18);
+    assert_eq!(cases.len(), 17);
     crate::retention_tests::without_executor(|| {
         for (name, case) in cases {
             let root = root_from(&case["config_before"]);
@@ -281,6 +281,33 @@ async fn ac2_partial_processing_write_preserves_unknown_nested_bytes() {
         raw_top_level_field(&after, "some_future_section"),
         raw_top_level_field(&before, "some_future_section")
     );
+}
+
+#[tokio::test]
+async fn leftover_agent_object_survives_identity_write() {
+    let root = crate::test_support::phase_root("rich");
+    let config_path = root.path().join("config/journal.json");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(&config_path).expect("config")).expect("config JSON");
+    let leftover = json!({
+        "name": "Ada",
+        "name_status": "chosen",
+        "named_date": "2026-01-02",
+        "sibling": true,
+    });
+    config["agent"] = leftover.clone();
+    write_config(root.path(), &config);
+    let (status, _) = request(
+        crate::test_support::shell_router(root.path()),
+        "POST",
+        "/app/settings/api/config",
+        Some(&json!({"section":"identity","data":{"bio":"updated"}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let after_config: Value =
+        serde_json::from_slice(&fs::read(&config_path).expect("after")).expect("after JSON");
+    assert_eq!(after_config["agent"], leftover);
 }
 
 fn fixture_tree_file<'a>(corpus: &'a Value, path: &str) -> &'a str {
@@ -423,7 +450,7 @@ fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
     let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations_malformed");
-    assert_eq!(cases.len(), 18);
+    assert_eq!(cases.len(), 17);
     crate::retention_tests::without_executor(|| {
         for (name, case) in cases {
             let root = root_from(&case["config_before"]);

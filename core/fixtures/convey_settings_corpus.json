@@ -5,349 +5,8 @@
     "system": "Linux"
   },
   "mutations": {
-    "POST agent.rename": {
-      "config_after": {
-        "agent": {
-          "name": "aria",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": 42,
-          "redact": [
-            "password",
-            "secret"
-          ]
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": [
-            "ada",
-            "AAL"
-          ],
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": 17,
-            "enabled": false
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "days",
-          "raw_media_days": 90
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": 42,
-          "redact": [
-            "password",
-            "secret"
-          ]
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": [
-            "ada",
-            "AAL"
-          ],
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": 17,
-            "enabled": false
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "days",
-          "raw_media_days": 90
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_keys_added": [],
-      "config_keys_removed": [],
-      "digest": "3c5fb63f7f5f766d",
-      "method": "POST",
-      "normalized": {
-        "config": {
-          "agent": {
-            "name": "aria",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
-          "convey": {
-            "bind": "127.0.0.1"
-          },
-          "describe": {
-            "categories": {},
-            "max_extractions": 42,
-            "redact": [
-              "password",
-              "secret"
-            ]
-          },
-          "env": {
-            "PLAUD_ACCESS_TOKEN": false
-          },
-          "identity": {
-            "aliases": [
-              "ada",
-              "AAL"
-            ],
-            "bio": "first programmer",
-            "email_addresses": [
-              "ada@example.org"
-            ],
-            "name": "Ada Lovelace",
-            "preferred": "Ada",
-            "pronouns": {
-              "object": "her",
-              "possessive": "her",
-              "reflexive": "herself",
-              "subject": "she"
-            },
-            "timezone": "Europe/London"
-          },
-          "journal": {
-            "name": "Analytical Engine"
-          },
-          "key_validation": {
-            "plaud": {
-              "timestamp": "2026-01-01T00:00:00Z",
-              "valid": false
-            }
-          },
-          "observe": {
-            "tmux": {
-              "capture_interval": 17,
-              "enabled": false
-            }
-          },
-          "processing": {},
-          "retention": {
-            "journal_logs": {
-              "days": 14,
-              "enabled": true
-            },
-            "per_stream": {
-              "tmux": {
-                "raw_media": "processed"
-              }
-            },
-            "raw_media": "days",
-            "raw_media_days": 90
-          },
-          "runtime_env": {
-            "PLAUD_ACCESS_TOKEN": false
-          },
-          "setup": {
-            "completed_at": 1700000000000
-          },
-          "some_future_section": {
-            "kept": true,
-            "n": 7
-          },
-          "support": {
-            "anonymous_feedback": true,
-            "enabled": true,
-            "portal_url": "https://support.example.org",
-            "proactive": false
-          },
-          "transcribe": {
-            "backend": "parakeet",
-            "confidential_audio": false,
-            "parakeet": {
-              "device": "auto",
-              "model_version": "v3",
-              "timeout_sec": 120.0
-            },
-            "preserve_all": true
-          }
-        },
-        "key_validation": {
-          "plaud": {
-            "timestamp": "<VOLATILE:timestamp>",
-            "valid": false
-          }
-        },
-        "success": true
-      },
-      "normalized_paths": [
-        "key_validation.plaud.timestamp"
-      ],
-      "path": "/app/settings/api/config",
-      "sent": {
-        "data": {
-          "name": "aria",
-          "name_status": "named"
-        },
-        "section": "agent"
-      },
-      "status": 200
-    },
     "POST identity.bare-backcompat": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -450,11 +109,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -558,15 +212,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "769f58166acb7020",
+      "digest": "4a1d889549116230",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -677,11 +326,6 @@
     },
     "POST identity.legacy-key-value": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -784,11 +428,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -892,15 +531,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "7ebb696daa09ddf3",
+      "digest": "821ab6dc76b2927f",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -1011,11 +645,6 @@
     },
     "POST identity.partial": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -1118,11 +747,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -1226,15 +850,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "e8557996bdd5c16c",
+      "digest": "c7f0a913daa9ddcc",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -1347,11 +966,6 @@
     },
     "POST journal.rename": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -1454,11 +1068,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -1562,15 +1171,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "02a60c8f45c7ada2",
+      "digest": "77acc90ecee8cb8a",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -1682,11 +1286,6 @@
     },
     "POST observe.tmux": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -1789,11 +1388,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -1925,11 +1519,6 @@
     },
     "POST processing.valid": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -2044,11 +1633,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -2152,15 +1736,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "beb6965531e3a45c",
+      "digest": "a3bfd353660d3bea",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -2284,11 +1863,6 @@
     },
     "POST prune-logs.dry-run": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -2391,11 +1965,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -2499,7 +2068,7 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "2bb002e7fa1ad610",
+      "digest": "77ff02770ff2058a",
       "method": "POST",
       "normalized": {
         "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
@@ -2515,11 +2084,6 @@
     },
     "POST support.toggle": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -2622,11 +2186,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -2730,15 +2289,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "7e13c463e39a6d85",
+      "digest": "000998e12c0e75bc",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -2851,11 +2405,6 @@
     },
     "POST transcribe.backend": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -2958,11 +2507,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -3066,15 +2610,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "20990e91a6033fb9",
+      "digest": "2079c102947dc43b",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -3187,11 +2726,6 @@
     },
     "POST transcribe.nested": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -3294,11 +2828,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -3402,15 +2931,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "bc54f9ae2a45f9f3",
+      "digest": "47e249a34ebec84e",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -3524,11 +3048,6 @@
     },
     "PUT sol_voice.partial": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -3656,11 +3175,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -3817,11 +3331,6 @@
     },
     "PUT sol_voice.unknown-key": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -3924,11 +3433,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -4048,11 +3552,6 @@
     },
     "PUT storage.journal-logs": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -4155,11 +3654,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -4293,11 +3787,6 @@
     },
     "PUT storage.per-stream": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -4400,11 +3889,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -4539,11 +4023,6 @@
     },
     "PUT storage.raw-days-true": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -4646,11 +4125,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -4781,11 +4255,6 @@
     },
     "PUT storage.retention": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -4888,11 +4357,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -5024,11 +4488,6 @@
     },
     "PUT sync.plaud-enable": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -5131,11 +4590,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -5264,11 +4718,6 @@
     },
     "PUT vision.max-extractions": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -5371,11 +4820,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -5566,11 +5010,6 @@
     },
     "PUT vision.redact-trims-blanks": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -5673,11 +5112,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -5872,337 +5306,8 @@
     }
   },
   "mutations_malformed": {
-    "POST agent.rename": {
-      "config_after": {
-        "agent": {
-          "name": "aria",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": null,
-          "redact": "not-a-list"
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": {
-            "not": "a list"
-          },
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": "five",
-            "enabled": false
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "sometimes",
-          "raw_media_days": "ninety"
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": null,
-          "redact": "not-a-list"
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": {
-            "not": "a list"
-          },
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": "five",
-            "enabled": false
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "sometimes",
-          "raw_media_days": "ninety"
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_keys_added": [],
-      "config_keys_removed": [],
-      "digest": "e61323430ec30352",
-      "method": "POST",
-      "normalized": {
-        "config": {
-          "agent": {
-            "name": "aria",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
-          "convey": {
-            "bind": "127.0.0.1"
-          },
-          "describe": {
-            "categories": {},
-            "max_extractions": null,
-            "redact": "not-a-list"
-          },
-          "env": {
-            "PLAUD_ACCESS_TOKEN": false
-          },
-          "identity": {
-            "aliases": {
-              "not": "a list"
-            },
-            "bio": "first programmer",
-            "email_addresses": [
-              "ada@example.org"
-            ],
-            "name": "Ada Lovelace",
-            "preferred": "Ada",
-            "pronouns": {
-              "object": "her",
-              "possessive": "her",
-              "reflexive": "herself",
-              "subject": "she"
-            },
-            "timezone": "Europe/London"
-          },
-          "journal": {
-            "name": "Analytical Engine"
-          },
-          "key_validation": {
-            "plaud": {
-              "timestamp": "2026-01-01T00:00:00Z",
-              "valid": false
-            }
-          },
-          "observe": {
-            "tmux": {
-              "capture_interval": "five",
-              "enabled": false
-            }
-          },
-          "processing": {},
-          "retention": {
-            "journal_logs": {
-              "days": 14,
-              "enabled": true
-            },
-            "per_stream": {
-              "tmux": {
-                "raw_media": "processed"
-              }
-            },
-            "raw_media": "sometimes",
-            "raw_media_days": "ninety"
-          },
-          "runtime_env": {
-            "PLAUD_ACCESS_TOKEN": false
-          },
-          "setup": {
-            "completed_at": 1700000000000
-          },
-          "some_future_section": {
-            "kept": true,
-            "n": 7
-          },
-          "support": {
-            "anonymous_feedback": true,
-            "enabled": true,
-            "portal_url": "https://support.example.org",
-            "proactive": false
-          },
-          "transcribe": {
-            "backend": "parakeet",
-            "confidential_audio": false,
-            "parakeet": {
-              "device": "auto",
-              "model_version": "v3",
-              "timeout_sec": 120.0
-            },
-            "preserve_all": true
-          }
-        },
-        "key_validation": {
-          "plaud": {
-            "timestamp": "<VOLATILE:timestamp>",
-            "valid": false
-          }
-        },
-        "success": true
-      },
-      "normalized_paths": [
-        "key_validation.plaud.timestamp"
-      ],
-      "path": "/app/settings/api/config",
-      "sent": {
-        "data": {
-          "name": "aria",
-          "name_status": "named"
-        },
-        "section": "agent"
-      },
-      "status": 200
-    },
     "POST identity.bare-backcompat": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -6301,11 +5406,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -6405,15 +5505,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "0df60eda1b36c233",
+      "digest": "831ecda1a8967384",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -6520,11 +5615,6 @@
     },
     "POST identity.legacy-key-value": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -6623,11 +5713,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -6727,15 +5812,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "70be9f16ae3596e8",
+      "digest": "69b294d516f43730",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -6842,11 +5922,6 @@
     },
     "POST identity.partial": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -6945,11 +6020,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -7049,15 +6119,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "2d802e4992cf9c9f",
+      "digest": "8edfdbedafb963e5",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -7166,11 +6231,6 @@
     },
     "POST journal.rename": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -7269,11 +6329,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -7373,15 +6428,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "7bf617d3fbc34f69",
+      "digest": "320b0703721daa99",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -7489,11 +6539,6 @@
     },
     "POST observe.tmux": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -7592,11 +6637,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -7724,11 +6764,6 @@
     },
     "POST processing.valid": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -7839,11 +6874,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -7943,15 +6973,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "54ad68221f867afa",
+      "digest": "a4a5343e080a6590",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -8071,11 +7096,6 @@
     },
     "POST prune-logs.dry-run": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -8174,11 +7194,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -8278,7 +7293,7 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "2bb002e7fa1ad610",
+      "digest": "77ff02770ff2058a",
       "method": "POST",
       "normalized": {
         "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
@@ -8294,11 +7309,6 @@
     },
     "POST support.toggle": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -8397,11 +7407,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -8501,15 +7506,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "2366657f217f2572",
+      "digest": "3b8107a67e96cf42",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -8618,11 +7618,6 @@
     },
     "POST transcribe.backend": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -8721,11 +7716,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -8825,15 +7815,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "7b26e8721fa9b810",
+      "digest": "d34dd790c21153a5",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -8942,11 +7927,6 @@
     },
     "POST transcribe.nested": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -9045,11 +8025,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -9149,15 +8124,10 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "d0132e9e34e4879d",
+      "digest": "73aaf464178711db",
       "method": "POST",
       "normalized": {
         "config": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -9267,11 +8237,6 @@
     },
     "PUT sol_voice.partial": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -9395,11 +8360,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -9552,11 +8512,6 @@
     },
     "PUT sol_voice.unknown-key": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -9655,11 +8610,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -9775,11 +8725,6 @@
     },
     "PUT storage.journal-logs": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -9878,11 +8823,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -10012,11 +8952,6 @@
     },
     "PUT storage.per-stream": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -10115,11 +9050,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -10250,11 +9180,6 @@
     },
     "PUT storage.raw-days-true": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -10353,11 +9278,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -10484,11 +9404,6 @@
     },
     "PUT storage.retention": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -10587,11 +9502,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -10719,11 +9629,6 @@
     },
     "PUT sync.plaud-enable": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -10822,11 +9727,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -10951,11 +9851,6 @@
     },
     "PUT vision.max-extractions": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -11054,11 +9949,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -11242,11 +10132,6 @@
     },
     "PUT vision.redact-trims-blanks": {
       "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -11348,11 +10233,6 @@
         }
       },
       "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
         "convey": {
           "bind": "127.0.0.1",
           "password": "MUST-NOT-LEAK",
@@ -12306,7 +11186,7 @@
       },
       "GET api/activities/defaults": {
         "content_type": "application/json",
-        "digest": "94a9a6e1875935b4",
+        "digest": "84f543eff18f189a",
         "normalized": {
           "activities": [
             {
@@ -12824,7 +11704,7 @@
       },
       "GET api/state": {
         "content_type": "application/json",
-        "digest": "a109fe58502e8df9",
+        "digest": "4fba14dc54d97481",
         "normalized": {
           "install_copy": {
             "STT_DETECTED_MEMORY_TEMPLATE": "{available_gb} GB of free memory detected on this machine.",
@@ -13126,7 +12006,7 @@
         "status": 400
       },
       "POST config.no-body": {
-        "digest": "2bb002e7fa1ad610",
+        "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
           "error": "I couldn't save those settings.",
@@ -13232,7 +12112,7 @@
         "status": 400
       },
       "POST observe.no-body": {
-        "digest": "2bb002e7fa1ad610",
+        "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
           "error": "I couldn't save those settings.",
@@ -13451,7 +12331,7 @@
       },
       "GET api/activities/defaults": {
         "content_type": "application/json",
-        "digest": "94a9a6e1875935b4",
+        "digest": "84f543eff18f189a",
         "normalized": {
           "activities": [
             {
@@ -13689,13 +12569,8 @@
       },
       "GET api/config": {
         "content_type": "application/json",
-        "digest": "6a7f115842478c2b",
+        "digest": "47a0ef2550e753a6",
         "normalized": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -14050,7 +12925,7 @@
       },
       "GET api/state": {
         "content_type": "application/json",
-        "digest": "a109fe58502e8df9",
+        "digest": "4fba14dc54d97481",
         "normalized": {
           "install_copy": {
             "STT_DETECTED_MEMORY_TEMPLATE": "{available_gb} GB of free memory detected on this machine.",
@@ -14363,7 +13238,7 @@
         "status": 400
       },
       "POST config.no-body": {
-        "digest": "2bb002e7fa1ad610",
+        "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
           "error": "I couldn't save those settings.",
@@ -14469,7 +13344,7 @@
         "status": 400
       },
       "POST observe.no-body": {
-        "digest": "2bb002e7fa1ad610",
+        "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
           "error": "I couldn't save those settings.",
@@ -14688,7 +13563,7 @@
       },
       "GET api/activities/defaults": {
         "content_type": "application/json",
-        "digest": "94a9a6e1875935b4",
+        "digest": "84f543eff18f189a",
         "normalized": {
           "activities": [
             {
@@ -14926,13 +13801,8 @@
       },
       "GET api/config": {
         "content_type": "application/json",
-        "digest": "50724236d5090618",
+        "digest": "1159cb37fba56caf",
         "normalized": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -15077,7 +13947,7 @@
       },
       "GET api/facet/muted-thing": {
         "content_type": "application/json",
-        "digest": "efed9434b78904c4",
+        "digest": "7f1fb448f45044fd",
         "normalized": {
           "config": {
             "color": "#334455",
@@ -15096,7 +13966,7 @@
       },
       "GET api/facet/muted-thing/activities": {
         "content_type": "application/json",
-        "digest": "190ab0a627114700",
+        "digest": "cc4b9725414691a5",
         "normalized": {
           "activities": [
             {
@@ -15614,7 +14484,7 @@
       },
       "GET api/facet/muted-thing/logs": {
         "content_type": "application/json",
-        "digest": "c1c6ff00c7e76f82",
+        "digest": "d89940ba00170a8d",
         "normalized": {
           "day": "20260813",
           "entries": [
@@ -15652,7 +14522,7 @@
       },
       "GET api/facet/work-life": {
         "content_type": "application/json",
-        "digest": "12ff61ad9ce195ce",
+        "digest": "ccd9c6c85fd8aec8",
         "normalized": {
           "config": {
             "color": "#334455",
@@ -15672,7 +14542,7 @@
       },
       "GET api/facet/work-life/activities": {
         "content_type": "application/json",
-        "digest": "ee792eb30dab8165",
+        "digest": "99496cf4a08208b9",
         "normalized": {
           "activities": [
             {
@@ -15966,7 +14836,7 @@
       },
       "GET api/facet/work-life/logs": {
         "content_type": "application/json",
-        "digest": "be97c748649d0f90",
+        "digest": "491e2de0a623fa0d",
         "normalized": {
           "day": "20260813",
           "entries": [
@@ -16067,7 +14937,7 @@
       },
       "GET api/facet/work-life/logs?cursor=20260814": {
         "content_type": "application/json",
-        "digest": "be97c748649d0f90",
+        "digest": "491e2de0a623fa0d",
         "normalized": {
           "day": "20260813",
           "entries": [
@@ -16116,7 +14986,7 @@
       },
       "GET api/facet/zeta-project": {
         "content_type": "application/json",
-        "digest": "4cfc4162d23b0217",
+        "digest": "fbd20e627ded7bf2",
         "normalized": {
           "config": {
             "color": "#334455",
@@ -16136,7 +15006,7 @@
       },
       "GET api/facet/zeta-project/activities": {
         "content_type": "application/json",
-        "digest": "190ab0a627114700",
+        "digest": "cc4b9725414691a5",
         "normalized": {
           "activities": [
             {
@@ -16654,7 +15524,7 @@
       },
       "GET api/facet/zeta-project/logs": {
         "content_type": "application/json",
-        "digest": "504b9f6cf6290a3c",
+        "digest": "1c6062efb45bbb21",
         "normalized": {
           "day": "20260813",
           "entries": [
@@ -16683,7 +15553,7 @@
       },
       "GET api/facets": {
         "content_type": "application/json",
-        "digest": "e1560e86b48c7416",
+        "digest": "16f0e258104f2224",
         "normalized": {
           "facets": [
             {
@@ -16711,7 +15581,7 @@
       },
       "GET api/facets/muted": {
         "content_type": "application/json",
-        "digest": "686a2bcb665389c0",
+        "digest": "2ea69f4f63360fd2",
         "normalized": {
           "facets": [
             {
@@ -16730,7 +15600,7 @@
       },
       "GET api/facets?all=true": {
         "content_type": "application/json",
-        "digest": "348fc6b3b6724661",
+        "digest": "797806085b6d2d9f",
         "normalized": {
           "facets": [
             {
@@ -17106,7 +15976,7 @@
       },
       "GET api/state": {
         "content_type": "application/json",
-        "digest": "a109fe58502e8df9",
+        "digest": "4fba14dc54d97481",
         "normalized": {
           "install_copy": {
             "STT_DETECTED_MEMORY_TEMPLATE": "{available_gb} GB of free memory detected on this machine.",
@@ -17429,7 +16299,7 @@
         "status": 400
       },
       "POST config.no-body": {
-        "digest": "2bb002e7fa1ad610",
+        "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
           "error": "I couldn't save those settings.",
@@ -17535,7 +16405,7 @@
         "status": 400
       },
       "POST observe.no-body": {
-        "digest": "2bb002e7fa1ad610",
+        "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
           "error": "I couldn't save those settings.",
@@ -17739,7 +16609,7 @@
           "config/actions/20260812.jsonl": "{\"action\": \"probe_0\", \"actor\": \"settings\", \"params\": {\"seq\": 0}, \"source\": \"app\", \"timestamp\": \"<VOLATILE:log_timestamp>\"}\n",
           "config/actions/20260813.jsonl": "{\"action\": \"identity_update\", \"actor\": \"settings\", \"params\": {\"changed_fields\": {\"preferred\": {\"new\": \"Countess\", \"old\": \"Ada\"}}}, \"source\": \"app\", \"timestamp\": \"<VOLATILE:log_timestamp>\"}\n",
           "config/actions/notes.txt": "ignore me\n",
-          "config/journal.json": "{\n  \"setup\": {\n    \"completed_at\": 1700000000000\n  },\n  \"identity\": {\n    \"name\": \"Ada Lovelace\",\n    \"preferred\": \"Countess\",\n    \"bio\": \"first programmer\",\n    \"pronouns\": {\n      \"subject\": \"she\",\n      \"object\": \"her\",\n      \"possessive\": \"her\",\n      \"reflexive\": \"herself\"\n    },\n    \"aliases\": [\n      \"ada\",\n      \"AAL\"\n    ],\n    \"email_addresses\": [\n      \"ada@example.org\"\n    ],\n    \"timezone\": \"Europe/London\"\n  },\n  \"journal\": {\n    \"name\": \"Analytical Engine\"\n  },\n  \"agent\": {\n    \"name\": \"sol\",\n    \"name_status\": \"named\",\n    \"named_date\": \"2026-01-02\"\n  },\n  \"support\": {\n    \"enabled\": true,\n    \"proactive\": false,\n    \"anonymous_feedback\": true,\n    \"portal_url\": \"https://support.example.org\"\n  },\n  \"env\": {\n    \"PLAUD_ACCESS_TOKEN\": \"\"\n  },\n  \"transcribe\": {\n    \"backend\": \"parakeet\",\n    \"preserve_all\": true,\n    \"confidential_audio\": false,\n    \"parakeet\": {\n      \"model_version\": \"v3\",\n      \"device\": \"auto\",\n      \"timeout_sec\": 120.0\n    },\n    \"whisper\": {\n      \"model\": \"large-v3\"\n    },\n    \"not_a_real_key\": \"should not survive projection\"\n  },\n  \"observe\": {\n    \"tmux\": {\n      \"enabled\": false,\n      \"capture_interval\": 17\n    }\n  },\n  \"describe\": {\n    \"max_extractions\": 42,\n    \"redact\": [\n      \"password\",\n      \"secret\"\n    ],\n    \"categories\": {}\n  },\n  \"retention\": {\n    \"raw_media\": \"days\",\n    \"raw_media_days\": 90,\n    \"per_stream\": {\n      \"tmux\": {\n        \"raw_media\": \"processed\"\n      }\n    },\n    \"journal_logs\": {\n      \"enabled\": true,\n      \"days\": 14\n    }\n  },\n  \"processing\": {},\n  \"convey\": {\n    \"secret\": \"MUST-NOT-LEAK\",\n    \"password_hash\": \"MUST-NOT-LEAK\",\n    \"password\": \"MUST-NOT-LEAK\",\n    \"bind\": \"127.0.0.1\"\n  },\n  \"providers\": {\n    \"active\": {\n      \"provider\": \"unused\"\n    }\n  },\n  \"service_key_validation\": {\n    \"plaud\": {\n      \"valid\": false,\n      \"timestamp\": \"2026-01-01T00:00:00Z\"\n    },\n    \"bogus\": {\n      \"valid\": true\n    }\n  },\n  \"some_future_section\": {\n    \"kept\": true,\n    \"n\": 7\n  }\n}\n",
+          "config/journal.json": "{\n  \"setup\": {\n    \"completed_at\": 1700000000000\n  },\n  \"identity\": {\n    \"name\": \"Ada Lovelace\",\n    \"preferred\": \"Countess\",\n    \"bio\": \"first programmer\",\n    \"pronouns\": {\n      \"subject\": \"she\",\n      \"object\": \"her\",\n      \"possessive\": \"her\",\n      \"reflexive\": \"herself\"\n    },\n    \"aliases\": [\n      \"ada\",\n      \"AAL\"\n    ],\n    \"email_addresses\": [\n      \"ada@example.org\"\n    ],\n    \"timezone\": \"Europe/London\"\n  },\n  \"journal\": {\n    \"name\": \"Analytical Engine\"\n  },\n  \"support\": {\n    \"enabled\": true,\n    \"proactive\": false,\n    \"anonymous_feedback\": true,\n    \"portal_url\": \"https://support.example.org\"\n  },\n  \"env\": {\n    \"PLAUD_ACCESS_TOKEN\": \"\"\n  },\n  \"transcribe\": {\n    \"backend\": \"parakeet\",\n    \"preserve_all\": true,\n    \"confidential_audio\": false,\n    \"parakeet\": {\n      \"model_version\": \"v3\",\n      \"device\": \"auto\",\n      \"timeout_sec\": 120.0\n    },\n    \"whisper\": {\n      \"model\": \"large-v3\"\n    },\n    \"not_a_real_key\": \"should not survive projection\"\n  },\n  \"observe\": {\n    \"tmux\": {\n      \"enabled\": false,\n      \"capture_interval\": 17\n    }\n  },\n  \"describe\": {\n    \"max_extractions\": 42,\n    \"redact\": [\n      \"password\",\n      \"secret\"\n    ],\n    \"categories\": {}\n  },\n  \"retention\": {\n    \"raw_media\": \"days\",\n    \"raw_media_days\": 90,\n    \"per_stream\": {\n      \"tmux\": {\n        \"raw_media\": \"processed\"\n      }\n    },\n    \"journal_logs\": {\n      \"enabled\": true,\n      \"days\": 14\n    }\n  },\n  \"processing\": {},\n  \"convey\": {\n    \"secret\": \"MUST-NOT-LEAK\",\n    \"password_hash\": \"MUST-NOT-LEAK\",\n    \"password\": \"MUST-NOT-LEAK\",\n    \"bind\": \"127.0.0.1\"\n  },\n  \"providers\": {\n    \"active\": {\n      \"provider\": \"unused\"\n    }\n  },\n  \"service_key_validation\": {\n    \"plaud\": {\n      \"valid\": false,\n      \"timestamp\": \"2026-01-01T00:00:00Z\"\n    },\n    \"bogus\": {\n      \"valid\": true\n    }\n  },\n  \"some_future_section\": {\n    \"kept\": true,\n    \"n\": 7\n  }\n}\n",
           "config/journal.json.lock": "",
           "facets/muted-thing/facet.json": "{\n  \"title\": \"Muted Thing\",\n  \"description\": \"Muted Thing desc\",\n  \"color\": \"#334455\",\n  \"emoji\": \"\ud83d\udd07\",\n  \"muted\": true\n}\n",
           "facets/muted-thing/logs/20260813.jsonl": "{\"action\": \"facet_create\", \"actor\": \"agent\", \"facet\": \"muted-thing\", \"params\": {\"color\": \"#334455\", \"consent\": true, \"description\": \"Muted Thing desc\", \"emoji\": \"\\ud83d\\udd07\", \"title\": \"Muted Thing\"}, \"source\": \"call\", \"timestamp\": \"<VOLATILE:log_timestamp>\"}\n{\"action\": \"facet_mute\", \"actor\": \"agent\", \"facet\": \"muted-thing\", \"params\": {\"muted\": true}, \"source\": \"call\", \"timestamp\": \"<VOLATILE:log_timestamp>\"}\n",
@@ -17834,7 +16704,7 @@
       },
       "GET api/activities/defaults": {
         "content_type": "application/json",
-        "digest": "94a9a6e1875935b4",
+        "digest": "84f543eff18f189a",
         "normalized": {
           "activities": [
             {
@@ -18072,13 +16942,8 @@
       },
       "GET api/config": {
         "content_type": "application/json",
-        "digest": "b377ccfec96948ad",
+        "digest": "ab722956f57908ce",
         "normalized": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -18437,7 +17302,7 @@
       },
       "GET api/state": {
         "content_type": "application/json",
-        "digest": "a109fe58502e8df9",
+        "digest": "4fba14dc54d97481",
         "normalized": {
           "install_copy": {
             "STT_DETECTED_MEMORY_TEMPLATE": "{available_gb} GB of free memory detected on this machine.",
@@ -18753,7 +17618,7 @@
         "status": 400
       },
       "POST config.no-body": {
-        "digest": "2bb002e7fa1ad610",
+        "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
           "error": "I couldn't save those settings.",
@@ -18859,7 +17724,7 @@
         "status": 400
       },
       "POST observe.no-body": {
-        "digest": "2bb002e7fa1ad610",
+        "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
           "error": "I couldn't save those settings.",
@@ -19078,7 +17943,7 @@
       },
       "GET api/activities/defaults": {
         "content_type": "application/json",
-        "digest": "94a9a6e1875935b4",
+        "digest": "84f543eff18f189a",
         "normalized": {
           "activities": [
             {
@@ -19316,13 +18181,8 @@
       },
       "GET api/config": {
         "content_type": "application/json",
-        "digest": "f9bb789510437cd8",
+        "digest": "cb6fab4381f27f34",
         "normalized": {
-          "agent": {
-            "name": "sol",
-            "name_status": "named",
-            "named_date": "2026-01-02"
-          },
           "convey": {
             "bind": "127.0.0.1"
           },
@@ -19681,7 +18541,7 @@
       },
       "GET api/state": {
         "content_type": "application/json",
-        "digest": "a109fe58502e8df9",
+        "digest": "4fba14dc54d97481",
         "normalized": {
           "install_copy": {
             "STT_DETECTED_MEMORY_TEMPLATE": "{available_gb} GB of free memory detected on this machine.",
@@ -19988,7 +18848,7 @@
         "status": 400
       },
       "POST config.no-body": {
-        "digest": "2bb002e7fa1ad610",
+        "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
           "error": "I couldn't save those settings.",
@@ -20094,7 +18954,7 @@
         "status": 400
       },
       "POST observe.no-body": {
-        "digest": "2bb002e7fa1ad610",
+        "digest": "77ff02770ff2058a",
         "normalized": {
           "detail": "something went wrong \u2014 try again, and if it persists, check the health dashboard",
           "error": "I couldn't save those settings.",

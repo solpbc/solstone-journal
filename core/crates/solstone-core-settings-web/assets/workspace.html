@@ -2052,7 +2052,6 @@ button:focus:not(:focus-visible) {
       </optgroup>
       <optgroup label="identity">
         <option value="profile">profile</option>
-        <option value="agent">agent identity</option>
       </optgroup>
       <optgroup label="AI">
         <option value="apikeys">API keys</option>
@@ -2087,7 +2086,6 @@ button:focus:not(:focus-visible) {
     <div class="settings-nav-group">
       <div class="settings-nav-label">identity</div>
       <button class="settings-nav-item" data-section="profile" id="tab-profile" role="tab" aria-selected="false" aria-controls="section-profile" tabindex="-1">profile</button>
-      <button class="settings-nav-item" data-section="agent" id="tab-agent" role="tab" aria-selected="false" aria-controls="section-agent" tabindex="-1">agent identity</button>
     </div>
     <div class="settings-nav-group">
       <div class="settings-nav-label">AI</div>
@@ -2656,38 +2654,6 @@ button:focus:not(:focus-visible) {
       </div>
     </section>
 
-    <!-- Agent Identity Section -->
-    <section class="settings-section" id="section-agent" role="tabpanel" aria-labelledby="tab-agent">
-      <h2>agent identity</h2>
-      <p class="settings-section-desc">your assistant's name and identity.</p>
-
-      <form class="settings-form" onsubmit="return false;">
-
-      <div class="settings-field">
-        <label for="field-agent-name">name</label>
-        <input type="text" id="field-agent-name" placeholder="sol">
-        <small>the name your assistant uses to identify itself</small>
-      </div>
-
-      <div class="settings-field">
-        <label>status</label>
-        <span id="agent-name-status" class="field-display">default</span>
-        <small>how the name was set: default, chosen, self-named, or deferred</small>
-      </div>
-
-      <div class="settings-field">
-        <label>named date</label>
-        <span id="agent-named-date" class="field-display">—</span>
-        <small>when the name was last changed</small>
-      </div>
-
-      <div class="settings-field">
-        <button type="button" class="setup-btn" id="resetAgentName" style="background: #6c757d; font-size: 0.85em; padding: 0.4em 1em;">reset to default</button>
-        <small>reset the name back to the default</small>
-      </div>
-      </form>
-    </section>
-
     <!-- Facet Appearance Section -->
     <section class="settings-section" id="section-facet-appearance" data-requires-facet role="tabpanel" aria-labelledby="tab-facet-appearance">
       <div class="facet-header">
@@ -3018,7 +2984,7 @@ setupModalAccessibility('customActivityModal');
 setupModalAccessibility('cleanupModal');
 
 // ========== NAVIGATION ==========
-  const VALID_SECTIONS = ['guide', 'profile', 'agent', 'apikeys', 'transcription', 'observer', 'vision', 'sync', 'storage', 'support', 'facets', 'facet-appearance', 'facet-activities', 'facet-activity'];
+  const VALID_SECTIONS = ['guide', 'profile', 'apikeys', 'transcription', 'observer', 'vision', 'sync', 'storage', 'support', 'facets', 'facet-appearance', 'facet-activities', 'facet-activity'];
 
 function switchSection(sectionId, updateHash = true) {
   // Validate section exists
@@ -3404,14 +3370,6 @@ function populateFields(config) {
   document.getElementById('field-support-proactive').checked = support.proactive !== false;
   document.getElementById('field-support-anonymous').checked = support.anonymous_feedback || false;
   setValue('field-support-portal-url', support.portal_url || 'https://support.solstone.app');
-
-  // Agent identity
-  const agent = config.agent || {};
-  setValue('field-agent-name', agent.name || 'sol');
-  const statusEl = document.getElementById('agent-name-status');
-  if (statusEl) statusEl.textContent = agent.name_status || 'default';
-  const dateEl = document.getElementById('agent-named-date');
-  if (dateEl) dateEl.textContent = agent.named_date || '—';
 
   // Env (API keys) - show status indicators
   // env = journal config status, runtime_env = loaded into process
@@ -5555,84 +5513,6 @@ document.getElementById('saveCustomActivityBtn').addEventListener('click', async
     notifyError('add failed', err.message);
   }
 });
-
-// Agent name reset
-const agentNameInput = document.getElementById('field-agent-name');
-if (agentNameInput) {
-  agentNameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      agentNameInput.blur();
-    }
-  });
-
-  agentNameInput.addEventListener('change', async (e) => {
-    const newName = e.target.value.trim() || 'sol';
-    const today = new Date().toISOString().slice(0, 10);
-
-    try {
-      const response = await fetch('api/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          section: 'agent',
-          data: {
-            name: newName,
-            name_status: 'chosen',
-            named_date: today,
-          },
-        }),
-      });
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || 'could not save name');
-      }
-
-      configData = result.config;
-      setValue('field-agent-name', newName);
-      showFieldStatus(agentNameInput, 'saved');
-      const statusEl = document.getElementById('agent-name-status');
-      if (statusEl) statusEl.textContent = 'chosen';
-      const dateEl = document.getElementById('agent-named-date');
-      if (dateEl) dateEl.textContent = today;
-    } catch (err) {
-      showFieldStatus(agentNameInput, 'error', err.message);
-    }
-  });
-  agentNameInput.onkeydown = (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); agentNameInput.blur(); }
-  };
-}
-
-const resetAgentBtn = document.getElementById('resetAgentName');
-if (resetAgentBtn) {
-  resetAgentBtn.addEventListener('click', async () => {
-    try {
-      const response = await fetch('api/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          section: 'agent',
-          data: { name: 'sol', name_status: 'default', named_date: null },
-        }),
-      });
-      const result = await response.json();
-      if (result.success) {
-        configData = result.config;
-        setValue('field-agent-name', 'sol');
-        const statusEl = document.getElementById('agent-name-status');
-        if (statusEl) statusEl.textContent = 'default';
-        const dateEl = document.getElementById('agent-named-date');
-        if (dateEl) dateEl.textContent = '—';
-        notifySuccess('reset', 'name reset to the default');
-      } else {
-        notifyError('reset failed', result.error || 'could not reset name');
-      }
-    } catch (err) {
-      notifyError('reset failed', err.message);
-    }
-  });
-}
 
 // ========== STORAGE ==========
 let storageData = null;

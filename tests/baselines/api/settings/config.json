@@ -1,9 +1,4 @@
 {
-  "agent": {
-    "name": "sol",
-    "name_status": "default",
-    "named_date": null
-  },
   "convey": {
     "allow_network_access": false,
     "trust_localhost": true
