@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use solstone_core_assets::{Artifact, Platform, catalog};
+use solstone_core_assets::{Artifact, Platform, canonical_host_pair, catalog};
 use solstone_core_journal_config::{
     JournalConfigRead,
     parakeet_coreml::{
@@ -48,34 +48,6 @@ fn rows() -> Result<Vec<&'static Artifact>, CoremlInstallError> {
         .filter(|artifact| artifact.unit == UNIT && artifact.platform == Some(Platform::MacosArm64))
         .collect::<Vec<_>>();
     Ok(rows)
-}
-
-fn normalize_os(os_name: &str) -> &str {
-    if os_name == "macos" {
-        "darwin"
-    } else {
-        os_name
-    }
-}
-
-/// Rust spells Apple Silicon `aarch64`; every platform string this installer
-/// compares against, and the one `install-models` resolves its variant from,
-/// spells it `arm64`. Normalizing only the OS and not the arch is why a real
-/// Apple Silicon host refused its own supported platform.
-fn normalize_arch(arch: &str) -> &str {
-    if arch == "aarch64" { "arm64" } else { arch }
-}
-
-/// Split from `current_platform` so the normalization can be tested over the
-/// raw values a host actually reports. A test that composes the normalizers
-/// itself proves they are correct and says nothing about whether the caller
-/// uses them -- which is precisely how the arch half stayed unnormalized.
-fn platform_from(os_name: &'static str, arch: &'static str) -> (&'static str, &'static str) {
-    (normalize_os(os_name), normalize_arch(arch))
-}
-
-fn current_platform() -> (&'static str, &'static str) {
-    platform_from(std::env::consts::OS, std::env::consts::ARCH)
 }
 
 fn require_coreml_host(os_name: &str, arch: &str) -> Result<(), CoremlInstallError> {
@@ -129,7 +101,7 @@ pub fn install_parakeet_coreml_model(
     config: &JournalConfigRead,
     force: bool,
 ) -> Result<PathBuf, CoremlInstallError> {
-    let (os_name, arch) = current_platform();
+    let (os_name, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
     install_parakeet_coreml_model_with_policy(
         home_dir,
         config,
@@ -145,7 +117,7 @@ pub fn check_parakeet_coreml_install(
     home_dir: &Path,
     _config: &JournalConfigRead,
 ) -> Result<(), CoremlInstallError> {
-    let (os_name, arch) = current_platform();
+    let (os_name, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
     check_parakeet_coreml_install_with_platform(home_dir, os_name, arch)
 }
 
@@ -478,33 +450,15 @@ mod tests {
         assert_eq!(FLUIDAUDIO_VERSION, version);
     }
 
-    /// The spellings `std::env::consts` actually produces on the hosts this
-    /// installer supports must be accepted by the guard, and the arch half is
-    /// the one that was wrong: every unit test injected an already-normalized
-    /// `("darwin", "arm64")`, so the assertions were right and the input was
-    /// not, and a real Apple Silicon host refused itself with
-    /// `platform_unsupported`. Compose the same normalizers `current_platform`
-    /// uses over the raw values Rust reports, so this stays host-independent.
     #[test]
-    fn the_raw_host_spellings_rust_reports_are_accepted_by_the_guard() {
-        for (raw_os, raw_arch) in [("macos", "aarch64"), ("macos", "arm64")] {
-            let (os_name, arch) = platform_from(raw_os, raw_arch);
-            assert_eq!(
-                (os_name, arch),
-                ("darwin", "arm64"),
-                "{raw_os}/{raw_arch} must normalize to the spelling the guard compares against"
-            );
-            require_coreml_host(os_name, arch).unwrap_or_else(|error| {
-                panic!("raw host {raw_os}/{raw_arch} must be a supported CoreML host: {error:?}")
-            });
-        }
+    fn the_canonical_coreml_host_is_accepted_by_the_guard() {
+        require_coreml_host("darwin", "arm64").unwrap();
     }
 
     #[test]
     fn a_genuinely_unsupported_host_is_still_refused() {
-        let (os_name, arch) = platform_from("linux", "x86_64");
         let error =
-            require_coreml_host(os_name, arch).expect_err("linux/x86_64 is not a CoreML host");
+            require_coreml_host("linux", "x86_64").expect_err("linux/x86_64 is not a CoreML host");
         assert_eq!(error.reason_code, "platform_unsupported");
     }
 }

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use axum::response::Response;
 use serde_json::json;
+use solstone_core_assets::{Platform, resolve_host_platform};
 use solstone_core_sense::memory::{MemoryProbe, SystemMemoryProbe};
 
 use crate::{config, http::json_response};
@@ -29,29 +30,50 @@ pub async fn get(journal_root: PathBuf) -> Response {
         "api_keys": {"parakeet": true, "parakeet-cpp": true},
         "config": transcribe,
         "runtime_label": runtime_label(std::env::consts::OS, std::env::consts::ARCH),
-        "parakeet_uses_cpp": std::env::consts::OS == "linux" && std::env::consts::ARCH == "x86_64",
+        "parakeet_uses_cpp": parakeet_uses_cpp(std::env::consts::OS, std::env::consts::ARCH),
         "resource": {"min_ram_gb": 6, "available_memory_gb": available_gb, "requirement": "local transcription needs about 6 GB of free memory for the on-device model (transcription, speaker labels, and overlap detection).", "detected": available_gb.map(|value| format!("{value} GB of free memory detected on this machine.")).unwrap_or_else(|| "free memory on this machine could not be detected.".to_owned()), "needs_setup": available.is_some_and(|value| value < 6 * 1024_u64.pow(3)), "notice": ""},
     }))
 }
 
 pub fn runtime_label(os: &str, arch: &str) -> &'static str {
-    if os == "darwin" && arch == "arm64" {
-        "macOS CoreML helper"
-    } else if os != "linux" || arch != "x86_64" {
-        "unsupported"
-    } else {
-        "Linux parakeet.cpp"
+    match resolve_host_platform(os, arch) {
+        Ok(Platform::MacosArm64) => "macOS CoreML helper",
+        Ok(Platform::LinuxX64) => "Linux parakeet.cpp",
+        Ok(Platform::LinuxArm64) | Err(_) => "unsupported",
     }
+}
+
+pub fn parakeet_uses_cpp(os: &str, arch: &str) -> bool {
+    matches!(resolve_host_platform(os, arch), Ok(Platform::LinuxX64))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::runtime_label;
+    use super::{parakeet_uses_cpp, runtime_label};
 
     #[test]
     fn ac12_runtime_label_has_all_three_branches() {
         assert_eq!(runtime_label("darwin", "arm64"), "macOS CoreML helper");
         assert_eq!(runtime_label("linux", "x86_64"), "Linux parakeet.cpp");
         assert_eq!(runtime_label("windows", "x86_64"), "unsupported");
+    }
+
+    #[test]
+    fn runtime_label_for_macos_aarch64_is_coreml_helper() {
+        assert_eq!(runtime_label("macos", "aarch64"), "macOS CoreML helper");
+    }
+
+    #[test]
+    fn runtime_label_for_linux_aarch64_is_unsupported() {
+        assert_eq!(runtime_label("linux", "aarch64"), "unsupported");
+    }
+
+    #[test]
+    fn parakeet_uses_cpp_is_true_only_for_linux_x86_64() {
+        assert!(parakeet_uses_cpp("linux", "x86_64"));
+        assert!(!parakeet_uses_cpp("linux", "aarch64"));
+        assert!(!parakeet_uses_cpp("macos", "aarch64"));
+        assert!(!parakeet_uses_cpp("darwin", "arm64"));
+        assert!(!parakeet_uses_cpp("windows", "x86_64"));
     }
 }

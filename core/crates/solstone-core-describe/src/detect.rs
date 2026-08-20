@@ -11,6 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
+use solstone_core_assets::canonical_host_pair;
 use solstone_core_local::install::rfdetr_install::{
     RfdetrInstallError, RfdetrInstallRecord, binary_path, check_rfdetr_model, model_path,
 };
@@ -107,7 +108,8 @@ fn wait_for_child(child: &mut Child, timeout: Duration) -> Result<ExitStatus, St
 }
 
 fn native_paths(journal: &Path) -> Result<(PathBuf, PathBuf), String> {
-    let result = check_rfdetr_model(journal, env::consts::OS, env::consts::ARCH);
+    let (os, arch) = canonical_host_pair(env::consts::OS, env::consts::ARCH);
+    let result = check_rfdetr_model(journal, os, arch);
     paths_from_install_check(result, journal)
 }
 

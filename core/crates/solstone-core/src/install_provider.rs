@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use solstone_core_assets::canonical_host_pair;
 use solstone_core_cli::InstallProviderOptions;
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_local::install::{
@@ -108,12 +109,8 @@ pub fn run(options: InstallProviderOptions) -> ExitCode {
             }
         },
         move |journal| {
-            readiness_for(
-                journal,
-                is_local,
-                normalized_os(std::env::consts::OS),
-                normalized_arch(std::env::consts::ARCH),
-            )
+            let (os_name, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
+            readiness_for(journal, is_local, os_name, arch)
         },
         install_parakeet,
         install_local,
@@ -140,8 +137,7 @@ where
     P: FnOnce(&Path, lease::InstallLease) -> Result<Value, Box<DispatchError>>,
     L: FnOnce(&Path) -> Result<Value, Box<DispatchError>>,
 {
-    let os_name = normalized_os(std::env::consts::OS);
-    let arch = normalized_arch(std::env::consts::ARCH);
+    let (os_name, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
     run_inner_with(
         options,
         journal_resolver,
@@ -288,17 +284,13 @@ fn install_parakeet(
     journal: &Path,
     held: lease::InstallLease,
 ) -> Result<Value, Box<DispatchError>> {
-    install_parakeet_with_lease(
-        journal,
-        normalized_os(std::env::consts::OS),
-        normalized_arch(std::env::consts::ARCH),
-        held,
-    )
-    .map_err(Box::new)
+    let (os_name, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
+    install_parakeet_with_lease(journal, os_name, arch, held).map_err(Box::new)
 }
 
 fn install_local(journal: &Path) -> Result<Value, Box<DispatchError>> {
-    let payload = if normalized_os(std::env::consts::OS) == "darwin" {
+    let payload = if canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH).0 == "darwin"
+    {
         json!({
             "journal": journal.display().to_string(),
             "model_id": "local/qwen3.5-4b",
@@ -629,7 +621,7 @@ fn local_target_sha(journal: &Path) -> Result<String, String> {
         "journal": journal.display().to_string(),
         "model_id": "local/qwen3.5-4b",
     });
-    if normalized_os(std::env::consts::OS) == "darwin" {
+    if canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH).0 == "darwin" {
         payload["backend"] = Value::String("metal".to_owned());
     }
     let envelope = dispatch(InstallVerb::FingerprintLocal, payload).map_err(dispatch_message)?;
@@ -840,14 +832,6 @@ fn reference_repr(value: &str) -> String {
     } else {
         format!("'{value}'")
     }
-}
-
-fn normalized_os(value: &str) -> &str {
-    if value == "macos" { "darwin" } else { value }
-}
-
-fn normalized_arch(value: &str) -> &str {
-    if value == "aarch64" { "arm64" } else { value }
 }
 
 #[cfg(test)]

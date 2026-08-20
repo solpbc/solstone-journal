@@ -31,6 +31,7 @@ fn ced_download_disclosure() -> String {
     )
 }
 
+use solstone_core_assets::canonical_host_pair;
 use solstone_core_local::install::{
     DispatchError, ced_install, coreml_install, fingerprint, fit_report,
     install_parakeet_with_lease, lease, pins, rerank_install, rfdetr_install, status,
@@ -166,9 +167,10 @@ impl InstallModelsOutcome {
 
 /// Collect process inputs only; all command decisions live in `run_inner`.
 pub fn run(options: InstallModelsOptions) -> ExitCode {
+    let (os_name, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
     let host = HostPlatform {
-        os_name: normalize_os(std::env::consts::OS).to_owned(),
-        arch: normalize_arch(std::env::consts::ARCH).to_owned(),
+        os_name: os_name.to_owned(),
+        arch: arch.to_owned(),
         journal_variant: std::env::var("JOURNAL_VARIANT").ok(),
     };
     let home_dir = std::env::home_dir().unwrap_or_default();
@@ -787,18 +789,6 @@ fn ready_line(path: &Path) -> String {
     format!("model ready: {}", path.display())
 }
 
-fn normalize_os(os_name: &str) -> &str {
-    if os_name == "macos" {
-        "darwin"
-    } else {
-        os_name
-    }
-}
-
-fn normalize_arch(arch: &str) -> &str {
-    if arch == "aarch64" { "arm64" } else { arch }
-}
-
 #[cfg(test)]
 mod disclosure_tests {
     use super::ced_download_disclosure;
@@ -960,12 +950,7 @@ mod tests {
     }
 
     #[test]
-    fn normalization_maps_platform_names_and_raw_values_fall_through() {
-        assert_eq!(normalize_os("macos"), "darwin");
-        assert_eq!(normalize_arch("aarch64"), "arm64");
-        assert_eq!(normalize_os("linux"), "linux");
-        assert_eq!(normalize_arch("x86_64"), "x86_64");
-
+    fn raw_host_injected_into_run_inner_is_skipped_not_mapped() {
         let journal = tempfile::tempdir().unwrap();
         let outcome = run_inner_with_test!(
             host("macos", "aarch64", None),

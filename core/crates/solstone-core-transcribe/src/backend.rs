@@ -10,6 +10,7 @@ pub(crate) mod parakeet_cpp;
 use std::env;
 use std::fs;
 
+use solstone_core_assets::{Platform, resolve_host_platform};
 use solstone_core_system::stt_backend_choice::{STT_SURFACE, resolve_stt_backend_choice};
 
 use crate::TranscribeError;
@@ -88,10 +89,9 @@ pub(crate) fn resolve_default_backend(
 }
 
 fn platform_floor_bytes_for(os: &str, arch: &str) -> Option<u64> {
-    match (os, arch) {
-        ("darwin", "arm64") => Some(DARWIN_ARM64_LOCAL_FLOOR_BYTES),
-        ("linux", "x86_64" | "aarch64" | "arm64") => Some(LINUX_LOCAL_FLOOR_BYTES),
-        _ => None,
+    match resolve_host_platform(os, arch).ok()? {
+        Platform::MacosArm64 => Some(DARWIN_ARM64_LOCAL_FLOOR_BYTES),
+        Platform::LinuxX64 | Platform::LinuxArm64 => Some(LINUX_LOCAL_FLOOR_BYTES),
     }
 }
 
@@ -179,8 +179,21 @@ mod tests {
     }
 
     #[test]
+    fn macos_aarch64_platform_floor_is_two_gib() {
+        assert_eq!(
+            platform_floor_bytes_for("macos", "aarch64"),
+            Some(DARWIN_ARM64_LOCAL_FLOOR_BYTES)
+        );
+    }
+
+    #[test]
     fn local_stt_backend_supports_darwin_arm64() {
         assert_eq!(local_stt_backend_for("darwin", "arm64"), Some("parakeet"));
+    }
+
+    #[test]
+    fn local_stt_backend_supports_macos_aarch64() {
+        assert_eq!(local_stt_backend_for("macos", "aarch64"), Some("parakeet"));
     }
 
     #[test]

@@ -28,6 +28,7 @@ solstone-core-facets.workspace = true
 solstone-core-retention.workspace = true
 solstone-core-sense.workspace = true
 solstone-core-segment.workspace = true
+solstone-core-assets.workspace = true
 
 [build-dependencies]
 serde_json.workspace = true

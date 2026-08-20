@@ -331,22 +331,20 @@ mod tests {
 
     #[test]
     fn runtime_platform_normalizes_macos_arm64_for_wheel_coverage() {
-        assert_eq!(
-            runtime_platform_for("macos", "aarch64"),
-            ("darwin", "arm64")
-        );
+        let (platform, architecture) = runtime_platform();
+        if std::env::consts::OS == "macos" && std::env::consts::ARCH == "aarch64" {
+            assert_eq!((platform, architecture), ("darwin", "arm64"));
+        } else {
+            assert_eq!(
+                (platform, architecture),
+                (std::env::consts::OS, std::env::consts::ARCH)
+            );
+        }
     }
 
     #[test]
     fn current_target_has_covered_speakers_analyze_runtime() {
         check_platform_coverage().unwrap();
-    }
-
-    fn runtime_platform_for<'a>(platform: &'a str, architecture: &'a str) -> (&'a str, &'a str) {
-        match (platform, architecture) {
-            ("macos", "aarch64") => ("darwin", "arm64"),
-            values => values,
-        }
     }
 
     #[test]
