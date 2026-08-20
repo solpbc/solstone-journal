@@ -736,9 +736,9 @@
             "Content-Type": "text/javascript; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 42655,
+          "text_bytes": 43266,
           "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES",
-          "text_sha256": "7479e111097a6f847c846689d6febf26ec1628924fee5b0ac09887d07baf08b2"
+          "text_sha256": "dc3e60dfef2e82cd460be2d96f7e9c8056db17fb3868fb11dc1fcb2bcd5b43a6"
         },
         "sends_idempotency_key": false
       },
@@ -1439,9 +1439,9 @@
             "Content-Type": "text/javascript; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 42655,
+          "text_bytes": 43266,
           "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES",
-          "text_sha256": "7479e111097a6f847c846689d6febf26ec1628924fee5b0ac09887d07baf08b2"
+          "text_sha256": "dc3e60dfef2e82cd460be2d96f7e9c8056db17fb3868fb11dc1fcb2bcd5b43a6"
         },
         "sends_idempotency_key": false
       },
@@ -3213,9 +3213,9 @@
             "Content-Type": "text/javascript; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 42655,
+          "text_bytes": 43266,
           "text_prefix": "// SPDX-License-Identifier: AGPL-3.0-only\n// Copyright (c) 2026 sol pbc\n\n(function() {\n  const REQUEST_TIMEOUT_MS = 12000;\n  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;\n  const MAX_ATTACHMENT_FILES",
-          "text_sha256": "7479e111097a6f847c846689d6febf26ec1628924fee5b0ac09887d07baf08b2"
+          "text_sha256": "dc3e60dfef2e82cd460be2d96f7e9c8056db17fb3868fb11dc1fcb2bcd5b43a6"
         },
         "sends_idempotency_key": false
       },

@@ -136,11 +136,6 @@
     });
   }
 
-  function lookup(deps, id) {
-    if (deps && typeof deps.getElementById === 'function') return deps.getElementById(id);
-    return document.getElementById(id);
-  }
-
   async function readJsonResponse(resp) {
     let body = {};
     try {
@@ -172,7 +167,11 @@
   async function cancelItems(items) {
     let last = {ok: true, body: {}};
     for (let i = 0; i < items.length; i++) {
-      last = await postDraftJson('/app/support/api/draft/cancel', {draft_id: items[i].draftId});
+      try {
+        last = await postDraftJson('/app/support/api/draft/cancel', {draft_id: items[i].draftId});
+      } catch (err) {
+        last = {ok: false, body: {}, error: err && err.message};
+      }
     }
     return last;
   }
@@ -509,7 +508,7 @@
 
   async function startReview(attempt, deps) {
     deps = deps || {};
-    const statusEl = deps.statusEl || lookup(deps, attempt.composeStatusId);
+    const statusEl = deps.statusEl;
     if (reviewInFlight) return;
     const files = attempt.files || [];
     const fileError = validateFiles(files);
@@ -552,7 +551,9 @@
         const file = files[i];
         const captured = await captureAttach(attempt.ticketId, file);
         if (!captured.ok) {
-          await cancelItems(items);
+          try {
+            await cancelItems(items);
+          } catch (cancelErr) { /* still release the guard */ }
           failBeforeReview(statusEl, captured.error);
           return;
         }
@@ -581,7 +582,9 @@
       renderReview(currentAttempt);
       showReview();
     } catch (err) {
-      await cancelItems(items);
+      try {
+        await cancelItems(items);
+      } catch (cancelErr) { /* still release the guard */ }
       failBeforeReview(statusEl, (err && err.message) || "couldn't capture");
     }
   }
@@ -623,7 +626,18 @@
       }
       const outcome = result.body.outcome;
       if (outcome === 'not_found') {
-        finishAttempt('that draft is gone. nothing was sent.');
+        const leftover = currentAttempt.items.filter(function(entry) { return !entry.confirmed; });
+        const hadConfirmed = currentAttempt.items.some(function(entry) { return entry.confirmed; });
+        try {
+          await cancelItems(leftover);
+        } catch (cancelErr) { /* still finish */ }
+        if (!hadConfirmed) {
+          finishAttempt('that draft is gone. nothing was sent.');
+          return;
+        }
+        const names = leftover.map(function(entry) { return entry.filename; }).filter(Boolean);
+        const didNot = names.length ? names.join(', ') : 'that file';
+        finishAttempt('the reply left. ' + didNot + ' did not.', 'error');
         return;
       }
       item.confirmed = true;
@@ -688,9 +702,9 @@
     });
   }
 
-  function bindCtrlEnter(form, textEl) {
-    if (!textEl || !form) return;
-    textEl.addEventListener('keydown', function(e) {
+  function bindCtrlEnter(form) {
+    if (!form) return;
+    form.addEventListener('keydown', function(e) {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         form.requestSubmit();
@@ -745,7 +759,7 @@
     });
     subjectEl.addEventListener('input', function() { subjectError.style.display = 'none'; });
     descriptionEl.addEventListener('input', function() { descriptionError.style.display = 'none'; });
-    bindCtrlEnter(form, descriptionEl);
+    bindCtrlEnter(form);
   }
 
   function bindFeedbackForm() {
@@ -777,7 +791,7 @@
     });
     textEl.addEventListener('input', function() { errorEl.style.display = 'none'; });
     emailInput.addEventListener('input', function() { emailError.textContent = ''; });
-    bindCtrlEnter(form, textEl);
+    bindCtrlEnter(form);
   }
 
   function renderPendingFiles() {
@@ -862,7 +876,7 @@
     });
     if (textEl) {
       textEl.addEventListener('input', function() { errorEl.style.display = 'none'; });
-      bindCtrlEnter(form, textEl);
+      bindCtrlEnter(form);
     }
     if (attachOnlyBtn) {
       attachOnlyBtn.addEventListener('click', function() {

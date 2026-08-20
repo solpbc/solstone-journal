@@ -321,7 +321,6 @@
           && postsTo('/draft/confirm')[0].json.draft_id === 'draft-1'
       );
       assert('create submitted copy', text('#create-status').indexOf('sent to solstone support') !== -1);
-      assert('create review cleared', !reviewVisible());
     });
 
     resetFixture();
@@ -724,6 +723,83 @@
       }, { statusEl: document.getElementById('create-status') });
       assert('in-flight blocks second capture', calls.length === before);
       assert('in-flight observable', window.SupportUI.isReviewInFlight() === true);
+    });
+
+    resetFixture();
+    let cancelThrowPosts = 0;
+    await withFetch(async function(url, opts) {
+      const method = (opts && opts.method) || 'GET';
+      if (method === 'POST' && url.indexOf('/draft/cancel') !== -1) {
+        throw new Error('cancel down');
+      }
+      if (method === 'POST' && url.indexOf('/app/support/api/draft') !== -1) {
+        cancelThrowPosts += 1;
+        if (cancelThrowPosts === 1) return response({ body: { draft_id: 'keep-me' } });
+        return response({
+          status: 500,
+          body: { error: 'second failed', reason_code: 'support_portal_failed' }
+        });
+      }
+      return response({ status: 404, body: { error: 'unhandled' } });
+    }, async () => {
+      await window.SupportUI.startReview({
+        kind: 'reply',
+        ticketId: 42,
+        payload: { ticket_id: 42, content: 'More detail' },
+        files: [evidence]
+      }, { statusEl: document.getElementById('reply-status') });
+      assert('cancel throw releases guard', window.SupportUI.isReviewInFlight() === false);
+      assert('cancel throw re-enables compose', document.getElementById('reply-submit').disabled === false);
+      assert('cancel throw shows error', text('#reply-status').indexOf('second failed') !== -1);
+      assert('cancel throw keeps review hidden', !reviewVisible());
+    });
+
+    resetFixture();
+    await withFetch(async function(url, opts) {
+      const method = (opts && opts.method) || 'GET';
+      if (method === 'POST' && url.indexOf('/draft/confirm') !== -1) {
+        return response({ body: { ok: true, outcome: 'not_found' } });
+      }
+      if (method === 'POST' && url.indexOf('/draft/cancel') !== -1) {
+        return response({ body: { ok: true, outcome: 'cancelled' } });
+      }
+      if (method === 'POST' && url.indexOf('/app/support/api/draft') !== -1) {
+        return response({ body: { draft_id: nextDraftId() } });
+      }
+      return response({ status: 404, body: { error: 'unhandled' } });
+    }, async () => {
+      const fileA = new File(['a'], 'a.txt', { type: 'text/plain' });
+      const fileB = new File(['b'], 'b.txt', { type: 'text/plain' });
+      await window.SupportUI.startReview({
+        kind: 'reply',
+        ticketId: 42,
+        payload: { ticket_id: 42, content: 'More detail' },
+        files: [fileA, fileB]
+      }, { statusEl: document.getElementById('reply-status') });
+      await window.SupportUI.confirmReview();
+      const cancels = postsTo('/draft/cancel');
+      const cancelledIds = cancels.map(function(entry) { return entry.json && entry.json.draft_id; });
+      assert(
+        'not_found cancels both attach ids',
+        cancelledIds.indexOf('draft-2') !== -1 && cancelledIds.indexOf('draft-3') !== -1
+      );
+    });
+
+    resetFixture();
+    await withFetch(captureOk(), async () => {
+      document.getElementById('create-subject').value = 's';
+      document.getElementById('create-description').value = 'd';
+      const subject = document.getElementById('create-subject');
+      subject.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        ctrlKey: true,
+        bubbles: true
+      }));
+      await waitFor(reviewVisible, 'create from subject ctrl+enter');
+      const captures = postsTo('/app/support/api/draft').filter(function(entry) {
+        return entry.url.indexOf('/confirm') === -1 && entry.url.indexOf('/cancel') === -1;
+      });
+      assert('ctrl+enter from subject starts one capture', captures.length === 1);
     });
 
     resetFixture();

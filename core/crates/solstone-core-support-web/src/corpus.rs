@@ -1288,8 +1288,8 @@ fn copied_assets_are_byte_identical_to_the_frozen_hashes() {
         ),
         (
             super::SUPPORT_JS,
-            "7479e111097a6f847c846689d6febf26ec1628924fee5b0ac09887d07baf08b2",
-            42_655,
+            "dc3e60dfef2e82cd460be2d96f7e9c8056db17fb3868fb11dc1fcb2bcd5b43a6",
+            43_266,
         ),
         (
             super::SHELL,
