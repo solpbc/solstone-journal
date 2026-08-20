@@ -10,7 +10,6 @@ pub enum StageId {
     Documents,
     Steward,
     Story,
-    ChatContext,
     Pulse,
     MorningBriefing,
     EntityDescribe,
@@ -52,7 +51,6 @@ pub enum GateDecision {
 pub enum PrePostState {
     None,
     Steward(crate::steward::StewardPreState),
-    ChatContext(crate::chat_context::ChatContextState),
     Pulse(Box<crate::pulse::PulsePreState>),
     MorningBriefing(crate::morning_briefing::MorningBriefingPreState),
     EntityDescribe(crate::entities::describe::EntityDescribePreState),
@@ -101,7 +99,7 @@ pub struct StageSpec {
     pub output_override: Option<OutputOverrideFn>,
 }
 
-pub const HOOK_TABLE: [HookBinding; 16] = [
+pub const HOOK_TABLE: [HookBinding; 15] = [
     HookBinding {
         hook: "documents",
         stage: StageId::Documents,
@@ -113,10 +111,6 @@ pub const HOOK_TABLE: [HookBinding; 16] = [
     HookBinding {
         hook: "story",
         stage: StageId::Story,
-    },
-    HookBinding {
-        hook: "chat_context",
-        stage: StageId::ChatContext,
     },
     HookBinding {
         hook: "pulse",
@@ -199,15 +193,6 @@ pub static STORY: StageSpec = StageSpec {
         commit: crate::story::commit,
     }),
     writes_as_intent: Some(crate::writers::apply),
-    output_override: None,
-};
-pub static CHAT_CONTEXT: StageSpec = StageSpec {
-    stage: StageId::ChatContext,
-    gate: None,
-    build: Some(crate::chat_context::build),
-    prompt_override: Some(crate::chat_context::apply_prompt_override),
-    commit: None,
-    writes_as_intent: None,
     output_override: None,
 };
 pub static PULSE: StageSpec = StageSpec {
@@ -355,7 +340,6 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
         StageId::Documents => &DOCUMENTS,
         StageId::Steward => &STEWARD,
         StageId::Story => &STORY,
-        StageId::ChatContext => &CHAT_CONTEXT,
         StageId::Pulse => &PULSE,
         StageId::MorningBriefing => &MORNING_BRIEFING,
         StageId::EntityDescribe => &ENTITY_DESCRIBE,
@@ -500,10 +484,7 @@ mod tests {
         assert!(ptr::eq(stages[1], stages[2]));
         assert!(ptr::eq(resolve_hook("documents").unwrap(), &DOCUMENTS));
         assert!(ptr::eq(resolve_hook("steward").unwrap(), &STEWARD));
-        assert!(ptr::eq(
-            resolve_hook("chat_context").unwrap(),
-            &CHAT_CONTEXT
-        ));
+        assert!(resolve_hook("chat_context").is_none());
         assert!(resolve_hook("chat").is_none());
     }
 

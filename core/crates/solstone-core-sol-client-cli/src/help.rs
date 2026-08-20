@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     fn root_call_groups_come_from_fixture() {
-        assert_eq!(root_call_groups().len(), 20);
+        assert_eq!(root_call_groups().len(), 19);
         assert!(root_call_groups().contains(&"journal".to_string()));
     }
 
@@ -418,10 +418,7 @@ mod tests {
         let mut scanned = 0;
         let mut secondary_scanned = 0;
         for entry in aggregate::entries() {
-            if !matches!(
-                entry.surface,
-                "sol-call" | "sol-import" | "sol-link"
-            ) {
+            if !matches!(entry.surface, "sol-call" | "sol-import" | "sol-link") {
                 continue;
             }
             scanned += 1;

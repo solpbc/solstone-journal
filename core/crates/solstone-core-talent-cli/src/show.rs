@@ -593,26 +593,26 @@ mod tests {
     }
 
     #[test]
-    fn chat_pre_hook_uses_python_dict_rendering() {
-        let chat = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../core/payload/solstone/talent/chat.md");
-        let parsed = read_frontmatter(&chat).expect("checked-in chat talent");
+    fn documents_pre_hook_uses_python_dict_rendering() {
+        let documents = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../core/payload/solstone/talent/documents.md");
+        let parsed = read_frontmatter(&documents).expect("checked-in documents talent");
         assert_eq!(
             python_str(parsed.metadata.get("hook").expect("hook")),
-            "{'pre': 'chat_context'}"
+            "{'pre': 'documents'}"
         );
     }
 
     #[test]
-    fn checked_in_read_talent_is_the_cogitate_static_view_fixture() {
-        let read = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../core/payload/solstone/talent/read.md");
-        let parsed = read_frontmatter(&read).expect("checked-in read talent");
+    fn checked_in_partner_talent_is_the_cogitate_static_view_fixture() {
+        let partner = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../core/payload/solstone/talent/partner.md");
+        let parsed = read_frontmatter(&partner).expect("checked-in partner talent");
         assert_eq!(
             parsed.metadata.get("type"),
             Some(&Value::String("cogitate".to_owned()))
         );
-        assert!(parsed.body.contains("## Your Job"));
+        assert!(parsed.body.contains("# Partner Profile"));
     }
 
     #[test]

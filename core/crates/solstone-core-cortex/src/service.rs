@@ -338,7 +338,8 @@ mod tests {
         let (outbound_tx, _) = mpsc::channel();
         let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
         state.request(
-            serde_json::from_value(serde_json::json!({"use_id":"one","name":"chat"})).unwrap(),
+            serde_json::from_value(serde_json::json!({"use_id":"one","name":"conversation"}))
+                .unwrap(),
         );
         let work = spawn_rx.recv().unwrap();
         state.spawn_begin("one");

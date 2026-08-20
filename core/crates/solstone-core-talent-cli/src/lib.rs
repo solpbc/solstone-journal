@@ -562,12 +562,6 @@ mod tests {
 
         let discovered = solstone_core_talent_config::discover(&talent_root, &apps_root)
             .expect("discover corpus");
-        assert!(discovered.iter().any(|config| config.key == "chat"));
-        assert!(
-            discovered
-                .iter()
-                .any(|config| config.key == "support:support")
-        );
 
         let json = run_cli(
             &args(&["list", "--json"]),
@@ -587,14 +581,10 @@ mod tests {
                 < json.stdout.find("talent/event.md").expect("event")
         );
         for expected in [
-            r##"{"file": "talent/chat.md", "type": "generate", "title": "Chat", "description": "Structured conversational reply planner for the chat backend rewrite", "thinking_budget": 4096, "max_output_tokens": 2048, "output": "json", "schema": "chat.schema.json", "hook": {"pre": "chat_context"}, "color": "#6c757d", "source": "system"}"##,
             r##"{"file": "talent/conversation.md", "type": "generate", "title": "Conversation Story", "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.", "color": "#00796b", "schedule": "activity", "activities": ["meeting", "call", "messaging", "email"], "priority": 20, "output": "json", "max_output_tokens": 12288, "schema": "story.schema.json", "hook": {"post": "story"}, "degradation_check": true, "load": {"transcripts": true, "percepts": true, "talents": false}, "source": "system"}"##,
-            r##"{"file": "talent/exec.md", "type": "cogitate", "access_tier": "normal", "title": "Exec", "description": "Sol \u2014 takes action and makes changes in the journal", "color": "#6c757d", "source": "system", "cwd": "journal"}"##,
-            r##"{"file": "talent/read.md", "type": "cogitate", "title": "Read", "description": "Sol \u2014 finds, reads, and synthesizes anything in the journal (read-only)", "color": "#6c757d", "source": "system", "access_tier": "normal", "cwd": "journal"}"##,
             r##"{"file": "talent/partner.md", "type": "cogitate", "access_tier": "synthesis", "title": "Partner Profile", "description": "Weekly observation of the journal owner's behavioral patterns \u2014 work style, communication, priorities, decision-making, expertise", "schedule": "weekly", "priority": 95, "max_turns": 100, "color": "#6c757d", "source": "system", "cwd": "journal"}"##,
             r##"{"file": "talent/weekly_reflection.md", "type": "cogitate", "access_tier": "synthesis", "title": "Weekly Reflection", "description": "Sunday-start weekly reflection synthesized from the journal", "schedule": "weekly", "priority": 90, "output": "md", "degradation_check": true, "read_scope_span": 7, "max_turns": 100, "max_run_cost_usd": 5.0, "color": "#6c757d", "source": "system", "cwd": "journal"}"##,
             r##"{"file": "apps/entities/talent/entity_assist.md", "type": "cogitate", "title": "Entity Assistant", "description": "Quick entity addition with intelligent type detection and automatic description generation", "color": "#00695c", "group": "Entities", "source": "app", "app": "entities", "access_tier": "normal", "cwd": "journal"}"##,
-            r##"{"file": "apps/support/talent/support.md", "type": "cogitate", "access_tier": "outbound", "title": "Support", "description": "Drafts support requests and feedback to solstone support for owner review, searches help articles, and runs local diagnostics.", "color": "#0288d1", "source": "app", "app": "support", "cwd": "journal"}"##,
         ] {
             assert!(
                 records.contains(&expected),
@@ -673,13 +663,9 @@ mod tests {
         "  participation             Participation                 -                   json post\n",
         "  work                      Work Story                    -                   json post\n\n",
         "unscheduled:\n",
-        "  chat                      Chat                          -                   json pre\n",
         "  entities:entity_assist    Entity Assistant              -                  [entities]\n",
         "  entities:entity_describe  Entity Description            -                   md pre [entities]\n",
-        "  exec                      Exec                          -\n",
         "  pulse                     Pulse                         -                   json pre post\n",
-        "  read                      Read                          -\n",
-        "  steward                   Steward                       -                   json pre post\n",
-        "  support:support           Support                       -                  [support]\n\n",
+        "  steward                   Steward                       -                   json pre post\n\n",
     );
 }

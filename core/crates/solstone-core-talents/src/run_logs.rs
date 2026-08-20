@@ -53,7 +53,10 @@ pub fn migrate_agent_run_logs(
             report.skipped += 1;
             continue;
         };
-        let name = first.get("name").and_then(Value::as_str).unwrap_or("chat");
+        let name = first
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("talent");
         let safe = name.replace(':', "--");
         let dest = agents.join(&safe).join(path.file_name().unwrap());
         if dest.exists() {

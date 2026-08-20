@@ -152,15 +152,21 @@ mod tests {
     #[test]
     fn stripping_the_source_root_drops_paths_outside_it() {
         assert_eq!(
-            strip_payload_src_root("core/payload", b"core/payload/solstone/talent/chat.md"),
-            Some(b"solstone/talent/chat.md".to_vec())
+            strip_payload_src_root(
+                "core/payload",
+                b"core/payload/solstone/talent/conversation.md"
+            ),
+            Some(b"solstone/talent/conversation.md".to_vec())
         );
         assert_eq!(
-            strip_payload_src_root("core/payload", b"solstone/talent/chat.md"),
+            strip_payload_src_root("core/payload", b"solstone/talent/conversation.md"),
             None
         );
         assert_eq!(
-            strip_payload_src_root("core/payload", b"core/payloadish/solstone/talent/chat.md"),
+            strip_payload_src_root(
+                "core/payload",
+                b"core/payloadish/solstone/talent/conversation.md"
+            ),
             None
         );
     }

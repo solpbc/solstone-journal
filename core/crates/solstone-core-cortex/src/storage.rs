@@ -386,8 +386,10 @@ mod tests {
     use tempfile::tempdir;
 
     fn request() -> Map<String, Value> {
-        serde_json::from_value(json!({"name":"chat","day":"19700101","ts":1000,"prompt":"p"}))
-            .unwrap()
+        serde_json::from_value(
+            json!({"name":"conversation","day":"19700101","ts":1000,"prompt":"p"}),
+        )
+        .unwrap()
     }
 
     fn complete_with_request(store: &CortexStore, use_id: &str, request: &Map<String, Value>) {
@@ -408,7 +410,10 @@ mod tests {
     fn append_without_create_drops_late_event_and_create_append_causes_bogus_recovery() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let active = store.claim("chat", "one", &request()).unwrap().unwrap();
+        let active = store
+            .claim("conversation", "one", &request())
+            .unwrap()
+            .unwrap();
         store.complete("one", &active, Some(&request()));
         assert!(
             !store
@@ -434,7 +439,10 @@ mod tests {
     fn day_index_terminal_status_is_last_wins() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let active = store.claim("chat", "one", &request()).unwrap().unwrap();
+        let active = store
+            .claim("conversation", "one", &request())
+            .unwrap()
+            .unwrap();
         store
             .append_active(
                 &active,
@@ -463,9 +471,17 @@ mod tests {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let request = request();
-        let active = store.claim("chat", "one", &request).unwrap().unwrap();
+        let active = store
+            .claim("conversation", "one", &request)
+            .unwrap()
+            .unwrap();
         let before = fs::read(&active).unwrap();
-        assert!(store.claim("chat", "one", &request).unwrap().is_none());
+        assert!(
+            store
+                .claim("conversation", "one", &request)
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(fs::read(active).unwrap(), before);
     }
 
@@ -474,7 +490,10 @@ mod tests {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let request = request();
-        let active = store.claim("chat", "one", &request).unwrap().unwrap();
+        let active = store
+            .claim("conversation", "one", &request)
+            .unwrap()
+            .unwrap();
         let link = store.talents().join("chat.log");
         atomic_symlink(&link, "chat/old.jsonl");
         let before = fs::read_link(&link).unwrap();
@@ -488,7 +507,10 @@ mod tests {
     fn completion_without_request_only_renames() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let active = store.claim("chat", "one", &request()).unwrap().unwrap();
+        let active = store
+            .claim("conversation", "one", &request())
+            .unwrap()
+            .unwrap();
         store.complete("one", &active, None);
         assert!(active.with_file_name("one.jsonl").exists());
         assert!(!store.talents().join("chat.log").exists());
@@ -518,7 +540,10 @@ mod tests {
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let mut request = request();
         request.insert("model".into(), Value::String("request-model".into()));
-        let active = store.claim("chat", "one", &request).unwrap().unwrap();
+        let active = store
+            .claim("conversation", "one", &request)
+            .unwrap()
+            .unwrap();
         for event in [
             json!({"event":"start","model":"priced-model","provider":"provider","ts":1100}),
             json!({"event":"finish","usage":{"input_tokens":2},"ts":2300}),
@@ -663,7 +688,10 @@ mod tests {
     fn recovery_create_append_and_late_no_create_append_are_deliberately_different() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let active = store.claim("chat", "one", &request()).unwrap().unwrap();
+        let active = store
+            .claim("conversation", "one", &request())
+            .unwrap()
+            .unwrap();
         fs::remove_file(&active).unwrap();
         assert!(
             !store
@@ -683,10 +711,13 @@ mod tests {
     fn completion_rename_failure_is_silent_and_success_is_observable() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let missing = store.active_path("chat", "missing");
+        let missing = store.active_path("conversation", "missing");
         store.complete("missing", &missing, Some(&request()));
         assert!(!store.talents().join("19700101.jsonl").exists());
-        let active = store.claim("chat", "one", &request()).unwrap().unwrap();
+        let active = store
+            .claim("conversation", "one", &request())
+            .unwrap()
+            .unwrap();
         store.complete("one", &active, Some(&request()));
         assert!(active.with_file_name("one.jsonl").exists());
     }
@@ -695,7 +726,7 @@ mod tests {
     fn missing_finish_scan_and_no_create_append_do_not_resurrect_active_file() {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let active = store.active_path("chat", "one");
+        let active = store.active_path("conversation", "one");
         assert!(!store.has_finish(&active));
         assert!(
             !store
@@ -744,7 +775,10 @@ mod tests {
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let mut request = request();
         request.insert("model".into(), Value::String("request-model".into()));
-        let active = store.claim("chat", "one", &request).unwrap().unwrap();
+        let active = store
+            .claim("conversation", "one", &request)
+            .unwrap()
+            .unwrap();
         store
             .append_active(
                 &active,
@@ -774,13 +808,22 @@ mod tests {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let request = request();
-        let first = store.claim("chat", "one", &request).unwrap().unwrap();
-        let _second = store.claim("chat", "two", &request).unwrap().unwrap();
+        let first = store
+            .claim("conversation", "one", &request)
+            .unwrap()
+            .unwrap();
+        let _second = store
+            .claim("conversation", "two", &request)
+            .unwrap()
+            .unwrap();
         store.recover();
         let recovered = first.with_file_name("one.jsonl");
         let recovered_text = fs::read_to_string(&recovered).unwrap();
         store.append_day_index("one", &request, &recovered);
-        let rerun = store.claim("chat", "one", &request).unwrap().unwrap();
+        let rerun = store
+            .claim("conversation", "one", &request)
+            .unwrap()
+            .unwrap();
         store
             .append_active(
                 &rerun,
@@ -801,7 +844,7 @@ mod tests {
 
     #[test]
     fn safe_name_cannot_escape_the_talents_directory() {
-        assert_eq!(safe_name("chat"), "chat");
+        assert_eq!(safe_name("conversation"), "conversation");
         assert_eq!(safe_name("app:name"), "app--name");
         assert_eq!(safe_name("foo/../etc"), "foo-..-etc");
         assert_eq!(safe_name(".."), "_invalid");

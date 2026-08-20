@@ -14,7 +14,6 @@ use solstone_core_generate::{ContentPart, GenerateRequest, GenerateResponse, One
 use solstone_core_system_health::{DataState, read_segment_data_state};
 
 pub mod assemble;
-pub mod chat_context;
 pub mod contract;
 pub mod daily_schedule;
 pub mod documents;
@@ -319,7 +318,7 @@ pub fn execute_request(
 }
 
 fn emit_start(writer: &mut impl Write, prepared: &PreparedTalent) {
-    let mut event = Map::from_iter([
+    let event = Map::from_iter([
         ("event".to_owned(), json!("start")),
         ("name".to_owned(), json!(prepared.name)),
         (
@@ -343,11 +342,6 @@ fn emit_start(writer: &mut impl Write, prepared: &PreparedTalent) {
                 .unwrap_or(Value::Null),
         ),
     ]);
-    for key in ["session_id", "chat_id"] {
-        if let Some(value) = prepared.config.get(key) {
-            event.insert(key.to_owned(), value.clone());
-        }
-    }
     emit(writer, Value::Object(event));
 }
 

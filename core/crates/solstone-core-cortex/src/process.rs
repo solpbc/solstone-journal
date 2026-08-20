@@ -428,7 +428,7 @@ mod tests {
 
     #[test]
     fn context_for_matches_python_talent_key_shape() {
-        assert_eq!(context_for("chat"), "talent.system.chat");
+        assert_eq!(context_for("conversation"), "talent.system.conversation");
         assert_eq!(context_for("entities:observer"), "talent.entities.observer");
     }
 
@@ -437,10 +437,13 @@ mod tests {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let request: Map<String, Value> = serde_json::from_value(
-            serde_json::json!({"use_id":"one","name":"chat","day":"20260101","ts":10}),
+            serde_json::json!({"use_id":"one","name":"conversation","day":"20260101","ts":10}),
         )
         .unwrap();
-        let active = store.claim("chat", "one", &request).unwrap().unwrap();
+        let active = store
+            .claim("conversation", "one", &request)
+            .unwrap()
+            .unwrap();
         let (spawn_tx, _) = mpsc::channel();
         let (cancel_tx, _) = mpsc::channel();
         let (outbound_tx, outbound_rx) = mpsc::channel();
@@ -453,7 +456,7 @@ mod tests {
         handle_stdout(&state, &work, "{\"event\":\"thinking\"}".into());
         let absent = outbound_rx.recv().unwrap();
         assert_eq!(absent.fields["use_id"], "one");
-        assert_eq!(absent.fields["name"], "chat");
+        assert_eq!(absent.fields["name"], "conversation");
         assert_eq!(absent.fields["day"], "20260101");
         handle_stdout(&state, &work, "{\"event\":\"thinking\",\"ts\":999,\"use_id\":\"other\",\"name\":\"other-name\",\"day\":\"other-day\"}".into());
         let present = outbound_rx.recv().unwrap();
@@ -478,7 +481,7 @@ mod tests {
         write_sibling_stub(&executable_dir);
         let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
             "use_id":"one",
-            "name":"chat",
+            "name":"conversation",
             "day":"20260101",
             "facet":"top",
             "env":{
@@ -573,7 +576,7 @@ mod tests {
         assert!(!marker.exists());
 
         let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
-            "use_id":"one","name":"chat","day":"20260101","env":{"CORTEX_MARKER":marker}
+            "use_id":"one","name":"conversation","day":"20260101","env":{"CORTEX_MARKER":marker}
         }))
         .unwrap();
         let command = captured_command(&executable_dir, directory.path(), None, &request);
@@ -592,10 +595,13 @@ mod tests {
         let directory = tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
         let request: Map<String, Value> = serde_json::from_value(
-            serde_json::json!({"use_id":"one","name":"chat","day":"20260101"}),
+            serde_json::json!({"use_id":"one","name":"conversation","day":"20260101"}),
         )
         .unwrap();
-        let active = store.claim("chat", "one", &request).unwrap().unwrap();
+        let active = store
+            .claim("conversation", "one", &request)
+            .unwrap()
+            .unwrap();
         let (spawn_tx, _) = mpsc::channel();
         let (cancel_tx, _) = mpsc::channel();
         let (outbound_tx, outbound_rx) = mpsc::channel();
@@ -614,7 +620,10 @@ mod tests {
         );
         handle_stdout(&state, &work, "{\"event\":\"error\"}".into());
         assert!(store.has_finish(&active));
-        let active_false = store.claim("chat", "two", &work.request).unwrap().unwrap();
+        let active_false = store
+            .claim("conversation", "two", &work.request)
+            .unwrap()
+            .unwrap();
         let work_false = Work {
             use_id: "two".into(),
             active: active_false.clone(),
@@ -665,12 +674,18 @@ mod tests {
         for (use_id, name, model_version, expected_model, expected_context) in [
             (
                 "one",
-                "apps:chat",
+                "apps:timeline",
                 Some("usage-model"),
                 "usage-model",
-                "talent.apps.chat",
+                "talent.apps.timeline",
             ),
-            ("two", "chat", None, "request-model", "talent.system.chat"),
+            (
+                "two",
+                "conversation",
+                None,
+                "request-model",
+                "talent.system.conversation",
+            ),
         ] {
             let directory = tempdir().unwrap();
             let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
@@ -726,7 +741,7 @@ mod tests {
         let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
         state.request(
             serde_json::from_value(
-                serde_json::json!({"use_id":"one","name":"chat","model":"model"}),
+                serde_json::json!({"use_id":"one","name":"conversation","model":"model"}),
             )
             .unwrap(),
         );

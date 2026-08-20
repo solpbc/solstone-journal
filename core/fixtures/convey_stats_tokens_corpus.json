@@ -296,8 +296,6 @@
           "method": "GET",
           "name": "api_stats",
           "normalized": [
-            "response.body.generators.chat.mtime",
-            "response.body.generators.chat.path",
             "response.body.generators.conversation.mtime",
             "response.body.generators.conversation.path",
             "response.body.generators.daily_schedule.mtime",
@@ -341,22 +339,6 @@
           "response": {
             "body": {
               "generators": {
-                "chat": {
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "hook": {
-                    "pre": "chat_context"
-                  },
-                  "max_output_tokens": 2048,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "schema": "chat.schema.json",
-                  "source": "system",
-                  "thinking_budget": 4096,
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "activities": [
                     "meeting",
@@ -1067,8 +1049,6 @@
           "method": "GET",
           "name": "api_stats",
           "normalized": [
-            "response.body.generators.chat.mtime",
-            "response.body.generators.chat.path",
             "response.body.generators.conversation.mtime",
             "response.body.generators.conversation.path",
             "response.body.generators.daily_schedule.mtime",
@@ -1113,22 +1093,6 @@
             "body": {
               "file_mtime": 1700000000.0,
               "generators": {
-                "chat": {
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "hook": {
-                    "pre": "chat_context"
-                  },
-                  "max_output_tokens": 2048,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "schema": "chat.schema.json",
-                  "source": "system",
-                  "thinking_budget": 4096,
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "activities": [
                     "meeting",
@@ -1957,8 +1921,6 @@
           "method": "GET",
           "name": "api_stats",
           "normalized": [
-            "response.body.generators.chat.mtime",
-            "response.body.generators.chat.path",
             "response.body.generators.conversation.mtime",
             "response.body.generators.conversation.path",
             "response.body.generators.daily_schedule.mtime",
@@ -2003,22 +1965,6 @@
             "body": {
               "file_mtime": 1700000000.0,
               "generators": {
-                "chat": {
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "hook": {
-                    "pre": "chat_context"
-                  },
-                  "max_output_tokens": 2048,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "schema": "chat.schema.json",
-                  "source": "system",
-                  "thinking_budget": 4096,
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "activities": [
                     "meeting",
@@ -2848,8 +2794,6 @@
           "method": "GET",
           "name": "api_stats",
           "normalized": [
-            "response.body.generators.chat.mtime",
-            "response.body.generators.chat.path",
             "response.body.generators.conversation.mtime",
             "response.body.generators.conversation.path",
             "response.body.generators.daily_schedule.mtime",
@@ -2893,22 +2837,6 @@
           "response": {
             "body": {
               "generators": {
-                "chat": {
-                  "color": "#6c757d",
-                  "description": "Structured conversational reply planner for the chat backend rewrite",
-                  "hook": {
-                    "pre": "chat_context"
-                  },
-                  "max_output_tokens": 2048,
-                  "mtime": "<TALENT_MTIME>",
-                  "output": "json",
-                  "path": "<TALENT_PATH>",
-                  "schema": "chat.schema.json",
-                  "source": "system",
-                  "thinking_budget": 4096,
-                  "title": "Chat",
-                  "type": "generate"
-                },
                 "conversation": {
                   "activities": [
                     "meeting",

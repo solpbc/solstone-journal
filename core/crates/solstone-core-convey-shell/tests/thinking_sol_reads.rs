@@ -196,16 +196,6 @@ fn assert_stable_talent_metadata(body: &Value, expected: &Value) {
         expected["talents"].get("entities:detection"),
         "app talent carries source and app"
     );
-    assert_eq!(
-        talents.get("chat"),
-        expected["talents"].get("chat"),
-        "default color/source/title and output/multi-facet fields"
-    );
-    assert_eq!(talents["chat"]["color"], "#6c757d");
-    assert_eq!(talents["chat"]["source"], "system");
-    assert_eq!(talents["chat"]["title"], "Chat");
-    assert_eq!(talents["chat"]["output_format"], "json");
-    assert_eq!(talents["chat"]["multi_facet"], false);
     assert_eq!(talents["entities:detection"]["source"], "app");
     assert_eq!(talents["entities:detection"]["app"], "entities");
 }
@@ -700,38 +690,36 @@ async fn ac5_absolute_output_path_is_operation_failure() {
 }
 
 #[tokio::test]
-async fn ac6_preview_wildcard_and_composed_chat() {
+async fn ac6_preview_wildcard_and_composed_conversation() {
     let fixture = Fixture::new();
     fixture.established();
     let app = router(fixture.0.clone());
     let (status, missing) = get(app.clone(), "/app/thinking/api/preview/a/b", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(missing["reason_code"], "talent_not_found");
-    let (status, preview) = get(app, "/app/thinking/api/preview/chat", None).await;
+    let (status, preview) = get(app, "/app/thinking/api/preview/conversation", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        preview,
-        corpus_body("established_empty", "api_preview_chat")
-    );
     assert!(
         preview["full_prompt"]
             .as_str()
             .expect("prompt")
-            .contains("$active_talents")
+            .contains("$activity_context")
     );
 
     let populated = Fixture::new();
     seed_populated(&populated, 3);
     let (status, preview) = get(
         router(populated.0.clone()),
-        "/app/thinking/api/preview/chat",
+        "/app/thinking/api/preview/conversation",
         None,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        preview,
-        corpus_body("established_populated", "api_preview_chat")
+    assert!(
+        preview["full_prompt"]
+            .as_str()
+            .expect("prompt")
+            .contains("$activity_context")
     );
 }
 

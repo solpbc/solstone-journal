@@ -424,7 +424,7 @@ mod tests {
         let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
         state.request(
             serde_json::from_value(
-                serde_json::json!({"use_id":"one","name":"chat","day":"20260101"}),
+                serde_json::json!({"use_id":"one","name":"conversation","day":"20260101"}),
             )
             .unwrap(),
         );
@@ -441,7 +441,8 @@ mod tests {
         let (outbound_tx, _) = mpsc::channel();
         let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
         state.request(
-            serde_json::from_value(serde_json::json!({"use_id":"one","name":"chat"})).unwrap(),
+            serde_json::from_value(serde_json::json!({"use_id":"one","name":"conversation"}))
+                .unwrap(),
         );
         assert_eq!(state.resolved_talent("one"), None);
         let resolved = ResolvedTalent {
@@ -481,13 +482,13 @@ mod tests {
         let state = CortexState::new(store.clone(), spawn_tx, cancel_tx, outbound_tx);
         state.request(
             serde_json::from_value(
-                serde_json::json!({"use_id":"one","name":"chat","day":"20260101"}),
+                serde_json::json!({"use_id":"one","name":"conversation","day":"20260101"}),
             )
             .unwrap(),
         );
         assert_eq!(state.queue_depth(), 1);
         assert!(state.stop_immediately().is_empty());
-        let completed = store.talents().join("chat/one.jsonl");
+        let completed = store.talents().join("conversation/one.jsonl");
         assert!(
             fs::read_to_string(completed)
                 .unwrap()
@@ -506,13 +507,13 @@ mod tests {
         let state = CortexState::new(store.clone(), spawn_tx, cancel_tx, outbound_tx);
         state.request(
             serde_json::from_value(
-                serde_json::json!({"use_id":"one","name":"chat","day":"20260101"}),
+                serde_json::json!({"use_id":"one","name":"conversation","day":"20260101"}),
             )
             .unwrap(),
         );
         assert!(state.is_idle());
         assert!(
-            fs::read_to_string(store.talents().join("chat/one.jsonl"))
+            fs::read_to_string(store.talents().join("conversation/one.jsonl"))
                 .unwrap()
                 .contains("Spawn worker error: spawn queue unavailable")
         );

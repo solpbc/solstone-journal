@@ -121,7 +121,7 @@ fn criterion_16_talent_worker_is_closed_at_journal_and_reaches_native_body() {
 
     prepare_talent_worker_journal(&context);
     let output =
-        run_talent_worker_with_output(&context, "{\"name\":\"read\",\"prompt\":\"hello\"}\n");
+        run_talent_worker_with_output(&context, "{\"name\":\"partner\",\"prompt\":\"hello\"}\n");
     let events = String::from_utf8_lossy(&output.stdout)
         .lines()
         .map(serde_json::from_str::<serde_json::Value>)
@@ -130,7 +130,7 @@ fn criterion_16_talent_worker_is_closed_at_journal_and_reaches_native_body() {
     assert!(
         events
             .iter()
-            .any(|event| event["event"] == "start" && event["name"] == "read")
+            .any(|event| event["event"] == "start" && event["name"] == "partner")
     );
 }
 
@@ -141,7 +141,7 @@ fn criterion_17_talent_worker_reaches_start_under_sibling_and_path_poison() {
     prove_poison_interpreters_live(&context);
     prepare_talent_worker_journal(&context);
     let output =
-        run_talent_worker_with_output(&context, "{\"name\":\"read\",\"prompt\":\"hello\"}\n");
+        run_talent_worker_with_output(&context, "{\"name\":\"partner\",\"prompt\":\"hello\"}\n");
     assert!(output.status.success());
     assert!(!context.poison_marker.exists());
     let events = String::from_utf8_lossy(&output.stdout)
@@ -154,7 +154,7 @@ fn criterion_17_talent_worker_reaches_start_under_sibling_and_path_poison() {
     assert!(
         events
             .iter()
-            .any(|event| event["event"] == "start" && event["name"] == "read")
+            .any(|event| event["event"] == "start" && event["name"] == "partner")
     );
 }
 
