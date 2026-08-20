@@ -180,8 +180,8 @@
   <div id="keyModal" class="modal" role="dialog" aria-modal="true" aria-label="device key">
     <div class="modal-content">
       <button type="button" class="modal-close" id="keyModalClose" aria-label="close">&times;</button>
-      <h3 id="keyModalTitle">sol on <span id="modalObserverName"></span></h3>
-      <p>paste these into sol on that device, under settings. keep the key secret — anyone with it can add to your journal.</p>
+      <h3 id="keyModalTitle">the solstone app on <span id="modalObserverName"></span></h3>
+      <p>paste these into the solstone app on that device, under settings. keep the key secret. anyone with it can add to your journal.</p>
       <div class="credential-label">server URL</div>
       <div class="command-box">
         <code id="serverUrlText"></code>
@@ -1497,12 +1497,12 @@ function statsHTML(observer, statusClass) {
   const lastSeen = !verdictAvailable(observer)
     ? lastSeenBase
     : statusClass === 'stale'
-      ? `sol on this device last reported ${lastSeenBase}`
+      ? `last check-in from this device: ${lastSeenBase}`
       : statusClass === 'disconnected'
         ? `${lastSeenBase} — offline`
         : lastSeenBase;
   return `<dl>
-    <div><dt>last reported</dt><dd data-last-seen="${observer.last_seen || ''}" data-state="${statusClass}">${lastSeen}</dd></div>
+    <div><dt>last check-in</dt><dd data-last-seen="${observer.last_seen || ''}" data-state="${statusClass}">${lastSeen}</dd></div>
     <div><dt>segments (5-min chunks)</dt><dd>${observer.stats?.segments_received ?? 0}</dd></div>
     <div><dt>data</dt><dd>${formatBytes(observer.stats?.bytes_received || 0)}</dd></div>
   </dl>`;
@@ -1706,7 +1706,7 @@ async function loadObservers() {
     }
   } catch (err) {
     window.SurfaceState.replaceLoading('observersList', window.SurfaceState.error({
-      heading: 'i couldn\'t load your devices.',
+      heading: 'your devices couldn\'t be loaded.',
       desc: window.CONVEY_COPY.RELOAD_HINT,
       serverMessage: err?.serverMessage || err?.message || '',
       detail: err,
@@ -1722,7 +1722,7 @@ function refreshTimestamps() {
 	    const text = `${relativeTime(Date.now() - lastSeen)} ago`;
 	    const state = span.getAttribute('data-state');
 		    span.textContent = state === 'stale'
-	      ? `sol on this device last reported ${text}`
+	      ? `last check-in from this device: ${text}`
 	      : state === 'disconnected'
 	        ? `${text} — offline`
 	        : text;
@@ -1752,7 +1752,7 @@ function refreshTimestamps() {
 	    button.textContent = window.CONVEY_COPY?.ACTION_RECONNECT || 'Reconnect';
 	    if (result) {
 	      result.style.color = '#dc2626';
-	      result.textContent = err.serverMessage || "I couldn't reconnect.";
+	      result.textContent = err.serverMessage || "couldn't reconnect.";
 	    }
 	  }
 	}
@@ -1763,7 +1763,7 @@ function observerNameFor(button) {
 
 async function revokeObserver(keyPrefix, button) {
   const name = observerNameFor(button);
-  if (!confirm(`Remove "${name}"? sol on that device won't be able to add to your journal.`)) {
+  if (!confirm(`remove "${name}"? this disconnects that device from your journal.`)) {
     return;
   }
 
@@ -1779,7 +1779,7 @@ async function revokeObserver(keyPrefix, button) {
 
     loadObservers();
   } catch (err) {
-    const msg = 'i couldn\'t remove that device — your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
+    const msg = 'that device couldn\'t be removed. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
     if (window.showError) { showError(msg); } else { showLocalError(msg); }
   }
 }
@@ -1797,7 +1797,7 @@ async function viewObserverKey(keyPrefix, button) {
 
     showKeyModal(name, data.key, button);
   } catch (err) {
-    const msg = 'i couldn\'t retrieve the key for that device — your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
+    const msg = 'the key for that device couldn\'t be retrieved. your journal may not be reachable. ' + window.CONVEY_COPY.RELOAD_HINT;
     if (window.showError) { showError(msg); } else { showLocalError(msg); }
   }
 }

@@ -1747,7 +1747,7 @@
       <div class="spk-owner-panel">
         <div class="spk-owner-title">is this your voice?</div>
         <div class="spk-owner-copy">
-          sol found a voice pattern that's likely yours, from ${escapeHtml(data.cluster_size || 0)} voice samples. review a few examples before confirming.
+          a voice pattern is likely yours, based on ${escapeHtml(data.cluster_size || 0)} voice samples. review a few examples before confirming.
         </div>
         <div class="spk-owner-samples">
           ${samples.map((sample, index) => `
@@ -2477,7 +2477,7 @@
         ${clusters.length ? `
           <div class="spk-discovery-title">new speakers found</div>
           <div class="spk-discovery-copy">
-            sol found ${clusters.length} recurring voice pattern${clusters.length > 1 ? 's' : ''} that ${clusters.length > 1 ? "don't" : "doesn't"} match anyone you've named. listen to a few samples and name them.
+            ${clusters.length} recurring voice pattern${clusters.length > 1 ? 's' : ''} ${clusters.length > 1 ? "don't" : "doesn't"} match anyone you've named. listen to a few samples and name them.
           </div>
           <div class="spk-discovery-clusters">
             ${clusters.map(cluster => `
@@ -2652,7 +2652,7 @@
         : 'no speakers discovered today';
       const emptyDesc = speakerFilter
         ? ''
-        : 'sol hasn\'t found any speaker segments for this day yet';
+        : 'no speaker segments found for this day yet';
       segmentList.innerHTML = '<li>' + window.SurfaceState.empty({
         icon: window.ConveyIcons.svg('audio-lines'),
         heading: emptyHeading,
@@ -3016,9 +3016,9 @@
         const nonOwnerTotal = seg?.attribution_non_owner_total || 0;
         const nullCount = seg?.attribution_null || 0;
         const showPrompt = seg?.speaker_count > 0 && nonOwnerTotal > 0 && (nullCount / nonOwnerTotal) > 0.5;
-        return showPrompt ? `<div class="spk-seeding-prompt">this meeting has ${seg.speaker_count} named speakers but I can't match voices yet. assigning even a few sentences will help me learn their voices for future meetings.</div>` : '';
+        return showPrompt ? `<div class="spk-seeding-prompt">this meeting has ${seg.speaker_count} named speakers, but their voices can't be matched yet. assigning even a few sentences will improve voice matching for future meetings.</div>` : '';
       })()}
-      ${!hasLabels ? '<div class="spk-status spk-status-info">speakers haven\'t been identified yet — assign a few sentences to help sol learn their voices</div>' : ''}
+      ${!hasLabels ? '<div class="spk-status spk-status-info">speakers haven\'t been identified yet. assign a few sentences to improve voice matching.</div>' : ''}
       ${sentences.length === 0 ? '<div class="spk-empty">no sentences match this filter</div>' : sentences.map(renderSentence).join('')}
     `;
 
