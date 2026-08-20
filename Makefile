@@ -926,8 +926,8 @@ brand-sync:
 	@set -e; for pair in $(SHELL_STATUS_SYNC); do \
 	  cp "$(BRAND_DIR)/$${pair#*:}.svg" "$(SHELL_STATUS_DIR)/$${pair%%:*}.svg"; \
 	done
-	cp "$(BRAND_DIR)/sol-wordmark.svg"            docs/static/sol-wordmark.svg
-	cp "$(BRAND_DIR)/png/sol-wordmark-512.png"    docs/static/logo.png
+	cp "$(BRAND_DIR)/mark.svg"                    docs/static/sol-wordmark.svg
+	cp "$(BRAND_DIR)/png/mark-512.png"            docs/static/logo.png
 	cp "$(BRAND_DIR)/web-favicon/favicon.ico"     favicon.ico
 	@if [ -n "$(SHELL_STATUS_HELD)" ]; then echo "brand: held (not synced, intentionally divergent): $(SHELL_STATUS_HELD)"; fi
 	@echo "brand: synced from $(BRAND_DIR)"

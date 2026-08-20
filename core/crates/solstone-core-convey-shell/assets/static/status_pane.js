@@ -103,18 +103,20 @@
     const wsLastMessageRaw = document.getElementById('ws-last-message-raw');
 
     if (statusSentence) {
-      if (metrics.state === 'connected' && lastCaptureStatusForPane === 'degraded') {
-        statusSentence.textContent = 'a device needs attention';
-        statusSentence.style.color = '#b91c1c';
-      } else if (metrics.state === 'connected') {
-        statusSentence.textContent = 'all systems connected';
-        statusSentence.style.color = '#10b981';
+      // Headline answers the same question the mark answers (is your journal
+      // receiving your life right now?). Transport health stays in technical
+      // details below — naming that axis, rather than claiming "all systems
+      // connected" under an offline mark.
+      const markLabel = window.appEvents?.statusLabel;
+      if (markLabel) {
+        statusSentence.textContent = markLabel;
+        statusSentence.style.color = '';
       } else if (metrics.state === 'connecting') {
         statusSentence.textContent = 'connecting…';
-        statusSentence.style.color = '#f59e0b';
+        statusSentence.style.color = '';
       } else {
         statusSentence.textContent = 'connection lost. reconnecting';
-        statusSentence.style.color = '#ef4444';
+        statusSentence.style.color = '';
       }
     }
 
