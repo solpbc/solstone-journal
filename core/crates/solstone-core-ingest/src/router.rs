@@ -1027,6 +1027,7 @@ mod tests {
         .unwrap();
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn seed_observer_stamped(
         root: &Path,
         prefix: &str,

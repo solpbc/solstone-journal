@@ -3030,7 +3030,7 @@ mod tests {
             &mut prompt,
             None,
         );
-        assert_eq!(native_already_keeps_journal_probe(&setup).unwrap(), true);
+        assert!(native_already_keeps_journal_probe(&setup).unwrap());
         assert!(!home.join(".local/bin/solstone").exists());
     }
 }

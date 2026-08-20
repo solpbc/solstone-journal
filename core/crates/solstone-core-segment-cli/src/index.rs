@@ -48,6 +48,7 @@ pub(crate) fn read_segment_index(journal: &Path, rel: &str) -> SegmentIndexStatu
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
 

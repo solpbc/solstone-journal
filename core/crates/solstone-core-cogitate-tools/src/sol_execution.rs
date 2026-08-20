@@ -389,7 +389,7 @@ mod tests {
         fs::write(sibling.join("solstone"), "sibling").expect("current sibling");
         fs::write(path.join("sol"), "stale-path-sol").expect("stale path sol");
         assert_eq!(
-            resolve_executable_in("solstone", Some(&sibling), &[path.clone()]),
+            resolve_executable_in("solstone", Some(&sibling), std::slice::from_ref(&path)),
             Some(sibling.join("solstone"))
         );
         assert_eq!(
