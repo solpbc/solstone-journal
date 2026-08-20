@@ -283,14 +283,6 @@ body:has(.status-pane.visible) .facet-bar::after {
   height: 22px;
 }
 
-.status-indicator--connecting {
-  animation: status-spin 1.2s linear infinite;
-}
-
-@keyframes status-spin {
-  to { transform: rotate(360deg); }
-}
-
 /* Status Pane - slides down from facet bar on right (mirrors menu bar on left) */
 .status-pane {
   position: fixed;
@@ -1954,10 +1946,6 @@ button.close {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-  }
-
-  .status-indicator--connecting {
-    animation: none;
   }
 
   .facet-pill:hover {

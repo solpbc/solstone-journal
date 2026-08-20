@@ -129,6 +129,8 @@ pub mod session;
 pub mod session_gate;
 mod speakers;
 mod speakers_analyze_client;
+#[cfg(test)]
+mod status_mark;
 #[cfg(feature = "host")]
 mod sync_persist;
 #[cfg(any(test, feature = "test-hooks"))]

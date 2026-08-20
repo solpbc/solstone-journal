@@ -22,7 +22,7 @@
   let connectionState = 'disconnected';
   let lastCaptureStatus = null;
   let lastRenderedVariant = null;
-  let lastRenderedSpin = null;
+  let lastRenderedConnecting = null;
   let disconnectTimerId = null;
   let disconnectCardId = null;
   let disconnectSecondPhaseTimerId = null;
@@ -187,49 +187,47 @@
     });
   }
 
+  // STATUS_MAP is JSON-shaped on purpose because a --lib contract test in this
+  // crate extracts and asserts it.
+  const STATUS_MAP = [
+    {"ws": "connecting", "capture": "*", "unviewed": "*", "variant": "mark-connecting", "label": "connecting"},
+    {"ws": "connected", "capture": null, "unviewed": "*", "variant": "mark-connecting", "label": "connecting"},
+    {"ws": "disconnected", "capture": "*", "unviewed": "*", "variant": "mark-offline", "label": "disconnected"},
+    {"ws": "*", "capture": "offline", "unviewed": "*", "variant": "mark-offline", "label": "devices offline"},
+    {"ws": "*", "capture": "degraded", "unviewed": "*", "variant": "mark-attention", "label": "a device needs attention"},
+    {"ws": "*", "capture": "*", "unviewed": true, "variant": "mark-attention", "label": "attention"},
+    {"ws": "*", "capture": "stale", "unviewed": "*", "variant": "mark-attention", "label": "a device hasn't reached your journal"},
+    {"ws": "*", "capture": "no_observers", "unviewed": "*", "variant": "mark-paused", "label": "no devices connected"},
+    {"ws": "*", "capture": "active", "unviewed": "*", "variant": "mark", "label": "active"},
+    {"ws": "*", "capture": "*", "unviewed": "*", "variant": "mark-offline", "label": "can't confirm"}
+  ];
+
+  function statusFieldMatches(expected, actual) {
+    return expected === '*' || expected === actual;
+  }
+
+  function statusUnviewedMatches(expected, actual) {
+    return expected === '*' || (expected === true && !!actual);
+  }
+
   function deriveStatusMark(wsState, captureStatus, hasUnviewedNotifs) {
-    let variant;
-    let spin = false;
-
-    if (wsState === 'disconnected') {
-      variant = 'x';
-    } else if (wsState === 'connecting') {
-      variant = 'active';
-      spin = true;
-    } else if (captureStatus === 'degraded') {
-      variant = 'degraded';
-    } else if (captureStatus === 'offline') {
-      variant = 'error';
-    } else if (captureStatus === null || captureStatus === 'unknown') {
-      variant = 'question';
-    } else if (hasUnviewedNotifs) {
-      variant = 'bang';
-    } else if (captureStatus === 'stale') {
-      variant = 'half';
-    } else if (captureStatus === 'no_observers') {
-      variant = 'paused';
-    } else if (captureStatus === 'active') {
-      variant = 'active';
-    } else {
-      variant = 'question';
+    for (const row of STATUS_MAP) {
+      if (!statusFieldMatches(row.ws, wsState)) {
+        continue;
+      }
+      if (!statusFieldMatches(row.capture, captureStatus)) {
+        continue;
+      }
+      if (!statusUnviewedMatches(row.unviewed, hasUnviewedNotifs)) {
+        continue;
+      }
+      return {
+        variant: row.variant,
+        connecting: row.variant === 'mark-connecting',
+        label: row.label
+      };
     }
-
-    const labels = {
-      active: 'active',
-      x: 'disconnected',
-      error: 'devices offline',
-      degraded: 'a device needs attention',
-      question: 'status unknown',
-      bang: 'attention',
-      half: 'devices out of touch',
-      paused: 'no devices running sol'
-    };
-
-    return {
-      variant,
-      spin,
-      label: spin ? 'connecting' : labels[variant]
-    };
+    throw new Error('STATUS_MAP has no matching row');
   }
 
   function renderStatusMark() {
@@ -245,7 +243,7 @@
       window.appEvents.statusLabel = mark.label;
     }
 
-    if (mark.variant === lastRenderedVariant && mark.spin === lastRenderedSpin) {
+    if (mark.variant === lastRenderedVariant && mark.connecting === lastRenderedConnecting) {
       window.updateStatusLabel?.();
       return;
     }
@@ -261,10 +259,12 @@
       statusIcon.insertBefore(img, badge || statusIcon.firstChild);
     }
 
-    img.src = '/static/sol-status/' + mark.variant + '.svg';
-    img.classList.toggle('status-indicator--connecting', mark.spin);
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    const stem = mark.connecting && !reduced ? 'mark-connecting-animated' : mark.variant;
+    img.src = '/static/sol-status/' + stem + '.svg';
+    img.classList.toggle('status-indicator--connecting', mark.connecting);
     lastRenderedVariant = mark.variant;
-    lastRenderedSpin = mark.spin;
+    lastRenderedConnecting = mark.connecting;
     window.updateStatusLabel?.();
   }
 

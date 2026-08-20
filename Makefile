@@ -912,16 +912,13 @@ audit:
 # brand spec updates, then commit the diff. Pure copy: every asset below has a
 # committed source in the brand tree, so no rasterizer is needed.
 #
-# SHELL_STATUS_HELD are shell status glyphs that intentionally diverge from the
-# brand source and are NOT synced: bang.svg and error.svg re-tint their alert
-# and error glyphs (#d97706 / #dc2626) so severity reads at a glance in the
-# shell, and degraded.svg has no brand counterpart at all. Each carries an
-# in-file comment saying so. Reverting them to the brand orange is a deliberate
-# design decision, not a sync — leave them out of this list until that decision
-# is made.
+# SHELL_STATUS_SYNC copies every committed shell status file from identically
+# named brand sources, including mark-connecting-animated because the connecting
+# presentation references it. SHELL_STATUS_HELD is empty: nothing in this
+# directory is held back from a brand-sync.
 SHELL_STATUS_DIR  = core/crates/solstone-core-convey-shell/assets/static/sol-status
-SHELL_STATUS_SYNC = active:sol-ring-icon half:sol-ring-icon-half paused:sol-ring-icon-paused question:sol-ring-icon-question x:sol-ring-icon-x
-SHELL_STATUS_HELD = bang.svg error.svg degraded.svg
+SHELL_STATUS_SYNC = mark:mark mark-attention:mark-attention mark-paused:mark-paused mark-offline:mark-offline mark-error:mark-error mark-connecting:mark-connecting mark-connecting-animated:mark-connecting-animated
+SHELL_STATUS_HELD =
 
 brand-sync:
 	@test -n "$(BRAND_DIR)" || { echo "brand: BRAND_DIR is required — point it at your brand asset directory (BRAND_DIR=/path/to/brand make brand-sync)"; exit 1; }
