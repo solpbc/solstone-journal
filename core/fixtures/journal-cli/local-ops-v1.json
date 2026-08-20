@@ -24,12 +24,16 @@
     {
       "path": ["archive", "export"],
       "owner": "journal-direct",
-      "grammar": "journal archive export [--out PATH] [--quiet]",
+      "grammar": "journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]",
       "reads_stdin": false,
       "retired_spellings": ["sol call journal export"],
       "capabilities": [
-        "export only chronicle, entities, facets, and imports",
-        "include explicit chronicle/, entities/, facets/, imports/ members and _export.json",
+        "export membership is the journal tree minus a named deny-list: no-slash patterns match a basename at any depth, and a trailing-slash entry prunes only that top-level tree",
+        "an unsliced empty journal contains only _export.json; present included-root directories are emitted when they exist, with no placeholder four-root members",
+        "when any of --day, --from, or --to is present, membership is exactly matching chronicle/<YYYYMMDD>/ trees plus _export.json; entities, facets, imports, extra roots, and days outside the window are absent",
+        "a valid window with zero matching days writes a zip that contains _export.json only, exit 0, with day_count, entity_count, and facet_count all 0",
+        "sliced manifest day_count is the number of matching days; entity_count and facet_count are 0",
+        "--day cannot be combined with --from or --to; --from after --to is a usage error (exit 64); a non-Gregorian day token is unsafe input (exit 65)",
         "manifest keys are solstone_version, exported_at, source_journal, day_count, entity_count, and facet_count",
         "default output is JOURNAL.exports/YYYYMMDDTHHMMSSZ.zip beside the journal",
         "publish from a unique mode-0600 create-new no-follow sibling and leave no temporary residue on failure",
@@ -47,7 +51,7 @@
           "expected_exit": 0,
           "expected_stdout": "${OUT_CANONICAL}\n",
           "expected_stderr": "",
-          "expected_archive_members": ["chronicle/", "entities/", "facets/", "imports/", "_export.json"]
+          "expected_archive_members": ["_export.json"]
         },
         {
           "name": "symlink_member_rejected",
@@ -68,19 +72,16 @@
       "reads_stdin": false,
       "retired_spellings": ["journal merge", "sol call journal merge"],
       "capabilities": [
-        "accept a source with chronicle day directories or legacy flat day directories",
-        "reject a source that is equal to, inside, or contains the target journal",
-        "merge segments, entities, facets, and imports while ignoring identity and config",
-        "never overwrite an existing segment or import",
+        "SOURCE is a regular zip file; a directory SOURCE is unsafe input (exit 65) and names a zip file; a missing SOURCE is unsafe input (exit 65) and names the path that does not exist",
+        "no contains/disjointness check on the archive path, extract path, or working_root; a zip at target/imports/<ts>/file.zip merges",
+        "merge applies chronicle, entities, facets, and imports only; extra zip members are skipped and logged in the decision log",
+        "never overwrite an existing segment or import; destination-wins is recorded",
         "deduplicate entity aliases, emails, and observations; destination scalar fields win; a second principal is demoted",
         "stage ambiguous entity identity collisions instead of guessing",
-        "the source journal is immutable: all accepted source data is copied, never renamed, moved, removed, or rewritten",
-        "overlapping facets preserve destination facet.json; entity relationship and observation data merge by their domain rules; detected-entity and activity JSONL records deduplicate by nonempty id with destination winning; activity output directories and news files use destination-wins by relative path; facet logs append source records in stable order",
-        "each new item is staged and create-only published; each update item is staged with an item transaction manifest, original backup, replacement, and recovery phase so interruption resolves to the original or replacement item before the next merge",
-        "write a mode-0600 append-only decision log in a mode-0700 per-run artifact directory beside the target",
-        "any failed item exits nonzero and reports committed, skipped, and failed items; a failed merge never starts the indexer",
-        "--dry-run creates no file or directory anywhere, including logs, artifacts, staging, ambiguity records, and locks, and never invokes the indexer",
-        "after a wholly successful write merge, request the native in-process full index rebuild; a rebuild failure exits nonzero and reports that merge items were already committed",
+        "the source archive file is immutable",
+        "stage all four families before any target publish; a hard publish failure rolls back this transaction and never reports Incomplete",
+        "--dry-run plans from the zip central directory and creates no file or directory anywhere, including locks, extract-*, working_root, and decision logs, and never invokes the indexer",
+        "after a wholly successful write merge, request the native in-process full index rebuild via scan_journal; a rebuild failure exits nonzero with code index-rebuild-failed",
         "--json writes exactly one UTF-8 JSON line to stdout on success and to stderr on failure, with keys ok, code, source, dry_run, committed, skipped, failed, decision_log, staging_dir, index_rebuild, and summary"
       ],
       "cases": [
@@ -88,35 +89,20 @@
           "name": "dry_run_is_zero_write",
           "argv": ["archive", "merge", "${SOURCE}", "--dry-run", "--json"],
           "stdin": "",
-          "fixture": "merge_mixed_source",
+          "fixture": "merge_zip_source",
           "expected_exit": 0,
           "expected_json_stream": "stdout",
-          "expected_json_subset": {"ok": true, "code": "ok", "dry_run": true, "decision_log": null, "staging_dir": null, "index_rebuild": "not-requested"},
-          "expected_tree_unchanged": ["${SOURCE}", "${JOURNAL}", "${JOURNAL}.merge"]
+          "expected_json_subset": {"ok": true, "code": "ok", "dry_run": true, "committed": 0, "failed": 0, "decision_log": null, "staging_dir": null, "index_rebuild": "not-requested"},
+          "expected_tree_unchanged": ["${SOURCE}", "${JOURNAL}"]
         },
         {
-          "name": "later_item_failure_is_honest",
-          "argv": ["archive", "merge", "${SOURCE}", "--json"],
+          "name": "directory_source_is_unsafe",
+          "argv": ["archive", "merge", "${SOURCE}"],
           "stdin": "",
-          "fixture": "merge_two_items",
-          "fault": "fail-second-item-before-publish",
-          "expected_exit": 1,
-          "expected_json_stream": "stderr",
-          "expected_json_subset": {"ok": false, "code": "item-failed", "index_rebuild": "not-requested"},
-          "expected_committed_count": 1,
-          "expected_failed_count": 1
-        },
-        {
-          "name": "update_item_crash_recovers",
-          "argv": ["archive", "merge", "${SOURCE}", "--json"],
-          "stdin": "",
-          "fixture": "merge_overlapping_entity",
-          "fault": "kill-process-after-update-publish-before-item-commit-mark",
-          "recovery_argv": ["archive", "merge", "${SOURCE}", "--dry-run", "--json"],
-          "expected_recovery_exit": 0,
-          "expected_recovery_state": "original-or-replacement-item",
-          "expected_source_unchanged": true,
-          "expected_temporary_residue_count": 0
+          "fixture": "merge_directory_source",
+          "expected_exit": 65,
+          "expected_stdout": "",
+          "expected_stderr_contains": "SOURCE must be a zip file"
         }
       ]
     },

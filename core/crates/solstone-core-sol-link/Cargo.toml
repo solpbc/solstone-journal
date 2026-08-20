@@ -52,6 +52,7 @@ solstone-core-journal-config = { workspace = true, optional = true }
 solstone-core-journal-config-write = { workspace = true, optional = true }
 sha2 = { version = "0.10.9", optional = true }
 solstone-core-journal-io = { workspace = true, optional = true }
+solstone-core-ingest-contract = { workspace = true }
 solstone-core-sol-client = { workspace = true }
 solstone-core-thinking-copy = { workspace = true, optional = true }
 spl-core = { workspace = true }

@@ -46,9 +46,9 @@ pub use store::{
     read_prepared_history, read_visible_history, record_ambiguity_choice,
     record_ambiguity_observation, record_merge_candidate, refresh_identity_map_cache,
     remove_entity_ambiguity_references, remove_voiceprints_by_key, repair_entity_identities,
-    rescope_facet_ambiguities, restore_journal_entity_version, rewrite_voiceprint_metadata,
-    save_entity_identity, save_voiceprints_batch, try_load_entity_voiceprints_file,
-    unblock_journal_entity, undo_entity_merge,
+    rescope_facet_ambiguities, restore_journal_entity_version, rewrite_identity_map_cache,
+    rewrite_voiceprint_metadata, save_entity_identity, save_voiceprints_batch,
+    try_load_entity_voiceprints_file, unblock_journal_entity, undo_entity_merge,
 };
 pub use trust_lock::{
     EntityTrustLock, EntityTrustLockError, hold_entity_trust_lock,

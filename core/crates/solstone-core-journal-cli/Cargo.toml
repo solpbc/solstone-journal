@@ -21,6 +21,7 @@ solstone-core-sol-client = { workspace = true }
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 solstone-core-indexer-query = { workspace = true }
 solstone-core-indexer-store = { workspace = true }
+solstone-core-import-sources = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

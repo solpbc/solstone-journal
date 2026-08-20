@@ -3844,6 +3844,7 @@ dependencies = [
  "sha2",
  "solstone-core-depict",
  "solstone-core-entity",
+ "solstone-core-entity-matching",
  "solstone-core-facets",
  "solstone-core-generate",
  "solstone-core-import",
@@ -3931,6 +3932,7 @@ dependencies = [
  "sha2",
  "solstone-core-callosum",
  "solstone-core-convey-http",
+ "solstone-core-ingest-contract",
  "solstone-core-ingest-resolve",
  "solstone-core-observer",
  "solstone-core-segment",
@@ -3939,6 +3941,10 @@ dependencies = [
  "tower",
  "tower-http",
 ]
+
+[[package]]
+name = "solstone-core-ingest-contract"
+version = "2.0.0"
 
 [[package]]
 name = "solstone-core-ingest-resolve"
@@ -3999,6 +4005,7 @@ dependencies = [
  "solstone-core-cli-boundary",
  "solstone-core-convey-config",
  "solstone-core-facets",
+ "solstone-core-import-sources",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal",
@@ -4498,6 +4505,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-convey-http",
+ "solstone-core-ingest-contract",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",

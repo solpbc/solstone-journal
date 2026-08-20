@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
+use solstone_core_ingest_contract::CONNECTION_BODY_LIMIT;
 use solstone_core_sol_client::resident::ShutdownSignal;
 use solstone_core_sol_client::seam::{
     LinkServeBundle, LinkServeError, LinkServeErrorKind, LinkServeFailure,
@@ -25,10 +26,6 @@ use spl_transport::relay_pairing::enroll_device;
 use spl_transport::{RelayControlEndpoint, RelayError, TransportError, tls};
 
 pub const STATUS_PATH: &str = "/_solstone/link/status";
-const OBSERVER_HEADER: &str = "X-Solstone-Observer";
-const PROTOCOL_HEADER: &str = "X-Solstone-Protocol-Version";
-const OBSERVER_PROTOCOL_VERSION: &str = "2";
-const MAX_REQUEST_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SplLinkServeRunner;
@@ -96,7 +93,6 @@ impl ServeStarter {
         let tracker = Arc::new(StatusTracker::new(self.clock.clone()));
         let opener = Arc::new(SolstoneCarrierOpener {
             client,
-            label: request.label.clone(),
             tracker: tracker.clone(),
         });
         let policy = bridge_policy_for_port(request.port, tracker);
@@ -145,7 +141,6 @@ impl LinkServeSession for SplLinkServeSession {
 
 struct SolstoneCarrierOpener {
     client: Arc<TransportClient>,
-    label: String,
     tracker: Arc<StatusTracker>,
 }
 
@@ -154,13 +149,7 @@ impl CarrierOpener for SolstoneCarrierOpener {
         &self,
         upstream_headers: &[(String, String)],
     ) -> Result<Vec<(String, String)>, TransportError> {
-        let mut headers = upstream_headers.to_vec();
-        headers.push((OBSERVER_HEADER.to_string(), self.label.clone()));
-        headers.push((
-            PROTOCOL_HEADER.to_string(),
-            OBSERVER_PROTOCOL_VERSION.to_string(),
-        ));
-        Ok(headers)
+        Ok(upstream_headers.to_vec())
     }
 
     fn dial_carrier(
@@ -252,8 +241,9 @@ pub fn bridge_names() -> BridgeNames {
     BridgeNames {
         capability_cookie_name: "__solstone_link_cap".to_string(),
         upstream_cookie_prefix: String::new(),
-        observer_header_name: "x-solstone-observer".to_string(),
-        protocol_version_header_name: "x-solstone-protocol-version".to_string(),
+        // Inert sentinels: capability_gate is Disabled, so check_caller_auth is unused; these names only exist so is_reserved_request_header does not strip the caller's real protocol-version and observer headers.
+        observer_header_name: "x-solstone-link-serve-unused-observer".to_string(),
+        protocol_version_header_name: "x-solstone-link-serve-unused-protocol-version".to_string(),
     }
 }
 
@@ -275,7 +265,7 @@ fn bridge_policy(tracker: Arc<StatusTracker>) -> BridgePolicy {
         }),
         attribution_headers: Arc::new(|_| Vec::new()),
         request_headers: RequestHeaderPolicy::ForwardAll,
-        max_request_body_bytes: MAX_REQUEST_BODY_BYTES,
+        max_request_body_bytes: CONNECTION_BODY_LIMIT,
     }
 }
 
@@ -783,6 +773,23 @@ mod tests {
         );
         assert!((policy.local_response)(&request_head("/not-status"), &status).is_none());
         assert!((policy.attribution_headers)(&request_head(STATUS_PATH)).is_empty());
+        assert_eq!(
+            policy.max_request_body_bytes,
+            solstone_core_ingest_contract::CONNECTION_BODY_LIMIT
+        );
+    }
+
+    #[test]
+    fn bridge_names_use_inert_reserved_header_sentinels() {
+        let names = bridge_names();
+        assert_eq!(
+            names.observer_header_name,
+            "x-solstone-link-serve-unused-observer"
+        );
+        assert_eq!(
+            names.protocol_version_header_name,
+            "x-solstone-link-serve-unused-protocol-version"
+        );
     }
 
     #[test]
@@ -794,5 +801,59 @@ mod tests {
         for host in [wildcard_v4, wildcard_v6, named_loopback] {
             assert!(!source.contains(&format!("{host:?}")));
         }
+        let observer_mixed = ["X", "Solstone", "Observer"].join("-");
+        let protocol_mixed = ["X", "Solstone", "Protocol", "Version"].join("-");
+        let observer_lower = ["x", "solstone", "observer"].join("-");
+        let protocol_lower = ["x", "solstone", "protocol", "version"].join("-");
+        for header in [
+            observer_mixed,
+            protocol_mixed,
+            observer_lower,
+            protocol_lower,
+        ] {
+            assert!(
+                !source.contains(&header),
+                "serve.rs still contains reserved header literal {header}"
+            );
+        }
+    }
+
+    fn test_opener() -> SolstoneCarrierOpener {
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test key");
+        let params = CertificateParams::new(Vec::<String>::new()).expect("test params");
+        let cert = params.self_signed(&key).expect("test cert");
+        let credential = Credential {
+            client_key_pem: key.serialize_pem(),
+            client_cert_pem: cert.pem(),
+            ca_chain_pem: vec![cert.pem()],
+            ca_fp_prefix: spl_core::ca::sha256(cert.der())[..16].to_vec(),
+            instance_id: "home-instance".to_string(),
+            home_label: "Home".to_string(),
+            endpoints: vec![EndpointAddr {
+                host: "127.0.0.1".to_string(),
+                port: 1,
+            }],
+            home_attestation: None,
+            local_endpoints: None,
+            relay_origin: None,
+            device_token: None,
+            device_token_expires_at: None,
+        };
+        SolstoneCarrierOpener {
+            client: Arc::new(TransportClient::new(credential, None).expect("test client")),
+            tracker: Arc::new(StatusTracker::new(Arc::new(FixedStatusClock::new(0.0)))),
+        }
+    }
+
+    #[test]
+    fn proxy_headers_forwards_caller_headers_unchanged() {
+        let opener = test_opener();
+        let protocol = ["x", "solstone", "protocol", "version"].join("-");
+        let incoming = [
+            (protocol, "3".to_string()),
+            ("x-custom".to_string(), "v".to_string()),
+        ];
+        let forwarded = opener.proxy_headers(&incoming).expect("proxy headers");
+        assert_eq!(forwarded, incoming);
     }
 }

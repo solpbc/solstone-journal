@@ -847,7 +847,7 @@ where
     Ok(result)
 }
 
-pub(super) fn rewrite_identity_map_cache(journal_root: &Path) -> Result<(), EntityWriteError> {
+pub fn rewrite_identity_map_cache(journal_root: &Path) -> Result<(), EntityWriteError> {
     let map = read_identity_map(journal_root)?;
     write_identity_map_cache(journal_root, &map.resolved)
 }

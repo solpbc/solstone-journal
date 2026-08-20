@@ -442,6 +442,148 @@ fn same_name_principal_claim_reports_collision() {
     assert_eq!(collision.source_entity_id, "source-principal");
 }
 
+#[test]
+fn facet_failure_after_staged_segments_leaves_target_unchanged() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(target.join("chronicle/20260101/120000_60")).unwrap();
+    fs::write(
+        target.join("chronicle/20260101/120000_60/keep"),
+        b"keep-day",
+    )
+    .unwrap();
+    save_entity_identity(
+        &target,
+        "keep",
+        &json!({"id":"keep","name":"Keep","type":"Person"}),
+        None,
+    )
+    .unwrap();
+    fs::create_dir_all(target.join("facets/keep")).unwrap();
+    fs::write(
+        target.join("facets/keep/facet.json"),
+        b"{\"name\":\"keep\"}",
+    )
+    .unwrap();
+    fs::create_dir_all(target.join("imports/keep")).unwrap();
+    fs::write(target.join("imports/keep/file"), b"keep-import").unwrap();
+    fs::create_dir_all(source.join("chronicle/20260311/120000_60")).unwrap();
+    fs::write(
+        source.join("chronicle/20260311/120000_60/value"),
+        b"new-day",
+    )
+    .unwrap();
+    save_entity_identity(
+        &source,
+        "fresh",
+        &json!({"id":"fresh","name":"Fresh","type":"Person"}),
+        None,
+    )
+    .unwrap();
+    fs::create_dir_all(source.join("facets/keep/entities/bad")).unwrap();
+    fs::write(
+        source.join("facets/keep/entities/bad/entity.json"),
+        b"not-json",
+    )
+    .unwrap();
+    fs::create_dir_all(source.join("imports/new-id")).unwrap();
+    fs::write(source.join("imports/new-id/file"), b"new-import").unwrap();
+    let before = family_snapshot(&target);
+    let archive = archive_from(&source, &tree.path);
+
+    let error = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap_err();
+    assert!(
+        matches!(error, ImportSourcesError::FacetMerge { .. }),
+        "{error:?}"
+    );
+    assert!(!matches!(
+        error,
+        ImportSourcesError::MergePublishFailed { .. }
+    ));
+    assert_eq!(family_snapshot(&target), before);
+    assert!(!target.join("chronicle/20260311").exists());
+    assert!(find_named(&tree.path.join("work"), "publish-undo").is_none());
+}
+
+#[test]
+fn extra_zip_members_are_skipped_and_absent_from_target() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(source.join("chronicle/20260311/120000_60")).unwrap();
+    fs::write(source.join("chronicle/20260311/120000_60/value"), b"day").unwrap();
+    fs::create_dir_all(source.join("health/pruning-runs")).unwrap();
+    fs::write(source.join("health/pruning-runs/x.jsonl"), b"{}\n").unwrap();
+    fs::write(source.join("_export.json"), b"{}").unwrap();
+    fs::create_dir_all(source.join("identity")).unwrap();
+    fs::write(source.join("identity/owner.md"), b"# owner").unwrap();
+    let archive = archive_from(&source, &tree.path);
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    assert!(target.join("chronicle/20260311/120000_60/value").is_file());
+    assert!(!target.join("health/pruning-runs").exists());
+    assert!(!target.join("_export.json").exists());
+    assert!(!target.join("identity").exists());
+    let log = fs::read_to_string(&result.decision_log_path).unwrap();
+    assert!(log.contains("\"state\":\"skipped\""));
+    assert!(log.contains("_export.json"));
+    assert!(log.contains("identity"));
+    assert!(log.contains("health"));
+}
+
+fn family_snapshot(root: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    let mut files = std::collections::BTreeMap::new();
+    for family in ["chronicle", "entities", "facets", "imports"] {
+        let path = root.join(family);
+        if !path.exists() {
+            continue;
+        }
+        fn visit(
+            root: &Path,
+            current: &Path,
+            files: &mut std::collections::BTreeMap<String, Vec<u8>>,
+        ) {
+            let Ok(entries) = fs::read_dir(current) else {
+                return;
+            };
+            for entry in entries.filter_map(Result::ok) {
+                let ty = entry.file_type().ok();
+                if ty.as_ref().is_some_and(std::fs::FileType::is_dir) {
+                    visit(root, &entry.path(), files);
+                } else if ty.as_ref().is_some_and(std::fs::FileType::is_file) {
+                    let relative = entry
+                        .path()
+                        .strip_prefix(root)
+                        .expect("under root")
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    files.insert(relative, fs::read(entry.path()).unwrap());
+                }
+            }
+        }
+        visit(root, &path, &mut files);
+    }
+    files
+}
+
+fn find_named(root: &Path, name: &str) -> Option<PathBuf> {
+    fn visit(current: &Path, name: &str) -> Option<PathBuf> {
+        let entries = fs::read_dir(current).ok()?;
+        for entry in entries.filter_map(Result::ok) {
+            if entry.file_name() == name {
+                return Some(entry.path());
+            }
+            if entry.file_type().ok()?.is_dir()
+                && let Some(found) = visit(&entry.path(), name)
+            {
+                return Some(found);
+            }
+        }
+        None
+    }
+    visit(root, name)
+}
+
 fn options(tree: &TempTree) -> ArchiveMergeOptions {
     ArchiveMergeOptions {
         working_root: tree.path.join("work"),

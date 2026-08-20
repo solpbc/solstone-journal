@@ -9,8 +9,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 
 use solstone_core_journal_archive::{
-    ArchiveError, ArchiveSource, EncodeArchiveError, EncodeArchiveRequest, EncodingPhase,
-    encode_archive,
+    ArchiveError, ArchiveSource, DayWindow, EncodeArchiveError, EncodeArchiveRequest,
+    EncodingPhase, encode_archive,
 };
 use zip::{CompressionMethod, ZipArchive};
 
@@ -24,6 +24,7 @@ fn request<'a>(source: &'a ArchiveSource) -> EncodeArchiveRequest<'a> {
         source,
         solstone_version: VERSION,
         exported_at: EXPORTED_AT,
+        day_window: None,
     }
 }
 
@@ -47,7 +48,11 @@ fn assert_archive_shape(path: &std::path::Path, expected_names: &[&str], expecte
             .collect::<Vec<_>>()
     );
 
-    for index in 0..4 {
+    let directory_count = expected_names
+        .iter()
+        .take_while(|name| name.ends_with('/'))
+        .count();
+    for index in 0..directory_count {
         let member = archive.by_index(index).expect("root member");
         assert!(member.is_dir());
         assert_eq!(member.compression(), CompressionMethod::Stored);
@@ -66,7 +71,7 @@ fn assert_archive_shape(path: &std::path::Path, expected_names: &[&str], expecte
         );
     }
 
-    for index in 4..archive.len() {
+    for index in directory_count..archive.len() {
         let member = archive.by_index(index).expect("file member");
         assert!(!member.is_dir());
         assert_eq!(member.compression(), CompressionMethod::Deflated);
@@ -148,17 +153,7 @@ fn encodes_empty_and_mixed_sources_with_the_fixed_archive_shape() {
             .to_str()
             .expect("UTF-8 source")
     );
-    assert_archive_shape(
-        &empty_path,
-        &[
-            "chronicle/",
-            "entities/",
-            "facets/",
-            "imports/",
-            "_export.json",
-        ],
-        empty_manifest.as_bytes(),
-    );
+    assert_archive_shape(&empty_path, &["_export.json"], empty_manifest.as_bytes());
 
     let mixed_temporary = TempDir::new("encode-mixed");
     let mixed_root = valid_four_root_journal(&mixed_temporary);
@@ -202,6 +197,107 @@ fn encodes_empty_and_mixed_sources_with_the_fixed_archive_shape() {
             ("facets/work/facet.json", b"{}"),
             ("imports/import-1/source.bin", b"source"),
         ],
+    );
+}
+
+#[test]
+fn deny_list_zip_includes_new_roots_and_omits_pruned_trees() {
+    let temporary = TempDir::new("encode-deny");
+    let root = journal(&temporary);
+    write(&root, "chronicle/20260101/a.txt", b"a");
+    write(&root, "identity/partner.md", b"hello");
+    write(&root, "config/journal.json", b"{}");
+    write(&root, "apps/observer/x.json", b"{}");
+    write(&root, "chronicle/20260101/foo.sqlite", b"db");
+    let source = ArchiveSource::open(&root).expect("open source");
+    let path = temporary.path().join("archive.zip");
+    let mut file = File::create(&path).expect("create output");
+    encode_archive(&request(&source), &mut file).expect("encode");
+    let mut archive = ZipArchive::new(File::open(&path).expect("open archive")).expect("parse");
+    let names: Vec<String> = (0..archive.len())
+        .map(|index| archive.by_index(index).expect("member").name().to_owned())
+        .collect();
+    assert!(names.contains(&"chronicle/".to_owned()));
+    assert!(names.contains(&"identity/".to_owned()));
+    assert!(names.contains(&"chronicle/20260101/a.txt".to_owned()));
+    assert!(names.contains(&"identity/partner.md".to_owned()));
+    assert!(!names.iter().any(|name| name.starts_with("config")));
+    assert!(!names.iter().any(|name| name.starts_with("apps")));
+    assert!(!names.iter().any(|name| name.ends_with("foo.sqlite")));
+}
+
+#[test]
+fn date_window_keeps_matching_chronicle_and_drops_every_other_root() {
+    let temporary = TempDir::new("encode-window");
+    let root = journal(&temporary);
+    write(&root, "chronicle/20260101/a.txt", b"a");
+    write(&root, "chronicle/20260102/b.txt", b"b");
+    write(&root, "entities/alice/entity.json", b"{}");
+    write(&root, "facets/work/facet.json", b"{}");
+    write(&root, "imports/import-1/source.bin", b"source");
+    write(&root, "identity/partner.md", b"hello");
+    let source = ArchiveSource::open(&root).expect("open source");
+    let path = temporary.path().join("sliced.zip");
+    let mut file = File::create(&path).expect("create output");
+    let request = EncodeArchiveRequest {
+        source: &source,
+        solstone_version: VERSION,
+        exported_at: EXPORTED_AT,
+        day_window: Some(DayWindow {
+            from: Some("20260101".to_owned()),
+            to: Some("20260101".to_owned()),
+        }),
+    };
+    encode_archive(&request, &mut file).expect("encode sliced");
+    let mut archive = ZipArchive::new(File::open(&path).expect("open archive")).expect("parse");
+    let names: Vec<String> = (0..archive.len())
+        .map(|index| archive.by_index(index).expect("member").name().to_owned())
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            "chronicle/".to_owned(),
+            "chronicle/20260101/a.txt".to_owned(),
+            "_export.json".to_owned(),
+        ]
+    );
+    let mut manifest = archive.by_name("_export.json").expect("manifest");
+    let mut contents = Vec::new();
+    manifest.read_to_end(&mut contents).expect("read manifest");
+    assert!(
+        contents
+            .windows(b"\"day_count\": 1".len())
+            .any(|w| w == b"\"day_count\": 1")
+    );
+    assert!(
+        contents
+            .windows(b"\"entity_count\": 0".len())
+            .any(|w| w == b"\"entity_count\": 0")
+    );
+    assert!(
+        contents
+            .windows(b"\"facet_count\": 0".len())
+            .any(|w| w == b"\"facet_count\": 0")
+    );
+
+    let empty_path = temporary.path().join("empty-window.zip");
+    let mut empty_file = File::create(&empty_path).expect("create empty-window output");
+    let empty_request = EncodeArchiveRequest {
+        source: &source,
+        solstone_version: VERSION,
+        exported_at: EXPORTED_AT,
+        day_window: Some(DayWindow {
+            from: Some("20261231".to_owned()),
+            to: Some("20261231".to_owned()),
+        }),
+    };
+    encode_archive(&empty_request, &mut empty_file).expect("encode empty window");
+    let mut empty_archive =
+        ZipArchive::new(File::open(&empty_path).expect("open empty-window")).expect("parse");
+    assert_eq!(empty_archive.len(), 1);
+    assert_eq!(
+        empty_archive.by_index(0).expect("only member").name(),
+        "_export.json"
     );
 }
 
@@ -288,6 +384,7 @@ fn metadata_and_pre_inventory_source_failures_leave_output_empty() {
             source: &source,
             solstone_version,
             exported_at,
+            day_window: None,
         };
         assert!(matches!(
             encode_archive(&request, &mut file),

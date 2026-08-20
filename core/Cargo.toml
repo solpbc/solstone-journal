@@ -68,6 +68,7 @@ members = [
     "crates/solstone-core-thinking-copy",
     "crates/solstone-core-thinking",
     "crates/solstone-core-serving",
+    "crates/solstone-core-ingest-contract",
     "crates/solstone-core-ingest",
     "crates/solstone-core-entities",
     "crates/solstone-core-ingest-resolve",
@@ -155,6 +156,7 @@ solstone-core-indexer-store = { path = "crates/solstone-core-indexer-store" }
 solstone-core-support-drafts = { path = "crates/solstone-core-support-drafts" }
 solstone-core-indexer-query = { path = "crates/solstone-core-indexer-query" }
 solstone-core-ingest = { path = "crates/solstone-core-ingest" }
+solstone-core-ingest-contract = { path = "crates/solstone-core-ingest-contract" }
 solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }
 solstone-core-journal-archive = { path = "crates/solstone-core-journal-archive" }

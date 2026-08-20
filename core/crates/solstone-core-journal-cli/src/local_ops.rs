@@ -24,6 +24,13 @@ use solstone_core_convey_config::{
 };
 use solstone_core_facets::{append_action_log, hold_facet_trust_lock, write_news_file};
 #[cfg(not(target_os = "ios"))]
+use solstone_core_import_sources::ImportSourcesError;
+#[cfg(not(target_os = "ios"))]
+use solstone_core_import_sources::archive::{
+    ArchiveMergeOptions, ArchiveMergeResult, ArchivePlan, FullReindexRequester, ReindexStatus,
+    RetryDisposition, merge_journal_archive, plan_journal_archive,
+};
+#[cfg(not(target_os = "ios"))]
 use solstone_core_indexer_query::{
     CountsResponse, IndexAccessError, Order, SearchHit, SearchRequest, search,
 };
@@ -34,11 +41,11 @@ use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
 };
 use solstone_core_journal_archive::{
-    ArchiveSource, EncodeArchiveRequest, ExplicitArchiveOutputRequest,
+    ArchiveSource, DayWindow, EncodeArchiveRequest, ExplicitArchiveOutputRequest,
     acquire_explicit_output_target, publish_archive,
 };
 use solstone_core_journal_io::{
-    AtomicWriteOptions, LockOptions, append_jsonl, atomic_replace, hold_lock, write_bytes_exclusive,
+    AtomicWriteOptions, append_jsonl, atomic_replace, write_bytes_exclusive,
 };
 
 use crate::Outcome;
@@ -494,6 +501,9 @@ fn format_count_column(entries: Vec<(&String, &u64)>, total: usize, top: usize) 
 fn archive_export(args: &[OsString]) -> Outcome {
     let mut output: Option<PathBuf> = None;
     let mut quiet = false;
+    let mut day: Option<String> = None;
+    let mut from: Option<String> = None;
+    let mut to: Option<String> = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].to_str() {
@@ -508,14 +518,75 @@ fn archive_export(args: &[OsString]) -> Outcome {
                 quiet = true;
                 index += 1;
             }
+            Some("--day") if day.is_none() => {
+                let Some(value) = args.get(index + 1).and_then(|value| value.to_str()) else {
+                    return usage("archive export", "--day requires YYYYMMDD");
+                };
+                if !valid_day(value) {
+                    return failure(
+                        "archive export",
+                        "DAY must be a real YYYYMMDD date",
+                        EXIT_DATA,
+                    );
+                }
+                day = Some(value.to_owned());
+                index += 2;
+            }
+            Some("--from") if from.is_none() => {
+                let Some(value) = args.get(index + 1).and_then(|value| value.to_str()) else {
+                    return usage("archive export", "--from requires YYYYMMDD");
+                };
+                if !valid_day(value) {
+                    return failure(
+                        "archive export",
+                        "FROM must be a real YYYYMMDD date",
+                        EXIT_DATA,
+                    );
+                }
+                from = Some(value.to_owned());
+                index += 2;
+            }
+            Some("--to") if to.is_none() => {
+                let Some(value) = args.get(index + 1).and_then(|value| value.to_str()) else {
+                    return usage("archive export", "--to requires YYYYMMDD");
+                };
+                if !valid_day(value) {
+                    return failure(
+                        "archive export",
+                        "TO must be a real YYYYMMDD date",
+                        EXIT_DATA,
+                    );
+                }
+                to = Some(value.to_owned());
+                index += 2;
+            }
             Some("--help" | "-h") if args.len() == 1 => {
                 return success(
-                    "Usage: journal archive export [--out PATH] [--quiet]\n".to_owned(),
+                    "Usage: journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n".to_owned(),
                 );
             }
             _ => return usage("archive export", "unexpected argument"),
         }
     }
+    if day.is_some() && (from.is_some() || to.is_some()) {
+        return usage(
+            "archive export",
+            "--day cannot be combined with --from or --to",
+        );
+    }
+    if let (Some(from_day), Some(to_day)) = (&from, &to)
+        && from_day > to_day
+    {
+        return usage("archive export", "--from must not be after --to");
+    }
+    let day_window = if day.is_some() || from.is_some() || to.is_some() {
+        Some(DayWindow {
+            from: day.clone().or(from),
+            to: day.or(to),
+        })
+    } else {
+        None
+    };
 
     let journal = match journal_root("archive export") {
         Ok(path) => path,
@@ -552,6 +623,7 @@ fn archive_export(args: &[OsString]) -> Outcome {
         source: &source,
         solstone_version: env!("CARGO_PKG_VERSION"),
         exported_at: &exported_at,
+        day_window,
     };
     if let Err(error) = publish_archive(&target, &request) {
         return archive_error("archive export", &error.to_string());
@@ -583,6 +655,20 @@ fn archive_merge(_args: &[OsString]) -> Outcome {
 }
 
 #[cfg(not(target_os = "ios"))]
+struct LocalScanReindex {
+    journal: PathBuf,
+}
+
+#[cfg(not(target_os = "ios"))]
+impl FullReindexRequester for LocalScanReindex {
+    fn request_full_reindex(&self) -> Result<bool, String> {
+        scan_journal(&self.journal, true)
+            .map(|_| true)
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
 fn archive_merge(args: &[OsString]) -> Outcome {
     let Some(source_arg) = args.first() else {
         return usage("archive merge", "SOURCE is required");
@@ -608,152 +694,44 @@ fn archive_merge(args: &[OsString]) -> Outcome {
         Ok(path) => path,
         Err(outcome) => return outcome,
     };
-    let source = match canonical_directory(&source) {
+    let source = match regular_archive_file(&source) {
         Ok(path) => path,
         Err(error) => return failure("archive merge", &error, EXIT_DATA),
     };
-    if source == journal || source.starts_with(&journal) || journal.starts_with(&source) {
-        return failure(
-            "archive merge",
-            "SOURCE and target journal must be disjoint",
-            EXIT_DATA,
-        );
-    }
-    let plan = match merge_plan(&source, &journal) {
-        Ok(plan) => plan,
-        Err(error) => return failure("archive merge", &error, EXIT_DATA),
-    };
     if dry_run {
-        return merge_result(MergeReport {
-            ok: true,
-            code: "ok",
-            source: &source,
-            dry_run: true,
-            committed: 0,
-            skipped: plan.len(),
-            failed: 0,
-            decision_log: None,
-            index_rebuild: "not-requested",
-            json_output,
-            to_stderr: false,
-        });
-    }
-    let lock_path = journal.join("health/locks/archive-merge");
-    let _lock = match hold_lock(&lock_path, LockOptions::default()) {
-        Ok(lock) => lock,
-        Err(error) => return failure("archive merge", &error.to_string(), EXIT_IO),
-    };
-    let transaction = transaction_id();
-    let artifact_dir = sibling_path(&journal, &format!(".merge/{transaction}"));
-    if let Err(error) = create_private_dir(&artifact_dir) {
-        return failure("archive merge", &error.to_string(), EXIT_IO);
-    }
-    let decision_log = artifact_dir.join("decisions.jsonl");
-    let mut committed = 0;
-    let mut skipped = 0;
-    for item in &plan {
-        match existing_path_kind(&item.destination) {
-            Ok(Some(ExistingPathKind::RegularFile)) => {
-                skipped += 1;
-                if let Err(error) = append_jsonl(
-                    &decision_log,
-                    &json!({"path": item.relative, "decision": "destination-wins"}),
-                ) {
-                    return merge_result(MergeReport {
-                        ok: false,
-                        code: "item-failed",
-                        source: &source,
-                        dry_run: false,
-                        committed,
-                        skipped,
-                        failed: 1,
-                        decision_log: Some(&decision_log),
-                        index_rebuild: "not-requested",
-                        json_output,
-                        to_stderr: true,
-                    })
-                    .with_stderr_suffix(&format!("journal archive merge: {error}\n"));
-                }
-                continue;
-            }
-            Ok(None) => {}
-            Ok(Some(_)) => {
-                return failure(
-                    "archive merge",
-                    &format!("unsafe destination entry: {}", item.destination.display()),
-                    EXIT_DATA,
-                );
-            }
-            Err(error) => return failure("archive merge", &error, EXIT_IO),
-        }
-        let bytes = match fs::read(&item.source) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                return merge_result(MergeReport {
-                    ok: false,
-                    code: "item-failed",
-                    source: &source,
-                    dry_run: false,
-                    committed,
-                    skipped,
-                    failed: 1,
-                    decision_log: Some(&decision_log),
-                    index_rebuild: "not-requested",
-                    json_output,
-                    to_stderr: true,
-                })
-                .with_stderr_suffix(&format!("journal archive merge: {error}\n"));
-            }
+        return match plan_journal_archive(&source) {
+            Ok(plan) => archive_merge_plan(&plan, &source, json_output),
+            Err(error) => archive_merge_json(Err(error), &source, true, json_output),
         };
-        if let Err(error) = write_bytes_exclusive(
-            &item.destination,
-            &bytes,
-            AtomicWriteOptions { mode: Some(0o600) },
-        ) {
-            return merge_result(MergeReport {
-                ok: false,
-                code: "item-failed",
-                source: &source,
-                dry_run: false,
-                committed,
-                skipped,
-                failed: 1,
-                decision_log: Some(&decision_log),
-                index_rebuild: "not-requested",
-                json_output,
-                to_stderr: true,
-            })
-            .with_stderr_suffix(&format!("journal archive merge: {error}\n"));
-        }
-        committed += 1;
-        if let Err(error) = append_jsonl(
-            &decision_log,
-            &json!({"path": item.relative, "decision": "copied"}),
-        ) {
-            return failure("archive merge", &error.to_string(), EXIT_IO);
-        }
     }
-    let index_rebuild = match scan_journal(&journal, true) {
-        Ok(_) => "completed",
-        Err(_) => "failed",
+    let options = ArchiveMergeOptions {
+        working_root: journal.join("imports").join("archive-merge-work"),
+        ..ArchiveMergeOptions::default()
     };
-    merge_result(MergeReport {
-        ok: index_rebuild == "completed",
-        code: if index_rebuild == "completed" {
-            "ok"
-        } else {
-            "index-rebuild-failed"
-        },
-        source: &source,
-        dry_run: false,
-        committed,
-        skipped,
-        failed: 0,
-        decision_log: Some(&decision_log),
-        index_rebuild,
+    let reindexer = LocalScanReindex {
+        journal: journal.clone(),
+    };
+    archive_merge_json(
+        merge_journal_archive(&source, &journal, &options, Some(&reindexer)),
+        &source,
+        false,
         json_output,
-        to_stderr: index_rebuild != "completed",
-    })
+    )
+}
+
+#[cfg(not(target_os = "ios"))]
+fn regular_archive_file(source: &Path) -> Result<PathBuf, String> {
+    let metadata = fs::symlink_metadata(source).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            format!("SOURCE does not exist: {}", source.display())
+        } else {
+            error.to_string()
+        }
+    })?;
+    if !metadata.file_type().is_file() {
+        return Err("SOURCE must be a zip file".to_owned());
+    }
+    fs::canonicalize(source).map_err(|error| error.to_string())
 }
 
 fn facet_doctor(args: &[OsString]) -> Outcome {
@@ -1032,12 +1010,6 @@ fn news_write(args: &[OsString]) -> Outcome {
     success(format!("News for {day} saved to {facet}.\n"))
 }
 
-struct MergeItem {
-    source: PathBuf,
-    destination: PathBuf,
-    relative: String,
-}
-
 enum ExistingPathKind {
     RegularFile,
     Directory,
@@ -1086,84 +1058,6 @@ fn transaction_failure(token: &str, primary: &str, rollback: Result<(), String>)
             EXIT_IO,
         ),
     }
-}
-
-fn merge_plan(source: &Path, journal: &Path) -> Result<Vec<MergeItem>, String> {
-    let mut items = Vec::new();
-    for family in ["chronicle", "entities", "facets", "imports"] {
-        collect_merge_files(
-            &source.join(family),
-            &source.join(family),
-            &journal.join(family),
-            family,
-            &mut items,
-        )?;
-    }
-    let entries = fs::read_dir(source).map_err(|error| error.to_string())?;
-    for entry in entries {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let name = entry.file_name();
-        if name.to_str().is_some_and(valid_day)
-            && entry
-                .file_type()
-                .map_err(|error| error.to_string())?
-                .is_dir()
-        {
-            let day = name.to_string_lossy();
-            collect_merge_files(
-                &entry.path(),
-                &entry.path(),
-                &journal.join("chronicle").join(day.as_ref()),
-                &format!("chronicle/{day}"),
-                &mut items,
-            )?;
-        }
-    }
-    items.sort_by(|left, right| left.relative.cmp(&right.relative));
-    Ok(items)
-}
-
-fn collect_merge_files(
-    current: &Path,
-    root: &Path,
-    destination_root: &Path,
-    display_root: &str,
-    output: &mut Vec<MergeItem>,
-) -> Result<(), String> {
-    let entries = match fs::read_dir(current) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error.to_string()),
-    };
-    let mut entries = entries
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())?;
-    entries.sort_by_key(fs::DirEntry::file_name);
-    for entry in entries {
-        let kind = entry.file_type().map_err(|error| error.to_string())?;
-        let relative = entry
-            .path()
-            .strip_prefix(root)
-            .map_err(|error| error.to_string())?
-            .to_owned();
-        if kind.is_dir() {
-            collect_merge_files(&entry.path(), root, destination_root, display_root, output)?;
-        } else if kind.is_file() {
-            let display = if relative.as_os_str().is_empty() {
-                display_root.to_owned()
-            } else {
-                format!("{display_root}/{}", relative.to_string_lossy())
-            };
-            output.push(MergeItem {
-                source: entry.path(),
-                destination: destination_root.join(&relative),
-                relative: display,
-            });
-        } else {
-            return Err(format!("unsafe source entry: {}", entry.path().display()));
-        }
-    }
-    Ok(())
 }
 
 fn orphan_facets(journal: &Path) -> Result<Vec<String>, String> {
@@ -1497,12 +1391,6 @@ fn create_private_dir(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn sibling_path(path: &Path, suffix: &str) -> PathBuf {
-    let mut value = path.as_os_str().to_os_string();
-    value.push(suffix);
-    PathBuf::from(value)
-}
-
 fn transaction_id() -> String {
     format!(
         "{}-{}",
@@ -1531,45 +1419,132 @@ fn archive_error(token: &str, message: &str) -> Outcome {
     failure(token, message, exit)
 }
 
-struct MergeReport<'a> {
+#[cfg(not(target_os = "ios"))]
+fn archive_merge_plan(plan: &ArchivePlan, source: &Path, json_output: bool) -> Outcome {
+    emit_merge_json(
+        true,
+        "ok",
+        source,
+        true,
+        0,
+        plan.payload_files,
+        0,
+        None,
+        None,
+        "not-requested",
+        json_output,
+        EXIT_FAILED,
+    )
+}
+
+#[cfg(not(target_os = "ios"))]
+fn archive_merge_json(
+    result: Result<ArchiveMergeResult, ImportSourcesError>,
+    source: &Path,
+    dry_run: bool,
+    json_output: bool,
+) -> Outcome {
+    match result {
+        Ok(outcome) => {
+            let committed = outcome.merge_summary.segments_copied
+                + outcome.merge_summary.imports_copied
+                + outcome.merge_summary.entities_created
+                + outcome.merge_summary.entities_merged
+                + outcome.merge_summary.facets_created
+                + outcome.merge_summary.facets_merged;
+            let skipped = outcome.merge_summary.segments_skipped
+                + outcome.merge_summary.entities_skipped
+                + outcome.merge_summary.imports_skipped;
+            let failed = outcome.merge_summary.segments_errored;
+            let ok = matches!(
+                outcome.retry_disposition,
+                RetryDisposition::Applied | RetryDisposition::IdempotentNoop
+            );
+            let code = match &outcome.reindex_status {
+                ReindexStatus::NotAccepted { .. } => "index-rebuild-failed",
+                _ if outcome.retry_disposition == RetryDisposition::Incomplete => "incomplete",
+                _ => "ok",
+            };
+            let index_rebuild = match &outcome.reindex_status {
+                ReindexStatus::Accepted => "completed",
+                ReindexStatus::NotAccepted { .. } => "failed",
+                ReindexStatus::NotRequested => "not-requested",
+            };
+            emit_merge_json(
+                ok,
+                code,
+                source,
+                dry_run,
+                committed,
+                skipped,
+                failed,
+                Some(&outcome.decision_log_path),
+                Some(&outcome.staging_path),
+                index_rebuild,
+                json_output,
+                EXIT_FAILED,
+            )
+        }
+        Err(error) => {
+            let (code, exit) = match &error {
+                ImportSourcesError::MergePublishFailed { .. } => {
+                    ("merge-publish-failed", EXIT_FAILED)
+                }
+                ImportSourcesError::LockBusy { .. } => ("lock-busy", EXIT_IO),
+                ImportSourcesError::ArchiveUnsafeEntry { .. }
+                | ImportSourcesError::ArchiveInvalid { .. }
+                | ImportSourcesError::ArchiveEntryEncrypted { .. } => ("merge-failed", EXIT_DATA),
+                _ => ("merge-failed", EXIT_IO),
+            };
+            if json_output {
+                emit_merge_json(
+                    false,
+                    code,
+                    source,
+                    dry_run,
+                    0,
+                    0,
+                    0,
+                    None,
+                    None,
+                    "not-requested",
+                    true,
+                    exit,
+                )
+            } else {
+                failure("archive merge", &error.to_string(), exit)
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+#[allow(clippy::too_many_arguments)] // JSON line keys are independently specified by the local-ops census.
+fn emit_merge_json(
     ok: bool,
-    code: &'a str,
-    source: &'a Path,
+    code: &str,
+    source: &Path,
     dry_run: bool,
     committed: usize,
     skipped: usize,
     failed: usize,
-    decision_log: Option<&'a Path>,
-    index_rebuild: &'a str,
+    decision_log: Option<&Path>,
+    staging_dir: Option<&Path>,
+    index_rebuild: &str,
     json_output: bool,
-    to_stderr: bool,
-}
-
-fn merge_result(report: MergeReport<'_>) -> Outcome {
-    let MergeReport {
-        ok,
-        code,
-        source,
-        dry_run,
-        committed,
-        skipped,
-        failed,
-        decision_log,
-        index_rebuild,
-        json_output,
-        to_stderr,
-    } = report;
+    exit: u8,
+) -> Outcome {
     if json_output {
         let line = json!({
             "ok": ok,
             "code": code,
-            "source": source,
+            "source": source.display().to_string(),
             "dry_run": dry_run,
             "committed": committed,
             "skipped": skipped,
             "failed": failed,
-            "decision_log": decision_log,
-            "staging_dir": Value::Null,
+            "decision_log": decision_log.map(|path| path.display().to_string()),
+            "staging_dir": staging_dir.map(|path| path.display().to_string()),
             "index_rebuild": index_rebuild,
             "summary": {"committed": committed, "skipped": skipped, "failed": failed}
         })
@@ -1579,13 +1554,9 @@ fn merge_result(report: MergeReport<'_>) -> Outcome {
             return success(line);
         }
         return Outcome::LocalFailure {
-            stdout: if to_stderr {
-                String::new()
-            } else {
-                line.to_owned()
-            },
-            stderr: if to_stderr { line } else { String::new() },
-            exit: EXIT_FAILED,
+            stdout: String::new(),
+            stderr: line,
+            exit,
         };
     }
     if ok {
@@ -1596,21 +1567,8 @@ fn merge_result(report: MergeReport<'_>) -> Outcome {
         failure(
             "archive merge",
             &format!("{committed} committed, {skipped} skipped, {failed} failed"),
-            EXIT_FAILED,
+            exit,
         )
-    }
-}
-
-trait OutcomeExt {
-    fn with_stderr_suffix(self, suffix: &str) -> Self;
-}
-
-impl OutcomeExt for Outcome {
-    fn with_stderr_suffix(mut self, suffix: &str) -> Self {
-        if let Outcome::LocalFailure { stderr, .. } = &mut self {
-            stderr.push_str(suffix);
-        }
-        self
     }
 }
 
@@ -1630,5 +1588,35 @@ fn failure(token: &str, message: &str, exit: u8) -> Outcome {
         stdout: String::new(),
         stderr: format!("journal {token}: {message}\n"),
         exit,
+    }
+}
+
+#[cfg(all(test, not(target_os = "ios")))]
+mod archive_merge_source_kind_tests {
+    use super::*;
+
+    #[test]
+    fn missing_source_names_the_absent_path() {
+        let path = PathBuf::from("/no/such/solstone-archive-source.zip");
+        let error = regular_archive_file(&path).unwrap_err();
+        assert!(error.contains("SOURCE does not exist"), "{error}");
+        assert!(error.contains("solstone-archive-source.zip"), "{error}");
+        assert!(!error.contains("must be a zip file"), "{error}");
+    }
+
+    #[test]
+    fn directory_source_names_a_zip_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "solstone-archive-merge-src-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let error = regular_archive_file(&dir).unwrap_err();
+        let _ = fs::remove_dir(&dir);
+        assert_eq!(error, "SOURCE must be a zip file");
     }
 }

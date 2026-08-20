@@ -10,6 +10,7 @@ use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use serde_json::json;
+use solstone_core_ingest_contract::CONNECTION_BODY_LIMIT;
 use solstone_core_sol_client::resident::ShutdownSignal;
 use solstone_core_sol_client::seam::{
     LinkServeBundle, LinkServeEndpoint, LinkServeRequest, LinkServeRunner,
@@ -18,7 +19,9 @@ use solstone_core_sol_link::SplLinkServeRunner;
 use solstone_core_sol_link::serve_test_support::{
     STATUS_PATH, StatusClock, StatusTracker, bridge_names, bridge_policy_for_port,
 };
-use spl_core::frame::{FLAG_CLOSE, FLAG_DATA, Frame, FrameDecoder, RECOMMENDED_CHUNK};
+use spl_core::bridge::{RequestHead, parse_request_head};
+use spl_core::frame::{FLAG_CLOSE, FLAG_DATA, FLAG_WINDOW, Frame, FrameDecoder, RECOMMENDED_CHUNK};
+use spl_core::mux::INITIAL_WINDOW;
 use spl_transport::TransportError;
 use spl_transport::client::{DialedCarrier, TransportClient};
 use spl_transport::credential::{Credential, EndpointAddr};
@@ -154,24 +157,239 @@ fn transport_credential(pin: Vec<u8>, port: u16) -> Credential {
 async fn read_framed_request(
     tls: &mut tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
 ) -> u32 {
+    read_framed_request_bytes(tls).await.0
+}
+
+async fn read_framed_request_bytes(
+    tls: &mut tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+) -> (u32, Vec<u8>) {
     let mut decoder = FrameDecoder::new();
     let mut stream_id = 1u32;
     let mut closed = false;
-    let mut buf = [0u8; 4096];
+    let mut raw = Vec::new();
+    let mut recv_credit: i64 = INITIAL_WINDOW as i64;
+    let mut unacked: i64 = 0;
+    let mut buf = [0u8; 8192];
     while !closed {
-        let n = tls.read(&mut buf).await.expect("read framed request");
+        let n = tokio::time::timeout(Duration::from_secs(60), tls.read(&mut buf))
+            .await
+            .expect("framed request timeout")
+            .expect("read framed request");
         if n == 0 {
             break;
         }
         decoder.feed(&buf[..n]);
         for frame in decoder.drain().expect("decode request frame") {
+            if let Some(pong) = frame.control_pong() {
+                tls.write_all(&pong.encode().expect("encode pong"))
+                    .await
+                    .expect("write pong");
+                tls.flush().await.expect("flush pong");
+                continue;
+            }
             stream_id = frame.stream_id;
+            if frame.flags & FLAG_DATA != 0 {
+                let len = frame.payload.len() as i64;
+                assert!(
+                    len <= recv_credit,
+                    "peer sent DATA past the un-granted mux window"
+                );
+                recv_credit -= len;
+                unacked += len;
+                raw.extend_from_slice(&frame.payload);
+                if unacked >= (INITIAL_WINDOW as i64) / 2 {
+                    let grant = unacked as u32;
+                    recv_credit += unacked;
+                    unacked = 0;
+                    let window = Frame::new(stream_id, FLAG_WINDOW, grant.to_be_bytes().to_vec());
+                    tls.write_all(&window.encode().expect("encode window"))
+                        .await
+                        .expect("write window");
+                    tls.flush().await.expect("flush window");
+                }
+            }
             if frame.flags & FLAG_CLOSE != 0 {
                 closed = true;
             }
         }
     }
-    stream_id
+    (stream_id, raw)
+}
+
+struct ScriptedHttpResponse {
+    status: u16,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+}
+
+struct CapturedUpstream {
+    head: RequestHead,
+    content_length: usize,
+    body: Vec<u8>,
+}
+
+fn encode_scripted_http(response: &ScriptedHttpResponse) -> Vec<u8> {
+    let reason = match response.status {
+        200 => "OK",
+        403 => "Forbidden",
+        404 => "Not Found",
+        _ => "Status",
+    };
+    let mut head = format!("HTTP/1.1 {} {reason}\r\n", response.status);
+    for (name, value) in &response.headers {
+        head.push_str(name);
+        head.push_str(": ");
+        head.push_str(value);
+        head.push_str("\r\n");
+    }
+    head.push_str(&format!("Content-Length: {}\r\n\r\n", response.body.len()));
+    let mut encoded = head.into_bytes();
+    encoded.extend_from_slice(&response.body);
+    encoded
+}
+
+async fn serve_and_capture_one_request(
+    listener: TokioTcpListener,
+    acceptor: TlsAcceptor,
+    response: ScriptedHttpResponse,
+) -> CapturedUpstream {
+    let (tcp, _) = listener.accept().await.expect("accept transport peer");
+    let mut tls = acceptor.accept(tcp).await.expect("accept tls");
+    let (stream_id, raw) = read_framed_request_bytes(&mut tls).await;
+    let validated = parse_request_head(&raw).expect("parse upstream request head");
+    let header_end = raw
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("header terminator")
+        + 4;
+    let body = raw[header_end..].to_vec();
+    write_response_frame(
+        &mut tls,
+        stream_id,
+        FLAG_DATA | FLAG_CLOSE,
+        encode_scripted_http(&response),
+    )
+    .await;
+    let _ = tls.shutdown().await;
+    CapturedUpstream {
+        head: validated.head,
+        content_length: validated.content_length,
+        body,
+    }
+}
+
+async fn start_bridge_with_capture(
+    response: ScriptedHttpResponse,
+) -> (
+    spl_transport::journal_bridge::JournalBridgeHandle,
+    u16,
+    tokio::task::JoinHandle<CapturedUpstream>,
+) {
+    let (server_cert, server_key) = self_signed_server();
+    let pin = spl_core::ca::sha256(server_cert.as_ref())[..16].to_vec();
+    let listener = TokioTcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind transport peer");
+    let transport_port = listener.local_addr().expect("transport addr").port();
+    let client = Arc::new(
+        TransportClient::new(transport_credential(pin, transport_port), None)
+            .expect("transport client"),
+    );
+    let acceptor = TlsAcceptor::from(Arc::new(server_config(server_cert, server_key)));
+    let server = tokio::spawn(serve_and_capture_one_request(listener, acceptor, response));
+    let tracker = Arc::new(StatusTracker::new(Arc::new(FixedStatusClock::new(0.0))));
+    let handle = journal_bridge::start(JournalBridgeConfig {
+        opener: Arc::new(TransportClientOpener { client }),
+        bridge_names: bridge_names(),
+        endpoint_hosts: vec!["127.0.0.1".to_string()],
+        policy: bridge_policy_for_port(0, tracker),
+    })
+    .await
+    .expect("bridge start");
+    let bound = handle.port();
+    (handle, bound, server)
+}
+
+async fn start_counting_bridge() -> (
+    spl_transport::journal_bridge::JournalBridgeHandle,
+    u16,
+    Arc<CountingOpener>,
+) {
+    let opener = Arc::new(CountingOpener::default());
+    let tracker = Arc::new(StatusTracker::new(Arc::new(FixedStatusClock::new(0.0))));
+    let handle = journal_bridge::start(JournalBridgeConfig {
+        opener: opener.clone(),
+        bridge_names: bridge_names(),
+        endpoint_hosts: vec!["192.168.1.10".to_string()],
+        policy: bridge_policy_for_port(0, tracker),
+    })
+    .await
+    .expect("bridge start");
+    let bound = handle.port();
+    (handle, bound, opener)
+}
+
+async fn http_exchange(port: u16, request: &[u8]) -> Vec<u8> {
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("connect bridge");
+    stream.write_all(request).await.expect("write request");
+    let mut response = Vec::new();
+    tokio::time::timeout(Duration::from_secs(60), stream.read_to_end(&mut response))
+        .await
+        .expect("response timeout")
+        .expect("read response");
+    response
+}
+
+fn parse_client_http(raw: &[u8]) -> (u16, Vec<(String, String)>, Vec<u8>) {
+    let header_end = raw
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("client header terminator");
+    let headers_text = std::str::from_utf8(&raw[..header_end]).expect("client headers utf8");
+    let mut lines = headers_text.split("\r\n");
+    let status_line = lines.next().expect("status line");
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .expect("status code")
+        .parse::<u16>()
+        .expect("status u16");
+    let mut headers = Vec::new();
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            headers.push((name.trim().to_ascii_lowercase(), value.trim().to_string()));
+        }
+    }
+    (status, headers, raw[header_end + 4..].to_vec())
+}
+
+fn header_values<'a>(head: &'a RequestHead, name: &str) -> Vec<&'a str> {
+    head.headers
+        .iter()
+        .filter(|(existing, _)| existing == name)
+        .map(|(_, value)| value.as_str())
+        .collect()
+}
+
+fn json_ok() -> ScriptedHttpResponse {
+    ScriptedHttpResponse {
+        status: 200,
+        headers: vec![
+            ("etag".to_string(), "fixture-1".to_string()),
+            ("Content-Type".to_string(), "application/json".to_string()),
+        ],
+        body: b"{\"status\":\"ok\"}".to_vec(),
+    }
+}
+
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime")
+        .block_on(future)
 }
 
 async fn write_response_frame(
@@ -579,4 +797,253 @@ fn resident_serve_answers_the_local_status_route_while_on_duty() {
         response.contains("\"manager_alive\":true"),
         "status payload should report an active listener: {response}"
     );
+}
+
+fn multipart_ingest_body() -> (String, Vec<u8>) {
+    let boundary = "ingest-test-boundary";
+    let envelope = r#"{"day":"20260815","segment":"143000_1","files":[{"submitted":"a.bin"},{"submitted":"b.bin"}]}"#;
+    let file_a = vec![0x11u8; 5 * 1024 * 1024];
+    let file_b = vec![0x22u8; 5 * 1024 * 1024];
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        format!("--{boundary}\r\nContent-Disposition: form-data; name=\"envelope\"\r\n\r\n")
+            .as_bytes(),
+    );
+    body.extend_from_slice(envelope.as_bytes());
+    body.extend_from_slice(b"\r\n");
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"a.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(&file_a);
+    body.extend_from_slice(b"\r\n");
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"b.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(&file_b);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (boundary.to_string(), body)
+}
+
+#[test]
+fn v3_multipart_ingest_request_reaches_carrier_unchanged() {
+    block_on(async {
+        let (boundary, body) = multipart_ingest_body();
+        assert!(
+            body.len() > 9 * 1024 * 1024,
+            "multipart fixture must exceed the retired eight-mebibyte ceiling"
+        );
+        let (handle, port, server) = start_bridge_with_capture(json_ok()).await;
+        let request = format!(
+            "POST /app/devices/ingest?source=test HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: multipart/form-data; boundary={boundary}\r\nX-Solstone-Protocol-Version: 3\r\nX-Test-Marker: abc123\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let mut raw = request.into_bytes();
+        raw.extend_from_slice(&body);
+        let client_raw = http_exchange(port, &raw).await;
+        let captured = server.await.expect("capture task");
+        handle.shutdown_and_wait().await;
+
+        assert_eq!(captured.head.method, "POST");
+        assert_eq!(captured.head.path(), "/app/devices/ingest");
+        assert_eq!(captured.head.query(), Some("source=test"));
+        assert_eq!(
+            header_values(&captured.head, "x-solstone-protocol-version"),
+            vec!["3"]
+        );
+        assert!(header_values(&captured.head, "x-solstone-observer").is_empty());
+        assert_eq!(
+            header_values(&captured.head, "x-test-marker"),
+            vec!["abc123"]
+        );
+        assert_eq!(captured.body, body);
+
+        let (status, headers, response_body) = parse_client_http(&client_raw);
+        assert_eq!(status, 200);
+        assert!(
+            headers
+                .iter()
+                .any(|(name, value)| name == "etag" && value == "fixture-1")
+        );
+        assert_eq!(response_body, b"{\"status\":\"ok\"}");
+    });
+}
+
+#[test]
+fn body_size_at_boundary_reaches_carrier_unchanged() {
+    block_on(async {
+        let (handle, port, server) = start_bridge_with_capture(json_ok()).await;
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("connect bridge");
+        let head = format!(
+            "POST /app/devices/ingest HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/octet-stream\r\nContent-Length: {CONNECTION_BODY_LIMIT}\r\nConnection: close\r\n\r\n"
+        );
+        stream.write_all(head.as_bytes()).await.expect("write head");
+        let chunk = [0x5Au8; 65536];
+        let mut remaining = CONNECTION_BODY_LIMIT;
+        while remaining > 0 {
+            let n = remaining.min(chunk.len());
+            stream
+                .write_all(&chunk[..n])
+                .await
+                .expect("write body chunk");
+            remaining -= n;
+        }
+        let mut client_raw = Vec::new();
+        tokio::time::timeout(Duration::from_secs(60), stream.read_to_end(&mut client_raw))
+            .await
+            .expect("response timeout")
+            .expect("read response");
+        let captured = server.await.expect("capture task");
+        handle.shutdown_and_wait().await;
+
+        assert_eq!(captured.content_length, CONNECTION_BODY_LIMIT);
+        assert_eq!(captured.body.len(), CONNECTION_BODY_LIMIT);
+        assert_eq!(captured.body.first().copied(), Some(0x5A));
+        assert_eq!(captured.body.last().copied(), Some(0x5A));
+        let checksum = captured
+            .body
+            .iter()
+            .fold(0u64, |acc, byte| acc.wrapping_add(u64::from(*byte)));
+        assert_eq!(checksum, 0x5A * CONNECTION_BODY_LIMIT as u64);
+        assert!(parse_client_http(&client_raw).0 == 200);
+    });
+}
+
+#[test]
+fn body_over_limit_by_one_byte_rejected_pre_dial() {
+    block_on(async {
+        let (handle, port, opener) = start_counting_bridge().await;
+        let request = format!(
+            "POST /ordinary HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            CONNECTION_BODY_LIMIT + 1
+        );
+        let client_raw = http_exchange(port, request.as_bytes()).await;
+        assert!(String::from_utf8_lossy(&client_raw).starts_with("HTTP/1.1 413"));
+        assert_eq!(opener.dials(), 0);
+        handle.shutdown_and_wait().await;
+    });
+}
+
+#[test]
+fn body_with_absent_content_length_treated_as_empty() {
+    block_on(async {
+        let (handle, port, server) = start_bridge_with_capture(json_ok()).await;
+        let request = format!(
+            "POST /ordinary HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-Test-Marker: nosmuggle\r\nConnection: close\r\n\r\nSMUGGLE"
+        );
+        let client_raw = http_exchange(port, request.as_bytes()).await;
+        let captured = server.await.expect("capture task");
+        handle.shutdown_and_wait().await;
+
+        let (status, _, _) = parse_client_http(&client_raw);
+        assert_ne!(status, 413);
+        assert_eq!(status, 200);
+        assert_eq!(captured.content_length, 0);
+        assert!(captured.body.is_empty());
+        assert_eq!(
+            header_values(&captured.head, "x-test-marker"),
+            vec!["nosmuggle"]
+        );
+    });
+}
+
+#[test]
+fn duplicate_content_length_rejected_pre_dial() {
+    block_on(async {
+        let (handle, port, opener) = start_counting_bridge().await;
+        let request = format!(
+            "POST /ordinary HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 1\r\nContent-Length: 2\r\nConnection: close\r\n\r\n"
+        );
+        let client_raw = http_exchange(port, request.as_bytes()).await;
+        assert!(String::from_utf8_lossy(&client_raw).starts_with("HTTP/1.1 400"));
+        assert_eq!(opener.dials(), 0);
+        handle.shutdown_and_wait().await;
+    });
+}
+
+async fn assert_get_round_trip(target: &str, status: u16, body: &[u8]) {
+    let scripted = ScriptedHttpResponse {
+        status,
+        headers: vec![
+            ("etag".to_string(), "fixture-1".to_string()),
+            ("Content-Type".to_string(), "application/json".to_string()),
+        ],
+        body: body.to_vec(),
+    };
+    let (handle, port, server) = start_bridge_with_capture(scripted).await;
+    let request = format!(
+        "GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-Solstone-Protocol-Version: 3\r\nConnection: close\r\n\r\n"
+    );
+    let client_raw = http_exchange(port, request.as_bytes()).await;
+    let captured = server.await.expect("capture task");
+    handle.shutdown_and_wait().await;
+
+    assert_eq!(captured.head.method, "GET");
+    let (path, query) = target
+        .split_once('?')
+        .map(|(path, query)| (path, Some(query)))
+        .unwrap_or((target, None));
+    assert_eq!(captured.head.path(), path);
+    assert_eq!(captured.head.query(), query);
+    assert_eq!(
+        header_values(&captured.head, "x-solstone-protocol-version"),
+        vec!["3"]
+    );
+
+    let (got_status, headers, got_body) = parse_client_http(&client_raw);
+    assert_eq!(got_status, status);
+    assert!(
+        headers
+            .iter()
+            .any(|(name, value)| name == "etag" && value == "fixture-1")
+    );
+    assert_eq!(got_body, body);
+}
+
+const FILE_SHA256: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+#[test]
+fn get_ingest_manifest_success_and_rejection_round_trip() {
+    block_on(async {
+        let ok = br#"{"days":{"20260815":{"segments":3}}}"#;
+        let denied = br#"{"error":"linked device not authorized"}"#;
+        assert_get_round_trip("/app/devices/ingest/manifest", 200, ok).await;
+        assert_get_round_trip("/app/devices/ingest/manifest", 403, denied).await;
+    });
+}
+
+#[test]
+fn get_ingest_manifest_day_success_and_rejection_round_trip() {
+    block_on(async {
+        let ok = format!(
+            r#"{{"version":1,"day":"20260815","segments":{{"143000":{{"files":[{{"name":"audio.m4a","size":4096,"sha256":"{FILE_SHA256}","status":"present"}}]}}}}}}"#
+        );
+        let missing = br#"{"error":"day not found"}"#;
+        assert_get_round_trip("/app/devices/ingest/manifest/20260815", 200, ok.as_bytes()).await;
+        assert_get_round_trip("/app/devices/ingest/manifest/20260815", 404, missing).await;
+    });
+}
+
+#[test]
+fn get_ingest_segments_success_and_rejection_round_trip() {
+    block_on(async {
+        let ok = format!(
+            r#"{{"protocol_version":3,"total":1,"items":[{{"key":"20260815/143000","observed":true,"files":[{{"name":"audio.m4a","size":4096,"sha256":"{FILE_SHA256}","status":"present"}}]}}]}}"#
+        );
+        let denied = br#"{"error":"linked device not authorized"}"#;
+        assert_get_round_trip(
+            "/app/devices/ingest/segments/20260815?source=test",
+            200,
+            ok.as_bytes(),
+        )
+        .await;
+        assert_get_round_trip("/app/devices/ingest/segments/20260815", 403, denied).await;
+    });
 }

@@ -17,7 +17,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const LOCAL_OPS_JSON: &str = include_str!("../../../fixtures/journal-cli/local-ops-v1.json");
-const LOCAL_OPS_SHA256: &str = "02424d2e9173eb7b90949bddbffb78ee0c057b20de8ec621db89b60258f12a75";
+const LOCAL_OPS_SHA256: &str = "e95144e8e7320a18f5dd731e3d9a125022ead77da3d2be97377c988a07aef53c";
 const CLI_BOUNDARY_JSON: &str = include_str!("../../../fixtures/native-sol/cli-boundary-v1.json");
 
 struct TempDir {
@@ -345,13 +345,21 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
 
     let source = temp.path.join("source");
     seed_journal(&source);
-    fs::create_dir_all(source.join("chronicle/20260807")).expect("seed merge day");
-    fs::write(source.join("chronicle/20260807/segment.jsonl"), b"{}\n").expect("seed merge item");
+    fs::create_dir_all(source.join("chronicle/20260807/120000_60")).expect("seed merge day");
+    fs::write(source.join("chronicle/20260807/120000_60/value"), b"day\n")
+        .expect("seed merge item");
+    let source_zip = temp.path.join("source.zip");
+    let export_source = run_journal_with_journal(
+        &["archive", "export", "--out", source_zip.to_str().unwrap()],
+        Some(&path),
+        &source,
+    );
+    assert_eq!(export_source.status.code(), Some(0));
     let dry_run = run_journal_with_journal(
         &[
             "archive",
             "merge",
-            source.to_str().unwrap(),
+            source_zip.to_str().unwrap(),
             "--dry-run",
             "--json",
         ],
@@ -894,4 +902,164 @@ fn cargo_metadata_confirms_distinct_public_identity_binaries() {
         journal,
         vec![&("solstone-core-journal-bin", "solstone-core-journal")]
     );
+}
+
+fn seed_four_family_journal(root: &Path) {
+    seed_journal(root);
+    fs::create_dir_all(root.join("chronicle/20260807/120000_60")).expect("seed chronicle");
+    fs::write(
+        root.join("chronicle/20260807/120000_60/value"),
+        b"day-bytes",
+    )
+    .expect("seed day");
+    fs::create_dir_all(root.join("entities/person")).expect("seed entity dir");
+    fs::write(
+        root.join("entities/person/entity.json"),
+        br#"{"id":"person","name":"Person","type":"Person"}"#,
+    )
+    .expect("seed entity");
+    fs::create_dir_all(root.join("facets/work")).expect("seed facet");
+    fs::write(root.join("facets/work/facet.json"), br#"{"title":"Work"}"#)
+        .expect("seed facet json");
+    fs::create_dir_all(root.join("imports/imp1")).expect("seed import");
+    fs::write(root.join("imports/imp1/file"), b"import-bytes").expect("seed import file");
+}
+
+#[test]
+fn archive_merge_zip_round_trips_all_four_families_and_reindexes() {
+    let temp = TempDir::new("archive-merge-ac8");
+    let (path, sentinel) = poison_path(&temp);
+    let source = temp.path.join("journal-a");
+    let target = temp.path.join("journal-b");
+    seed_four_family_journal(&source);
+    seed_journal(&target);
+    let zip = temp.path.join("portable.zip");
+    let export = run_journal_with_journal(
+        &["archive", "export", "--out", zip.to_str().unwrap()],
+        Some(&path),
+        &source,
+    );
+    assert_eq!(
+        export.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&export.stderr)
+    );
+    let nested = target.join("imports/20260311/file.zip");
+    fs::create_dir_all(nested.parent().expect("nested parent")).expect("imports ts dir");
+    fs::copy(&zip, &nested).expect("copy zip into target");
+    let merge = run_journal_with_journal(
+        &["archive", "merge", nested.to_str().unwrap(), "--json"],
+        Some(&path),
+        &target,
+    );
+    assert_eq!(
+        merge.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&merge.stderr)
+    );
+    let payload: Value = serde_json::from_slice(&merge.stdout).expect("merge json");
+    assert_eq!(payload["ok"], true);
+    assert_eq!(payload["code"], "ok");
+    assert_eq!(payload["index_rebuild"], "completed");
+    assert_eq!(
+        fs::read(target.join("chronicle/20260807/120000_60/value")).expect("copied day"),
+        b"day-bytes"
+    );
+    assert!(target.join("entities/person/entity.json").is_file());
+    assert!(target.join("facets/work/facet.json").is_file());
+    assert_eq!(
+        fs::read(target.join("imports/imp1/file")).expect("copied import"),
+        b"import-bytes"
+    );
+    let conn = rusqlite::Connection::open(target.join("indexer/journal.sqlite"))
+        .expect("open written index");
+    let (state, files_count, chunks_count): (String, i64, i64) = conn
+        .query_row(
+            "SELECT CAST(state AS TEXT), CAST(files_count AS INTEGER), CAST(chunks_count AS INTEGER) FROM index_build_state WHERE id=1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("read index build state");
+    assert_eq!(state, "complete");
+    let live_files: i64 = conn
+        .query_row("SELECT count(*) FROM files", [], |row| row.get(0))
+        .expect("count files");
+    let live_chunks: i64 = conn
+        .query_row("SELECT count(*) FROM chunks", [], |row| row.get(0))
+        .expect("count chunks");
+    assert_eq!(files_count, live_files);
+    assert_eq!(chunks_count, live_chunks);
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn archive_merge_wrapper_folder_still_merges_and_skips_extra_trees() {
+    let temp = TempDir::new("archive-merge-ac10");
+    let (path, sentinel) = poison_path(&temp);
+    let target = temp.path.join("journal-b");
+    seed_journal(&target);
+    let zip = temp.path.join("wrapped.zip");
+    let file = fs::File::create(&zip).expect("create wrapped zip");
+    let mut writer = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default();
+    for (name, bytes) in [
+        (
+            "journal/chronicle/20260811/120000_60/value",
+            b"wrapped-day".as_slice(),
+        ),
+        (
+            "journal/config/journal.json",
+            br#"{"secret":true}"#.as_slice(),
+        ),
+        ("journal/indexer/journal.sqlite", b"not-an-index".as_slice()),
+        ("journal/apps/observer/x.json", b"{}".as_slice()),
+    ] {
+        writer.start_file(name, options).expect("zip member");
+        writer.write_all(bytes).expect("zip bytes");
+    }
+    writer.finish().expect("finish zip");
+    let merge = run_journal_with_journal(
+        &["archive", "merge", zip.to_str().unwrap(), "--json"],
+        Some(&path),
+        &target,
+    );
+    assert_eq!(
+        merge.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&merge.stderr)
+    );
+    let payload: Value = serde_json::from_slice(&merge.stdout).expect("merge json");
+    assert_eq!(
+        fs::read(target.join("chronicle/20260811/120000_60/value")).expect("copied wrapped day"),
+        b"wrapped-day"
+    );
+    assert!(!target.join("config").exists());
+    assert!(!target.join("apps").exists());
+    let log = fs::read_to_string(payload["decision_log"].as_str().expect("decision log path"))
+        .expect("read decision log");
+    assert!(log.contains("\"state\":\"skipped\""));
+    assert!(log.contains("config") && log.contains("indexer") && log.contains("apps"));
+    assert_sentinel_untouched(&sentinel);
+}
+
+#[test]
+fn archive_merge_directory_source_is_unsafe() {
+    let temp = TempDir::new("archive-merge-directory");
+    let (path, sentinel) = poison_path(&temp);
+    let journal = temp.path.join("journal");
+    let source = temp.path.join("source-dir");
+    seed_journal(&journal);
+    seed_journal(&source);
+    let merge = run_journal_with_journal(
+        &["archive", "merge", source.to_str().unwrap()],
+        Some(&path),
+        &journal,
+    );
+    assert_eq!(merge.status.code(), Some(65));
+    let stderr = String::from_utf8_lossy(&merge.stderr);
+    assert!(stderr.contains("SOURCE must be a zip file"), "{stderr}");
+    assert_sentinel_untouched(&sentinel);
 }

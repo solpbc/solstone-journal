@@ -781,6 +781,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-ingest-contract"
+package = "solstone-core-ingest-contract"
+set = "component"
+areas = ["ingest"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-ingest-resolve"
 package = "solstone-core-ingest-resolve"
 set = "component"

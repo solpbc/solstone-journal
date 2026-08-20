@@ -536,7 +536,7 @@ mod tests {
                 &spawner,
             ),
             Outcome::LocalSuccess {
-                stdout: "Usage: journal archive export [--out PATH] [--quiet]\n".to_owned(),
+                stdout: "Usage: journal archive export [--out PATH] [--quiet] [--day YYYYMMDD | --from YYYYMMDD [--to YYYYMMDD] | --to YYYYMMDD]\n".to_owned(),
                 stderr: String::new(),
             }
         );
