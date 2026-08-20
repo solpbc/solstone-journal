@@ -3522,235 +3522,6 @@
       },
       "status": 200
     },
-    "PUT chat.thinking-surfaces": {
-      "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": 42,
-          "redact": [
-            "password",
-            "secret"
-          ]
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": [
-            "ada",
-            "AAL"
-          ],
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": 17,
-            "enabled": false
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "days",
-          "raw_media_days": 90
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": 42,
-          "redact": [
-            "password",
-            "secret"
-          ]
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": [
-            "ada",
-            "AAL"
-          ],
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": 17,
-            "enabled": false
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "days",
-          "raw_media_days": 90
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_keys_added": [],
-      "config_keys_removed": [],
-      "digest": "a0898571830ebb48",
-      "method": "PUT",
-      "normalized": {
-        "thinking_surfaces": "on_tap"
-      },
-      "normalized_paths": [],
-      "path": "/app/settings/api/chat",
-      "sent": {
-        "thinking_surfaces": "on_tap"
-      },
-      "status": 200
-    },
     "PUT sol_voice.partial": {
       "config_after": {
         "agent": {
@@ -9494,227 +9265,6 @@
       },
       "status": 200
     },
-    "PUT chat.thinking-surfaces": {
-      "config_after": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": null,
-          "redact": "not-a-list"
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": {
-            "not": "a list"
-          },
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": "five",
-            "enabled": false
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "sometimes",
-          "raw_media_days": "ninety"
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_before": {
-        "agent": {
-          "name": "sol",
-          "name_status": "named",
-          "named_date": "2026-01-02"
-        },
-        "convey": {
-          "bind": "127.0.0.1",
-          "password": "MUST-NOT-LEAK",
-          "password_hash": "MUST-NOT-LEAK",
-          "secret": "MUST-NOT-LEAK"
-        },
-        "describe": {
-          "categories": {},
-          "max_extractions": null,
-          "redact": "not-a-list"
-        },
-        "env": {
-          "PLAUD_ACCESS_TOKEN": ""
-        },
-        "identity": {
-          "aliases": {
-            "not": "a list"
-          },
-          "bio": "first programmer",
-          "email_addresses": [
-            "ada@example.org"
-          ],
-          "name": "Ada Lovelace",
-          "preferred": "Ada",
-          "pronouns": {
-            "object": "her",
-            "possessive": "her",
-            "reflexive": "herself",
-            "subject": "she"
-          },
-          "timezone": "Europe/London"
-        },
-        "journal": {
-          "name": "Analytical Engine"
-        },
-        "observe": {
-          "tmux": {
-            "capture_interval": "five",
-            "enabled": false
-          }
-        },
-        "processing": {},
-        "providers": {
-          "active": {
-            "provider": "unused"
-          }
-        },
-        "retention": {
-          "journal_logs": {
-            "days": 14,
-            "enabled": true
-          },
-          "per_stream": {
-            "tmux": {
-              "raw_media": "processed"
-            }
-          },
-          "raw_media": "sometimes",
-          "raw_media_days": "ninety"
-        },
-        "service_key_validation": {
-          "bogus": {
-            "valid": true
-          },
-          "plaud": {
-            "timestamp": "2026-01-01T00:00:00Z",
-            "valid": false
-          }
-        },
-        "setup": {
-          "completed_at": 1700000000000
-        },
-        "some_future_section": {
-          "kept": true,
-          "n": 7
-        },
-        "support": {
-          "anonymous_feedback": true,
-          "enabled": true,
-          "portal_url": "https://support.example.org",
-          "proactive": false
-        },
-        "transcribe": {
-          "backend": "parakeet",
-          "confidential_audio": false,
-          "not_a_real_key": "should not survive projection",
-          "parakeet": {
-            "device": "auto",
-            "model_version": "v3",
-            "timeout_sec": 120.0
-          },
-          "preserve_all": true,
-          "whisper": {
-            "model": "large-v3"
-          }
-        }
-      },
-      "config_keys_added": [],
-      "config_keys_removed": [],
-      "digest": "a0898571830ebb48",
-      "method": "PUT",
-      "normalized": {
-        "thinking_surfaces": "on_tap"
-      },
-      "normalized_paths": [],
-      "path": "/app/settings/api/chat",
-      "sent": {
-        "thinking_surfaces": "on_tap"
-      },
-      "status": 200
-    },
     "PUT sol_voice.partial": {
       "config_after": {
         "agent": {
@@ -12064,19 +11614,6 @@
         ],
         "status": 500
       },
-      "GET api/chat": {
-        "content_type": "application/json",
-        "digest": "899a444cde0057fa",
-        "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
-          "reason_code": "corrupt_config"
-        },
-        "normalized_paths": [
-          "detail#journal_root"
-        ],
-        "status": 500
-      },
       "GET api/config": {
         "content_type": "application/json",
         "digest": "899a444cde0057fa",
@@ -12561,21 +12098,6 @@
         ],
         "sent": {
           "days": 0
-        },
-        "status": 500
-      },
-      "PUT chat.bad-thinking-surfaces": {
-        "digest": "899a444cde0057fa",
-        "normalized": {
-          "detail": "I couldn't read your settings file at <JOURNAL_ROOT>/config/journal.json. Your settings were NOT changed. Repair the file or restore config/journal.json from a backup, then try again.",
-          "error": "I couldn't read your settings.",
-          "reason_code": "corrupt_config"
-        },
-        "normalized_paths": [
-          "detail#journal_root"
-        ],
-        "sent": {
-          "thinking_surfaces": "sideways"
         },
         "status": 500
       },
@@ -13020,15 +12542,6 @@
         "normalized_paths": [],
         "status": 200
       },
-      "GET api/chat": {
-        "content_type": "application/json",
-        "digest": "a0898571830ebb48",
-        "normalized": {
-          "thinking_surfaces": "on_tap"
-        },
-        "normalized_paths": [],
-        "status": 200
-      },
       "GET api/config": {
         "content_type": "application/json",
         "digest": "8659e791eb330605",
@@ -13311,55 +12824,8 @@
       },
       "GET api/state": {
         "content_type": "application/json",
-        "digest": "bc408323286d0427",
+        "digest": "a109fe58502e8df9",
         "normalized": {
-          "chat_copy": {
-            "CHAT_CLOSER_DIFFERENT_ANGLE_SUFFIX": "Want me to try a different angle?",
-            "CHAT_CLOSER_LOOP_EXHAUSTED_PREFIX": "Here's what I have so far:",
-            "CHAT_CLOSER_SUPPORT_SEND_FAILED": "I couldn't finish reaching solstone support, so nothing was sent. Want me to try again?",
-            "CHAT_CLOSER_TALENT_ERRORED_FORMAT": "I couldn't finish that lookup \u2014 {reason}. Want to try a different angle, or rephrase the question?",
-            "CHAT_CLOSER_TALENT_ERRORED_GENERIC": "I couldn't finish that lookup. Want to try a different angle, or rephrase the question?",
-            "CHAT_DEFERRED_NOT_ANALYZED": "Today's segments aren't analyzed yet \u2014 they'll process during your deferred window.",
-            "CHAT_DISPATCH_ORIGIN_PREFIX": "in reply to:",
-            "CHAT_ERROR_DETAIL_COLLAPSER_LABEL": "hide details",
-            "CHAT_ERROR_DETAIL_EXPANDER_LABEL": "show details",
-            "CHAT_JOBS_INDICATOR_PLURAL_FORMAT": "sol is running {count} jobs",
-            "CHAT_JOBS_INDICATOR_SINGULAR": "sol is running 1 job",
-            "CHAT_LIVENESS_TASK_FORMAT": "{label} {task}",
-            "CHAT_LIVENESS_THINKING": "sol is thinking\u2026",
-            "CHAT_OFFER_SUPPORT_DECLINE": "Okay \u2014 I'll keep this local. Tell me if you'd like me to bring in solstone support after all.",
-            "CHAT_OFFER_SUPPORT_PROMPT": "Sounds like something's not working \u2014 want me to bring in solstone support?",
-            "CHAT_QUEUE_DEPTH_CAP_MESSAGE": "Give sol a moment to catch up \u2014 you have 10 messages waiting.",
-            "CHAT_SUPPORT_ATTACH_FILED_FORMAT": "I added that to solstone support ticket #{ticket_id}.",
-            "CHAT_SUPPORT_CLOSE_SUBMITTED": "I closed that support ticket. Closing it removes it from solstone support's open list; only a minimal closed record is kept.",
-            "CHAT_SUPPORT_DRAFT_CANCELLED": "Okay \u2014 nothing was sent to solstone support.",
-            "CHAT_SUPPORT_DRAFT_READY": "Here's the support request I put together \u2014 look it over before anything goes to solstone support.",
-            "CHAT_SUPPORT_IN_PROGRESS": "I'm still working on the last support request for this \u2014 try again in a moment.",
-            "CHAT_SUPPORT_RECONSENT_NEEDED": "solstone support's terms changed; want me to try again?",
-            "CHAT_SUPPORT_RESOLVED_SUBMITTED": "I accepted the proposed resolution and closed that support ticket. It is no longer in solstone support's open list; only a minimal closed record is kept.",
-            "CHAT_SUPPORT_STILL_NEED_HELP_SUBMITTED": "I let solstone support know you still need help. The proposed close was cancelled, and the ticket stays open.",
-            "CHAT_SUPPORT_SUBMIT_AMBIGUOUS": "I couldn't confirm whether solstone support received that. Check with solstone support before resending so we don't file it twice.",
-            "CHAT_SUPPORT_SUBMIT_FAILED": "I couldn't finish reaching solstone support, so nothing was sent. Want me to try again?",
-            "CHAT_SUPPORT_SUBMIT_FILED_FORMAT": "I sent that to solstone support as ticket #{ticket_id}.",
-            "CHAT_TALENT_QUEUED_LABEL": "waiting to start\u2026",
-            "CHAT_THINKING_COLLAPSER_LABEL": "hide thinking",
-            "CHAT_THINKING_ENGINE_NOT_CHOSEN": "no thinking engine is chosen yet. choose one in thinking so i can answer from your journal.",
-            "CHAT_THINKING_EXPANDER_LABEL": "show thinking",
-            "CHAT_THINKING_OPT_ALWAYS": "always show",
-            "CHAT_THINKING_OPT_NEVER": "never show",
-            "CHAT_THINKING_OPT_ON_TAP": "show on tap",
-            "CHAT_THINKING_SETTING_HELP": "sol does some thinking before replying. choose how much you want to see.",
-            "CHAT_THINKING_SETTING_LABEL": "thinking surfaces",
-            "TALENT_LABEL_EXEC_ERRORED": "couldn't finish the change",
-            "TALENT_LABEL_EXEC_FINISHED": "made the change",
-            "TALENT_LABEL_EXEC_RUNNING": "making that change\u2026",
-            "TALENT_LABEL_READ_ERRORED": "couldn't finish reading your journal",
-            "TALENT_LABEL_READ_FINISHED": "read your journal",
-            "TALENT_LABEL_READ_RUNNING": "reading your journal\u2026",
-            "TALENT_LABEL_SUPPORT_ERRORED": "couldn't reach solstone support",
-            "TALENT_LABEL_SUPPORT_FINISHED": "reached solstone support",
-            "TALENT_LABEL_SUPPORT_RUNNING": "reaching solstone support\u2026"
-          },
           "install_copy": {
             "STT_DETECTED_MEMORY_TEMPLATE": "{available_gb} GB of free memory detected on this machine.",
             "STT_DETECTED_MEMORY_UNKNOWN": "free memory on this machine could not be detected.",
@@ -13427,8 +12893,7 @@
             "THROTTLE_MUTE_WINDOW": "mute-window",
             "THROTTLE_RATE_FLOOR": "rate-floor",
             "TRIGGER_LABEL_SOL_INITIATED": "sol_initiated"
-          },
-          "thinking_surfaces": "on_tap"
+          }
         },
         "normalized_paths": [],
         "status": 200
@@ -13800,19 +13265,6 @@
         "normalized_paths": [],
         "sent": {
           "days": 0
-        },
-        "status": 400
-      },
-      "PUT chat.bad-thinking-surfaces": {
-        "digest": "ae7331c072e5baa9",
-        "normalized": {
-          "detail": "invalid thinking_surfaces",
-          "error": "I couldn't save that setting because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "thinking_surfaces": "sideways"
         },
         "status": 400
       },
@@ -14235,15 +13687,6 @@
         "normalized_paths": [],
         "status": 200
       },
-      "GET api/chat": {
-        "content_type": "application/json",
-        "digest": "a0898571830ebb48",
-        "normalized": {
-          "thinking_surfaces": "on_tap"
-        },
-        "normalized_paths": [],
-        "status": 200
-      },
       "GET api/config": {
         "content_type": "application/json",
         "digest": "6a7f115842478c2b",
@@ -14607,55 +14050,8 @@
       },
       "GET api/state": {
         "content_type": "application/json",
-        "digest": "bc408323286d0427",
+        "digest": "a109fe58502e8df9",
         "normalized": {
-          "chat_copy": {
-            "CHAT_CLOSER_DIFFERENT_ANGLE_SUFFIX": "Want me to try a different angle?",
-            "CHAT_CLOSER_LOOP_EXHAUSTED_PREFIX": "Here's what I have so far:",
-            "CHAT_CLOSER_SUPPORT_SEND_FAILED": "I couldn't finish reaching solstone support, so nothing was sent. Want me to try again?",
-            "CHAT_CLOSER_TALENT_ERRORED_FORMAT": "I couldn't finish that lookup \u2014 {reason}. Want to try a different angle, or rephrase the question?",
-            "CHAT_CLOSER_TALENT_ERRORED_GENERIC": "I couldn't finish that lookup. Want to try a different angle, or rephrase the question?",
-            "CHAT_DEFERRED_NOT_ANALYZED": "Today's segments aren't analyzed yet \u2014 they'll process during your deferred window.",
-            "CHAT_DISPATCH_ORIGIN_PREFIX": "in reply to:",
-            "CHAT_ERROR_DETAIL_COLLAPSER_LABEL": "hide details",
-            "CHAT_ERROR_DETAIL_EXPANDER_LABEL": "show details",
-            "CHAT_JOBS_INDICATOR_PLURAL_FORMAT": "sol is running {count} jobs",
-            "CHAT_JOBS_INDICATOR_SINGULAR": "sol is running 1 job",
-            "CHAT_LIVENESS_TASK_FORMAT": "{label} {task}",
-            "CHAT_LIVENESS_THINKING": "sol is thinking\u2026",
-            "CHAT_OFFER_SUPPORT_DECLINE": "Okay \u2014 I'll keep this local. Tell me if you'd like me to bring in solstone support after all.",
-            "CHAT_OFFER_SUPPORT_PROMPT": "Sounds like something's not working \u2014 want me to bring in solstone support?",
-            "CHAT_QUEUE_DEPTH_CAP_MESSAGE": "Give sol a moment to catch up \u2014 you have 10 messages waiting.",
-            "CHAT_SUPPORT_ATTACH_FILED_FORMAT": "I added that to solstone support ticket #{ticket_id}.",
-            "CHAT_SUPPORT_CLOSE_SUBMITTED": "I closed that support ticket. Closing it removes it from solstone support's open list; only a minimal closed record is kept.",
-            "CHAT_SUPPORT_DRAFT_CANCELLED": "Okay \u2014 nothing was sent to solstone support.",
-            "CHAT_SUPPORT_DRAFT_READY": "Here's the support request I put together \u2014 look it over before anything goes to solstone support.",
-            "CHAT_SUPPORT_IN_PROGRESS": "I'm still working on the last support request for this \u2014 try again in a moment.",
-            "CHAT_SUPPORT_RECONSENT_NEEDED": "solstone support's terms changed; want me to try again?",
-            "CHAT_SUPPORT_RESOLVED_SUBMITTED": "I accepted the proposed resolution and closed that support ticket. It is no longer in solstone support's open list; only a minimal closed record is kept.",
-            "CHAT_SUPPORT_STILL_NEED_HELP_SUBMITTED": "I let solstone support know you still need help. The proposed close was cancelled, and the ticket stays open.",
-            "CHAT_SUPPORT_SUBMIT_AMBIGUOUS": "I couldn't confirm whether solstone support received that. Check with solstone support before resending so we don't file it twice.",
-            "CHAT_SUPPORT_SUBMIT_FAILED": "I couldn't finish reaching solstone support, so nothing was sent. Want me to try again?",
-            "CHAT_SUPPORT_SUBMIT_FILED_FORMAT": "I sent that to solstone support as ticket #{ticket_id}.",
-            "CHAT_TALENT_QUEUED_LABEL": "waiting to start\u2026",
-            "CHAT_THINKING_COLLAPSER_LABEL": "hide thinking",
-            "CHAT_THINKING_ENGINE_NOT_CHOSEN": "no thinking engine is chosen yet. choose one in thinking so i can answer from your journal.",
-            "CHAT_THINKING_EXPANDER_LABEL": "show thinking",
-            "CHAT_THINKING_OPT_ALWAYS": "always show",
-            "CHAT_THINKING_OPT_NEVER": "never show",
-            "CHAT_THINKING_OPT_ON_TAP": "show on tap",
-            "CHAT_THINKING_SETTING_HELP": "sol does some thinking before replying. choose how much you want to see.",
-            "CHAT_THINKING_SETTING_LABEL": "thinking surfaces",
-            "TALENT_LABEL_EXEC_ERRORED": "couldn't finish the change",
-            "TALENT_LABEL_EXEC_FINISHED": "made the change",
-            "TALENT_LABEL_EXEC_RUNNING": "making that change\u2026",
-            "TALENT_LABEL_READ_ERRORED": "couldn't finish reading your journal",
-            "TALENT_LABEL_READ_FINISHED": "read your journal",
-            "TALENT_LABEL_READ_RUNNING": "reading your journal\u2026",
-            "TALENT_LABEL_SUPPORT_ERRORED": "couldn't reach solstone support",
-            "TALENT_LABEL_SUPPORT_FINISHED": "reached solstone support",
-            "TALENT_LABEL_SUPPORT_RUNNING": "reaching solstone support\u2026"
-          },
           "install_copy": {
             "STT_DETECTED_MEMORY_TEMPLATE": "{available_gb} GB of free memory detected on this machine.",
             "STT_DETECTED_MEMORY_UNKNOWN": "free memory on this machine could not be detected.",
@@ -14723,8 +14119,7 @@
             "THROTTLE_MUTE_WINDOW": "mute-window",
             "THROTTLE_RATE_FLOOR": "rate-floor",
             "TRIGGER_LABEL_SOL_INITIATED": "sol_initiated"
-          },
-          "thinking_surfaces": "on_tap"
+          }
         },
         "normalized_paths": [],
         "status": 200
@@ -15107,19 +14502,6 @@
         "normalized_paths": [],
         "sent": {
           "days": 0
-        },
-        "status": 400
-      },
-      "PUT chat.bad-thinking-surfaces": {
-        "digest": "ae7331c072e5baa9",
-        "normalized": {
-          "detail": "invalid thinking_surfaces",
-          "error": "I couldn't save that setting because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "thinking_surfaces": "sideways"
         },
         "status": 400
       },
@@ -15538,15 +14920,6 @@
               "name": "Music"
             }
           ]
-        },
-        "normalized_paths": [],
-        "status": 200
-      },
-      "GET api/chat": {
-        "content_type": "application/json",
-        "digest": "a0898571830ebb48",
-        "normalized": {
-          "thinking_surfaces": "on_tap"
         },
         "normalized_paths": [],
         "status": 200
@@ -17733,55 +17106,8 @@
       },
       "GET api/state": {
         "content_type": "application/json",
-        "digest": "bc408323286d0427",
+        "digest": "a109fe58502e8df9",
         "normalized": {
-          "chat_copy": {
-            "CHAT_CLOSER_DIFFERENT_ANGLE_SUFFIX": "Want me to try a different angle?",
-            "CHAT_CLOSER_LOOP_EXHAUSTED_PREFIX": "Here's what I have so far:",
-            "CHAT_CLOSER_SUPPORT_SEND_FAILED": "I couldn't finish reaching solstone support, so nothing was sent. Want me to try again?",
-            "CHAT_CLOSER_TALENT_ERRORED_FORMAT": "I couldn't finish that lookup \u2014 {reason}. Want to try a different angle, or rephrase the question?",
-            "CHAT_CLOSER_TALENT_ERRORED_GENERIC": "I couldn't finish that lookup. Want to try a different angle, or rephrase the question?",
-            "CHAT_DEFERRED_NOT_ANALYZED": "Today's segments aren't analyzed yet \u2014 they'll process during your deferred window.",
-            "CHAT_DISPATCH_ORIGIN_PREFIX": "in reply to:",
-            "CHAT_ERROR_DETAIL_COLLAPSER_LABEL": "hide details",
-            "CHAT_ERROR_DETAIL_EXPANDER_LABEL": "show details",
-            "CHAT_JOBS_INDICATOR_PLURAL_FORMAT": "sol is running {count} jobs",
-            "CHAT_JOBS_INDICATOR_SINGULAR": "sol is running 1 job",
-            "CHAT_LIVENESS_TASK_FORMAT": "{label} {task}",
-            "CHAT_LIVENESS_THINKING": "sol is thinking\u2026",
-            "CHAT_OFFER_SUPPORT_DECLINE": "Okay \u2014 I'll keep this local. Tell me if you'd like me to bring in solstone support after all.",
-            "CHAT_OFFER_SUPPORT_PROMPT": "Sounds like something's not working \u2014 want me to bring in solstone support?",
-            "CHAT_QUEUE_DEPTH_CAP_MESSAGE": "Give sol a moment to catch up \u2014 you have 10 messages waiting.",
-            "CHAT_SUPPORT_ATTACH_FILED_FORMAT": "I added that to solstone support ticket #{ticket_id}.",
-            "CHAT_SUPPORT_CLOSE_SUBMITTED": "I closed that support ticket. Closing it removes it from solstone support's open list; only a minimal closed record is kept.",
-            "CHAT_SUPPORT_DRAFT_CANCELLED": "Okay \u2014 nothing was sent to solstone support.",
-            "CHAT_SUPPORT_DRAFT_READY": "Here's the support request I put together \u2014 look it over before anything goes to solstone support.",
-            "CHAT_SUPPORT_IN_PROGRESS": "I'm still working on the last support request for this \u2014 try again in a moment.",
-            "CHAT_SUPPORT_RECONSENT_NEEDED": "solstone support's terms changed; want me to try again?",
-            "CHAT_SUPPORT_RESOLVED_SUBMITTED": "I accepted the proposed resolution and closed that support ticket. It is no longer in solstone support's open list; only a minimal closed record is kept.",
-            "CHAT_SUPPORT_STILL_NEED_HELP_SUBMITTED": "I let solstone support know you still need help. The proposed close was cancelled, and the ticket stays open.",
-            "CHAT_SUPPORT_SUBMIT_AMBIGUOUS": "I couldn't confirm whether solstone support received that. Check with solstone support before resending so we don't file it twice.",
-            "CHAT_SUPPORT_SUBMIT_FAILED": "I couldn't finish reaching solstone support, so nothing was sent. Want me to try again?",
-            "CHAT_SUPPORT_SUBMIT_FILED_FORMAT": "I sent that to solstone support as ticket #{ticket_id}.",
-            "CHAT_TALENT_QUEUED_LABEL": "waiting to start\u2026",
-            "CHAT_THINKING_COLLAPSER_LABEL": "hide thinking",
-            "CHAT_THINKING_ENGINE_NOT_CHOSEN": "no thinking engine is chosen yet. choose one in thinking so i can answer from your journal.",
-            "CHAT_THINKING_EXPANDER_LABEL": "show thinking",
-            "CHAT_THINKING_OPT_ALWAYS": "always show",
-            "CHAT_THINKING_OPT_NEVER": "never show",
-            "CHAT_THINKING_OPT_ON_TAP": "show on tap",
-            "CHAT_THINKING_SETTING_HELP": "sol does some thinking before replying. choose how much you want to see.",
-            "CHAT_THINKING_SETTING_LABEL": "thinking surfaces",
-            "TALENT_LABEL_EXEC_ERRORED": "couldn't finish the change",
-            "TALENT_LABEL_EXEC_FINISHED": "made the change",
-            "TALENT_LABEL_EXEC_RUNNING": "making that change\u2026",
-            "TALENT_LABEL_READ_ERRORED": "couldn't finish reading your journal",
-            "TALENT_LABEL_READ_FINISHED": "read your journal",
-            "TALENT_LABEL_READ_RUNNING": "reading your journal\u2026",
-            "TALENT_LABEL_SUPPORT_ERRORED": "couldn't reach solstone support",
-            "TALENT_LABEL_SUPPORT_FINISHED": "reached solstone support",
-            "TALENT_LABEL_SUPPORT_RUNNING": "reaching solstone support\u2026"
-          },
           "install_copy": {
             "STT_DETECTED_MEMORY_TEMPLATE": "{available_gb} GB of free memory detected on this machine.",
             "STT_DETECTED_MEMORY_UNKNOWN": "free memory on this machine could not be detected.",
@@ -17849,8 +17175,7 @@
             "THROTTLE_MUTE_WINDOW": "mute-window",
             "THROTTLE_RATE_FLOOR": "rate-floor",
             "TRIGGER_LABEL_SOL_INITIATED": "sol_initiated"
-          },
-          "thinking_surfaces": "on_tap"
+          }
         },
         "normalized_paths": [],
         "status": 200
@@ -18243,19 +17568,6 @@
         "normalized_paths": [],
         "sent": {
           "days": 0
-        },
-        "status": 400
-      },
-      "PUT chat.bad-thinking-surfaces": {
-        "digest": "ae7331c072e5baa9",
-        "normalized": {
-          "detail": "invalid thinking_surfaces",
-          "error": "I couldn't save that setting because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "thinking_surfaces": "sideways"
         },
         "status": 400
       },
@@ -18758,15 +18070,6 @@
         "normalized_paths": [],
         "status": 200
       },
-      "GET api/chat": {
-        "content_type": "application/json",
-        "digest": "a0898571830ebb48",
-        "normalized": {
-          "thinking_surfaces": "on_tap"
-        },
-        "normalized_paths": [],
-        "status": 200
-      },
       "GET api/config": {
         "content_type": "application/json",
         "digest": "b377ccfec96948ad",
@@ -19134,55 +18437,8 @@
       },
       "GET api/state": {
         "content_type": "application/json",
-        "digest": "bc408323286d0427",
+        "digest": "a109fe58502e8df9",
         "normalized": {
-          "chat_copy": {
-            "CHAT_CLOSER_DIFFERENT_ANGLE_SUFFIX": "Want me to try a different angle?",
-            "CHAT_CLOSER_LOOP_EXHAUSTED_PREFIX": "Here's what I have so far:",
-            "CHAT_CLOSER_SUPPORT_SEND_FAILED": "I couldn't finish reaching solstone support, so nothing was sent. Want me to try again?",
-            "CHAT_CLOSER_TALENT_ERRORED_FORMAT": "I couldn't finish that lookup \u2014 {reason}. Want to try a different angle, or rephrase the question?",
-            "CHAT_CLOSER_TALENT_ERRORED_GENERIC": "I couldn't finish that lookup. Want to try a different angle, or rephrase the question?",
-            "CHAT_DEFERRED_NOT_ANALYZED": "Today's segments aren't analyzed yet \u2014 they'll process during your deferred window.",
-            "CHAT_DISPATCH_ORIGIN_PREFIX": "in reply to:",
-            "CHAT_ERROR_DETAIL_COLLAPSER_LABEL": "hide details",
-            "CHAT_ERROR_DETAIL_EXPANDER_LABEL": "show details",
-            "CHAT_JOBS_INDICATOR_PLURAL_FORMAT": "sol is running {count} jobs",
-            "CHAT_JOBS_INDICATOR_SINGULAR": "sol is running 1 job",
-            "CHAT_LIVENESS_TASK_FORMAT": "{label} {task}",
-            "CHAT_LIVENESS_THINKING": "sol is thinking\u2026",
-            "CHAT_OFFER_SUPPORT_DECLINE": "Okay \u2014 I'll keep this local. Tell me if you'd like me to bring in solstone support after all.",
-            "CHAT_OFFER_SUPPORT_PROMPT": "Sounds like something's not working \u2014 want me to bring in solstone support?",
-            "CHAT_QUEUE_DEPTH_CAP_MESSAGE": "Give sol a moment to catch up \u2014 you have 10 messages waiting.",
-            "CHAT_SUPPORT_ATTACH_FILED_FORMAT": "I added that to solstone support ticket #{ticket_id}.",
-            "CHAT_SUPPORT_CLOSE_SUBMITTED": "I closed that support ticket. Closing it removes it from solstone support's open list; only a minimal closed record is kept.",
-            "CHAT_SUPPORT_DRAFT_CANCELLED": "Okay \u2014 nothing was sent to solstone support.",
-            "CHAT_SUPPORT_DRAFT_READY": "Here's the support request I put together \u2014 look it over before anything goes to solstone support.",
-            "CHAT_SUPPORT_IN_PROGRESS": "I'm still working on the last support request for this \u2014 try again in a moment.",
-            "CHAT_SUPPORT_RECONSENT_NEEDED": "solstone support's terms changed; want me to try again?",
-            "CHAT_SUPPORT_RESOLVED_SUBMITTED": "I accepted the proposed resolution and closed that support ticket. It is no longer in solstone support's open list; only a minimal closed record is kept.",
-            "CHAT_SUPPORT_STILL_NEED_HELP_SUBMITTED": "I let solstone support know you still need help. The proposed close was cancelled, and the ticket stays open.",
-            "CHAT_SUPPORT_SUBMIT_AMBIGUOUS": "I couldn't confirm whether solstone support received that. Check with solstone support before resending so we don't file it twice.",
-            "CHAT_SUPPORT_SUBMIT_FAILED": "I couldn't finish reaching solstone support, so nothing was sent. Want me to try again?",
-            "CHAT_SUPPORT_SUBMIT_FILED_FORMAT": "I sent that to solstone support as ticket #{ticket_id}.",
-            "CHAT_TALENT_QUEUED_LABEL": "waiting to start\u2026",
-            "CHAT_THINKING_COLLAPSER_LABEL": "hide thinking",
-            "CHAT_THINKING_ENGINE_NOT_CHOSEN": "no thinking engine is chosen yet. choose one in thinking so i can answer from your journal.",
-            "CHAT_THINKING_EXPANDER_LABEL": "show thinking",
-            "CHAT_THINKING_OPT_ALWAYS": "always show",
-            "CHAT_THINKING_OPT_NEVER": "never show",
-            "CHAT_THINKING_OPT_ON_TAP": "show on tap",
-            "CHAT_THINKING_SETTING_HELP": "sol does some thinking before replying. choose how much you want to see.",
-            "CHAT_THINKING_SETTING_LABEL": "thinking surfaces",
-            "TALENT_LABEL_EXEC_ERRORED": "couldn't finish the change",
-            "TALENT_LABEL_EXEC_FINISHED": "made the change",
-            "TALENT_LABEL_EXEC_RUNNING": "making that change\u2026",
-            "TALENT_LABEL_READ_ERRORED": "couldn't finish reading your journal",
-            "TALENT_LABEL_READ_FINISHED": "read your journal",
-            "TALENT_LABEL_READ_RUNNING": "reading your journal\u2026",
-            "TALENT_LABEL_SUPPORT_ERRORED": "couldn't reach solstone support",
-            "TALENT_LABEL_SUPPORT_FINISHED": "reached solstone support",
-            "TALENT_LABEL_SUPPORT_RUNNING": "reaching solstone support\u2026"
-          },
           "install_copy": {
             "STT_DETECTED_MEMORY_TEMPLATE": "{available_gb} GB of free memory detected on this machine.",
             "STT_DETECTED_MEMORY_UNKNOWN": "free memory on this machine could not be detected.",
@@ -19250,8 +18506,7 @@
             "THROTTLE_MUTE_WINDOW": "mute-window",
             "THROTTLE_RATE_FLOOR": "rate-floor",
             "TRIGGER_LABEL_SOL_INITIATED": "sol_initiated"
-          },
-          "thinking_surfaces": "on_tap"
+          }
         },
         "normalized_paths": [],
         "status": 200
@@ -19637,19 +18892,6 @@
         "normalized_paths": [],
         "sent": {
           "days": 0
-        },
-        "status": 400
-      },
-      "PUT chat.bad-thinking-surfaces": {
-        "digest": "ae7331c072e5baa9",
-        "normalized": {
-          "detail": "invalid thinking_surfaces",
-          "error": "I couldn't save that setting because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "thinking_surfaces": "sideways"
         },
         "status": 400
       },
@@ -20072,15 +19314,6 @@
         "normalized_paths": [],
         "status": 200
       },
-      "GET api/chat": {
-        "content_type": "application/json",
-        "digest": "a0898571830ebb48",
-        "normalized": {
-          "thinking_surfaces": "on_tap"
-        },
-        "normalized_paths": [],
-        "status": 200
-      },
       "GET api/config": {
         "content_type": "application/json",
         "digest": "f9bb789510437cd8",
@@ -20448,55 +19681,8 @@
       },
       "GET api/state": {
         "content_type": "application/json",
-        "digest": "bc408323286d0427",
+        "digest": "a109fe58502e8df9",
         "normalized": {
-          "chat_copy": {
-            "CHAT_CLOSER_DIFFERENT_ANGLE_SUFFIX": "Want me to try a different angle?",
-            "CHAT_CLOSER_LOOP_EXHAUSTED_PREFIX": "Here's what I have so far:",
-            "CHAT_CLOSER_SUPPORT_SEND_FAILED": "I couldn't finish reaching solstone support, so nothing was sent. Want me to try again?",
-            "CHAT_CLOSER_TALENT_ERRORED_FORMAT": "I couldn't finish that lookup \u2014 {reason}. Want to try a different angle, or rephrase the question?",
-            "CHAT_CLOSER_TALENT_ERRORED_GENERIC": "I couldn't finish that lookup. Want to try a different angle, or rephrase the question?",
-            "CHAT_DEFERRED_NOT_ANALYZED": "Today's segments aren't analyzed yet \u2014 they'll process during your deferred window.",
-            "CHAT_DISPATCH_ORIGIN_PREFIX": "in reply to:",
-            "CHAT_ERROR_DETAIL_COLLAPSER_LABEL": "hide details",
-            "CHAT_ERROR_DETAIL_EXPANDER_LABEL": "show details",
-            "CHAT_JOBS_INDICATOR_PLURAL_FORMAT": "sol is running {count} jobs",
-            "CHAT_JOBS_INDICATOR_SINGULAR": "sol is running 1 job",
-            "CHAT_LIVENESS_TASK_FORMAT": "{label} {task}",
-            "CHAT_LIVENESS_THINKING": "sol is thinking\u2026",
-            "CHAT_OFFER_SUPPORT_DECLINE": "Okay \u2014 I'll keep this local. Tell me if you'd like me to bring in solstone support after all.",
-            "CHAT_OFFER_SUPPORT_PROMPT": "Sounds like something's not working \u2014 want me to bring in solstone support?",
-            "CHAT_QUEUE_DEPTH_CAP_MESSAGE": "Give sol a moment to catch up \u2014 you have 10 messages waiting.",
-            "CHAT_SUPPORT_ATTACH_FILED_FORMAT": "I added that to solstone support ticket #{ticket_id}.",
-            "CHAT_SUPPORT_CLOSE_SUBMITTED": "I closed that support ticket. Closing it removes it from solstone support's open list; only a minimal closed record is kept.",
-            "CHAT_SUPPORT_DRAFT_CANCELLED": "Okay \u2014 nothing was sent to solstone support.",
-            "CHAT_SUPPORT_DRAFT_READY": "Here's the support request I put together \u2014 look it over before anything goes to solstone support.",
-            "CHAT_SUPPORT_IN_PROGRESS": "I'm still working on the last support request for this \u2014 try again in a moment.",
-            "CHAT_SUPPORT_RECONSENT_NEEDED": "solstone support's terms changed; want me to try again?",
-            "CHAT_SUPPORT_RESOLVED_SUBMITTED": "I accepted the proposed resolution and closed that support ticket. It is no longer in solstone support's open list; only a minimal closed record is kept.",
-            "CHAT_SUPPORT_STILL_NEED_HELP_SUBMITTED": "I let solstone support know you still need help. The proposed close was cancelled, and the ticket stays open.",
-            "CHAT_SUPPORT_SUBMIT_AMBIGUOUS": "I couldn't confirm whether solstone support received that. Check with solstone support before resending so we don't file it twice.",
-            "CHAT_SUPPORT_SUBMIT_FAILED": "I couldn't finish reaching solstone support, so nothing was sent. Want me to try again?",
-            "CHAT_SUPPORT_SUBMIT_FILED_FORMAT": "I sent that to solstone support as ticket #{ticket_id}.",
-            "CHAT_TALENT_QUEUED_LABEL": "waiting to start\u2026",
-            "CHAT_THINKING_COLLAPSER_LABEL": "hide thinking",
-            "CHAT_THINKING_ENGINE_NOT_CHOSEN": "no thinking engine is chosen yet. choose one in thinking so i can answer from your journal.",
-            "CHAT_THINKING_EXPANDER_LABEL": "show thinking",
-            "CHAT_THINKING_OPT_ALWAYS": "always show",
-            "CHAT_THINKING_OPT_NEVER": "never show",
-            "CHAT_THINKING_OPT_ON_TAP": "show on tap",
-            "CHAT_THINKING_SETTING_HELP": "sol does some thinking before replying. choose how much you want to see.",
-            "CHAT_THINKING_SETTING_LABEL": "thinking surfaces",
-            "TALENT_LABEL_EXEC_ERRORED": "couldn't finish the change",
-            "TALENT_LABEL_EXEC_FINISHED": "made the change",
-            "TALENT_LABEL_EXEC_RUNNING": "making that change\u2026",
-            "TALENT_LABEL_READ_ERRORED": "couldn't finish reading your journal",
-            "TALENT_LABEL_READ_FINISHED": "read your journal",
-            "TALENT_LABEL_READ_RUNNING": "reading your journal\u2026",
-            "TALENT_LABEL_SUPPORT_ERRORED": "couldn't reach solstone support",
-            "TALENT_LABEL_SUPPORT_FINISHED": "reached solstone support",
-            "TALENT_LABEL_SUPPORT_RUNNING": "reaching solstone support\u2026"
-          },
           "install_copy": {
             "STT_DETECTED_MEMORY_TEMPLATE": "{available_gb} GB of free memory detected on this machine.",
             "STT_DETECTED_MEMORY_UNKNOWN": "free memory on this machine could not be detected.",
@@ -20564,8 +19750,7 @@
             "THROTTLE_MUTE_WINDOW": "mute-window",
             "THROTTLE_RATE_FLOOR": "rate-floor",
             "TRIGGER_LABEL_SOL_INITIATED": "sol_initiated"
-          },
-          "thinking_surfaces": "on_tap"
+          }
         },
         "normalized_paths": [],
         "status": 200
@@ -20942,19 +20127,6 @@
         "normalized_paths": [],
         "sent": {
           "days": 0
-        },
-        "status": 400
-      },
-      "PUT chat.bad-thinking-surfaces": {
-        "digest": "ae7331c072e5baa9",
-        "normalized": {
-          "detail": "invalid thinking_surfaces",
-          "error": "I couldn't save that setting because one value was invalid.",
-          "reason_code": "invalid_config_value"
-        },
-        "normalized_paths": [],
-        "sent": {
-          "thinking_surfaces": "sideways"
         },
         "status": 400
       },

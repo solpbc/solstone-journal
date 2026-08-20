@@ -76,13 +76,6 @@
     });
   }
 
-  function applyThinkingSurfaces(root, value) {
-    if (!root || typeof root.querySelectorAll !== 'function') return;
-    root.querySelectorAll('input[name="thinking_surfaces"]').forEach((input) => {
-      input.checked = input.value === value;
-    });
-  }
-
   function formatTitle(template, title) {
     return String(template || '').split('{title}').join(String(title || ''));
   }
@@ -212,7 +205,6 @@
   const SettingsRender = {
     applyCopy,
     applyCopyAttr,
-    applyThinkingSurfaces,
     buildStreamOverridesDrawerProps,
     formatTitle,
     redactionRulesLine,

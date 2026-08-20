@@ -13,7 +13,6 @@ fn ac15_settings_sources_allow_only_bounded_retention_executor_spawn() {
     let sources = [
         ("lib.rs", include_str!("lib.rs")),
         ("assets.rs", include_str!("assets.rs")),
-        ("chat.rs", include_str!("chat.rs")),
         ("convey.rs", include_str!("convey.rs")),
         ("corpus.rs", include_str!("corpus.rs")),
         ("config.rs", include_str!("config.rs")),

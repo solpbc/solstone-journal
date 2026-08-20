@@ -13,11 +13,10 @@ use serde_json::{Value, json};
 use solstone_core_journal_config_write::{LockOptions, hold_lock};
 use tower::ServiceExt;
 
-const MUTATION_PAIRS: [(&str, &str); 19] = [
+const MUTATION_PAIRS: [(&str, &str); 18] = [
     ("PUT", "/app/settings/api/config"),
     ("POST", "/app/settings/api/config"),
     ("PUT", "/app/settings/api/sol_voice"),
-    ("PUT", "/app/settings/api/chat"),
     ("POST", "/app/settings/api/validate-keys"),
     ("PUT", "/app/settings/api/vision"),
     ("PUT", "/app/settings/api/observe"),
@@ -236,7 +235,7 @@ fn ac1_mutations_replay_status_digest_config_and_key_deltas() {
     let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations");
-    assert_eq!(cases.len(), 21);
+    assert_eq!(cases.len(), 20);
     crate::retention_tests::without_executor(|| {
         for (name, case) in cases {
             let root = root_from(&case["config_before"]);
@@ -425,7 +424,7 @@ fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
     let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations_malformed");
-    assert_eq!(cases.len(), 21);
+    assert_eq!(cases.len(), 20);
     crate::retention_tests::without_executor(|| {
         for (name, case) in cases {
             let root = root_from(&case["config_before"]);
@@ -558,7 +557,6 @@ fn refusal_route(name: &str) -> (&'static str, &'static str) {
             ("DELETE", "/app/settings/api/facet/no-such")
         }
         "POST facet.rename-no-name" => ("POST", "/app/settings/api/facet/no-such/rename"),
-        "PUT chat.bad-thinking-surfaces" => ("PUT", "/app/settings/api/chat"),
         "PUT sol_voice.not-object" => ("PUT", "/app/settings/api/sol_voice"),
         "PUT storage.bad-mode" | "PUT storage.bad-days" | "PUT storage.logs-bad-days" => {
             ("PUT", "/app/settings/api/storage")
@@ -639,8 +637,8 @@ async fn ac3_refusals_replay_across_all_non_corrupt_phases() {
             total += 1;
         }
     }
-    assert_eq!(per_phase, Some(27));
-    assert_eq!(total, 27 * 5);
+    assert_eq!(per_phase, Some(26));
+    assert_eq!(total, 26 * 5);
 }
 
 #[tokio::test]
@@ -728,21 +726,6 @@ async fn ac9_off_journal_writes_are_directly_observable() {
     let (status, _) = request(
         crate::test_support::shell_router(root.path()),
         "PUT",
-        "/app/settings/api/chat",
-        Some(&json!({"thinking_surfaces":"always"})),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        serde_json::from_slice::<Value>(
-            &fs::read(root.path().join("config/chat.json")).expect("chat")
-        )
-        .expect("JSON")["thinking_surfaces"],
-        "always"
-    );
-    let (status, _) = request(
-        crate::test_support::shell_router(root.path()),
-        "PUT",
         "/app/settings/api/sync",
         Some(&json!({"plaud":{"enabled":true}})),
     )
@@ -758,7 +741,7 @@ async fn ac9_off_journal_writes_are_directly_observable() {
 }
 
 #[tokio::test]
-async fn ac10_config_busy_routes_and_chat_timeout_twin() {
+async fn ac10_config_busy_routes() {
     let options = LockOptions {
         timeout: Duration::from_millis(1),
         poll_interval: Duration::from_millis(1),
@@ -796,20 +779,6 @@ async fn ac10_config_busy_routes_and_chat_timeout_twin() {
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{path}");
         assert_eq!(response["reason_code"], "config_busy", "{path}");
     }
-    let root = crate::test_support::phase_root("rich");
-    fs::create_dir_all(root.path().join("config")).expect("config directory");
-    fs::write(root.path().join("config/chat.json"), "{}\n").expect("chat config");
-    let _lock = hold_lock(root.path().join("config/chat.json"), LockOptions::default())
-        .expect("held chat lock");
-    let (status, response) = request(
-        crate::routes_with_lock_options(root.path().to_owned(), options),
-        "PUT",
-        "/app/settings/api/chat",
-        Some(&json!({"thinking_surfaces":"always"})),
-    )
-    .await;
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(response["reason_code"], "settings_operation_failed");
 }
 
 #[tokio::test]
@@ -845,8 +814,8 @@ async fn ac11_env_write_persists_masks_and_clears_stale_validation() {
 }
 
 #[tokio::test]
-async fn ac12_explicit_nineteen_pair_inventory() {
-    assert_eq!(MUTATION_PAIRS.len(), 19);
+async fn ac12_explicit_eighteen_pair_inventory() {
+    assert_eq!(MUTATION_PAIRS.len(), 18);
     let root = crate::test_support::populated_root();
     for (method, path) in MUTATION_PAIRS {
         let response = crate::test_support::shell_router(root.path())

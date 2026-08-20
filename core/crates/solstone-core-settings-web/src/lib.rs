@@ -13,7 +13,6 @@ use solstone_core_journal_io::LockOptions;
 
 mod activities;
 mod assets;
-pub mod chat;
 mod config;
 mod convey;
 mod facets;
@@ -51,8 +50,6 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let sol_voice_get_root = journal_root.clone();
     let sol_voice_put_root = journal_root.clone();
     let throttled_root = journal_root.clone();
-    let chat_get_root = journal_root.clone();
-    let chat_put_root = journal_root.clone();
     let keys_root = journal_root.clone();
     let vision_get_root = journal_root.clone();
     let vision_put_root = journal_root.clone();
@@ -123,11 +120,6 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         .route(
             "/app/settings/api/sol_voice/throttled",
             get(move |query| sol_voice::throttled(throttled_root.clone(), query)),
-        )
-        .route(
-            "/app/settings/api/chat",
-            get(move || chat::get(chat_get_root.clone()))
-                .put(move |body| chat::update(chat_put_root.clone(), config_lock_options, body)),
         )
         .route(
             "/app/settings/api/validate-keys",

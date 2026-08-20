@@ -289,7 +289,6 @@ fn main() {
             true,
             "install_copy.rs",
         ),
-        (manifest.join("assets/chat_copy.py"), false, "chat_copy.rs"),
         (
             manifest.join("assets/sol_initiated_copy.py"),
             false,
