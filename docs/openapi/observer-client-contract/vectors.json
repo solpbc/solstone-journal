@@ -41,42 +41,6 @@
     },
     {
       "decision": {
-        "accepted": false,
-        "kind": "chat_open_request",
-        "missing_field_behavior": "absent_malformed_empty_or_blank_rejected",
-        "reason_code": "missing_required_field"
-      },
-      "fixture_id": "recorded.chat.openSolChatRequest.missing",
-      "id": "chat.openSolChatRequest.missing_required_field",
-      "kind": "recorded",
-      "observed_status": 400,
-      "pointer_hashes": {
-        "/reason_code": "c5e107146d3eafcb710f0f9e5f463aaf8b48e0b066d794a8405a81f6b131ca4c"
-      },
-      "pointers": [
-        "/reason_code"
-      ]
-    },
-    {
-      "decision": {
-        "accepted": true,
-        "kind": "chat_open_request",
-        "missing_field_behavior": "non_empty_trimmed_request_id_required",
-        "result": "ok_true"
-      },
-      "fixture_id": "recorded.chat.openSolChatRequest.ok",
-      "id": "chat.openSolChatRequest.ok",
-      "kind": "recorded",
-      "observed_status": 200,
-      "pointer_hashes": {
-        "/ok": "a17fcf0a2f50e2d495e4f90ce263410edc183add6c62699a2facbccf60410f74"
-      },
-      "pointers": [
-        "/ok"
-      ]
-    },
-    {
-      "decision": {
         "accepted": true,
         "auth_form": "authorization_bearer",
         "kind": "auth_header_form",

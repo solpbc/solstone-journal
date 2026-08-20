@@ -207,10 +207,10 @@ The registry should include the documented tracts from `docs/CALLOSUM.md:33-148`
 - `notification`: `*`
 - `navigate`: `request`
 
-It should also include the implemented `chat` tract from
-`solstone/convey/chat_stream.py:35-74` and `solstone/convey/chat_stream.py:349-366`:
-
-- `chat`: `owner_message`, `sol_message`, `talent_spawned`, `talent_finished`, `talent_errored`, `reflection_ready`, `chat_queue_depth`, `chat_error`, `sol_chat_request`, `sol_chat_request_superseded`, `owner_chat_open`, `owner_chat_dismissed`, `support_draft`, `result`, `support_submit_claim`
+The published registry names a closed `work` tract with 8 events, in this
+order: `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`,
+`result`, `reflection_ready`, `support_draft`, `support_submit_claim`. There is
+no Python producer anymore, and the registry is hand-edited JSON.
 
 Implementation should also fix the stale non-generated prose in
 `docs/CONVEY.md`: the route is currently wrong at `docs/CONVEY.md:131-132`, and
@@ -409,11 +409,10 @@ or component-reference escape hatch. Field-only dataclasses are too rigid for
 `oneOf`, top-level arrays, and `text/event-stream`, but frozen dataclasses remain
 feasible with that minimal extension.
 
-Documentation mismatch: the assignment context says `docs/CALLOSUM.md:33-148`
-contains `chat`, but that range does not. The implemented chat tract is emitted
-from `solstone/convey/chat_stream.py:349-366`, with valid event names defined at
-`solstone/convey/chat_stream.py:35-74`. The generated registry should include
-chat from source and can become the source of truth for the CONVEY.md block.
+The published registry names a closed `work` tract with 8 events, in this
+order: `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`,
+`result`, `reflection_ready`, `support_draft`, `support_submit_claim`. There is
+no Python producer anymore, and the registry is hand-edited JSON.
 
 Contract assumption to state: non-exempt routes can redirect to setup before
 reaching handlers when setup is incomplete (`solstone/convey/root.py:120-122`).

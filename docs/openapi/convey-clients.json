@@ -46,7 +46,6 @@
               "backup_not_confirmed",
               "backup_operation_failed",
               "backup_unavailable",
-              "chat_queue_full",
               "config_busy",
               "convey_busy",
               "convey_operation_failed",
@@ -249,508 +248,6 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/chat": {
-      "post": {
-        "description": "Accept an owner chat message and enqueue or start the chat turn.",
-        "operationId": "chat.postMessage",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "app": "today",
-                "facet": "work",
-                "message": "What changed this morning?",
-                "path": "/app/today",
-                "source": {
-                  "kind": "native"
-                }
-              },
-              "schema": {
-                "additionalProperties": true,
-                "properties": {
-                  "app": {
-                    "type": "string"
-                  },
-                  "facet": {
-                    "type": "string"
-                  },
-                  "message": {
-                    "type": "string"
-                  },
-                  "path": {
-                    "type": "string"
-                  },
-                  "source": {
-                    "type": "object"
-                  }
-                },
-                "required": [
-                  "message"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "queue_depth": 0,
-                  "queued": false,
-                  "use_id": "1781803200000"
-                },
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "queue_depth": {
-                      "type": "integer"
-                    },
-                    "queued": {
-                      "type": "boolean"
-                    },
-                    "use_id": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "use_id",
-                    "queued",
-                    "queue_depth"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Chat message accepted."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Message text was missing.",
-            "x-reason-codes": [
-              "missing_required_field"
-            ]
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Access gate rejected a revoked paired-link identity.",
-            "x-reason-codes": [
-              "pl_revoked"
-            ]
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/Error"
-                    },
-                    {
-                      "additionalProperties": true,
-                      "properties": {
-                        "queue_depth": {
-                          "type": "integer"
-                        }
-                      },
-                      "required": [
-                        "queue_depth"
-                      ],
-                      "type": "object"
-                    }
-                  ]
-                }
-              }
-            },
-            "description": "Chat queue was full.",
-            "x-reason-codes": [
-              "chat_queue_full"
-            ]
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Agent service was unavailable.",
-            "x-reason-codes": [
-              "agent_unavailable"
-            ]
-          }
-        },
-        "summary": "Post chat message",
-        "tags": [
-          "chat"
-        ]
-      }
-    },
-    "/api/chat/offer/decline": {
-      "post": {
-        "description": "Record that the owner declined the pending support offer.",
-        "operationId": "chat.declineOffer",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "ok": true
-                },
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Support offer declined."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Access gate rejected a revoked paired-link identity.",
-            "x-reason-codes": [
-              "pl_revoked"
-            ]
-          }
-        },
-        "summary": "Decline support offer",
-        "tags": [
-          "chat"
-        ]
-      }
-    },
-    "/api/chat/session": {
-      "get": {
-        "description": "Return the reduced state for today's chat stream.",
-        "operationId": "chat.session",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "active_talents": [],
-                  "chat_error": null,
-                  "completed_talents": [],
-                  "errored_talents": [],
-                  "latest_sol_message": null,
-                  "queue_depth": 0,
-                  "queued_talents": []
-                },
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "active_talents": {
-                      "items": {},
-                      "type": "array"
-                    },
-                    "chat_error": {
-                      "additionalProperties": true,
-                      "type": [
-                        "object",
-                        "null"
-                      ]
-                    },
-                    "completed_talents": {
-                      "items": {},
-                      "type": "array"
-                    },
-                    "errored_talents": {
-                      "items": {},
-                      "type": "array"
-                    },
-                    "latest_sol_message": {
-                      "additionalProperties": true,
-                      "type": [
-                        "object",
-                        "null"
-                      ]
-                    },
-                    "queue_depth": {
-                      "type": "integer"
-                    },
-                    "queued_talents": {
-                      "items": {},
-                      "type": "array"
-                    }
-                  },
-                  "required": [
-                    "latest_sol_message",
-                    "active_talents",
-                    "queued_talents",
-                    "completed_talents",
-                    "errored_talents",
-                    "chat_error",
-                    "queue_depth"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Current chat session state. Nested message and talent payloads remain open."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Access gate rejected a revoked paired-link identity.",
-            "x-reason-codes": [
-              "pl_revoked"
-            ]
-          }
-        },
-        "summary": "Get chat session",
-        "tags": [
-          "chat"
-        ]
-      }
-    },
-    "/api/chat/sol_chat_request/open": {
-      "post": {
-        "description": "Record that the owner opened a sol-initiated chat request. The request identifier must be a non-empty value after trimming.",
-        "operationId": "chat.openSolChatRequest",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "request_id": "sol-chat-1781803200000"
-              },
-              "schema": {
-                "additionalProperties": true,
-                "properties": {
-                  "request_id": {
-                    "minLength": 1,
-                    "pattern": "\\S",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "request_id"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "ok": true
-                },
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Sol-initiated chat request opened."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Request identifier was missing, malformed, empty, or blank.",
-            "x-reason-codes": [
-              "missing_required_field"
-            ]
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Access gate rejected a revoked paired-link identity.",
-            "x-reason-codes": [
-              "pl_revoked"
-            ]
-          }
-        },
-        "summary": "Open sol chat request",
-        "tags": [
-          "chat"
-        ]
-      }
-    },
-    "/api/chat/start": {
-      "post": {
-        "description": "Start a sol-initiated chat request from the CLI.",
-        "operationId": "chat.start",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "category": "planning",
-                "dedupe": "morning-plan",
-                "dedupe_window": "24h",
-                "message": "Want to review the priorities?",
-                "since_ts": 1781803200000,
-                "summary": "Check in about the morning plan",
-                "trigger_talent": "schedule"
-              },
-              "schema": {
-                "additionalProperties": true,
-                "properties": {
-                  "category": {
-                    "type": "string"
-                  },
-                  "dedupe": {
-                    "type": "string"
-                  },
-                  "dedupe_window": {
-                    "type": "string"
-                  },
-                  "message": {
-                    "type": "string"
-                  },
-                  "since_ts": {
-                    "type": "integer"
-                  },
-                  "summary": {
-                    "type": "string"
-                  },
-                  "trigger_talent": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "summary",
-                  "category",
-                  "dedupe",
-                  "since_ts",
-                  "trigger_talent"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "example": {
-                  "category": "planning",
-                  "dedupe": "morning-plan",
-                  "dedupe_window": "24h",
-                  "message": "Want to review the priorities?",
-                  "request_id": "sol-chat-1781803200000",
-                  "since_ts": 1781803200000,
-                  "summary": "Check in about the morning plan",
-                  "trigger_talent": "schedule"
-                },
-                "schema": {
-                  "additionalProperties": true,
-                  "properties": {
-                    "category": {
-                      "type": "string"
-                    },
-                    "dedupe": {
-                      "type": "string"
-                    },
-                    "dedupe_window": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "since_ts": {
-                      "type": "integer"
-                    },
-                    "summary": {
-                      "type": "string"
-                    },
-                    "trigger_talent": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "request_id",
-                    "summary",
-                    "category",
-                    "dedupe",
-                    "since_ts",
-                    "trigger_talent"
-                  ],
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Sol-initiated chat request started."
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "The chat start request was invalid.",
-            "x-reason-codes": [
-              "invalid_request_value"
-            ]
-          }
-        },
-        "summary": "Start sol chat request",
-        "tags": [
-          "chat"
-        ]
-      }
-    },
     "/api/health/full": {
       "get": {
         "description": "Return the full journal-data trust report for one day.",
@@ -10129,7 +9626,7 @@
                 "description": "It timed out after submitting a prompt.",
                 "product": "solstone",
                 "severity": "medium",
-                "subject": "Chat stopped responding"
+                "subject": "A device stopped checking in"
               },
               "schema": {
                 "additionalProperties": true,
@@ -12238,16 +11735,15 @@
     },
     "/sse/events": {
       "get": {
-        "description": "Open the root Server-Sent Events feed for Callosum events. Frames: heartbeat comments `: heartbeat\\n\\n`; data frames `data: {json}\\n\\n` carrying CallosumEvent JSON for all tracts, including chat. This stream emits no `event: error` frames.",
+        "description": "Open the root Server-Sent Events feed for Callosum events. Frames: heartbeat comments `: heartbeat\\n\\n`; data frames `data: {json}\\n\\n` carrying CallosumEvent JSON for all tracts. This stream emits no `event: error` frames.",
         "operationId": "callosum.rootEvents",
         "responses": {
           "200": {
             "content": {
               "text/event-stream": {
                 "example": {
-                  "event": "owner_message",
-                  "message": "What changed?",
-                  "tract": "chat",
+                  "tract": "observe",
+                  "event": "status",
                   "ts": 1781803200000
                 },
                 "schema": {
@@ -12255,25 +11751,7 @@
                 }
               }
             },
-            "description": "Callosum event stream. Heartbeat frames are comments `: heartbeat\\n\\n`; data frames are `data: {json}\\n\\n` and carry CallosumEvent JSON for all tracts, including chat.",
-            "x-chat-events": {
-              "classification": "extensible",
-              "description": "Native-client-interest subset of CallosumEvent kinds on tract 'chat'. This is not an exhaustive stream vocabulary; root SSE can carry other tracts and events. Payloads remain open (CallosumEvent.additionalProperties).",
-              "id": "root.chat.native_interest_kinds",
-              "kinds": [
-                "owner_message",
-                "sol_message",
-                "talent_queued",
-                "talent_spawned",
-                "talent_finished",
-                "talent_errored",
-                "chat_queue_depth",
-                "result",
-                "chat_error"
-              ],
-              "stream_exhaustive": false,
-              "unknown_value_behavior": "preserve"
-            },
+            "description": "Callosum event stream. Heartbeat frames are comments `: heartbeat\\n\\n`; data frames are `data: {json}\\n\\n` and carry CallosumEvent JSON for all tracts.",
             "x-sse-frame-kinds": {
               "classification": "closed",
               "id": "callosum.rootEvents.sse_frames",
@@ -12309,24 +11787,6 @@
     "activity": [
       "live",
       "recorded"
-    ],
-    "chat": [
-      "owner_message",
-      "sol_message",
-      "talent_queued",
-      "talent_spawned",
-      "talent_finished",
-      "talent_errored",
-      "reflection_ready",
-      "chat_queue_depth",
-      "chat_error",
-      "sol_chat_request",
-      "sol_chat_request_superseded",
-      "owner_chat_open",
-      "owner_chat_dismissed",
-      "support_draft",
-      "result",
-      "support_submit_claim"
     ],
     "cortex": [
       "request",
@@ -12413,6 +11873,16 @@
       "memory_throttle_started",
       "memory_throttle_completed",
       "daily_complete"
+    ],
+    "work": [
+      "talent_queued",
+      "talent_spawned",
+      "talent_finished",
+      "talent_errored",
+      "result",
+      "reflection_ready",
+      "support_draft",
+      "support_submit_claim"
     ]
   },
   "x-vocabularies": {
@@ -12422,24 +11892,6 @@
         "activity": [
           "live",
           "recorded"
-        ],
-        "chat": [
-          "owner_message",
-          "sol_message",
-          "talent_queued",
-          "talent_spawned",
-          "talent_finished",
-          "talent_errored",
-          "reflection_ready",
-          "chat_queue_depth",
-          "chat_error",
-          "sol_chat_request",
-          "sol_chat_request_superseded",
-          "owner_chat_open",
-          "owner_chat_dismissed",
-          "support_draft",
-          "result",
-          "support_submit_claim"
         ],
         "cortex": [
           "request",
@@ -12526,9 +11978,35 @@
           "memory_throttle_started",
           "memory_throttle_completed",
           "daily_complete"
+        ],
+        "work": [
+          "talent_queued",
+          "talent_spawned",
+          "talent_finished",
+          "talent_errored",
+          "result",
+          "reflection_ready",
+          "support_draft",
+          "support_submit_claim"
         ]
       },
       "unknown_value_behavior": "preserve"
+    },
+    "callosum.work.event": {
+      "classification": "closed",
+      "id": "callosum.work.event",
+      "source_pointer": "/x-callosum-registry/work",
+      "unknown_value_behavior": "reject",
+      "values": [
+        "talent_queued",
+        "talent_spawned",
+        "talent_finished",
+        "talent_errored",
+        "result",
+        "reflection_ready",
+        "support_draft",
+        "support_submit_claim"
+      ]
     }
   }
 }

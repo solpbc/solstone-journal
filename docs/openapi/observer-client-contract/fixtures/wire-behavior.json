@@ -72,9 +72,8 @@
       "id": "example.callosum.rootEvents.response.200.text-event-stream.default",
       "kind": "openapi-example",
       "payload": {
-        "event": "owner_message",
-        "message": "What changed?",
-        "tract": "chat",
+        "event": "status",
+        "tract": "observe",
         "ts": 1781803200000
       },
       "provenance": {
@@ -82,40 +81,6 @@
         "media_type": "text/event-stream",
         "named_variant": "default",
         "operation_id": "callosum.rootEvents",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.chat.openSolChatRequest.request.body.application-json.default",
-      "kind": "openapi-example",
-      "payload": {
-        "request_id": "sol-chat-1781803200000"
-      },
-      "provenance": {
-        "direction": "request",
-        "media_type": "application/json",
-        "named_variant": "default",
-        "operation_id": "chat.openSolChatRequest",
-        "status": null
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "example.chat.openSolChatRequest.response.200.application-json.default",
-      "kind": "openapi-example",
-      "payload": {
-        "ok": true
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "default",
-        "operation_id": "chat.openSolChatRequest",
         "status": 200
       },
       "schema_validation": {
@@ -431,42 +396,6 @@
         "media_type": "application/json",
         "named_variant": "observer_handle",
         "operation_id": "observer.ingestSegments",
-        "status": 200
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.chat.openSolChatRequest.missing",
-      "kind": "recorded-response",
-      "payload": {
-        "detail": "request_id required",
-        "error": "I couldn't find a required field.",
-        "reason_code": "missing_required_field"
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "missing_required_field",
-        "operation_id": "chat.openSolChatRequest",
-        "status": 400
-      },
-      "schema_validation": {
-        "validates": true
-      }
-    },
-    {
-      "id": "recorded.chat.openSolChatRequest.ok",
-      "kind": "recorded-response",
-      "payload": {
-        "ok": true
-      },
-      "provenance": {
-        "direction": "response",
-        "media_type": "application/json",
-        "named_variant": "ok",
-        "operation_id": "chat.openSolChatRequest",
         "status": 200
       },
       "schema_validation": {

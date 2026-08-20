@@ -14,7 +14,7 @@
     }
   ],
   "bundle_schema_identity": "solstone.observer-client-contract-bundle.schema.v1",
-  "bundle_semver": "7.0.3",
+  "bundle_semver": "8.0.0",
   "component_closure": [
     "CallosumEvent",
     "Error",
@@ -34,19 +34,19 @@
   "files": [
     {
       "path": "consumer-audit.json",
-      "sha256": "41440f44de59c94cbc780c5ba44e7059b1e725f0a0a7a04aaafdafb0b8c47a07"
+      "sha256": "3f9938b38994ea2a3a19ea154152e5dc8b3f24843e53eb1f14b6fb33d58e6ac9"
     },
     {
       "path": "fixtures/wire-behavior.json",
-      "sha256": "b6ee862c6d0151b58fb5c2b6f692c7ddc933470007ec6104e1718faef1dbb2db"
+      "sha256": "b9ed72f3c3de4a890978079fcf286ddad212c6ac99bd32d3e080afdd5a787dc4"
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "d1f51fe4e0988c8f4c6ba3fa784c46e3f257c07b52cae57f41910be03e91aa6e"
+      "sha256": "46eb05e6889f9176446fb315585a0e15a57600aead9ed1aaf948a93eee596c35"
     },
     {
       "path": "vectors.json",
-      "sha256": "7a5132c57b61e2a615a22719abc77e40b708d4a6636c45690cc522dc26c36dec"
+      "sha256": "a4cb9712bf5a6679a2fefc6b94f1618dfbd8e7f227364103d70095a8dd6bce1f"
     }
   ],
   "generator_identity": "solstone.convey.contract.observer_bundle.v1",
@@ -68,18 +68,6 @@
       "path": "solstone/apps/observer/contract.py",
       "role": "code_adjacent_extension",
       "sha256": "acfca9d0843a4c53b9db11c36d03c3a340d62f149fa50f6a3c934007c2a736f2"
-    },
-    {
-      "id": "extension.root_chat_native_subset",
-      "path": "solstone/convey/root_contract.py",
-      "role": "code_adjacent_extension",
-      "sha256": "26e7fe79cf78aa0a3c09e5074ce51136ccfb86b7aa0e33a16c18c69c746e99aa"
-    },
-    {
-      "id": "fragment.chat",
-      "path": "solstone/convey/chat_contract.py",
-      "role": "code_adjacent_fragment",
-      "sha256": "435aa16a37c8e58af281e5e312997588705eb076c0b0075be6a0ac1079895483"
     },
     {
       "id": "fragment.link",
@@ -104,30 +92,6 @@
       "path": "solstone/convey/contract/assemble.py",
       "role": "openapi_source",
       "sha256": "03f547c2d14d282f4ecf1c30ae754b241adbcf6ace0aae3298bd3ea27f9624a6"
-    },
-    {
-      "id": "producer.chat_routes",
-      "path": "solstone/convey/chat.py",
-      "role": "producer",
-      "sha256": "859934fccbc0c8dc6cc77671b8e5541fe648bebf36a43cf951e5981876044709"
-    },
-    {
-      "id": "producer.chat_sol_initiated_copy",
-      "path": "solstone/convey/sol_initiated/copy.py",
-      "role": "producer",
-      "sha256": "c8c9956a4c4143d92ce78d0f9000c104b6ee9720c357ab2a233250608a24d09a"
-    },
-    {
-      "id": "producer.chat_sol_initiated_events",
-      "path": "solstone/convey/sol_initiated/events.py",
-      "role": "producer",
-      "sha256": "9ec36a36baa53ec631700cdb9a6989d41ce57e9d092e49f4e85c965b24bfc6e8"
-    },
-    {
-      "id": "producer.chat_stream",
-      "path": "solstone/convey/chat_stream.py",
-      "role": "producer",
-      "sha256": "9945f3615b6b7a44fb9049b4946ed8d5a28f6056c46ba60726fc79ff1c8b64b3"
     },
     {
       "id": "producer.observer_routes",
@@ -165,7 +129,6 @@
   "openapi_spec_version": "3.1.0",
   "operation_ids": [
     "callosum.rootEvents",
-    "chat.openSolChatRequest",
     "link.pair",
     "observer.callosumStream",
     "observer.ingestEvent",
@@ -231,24 +194,6 @@
         "activity": [
           "live",
           "recorded"
-        ],
-        "chat": [
-          "owner_message",
-          "sol_message",
-          "talent_queued",
-          "talent_spawned",
-          "talent_finished",
-          "talent_errored",
-          "reflection_ready",
-          "chat_queue_depth",
-          "chat_error",
-          "sol_chat_request",
-          "sol_chat_request_superseded",
-          "owner_chat_open",
-          "owner_chat_dismissed",
-          "support_draft",
-          "result",
-          "support_submit_claim"
         ],
         "cortex": [
           "request",
@@ -335,6 +280,16 @@
           "memory_throttle_started",
           "memory_throttle_completed",
           "daily_complete"
+        ],
+        "work": [
+          "talent_queued",
+          "talent_spawned",
+          "talent_finished",
+          "talent_errored",
+          "result",
+          "reflection_ready",
+          "support_draft",
+          "support_submit_claim"
         ]
       },
       "source_pointer": "/",
@@ -342,24 +297,18 @@
     },
     {
       "classification": "closed",
-      "id": "chat.openSolChatRequest.responses.400.reason_code",
-      "method": "POST",
-      "path": "/api/chat/sol_chat_request/open",
-      "source_pointer": "/paths/~1api~1chat~1sol_chat_request~1open/post/responses/400",
+      "id": "callosum.work.event",
+      "source_pointer": "/x-callosum-registry/work",
       "unknown_value_behavior": "reject",
       "values": [
-        "missing_required_field"
-      ]
-    },
-    {
-      "classification": "closed",
-      "id": "chat.openSolChatRequest.responses.403.reason_code",
-      "method": "POST",
-      "path": "/api/chat/sol_chat_request/open",
-      "source_pointer": "/paths/~1api~1chat~1sol_chat_request~1open/post/responses/403",
-      "unknown_value_behavior": "reject",
-      "values": [
-        "pl_revoked"
+        "talent_queued",
+        "talent_spawned",
+        "talent_finished",
+        "talent_errored",
+        "result",
+        "reflection_ready",
+        "support_draft",
+        "support_submit_claim"
       ]
     },
     {
@@ -642,33 +591,11 @@
       "values": [
         "ok"
       ]
-    },
-    {
-      "classification": "extensible",
-      "description": "Native-client-interest subset of CallosumEvent kinds on tract 'chat'. This is not an exhaustive stream vocabulary; root SSE can carry other tracts and events. Payloads remain open (CallosumEvent.additionalProperties).",
-      "id": "root.chat.native_interest_kinds",
-      "native_client_interest_subset": [
-        "owner_message",
-        "sol_message",
-        "talent_queued",
-        "talent_spawned",
-        "talent_finished",
-        "talent_errored",
-        "chat_queue_depth",
-        "result",
-        "chat_error"
-      ],
-      "source_pointer": "/paths/~1sse~1events/get/responses/200",
-      "stream_exhaustive": false,
-      "unknown_value_behavior": "preserve"
     }
   ],
   "windows_linux_rollout_targets": [
     {
-      "adoption_blocker_ids": [
-        "linux.sol_voice.path",
-        "linux.sol_voice.linux_notify_send"
-      ],
+      "adoption_blocker_ids": [],
       "consumer_identifier": "solstone-linux"
     },
     {

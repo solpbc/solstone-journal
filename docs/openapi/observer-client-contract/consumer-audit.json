@@ -106,46 +106,6 @@
     },
     {
       "classification": "bundled",
-      "consumer": "solstone-linux",
-      "path": "/app/observer/callosum",
-      "rationale": "Projected as observer.callosumStream for Linux chat bridge SSE.",
-      "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
-      "source_files": [
-        "crates/solstone-linux/src/chat_bridge.rs"
-      ]
-    },
-    {
-      "classification": "bundled",
-      "consumer": "solstone-linux",
-      "path": "/api/chat/sol_chat_request/open",
-      "rationale": "Projected as chat.openSolChatRequest for Linux chat bridge.",
-      "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
-      "source_files": [
-        "crates/solstone-linux/src/chat_bridge.rs"
-      ]
-    },
-    {
-      "classification": "browser_navigation_excluded_from_api_projection",
-      "consumer": "solstone-linux",
-      "path": "/app/chat/{day}#event-{index}",
-      "rationale": "Browser navigation anchor, not an HTTP API contract path.",
-      "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
-      "source_files": [
-        "crates/solstone-linux/src/chat_bridge.rs"
-      ]
-    },
-    {
-      "classification": "consumer_drift_adoption_blocker",
-      "consumer": "solstone-linux",
-      "path": "/api/sol_voice",
-      "rationale": "Consumer uses the old settings path and reads linux_notify_send; journal serves /app/settings/api/sol_voice and nests the Linux boolean under system_notifications.linux.",
-      "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
-      "source_files": [
-        "crates/solstone-linux/src/chat_bridge.rs"
-      ]
-    },
-    {
-      "classification": "bundled",
       "consumer": "solstone-windows",
       "path": "/app/network/pair",
       "rationale": "Projected as link.pair for Windows pairing.",
@@ -225,12 +185,6 @@
       "role": "production"
     },
     {
-      "consumer": "solstone-linux",
-      "path": "crates/solstone-linux/src/chat_bridge.rs",
-      "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef",
-      "role": "production"
-    },
-    {
       "consumer": "solstone-windows",
       "path": "crates/observer-pl/src/lib.rs",
       "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
@@ -249,28 +203,5 @@
       "role": "production"
     }
   ],
-  "settings_drift_findings": [
-    {
-      "consumer": "solstone-linux",
-      "id": "linux.sol_voice.path",
-      "rationale": "Linux reads /api/sol_voice, but the journal route is /app/settings/api/sol_voice.",
-      "status": "adoption_blocker",
-      "verified_citations": [
-        "core/crates/solstone-core-settings-web/src/lib.rs:117-121",
-        "core/crates/solstone-core-settings-web/src/router_contracts.rs:1-36"
-      ]
-    },
-    {
-      "consumer": "solstone-linux",
-      "id": "linux.sol_voice.linux_notify_send",
-      "rationale": "Linux reads top-level linux_notify_send, but the journal response exposes system_notifications.linux.",
-      "status": "adoption_blocker",
-      "verified_citations": [
-        "solstone/convey/sol_initiated/settings.py:41-42",
-        "solstone/convey/sol_initiated/settings.py:61-63",
-        "solstone/convey/sol_initiated/settings.py:211-213",
-        "core/crates/solstone-core-settings-web/src/build_contract.rs:29-37"
-      ]
-    }
-  ]
+  "settings_drift_findings": []
 }

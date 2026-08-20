@@ -10,24 +10,6 @@
       "live",
       "recorded"
     ],
-    "chat": [
-      "owner_message",
-      "sol_message",
-      "talent_queued",
-      "talent_spawned",
-      "talent_finished",
-      "talent_errored",
-      "reflection_ready",
-      "chat_queue_depth",
-      "chat_error",
-      "sol_chat_request",
-      "sol_chat_request_superseded",
-      "owner_chat_open",
-      "owner_chat_dismissed",
-      "support_draft",
-      "result",
-      "support_submit_claim"
-    ],
     "cortex": [
       "request",
       "start",
@@ -113,6 +95,16 @@
       "memory_throttle_started",
       "memory_throttle_completed",
       "daily_complete"
+    ],
+    "work": [
+      "talent_queued",
+      "talent_spawned",
+      "talent_finished",
+      "talent_errored",
+      "result",
+      "reflection_ready",
+      "support_draft",
+      "support_submit_claim"
     ]
   }
 }
