@@ -16,6 +16,73 @@ pub enum Platform {
     LinuxArm64,
 }
 
+impl Platform {
+    pub fn canonical_os(self) -> &'static str {
+        match self {
+            Self::MacosArm64 => "darwin",
+            Self::LinuxX64 | Self::LinuxArm64 => "linux",
+        }
+    }
+
+    pub fn canonical_arch(self) -> &'static str {
+        match self {
+            Self::MacosArm64 | Self::LinuxArm64 => "arm64",
+            Self::LinuxX64 => "x86_64",
+        }
+    }
+}
+
+/// Resolve a raw `(os, arch)` pair to a shipped [`Platform`].
+///
+/// Rust spells Apple Silicon `aarch64`; every platform string installers
+/// compare against, and the one `install-models` resolves its variant from,
+/// spells it `arm64`. Normalizing only the OS and not the arch is why a real
+/// Apple Silicon host refused its own supported platform.
+///
+/// A test that composes the normalizers itself proves they are correct and
+/// says nothing about whether the caller uses them -- which is precisely how
+/// the arch half stayed unnormalized. Callers must feed this function (or
+/// [`canonical_host_pair`]) rather than mapping the two halves independently.
+pub fn resolve_host_platform(os: &str, arch: &str) -> Result<Platform, UnsupportedHost> {
+    match (os, arch.to_ascii_lowercase().as_str()) {
+        ("macos" | "darwin", "aarch64" | "arm64") => Ok(Platform::MacosArm64),
+        ("linux", "x86_64" | "amd64" | "x64") => Ok(Platform::LinuxX64),
+        ("linux", "aarch64" | "arm64") => Ok(Platform::LinuxArm64),
+        _ => Err(UnsupportedHost {
+            os: os.to_owned(),
+            arch: arch.to_owned(),
+        }),
+    }
+}
+
+/// Identity fall-through for callers that historically forwarded unrecognized
+/// `(os, arch)` unchanged. Prefer [`resolve_host_platform`] when the caller
+/// should fail closed.
+pub fn canonical_host_pair<'a>(os: &'a str, arch: &'a str) -> (&'a str, &'a str) {
+    match resolve_host_platform(os, arch) {
+        Ok(platform) => (platform.canonical_os(), platform.canonical_arch()),
+        Err(_) => (os, arch),
+    }
+}
+
+/// An `(os, arch)` pair that does not resolve to a shipped [`Platform`].
+///
+/// Stores the strings as received (arch is not lowercased here) so Display
+/// can interpolate them verbatim.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsupportedHost {
+    pub os: String,
+    pub arch: String,
+}
+
+impl fmt::Display for UnsupportedHost {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unsupported host platform: {}/{}", self.os, self.arch)
+    }
+}
+
+impl std::error::Error for UnsupportedHost {}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "kebab-case")]
 // A backend is present only when it discriminates artifacts within a unit.
@@ -1456,5 +1523,71 @@ mod tests {
                 .iter()
                 .any(|artifact| artifact.sha256 == row.extracted_binary_sha256.unwrap())
         );
+    }
+
+    #[test]
+    fn resolve_host_platform_maps_every_supported_spelling() {
+        let cases = [
+            ("macos", "aarch64", Platform::MacosArm64, "darwin", "arm64"),
+            ("macos", "arm64", Platform::MacosArm64, "darwin", "arm64"),
+            ("darwin", "aarch64", Platform::MacosArm64, "darwin", "arm64"),
+            ("darwin", "arm64", Platform::MacosArm64, "darwin", "arm64"),
+            ("linux", "x86_64", Platform::LinuxX64, "linux", "x86_64"),
+            ("linux", "amd64", Platform::LinuxX64, "linux", "x86_64"),
+            ("linux", "x64", Platform::LinuxX64, "linux", "x86_64"),
+            ("linux", "aarch64", Platform::LinuxArm64, "linux", "arm64"),
+            ("linux", "arm64", Platform::LinuxArm64, "linux", "arm64"),
+        ];
+        for (os, arch, platform, canonical_os, canonical_arch) in cases {
+            let resolved = resolve_host_platform(os, arch)
+                .unwrap_or_else(|error| panic!("{os}/{arch} must resolve: {error}"));
+            assert_eq!(resolved, platform, "{os}/{arch}");
+            assert_eq!(resolved.canonical_os(), canonical_os, "{os}/{arch}");
+            assert_eq!(resolved.canonical_arch(), canonical_arch, "{os}/{arch}");
+        }
+    }
+
+    #[test]
+    fn resolve_host_platform_rejects_unresolved_hosts() {
+        for (os, arch) in [
+            ("windows", "x86_64"),
+            ("windows", "aarch64"),
+            ("macos", "x86_64"),
+            ("darwin", "x86_64"),
+            ("Linux", "x86_64"),
+        ] {
+            assert!(
+                resolve_host_platform(os, arch).is_err(),
+                "{os}/{arch} must stay unresolved"
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_host_display_contains_raw_os_and_arch() {
+        let error = resolve_host_platform("windows", "riscv64").expect_err("unresolved");
+        let message = error.to_string();
+        assert!(message.contains("windows"), "{message}");
+        assert!(message.contains("riscv64"), "{message}");
+        assert_eq!(error.os, "windows");
+        assert_eq!(error.arch, "riscv64");
+    }
+
+    #[test]
+    fn running_host_resolves_when_the_platform_is_supported() {
+        let os = std::env::consts::OS;
+        let arch = std::env::consts::ARCH;
+        // env::consts is a compile-time constant, so the macOS assertion is
+        // structurally unreachable on this linux lode; only the linux branch
+        // runs here.
+        match (os, arch) {
+            ("linux", "x86_64" | "aarch64") | ("macos", "aarch64") => {
+                assert!(
+                    resolve_host_platform(os, arch).is_ok(),
+                    "{os}/{arch} must resolve on a supported running host"
+                );
+            }
+            _ => {}
+        }
     }
 }
