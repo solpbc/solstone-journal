@@ -4252,7 +4252,6 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
- "solstone-core-settings-web",
  "temp-env",
  "tokio",
  "tower",

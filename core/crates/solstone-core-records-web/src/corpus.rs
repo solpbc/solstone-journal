@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -10,13 +9,13 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode},
 };
-use chrono::{Local, TimeZone};
+
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use solstone_core_indexer_store::db::open_index;
 use tower::ServiceExt;
 
-use crate::{api_router, chat_state};
+use crate::api_router;
 
 const DROPPED_SEARCH_FIELDS: &[&str] = &[
     "agent_icon_svg",
@@ -44,69 +43,53 @@ fn populated_corpus_replays_every_non_deviation_probe() {
                 let today = today_day();
                 let mut asserted = 0;
                 let mut skipped = 0;
-                for app in ["chat", "search"] {
-                    for probe in corpus["phases"]["populated"][app]
-                        .as_array()
-                        .expect("probe array")
-                    {
-                        let path = probe["path"].as_str().expect("probe path");
-                        if app == "search" && path.starts_with("/app/search/api/day_results") {
-                            skipped += 1;
-                            continue;
-                        }
-                        let response =
-                            request(&fixture.root, &path.replace("<TODAY>", &today)).await;
+                for probe in corpus["phases"]["populated"]["search"]
+                    .as_array()
+                    .expect("probe array")
+                {
+                    let path = probe["path"].as_str().expect("probe path");
+                    if path.starts_with("/app/search/api/day_results") {
+                        skipped += 1;
+                        continue;
+                    }
+                    let response = request(&fixture.root, &path.replace("<TODAY>", &today)).await;
+                    assert_eq!(
+                        response.status(),
+                        probe["status"].as_u64().expect("status") as u16,
+                        "{}",
+                        probe["why"]
+                    );
+                    if !response.status().is_success() && probe["json"].is_object() {
                         assert_eq!(
-                            response.status(),
-                            probe["status"].as_u64().expect("status") as u16,
-                            "{}",
+                            response_json(response).await,
+                            probe["json"],
+                            "{} error body",
                             probe["why"]
                         );
-                        if app == "chat"
-                            && response.status().is_success()
-                            && probe["json"].is_object()
-                        {
-                            let body = response_json(response).await;
-                            assert_eq!(
-                                normalize_chat_payload(body.clone(), &today),
-                                expected_chat_payload(&probe["json"], &body, &today),
-                                "{} chat body",
-                                probe["why"]
-                            );
-                        } else if !response.status().is_success() && probe["json"].is_object() {
-                            assert_eq!(
-                                response_json(response).await,
-                                probe["json"],
-                                "{} error body",
-                                probe["why"]
-                            );
-                        }
-                        asserted += 1;
                     }
+                    asserted += 1;
                 }
                 let established = Fixture::established();
-                for app in ["chat", "search"] {
-                    for probe in corpus["phases"]["established"][app]
-                        .as_array()
-                        .expect("probe array")
-                    {
-                        let router = solstone_core_convey_shell::session_gate::apply_layer(
-                            api_router(established.root.clone()),
-                            established.root.clone(),
-                        );
-                        let response = router
-                            .oneshot(
-                                Request::get(probe["path"].as_str().expect("path"))
-                                    .body(Body::empty())
-                                    .expect("request"),
-                            )
-                            .await
-                            .expect("response");
-                        assert_eq!(response.status(), StatusCode::OK);
-                        asserted += 1;
-                    }
+                for probe in corpus["phases"]["established"]["search"]
+                    .as_array()
+                    .expect("probe array")
+                {
+                    let router = solstone_core_convey_shell::session_gate::apply_layer(
+                        api_router(established.root.clone()),
+                        established.root.clone(),
+                    );
+                    let response = router
+                        .oneshot(
+                            Request::get(probe["path"].as_str().expect("path"))
+                                .body(Body::empty())
+                                .expect("request"),
+                        )
+                        .await
+                        .expect("response");
+                    assert_eq!(response.status(), StatusCode::OK);
+                    asserted += 1;
                 }
-                assert!(asserted >= 38);
+                assert_eq!(asserted, 25);
                 assert_eq!(skipped, 2);
             });
     });
@@ -120,108 +103,29 @@ async fn established_unestablished_and_corrupt_fixture_probes_use_session_gate()
         ("established", Fixture::established()),
         ("corrupt", Fixture::corrupt()),
     ] {
-        for app in ["chat", "search"] {
-            for probe in corpus["phases"][phase][app]
-                .as_array()
-                .expect("probe array")
-            {
-                let router = solstone_core_convey_shell::session_gate::apply_layer(
-                    api_router(root.root.clone()),
-                    root.root.clone(),
-                );
-                let response = router
-                    .oneshot(
-                        Request::get(probe["path"].as_str().expect("path"))
-                            .body(Body::empty())
-                            .expect("request"),
-                    )
-                    .await
-                    .expect("response");
-                assert_eq!(
-                    response.status(),
-                    probe["status"].as_u64().expect("status") as u16,
-                    "{phase}: {}",
-                    probe["why"]
-                );
-            }
+        for probe in corpus["phases"][phase]["search"]
+            .as_array()
+            .expect("probe array")
+        {
+            let router = solstone_core_convey_shell::session_gate::apply_layer(
+                api_router(root.root.clone()),
+                root.root.clone(),
+            );
+            let response = router
+                .oneshot(
+                    Request::get(probe["path"].as_str().expect("path"))
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(
+                response.status(),
+                probe["status"].as_u64().expect("status") as u16,
+                "{phase}: {}",
+                probe["why"]
+            );
         }
-    }
-}
-
-#[test]
-fn chat_state_matches_the_recorded_shape_origins_and_open_request() {
-    with_utc(|| {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("runtime")
-            .block_on(async {
-    let fixture = seeded_journal();
-    let corpus = corpus();
-    let today = today_day();
-    let rich_probe = populated_chat_probe(&corpus, "/app/chat/api/state?day=20260731");
-    let value =
-        response_json(request(&fixture.root, "/app/chat/api/state?day=20260731").await).await;
-    assert_eq!(
-        value
-            .as_object()
-            .expect("state object")
-            .keys()
-            .map(String::as_str)
-            .collect::<BTreeSet<_>>(),
-        BTreeSet::from([
-            "agent_name",
-            "events",
-            "owner_name",
-            "sol_message_origins",
-            "sol_open_request_id",
-            "thinking_surfaces",
-            "today_day"
-        ]),
-    );
-    assert_eq!(
-        normalize_chat_payload(value.clone(), &today),
-        expected_chat_payload(&rich_probe["json"], &value, &today)
-    );
-    let today_probe = populated_chat_probe(&corpus, "/app/chat/api/state?day=<TODAY>");
-    let today_value =
-        response_json(request(&fixture.root, &format!("/app/chat/api/state?day={today}")).await)
-            .await;
-    assert_eq!(
-        normalize_chat_payload(today_value.clone(), &today)["sol_message_origins"],
-        expected_chat_payload(&today_probe["json"], &today_value, &today)["sol_message_origins"]
-    );
-            });
-    });
-}
-
-#[tokio::test]
-async fn chat_state_uses_agent_name_or_sol_fallback() {
-    for (name, expected) in [("~/secret", "sol"), ("Ada", "Ada")] {
-        let fixture = Fixture::new("agent-name");
-        write(
-            &fixture.root.join("config/journal.json"),
-            &json!({"setup":{"completed_at":1},"agent":{"name":name}}).to_string(),
-        );
-        let value =
-            response_json(request(&fixture.root, "/app/chat/api/state?day=20260731").await).await;
-        assert_eq!(value["agent_name"], expected, "{name}");
-    }
-}
-
-#[tokio::test]
-async fn chat_state_distinguishes_corrupt_and_healthy_streams() {
-    let fixture = seeded_journal();
-    for (day, expected_nonempty) in [("20260731", true), ("20260916", false)] {
-        let response = request(&fixture.root, &format!("/app/chat/api/state?day={day}")).await;
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            !response_json(response).await["events"]
-                .as_array()
-                .expect("events")
-                .is_empty(),
-            expected_nonempty
-        );
     }
 }
 
@@ -399,22 +303,6 @@ async fn day_results_is_absent_while_search_remains_live() {
 }
 
 #[tokio::test]
-async fn chat_workspace_is_crate_owned_and_contains_the_reviewed_limit() {
-    let fixture = seeded_journal();
-    let response = request(&fixture.root, "/app/chat/workspace").await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = String::from_utf8(
-        to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("body")
-            .to_vec(),
-    )
-    .expect("workspace UTF-8");
-    assert!(body.contains("sending isn't available yet. your full history is above."));
-    assert!(body.contains("chatSearchForm"));
-}
-
-#[tokio::test]
 async fn search_document_routes_serve_the_shell_workspace_and_redirect() {
     let fixture = seeded_journal();
     let shell = request(&fixture.root, "/app/search/").await;
@@ -442,13 +330,13 @@ async fn search_document_routes_serve_the_shell_workspace_and_redirect() {
 }
 
 #[tokio::test]
-async fn session_gate_protects_chat_and_search_document_routes() {
+async fn session_gate_protects_search_document_routes() {
     for (root, expected_status) in [
         (Fixture::unestablished(), StatusCode::FOUND),
         (Fixture::established(), StatusCode::OK),
         (Fixture::corrupt(), StatusCode::INTERNAL_SERVER_ERROR),
     ] {
-        for path in ["/app/chat/workspace", "/app/search/"] {
+        for path in ["/app/search/"] {
             let response = solstone_core_convey_shell::session_gate::apply_layer(
                 api_router(root.root.clone()),
                 root.root.clone(),
@@ -470,108 +358,9 @@ async fn session_gate_protects_chat_and_search_document_routes() {
     }
 }
 
-#[test]
-fn open_request_uses_the_explicit_today_parameter() {
-    let events = vec![json!({"kind": "sol_chat_request", "request_id": "open"})];
-    assert_eq!(
-        chat_state::sol_open_request_id(&events, "20260731", "20260731"),
-        Some("open".into())
-    );
-    assert_eq!(
-        chat_state::sol_open_request_id(&events, "20260731", "20260801"),
-        None
-    );
-}
-
 fn corpus() -> Value {
     serde_json::from_str(include_str!("../../../fixtures/convey_records_corpus.json"))
         .expect("records corpus parses")
-}
-
-fn populated_chat_probe<'a>(corpus: &'a Value, path: &str) -> &'a Value {
-    corpus["phases"]["populated"]["chat"]
-        .as_array()
-        .expect("chat probes")
-        .iter()
-        .find(|probe| probe["path"] == path)
-        .expect("captured chat probe")
-}
-
-fn normalize_chat_payload(mut value: Value, today: &str) -> Value {
-    if value.get("today_day").is_some() {
-        value["today_day"] = json!("<TODAY>");
-    }
-    if let Some(events) = value.get_mut("events").and_then(Value::as_array_mut) {
-        for event in events {
-            for field in ["ts", "since_ts", "queued_at", "started_at"] {
-                if event.get(field).is_some() {
-                    event[field] = json!("<TODAY_TIMESTAMP>");
-                }
-            }
-            if let Some(path) = event["path"].as_str() {
-                event["path"] = json!(path.replace(today, "<TODAY>"));
-            }
-        }
-    }
-    if let Some(origins) = value
-        .get_mut("sol_message_origins")
-        .and_then(Value::as_object_mut)
-    {
-        for origin in origins.values_mut() {
-            for field in ["ts", "since_ts", "superseded_at"] {
-                if origin.get(field).is_some() {
-                    origin[field] = json!("<TODAY_TIMESTAMP>");
-                }
-            }
-        }
-    }
-    let coverage_ends_today = value
-        .get_mut("coverage")
-        .and_then(Value::as_object_mut)
-        .and_then(|coverage| coverage.get_mut("end"))
-        .and_then(|end| end.as_str())
-        .is_some_and(|end| end == today);
-    if coverage_ends_today {
-        value["coverage"]["end"] = json!("<TODAY>");
-    }
-    if let Some(months) = value.get_mut("months").and_then(Value::as_object_mut)
-        && let Some(count) = months.remove(&today[..6])
-    {
-        months.insert("<TODAY>".into(), count);
-    }
-    value
-}
-
-fn expected_chat_payload(captured: &Value, actual: &Value, today: &str) -> Value {
-    let mut expected = captured.clone();
-    let Some(expected_origins) = expected
-        .get_mut("sol_message_origins")
-        .and_then(Value::as_object_mut)
-    else {
-        return normalize_chat_payload(expected, today);
-    };
-    let actual_origins = actual["sol_message_origins"]
-        .as_object()
-        .expect("actual origins object");
-    for (position, expected_origin) in expected_origins {
-        let actual_origin = actual_origins
-            .get(position)
-            .expect("actual origin for captured position");
-        if let Some(timestamp) = actual_origin["ts"].as_i64() {
-            expected_origin["time"] = json!(local_origin_time(timestamp));
-        }
-        if let Some(timestamp) = actual_origin["superseded_at"].as_i64() {
-            expected_origin["superseded_time"] = json!(local_origin_time(timestamp));
-        }
-    }
-    normalize_chat_payload(expected, today)
-}
-
-fn local_origin_time(timestamp: i64) -> String {
-    Local
-        .timestamp_millis_opt(timestamp)
-        .single()
-        .map_or_else(String::new, |time| time.format("%-I:%M %p").to_string())
 }
 
 async fn request(root: &Path, path: &str) -> axum::response::Response {
