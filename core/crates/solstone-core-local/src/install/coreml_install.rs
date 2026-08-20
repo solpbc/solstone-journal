@@ -455,6 +455,16 @@ mod tests {
         require_coreml_host("darwin", "arm64").unwrap();
     }
 
+    /// Pins that the owner's output is the spelling `require_coreml_host` accepts.
+    /// It does not prove `install_parakeet_coreml_model` / `check_parakeet_coreml_install`
+    /// call the owner: those read `env::consts`, a compile-time constant, so the
+    /// macos/aarch64 hop cannot be exercised from a linux host.
+    #[test]
+    fn owner_output_for_macos_aarch64_is_accepted_by_the_guard() {
+        let (os_name, arch) = canonical_host_pair("macos", "aarch64");
+        require_coreml_host(os_name, arch).unwrap();
+    }
+
     #[test]
     fn a_genuinely_unsupported_host_is_still_refused() {
         let error =

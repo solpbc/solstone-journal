@@ -1548,6 +1548,18 @@ mod tests {
     }
 
     #[test]
+    fn canonical_host_pair_canonicalizes_and_falls_through() {
+        assert_eq!(canonical_host_pair("macos", "aarch64"), ("darwin", "arm64"));
+        assert_eq!(canonical_host_pair("linux", "aarch64"), ("linux", "arm64"));
+        assert_eq!(canonical_host_pair("linux", "amd64"), ("linux", "x86_64"));
+        assert_eq!(
+            canonical_host_pair("windows", "x86_64"),
+            ("windows", "x86_64")
+        );
+        assert_eq!(canonical_host_pair("macos", "x86_64"), ("macos", "x86_64"));
+    }
+
+    #[test]
     fn resolve_host_platform_rejects_unresolved_hosts() {
         for (os, arch) in [
             ("windows", "x86_64"),

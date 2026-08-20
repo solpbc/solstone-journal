@@ -330,7 +330,7 @@ mod tests {
     use super::{check_platform_coverage, runtime_platform};
 
     #[test]
-    fn runtime_platform_normalizes_macos_arm64_for_wheel_coverage() {
+    fn runtime_platform_matches_the_running_host() {
         let (platform, architecture) = runtime_platform();
         if std::env::consts::OS == "macos" && std::env::consts::ARCH == "aarch64" {
             assert_eq!((platform, architecture), ("darwin", "arm64"));
