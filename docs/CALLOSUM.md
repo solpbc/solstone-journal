@@ -41,10 +41,10 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 
 **`info` note:** `info` remains the correct vocabulary for cortex telemetry. The current non-JSON stdout fallback in `_monitor_stdout()` writes an `info` record to the durable use-log through `_append_use_event()`; it does not broadcast that fallback record to Callosum. This is a bus-wiring gap, not a naming mismatch.
 
-### `work` - Talent run and support-draft events
-**Source:** `solstone-core-convey-shell`
+### `work` - Talent-run, reflection, and support-draft events
+**Source:** talent-run and support-draft producers. There is no native producer on this tract today; the vocabulary is closed so a future dispatcher cannot silently grow it.
 **Events:** `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`, `result`, `reflection_ready`, `support_draft`, `support_submit_claim`
-**Purpose:** Broadcast the closed work-event vocabulary on the `work` tract for real-time consumers. The `work` tract and the `work` facet (`journal/facets/work/`) are separate namespaces.
+**Purpose:** Live talent-run status, thinking `reflection_ready`, and support draft/submit-claim. Unknown event kinds are rejected. Closedness lives in `callosum.work.event` (`classification: closed`, `unknown_value_behavior: reject`), published in the OpenAPI `x-vocabularies` and the observer-client `manifest.json` `vocabularies[]`. The registry-level `callosum.tract_event` stays extensible. This tract used to be named `chat`; it was renamed rather than folded into `cortex` (1:1 with the cogitate wire contract), `think` (the daily-think pipeline, not live run status), or `support` (an open registry list). `work` is also an owner-facing facet id — tract and facet are different namespaces.
 
 ### `supervisor` - Process lifecycle management
 **Source:** `solstone-core-system` (supervisor)
