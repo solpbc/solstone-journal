@@ -1,38 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::import_ingest_door::door;
 #[allow(dead_code)]
 use crate::stub_peer;
 
 use std::process::{Command, Output};
 
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 use stub_peer::{Fixture, PeerPlan, RequestRoute, ResponseAction, StubPeer};
-
-const DOOR_ROUTES: &str = include_str!("../../../fixtures/import_ingest_door_routes.json");
-
-fn door(method: &str, key: &str, kind: &str, area: &str) -> String {
-    let fixture: Value = serde_json::from_str(DOOR_ROUTES).expect("door fixture");
-    let suffix = format!("/{kind}/{area}");
-    fixture["rules"]
-        .as_array()
-        .expect("rules")
-        .iter()
-        .find(|rule| {
-            rule["methods"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .any(|candidate| candidate.as_str() == Some(method))
-                && rule["rule"]
-                    .as_str()
-                    .is_some_and(|path| path.ends_with(&suffix))
-        })
-        .and_then(|rule| rule["rule"].as_str())
-        .map(|rule| rule.replace("<key_prefix>", key))
-        .unwrap_or_else(|| panic!("missing {method} {kind}/{area} door rule"))
-}
 
 fn plan(manifest: Vec<ResponseAction>, ingest: Vec<ResponseAction>) -> PeerPlan {
     PeerPlan::new([

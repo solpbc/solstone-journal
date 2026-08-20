@@ -72,17 +72,17 @@
       "reads_stdin": false,
       "retired_spellings": ["journal merge", "sol call journal merge"],
       "capabilities": [
-        "SOURCE is a regular zip file; a directory SOURCE is unsafe input (exit 65) and names a zip file; a missing SOURCE is unsafe input (exit 65) and names the path that does not exist",
-        "no contains/disjointness check on the archive path, extract path, or working_root; a zip at target/imports/<ts>/file.zip merges",
-        "merge applies chronicle, entities, facets, and imports only; extra zip members are skipped and logged in the decision log",
+        "SOURCE is a regular archive file; a directory SOURCE is unsafe input (exit 65) and reports SOURCE must be a regular file; a missing SOURCE is unsafe input (exit 65) and names the path that does not exist",
+        "no contains/disjointness check on the archive path, extract path, or working_root; an archive at target/imports/<ts>/file.zip merges",
+        "merge applies chronicle, entities, facets, and imports only; extra archive members are skipped and logged in the decision log",
         "never overwrite an existing segment or import; destination-wins is recorded",
         "deduplicate entity aliases, emails, and observations; destination scalar fields win; a second principal is demoted",
         "stage ambiguous entity identity collisions instead of guessing",
         "the source archive file is immutable",
         "stage all four families before any target publish; a hard publish failure rolls back this transaction and never reports Incomplete",
-        "--dry-run plans from the zip central directory and creates no file or directory anywhere, including locks, extract-*, working_root, and decision logs, and never invokes the indexer",
+        "--dry-run plans from archive metadata and creates no file or directory anywhere, including locks, extract-*, working_root, and decision logs, and never invokes the indexer",
         "after a wholly successful write merge, request the native in-process full index rebuild via scan_journal; a rebuild failure exits nonzero with code index-rebuild-failed",
-        "--json writes exactly one UTF-8 JSON line to stdout on success and to stderr on failure, with keys ok, code, source, dry_run, committed, skipped, failed, decision_log, staging_dir, index_rebuild, and summary"
+        "--json writes exactly one UTF-8 JSON line to stdout on success and to stderr on failure, with keys ok, code, source, dry_run, days, committed, skipped, failed, decision_log, staging_dir, index_rebuild, and summary; days is the sorted dry-run plan list and null on apply"
       ],
       "cases": [
         {
@@ -102,7 +102,7 @@
           "fixture": "merge_directory_source",
           "expected_exit": 65,
           "expected_stdout": "",
-          "expected_stderr_contains": "SOURCE must be a zip file"
+          "expected_stderr_contains": "SOURCE must be a regular file"
         }
       ]
     },

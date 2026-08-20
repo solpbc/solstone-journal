@@ -14,13 +14,13 @@ use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
     DirEntryKind, PathOrDay, day_path, iter_segments, list_dir_entries,
 };
+use solstone_core_transfer_manifest::{
+    MANIFEST_NAME, MANIFEST_VERSION, ManifestFile, SegmentManifest, TransferManifest, is_day,
+};
 use tar::{Builder, EntryType, Header};
 use tempfile::NamedTempFile;
 
-use crate::manifest::{
-    MANIFEST_NAME, MANIFEST_VERSION, ManifestFile, SegmentManifest, TransferManifest, is_day,
-    reject_symlink_day_directory,
-};
+use crate::manifest::reject_symlink_day_directory;
 use crate::{ExportReport, ExportRequest, TransferError};
 
 #[derive(Debug)]

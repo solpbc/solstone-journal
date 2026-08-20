@@ -1507,25 +1507,37 @@ async function loadGuidedFlow(sourceName) {
       </div></li>
       <li><div class="import-step">
         <div class="import-step-number">step 3</div>
-        <h4>configure and start</h4>
-        <div class="import-inline-fields">
-          <div class="confirm-field">
-            <label for="guidedFacetSelect">facet</label>
-            <select id="guidedFacetSelect"><option value="">None</option></select>
+        ${source.name === 'journal_archive' ? `
+          <h4>preview, then merge your archive</h4>
+          <div class="import-action-row">
+            <button id="guidedPreviewBtn" class="import-secondary-btn" type="button">preview archive</button>
+            <button id="guidedStartBtn" class="import-primary-btn" type="submit">start import</button>
+            <a class="import-secondary-btn" href="/app/import/api/journal-archive/export">download this journal</a>
           </div>
-          <div class="confirm-field">
-            <label for="guidedSettingInput">setting</label>
-            <input id="guidedSettingInput" placeholder="e.g. weekly planning" />
+          <div id="guidedArchivePreview"></div>
+        ` : `
+          <h4>configure and start</h4>
+          <div class="import-inline-fields">
+            <div class="confirm-field">
+              <label for="guidedFacetSelect">facet</label>
+              <select id="guidedFacetSelect"><option value="">None</option></select>
+            </div>
+            <div class="confirm-field">
+              <label for="guidedSettingInput">setting</label>
+              <input id="guidedSettingInput" placeholder="e.g. weekly planning" />
+            </div>
           </div>
-        </div>
-        <div class="import-action-row">
-          <button id="guidedStartBtn" class="import-primary-btn" type="submit">start import</button>
-        </div>
+          <div class="import-action-row">
+            <button id="guidedStartBtn" class="import-primary-btn" type="submit">start import</button>
+          </div>
+        `}
       </div></li>
     </ol></form>
   `;
 
-  loadFacets(window.selectedFacet || '', document.getElementById('guidedFacetSelect'));
+  if (source.name !== 'journal_archive') {
+    loadFacets(window.selectedFacet || '', document.getElementById('guidedFacetSelect'));
+  }
   if (source.input_type !== 'path_input') {
     setupGuidedUploadArea();
   } else {
@@ -1537,12 +1549,19 @@ async function loadGuidedFlow(sourceName) {
       });
     }
   }
-  document.getElementById('guidedStartBtn').addEventListener('click', () => startGuidedImport(source));
+  const guidedStartBtn = document.getElementById('guidedStartBtn');
+  if (guidedStartBtn) {
+    guidedStartBtn.addEventListener('click', () => startGuidedImport(source));
+  }
+  const guidedPreviewBtn = document.getElementById('guidedPreviewBtn');
+  if (guidedPreviewBtn) {
+    guidedPreviewBtn.addEventListener('click', () => previewGuidedJournalArchive(source));
+  }
   const guidedForm = document.getElementById('guidedImportForm');
-  if (guidedForm) {
+  if (guidedForm && guidedStartBtn) {
     guidedForm.addEventListener('submit', e => {
       e.preventDefault();
-      document.getElementById('guidedStartBtn').click();
+      guidedStartBtn.click();
     });
   }
 }
@@ -1906,6 +1925,40 @@ async function startGuidedImport(source) {
   } finally {
     startButton.disabled = false;
     startButton.textContent = originalText;
+  }
+}
+
+async function previewGuidedJournalArchive(source) {
+  const previewButton = document.getElementById('guidedPreviewBtn');
+  const preview = document.getElementById('guidedArchivePreview');
+  const originalText = previewButton.textContent;
+
+  previewButton.disabled = true;
+  previewButton.innerHTML = 'previewing<span class="spinner"></span>';
+  try {
+    const saved = currentGuidedSaved || await uploadGuidedSourceFile(source);
+    const response = await fetch('/app/import/api/journal-archive/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: saved.path, timestamp: saved.timestamp }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to preview archive');
+    }
+    const days = Array.isArray(data.days) ? data.days : [];
+    preview.innerHTML = `
+      <div class="import-dedup-notice">
+        <span class="dedup-text">${escapeHtml(days.length ? `Archive days: ${days.join(', ')}` : 'The archive has no chronicle days.')}</span>
+      </div>
+    `;
+  } catch (err) {
+    if (window.showError && err instanceof Error) {
+      showError(err.message);
+    }
+  } finally {
+    previewButton.disabled = false;
+    previewButton.textContent = originalText;
   }
 }
 

@@ -17,13 +17,14 @@ use solstone_core_journal_io::{
     StagedDirOptions, contained_path, day_path, find_available_segment_with_occupied, path_lexists,
     publish_staged_dir,
 };
+use solstone_core_transfer_manifest::{
+    ExpectedMember, MANIFEST_NAME, SegmentRoute, TransferManifest, expected_members,
+    parse_manifest, validate_expected_members,
+};
 use tar::{Archive, EntryType};
 use tempfile::TempDir;
 
-use crate::manifest::{
-    ExpectedMember, SegmentRoute, TransferManifest, expected_members, parse_manifest,
-    reject_symlink_day_directory,
-};
+use crate::manifest::{map_manifest_error, reject_symlink_day_directory};
 use crate::rescan::{RescanOutcome, send_indexer_rescan};
 use crate::{ImportError, ImportReport, ImportRequest, SegmentOutcome, TransferError};
 
@@ -75,7 +76,13 @@ pub fn import(journal: &Path, request: ImportRequest) -> Result<ImportReport, Im
     // `contained_path` trusts its supplied root; refuse a symlinked day root so
     // untrusted archive paths cannot redirect publication outside the journal.
     reject_symlink_day_directory(&day_directory)?;
-    let expected = expected_members(&manifest, &day_directory)?;
+    let expected = expected_members(&manifest).map_err(map_manifest_error)?;
+    for member in expected.values() {
+        let segment_directory = contained_path(&day_directory, &member.route.archive_key())
+            .map_err(TransferError::from)?;
+        contained_path(&segment_directory, &member.file.name).map_err(TransferError::from)?;
+    }
+    validate_expected_members(&expected).map_err(map_manifest_error)?;
     let scratch = TempDir::new().map_err(TransferError::from)?;
     let buffered = buffer_members(entries, &expected, scratch.path())?;
     let plans = plan_segments(&manifest, &day_directory, &expected, &buffered)?;
@@ -139,14 +146,14 @@ fn read_manifest<R: Read>(mut entry: tar::Entry<'_, R>) -> Result<TransferManife
         ));
     }
     let path = entry.path()?.to_string_lossy().into_owned();
-    if path != crate::manifest::MANIFEST_NAME {
+    if path != MANIFEST_NAME {
         return Err(TransferError::ArchiveMember(
             "first archive member must be manifest.json".to_owned(),
         ));
     }
     let mut bytes = Vec::new();
     entry.read_to_end(&mut bytes)?;
-    parse_manifest(&bytes)
+    parse_manifest(&bytes).map_err(map_manifest_error)
 }
 
 fn buffer_members<R: Read>(
@@ -234,7 +241,7 @@ fn plan_segments(
         if segment.files.is_empty() {
             continue;
         }
-        let source = SegmentRoute::parse(route_value)?;
+        let source = SegmentRoute::parse(route_value).map_err(map_manifest_error)?;
         let target_directory = day_directory.join(source.archive_key());
         let mut files = Vec::new();
         for file in &segment.files {

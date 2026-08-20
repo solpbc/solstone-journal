@@ -24,9 +24,11 @@ fn copy_tree(source: &Path, destination: &Path) {
 }
 
 /// Where the shipped payload sits relative to a repository root. The staged
-/// root mirrors the repository, so it carries the same two trees: the schema
-/// sources under `solstone/` and the generated payload under `core/payload/`.
+/// root mirrors the repository, so it carries schema sources under `solstone/`
+/// and the core contract-schema directory, plus the generated payload under
+/// `core/payload/`.
 const PAYLOAD: &str = "core/payload";
+const CONTRACT_SCHEMA_SOURCES: &str = "core/crates/solstone-core/src/contract/schemas";
 
 fn repository() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -37,7 +39,12 @@ fn repository() -> &'static Path {
 
 fn staged_root() -> TempDir {
     let temp = TempDir::new().unwrap();
-    for relative in ["solstone", PAYLOAD, "tests/fixtures/journal"] {
+    for relative in [
+        "solstone",
+        CONTRACT_SCHEMA_SOURCES,
+        PAYLOAD,
+        "tests/fixtures/journal",
+    ] {
         copy_tree(
             repository().join(relative).as_path(),
             &temp.path().join(relative),

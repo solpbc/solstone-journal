@@ -11,8 +11,9 @@ pub(crate) struct ContractPaths {
     /// these stay in the package tree; in an installed tree only the payload
     /// ships, and the two roots coincide.
     pub(crate) solstone: PathBuf,
-    /// Checkout-only source directory for the six at-rest format schemas.
-    /// Absent in an installed tree and in synthetic test roots.
+    /// Checkout-only source directory for the five at-rest format schemas.
+    /// Absent in an installed tree and in synthetic test roots; build/check
+    /// reject roots that lack the required inputs instead of building partial bundles.
     pub(crate) sources: PathBuf,
     pub(crate) layout: PathBuf,
     pub(crate) artifact: PathBuf,

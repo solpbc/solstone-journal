@@ -11,10 +11,10 @@ use std::time::Duration;
 use chrono::{Duration as ChronoDuration, NaiveDate};
 use serde_json::json;
 use solstone_core_journal_io::{PathOrDay, iter_segments};
+use solstone_core_transfer_manifest::{ManifestFile, SegmentManifest};
 
 use crate::TransferError;
 use crate::export::hash_file;
-use crate::manifest::{ManifestFile, SegmentManifest};
 use crate::peer::{MultipartFile, PeerLoopbackClient, multipart_body, with_peer_bridge};
 pub use crate::peer::{ResolvedPeer, resolve_peer};
 

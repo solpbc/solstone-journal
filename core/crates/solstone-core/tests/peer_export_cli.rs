@@ -1,36 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use crate::stub_peer;
+use crate::{import_ingest_door::door, stub_peer};
 
 use std::process::{Command, Output};
 
 use serde_json::{Value, json};
 use stub_peer::{Fixture, PeerPlan, RequestRoute, ResponseAction, StubPeer};
-
-const DOOR_ROUTES: &str = include_str!("../../../fixtures/import_ingest_door_routes.json");
-
-fn door(method: &str, key: &str, kind: &str, area: &str) -> String {
-    let fixture: Value = serde_json::from_str(DOOR_ROUTES).expect("door fixture");
-    let suffix = format!("/{kind}/{area}");
-    fixture["rules"]
-        .as_array()
-        .expect("rules")
-        .iter()
-        .find(|rule| {
-            rule["methods"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .any(|candidate| candidate.as_str() == Some(method))
-                && rule["rule"]
-                    .as_str()
-                    .is_some_and(|path| path.ends_with(&suffix))
-        })
-        .and_then(|rule| rule["rule"].as_str())
-        .map(|rule| rule.replace("<key_prefix>", key))
-        .unwrap_or_else(|| panic!("missing {method} {kind}/{area} door rule"))
-}
 
 fn run(fixture: &Fixture, extra: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_solstone-core"))
@@ -352,6 +328,39 @@ fn persistent_entity_server_error_reports_retry_exhaustion() {
     );
     assert!(!stdout.contains("Entity upload failed: 500"), "{stdout}");
     assert_eq!(peer.ingest_requests().len(), 3);
+}
+
+#[test]
+fn refused_entity_upload_marks_area_failed_and_returns_nonzero() {
+    let peer = StubPeer::new(PeerPlan::new([
+        (
+            RequestRoute::get(door("GET", "remote-i", "manifest", "entities")),
+            vec![ResponseAction::manifest_empty()],
+        ),
+        (
+            RequestRoute::post(door("POST", "remote-i", "ingest", "entities")),
+            vec![ResponseAction::status(403, b"revoked")],
+        ),
+    ]));
+    let fixture = peer.fixture();
+    fixture.add_entity("alice", json!({"id": "alice", "name": "Alice"}));
+
+    let output = run(&fixture, &["--only", "entities"]);
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains(
+            "entities: FAILED (Authentication failed: journal source revoked or disabled)"
+        ),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert_eq!(peer.ingest_requests().len(), 1);
 }
 
 #[test]

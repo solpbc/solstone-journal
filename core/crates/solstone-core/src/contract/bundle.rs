@@ -22,7 +22,23 @@ const REQUIRED_SOURCES: &[&str] = &[
 pub(crate) fn build_bundle(paths: &ContractPaths) -> Result<Value, String> {
     let layout = load_json(&paths.layout)?;
     let mut schemas = BTreeMap::new();
-    for source in discover_schema_sources(paths)? {
+    let sources = discover_schema_sources(paths)?;
+    let discovered = sources
+        .iter()
+        .map(|source| repo_relative(source, &paths.root))
+        .collect::<BTreeSet<_>>();
+    let missing = REQUIRED_SOURCES
+        .iter()
+        .copied()
+        .filter(|source| !discovered.contains(*source))
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(format!(
+            "contract: missing required schema sources: {}",
+            missing.join(", ")
+        ));
+    }
+    for source in sources {
         let schema = load_json(&source)?;
         let schema = schema.as_object().ok_or_else(|| {
             format!(
@@ -54,12 +70,6 @@ pub(crate) fn build_bundle(paths: &ContractPaths) -> Result<Value, String> {
                 source.display()
             ));
         }
-    }
-    if schemas.is_empty() {
-        return Err(format!(
-            "contract: no contract schema sources found under {}",
-            paths.solstone.display()
-        ));
     }
     Ok(json!({
         "contract": "solstone-journal-at-rest",
@@ -256,13 +266,31 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn source(root: &Path, name: &str, format: &str) {
-        let path = root.join(format!("solstone/think/{name}.schema.json"));
+    fn write_source(path: &Path, format: &str) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, format!(r#"{{"type":"object","x-journal-contract":{{"format_id":"{format}","schema_owner":"x","reference_writer":"x","allowed_producers":[],"write_discipline":"x","file_kind":"json","key_fields":[]}}}}"#)).unwrap();
     }
 
-    fn scratch() -> (TempDir, ContractPaths) {
+    fn source(root: &Path, name: &str, format: &str) {
+        write_source(
+            &root.join(format!("solstone/think/{name}.schema.json")),
+            format,
+        );
+    }
+
+    fn seed_required_sources(root: &Path) {
+        for (name, source) in [
+            ("audio", REQUIRED_SOURCES[0]),
+            ("browser", REQUIRED_SOURCES[1]),
+            ("protocol", REQUIRED_SOURCES[2]),
+            ("screen", REQUIRED_SOURCES[3]),
+            ("streams", REQUIRED_SOURCES[4]),
+        ] {
+            write_source(&root.join(source), &format!("required-{name}"));
+        }
+    }
+
+    fn scratch_without_required_sources() -> (TempDir, ContractPaths) {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
         fs::create_dir_all(root.join("solstone/think/contract")).unwrap();
@@ -273,6 +301,12 @@ mod tests {
         .unwrap();
         source(root, "first", "first");
         let paths = ContractPaths::from_root(root.to_path_buf()).unwrap();
+        (temp, paths)
+    }
+
+    fn scratch() -> (TempDir, ContractPaths) {
+        let (temp, paths) = scratch_without_required_sources();
+        seed_required_sources(&paths.root);
         (temp, paths)
     }
 
@@ -310,7 +344,9 @@ mod tests {
         assert_ne!(first["layout"], second["layout"]);
         assert_eq!(second["layout"], json!({"version": 2}));
         let schemas = second["schemas"].as_object().unwrap();
-        assert_eq!(schemas.keys().collect::<Vec<_>>(), vec!["first", "second"]);
+        assert_eq!(schemas.len(), 7);
+        assert!(schemas.contains_key("first"));
+        assert!(schemas.contains_key("second"));
     }
 
     #[test]
@@ -333,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn discovery_failures_name_source_or_root() {
+    fn discovery_failures_name_the_source() {
         let (_temp, paths) = scratch();
         let required = paths
             .root
@@ -345,12 +381,17 @@ mod tests {
                 .unwrap_err()
                 .contains("streams.schema.json")
         );
-        fs::remove_file(paths.root.join("solstone/think/first.schema.json")).unwrap();
-        fs::remove_file(&required).unwrap();
-        assert!(
-            build_bundle(&paths)
-                .unwrap_err()
-                .contains("no contract schema sources")
+    }
+
+    #[test]
+    fn missing_required_schema_sources_are_named() {
+        let (_temp, paths) = scratch_without_required_sources();
+        assert_eq!(
+            build_bundle(&paths).unwrap_err(),
+            format!(
+                "contract: missing required schema sources: {}",
+                REQUIRED_SOURCES.join(", ")
+            )
         );
     }
 

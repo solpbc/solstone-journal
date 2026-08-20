@@ -27,7 +27,7 @@ pub(crate) const CTIME_PATHS: &[JsonPath] = &[
 pub(crate) const DECLARED_STATUS_ROOT_CREATED_AT_OVERFIRE: JsonPath = &[Segment::Key("created_at")];
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
 
     use axum::{
@@ -62,6 +62,7 @@ mod tests {
         "/app/import/api/save-path",
         "/app/import/api/meta",
         "/app/import/api/start",
+        "/app/import/api/journal-archive/preview",
         "/app/import/api/journal-sources/create",
         "/app/import/api/journal-sources/corpus_peer/revoke",
         "/app/import/api/journal-sources/corpus_peer/resolve-entity",
@@ -70,12 +71,45 @@ mod tests {
         "/app/import/api/journal-sources/corpus_peer/resolve-config-all",
     ];
 
-    async fn request(
+    pub(crate) async fn request(
         root: &Path,
         method: &str,
         uri: &str,
         request_json: Option<&Value>,
     ) -> (StatusCode, String, Option<String>, Vec<u8>) {
+        let (status, headers, body) = response(root, method, uri, request_json).await;
+        let content_type = headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("")
+            .to_owned();
+        let location = headers
+            .get("location")
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned);
+        (status, content_type, location, body)
+    }
+
+    pub(crate) async fn response_header(
+        root: &Path,
+        method: &str,
+        uri: &str,
+        request_json: Option<&Value>,
+        name: &str,
+    ) -> Option<String> {
+        let (_, headers, _) = response(root, method, uri, request_json).await;
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned)
+    }
+
+    async fn response(
+        root: &Path,
+        method: &str,
+        uri: &str,
+        request_json: Option<&Value>,
+    ) -> (StatusCode, HeaderMap, Vec<u8>) {
         let mut builder = Request::builder().method(method).uri(uri);
         if request_json.is_some() {
             builder = builder.header("content-type", "application/json");
@@ -89,23 +123,14 @@ mod tests {
             .expect("router response");
         let status = response.status();
         let headers: HeaderMap = response.headers().clone();
-        let content_type = headers
-            .get("content-type")
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("")
-            .to_owned();
-        let location = headers
-            .get("location")
-            .and_then(|value| value.to_str().ok())
-            .map(ToOwned::to_owned);
         let body = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("response body")
             .to_vec();
-        (status, content_type, location, body)
+        (status, headers, body)
     }
 
-    async fn json_request(root: &Path, method: &str, uri: &str) -> (StatusCode, Value) {
+    pub(crate) async fn json_request(root: &Path, method: &str, uri: &str) -> (StatusCode, Value) {
         let (status, _, _, body) = request(root, method, uri, None).await;
         (
             status,

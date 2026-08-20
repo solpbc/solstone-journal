@@ -32,6 +32,7 @@ workspace = true
 [dependencies]
 base64 = "0.22.1"
 chrono.workspace = true
+flate2.workspace = true
 getrandom.workspace = true
 icalendar = { version = "0.17.13", features = ["chrono-tz"] }
 image.workspace = true
@@ -48,6 +49,8 @@ solstone-core-generate.workspace = true
 solstone-core-import.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-segment.workspace = true
+solstone-core-transfer-manifest.workspace = true
+tar.workspace = true
 tempfile = "3.24.0"
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 

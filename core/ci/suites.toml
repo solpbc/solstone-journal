@@ -1556,6 +1556,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-transfer-manifest"
+package = "solstone-core-transfer-manifest"
+set = "component"
+areas = ["transfer"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-vad-analyze"
 package = "solstone-core-vad-analyze"
 set = "native"
