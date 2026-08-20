@@ -53,9 +53,44 @@ fn inventory_is_frozen_and_has_fixed_root_then_member_order() {
             .collect::<Vec<_>>(),
         vec!["config"]
     );
+    assert_eq!(
+        source
+            .inventory()
+            .included_root_names()
+            .iter()
+            .map(|name| name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["chronicle", "entities", "facets", "imports"]
+    );
 
     write(&root, "chronicle/20260102/later.txt", b"later");
     write(&root, "imports/import-2/later.bin", b"later");
     assert_eq!(source.inventory().entries().len(), 5);
     assert_eq!(source.inventory().day_count(), 1);
+}
+
+#[test]
+fn health_durable_files_are_inventoried_and_brain_key_is_not() {
+    let temporary = TempDir::new("health-snapshot");
+    let root = valid_four_root_journal(&temporary);
+    write(&root, "health/pruning-runs/x.jsonl", b"audit");
+    write(&root, "health/brain.json", b"{}");
+    write(&root, "apps/observer/x.json", b"{}");
+    let source = ArchiveSource::open(&root).expect("open source");
+    let members: Vec<&str> = source
+        .inventory()
+        .entries()
+        .iter()
+        .map(|entry| entry.member_name().as_str())
+        .collect();
+    assert!(members.contains(&"health/pruning-runs/x.jsonl"));
+    assert!(!members.iter().any(|name| *name == "health/brain.json"));
+    assert!(!members.iter().any(|name| name.starts_with("apps/")));
+    assert!(
+        source
+            .inventory()
+            .skipped_root_names()
+            .iter()
+            .any(|name| name.as_str() == "apps")
+    );
 }

@@ -5,6 +5,7 @@
 //! acquire filesystem capabilities; the remaining modules only consume them.
 
 const SOURCES: &[(&str, &str)] = &[
+    ("deny", include_str!("../src/deny.rs")),
     ("encode", include_str!("../src/encode.rs")),
     ("entry", include_str!("../src/entry.rs")),
     ("error", include_str!("../src/error.rs")),

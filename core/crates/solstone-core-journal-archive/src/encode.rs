@@ -16,11 +16,41 @@ use crate::manifest::{self, ManifestError, ManifestFields};
 use crate::writer::{ArchiveEncodingError, WriteFailure};
 use crate::{ArchiveError, ArchiveMemberName, ArchiveSource};
 
+/// Inclusive chronicle-day window for a sliced portable export.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DayWindow {
+    /// Lower bound, inclusive. `None` means unbounded below.
+    pub from: Option<String>,
+    /// Upper bound, inclusive. `None` means unbounded above.
+    pub to: Option<String>,
+}
+
+impl DayWindow {
+    /// Return whether an eight-digit chronicle day falls in this window.
+    pub fn contains_day(&self, day: &str) -> bool {
+        self.from.as_deref().is_none_or(|from| day >= from)
+            && self.to.as_deref().is_none_or(|to| day <= to)
+    }
+
+    /// Return whether a file member belongs in a sliced archive.
+    pub fn contains_member(&self, member: &str) -> bool {
+        chronicle_day(member).is_some_and(|day| self.contains_day(day))
+    }
+}
+
+fn chronicle_day(member: &str) -> Option<&str> {
+    let rest = member.strip_prefix("chronicle/")?;
+    let day = rest.split_once('/').map_or(rest, |(day, _)| day);
+    (day.len() == 8 && day.bytes().all(|byte| byte.is_ascii_digit())).then_some(day)
+}
+
 /// The frozen source and metadata to encode into a portable archive.
 pub struct EncodeArchiveRequest<'a> {
     pub source: &'a ArchiveSource,
     pub solstone_version: &'a str,
     pub exported_at: &'a str,
+    /// When set, the zip contains only matching `chronicle/<day>/` trees and `_export.json`.
+    pub day_window: Option<DayWindow>,
 }
 
 /// The stage in which an output-file fault was observed.
@@ -636,13 +666,31 @@ pub fn encode_archive(
         }
     })?;
     let inventory = request.source.inventory();
+    let (day_count, entity_count, facet_count) = match &request.day_window {
+        None => (
+            inventory.day_count(),
+            inventory.entity_count(),
+            inventory.facet_count(),
+        ),
+        Some(window) => {
+            let mut days = std::collections::BTreeSet::new();
+            for entry in inventory.entries() {
+                if let Some(day) = chronicle_day(entry.member_name().as_str())
+                    && window.contains_day(day)
+                {
+                    days.insert(day);
+                }
+            }
+            (days.len(), 0, 0)
+        }
+    };
     let manifest = manifest::build(ManifestFields {
         solstone_version: request.solstone_version,
         exported_at: request.exported_at,
         source_journal,
-        day_count: inventory.day_count(),
-        entity_count: inventory.entity_count(),
-        facet_count: inventory.facet_count(),
+        day_count,
+        entity_count,
+        facet_count,
     })
     .map_err(from_manifest_error)?;
     request
@@ -658,9 +706,14 @@ pub fn encode_archive(
     let mut zip = ZipWriter::new(sink);
     #[cfg(any(test, feature = "test-hooks"))]
     test_set_boundary(TestBoundary::Body);
-    let mut pending = crate::writer::write_archive(&mut zip, request.source, &manifest)
-        .err()
-        .map(PendingFailure::from_encoding_error);
+    let mut pending = crate::writer::write_archive(
+        &mut zip,
+        request.source,
+        &manifest,
+        request.day_window.as_ref(),
+    )
+    .err()
+    .map(PendingFailure::from_encoding_error);
     if pending.is_none() {
         test_before_final_revalidate();
         pending = request
@@ -923,6 +976,7 @@ mod tests {
             source,
             solstone_version: "1.2.3",
             exported_at: "2040-01-02T03:04:59Z",
+            day_window: None,
         }
     }
 

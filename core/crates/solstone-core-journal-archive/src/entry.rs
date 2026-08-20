@@ -19,7 +19,7 @@ impl ArchiveMemberName {
     }
 }
 
-/// A top-level journal name omitted because it is outside the portable roots.
+/// A top-level journal directory omitted by a portable deny-list tree prune.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SkippedRootName(String);
 
@@ -29,6 +29,21 @@ impl SkippedRootName {
     }
 
     /// Return the omitted top-level name.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// A present top-level journal directory included in a portable archive.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct IncludedRootName(String);
+
+impl IncludedRootName {
+    pub(crate) fn new(value: String) -> Self {
+        Self(value)
+    }
+
+    /// Return the included top-level name.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -98,6 +113,7 @@ impl InventoryEntry {
 pub struct Inventory {
     pub(crate) entries: Vec<InventoryEntry>,
     pub(crate) directory_proofs: Vec<DirectoryEntryProof>,
+    pub(crate) included_root_names: Vec<IncludedRootName>,
     pub(crate) skipped_root_names: Vec<SkippedRootName>,
     pub(crate) day_count: usize,
     pub(crate) entity_count: usize,
@@ -105,12 +121,17 @@ pub struct Inventory {
 }
 
 impl Inventory {
-    /// Return regular archive entries in fixed-root, lexical member order.
+    /// Return regular archive entries in lexical member order.
     pub fn entries(&self) -> &[InventoryEntry] {
         &self.entries
     }
 
-    /// Return sorted direct journal-root names outside the portable roots.
+    /// Return sorted present top-level directories included in the archive.
+    pub fn included_root_names(&self) -> &[IncludedRootName] {
+        &self.included_root_names
+    }
+
+    /// Return sorted present top-level directories omitted by a tree prune.
     pub fn skipped_root_names(&self) -> &[SkippedRootName] {
         &self.skipped_root_names
     }

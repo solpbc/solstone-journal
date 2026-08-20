@@ -680,14 +680,6 @@ pub(crate) fn list_directory(
     Ok(names)
 }
 
-pub(crate) fn root_entry_missing(root: &OwnedFd, name: &OsStr) -> Result<bool, ArchiveError> {
-    match fstatat(root, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
-        Ok(_) => Ok(false),
-        Err(Errno::ENOENT) => Ok(true),
-        Err(error) => Err(source_io("stat archive root", None, error)),
-    }
-}
-
 pub(crate) fn utf8_component(
     name: &OsStr,
     member: &ArchiveMemberName,
@@ -1888,7 +1880,7 @@ mod tests {
                 ordinal: 1,
                 error: Errno::EIO,
             }),
-            || ArchiveSource::open(Path::new("/")),
+            || acquire_root(Path::new("/")),
         );
         assert!(root_result.is_ok());
         assert!(!root_trace.fault_consumed);

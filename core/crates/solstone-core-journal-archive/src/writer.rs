@@ -8,12 +8,10 @@ use std::io::{Read, Seek, Write};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, ZipWriter};
 
+use crate::encode::DayWindow;
 use crate::manifest::Manifest;
 use crate::{ArchiveError, ArchiveMemberName, ArchiveSource};
 
-// Mirrors inventory.rs's private ROOTS. This module needs the unconditional
-// placeholder-directory order but must not alter the inventory API.
-const ROOTS: [&str; 4] = ["chronicle", "entities", "facets", "imports"];
 const EXPORT_MANIFEST: &str = "_export.json";
 const COPY_BUFFER_SIZE: usize = 64 * 1024;
 
@@ -92,17 +90,42 @@ pub(crate) fn write_archive<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     source: &ArchiveSource,
     manifest: &Manifest,
+    day_window: Option<&DayWindow>,
 ) -> Result<(), ArchiveEncodingError> {
-    for root in ROOTS {
+    let sliced_chronicle = day_window.is_some_and(|window| {
+        source
+            .inventory()
+            .entries()
+            .iter()
+            .any(|entry| window.contains_member(entry.member_name().as_str()))
+    });
+    let included: Vec<&str> = match day_window {
+        Some(_) if sliced_chronicle => vec!["chronicle"],
+        Some(_) => Vec::new(),
+        None => source
+            .inventory()
+            .included_root_names()
+            .iter()
+            .map(|name| name.as_str())
+            .collect(),
+    };
+    if included.is_empty() {
         #[cfg(any(test, feature = "test-hooks"))]
         crate::encode::test_set_boundary(crate::encode::TestBoundary::RootDirectory);
-        zip.add_directory(root, directory_options(manifest.timestamp))
+    }
+    for root in &included {
+        #[cfg(any(test, feature = "test-hooks"))]
+        crate::encode::test_set_boundary(crate::encode::TestBoundary::RootDirectory);
+        zip.add_directory(*root, directory_options(manifest.timestamp))
             .map_err(|source| zip_error(None, source))?;
     }
 
     #[cfg(any(test, feature = "test-hooks"))]
     let mut test_first_entry = true;
     for entry in source.inventory().entries() {
+        if day_window.is_some_and(|window| !window.contains_member(entry.member_name().as_str())) {
+            continue;
+        }
         let member = entry.member_name();
         #[cfg(any(test, feature = "test-hooks"))]
         crate::encode::test_before_source_open(member);
@@ -300,7 +323,7 @@ mod tests {
     ) -> Vec<u8> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let manifest = manifest_for(source, solstone_version, exported_at);
-        write_archive(&mut writer, source, &manifest).expect("write archive");
+        write_archive(&mut writer, source, &manifest, None).expect("write archive");
         writer.finish().expect("finish archive").into_inner()
     }
 
@@ -432,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_journal_contains_only_fixed_roots_and_exact_manifest() {
+    fn empty_journal_contains_only_the_export_manifest() {
         let temporary = TempDir::new("empty-format");
         let root = temporary.journal();
         let source = ArchiveSource::open(&root).expect("open empty source");
@@ -440,13 +463,8 @@ mod tests {
         let bytes = archive_bytes(&source);
         let mut archive = ZipArchive::new(Cursor::new(bytes)).expect("open archive");
 
-        assert_eq!(archive.len(), 5);
-        for (index, expected) in ROOTS.iter().map(|root| format!("{root}/")).enumerate() {
-            let member = archive.by_index(index).expect("empty root member");
-            assert_eq!(member.name(), expected);
-            assert!(member.is_dir());
-        }
-        let mut manifest = archive.by_index(4).expect("empty manifest");
+        assert_eq!(archive.len(), 1);
+        let mut manifest = archive.by_index(0).expect("empty manifest");
         assert_eq!(manifest.name(), EXPORT_MANIFEST);
         let mut contents = Vec::new();
         manifest
@@ -521,15 +539,8 @@ mod tests {
             b"PK\x01\x02"
         ));
         assert!(has_zip64_extra(&bytes, b"_export.json", b"PK\x01\x02"));
-        for root in [
-            b"chronicle/".as_slice(),
-            b"entities/",
-            b"facets/",
-            b"imports/",
-        ] {
-            assert!(!has_zip64_extra(&bytes, root, b"PK\x03\x04"));
-            assert!(!has_zip64_extra(&bytes, root, b"PK\x01\x02"));
-        }
+        assert!(!has_zip64_extra(&bytes, b"imports/", b"PK\x03\x04"));
+        assert!(!has_zip64_extra(&bytes, b"imports/", b"PK\x01\x02"));
 
         let expected_manifest = expected_manifest(&source);
         let mut archive = ZipArchive::new(Cursor::new(bytes)).expect("open archive");
@@ -560,8 +571,8 @@ mod tests {
         fs::remove_file(root.join(member)).expect("remove inventoried member");
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let manifest = manifest_for(&source, "0.9.0", "2026-08-07T21:22:22Z");
-        let error =
-            write_archive(&mut writer, &source, &manifest).expect_err("stale source must fail");
+        let error = write_archive(&mut writer, &source, &manifest, None)
+            .expect_err("stale source must fail");
         assert!(matches!(
             error,
             ArchiveEncodingError::Source {
@@ -581,8 +592,8 @@ mod tests {
         fs::write(root.join(member), b"x").expect("truncate inventoried member");
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         let manifest = manifest_for(&source, "0.9.0", "2026-08-07T21:22:22Z");
-        let error =
-            write_archive(&mut writer, &source, &manifest).expect_err("truncated source must fail");
+        let error = write_archive(&mut writer, &source, &manifest, None)
+            .expect_err("truncated source must fail");
         assert!(matches!(
             error,
             ArchiveEncodingError::Source {

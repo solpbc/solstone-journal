@@ -157,6 +157,7 @@ fn encode_request(source: &ArchiveSource) -> EncodeArchiveRequest<'_> {
         source,
         solstone_version: "1.2.3",
         exported_at: "2040-01-02T03:04:59Z",
+        day_window: None,
     }
 }
 
