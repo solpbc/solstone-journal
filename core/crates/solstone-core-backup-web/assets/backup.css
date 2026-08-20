@@ -515,7 +515,7 @@
   .backup-shell,
   [data-backup-root] {
     padding-left: calc(var(--menu-bar-width-minimal) + 1rem);
-    padding-bottom: calc(var(--app-bar-height) + 3rem);
+    padding-bottom: 3rem;
   }
 
   body.menu-full .backup-shell,

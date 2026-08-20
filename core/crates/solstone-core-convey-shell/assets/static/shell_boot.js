@@ -113,11 +113,6 @@
 
   function applyBodyState(shell, app, day) {
     document.title = `${app.label} - journal`;
-    document.body.classList.toggle('has-app-bar', !!app.app_bar);
-    const appBar = document.getElementById('appBar');
-    if (appBar) {
-      appBar.hidden = !app.app_bar;
-    }
     const facetBar = document.querySelector('.facet-bar');
     if (facetBar) {
       facetBar.classList.toggle('facets-disabled', !app.facets_enabled);
@@ -168,19 +163,12 @@
   }
 
   function seedGlobals(shell, app) {
-    const chatBar = shell.chat_bar || {};
     window.facetsData = shell.facets || [];
     window.selectedFacet = app.facets_enabled ? shell.selected_facet : null;
     window.appFacetCounts = {};
     window.CONVEY_SETTINGS = {
       reportingEnabled: shell.settings?.reporting_enabled !== false
     };
-    window.solChatBarSeed = chatBar.sol_request || null;
-    window.solChatBarAttention = chatBar.attention || null;
-    const input = document.getElementById('chatBarInput');
-    if (input) {
-      input.placeholder = chatBar.placeholder || 'send a message…';
-    }
   }
 
   async function loadBackground(app) {

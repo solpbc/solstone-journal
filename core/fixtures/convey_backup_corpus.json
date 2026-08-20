@@ -36,8 +36,8 @@
   "phases": {
     "broken": [
       {
-        "body_bytes": 12199,
-        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_bytes": 8624,
+        "body_sha256": "f085838983b3d54640324ddab2aceda8db4d33970fc02b0c84100db4e0d31b13",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -77,8 +77,8 @@
         "why": "per-app static script"
       },
       {
-        "body_bytes": 10197,
-        "body_sha256": "01b2e4ce4c1ee310b93359984fc5b439b053f41cf8cd2d7064e6dbc8a279ef02",
+        "body_bytes": 10167,
+        "body_sha256": "26f4a8c7608fe5bc2a34a4d3476dff805c4ed63f45eda3d1928224cee97b41a3",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",
@@ -537,8 +537,8 @@
     ],
     "enabled_never_run": [
       {
-        "body_bytes": 12199,
-        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_bytes": 8624,
+        "body_sha256": "f085838983b3d54640324ddab2aceda8db4d33970fc02b0c84100db4e0d31b13",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -578,8 +578,8 @@
         "why": "per-app static script"
       },
       {
-        "body_bytes": 10197,
-        "body_sha256": "01b2e4ce4c1ee310b93359984fc5b439b053f41cf8cd2d7064e6dbc8a279ef02",
+        "body_bytes": 10167,
+        "body_sha256": "26f4a8c7608fe5bc2a34a4d3476dff805c4ed63f45eda3d1928224cee97b41a3",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",
@@ -842,8 +842,8 @@
     ],
     "fresh": [
       {
-        "body_bytes": 12199,
-        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_bytes": 8624,
+        "body_sha256": "f085838983b3d54640324ddab2aceda8db4d33970fc02b0c84100db4e0d31b13",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -883,8 +883,8 @@
         "why": "per-app static script"
       },
       {
-        "body_bytes": 10197,
-        "body_sha256": "01b2e4ce4c1ee310b93359984fc5b439b053f41cf8cd2d7064e6dbc8a279ef02",
+        "body_bytes": 10167,
+        "body_sha256": "26f4a8c7608fe5bc2a34a4d3476dff805c4ed63f45eda3d1928224cee97b41a3",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",
@@ -1147,8 +1147,8 @@
     ],
     "healthy": [
       {
-        "body_bytes": 12199,
-        "body_sha256": "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
+        "body_bytes": 8624,
+        "body_sha256": "f085838983b3d54640324ddab2aceda8db4d33970fc02b0c84100db4e0d31b13",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
         "method": "GET",
@@ -1188,8 +1188,8 @@
         "why": "per-app static script"
       },
       {
-        "body_bytes": 10197,
-        "body_sha256": "01b2e4ce4c1ee310b93359984fc5b439b053f41cf8cd2d7064e6dbc8a279ef02",
+        "body_bytes": 10167,
+        "body_sha256": "26f4a8c7608fe5bc2a34a4d3476dff805c4ed63f45eda3d1928224cee97b41a3",
         "body_sha256_basis": "raw-body",
         "content_type": "text/css; charset=utf-8",
         "method": "GET",

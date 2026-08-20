@@ -1,6 +1,4 @@
 Open `solstone/convey/static/tests/api.html` in a browser; each assertion reports pass/fail inline.
-Open `solstone/convey/static/tests/chat-render.html` in a browser; each assertion reports pass/fail inline.
-Open `solstone/convey/static/tests/chat-thinking-expander.html` in a browser; each assertion reports pass/fail inline.
 Open `solstone/convey/static/tests/diagnostic-console.html` in a browser; each assertion reports pass/fail inline.
 Open `solstone/convey/static/tests/date-nav.html` in a browser; each assertion reports pass/fail inline for date-nav.js labels, log1p heat, year totals, unit pluralization, and dayless fallback.
 Open `solstone/convey/static/tests/day-grid.html` in a browser; each assertion reports pass/fail inline for the DayGrid primitive's year blocks, legend, keyboard, peek, anchor, remount, and select-range behavior.
@@ -13,4 +11,3 @@ Open `solstone/convey/static/tests/support.html` in a browser; each assertion re
 Open `solstone/convey/static/tests/surface-state.html` in a browser; each assertion reports pass/fail inline.
 Open `solstone/convey/static/tests/ws-listen.html` in a browser; each assertion reports pass/fail inline.
 Open `solstone/convey/static/tests/register-task.html` in a browser; each assertion reports pass/fail inline.
-Open `solstone/convey/static/tests/support-draft-card.html` in a browser; each assertion reports pass/fail inline.

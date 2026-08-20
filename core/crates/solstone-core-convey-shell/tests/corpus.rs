@@ -125,6 +125,45 @@ fn apply_permanent_sol_removal_divergence(expected: &mut Value) {
     apps.retain(|app| app["name"] != "sol");
 }
 
+fn apply_permanent_chat_removal_divergence(expected: &mut Value) {
+    let apps = expected["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    assert_eq!(
+        apps.iter().filter(|app| app["name"] == "chat").count(),
+        1,
+        "frozen shell contains exactly one chat app"
+    );
+    apps.retain(|app| app["name"] != "chat");
+    assert!(
+        expected.get("chat_bar").is_some_and(Value::is_object),
+        "frozen shell contains a chat_bar object"
+    );
+    expected
+        .as_object_mut()
+        .expect("shell payload is an object")
+        .remove("chat_bar");
+}
+
+#[test]
+fn permanent_chat_removal_divergence_requires_exactly_one_chat_row() {
+    for (case, mut expected) in [
+        ("zero", json!({"apps": [], "chat_bar": {}})),
+        (
+            "two",
+            json!({"apps": [{"name": "chat"}, {"name": "chat"}], "chat_bar": {}}),
+        ),
+    ] {
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                apply_permanent_chat_removal_divergence(&mut expected);
+            }))
+            .is_err(),
+            "{case} chat rows must fail the narrow divergence"
+        );
+    }
+}
+
 #[test]
 fn permanent_sol_removal_divergence_requires_exactly_one_sol_row() {
     for (case, mut expected) in [
@@ -221,8 +260,6 @@ fn normalize(value: &mut Value, journal_root: &str, path: &str) {
         Value::String(text) => {
             if text.contains(journal_root) {
                 *text = text.replace(journal_root, "<JOURNAL_ROOT>");
-            } else if path == "chat_bar.placeholder" {
-                *text = "<CHAT_BAR_PLACEHOLDER>".to_owned();
             } else if text.len() == 8 && text.bytes().all(|byte| byte.is_ascii_digit()) {
                 *text = "<TODAY>".to_owned();
             } else if path == "version" && text.as_bytes().first().is_some_and(u8::is_ascii_digit) {
@@ -300,6 +337,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     apply_permanent_reflections_drop_divergence(&mut expected);
                     apply_permanent_tokens_removal_divergence(&mut expected);
                     apply_permanent_sol_removal_divergence(&mut expected);
+                    apply_permanent_chat_removal_divergence(&mut expected);
                 }
                 normalize(&mut actual, &journal.0.display().to_string(), "");
                 normalize(&mut expected, &journal.0.display().to_string(), "");
@@ -345,8 +383,8 @@ async fn registry_and_unconverted_refusal_contract_are_stable() {
     let (_, _, _, shell_body) = get(router(journal.0.clone()), "/api/shell").await;
     let shell: Value = serde_json::from_slice(&shell_body).expect("shell parses");
     let apps = shell["apps"].as_array().expect("apps array");
-    assert_eq!(shell["chat_bar"]["placeholder"], "send a message…");
-    assert_eq!(apps.len(), 19);
+    assert!(shell.get("chat_bar").is_none());
+    assert_eq!(apps.len(), 18);
     for app in apps {
         assert_eq!(app.as_object().unwrap().len(), 10);
         assert!(app["icon_svg"].is_string());

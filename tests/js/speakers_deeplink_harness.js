@@ -759,8 +759,6 @@ function makeDocument() {
       <p id="diagnostic-console-empty"></p>
     </aside>
     <a id="status-pane-console-link"></a>
-    <div id="appBar"></div>
-    <textarea id="chatBarInput"></textarea>
     <main id="main-content" class="workspace"></main>
   `;
   return document;
@@ -833,7 +831,6 @@ async function runRoute(scenario) {
     facets: [],
     selected_facet: null,
     settings: { reporting_enabled: true },
-    chat_bar: {},
   };
   const fetchStub = async (url, options = {}) => {
     fetchCalls.push({ url: String(url), method: String(options.method || 'GET').toUpperCase() });

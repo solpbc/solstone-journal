@@ -3,7 +3,7 @@
 .settings-wrap {
   font-family: system-ui, -apple-system, sans-serif;
   display: flex;
-  min-height: calc(100vh - var(--facet-bar-height, 60px) - var(--app-bar-height, 60px) - 40px);
+  min-height: calc(100vh - var(--facet-bar-height, 60px) - 40px);
   max-width: 1200px;
   margin: 0 auto;
   padding: 1em;
@@ -25,7 +25,7 @@
   position: sticky;
   top: calc(var(--facet-bar-height, 60px) + 1em);
   align-self: flex-start;
-  max-height: calc(100vh - var(--facet-bar-height, 60px) - var(--app-bar-height, 60px) - 3em);
+  max-height: calc(100vh - var(--facet-bar-height, 60px) - 3em);
   overflow-y: auto;
   border-right: 1px solid var(--facet-border, #e5e0db);
   padding-right: 0.75rem;
@@ -117,7 +117,7 @@
   flex: 1;
   min-width: 0;
   max-width: 600px;
-  padding-bottom: calc(var(--app-bar-height, 60px) + 2em);
+  padding-bottom: 2em;
 }
 
 .settings-section {
@@ -2004,7 +2004,7 @@ button:focus:not(:focus-visible) {
 .facet-detail-page {
   max-width: 720px;
   margin: 0 auto;
-  padding: 2rem 1rem calc(var(--app-bar-height, 60px) + 2rem);
+  padding: 2rem 1rem;
 }
 
 .facet-detail-page[hidden] {

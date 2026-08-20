@@ -120,7 +120,6 @@ async function main() {
     facets: [],
     selected_facet: null,
     settings: { reporting_enabled: true },
-    chat_bar: {},
   };
   const document = makeDocument(menuItems, facetBar);
   const window = {

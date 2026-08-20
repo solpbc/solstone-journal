@@ -87,16 +87,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         converted: true,
     },
     AppDefinition {
-        name: "chat",
-        icon: "💬",
-        label: "chat",
-        lucide_icon: "message-circle",
-        date_nav: Some(content_date_nav("message", "messages", "no messages")),
-        facets_enabled: true,
-        has_background: false,
-        converted: true,
-    },
-    AppDefinition {
         name: "curation",
         icon: "✨",
         label: "curation",
@@ -255,7 +245,6 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
 #[derive(Debug, Clone, Serialize)]
 pub struct ShellPayload {
     pub apps: Vec<ShellApp>,
-    pub chat_bar: ChatBar,
     pub facets: Vec<serde_json::Value>,
     pub selected_facet: Option<serde_json::Value>,
     pub settings: ShellSettings,
@@ -274,13 +263,6 @@ pub struct ShellApp {
     pub name: &'static str,
     pub starred: bool,
     pub workspace_url: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ChatBar {
-    pub attention: Option<serde_json::Value>,
-    pub placeholder: &'static str,
-    pub sol_request: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -317,11 +299,6 @@ pub fn shell_payload() -> ShellPayload {
                 workspace_url: format!("/app/{}/workspace", app.name),
             })
             .collect(),
-        chat_bar: ChatBar {
-            attention: None,
-            placeholder: "send a message…",
-            sol_request: None,
-        },
         facets: Vec::new(),
         selected_facet: None,
         settings: ShellSettings {
@@ -382,6 +359,22 @@ mod tests {
     fn devices_is_removed_from_the_registry() {
         assert!(!APP_REGISTRY.iter().any(|app| app.name == "devices"));
         assert!(known_app("devices").is_none());
+    }
+
+    #[test]
+    fn chat_is_removed_from_the_registry() {
+        assert!(!APP_REGISTRY.iter().any(|app| app.name == "chat"));
+        assert!(known_app("chat").is_none());
+    }
+
+    #[test]
+    fn shell_payload_omits_chat_app_and_chat_bar() {
+        let payload = shell_payload();
+        assert!(!payload.apps.iter().any(|app| {
+            app.name == "chat" || app.label == "chat" || app.workspace_url.contains("chat")
+        }));
+        let encoded = serde_json::to_value(&payload).expect("shell payload serializes");
+        assert!(encoded.get("chat_bar").is_none());
     }
 
     #[test]

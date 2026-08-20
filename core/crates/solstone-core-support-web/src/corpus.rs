@@ -1263,8 +1263,8 @@ fn copied_assets_are_byte_identical_to_the_frozen_hashes() {
         ),
         (
             super::SHELL,
-            "508e101adc759313ddce94c3263f4124f7575e7dd0d07dfc69cf02817746e7fe",
-            12_199,
+            "f085838983b3d54640324ddab2aceda8db4d33970fc02b0c84100db4e0d31b13",
+            8_624,
         ),
     ] {
         assert_eq!(bytes.len(), size);

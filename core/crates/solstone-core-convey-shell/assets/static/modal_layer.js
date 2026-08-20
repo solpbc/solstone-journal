@@ -4,7 +4,7 @@
 (function (global) {
   const MANAGED_DIALOG_SELECTOR = '[role="dialog"][aria-modal="true"]';
   // Assignment §8 items 1-2: shell-owned dialogs stay outside this app workspace layer.
-  const UNMANAGED_DIALOG_SELECTOR = '#talentViewModal, .report-error-modal';
+  const UNMANAGED_DIALOG_SELECTOR = '.report-error-modal';
   const BODY_ACTIVE_CLASS = 'has-managed-dialog';
   const ACTIVE_DIALOG_ATTR = 'data-convey-active-dialog';
   const ACTIVE_HOST_ATTR = 'data-convey-active-dialog-host';
