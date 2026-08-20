@@ -3,7 +3,7 @@
   "access_tier": "synthesis",
 
   "title": "your profile",
-  "description": "a weekly profile grounded in what you shared and what your journal holds: dated entries, repeated topics, recorded interactions, and decisions",
+  "description": "a weekly profile grounded in what you shared and what your journal holds: dated entries, repeated topics, recorded interactions, and decisions. your journal is always private, only yours.",
   "schedule": "weekly",
   "priority": 95,
   "max_turns": 100
@@ -98,9 +98,9 @@ sources. Do not infer expertise or attention from labels alone.
    replaces the whole section, reconstruct the complete section for every staleness
    update. Preserve each claim whose cited evidence is 30 days old or newer. Remove each
    older claim rather than presenting it as current. If no supported claim remains,
-   replace the section with `The latest supporting evidence for this section is from
-   YYYY-MM-DD.` Use the newest removed claim's evidence date. Perform this maintenance
-   even when no fresh evidence exists.
+   replace the section with `This section reflects your journal through YYYY-MM-DD.`
+   Use the newest removed claim's evidence date.
+   Perform this maintenance even when no fresh evidence exists.
 
 6. **Token bound**: The total partner.md should stay under about 2K tokens. If trimming
    is needed, drop the least-supported entries first.
@@ -110,8 +110,14 @@ sources. Do not infer expertise or attention from labels alone.
 For each section with new evidence, write it:
 
 ```bash
-journal identity partner --update-section 'work patterns' --value 'On March 28, 2026, your scheduled entries list a morning meeting. Add a broader pattern only when the cited records support it across the full date range.'
+journal identity partner --update-section 'work patterns' --value 'On March 28, 2026, your scheduled entries list a morning meeting.'
 ```
+
+Add a broader pattern only when the cited records support it across the full date range.
+Keep each command on one physical line: the host rejects a command containing a newline or
+a carriage return. Keep the `--value` text free of `$(`, backticks, and ASCII apostrophes —
+the host rejects command substitution outright, and an apostrophe inside the single-quoted
+value closes the quote. Rephrase to avoid a possessive rather than copying unsafe punctuation.
 
 Update a section when it has meaningful new evidence or when an existing entry must be
 marked stale. Leave placeholder sections alone when the available sources are insufficient.
