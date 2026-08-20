@@ -34,7 +34,7 @@ const OBSERVER_STATE_LABELS: [(&str, &str); 4] = [
     ("revoked", "removed"),
 ];
 
-const OBSERVER_ENTRY_FIELDS: [&str; 17] = [
+const OBSERVER_ENTRY_FIELDS: [&str; 16] = [
     "prefix",
     "name",
     "created_at",
@@ -45,7 +45,6 @@ const OBSERVER_ENTRY_FIELDS: [&str; 17] = [
     "revoked_at",
     "stats",
     "live",
-    "last_chat_request_at",
     "state",
     "group",
     "elapsed_ms",
@@ -227,7 +226,6 @@ fn observer_json(record: &ObserverRecord, now_ms: i64) -> Value {
             json!(record.stats().cloned().unwrap_or_default()),
         ),
         ("live".to_owned(), live.clone()),
-        ("last_chat_request_at".to_owned(), Value::Null),
         (
             "state".to_owned(),
             freshness_field(record, &live, &freshness, |row| json!(row.state)),
@@ -564,10 +562,6 @@ mod tests {
                     .expect("devices corpus parses");
             let environment_native = &corpus["environment_native"];
             assert_eq!(row["live"], environment_native["live"], "{prefix}");
-            assert_eq!(
-                row["last_chat_request_at"], environment_native["last_chat_request_at"],
-                "{prefix}"
-            );
             assert!(row["failing"].is_boolean(), "{prefix}");
 
             let (status, refusal) = request(
@@ -711,10 +705,6 @@ mod tests {
                 .expect("devices corpus parses");
         let environment_native = &corpus["environment_native"];
         assert_eq!(row["live"], environment_native["live"]);
-        assert_eq!(
-            row["last_chat_request_at"],
-            environment_native["last_chat_request_at"]
-        );
         assert!(row["failing"].is_boolean());
 
         let (status, key) = request(

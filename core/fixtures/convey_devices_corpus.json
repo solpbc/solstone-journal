@@ -24,7 +24,6 @@
     "STALE_THRESHOLD_MS": 120000
   },
   "environment_native": {
-    "last_chat_request_at": null,
     "live": null
   },
   "field_classes": {
@@ -46,8 +45,7 @@
       "stats"
     ],
     "environment": [
-      "live",
-      "last_chat_request_at"
+      "live"
     ]
   },
   "freshness": [
@@ -447,7 +445,6 @@
         "failing": false,
         "group": "inactive",
         "label": "offline",
-        "last_chat_request_at": null,
         "last_seen": 1759999820000,
         "last_segment": null,
         "live": false,
@@ -485,7 +482,6 @@
         "failing": false,
         "group": "stale",
         "label": "not reporting",
-        "last_chat_request_at": null,
         "last_seen": 1759999965000,
         "last_segment": null,
         "live": false,
@@ -523,7 +519,6 @@
         "failing": false,
         "group": "inactive",
         "label": "offline",
-        "last_chat_request_at": null,
         "last_seen": null,
         "last_segment": null,
         "live": false,
@@ -561,7 +556,6 @@
         "failing": false,
         "group": "active",
         "label": "connected",
-        "last_chat_request_at": null,
         "last_seen": 1759999999000,
         "last_segment": null,
         "live": false,
@@ -599,7 +593,6 @@
         "failing": false,
         "group": "active",
         "label": "connected",
-        "last_chat_request_at": null,
         "last_seen": 1759999999000,
         "last_segment": null,
         "live": false,
@@ -637,7 +630,6 @@
         "failing": false,
         "group": "inactive",
         "label": "removed",
-        "last_chat_request_at": null,
         "last_seen": 1759999995000,
         "last_segment": null,
         "live": false,
@@ -675,7 +667,6 @@
         "failing": false,
         "group": "inactive",
         "label": "removed",
-        "last_chat_request_at": null,
         "last_seen": 1759999760000,
         "last_segment": null,
         "live": false,

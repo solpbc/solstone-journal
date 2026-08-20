@@ -1747,26 +1747,6 @@ a.body-day-cell:focus-visible {
     ]);
   }
 
-  function renderPrompts(prompts) {
-    const items = asArray(prompts);
-    if (!items.length) return "";
-    return html([
-      '<section class="body-card body-section" aria-labelledby="body-ask-title">',
-      '<h2 id="body-ask-title" class="body-question-title">ask sol about this day</h2>',
-      '<div class="body-prompts">',
-      items.map((prompt) => `<button type="button" class="body-prompt" data-prompt="${escapeHtml(prompt)}">${escapeHtml(prompt)}</button>`).join(""),
-      '</div></section>',
-    ]);
-  }
-
-  function bindPromptButtons() {
-    root.querySelectorAll(".body-prompt").forEach((button) => {
-      button.addEventListener("click", () => {
-        if (window.fillChat) window.fillChat(button.dataset.prompt);
-      });
-    });
-  }
-
   function renderDayAudit(bodyDay) {
     const audit = asObject(bodyDay.audit);
     if (dayAuditHasNothingToDisclose(bodyDay)) {
@@ -1813,7 +1793,6 @@ a.body-day-cell:focus-visible {
       '</div>',
       renderSecondaryLists(bodyDay),
       renderSourcesThisDay(bodyDay.sources),
-      renderPrompts(bodyDay.prompts),
       renderDayAudit(bodyDay),
     ]);
   }
@@ -1823,7 +1802,6 @@ a.body-day-cell:focus-visible {
     try {
       const bodyDay = await window.apiJson(`/app/body/api/day/${encodeURIComponent(day)}`);
       reveal(renderDayView(bodyDay));
-      bindPromptButtons();
     } catch (err) {
       showError("Couldn't load body day", err, () => initBodyDay());
     }

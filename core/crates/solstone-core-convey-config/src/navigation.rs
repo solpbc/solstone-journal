@@ -10,10 +10,9 @@ use solstone_core_journal_io::{
     path_lexists, read_json, write_json,
 };
 
-const DEFAULT_RAIL_APPS: [&str; 9] = [
+const DEFAULT_RAIL_APPS: [&str; 8] = [
     "home",
     "sol",
-    "chat",
     "curation",
     "activities",
     "transcripts",
@@ -21,10 +20,9 @@ const DEFAULT_RAIL_APPS: [&str; 9] = [
     "search",
     "import",
 ];
-const DEFAULT_APP_ORDER: [&str; 11] = [
+const DEFAULT_APP_ORDER: [&str; 10] = [
     "home",
     "sol",
-    "chat",
     "curation",
     "activities",
     "transcripts",
@@ -337,5 +335,25 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, b"{\"apps\":{\"starred\":[],\"order\":[]}}\n").unwrap();
         assert!(!seed_default_app_navigation(temp.path()).unwrap().changed);
+    }
+
+    #[test]
+    fn default_navigation_lists_do_not_include_chat() {
+        assert!(!DEFAULT_RAIL_APPS.contains(&"chat"));
+        assert!(!DEFAULT_APP_ORDER.contains(&"chat"));
+    }
+
+    #[test]
+    fn seed_default_app_navigation_writes_no_chat() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("config/convey.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"{}\n").unwrap();
+        assert!(seed_default_app_navigation(temp.path()).unwrap().changed);
+        let config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let starred = config["apps"]["starred"].as_array().unwrap();
+        let order = config["apps"]["order"].as_array().unwrap();
+        assert!(!starred.iter().any(|value| value.as_str() == Some("chat")));
+        assert!(!order.iter().any(|value| value.as_str() == Some("chat")));
     }
 }
