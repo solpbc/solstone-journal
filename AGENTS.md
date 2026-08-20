@@ -97,7 +97,7 @@ Two surfaces:
 **Adding a top-level `solstone` command:** add a native authority under `core/native-sol/think/native/<command>/authority.toml` and implement the handler at `core/crates/solstone-core-sol-client/native/think/<command>/command.rs`. Use `core/native-sol/think/native/import/authority.toml` with `core/crates/solstone-core-sol-client/native/think/import/command.rs` as the current pattern.
 
 **Adding a `solstone call` sub-verb:** update `core/native-sol/apps/<app>/native/authority.toml`, implement the handler in `core/crates/solstone-core-sol-client/native/apps/<app>/command.rs`, and regenerate the native inventory.
-Portable journal archive export is temporarily unavailable while archive support migrates; read-only archive validation lives in `solstone/think/importers/journal_archive.py`.
+Portable journal archives can be downloaded from the Journal archive flow on the Import screen and previewed there before merge.
 
 Run `solstone` (no args) for the static grouped command list.
 

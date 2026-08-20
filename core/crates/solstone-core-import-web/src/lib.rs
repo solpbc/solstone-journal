@@ -18,6 +18,7 @@ mod facet_ingest;
 mod http;
 mod imports;
 mod ingest;
+mod journal_archive;
 mod journal_sources;
 mod lifecycle;
 mod multipart;
@@ -47,6 +48,14 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route("/app/import/api/sources", get(imports::sources))
         .route("/app/import/api/list", get(imports::list))
         .route("/app/import/api/guide/{source}", get(assets::guide))
+        .route(
+            "/app/import/api/journal-archive/export",
+            get(journal_archive::export),
+        )
+        .route(
+            "/app/import/api/journal-archive/preview",
+            post(journal_archive::preview),
+        )
         .route(
             "/app/import/api/save",
             post(lifecycle::save).layer(DefaultBodyLimit::max(

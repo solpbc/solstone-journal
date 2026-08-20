@@ -442,7 +442,7 @@ fn stage_bytes(
     Ok(target)
 }
 
-fn contained_import_file(
+pub(crate) fn contained_import_file(
     root: &Path,
     timestamp: &str,
     filename: &str,
