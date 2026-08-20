@@ -127,6 +127,7 @@
         "timeout": "it ran out of time.",
         "_missing": "the reason wasn't recorded.",
         "restic_unavailable": "encrypted backup can't run on this computer.",
+        "rclone_unavailable": "encrypted backup can't reach storage from this computer.",
         "backup_unavailable": "this computer can't set up or restore encrypted backup."
       }
     },

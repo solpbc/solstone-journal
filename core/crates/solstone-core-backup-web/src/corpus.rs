@@ -7,7 +7,18 @@ use axum::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_artifact_download::{ByteDownload, ByteDownloadError};
+use solstone_core_backup_runtime::hosted_runtime::HttpError;
+use solstone_core_backup_runtime::{
+    Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance, JournalMaintenanceError,
+    RESTIC_VERSION, ToolOutput, ToolRequest, ToolRunner,
+};
+use std::collections::VecDeque;
 use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 use tower::ServiceExt;
 
 struct Captured {
@@ -342,66 +353,62 @@ async fn unreadable_and_zero_geometry_return_non_panicking_shapes() {
 }
 
 #[tokio::test]
-async fn engine_routes_validate_then_return_distinct_native_refusals() {
+async fn engine_routes_are_no_longer_native_refusals() {
     let destination = json!({"repository":"s3:bucket","backend":"s3","credentials":{"access_key_id":"key","secret_access_key":"secret"}});
     let cases = [
-        (
-            "/app/backup/enable",
-            None,
-            crate::refuse::BACKUP_ENABLE_NOT_IMPLEMENTED_NATIVE,
-        ),
-        (
-            "/app/backup/enable-hosted",
-            None,
-            crate::refuse::BACKUP_ENABLE_HOSTED_NOT_IMPLEMENTED_NATIVE,
-        ),
-        (
-            "/app/backup/destination",
-            Some(destination.clone()),
-            crate::refuse::BACKUP_DESTINATION_NOT_IMPLEMENTED_NATIVE,
-        ),
-        (
-            "/app/backup/recovery-key/rotate",
-            None,
-            crate::refuse::BACKUP_RECOVERY_KEY_ROTATE_NOT_IMPLEMENTED_NATIVE,
-        ),
-        (
-            "/app/backup/teardown",
-            None,
-            crate::refuse::BACKUP_TEARDOWN_NOT_IMPLEMENTED_NATIVE,
-        ),
+        ("/app/backup/enable", None),
+        ("/app/backup/enable-hosted", None),
+        ("/app/backup/destination", Some(destination.clone())),
+        ("/app/backup/recovery-key/rotate", None),
+        ("/app/backup/teardown", None),
         (
             "/app/backup/restore",
             Some(
                 json!({"recovery_key":crate::test_support::RECOVERY_KEY,"repository":"s3:bucket","backend":"s3","credentials":{"access_key_id":"key","secret_access_key":"secret"}}),
             ),
-            crate::refuse::BACKUP_RESTORE_NOT_IMPLEMENTED_NATIVE,
         ),
         (
             "/app/backup/restore-hosted",
             Some(json!({"recovery_key":crate::test_support::RECOVERY_KEY})),
-            crate::refuse::BACKUP_RESTORE_HOSTED_NOT_IMPLEMENTED_NATIVE,
         ),
-        (
-            "/app/backup/offload/restore",
-            Some(json!({"all":true})),
-            crate::refuse::BACKUP_OFFLOAD_RESTORE_NOT_IMPLEMENTED_NATIVE,
-        ),
+        ("/app/backup/offload/restore", Some(json!({"all":true}))),
     ];
-    for (path, body, reason_code) in cases {
+    let retired = [
+        "backup_enable_not_implemented_native",
+        "backup_enable_hosted_not_implemented_native",
+        "backup_destination_not_implemented_native",
+        "backup_recovery_key_rotate_not_implemented_native",
+        "backup_teardown_not_implemented_native",
+        "backup_restore_not_implemented_native",
+        "backup_restore_hosted_not_implemented_native",
+        "backup_offload_restore_not_implemented_native",
+    ];
+    for (path, body) in cases {
         let root = crate::test_support::root("healthy");
-        let (status, response) = response_json(
-            crate::routes(root.path().to_path_buf()),
-            Request::post(path)
-                .body(Body::from(
-                    body.map(|value| serde_json::to_vec(&value).unwrap())
-                        .unwrap_or_default(),
-                ))
-                .unwrap(),
-        )
-        .await;
-        assert_eq!(status, 501, "{path}");
-        assert_eq!(response["reason_code"], reason_code, "{path}");
+        let restic = tempfile::tempdir().unwrap();
+        crate::test_support::write_ready_restic(restic.path());
+        let runner = ScriptRunner::with_outputs(vec![
+            version_output(),
+            output(10, ""),
+            output(0, ""),
+            output(0, ""),
+            output(0, ""),
+            output(0, "[{\"id\":\"snap\"}]"),
+            output(0, ""),
+            output(0, "[{\"paths\":[\"/original\"]}]"),
+            output(0, "[{\"message_type\":\"summary\",\"bytes_restored\":1}]"),
+            output(0, ""),
+        ]);
+        let deps = engine_deps(
+            root.path().to_path_buf(),
+            Arc::new(runner),
+            Arc::new(HttpScript::default()),
+            Some(restic.path().to_path_buf()),
+        );
+        let (status, response) = post_json(&deps, path, body).await;
+        assert_ne!(status, 501, "{path}");
+        let reason = response["reason_code"].as_str().unwrap_or("");
+        assert!(!retired.contains(&reason), "{path} retired reason {reason}");
     }
 }
 
@@ -576,4 +583,884 @@ fn corpus_declares_all_route_cases() {
             .sum::<usize>(),
         78
     );
+}
+
+struct Hold {
+    released: Mutex<bool>,
+    release: Condvar,
+    started: Mutex<bool>,
+    start: Condvar,
+}
+
+impl Hold {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            released: Mutex::new(false),
+            release: Condvar::new(),
+            started: Mutex::new(false),
+            start: Condvar::new(),
+        })
+    }
+
+    fn wait_started(&self) {
+        let mut started = self.started.lock().unwrap();
+        while !*started {
+            started = self.start.wait(started).unwrap();
+        }
+    }
+
+    fn release(&self) {
+        *self.released.lock().unwrap() = true;
+        self.release.notify_all();
+    }
+
+    fn arrive_and_wait(&self) {
+        *self.started.lock().unwrap() = true;
+        self.start.notify_all();
+        let mut released = self.released.lock().unwrap();
+        while !*released {
+            released = self.release.wait(released).unwrap();
+        }
+    }
+}
+
+struct ScriptRunner {
+    outputs: Mutex<VecDeque<ToolOutput>>,
+    calls: Mutex<Vec<(PathBuf, Vec<String>)>>,
+    hold: Option<Arc<Hold>>,
+}
+
+impl ScriptRunner {
+    fn with_outputs(outputs: Vec<ToolOutput>) -> Self {
+        Self {
+            outputs: Mutex::new(VecDeque::from(outputs)),
+            calls: Mutex::new(vec![]),
+            hold: None,
+        }
+    }
+
+    fn with_hold(outputs: Vec<ToolOutput>, hold: Arc<Hold>) -> Self {
+        Self {
+            outputs: Mutex::new(VecDeque::from(outputs)),
+            calls: Mutex::new(vec![]),
+            hold: Some(hold),
+        }
+    }
+
+    fn argv_heads(&self) -> Vec<String> {
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, argv)| argv.first().cloned().unwrap_or_default())
+            .collect()
+    }
+}
+
+impl ToolRunner for ScriptRunner {
+    fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        self.calls.lock().unwrap().push((
+            PathBuf::from(&request.program),
+            request
+                .argv
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect(),
+        ));
+        if let Some(hold) = &self.hold {
+            hold.arrive_and_wait();
+        }
+        Ok(self
+            .outputs
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(ToolOutput {
+                returncode: 0,
+                stdout: vec![],
+                stderr: vec![],
+            }))
+    }
+}
+
+#[derive(Default)]
+struct HttpScript {
+    responses: Mutex<VecDeque<Result<HttpResponse, HttpError>>>,
+    requests: Mutex<Vec<HttpRequest>>,
+}
+
+impl HttpScript {
+    fn with_responses(responses: Vec<Result<HttpResponse, HttpError>>) -> Self {
+        Self {
+            responses: Mutex::new(VecDeque::from(responses)),
+            requests: Mutex::new(vec![]),
+        }
+    }
+}
+
+impl HttpTransport for HttpScript {
+    fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, HttpError> {
+        self.requests.lock().unwrap().push(request.clone());
+        self.responses
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(Err(HttpError::Unreachable))
+    }
+}
+
+struct PanicDownload;
+
+impl ByteDownload for PanicDownload {
+    fn fetch(&self, _: &str, _: Duration) -> Result<Vec<u8>, ByteDownloadError> {
+        panic!("must not download")
+    }
+}
+
+struct TestClock;
+
+impl Clock for TestClock {
+    fn now_unix(&self) -> i64 {
+        50
+    }
+    fn iso_week(&self) -> u8 {
+        1
+    }
+}
+
+struct OkMaintenance;
+
+impl JournalMaintenance for OkMaintenance {
+    fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+        Ok(())
+    }
+    fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+        Ok(())
+    }
+}
+
+fn output(code: i32, stdout: &str) -> ToolOutput {
+    ToolOutput {
+        returncode: code,
+        stdout: stdout.as_bytes().to_vec(),
+        stderr: vec![],
+    }
+}
+
+fn version_output() -> ToolOutput {
+    output(0, &format!("restic {RESTIC_VERSION}\n"))
+}
+
+fn credentials_response() -> HttpResponse {
+    HttpResponse {
+        status: 200,
+        headers: vec![],
+        body: serde_json::to_vec(&json!({
+            "access_key_id": "ACCESS",
+            "secret_access_key": "SECRET",
+            "session_token": "SESSION",
+            "endpoint": "https://s3.example",
+            "expires_at": "tomorrow"
+        }))
+        .unwrap(),
+    }
+}
+
+fn xml_response(body: &str) -> HttpResponse {
+    HttpResponse {
+        status: 200,
+        headers: vec![],
+        body: body.as_bytes().to_vec(),
+    }
+}
+
+fn engine_deps(
+    journal_root: PathBuf,
+    runner: Arc<dyn ToolRunner + Send + Sync>,
+    http: Arc<dyn HttpTransport + Send + Sync>,
+    restic_install_dir: Option<PathBuf>,
+) -> crate::BackupWebDeps {
+    crate::BackupWebDeps {
+        journal_root,
+        cache: corpus_cache(),
+        operations: crate::operation::new_slot(),
+        runner,
+        http,
+        downloader: Arc::new(PanicDownload),
+        clock: Arc::new(TestClock),
+        journal_maintenance: Arc::new(OkMaintenance),
+        restic_install_dir,
+        rclone_install_dir: None,
+        portal_base: "https://services.solstone.app".into(),
+        version: "test",
+    }
+}
+
+fn prepared(
+    journal_root: PathBuf,
+    runner: Arc<dyn ToolRunner + Send + Sync>,
+) -> (crate::BackupWebDeps, tempfile::TempDir) {
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    (
+        engine_deps(
+            journal_root,
+            runner,
+            Arc::new(HttpScript::default()),
+            Some(restic.path().to_path_buf()),
+        ),
+        restic,
+    )
+}
+
+async fn post_json(deps: &crate::BackupWebDeps, path: &str, body: Option<Value>) -> (u16, Value) {
+    response_json(
+        crate::routes_with_deps(deps.clone()),
+        Request::post(path)
+            .body(Body::from(
+                body.map(|value| serde_json::to_vec(&value).unwrap())
+                    .unwrap_or_default(),
+            ))
+            .unwrap(),
+    )
+    .await
+}
+
+async fn get_status_json(deps: &crate::BackupWebDeps) -> (u16, Value) {
+    response_json(
+        crate::routes_with_deps(deps.clone()),
+        Request::get("/app/backup/status")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
+}
+
+async fn wait_terminal(deps: &crate::BackupWebDeps) -> Value {
+    for _ in 0..200 {
+        let (_, body) = get_status_json(deps).await;
+        let phase = body["operation"]["phase"].as_str().unwrap_or("");
+        if crate::operation::is_terminal(phase) || body["operation"].is_null() {
+            return body;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("operation did not terminate")
+}
+
+fn disable_backup(root: &Path) {
+    solstone_core_backup::set_enabled(root, false).unwrap();
+}
+
+fn restore_body() -> Value {
+    json!({
+        "recovery_key": crate::test_support::RECOVERY_KEY,
+        "repository": "s3:bucket",
+        "backend": "s3",
+        "credentials": {"access_key_id": "key", "secret_access_key": "secret"}
+    })
+}
+
+fn init_outputs() -> Vec<ToolOutput> {
+    vec![
+        version_output(),
+        output(10, ""),
+        output(0, ""),
+        output(0, ""),
+        output(0, ""),
+    ]
+}
+
+#[tokio::test]
+async fn enable_returns_running_then_done_without_waiting_for_restic() {
+    let root = crate::test_support::root("healthy");
+    disable_backup(root.path());
+    let hold = Hold::new();
+    let runner = ScriptRunner::with_hold(init_outputs(), hold.clone());
+    let runner = Arc::new(runner);
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let (status, body) = post_json(&deps, "/app/backup/enable", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["operation"]["kind"], "enable");
+    assert_eq!(body["operation"]["phase"], "setting_up");
+    hold.wait_started();
+    let (status, during) = get_status_json(&deps).await;
+    assert_eq!(status, 200);
+    assert_eq!(during["operation"]["phase"], "setting_up");
+    hold.release();
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "done");
+    assert_eq!(done["enabled"], true);
+    let heads = runner.argv_heads();
+    assert!(heads.contains(&"version".into()) || heads.contains(&"cat".into()));
+    assert!(
+        heads.iter().any(|head| head == "cat")
+            && (heads.iter().any(|head| head == "init") || heads.iter().any(|head| head == "key"))
+    );
+}
+
+#[tokio::test]
+async fn enable_init_failure_leaves_disabled_and_errors() {
+    let root = crate::test_support::root("healthy");
+    disable_backup(root.path());
+    let runner = ScriptRunner::with_outputs(vec![version_output(), output(10, ""), output(12, "")]);
+    let (deps, _restic) = prepared(root.path().to_path_buf(), Arc::new(runner));
+    let (status, _) = post_json(&deps, "/app/backup/enable", None).await;
+    assert_eq!(status, 200);
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "error");
+    assert_eq!(done["operation"]["reason_code"], "auth_failed");
+    assert_eq!(done["enabled"], false);
+}
+
+#[tokio::test]
+async fn restore_success_records_snapshots_then_restore() {
+    let root = crate::test_support::root("healthy");
+    let before = fs::read(root.path().join("config/journal.json")).unwrap();
+    let runner = ScriptRunner::with_outputs(vec![
+        version_output(),
+        output(0, "[{\"paths\":[\"/original\"]}]"),
+        output(0, "[{\"message_type\":\"summary\",\"bytes_restored\":12}]"),
+        output(0, ""),
+    ]);
+    let runner = Arc::new(runner);
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let (status, body) = post_json(&deps, "/app/backup/restore", Some(restore_body())).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["operation"]["kind"], "restore");
+    assert_eq!(body["operation"]["phase"], "restoring");
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "done");
+    let heads = runner.argv_heads();
+    assert!(heads.iter().any(|head| head == "snapshots"));
+    assert!(heads.iter().any(|head| head == "restore"));
+    assert_ne!(
+        fs::read(root.path().join("config/journal.json")).unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
+async fn restore_empty_snapshots_errors_without_publishing_destination() {
+    let root = crate::test_support::root("healthy");
+    let before = fs::read(root.path().join("config/journal.json")).unwrap();
+    let runner = ScriptRunner::with_outputs(vec![version_output(), output(0, "[]")]);
+    let (deps, _restic) = prepared(root.path().to_path_buf(), Arc::new(runner));
+    let _ = post_json(&deps, "/app/backup/restore", Some(restore_body())).await;
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "error");
+    assert_eq!(
+        fs::read(root.path().join("config/journal.json")).unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
+async fn restore_check_failure_is_degraded() {
+    let root = crate::test_support::root("healthy");
+    let runner = ScriptRunner::with_outputs(vec![
+        version_output(),
+        output(0, "[{\"paths\":[\"/original\"]}]"),
+        output(0, "[{\"message_type\":\"summary\",\"bytes_restored\":12}]"),
+        output(11, ""),
+    ]);
+    let (deps, _restic) = prepared(root.path().to_path_buf(), Arc::new(runner));
+    let _ = post_json(&deps, "/app/backup/restore", Some(restore_body())).await;
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "degraded");
+    assert_eq!(done["operation"]["reason_code"], "integrity_unverified");
+}
+
+#[tokio::test]
+async fn teardown_byo_forgets_then_clears() {
+    let root = crate::test_support::root("healthy");
+    let runner = ScriptRunner::with_outputs(vec![
+        version_output(),
+        output(0, "[{\"id\":\"snap\"}]"),
+        output(0, ""),
+    ]);
+    let runner = Arc::new(runner);
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let (status, body) = post_json(&deps, "/app/backup/teardown", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["operation"]["kind"], "teardown");
+    assert_eq!(body["operation"]["phase"], "tearing_down");
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "done");
+    assert_eq!(done["enabled"], false);
+    let heads = runner.argv_heads();
+    assert!(
+        heads
+            .iter()
+            .any(|head| head == "forget" || head == "snapshots")
+    );
+}
+
+#[tokio::test]
+async fn teardown_operated_wipes_via_http() {
+    let root = crate::test_support::hosted_bound_root();
+    let runner = ScriptRunner::with_outputs(vec![version_output()]);
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    let http = HttpScript::with_responses(vec![
+        Ok(credentials_response()),
+        Ok(xml_response(
+            "<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>",
+        )),
+        Ok(xml_response(
+            "<ListMultipartUploadsResult><IsTruncated>false</IsTruncated></ListMultipartUploadsResult>",
+        )),
+    ]);
+    let http = Arc::new(http);
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(runner),
+        http.clone(),
+        Some(restic.path().to_path_buf()),
+    );
+    let _ = post_json(&deps, "/app/backup/teardown", None).await;
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "done");
+    assert!(!http.requests.lock().unwrap().is_empty());
+    assert_eq!(done["hosted"]["bound"], false);
+}
+
+#[tokio::test]
+async fn rotate_does_not_echo_recovery_key() {
+    let root = crate::test_support::root("healthy");
+    let runner = ScriptRunner::with_outputs(vec![
+        version_output(),
+        output(0, "[{\"id\":\"old\",\"current\":true}]"),
+        output(0, ""),
+        output(0, ""),
+        output(0, ""),
+    ]);
+    let runner = Arc::new(runner);
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let (status, body) = post_json(&deps, "/app/backup/recovery-key/rotate", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["operation"]["kind"], "rotate");
+    assert!(body.get("recovery_key").is_none());
+    assert!(body.get("daily_key").is_none());
+    let rendered = body.to_string();
+    assert!(!rendered.contains(crate::test_support::RECOVERY_KEY));
+    hold_until_rotate_done(deps, runner).await;
+}
+
+async fn hold_until_rotate_done(deps: crate::BackupWebDeps, runner: Arc<ScriptRunner>) {
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "done");
+    assert_eq!(done["recovery_key_confirmed"], false);
+    assert!(done.get("recovery_key").is_none());
+    assert!(runner.argv_heads().iter().any(|head| head == "key"));
+}
+
+#[tokio::test]
+async fn second_engine_post_is_backup_busy() {
+    let root = crate::test_support::root("healthy");
+    disable_backup(root.path());
+    let hold = Hold::new();
+    let runner = ScriptRunner::with_hold(init_outputs(), hold.clone());
+    let (deps, _restic) = prepared(root.path().to_path_buf(), Arc::new(runner));
+    let (status, body) = post_json(&deps, "/app/backup/enable", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["operation"]["phase"], "setting_up");
+    let (busy_status, busy) = post_json(&deps, "/app/backup/teardown", None).await;
+    assert_eq!(busy_status, 400);
+    assert_eq!(busy["reason_code"], "backup_busy");
+    hold.release();
+    let _ = wait_terminal(&deps).await;
+}
+
+#[tokio::test]
+async fn destination_returns_distinct_reason_codes_from_cat_config() {
+    let destination = json!({"repository":"s3:bucket","backend":"s3","credentials":{"access_key_id":"key","secret_access_key":"secret"}});
+    for (code, reason) in [(0, "repo_exists"), (12, "auth_failed"), (99, "unreachable")] {
+        let root = crate::test_support::root("fresh");
+        let runner = ScriptRunner::with_outputs(vec![version_output(), output(code, "")]);
+        let runner = Arc::new(runner);
+        let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+        let (status, body) =
+            post_json(&deps, "/app/backup/destination", Some(destination.clone())).await;
+        assert_eq!(status, 200, "{reason}");
+        assert_eq!(body["destination_status"]["reason_code"], reason);
+        let argv: Vec<Vec<String>> = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, argv)| argv.clone())
+            .collect();
+        assert!(
+            argv.iter()
+                .any(|args| args.first().map(String::as_str) == Some("cat")
+                    && args.get(1).map(String::as_str) == Some("config")),
+            "{reason} {argv:?}"
+        );
+        assert!(
+            argv.iter()
+                .all(|args| args.first().map(String::as_str) != Some("snapshots")),
+            "{reason}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn enable_hosted_returns_portal_url() {
+    let root = crate::test_support::root("healthy");
+    let (deps, _restic) = prepared(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+    );
+    let (status, body) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["operation"]["kind"], "enable_hosted");
+    assert_eq!(body["operation"]["phase"], "setting_up");
+    let url = body["operation"]["portal_url"].as_str().unwrap();
+    assert!(url.contains("/enable/spb"));
+    assert!(url.contains("nonce="));
+    assert!(url.contains("instance="));
+}
+
+#[tokio::test]
+async fn handoff_binding_enables_operated_mode() {
+    let root = crate::test_support::root("healthy");
+    disable_backup(root.path());
+    let runner = ScriptRunner::with_outputs(init_outputs());
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    let http = HttpScript::with_responses(vec![Ok(credentials_response())]);
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(runner),
+        Arc::new(http),
+        Some(restic.path().to_path_buf()),
+    );
+    let (_, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    let url = started["operation"]["portal_url"].as_str().unwrap();
+    let nonce = url
+        .split("nonce=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap();
+    let binding = crate::test_support::hosted_binding();
+    let (status, _) = post_json(
+        &deps,
+        "/app/backup/handoff",
+        Some(json!({
+            "nonce": nonce,
+            "broker_endpoint": binding.broker_endpoint,
+            "account_id": binding.account_id,
+            "instance_id": binding.instance_id,
+            "bucket": binding.bucket,
+            "prefix": binding.prefix,
+            "broker_token": binding.broker_token
+        })),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "done");
+    assert_eq!(done["hosted"]["bound"], true);
+    assert_eq!(done["hosted"]["bucket"], "bucket");
+    assert_eq!(done["hosted"]["prefix"], "owner/prefix");
+    assert!(done["hosted"].get("broker_token").is_none());
+    assert_eq!(done["mode"], "operated");
+    assert_eq!(done["enabled"], true);
+    let rendered = done.to_string();
+    assert!(!rendered.contains("broker-token-secret"));
+    assert!(!rendered.contains(crate::test_support::RECOVERY_KEY));
+}
+
+#[tokio::test]
+async fn handoff_needs_subscription_is_terminal_without_binding() {
+    let root = crate::test_support::root("healthy");
+    let (deps, _restic) = prepared(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+    );
+    let (_, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    let url = started["operation"]["portal_url"].as_str().unwrap();
+    let nonce = url
+        .split("nonce=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap();
+    let _ = post_json(
+        &deps,
+        "/app/backup/handoff",
+        Some(json!({"nonce": nonce, "needs_subscription": true})),
+    )
+    .await;
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "needs_subscription");
+    assert_eq!(done["hosted"]["bound"], false);
+}
+
+#[tokio::test]
+async fn bound_restore_hosted_maps_broker_402_to_entitlement_error() {
+    let root = crate::test_support::hosted_bound_root();
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    let http = HttpScript::with_responses(vec![Ok(HttpResponse {
+        status: 402,
+        headers: vec![],
+        body: vec![],
+    })]);
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        Arc::new(http),
+        Some(restic.path().to_path_buf()),
+    );
+    let _ = post_json(
+        &deps,
+        "/app/backup/restore-hosted",
+        Some(json!({"recovery_key": crate::test_support::RECOVERY_KEY})),
+    )
+    .await;
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "error");
+    assert_eq!(
+        done["operation"]["reason_code"],
+        "hosted_entitlement_inactive"
+    );
+}
+
+#[tokio::test]
+async fn unbound_restore_hosted_returns_portal_and_restoring_phase() {
+    let root = crate::test_support::root("fresh");
+    let (deps, _restic) = prepared(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+    );
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/restore-hosted",
+        Some(json!({"recovery_key": crate::test_support::RECOVERY_KEY})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["operation"]["kind"], "restore_hosted");
+    assert_eq!(body["operation"]["phase"], "restoring");
+    assert!(
+        body["operation"]["portal_url"]
+            .as_str()
+            .unwrap()
+            .contains("/enable/spb")
+    );
+}
+
+#[tokio::test]
+async fn restore_hosted_missing_key_is_still_400() {
+    let root = crate::test_support::root("healthy");
+    let (deps, _restic) = prepared(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+    );
+    let (status, body) = post_json(&deps, "/app/backup/restore-hosted", Some(json!({}))).await;
+    assert_eq!(status, 400);
+    assert_eq!(body["reason_code"], "missing_required_field");
+}
+
+#[tokio::test]
+async fn status_reports_hosted_binding_without_token() {
+    let root = crate::test_support::hosted_bound_root();
+    let (deps, _restic) = prepared(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+    );
+    let (status, body) = get_status_json(&deps).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["hosted"]["bound"], true);
+    assert_eq!(body["hosted"]["bucket"], "bucket");
+    assert_eq!(body["hosted"]["prefix"], "owner/prefix");
+    assert!(body["hosted"].get("broker_token").is_none());
+}
+
+#[tokio::test]
+async fn offload_status_matches_builder_across_distinct_ledgers() {
+    let first = crate::test_support::offload_inventory_root();
+    let second = crate::test_support::root("healthy");
+    let first_seg = second.path().join("chronicle/20260303/030000_001");
+    fs::create_dir_all(&first_seg).unwrap();
+    solstone_core_offload::append_offload_event(
+        second.path(),
+        "20260303",
+        "_default",
+        "030000_001",
+        "snapshot-c",
+        &[solstone_core_offload::OffloadFile {
+            name: "only.webm".into(),
+            bytes: 21,
+            sha256: "c".repeat(64),
+        }],
+        3,
+    )
+    .unwrap();
+    let degraded = crate::test_support::degraded_offload_root();
+    let mut totals = vec![];
+    for journal in [first.path(), second.path(), degraded.path()] {
+        let (deps, _restic) = prepared(
+            journal.to_path_buf(),
+            Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
+        );
+        let (status, body) = response_json(
+            crate::routes_with_deps(deps.clone()),
+            Request::get("/app/backup/offload/status")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            body["device"],
+            json!({"free_bytes":crate::test_support::DEVICE_FREE_BYTES,"total_bytes":crate::test_support::DEVICE_TOTAL_BYTES})
+        );
+        let built = solstone_core_offload::build_offload_status(journal)
+            .unwrap()
+            .value;
+        totals.push((
+            body["backup_only"]["total_days"].as_u64().unwrap(),
+            body["backup_only"]["total_bytes"].as_u64().unwrap(),
+            body["backup_only"]["degraded"].as_bool().unwrap(),
+        ));
+        assert_eq!(
+            body["backup_only"]["total_bytes"],
+            built["backup_only"]["total_bytes"]
+        );
+        assert_eq!(
+            body["backup_only"]["total_days"],
+            built["backup_only"]["total_days"]
+        );
+        assert_eq!(
+            body["backup_only"]["degraded"],
+            built["backup_only"]["degraded"]
+        );
+    }
+    assert_ne!(totals[0].1, 0);
+    assert_ne!(totals[1].1, 0);
+    assert_ne!(totals[0], totals[1]);
+    assert!(totals[2].2);
+}
+
+#[tokio::test]
+async fn offload_restore_digest_mismatch_is_verification_failed() {
+    let root = crate::test_support::root("healthy");
+    let segment = root.path().join("chronicle/20260101/010000_001");
+    fs::create_dir_all(&segment).unwrap();
+    solstone_core_offload::append_offload_event(
+        root.path(),
+        "20260101",
+        "_default",
+        "010000_001",
+        "snapshot",
+        &[solstone_core_offload::OffloadFile {
+            name: "new.webm".into(),
+            bytes: 8,
+            sha256: "d".repeat(64),
+        }],
+        1,
+    )
+    .unwrap();
+    let runner = RestoreMismatchRunner::default();
+    let (deps, _restic) = prepared(root.path().to_path_buf(), Arc::new(runner));
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/offload/restore",
+        Some(json!({"all": true})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["operation"]["kind"], "offload_restore");
+    let done = wait_terminal(&deps).await;
+    assert!(done["operation"]["phase"] == "error" || done["operation"]["phase"] == "degraded");
+    assert_eq!(done["operation"]["reason_code"], "verification_failed");
+}
+
+#[derive(Default)]
+struct RestoreMismatchRunner {
+    calls: Mutex<Vec<Vec<String>>>,
+}
+
+impl ToolRunner for RestoreMismatchRunner {
+    fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        let argv = request
+            .argv
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        self.calls.lock().unwrap().push(argv.clone());
+        if argv.first().map(String::as_str) == Some("version") {
+            return Ok(version_output());
+        }
+        if argv.first().map(String::as_str) == Some("restore") {
+            let target = argv
+                .windows(2)
+                .find(|pair| pair[0] == "--target")
+                .map(|pair| PathBuf::from(&pair[1]))
+                .expect("target");
+            fs::write(target.join("new.webm"), b"corrupt").unwrap();
+        }
+        Ok(output(0, ""))
+    }
+}
+
+#[tokio::test]
+async fn enable_records_resolved_restic_program_not_path_decoy() {
+    let root = crate::test_support::root("healthy");
+    disable_backup(root.path());
+    let restic = tempfile::tempdir().unwrap();
+    let expected = crate::test_support::write_ready_restic(restic.path());
+    let runner = ScriptRunner::with_outputs(init_outputs());
+    let runner = Arc::new(runner);
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        runner.clone(),
+        Arc::new(HttpScript::default()),
+        Some(restic.path().to_path_buf()),
+    );
+    let _ = post_json(&deps, "/app/backup/enable", None).await;
+    let _ = wait_terminal(&deps).await;
+    let programs: Vec<PathBuf> = runner
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(program, _)| program.clone())
+        .collect();
+    assert!(
+        programs.iter().any(|program| program == &expected),
+        "{programs:?}"
+    );
+    assert!(
+        programs.iter().all(
+            |program| program.file_name() != Some(std::ffi::OsStr::new("restic"))
+                || program == &expected
+        ),
+        "{programs:?}"
+    );
+}
+
+#[tokio::test]
+async fn enable_success_response_shape_has_operation_without_secrets() {
+    let root = crate::test_support::root("healthy");
+    disable_backup(root.path());
+    let (deps, _restic) = prepared(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(init_outputs())),
+    );
+    let (status, body) = post_json(&deps, "/app/backup/enable", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["success"], true);
+    assert_eq!(body["operation"]["kind"], "enable");
+    assert!(body["operation"]["phase"].as_str().is_some());
+    assert!(body.get("recovery_key").is_none());
+    assert!(body.get("daily_key").is_none());
+    assert!(body.get("broker_token").is_none());
+    let _ = wait_terminal(&deps).await;
 }

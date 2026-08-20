@@ -1,5 +1,12 @@
 use serde_json::{Map, Value, json};
+use solstone_core_backup::{HostedBinding, save_hosted_binding, set_mode};
+use solstone_core_backup_runtime::readiness::{
+    RESTIC_SCHEMA_VERSION, RESTIC_TOOL, RESTIC_VERSION, binary_path, file_sha256, platform_info,
+    sentinel_path,
+};
+use solstone_core_offload::{OffloadFile, append_offload_event, ledger_path_for_day};
 use std::fs;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 pub const RECOVERY_KEY: &str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -77,4 +84,91 @@ fn backup(phase: &str) -> Value {
         _ => panic!("known phase"),
     };
     value
+}
+
+pub fn hosted_binding() -> HostedBinding {
+    HostedBinding {
+        broker_endpoint: "https://broker.example".into(),
+        account_id: "account".into(),
+        instance_id: "instance".into(),
+        bucket: "bucket".into(),
+        prefix: "owner/prefix".into(),
+        broker_token: "broker-token-secret".into(),
+    }
+}
+
+pub fn hosted_bound_root() -> TempDir {
+    let root = self::root("healthy");
+    set_mode(root.path(), "operated").expect("mode");
+    save_hosted_binding(root.path(), &hosted_binding()).expect("binding");
+    root
+}
+
+pub fn offload_inventory_root() -> TempDir {
+    let root = self::root("healthy");
+    let first = root.path().join("chronicle/20260101/010000_001");
+    let second = root.path().join("chronicle/20260102/020000_001");
+    fs::create_dir_all(&first).expect("first segment");
+    fs::create_dir_all(&second).expect("second segment");
+    fs::write(first.join("pending.webm"), b"abc").expect("pending");
+    fs::write(first.join("other.webm"), b"0123456789").expect("other");
+    fs::write(second.join("raw.webm"), b"01234567890123456789").expect("raw");
+    append_offload_event(
+        root.path(),
+        "20260101",
+        "_default",
+        "010000_001",
+        "snapshot-a",
+        &[OffloadFile {
+            name: "pending.webm".into(),
+            bytes: 3,
+            sha256: "a".repeat(64),
+        }],
+        1,
+    )
+    .expect("first ledger");
+    append_offload_event(
+        root.path(),
+        "20260102",
+        "_default",
+        "020000_001",
+        "snapshot-b",
+        &[OffloadFile {
+            name: "backup.webm".into(),
+            bytes: 7,
+            sha256: "b".repeat(64),
+        }],
+        2,
+    )
+    .expect("second ledger");
+    root
+}
+
+pub fn degraded_offload_root() -> TempDir {
+    let root = offload_inventory_root();
+    let path = ledger_path_for_day(root.path(), "20260103").expect("ledger path");
+    fs::create_dir_all(path.parent().expect("parent")).expect("offload dir");
+    fs::write(&path, "{not json\n").expect("corrupt ledger");
+    root
+}
+
+pub fn write_ready_restic(dir: &Path) -> PathBuf {
+    let binary = binary_path(dir);
+    fs::write(&binary, b"restic-fixture").expect("restic fixture");
+    let digest = file_sha256(&binary).expect("digest");
+    let (os, arch) = platform_info().expect("platform");
+    fs::write(
+        sentinel_path(dir),
+        serde_json::to_vec(&json!({
+            "schema_version": RESTIC_SCHEMA_VERSION,
+            "tool": RESTIC_TOOL,
+            "version": RESTIC_VERSION,
+            "sha256": digest,
+            "platform": {"os": os, "arch": arch},
+            "binary_path": binary,
+        }))
+        .expect("sentinel"),
+    )
+    .expect("write sentinel");
+    binary
 }

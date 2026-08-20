@@ -16,9 +16,13 @@ getrandom.workspace = true
 nix = { workspace = true, features = ["fs"] }
 serde.workspace = true
 serde_json.workspace = true
+solstone-core-artifact-download.workspace = true
+solstone-core-backup.workspace = true
+solstone-core-backup-runtime.workspace = true
 solstone-core-callosum.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
+solstone-core-offload.workspace = true
 
 [dev-dependencies]
 sha2.workspace = true

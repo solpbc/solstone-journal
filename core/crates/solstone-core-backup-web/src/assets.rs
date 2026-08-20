@@ -114,6 +114,7 @@ mod tests {
                 "incomplete",
                 "locked",
                 "repo_missing",
+                "rclone_unavailable",
                 "restic_unavailable",
                 "timeout",
             ])
