@@ -205,7 +205,7 @@
           "staged": 0,
           "errors": [
             {"facet": "Work", "error": "Invalid facet name"},
-            {"facet": "work", "path": "todos/20260101.jsonl", "error": "Invalid todos path"}
+            {"facet": "work", "path": "todos/latest.jsonl", "error": "Invalid todos path"}
           ]
         }
       ]
