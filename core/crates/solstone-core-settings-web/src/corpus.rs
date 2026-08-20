@@ -9,7 +9,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tower::ServiceExt;
 
-const NORMALIZE: [(&str, &str); 13] = [
+const NORMALIZE: [(&str, &str); 12] = [
     ("runtime_label", "<HOST:runtime_label>"),
     ("parakeet_uses_cpp", "<HOST:parakeet_uses_cpp>"),
     ("resource.*", "<HOST:resource>"),
@@ -22,7 +22,6 @@ const NORMALIZE: [(&str, &str); 13] = [
     ("warnings", "<VOLATILE:storage_warnings>"),
     ("key_validation.*.timestamp", "<VOLATILE:timestamp>"),
     ("entries.*.timestamp", "<VOLATILE:log_timestamp>"),
-    ("category_mute_state.*", "<VOLATILE:mute_state>"),
 ];
 
 #[tokio::test]

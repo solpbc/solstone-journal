@@ -184,7 +184,7 @@ fn native_sibling_is_selected_and_lands_finish() {
     let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
     let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
         "use_id":"one",
-        "name":"chat",
+        "name":"conversation",
         "day":"20260101",
         "timeout_seconds": 2,
         "facet":"top",
@@ -298,7 +298,7 @@ fn stdin_write_failure_terminates_and_reaps_spawned_child() {
     let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
     let request: Map<String, Value> = serde_json::from_value(serde_json::json!({
         "use_id":"one",
-        "name":"chat",
+        "name":"conversation",
         "timeout_seconds": 2,
         "prompt":"x".repeat(1_048_576),
         "env":{
@@ -402,7 +402,7 @@ fn drain_keeps_running_use_alive_until_its_own_exit() {
     let ready = directory.path().join("ready");
     let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
     let request: Map<String, Value> =
-        serde_json::from_value(serde_json::json!({"use_id":"one","name":"chat"})).unwrap();
+        serde_json::from_value(serde_json::json!({"use_id":"one","name":"conversation"})).unwrap();
     let work = claim_work(&store, &request);
     let state = new_state(store);
     let mut command = worker_command("sleep-exit");
@@ -427,7 +427,7 @@ fn immediate_stop_signals_the_running_group() {
     let ready = directory.path().join("ready");
     let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
     let request: Map<String, Value> =
-        serde_json::from_value(serde_json::json!({"use_id":"one","name":"chat"})).unwrap();
+        serde_json::from_value(serde_json::json!({"use_id":"one","name":"conversation"})).unwrap();
     let work = claim_work(&store, &request);
     let state = new_state(store);
     let mut command = worker_command("sleep-long");
