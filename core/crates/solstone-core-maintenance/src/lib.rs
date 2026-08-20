@@ -858,6 +858,7 @@ mod resolution_tests {
         assert!(runner.programs.borrow().is_empty());
     }
 
+    // Fixture is pre-installed: ensure_rclone's zip verification checks RCLONE_ZIP_SHA256, a real published-release checksum no offline fixture can satisfy, so this proves the resolved path is wired into the spawn, not the install cycle itself.
     #[test]
     fn ac4_operated_run_passes_absolute_rclone_program() {
         let restic_dir = tempfile::tempdir().unwrap();
@@ -883,6 +884,7 @@ mod resolution_tests {
         assert_ne!(program, "rclone");
     }
 
+    // Fixture is pre-installed: ensure_rclone's zip verification checks RCLONE_ZIP_SHA256, a real published-release checksum no offline fixture can satisfy, so this proves the resolved path is wired into the spawn, not the install cycle itself.
     #[test]
     fn ac5_offload_passes_absolute_rclone_program() {
         let restic_dir = tempfile::tempdir().unwrap();
