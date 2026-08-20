@@ -10,7 +10,7 @@ use tower::ServiceExt;
 use crate::test_support::{corpus, corrupt_root, established_root, shell_router};
 
 #[tokio::test]
-async fn ac1_established_has_exactly_23_reachable_json_get_cases() {
+async fn ac1_established_has_exactly_21_reachable_json_get_cases() {
     let corpus = corpus();
     let cases = corpus["phases"]["established"]
         .as_object()
@@ -19,11 +19,11 @@ async fn ac1_established_has_exactly_23_reachable_json_get_cases() {
         .iter()
         .filter(|(name, _)| name.starts_with("GET "))
         .collect::<Vec<_>>();
-    // 23 cases, not 23 routes: `api/icons` is recorded three times because it
+    // 21 cases, not 21 routes: `api/icons` is recorded three times because it
     // is a RANKED search -- a ranking correct for exactly one prefix passes a
     // one-case corpus -- and `api/facets` is recorded twice for `?all=true`.
     // Every recorded case must still be reachable and answer JSON.
-    assert_eq!(get_cases.len(), 23);
+    assert_eq!(get_cases.len(), 21);
     let root = established_root();
     let router = shell_router(root.path());
     for (name, expected) in get_cases {

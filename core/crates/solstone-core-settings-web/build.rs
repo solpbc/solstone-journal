@@ -289,11 +289,6 @@ fn main() {
             true,
             "install_copy.rs",
         ),
-        (
-            manifest.join("assets/sol_initiated_copy.py"),
-            false,
-            "sol_voice_copy.rs",
-        ),
     ];
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("output directory"));
     let mut source_names = fs::read_dir(manifest.join("src"))

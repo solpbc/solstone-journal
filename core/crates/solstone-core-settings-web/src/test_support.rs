@@ -9,11 +9,15 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 pub fn corpus() -> Value {
-    serde_json::from_str(include_str!(concat!(
+    let mut corpus = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../fixtures/convey_settings_corpus.json"
     )))
-    .expect("settings corpus")
+    .expect("settings corpus");
+    crate::settings_corpus_divergence::apply_permanent_sol_initiated_settings_divergence(
+        &mut corpus,
+    );
+    corpus
 }
 
 pub fn established_root() -> TempDir {

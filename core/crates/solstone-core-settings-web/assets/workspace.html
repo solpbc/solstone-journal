@@ -325,90 +325,6 @@
   font-size: 0.85em;
 }
 
-.sol-voice-grid {
-  display: grid;
-  gap: 1.25em;
-}
-
-.sol-voice-subsection {
-  display: grid;
-  gap: 0.9em;
-}
-
-.sol-voice-subsection h3 {
-  margin: 0;
-}
-
-.sol-voice-inline {
-  display: flex;
-  align-items: center;
-  gap: 1em;
-  flex-wrap: wrap;
-}
-
-.sol-voice-category-row {
-  display: grid;
-  grid-template-columns: minmax(8em, 1fr) minmax(6em, 9em) auto;
-  gap: 0.75em;
-  align-items: center;
-}
-
-.sol-voice-category-name {
-  color: #333;
-  font-weight: 500;
-}
-
-.sol-voice-category-row input {
-  max-width: 9em;
-}
-
-.sol-voice-muted {
-  color: #777;
-  font-size: 0.85em;
-}
-
-.sol-voice-clear-row {
-  display: flex;
-  gap: 0.75em;
-  align-items: center;
-  justify-content: flex-end;
-  min-height: 2.4em;
-}
-
-.sol-voice-throttled-log {
-  margin-top: 0.75em;
-  overflow-x: auto;
-}
-
-.sol-voice-throttled-log table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85em;
-}
-
-.sol-voice-throttled-log th,
-.sol-voice-throttled-log td {
-  border-bottom: 1px solid var(--facet-border, #e5e0db);
-  padding: 0.45em 0.5em;
-  text-align: left;
-  vertical-align: top;
-}
-
-.sol-voice-throttled-log th {
-  color: #666;
-  font-weight: 600;
-}
-
-@media (max-width: 640px) {
-  .sol-voice-category-row {
-    grid-template-columns: 1fr;
-  }
-
-  .sol-voice-clear-row {
-    justify-content: flex-start;
-  }
-}
-
 /* API key status indicators */
 .key-status {
   font-weight: normal;
@@ -2146,9 +2062,6 @@ button:focus:not(:focus-visible) {
         <option value="observer">devices</option>
         <option value="vision">vision</option>
       </optgroup>
-      <optgroup label="voice">
-        <option value="sol-voice" data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_HEADING"></option>
-      </optgroup>
       <optgroup label="data">
         <option value="sync">sync</option>
         <option value="storage">storage</option>
@@ -2185,10 +2098,6 @@ button:focus:not(:focus-visible) {
       <div class="settings-nav-label">devices</div>
       <button class="settings-nav-item" data-section="observer" id="tab-observer" role="tab" aria-selected="false" aria-controls="section-observer" tabindex="-1">devices</button>
       <button class="settings-nav-item" data-section="vision" id="tab-vision" role="tab" aria-selected="false" aria-controls="section-vision" tabindex="-1">vision</button>
-    </div>
-    <div class="settings-nav-group">
-      <div class="settings-nav-label">voice</div>
-      <button class="settings-nav-item" data-section="sol-voice" id="tab-sol-voice" role="tab" aria-selected="false" aria-controls="section-sol-voice" tabindex="-1" data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_HEADING"></button>
     </div>
     <div class="settings-nav-group">
       <div class="settings-nav-label">data</div>
@@ -2542,89 +2451,6 @@ button:focus:not(:focus-visible) {
           <div id="visionCategoryGroups">loading…</div>
         </div>
       </details>
-      </form>
-    </section>
-
-    <!-- Sol Voice Section -->
-    <section class="settings-section" id="section-sol-voice" role="tabpanel" aria-labelledby="tab-sol-voice">
-      <h2 data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_HEADING"></h2>
-      <form class="settings-form" onsubmit="return false;">
-        <div class="sol-voice-grid">
-          <div class="sol-voice-subsection">
-            <div class="settings-field">
-              <label for="field-sol-voice-daily-cap" data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_DAILY_CAP_LABEL"></label>
-              <input type="number" id="field-sol-voice-daily-cap" min="0" step="1" style="max-width: 9em;">
-              <small></small>
-            </div>
-
-            <div class="settings-field">
-              <label data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_CATEGORY_CAPS_LABEL"></label>
-              <div id="solVoiceCategoryCaps" class="sol-voice-subsection"></div>
-              <small></small>
-            </div>
-
-            <div class="settings-field">
-              <label for="field-sol-voice-rate-floor" data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_RATE_FLOOR_LABEL"></label>
-              <input type="number" id="field-sol-voice-rate-floor" min="0" step="1" style="max-width: 9em;">
-              <small></small>
-            </div>
-          </div>
-
-          <div class="sol-voice-subsection">
-            <h3 data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_QUIET_HOURS_HEADING"></h3>
-            <div class="sol-voice-inline">
-              <div class="settings-field">
-                <label for="field-sol-voice-mute-start" data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_QUIET_HOURS_START_LABEL"></label>
-                <input type="number" id="field-sol-voice-mute-start" min="0" max="23" step="1" style="max-width: 8em;">
-                <small></small>
-              </div>
-              <div class="settings-field">
-                <label for="field-sol-voice-mute-end" data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_QUIET_HOURS_END_LABEL"></label>
-                <input type="number" id="field-sol-voice-mute-end" min="0" max="23" step="1" style="max-width: 8em;">
-                <small></small>
-              </div>
-            </div>
-          </div>
-
-          <div class="sol-voice-subsection">
-            <h3 data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_SYSTEM_NOTIFICATIONS_HEADING"></h3>
-            <div class="settings-field">
-              <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
-                <label class="toggle-switch toggle-positive">
-                  <input type="checkbox" id="field-sol-voice-system-macos">
-                  <span class="slider"></span>
-                </label>
-                <label for="field-sol-voice-system-macos" class="toggle-label" style="cursor: pointer;" data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_SYSTEM_NOTIFICATIONS_MACOS_LABEL"></label>
-              </div>
-              <small></small>
-            </div>
-            <div class="settings-field">
-              <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
-                <label class="toggle-switch toggle-positive">
-                  <input type="checkbox" id="field-sol-voice-system-linux">
-                  <span class="slider"></span>
-                </label>
-                <label for="field-sol-voice-system-linux" class="toggle-label" style="cursor: pointer;" data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_SYSTEM_NOTIFICATIONS_LINUX_LABEL"></label>
-              </div>
-              <small></small>
-            </div>
-          </div>
-
-          <div class="sol-voice-subsection">
-            <h3 data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_DEBUG_HEADING"></h3>
-            <div class="settings-field">
-              <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
-                <label class="toggle-switch toggle-positive">
-                  <input type="checkbox" id="field-sol-voice-debug-show-throttled">
-                  <span class="slider"></span>
-                </label>
-                <label for="field-sol-voice-debug-show-throttled" class="toggle-label" style="cursor: pointer;" data-copy="sol_voice_copy.SOL_VOICE_SETTINGS_DEBUG_SHOW_THROTTLED_LABEL"></label>
-              </div>
-              <small></small>
-              <div id="sol-voice-throttled-log" class="sol-voice-throttled-log" hidden></div>
-            </div>
-          </div>
-        </div>
       </form>
     </section>
 
@@ -3110,24 +2936,10 @@ let facetConfig = null;
 const saveTimeouts = new Map();
 let logNextCursor = null;
 let keyValidationData = {};
-let solVoiceData = null;
-let solVoiceThrottledTimer = null;
 let transcribeResource = null;
 let settingsInitialized = false;
 const iconSvgCache = new Map();
 const escapeHtml = (value) => window.AppServices.escapeHtml(value);
-let solVoiceCopy = {
-  autoMutedFormat: '',
-  clearButton: '',
-  throttledEmpty: '',
-  throttledError: '',
-  throttledHeaderWhen: '',
-  throttledHeaderCategory: '',
-  throttledHeaderDedupeKey: '',
-  throttledHeaderOutcome: '',
-};
-let solVoiceCategories = [];
-
 // ========== TAB ATTENTION ==========
 
 // Reusable per-tab attention indicator. Any tab can opt in by calling
@@ -3206,7 +3018,7 @@ setupModalAccessibility('customActivityModal');
 setupModalAccessibility('cleanupModal');
 
 // ========== NAVIGATION ==========
-  const VALID_SECTIONS = ['guide', 'profile', 'agent', 'apikeys', 'transcription', 'observer', 'vision', 'sol-voice', 'sync', 'storage', 'support', 'facets', 'facet-appearance', 'facet-activities', 'facet-activity'];
+  const VALID_SECTIONS = ['guide', 'profile', 'agent', 'apikeys', 'transcription', 'observer', 'vision', 'sync', 'storage', 'support', 'facets', 'facet-appearance', 'facet-activities', 'facet-activity'];
 
 function switchSection(sectionId, updateHash = true) {
   // Validate section exists
@@ -3703,240 +3515,6 @@ async function revalidateAllKeys() {
 function setValue(id, value) {
   const el = document.getElementById(id);
   if (el) el.value = value;
-}
-
-async function loadSolVoiceSettings() {
-  try {
-    solVoiceData = await window.apiJson('api/sol_voice');
-    renderSolVoiceSettings(solVoiceData);
-  } catch (err) {
-    window.logError(err, { context: 'settings: loadSolVoiceSettings failed' });
-  }
-}
-
-function renderSolVoiceSettings(settings) {
-  if (!settings) return;
-  setValue('field-sol-voice-daily-cap', settings.daily_cap ?? 0);
-  setValue('field-sol-voice-rate-floor', settings.rate_floor_minutes ?? 0);
-  setValue('field-sol-voice-mute-start', settings.mute_window?.start_hour_local ?? 22);
-  setValue('field-sol-voice-mute-end', settings.mute_window?.end_hour_local ?? 7);
-  const macos = document.getElementById('field-sol-voice-system-macos');
-  const linux = document.getElementById('field-sol-voice-system-linux');
-  const debug = document.getElementById('field-sol-voice-debug-show-throttled');
-  if (macos) macos.checked = settings.system_notifications?.macos === true;
-  if (linux) linux.checked = settings.system_notifications?.linux === true;
-  if (debug) debug.checked = settings.debug_show_throttled === true;
-  renderSolVoiceCategoryCaps(settings);
-  updateSolVoiceThrottledState();
-}
-
-function renderSolVoiceCategoryCaps(settings) {
-  const host = document.getElementById('solVoiceCategoryCaps');
-  if (!host) return;
-  const caps = settings.category_caps || {};
-  const muteState = settings.category_mute_state || {};
-  host.innerHTML = solVoiceCategories.map((category) => {
-    const state = muteState[category] || {};
-    const expiresTs = Number(state.expires_ts || 0);
-    const isMuted = state.muted === true && expiresTs > 0;
-    const mutedText = isMuted
-      ? solVoiceCopy.autoMutedFormat.replace('{date}', formatSolVoiceDate(expiresTs))
-      : '';
-    const clearHidden = isMuted ? '' : ' hidden';
-    return `
-      <div class="sol-voice-category-row" data-sol-voice-category="${escapeHtml(category)}">
-        <span class="sol-voice-category-name">${escapeHtml(category)}</span>
-        <input
-          type="number"
-          min="0"
-          step="1"
-          value="${Number(caps[category] ?? 0)}"
-          data-sol-voice-category-cap="${escapeHtml(category)}"
-          aria-label="${escapeHtml(category)}"
-        >
-        <div class="sol-voice-clear-row">
-          <span class="sol-voice-muted" data-sol-voice-muted>${escapeHtml(mutedText)}</span>
-          <button type="button" class="setup-btn" data-sol-voice-clear="${escapeHtml(category)}"${clearHidden}>${escapeHtml(solVoiceCopy.clearButton)}</button>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-function formatSolVoiceDate(ts) {
-  const numericTs = Number(ts || 0);
-  if (!Number.isFinite(numericTs) || numericTs <= 0) {
-    return '';
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(numericTs));
-}
-
-function readSolVoiceInteger(el) {
-  const value = Number.parseInt(el.value, 10);
-  if (!Number.isInteger(value) || value < 0) {
-    throw new Error('Enter a non-negative whole number');
-  }
-  return value;
-}
-
-async function saveSolVoiceSettings(updates, el = null) {
-  const result = await window.apiJson('api/sol_voice', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updates),
-  });
-  solVoiceData = result;
-  renderSolVoiceSettings(result);
-  if (el) {
-    showFieldStatus(el, 'saved');
-  }
-  return result;
-}
-
-async function handleSolVoiceInput(el) {
-  const category = el.dataset.solVoiceCategoryCap;
-  let updates;
-  try {
-    if (category) {
-      updates = { category_caps: { [category]: readSolVoiceInteger(el) } };
-    } else if (el.id === 'field-sol-voice-daily-cap') {
-      updates = { daily_cap: readSolVoiceInteger(el) };
-    } else if (el.id === 'field-sol-voice-rate-floor') {
-      updates = { rate_floor_minutes: readSolVoiceInteger(el) };
-    } else if (el.id === 'field-sol-voice-mute-start') {
-      updates = { mute_window: { start_hour_local: readSolVoiceInteger(el) } };
-    } else if (el.id === 'field-sol-voice-mute-end') {
-      updates = { mute_window: { end_hour_local: readSolVoiceInteger(el) } };
-    } else if (el.id === 'field-sol-voice-system-macos') {
-      updates = { system_notifications: { macos: el.checked } };
-    } else if (el.id === 'field-sol-voice-system-linux') {
-      updates = { system_notifications: { linux: el.checked } };
-    } else if (el.id === 'field-sol-voice-debug-show-throttled') {
-      updates = { debug_show_throttled: el.checked };
-    } else {
-      return;
-    }
-    await saveSolVoiceSettings(updates, el);
-  } catch (err) {
-    showFieldStatus(el, 'error', err?.serverMessage || err?.message || 'Save failed');
-    window.logError(err, { context: 'settings: handleSolVoiceInput failed' });
-  }
-}
-
-async function clearSolVoiceCategoryMarker(category, button) {
-  try {
-    await saveSolVoiceSettings(
-      { category_self_mute_clear_markers: { [category]: Date.now() } },
-      button
-    );
-  } catch (err) {
-    showFieldStatus(button, 'error', err?.serverMessage || err?.message || 'Save failed');
-    window.logError(err, { context: 'settings: clearSolVoiceCategoryMarker failed' });
-  }
-}
-
-function setupSolVoiceListeners() {
-  const controls = [
-    'field-sol-voice-daily-cap',
-    'field-sol-voice-rate-floor',
-    'field-sol-voice-mute-start',
-    'field-sol-voice-mute-end',
-    'field-sol-voice-system-macos',
-    'field-sol-voice-system-linux',
-    'field-sol-voice-debug-show-throttled',
-  ];
-  controls.forEach((id) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('change', () => handleSolVoiceInput(el));
-    el.addEventListener('blur', () => {
-      if (el.type !== 'checkbox') handleSolVoiceInput(el);
-    });
-  });
-
-  const categoryHost = document.getElementById('solVoiceCategoryCaps');
-  if (categoryHost) {
-    categoryHost.addEventListener('change', (event) => {
-      const el = event.target.closest('[data-sol-voice-category-cap]');
-      if (el) handleSolVoiceInput(el);
-    });
-    categoryHost.addEventListener('blur', (event) => {
-      const el = event.target.closest('[data-sol-voice-category-cap]');
-      if (el) handleSolVoiceInput(el);
-    }, true);
-    categoryHost.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-sol-voice-clear]');
-      if (!button) return;
-      clearSolVoiceCategoryMarker(button.dataset.solVoiceClear, button);
-    });
-  }
-}
-
-function updateSolVoiceThrottledState() {
-  const debug = document.getElementById('field-sol-voice-debug-show-throttled');
-  const log = document.getElementById('sol-voice-throttled-log');
-  if (!debug || !log) return;
-  if (debug.checked) {
-    log.hidden = false;
-    loadSolVoiceThrottledLog();
-    if (!solVoiceThrottledTimer) {
-      solVoiceThrottledTimer = window.setInterval(loadSolVoiceThrottledLog, 30000);
-    }
-  } else {
-    log.hidden = true;
-    log.innerHTML = '';
-    if (solVoiceThrottledTimer) {
-      window.clearInterval(solVoiceThrottledTimer);
-      solVoiceThrottledTimer = null;
-    }
-  }
-}
-
-async function loadSolVoiceThrottledLog() {
-  const log = document.getElementById('sol-voice-throttled-log');
-  if (!log || log.hidden) return;
-  try {
-    const data = await window.apiJson('api/sol_voice/throttled?limit=50');
-    renderSolVoiceThrottledLog(Array.isArray(data?.items) ? data.items : []);
-  } catch (err) {
-    log.textContent = solVoiceCopy.throttledError;
-    window.logError(err, { context: 'settings: loadSolVoiceThrottledLog failed' });
-  }
-}
-
-function renderSolVoiceThrottledLog(rows) {
-  const log = document.getElementById('sol-voice-throttled-log');
-  if (!log) return;
-  if (!rows.length) {
-    log.textContent = solVoiceCopy.throttledEmpty;
-    return;
-  }
-  const body = rows.map((row) => `
-    <tr>
-      <td>${escapeHtml(formatSolVoiceDate(row.ts))}</td>
-      <td>${escapeHtml(row.category || '')}</td>
-      <td>${escapeHtml(row.dedupe_key || '')}</td>
-      <td>${escapeHtml(row.outcome || '')}</td>
-    </tr>
-  `).join('');
-  log.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>${escapeHtml(solVoiceCopy.throttledHeaderWhen)}</th>
-          <th>${escapeHtml(solVoiceCopy.throttledHeaderCategory)}</th>
-          <th>${escapeHtml(solVoiceCopy.throttledHeaderDedupeKey)}</th>
-          <th>${escapeHtml(solVoiceCopy.throttledHeaderOutcome)}</th>
-        </tr>
-      </thead>
-      <tbody>${body}</tbody>
-    </table>
-  `;
 }
 
 function readAutoSaveControlValue(el) {
@@ -6665,7 +6243,6 @@ function mergedSettingsCopy(state) {
   return {
     settings_copy: state.settings_copy || {},
     install_copy: state.install_copy || {},
-    sol_voice_copy: state.sol_voice_copy || {},
   };
 }
 
@@ -6673,19 +6250,7 @@ function applySettingsState(state) {
   if (!window.SettingsRender || typeof window.SettingsRender.applyCopy !== 'function') {
     throw new Error('settings renderer unavailable');
   }
-  const solCopy = state.sol_voice_copy || {};
   INSTALL_COPY = state.install_copy || {};
-  solVoiceCategories = Array.isArray(solCopy.CATEGORIES) ? solCopy.CATEGORIES : [];
-  solVoiceCopy = {
-    autoMutedFormat: solCopy.SOL_VOICE_SETTINGS_CATEGORY_CAP_AUTO_MUTED_FORMAT || '',
-    clearButton: solCopy.SOL_VOICE_SETTINGS_CATEGORY_CAP_CLEAR_BUTTON || '',
-    throttledEmpty: solCopy.SOL_VOICE_THROTTLED_LOG_EMPTY || '',
-    throttledError: solCopy.SOL_VOICE_THROTTLED_LOG_ERROR || '',
-    throttledHeaderWhen: solCopy.SOL_VOICE_THROTTLED_LOG_HEADER_WHEN || '',
-    throttledHeaderCategory: solCopy.SOL_VOICE_THROTTLED_LOG_HEADER_CATEGORY || '',
-    throttledHeaderDedupeKey: solCopy.SOL_VOICE_THROTTLED_LOG_HEADER_DEDUPE_KEY || '',
-    throttledHeaderOutcome: solCopy.SOL_VOICE_THROTTLED_LOG_HEADER_OUTCOME || '',
-  };
   window.SettingsRender.applyCopy(document, mergedSettingsCopy(state));
 }
 
@@ -6769,13 +6334,11 @@ function initSettings() {
   updateFacetNav();
   initFromHash();
   loadConfig();
-  loadSolVoiceSettings();
   loadObserve();
   loadVision();
   loadSync();
   loadStorage();
   setupAutoSave();
-  setupSolVoiceListeners();
   setupStorageListeners();
 
   // Enter-to-save for auto-save text inputs inside forms

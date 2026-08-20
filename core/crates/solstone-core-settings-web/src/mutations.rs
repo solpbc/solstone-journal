@@ -13,10 +13,9 @@ use serde_json::{Value, json};
 use solstone_core_journal_config_write::{LockOptions, hold_lock};
 use tower::ServiceExt;
 
-const MUTATION_PAIRS: [(&str, &str); 18] = [
+const MUTATION_PAIRS: [(&str, &str); 17] = [
     ("PUT", "/app/settings/api/config"),
     ("POST", "/app/settings/api/config"),
-    ("PUT", "/app/settings/api/sol_voice"),
     ("POST", "/app/settings/api/validate-keys"),
     ("PUT", "/app/settings/api/vision"),
     ("PUT", "/app/settings/api/observe"),
@@ -235,7 +234,7 @@ fn ac1_mutations_replay_status_digest_config_and_key_deltas() {
     let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations");
-    assert_eq!(cases.len(), 20);
+    assert_eq!(cases.len(), 18);
     crate::retention_tests::without_executor(|| {
         for (name, case) in cases {
             let root = root_from(&case["config_before"]);
@@ -424,7 +423,7 @@ fn ac5_malformed_mutations_replay_and_keep_malformed_sections_byte_equal() {
     let _serialized = crate::retention_tests::executor_env_guard();
     let corpus = crate::test_support::corpus();
     let cases = mutation_cases(&corpus, "mutations_malformed");
-    assert_eq!(cases.len(), 20);
+    assert_eq!(cases.len(), 18);
     crate::retention_tests::without_executor(|| {
         for (name, case) in cases {
             let root = root_from(&case["config_before"]);
@@ -557,7 +556,6 @@ fn refusal_route(name: &str) -> (&'static str, &'static str) {
             ("DELETE", "/app/settings/api/facet/no-such")
         }
         "POST facet.rename-no-name" => ("POST", "/app/settings/api/facet/no-such/rename"),
-        "PUT sol_voice.not-object" => ("PUT", "/app/settings/api/sol_voice"),
         "PUT storage.bad-mode" | "PUT storage.bad-days" | "PUT storage.logs-bad-days" => {
             ("PUT", "/app/settings/api/storage")
         }
@@ -637,8 +635,8 @@ async fn ac3_refusals_replay_across_all_non_corrupt_phases() {
             total += 1;
         }
     }
-    assert_eq!(per_phase, Some(26));
-    assert_eq!(total, 26 * 5);
+    assert_eq!(per_phase, Some(25));
+    assert_eq!(total, 25 * 5);
 }
 
 #[tokio::test]
@@ -814,8 +812,8 @@ async fn ac11_env_write_persists_masks_and_clears_stale_validation() {
 }
 
 #[tokio::test]
-async fn ac12_explicit_eighteen_pair_inventory() {
-    assert_eq!(MUTATION_PAIRS.len(), 18);
+async fn ac12_explicit_seventeen_pair_inventory() {
+    assert_eq!(MUTATION_PAIRS.len(), 17);
     let root = crate::test_support::populated_root();
     for (method, path) in MUTATION_PAIRS {
         let response = crate::test_support::shell_router(root.path())

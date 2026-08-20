@@ -162,8 +162,8 @@ fn materialized_defaults_only_change_identity_resolution_fields() {
     drop(localtime_guard);
     drop(passwd_guard);
 
-    assert_eq!(plain.len(), 11);
-    assert_eq!(materialized.len(), 11);
+    assert_eq!(plain.len(), 10);
+    assert_eq!(materialized.len(), 10);
     let mut plain_without_identity = plain.clone();
     let mut materialized_without_identity = materialized.clone();
     plain_without_identity.remove("identity");

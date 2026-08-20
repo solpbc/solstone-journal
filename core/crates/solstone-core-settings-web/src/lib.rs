@@ -25,7 +25,6 @@ mod processing;
 mod request_body;
 mod retention;
 mod retention_executor;
-mod sol_voice;
 mod state;
 mod storage;
 mod sync;
@@ -47,9 +46,6 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let observe_post_root = journal_root.clone();
     let transcribe_root = journal_root.clone();
     let processing_root = journal_root.clone();
-    let sol_voice_get_root = journal_root.clone();
-    let sol_voice_put_root = journal_root.clone();
-    let throttled_root = journal_root.clone();
     let keys_root = journal_root.clone();
     let vision_get_root = journal_root.clone();
     let vision_put_root = journal_root.clone();
@@ -110,16 +106,6 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         .route(
             "/app/settings/api/processing",
             get(move || processing::get(processing_root.clone())),
-        )
-        .route(
-            "/app/settings/api/sol_voice",
-            get(move || sol_voice::get(sol_voice_get_root.clone())).put(move |body| {
-                sol_voice::update(sol_voice_put_root.clone(), config_lock_options, body)
-            }),
-        )
-        .route(
-            "/app/settings/api/sol_voice/throttled",
-            get(move |query| sol_voice::throttled(throttled_root.clone(), query)),
         )
         .route(
             "/app/settings/api/validate-keys",
@@ -213,5 +199,7 @@ mod mutations;
 mod retention_tests;
 #[cfg(test)]
 mod router_contracts;
+#[cfg(test)]
+mod settings_corpus_divergence;
 #[cfg(test)]
 mod test_support;

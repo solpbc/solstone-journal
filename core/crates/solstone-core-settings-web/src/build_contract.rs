@@ -27,7 +27,10 @@ fn ac15_settings_sources_allow_only_bounded_retention_executor_spawn() {
         ("request_body.rs", include_str!("request_body.rs")),
         ("router_contracts.rs", include_str!("router_contracts.rs")),
         ("storage.rs", include_str!("storage.rs")),
-        ("sol_voice.rs", include_str!("sol_voice.rs")),
+        (
+            "settings_corpus_divergence.rs",
+            include_str!("settings_corpus_divergence.rs"),
+        ),
         ("state.rs", include_str!("state.rs")),
         ("sync.rs", include_str!("sync.rs")),
         ("test_support.rs", include_str!("test_support.rs")),
