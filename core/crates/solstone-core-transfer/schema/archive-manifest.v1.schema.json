@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solstone-journal-format:archive-manifest.v1",
+  "title": "Solstone transfer archive manifest v1",
+  "description": "On-disk manifest.json as accepted by parse_manifest. created_at is Unix epoch milliseconds. This file is crate-local and not bundle-discovered.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "day", "segments"],
+  "properties": {
+    "version": {"const": 1},
+    "day": {"type": "string", "pattern": "^[0-9]{8}$"},
+    "created_at": {
+      "type": "integer",
+      "description": "Unix epoch milliseconds (export.rs as_millis() as i64). No bounds."
+    },
+    "host": {"type": "string"},
+    "segments": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["files"],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["name", "sha256", "size"],
+              "properties": {
+                "name": {"type": "string"},
+                "sha256": {"type": "string", "pattern": "^[0-9A-Fa-f]{64}$"},
+                "size": {"type": "integer", "minimum": 0}
+              }
+            }
+          }
+        }
+      },
+      "propertyNames": {"pattern": "^[^/]+/[^/]+$"}
+    }
+  },
+  "examples": [
+    {
+      "version": 1,
+      "day": "20260203",
+      "created_at": 1,
+      "host": "test",
+      "segments": {
+        "audio/120000_30": {
+          "files": [
+            {
+              "name": "device.json",
+              "sha256": "263a4dbe41488fb87214b0032339dbb9f0c8da14c16dfcf13084bf3c2552eca5",
+              "size": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "version": 1,
+      "day": "20260203",
+      "segments": {
+        "audio/120000_30": {
+          "files": [
+            {
+              "name": "device.json",
+              "sha256": "263a4dbe41488fb87214b0032339dbb9f0c8da14c16dfcf13084bf3c2552eca5",
+              "size": 6
+            },
+            {
+              "name": "stream.json",
+              "sha256": "dca83e717b1f64eb141057a7415a330ad1361f51703efa2e4776f40047898a04",
+              "size": 6
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "x-journal-contract": {
+    "format_id": "solstone-archive-manifest.v1",
+    "schema_owner": "solstone-core-transfer",
+    "reference_writer": "solstone_core_transfer::export::export",
+    "allowed_producers": ["transfer.export"],
+    "write_discipline": "First member of the transfer tar+gzip archive (manifest.json); written whole by export; never mutated in place",
+    "file_kind": "json",
+    "key_fields": ["version", "day", "segments"]
+  },
+  "x-known-asymmetries": [
+    "Observed, not decided: after parse_manifest succeeds, expected_members additionally requires each segment-key's time half to be exactly 6 ASCII digits, the duration half to be nonempty ASCII digits, and duration.parse::<u64>() to succeed and be greater than 0. There is no HHMMSS_LEN constant; the length check is the literal 6 in validate_segment_key.",
+    "Observed, not decided: expected_members also runs contained_path on the stream/key route under the day directory and on each file.name under the segment directory, rejecting path escape before any extraction.",
+    "Observed, not decided: buffer_members additionally requires each archive member's sha256 and size to match the manifest entry, and every expected member to be present in the archive; those checks are not part of parse_manifest."
+  ]
+}

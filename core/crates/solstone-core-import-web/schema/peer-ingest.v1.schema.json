@@ -1,0 +1,473 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solstone-import-ingest-door:peer-ingest.v1",
+  "title": "Solstone peer-ingest HTTP surface v1",
+  "description": "This document defines subschemas for the six peer-ingest door operations, not a single instance shape. file_kind is http_request_response, deliberately outside contract::validate::validate_contract_file's routed set (json / ingest_envelope / headered_jsonl) because this is a wire contract, not a file format, and this document is not bundle-discovered.",
+  "x-journal-contract": {
+    "format_id": "solstone-peer-ingest-door.v1",
+    "schema_owner": "solstone-core-import-web",
+    "reference_writer": "solstone_core_transfer::peer_export",
+    "allowed_producers": ["transfer.peer_export", "transfer.send"],
+    "write_discipline": "HTTP request/response bodies, not an at-rest file",
+    "file_kind": "http_request_response",
+    "key_fields": ["ingest/segments", "ingest/entities", "ingest/facets", "ingest/imports", "ingest/config", "manifest/{area}"]
+  },
+  "x-operations": [
+    {
+      "method": "POST",
+      "path_rule": "/app/import/journal/<key_prefix>/ingest/config",
+      "handler": "ingest::config",
+      "body": "json",
+      "request_ref": "config_request",
+      "response_ref": "config_response"
+    },
+    {
+      "method": "POST",
+      "path_rule": "/app/import/journal/<key_prefix>/ingest/entities",
+      "handler": "ingest::entities",
+      "body": "json",
+      "request_ref": "entities_request",
+      "response_ref": "entities_response"
+    },
+    {
+      "method": "POST",
+      "path_rule": "/app/import/journal/<key_prefix>/ingest/facets",
+      "handler": "ingest::facets",
+      "body": "multipart",
+      "request_ref": "facets_request_metadata",
+      "response_ref": "facets_response"
+    },
+    {
+      "method": "POST",
+      "path_rule": "/app/import/journal/<key_prefix>/ingest/imports",
+      "handler": "ingest::imports",
+      "body": "json",
+      "request_ref": "imports_request",
+      "response_ref": "imports_response"
+    },
+    {
+      "method": "POST",
+      "path_rule": "/app/import/journal/<key_prefix>/ingest/segments",
+      "handler": "ingest::segments",
+      "body": "multipart",
+      "request_ref": "segments_request_metadata",
+      "response_ref": "segments_response"
+    },
+    {
+      "method": "GET",
+      "path_rule": "/app/import/journal/<key_prefix>/manifest/<area>",
+      "handler": "journal_sources::manifest",
+      "body": null,
+      "request_ref": null,
+      "response_ref": "manifest_{area}_response"
+    }
+  ],
+  "x-known-asymmetries": [
+    "Observed, not decided: 401/403 on this surface return Werkzeug-style HTML from html_auth_failure, not this JSON envelope. The seven cases are MissingAuth, InvalidPlIdentity, InvalidApiKey (401) and PlRevoked, PlDisabled, DlRevoked, PrefixMismatch (403).",
+    "Observed, not decided: malformed JSON on the four Json<Value> doors (entities, imports, config, and any future JSON sibling) is an Axum extractor rejection (typically 422), not this envelope. Multipart collect failure on segments/facets is 400 invalid_json_request.",
+    "Observed, not decided: unmatched paths get Axum's default 404; this router has no fallback to html_not_found or to this envelope.",
+    "Observed, not decided: ingest/config accepts the legacy alias journal_config; the only production producer (peer_export) sends config.",
+    "Observed, not decided: valid_segment_key here accepts a zero duration (120000_0) that the archive import path's validate_segment_key rejects via parse::<u64>() > 0.",
+    "Observed, not decided: valid_facet_name here allows a leading _ or - that the producer's is_facet_name never emits.",
+    "Observed, not decided: import id here is any non-empty [0-9_]+; the producer only emits YYYYMMDD_HHMMSS.",
+    "Observed, not decided: provenance keys (imported_via, link_id, sender_fingerprint, sender_instance_id) are stamped only on segment state records and on log.jsonl via decision; they are not written onto entities, facets, imports, or config state.json."
+  ],
+  "$defs": {
+    "segments_request_metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["segments"],
+      "properties": {
+        "segments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["day", "stream", "segment_key", "files"],
+            "properties": {
+              "day": {"type": "string", "pattern": "^[0-9]{8}$"},
+              "stream": {"type": "string", "pattern": "^(_default|[a-z][a-z0-9._-]*)$"},
+              "segment_key": {"type": "string", "pattern": "^[0-9]{6}_[0-9]+$"},
+              "files": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string"},
+                "description": "An empty or duplicate-name files array is rejected as a per-item errors[] entry inside a 200 response (ingest.rs:206-217), not as a 400. The schema describes the accepted request; the rejection path is a 200-with-errors."
+              }
+            }
+          }
+        }
+      },
+      "examples": [
+        {"segments": [{"day": "20260203", "stream": "audio", "segment_key": "120000_30", "files": ["device.json"]}]}
+      ]
+    },
+    "segments_response": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["segments_received", "segments_skipped", "segments_deconflicted", "errors"],
+      "properties": {
+        "segments_received": {"type": "integer", "minimum": 0},
+        "segments_skipped": {"type": "integer", "minimum": 0},
+        "segments_deconflicted": {"type": "integer", "minimum": 0},
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["segment_key", "day", "error"],
+            "properties": {
+              "segment_key": {"type": "string"},
+              "day": {"type": "string"},
+              "error": {"type": "string"}
+            }
+          }
+        }
+      },
+      "examples": [
+        {"segments_received": 1, "segments_skipped": 0, "segments_deconflicted": 0, "errors": []}
+      ]
+    },
+    "facets_request_metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["facets"],
+      "properties": {
+        "facets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["name", "files"],
+            "properties": {
+              "name": {"type": "string", "pattern": "^[a-z0-9_-]+$"},
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": ["path", "type"],
+                  "properties": {
+                    "path": {"type": "string"},
+                    "type": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "examples": [
+        {"facets": [{"name": "work", "files": [{"path": "facet.json", "type": "facet_json"}]}]}
+      ]
+    },
+    "facets_response": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["created", "merged", "skipped", "staged", "errors"],
+      "properties": {
+        "created": {"type": "integer", "minimum": 0},
+        "merged": {"type": "integer", "minimum": 0},
+        "skipped": {"type": "integer", "minimum": 0},
+        "staged": {"type": "integer", "minimum": 0},
+        "errors": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["facet", "error"],
+                "properties": {
+                  "facet": {"type": "string"},
+                  "error": {"type": "string"}
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["facet", "path", "error"],
+                "properties": {
+                  "facet": {"type": "string"},
+                  "path": {"type": "string"},
+                  "error": {"type": "string"}
+                }
+              }
+            ]
+          }
+        }
+      },
+      "examples": [
+        {
+          "created": 1,
+          "merged": 0,
+          "skipped": 0,
+          "staged": 0,
+          "errors": [
+            {"facet": "Work", "error": "Invalid facet name"},
+            {"facet": "work", "path": "todos/20260101.jsonl", "error": "Invalid todos path"}
+          ]
+        }
+      ]
+    },
+    "entities_request": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["entities"],
+      "properties": {
+        "entities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["name"],
+            "properties": {
+              "name": {"type": "string"},
+              "id": {"type": "string"}
+            }
+          }
+        }
+      },
+      "examples": [
+        {"entities": [{"id": "keep", "name": "Kept"}]}
+      ]
+    },
+    "entities_response": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["auto_merged", "created", "staged", "skipped", "errors"],
+      "properties": {
+        "auto_merged": {"type": "integer", "minimum": 0},
+        "created": {"type": "integer", "minimum": 0},
+        "staged": {"type": "integer", "minimum": 0},
+        "skipped": {"type": "integer", "minimum": 0},
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["entity_id", "error"],
+            "properties": {
+              "entity_id": {"type": "string"},
+              "error": {"type": "string"}
+            }
+          }
+        }
+      },
+      "examples": [
+        {"auto_merged": 0, "created": 1, "staged": 0, "skipped": 0, "errors": []}
+      ]
+    },
+    "imports_request": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["imports"],
+      "properties": {
+        "imports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["id", "import_json", "imported_json", "content_manifest"],
+            "properties": {
+              "id": {"type": "string", "pattern": "^[0-9_]+$"},
+              "import_json": {"type": "object", "additionalProperties": true},
+              "imported_json": {"type": "object", "additionalProperties": true},
+              "content_manifest": {"type": "array"}
+            }
+          }
+        }
+      },
+      "examples": [
+        {"imports": [{"id": "20260801_120000", "import_json": {}, "imported_json": {}, "content_manifest": []}]}
+      ]
+    },
+    "imports_response": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["copied", "skipped", "staged", "errors"],
+      "properties": {
+        "copied": {"type": "integer", "minimum": 0},
+        "skipped": {"type": "integer", "minimum": 0},
+        "staged": {"type": "integer", "minimum": 0},
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["import_id", "error"],
+            "properties": {
+              "import_id": {"type": "string"},
+              "error": {"type": "string"}
+            }
+          }
+        }
+      },
+      "examples": [
+        {"copied": 1, "skipped": 0, "staged": 0, "errors": []}
+      ]
+    },
+    "config_request": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["config"],
+      "properties": {
+        "config": {"type": "object", "additionalProperties": true}
+      },
+      "examples": [
+        {"config": {"setup": {"completed_at": 1767225600}}}
+      ]
+    },
+    "config_response": {
+      "type": "object",
+      "additionalProperties": true,
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["staged", "skipped", "reason"],
+          "properties": {
+            "staged": {"const": false},
+            "skipped": {"const": true},
+            "reason": {"const": "idempotent"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["staged", "skipped", "diff_fields"],
+          "properties": {
+            "staged": {"const": true},
+            "skipped": {"const": false},
+            "diff_fields": {"type": "integer"}
+          }
+        }
+      ],
+      "examples": [
+        {"staged": false, "skipped": true, "reason": "idempotent"},
+        {"staged": true, "skipped": false, "diff_fields": 2}
+      ]
+    },
+    "manifest_segments_response": {
+      "description": "GET state.json for the segments area. Example route keys and link_id are asserted by ingest.rs tests (1280, 1516-1518). files[].sha256/size use the committed b\"device\" digest as a well-formed stand-in because those tests do not assert the files array contents.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "files": {
+              "type": "array",
+              "description": "SegmentManifest.files as published by format solstone-archive-manifest.v1. Items are unconstrained here; do not copy name/sha256/size properties."
+            },
+            "imported_via": {"const": "peer_link"},
+            "link_id": {"type": ["string", "null"]},
+            "sender_fingerprint": {"type": ["string", "null"]},
+            "sender_instance_id": {"type": ["string", "null"]}
+          }
+        }
+      },
+      "examples": [
+        {
+          "20260801": {
+            "default/120000_60": {
+              "files": [
+                {
+                  "name": "entry.jsonl",
+                  "sha256": "263a4dbe41488fb87214b0032339dbb9f0c8da14c16dfcf13084bf3c2552eca5",
+                  "size": 6
+                }
+              ],
+              "imported_via": "peer_link",
+              "link_id": "sha256:peer-fingerprint",
+              "sender_fingerprint": "sha256:peer-fingerprint",
+              "sender_instance_id": "peer-instance"
+            }
+          }
+        }
+      ]
+    },
+    "manifest_entities_response": {
+      "description": "GET state.json for the entities area. No ingest.rs test asserts entities/state.json; id_map/received keys follow the criterion_13 request (ada), and received hashes use the committed b\"device\" digest as a well-formed stand-in.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id_map": {"type": "object", "additionalProperties": true},
+        "received": {"type": "object", "additionalProperties": true}
+      },
+      "examples": [
+        {
+          "id_map": {"ada": "ada"},
+          "received": {"ada": "263a4dbe41488fb87214b0032339dbb9f0c8da14c16dfcf13084bf3c2552eca5"}
+        }
+      ]
+    },
+    "manifest_facets_response": {
+      "description": "GET state.json for the facets area. ingest.rs:1564 seeds {\"received\":{}} as a refusal-test setup. The populated example uses the criterion_13 facet path work/todos/20260801.jsonl with the committed b\"device\" digest as a well-formed stand-in because no ingest.rs test asserts a populated facets state.json.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "received": {"type": "object", "additionalProperties": true}
+      },
+      "examples": [
+        {
+          "received": {
+            "work/todos/20260801.jsonl": "263a4dbe41488fb87214b0032339dbb9f0c8da14c16dfcf13084bf3c2552eca5"
+          }
+        }
+      ]
+    },
+    "manifest_imports_response": {
+      "description": "GET state.json for the imports area. The received key 20260801_120000 is the criterion_13 / symlink-refusal import id; the hash uses the committed b\"device\" digest as a well-formed stand-in because no ingest.rs test asserts imports/state.json.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "received": {"type": "object", "additionalProperties": true}
+      },
+      "examples": [
+        {
+          "received": {
+            "20260801_120000": "263a4dbe41488fb87214b0032339dbb9f0c8da14c16dfcf13084bf3c2552eca5"
+          }
+        }
+      ]
+    },
+    "manifest_config_response": {
+      "description": "GET state.json for the config area. No ingest.rs test asserts last_hash; the example uses the committed b\"device\" digest as a well-formed stand-in.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "last_hash": {"type": "string"}
+      },
+      "examples": [
+        {"last_hash": "263a4dbe41488fb87214b0032339dbb9f0c8da14c16dfcf13084bf3c2552eca5"}
+      ]
+    },
+    "error_envelope": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["error", "reason_code", "detail"],
+      "properties": {
+        "error": {"type": "string"},
+        "reason_code": {
+          "type": "string",
+          "enum": [
+            "invalid_json_request",
+            "missing_required_field",
+            "invalid_request_value",
+            "import_metadata_failed"
+          ]
+        },
+        "detail": {"type": "string"}
+      },
+      "examples": [
+        {
+          "error": "I couldn't find a required field.",
+          "reason_code": "missing_required_field",
+          "detail": "Missing segments array"
+        }
+      ]
+    }
+  }
+}

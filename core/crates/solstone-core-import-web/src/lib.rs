@@ -27,6 +27,8 @@ mod save_stream;
 #[cfg(test)]
 mod corpus;
 #[cfg(test)]
+mod peer_ingest_schema;
+#[cfg(test)]
 mod test_support;
 
 #[derive(Clone)]
