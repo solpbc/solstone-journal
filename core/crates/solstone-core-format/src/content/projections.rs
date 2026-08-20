@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use super::{ChatLabels, Family};
 use super::{
-    JsonObject, RawPerceptFamily, produce_chunks_by_shape, produce_raw_percept_chunks_by_shape,
+    Family, JsonObject, RawPerceptFamily, produce_chunks_by_shape,
+    produce_raw_percept_chunks_by_shape,
 };
 
 /// Render already-parsed raw-screen records as the owner-facing text stream.
@@ -20,7 +20,7 @@ pub fn render_raw_screen_text(rel: &str, records: &[JsonObject]) -> String {
 
 /// Render already-parsed browser records as the owner-facing text stream.
 pub fn render_browser_text(records: &[JsonObject]) -> String {
-    let produced = produce_chunks_by_shape(Family::Browser, None, records, &ChatLabels::default());
+    let produced = produce_chunks_by_shape(Family::Browser, None, records);
     produced
         .chunks
         .into_iter()
@@ -35,7 +35,6 @@ pub fn render_morning_briefing_text(briefing: &JsonObject) -> String {
         Family::MorningBriefing,
         None,
         std::slice::from_ref(briefing),
-        &ChatLabels::default(),
     );
     produced
         .chunks

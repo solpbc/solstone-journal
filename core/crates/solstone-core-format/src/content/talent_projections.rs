@@ -7,8 +7,7 @@ use std::io;
 use std::path::{Component, Path};
 
 use super::{
-    ChatLabels, ContentResolution, parse_records_for_family, produce_chunks_by_shape,
-    resolve_content_shape,
+    ContentResolution, parse_records_for_family, produce_chunks_by_shape, resolve_content_shape,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,12 +56,7 @@ pub fn iter_talent_text_projections(
         {
             let text = fs::read_to_string(&json_path)?;
             let records = parse_records_for_family(family, &text);
-            let produced = produce_chunks_by_shape(
-                family,
-                Some(&classifier_rel),
-                &records,
-                &ChatLabels::default(),
-            );
+            let produced = produce_chunks_by_shape(family, Some(&classifier_rel), &records);
             let text = produced
                 .chunks
                 .into_iter()

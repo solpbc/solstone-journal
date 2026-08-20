@@ -9,6 +9,7 @@ use chrono::NaiveDate;
 use rusqlite::trace::{TraceEvent, TraceEventCodes};
 use rusqlite::{Connection, OpenFlags, params};
 use solstone_core_indexer_store::db::{db_path, open_index};
+use solstone_core_indexer_store::scan::scan_journal;
 
 use crate::execute::{
     agents_with_connection_for_test, order_for_plan, search_with_connection_for_test,
@@ -730,4 +731,237 @@ fn relaxation_strips_an_odd_quote_count_before_retrying() {
     assert_eq!(response.results.len(), 1);
     assert!(response.relaxed);
     fs::remove_dir_all(root).expect("cleanup odd quote index");
+}
+
+fn write_rel(root: &Path, rel: &str, text: &str) {
+    let path = root.join(rel);
+    fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
+    fs::write(path, text).expect("write fixture");
+}
+
+fn chronicle_tree(root: &Path) -> Vec<(String, Vec<u8>)> {
+    let chronicle = root.join("chronicle");
+    let mut entries = Vec::new();
+    fn walk(dir: &Path, base: &Path, entries: &mut Vec<(String, Vec<u8>)>) {
+        let mut children: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .collect();
+        children.sort_by_key(|entry| entry.file_name());
+        for child in children {
+            let path = child.path();
+            if path.is_dir() {
+                walk(&path, base, entries);
+            } else {
+                let rel = path
+                    .strip_prefix(base)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .replace('\\', "/");
+                entries.push((rel, fs::read(&path).unwrap()));
+            }
+        }
+    }
+    if chronicle.is_dir() {
+        walk(&chronicle, &chronicle, &mut entries);
+    }
+    entries
+}
+
+fn count_path(conn: &Connection, table: &str, path: &str) -> i64 {
+    conn.query_row(
+        &format!("SELECT COUNT(*) FROM {table} WHERE path=?1"),
+        [path],
+        |row| row.get(0),
+    )
+    .expect("count path")
+}
+
+fn seed_file_row(conn: &Connection, path: &str) {
+    conn.execute("INSERT INTO files(path, mtime) VALUES (?1, 1)", [path])
+        .expect("seed files row");
+}
+
+fn seed_chunk(
+    conn: &Connection,
+    content: &str,
+    path: &str,
+    day: &str,
+    agent: &str,
+    stream: Option<&str>,
+) {
+    conn.execute(
+        "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
+         VALUES (?1, ?2, ?3, '', ?4, ?5, 0, '')",
+        params![content, path, day, agent, stream],
+    )
+    .expect("seed chunk");
+}
+
+#[test]
+fn search_purges_authored_chat_rows_without_rescanning() {
+    let (root, connection) = seeded_root("purge-authored-chat");
+
+    const PATH_A: &str = "20260508/chat/120000_300/chat.jsonl";
+    const PATH_B: &str = "20260509/chat/130000_300/chat.jsonl";
+    const PATH_C: &str = "20260508/talents/chat.md";
+    const PATH_D: &str = "20260508/import.chatgpt/thread/conversation_transcript.jsonl";
+    const PATH_E: &str = "facets/chat/logs/chat.jsonl";
+    const TOKEN_A: &str = "NeedADiffNullStream";
+    const TOKEN_B: &str = "NeedADiffChatStream";
+    const TOKEN_C: &str = "TalentChatMdControl";
+    const TOKEN_D: &str = "ImportChatgptControl";
+    const TOKEN_E: &str = "FacetsChatActionLogControl";
+    const MATCH_ALL: &str = "NeedADiffNullStream OR NeedADiffChatStream OR TalentChatMdControl OR ImportChatgptControl OR FacetsChatActionLogControl";
+
+    write_rel(
+        &root,
+        &format!("chronicle/{PATH_A}"),
+        &format!(r#"{{"kind":"owner_message","ts":1,"text":"{TOKEN_A}"}}"#),
+    );
+    write_rel(
+        &root,
+        &format!("chronicle/{PATH_B}"),
+        &format!(r#"{{"kind":"owner_message","ts":1,"text":"{TOKEN_B}"}}"#),
+    );
+    write_rel(
+        &root,
+        "chronicle/20260509/chat/130000_300/stream.json",
+        r#"{"stream":"chat"}"#,
+    );
+    write_rel(
+        &root,
+        &format!("chronicle/{PATH_C}"),
+        &format!("# Chat\n\n{TOKEN_C}\n"),
+    );
+    write_rel(
+        &root,
+        &format!("chronicle/{PATH_D}"),
+        &format!(
+            "{{\"model\":\"gpt\"}}\n{{\"start\":\"00:00:01\",\"speaker\":\"User\",\"text\":\"{TOKEN_D}\"}}\n"
+        ),
+    );
+    write_rel(
+        &root,
+        PATH_E,
+        &format!(
+            r#"{{"action":"identity_update","timestamp":"2026-05-08T00:00:00+00:00","note":"{TOKEN_E}"}}"#
+        ),
+    );
+
+    seed_chunk(&connection, TOKEN_A, PATH_A, "20260508", "chat", None);
+    seed_chunk(
+        &connection,
+        TOKEN_B,
+        PATH_B,
+        "20260509",
+        "chat",
+        Some("chat"),
+    );
+    seed_chunk(&connection, TOKEN_C, PATH_C, "20260508", "chat", None);
+    seed_chunk(&connection, TOKEN_D, PATH_D, "20260508", "import", None);
+    seed_chunk(&connection, TOKEN_E, PATH_E, "20260508", "", None);
+    for path in [PATH_A, PATH_B, PATH_C, PATH_D, PATH_E] {
+        seed_file_row(&connection, path);
+    }
+    drop(connection);
+
+    let before = chronicle_tree(&root);
+    let pre = read_only(&root);
+    assert_eq!(count_path(&pre, "chunks", PATH_A), 1);
+    assert_eq!(count_path(&pre, "files", PATH_A), 1);
+    assert_eq!(count_path(&pre, "chunks", PATH_B), 1);
+    assert_eq!(count_path(&pre, "files", PATH_B), 1);
+    assert_eq!(count_path(&pre, "chunks", PATH_C), 1);
+    assert_eq!(count_path(&pre, "files", PATH_C), 1);
+    assert_eq!(count_path(&pre, "chunks", PATH_D), 1);
+    assert_eq!(count_path(&pre, "files", PATH_D), 1);
+    assert_eq!(count_path(&pre, "chunks", PATH_E), 1);
+    assert_eq!(count_path(&pre, "files", PATH_E), 1);
+    let stream_a: Option<String> = pre
+        .query_row("SELECT stream FROM chunks WHERE path=?1", [PATH_A], |row| {
+            row.get(0)
+        })
+        .expect("stream a");
+    assert_eq!(stream_a, None);
+    let stream_b: Option<String> = pre
+        .query_row("SELECT stream FROM chunks WHERE path=?1", [PATH_B], |row| {
+            row.get(0)
+        })
+        .expect("stream b");
+    assert_eq!(stream_b.as_deref(), Some("chat"));
+    let mut matched = pre
+        .prepare("SELECT DISTINCT path FROM chunks WHERE chunks MATCH ?1")
+        .expect("prepare match")
+        .query_map([MATCH_ALL], |row| row.get::<_, String>(0))
+        .expect("query match")
+        .map(|row| row.expect("match path"))
+        .collect::<Vec<_>>();
+    matched.sort();
+    let mut expected_paths = vec![
+        PATH_A.to_string(),
+        PATH_B.to_string(),
+        PATH_C.to_string(),
+        PATH_D.to_string(),
+        PATH_E.to_string(),
+    ];
+    expected_paths.sort();
+    assert_eq!(matched, expected_paths);
+    drop(pre);
+
+    let mut query = request(MATCH_ALL);
+    query.limit = 20;
+    let response = search(&root, &query, reference_date()).expect("search");
+    let mut hit_paths: Vec<_> = response
+        .results
+        .iter()
+        .map(|hit| hit.metadata.path.as_str())
+        .collect();
+    hit_paths.sort();
+    hit_paths.dedup();
+    assert!(!hit_paths.contains(&PATH_A));
+    assert!(!hit_paths.contains(&PATH_B));
+    assert!(hit_paths.contains(&PATH_C));
+    assert!(hit_paths.contains(&PATH_D));
+    assert!(hit_paths.contains(&PATH_E));
+
+    let post = Connection::open(db_path(&root)).expect("open after search");
+    assert_eq!(count_path(&post, "chunks", PATH_A), 0);
+    assert_eq!(count_path(&post, "files", PATH_A), 0);
+    assert_eq!(count_path(&post, "chunks", PATH_B), 0);
+    assert_eq!(count_path(&post, "files", PATH_B), 0);
+    assert_eq!(count_path(&post, "chunks", PATH_C), 1);
+    assert_eq!(count_path(&post, "files", PATH_C), 1);
+    assert_eq!(count_path(&post, "chunks", PATH_D), 1);
+    assert_eq!(count_path(&post, "files", PATH_D), 1);
+    assert_eq!(count_path(&post, "chunks", PATH_E), 1);
+    assert_eq!(count_path(&post, "files", PATH_E), 1);
+    drop(post);
+
+    assert_eq!(chronicle_tree(&root), before);
+
+    let second = search(&root, &query, reference_date()).expect("second search");
+    let mut second_paths: Vec<_> = second
+        .results
+        .iter()
+        .map(|hit| hit.metadata.path.as_str())
+        .collect();
+    second_paths.sort();
+    second_paths.dedup();
+    assert_eq!(second_paths, hit_paths);
+    let after_second = Connection::open(db_path(&root)).expect("open after second search");
+    assert_eq!(count_path(&after_second, "chunks", PATH_A), 0);
+    assert_eq!(count_path(&after_second, "files", PATH_A), 0);
+    assert_eq!(count_path(&after_second, "chunks", PATH_B), 0);
+    assert_eq!(count_path(&after_second, "files", PATH_B), 0);
+    drop(after_second);
+
+    scan_journal(&root, true).expect("scan after purge");
+    let after_scan = Connection::open(db_path(&root)).expect("open after scan");
+    assert_eq!(count_path(&after_scan, "chunks", PATH_A), 0);
+    assert_eq!(count_path(&after_scan, "chunks", PATH_B), 0);
+    drop(after_scan);
+
+    fs::remove_dir_all(root).expect("cleanup purge authored chat");
 }

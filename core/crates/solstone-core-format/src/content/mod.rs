@@ -6,7 +6,6 @@ mod activities;
 mod ai_chat;
 mod audio;
 mod browser;
-mod chat;
 mod day_accumulator;
 mod documents;
 mod events;
@@ -41,7 +40,6 @@ pub enum Family {
     ActionLog,
     StructuredImport,
     AiChat,
-    Chat,
     Browser,
     DayAccumulator,
     FacetEntity,
@@ -61,14 +59,13 @@ pub enum RawPerceptFamily {
 }
 
 #[cfg(test)]
-const ALL_FAMILIES: [Family; 15] = [
+const ALL_FAMILIES: [Family; 14] = [
     Family::Markdown,
     Family::Event,
     Family::Activity,
     Family::ActionLog,
     Family::StructuredImport,
     Family::AiChat,
-    Family::Chat,
     Family::Browser,
     Family::DayAccumulator,
     Family::FacetEntity,
@@ -99,27 +96,6 @@ pub struct OccurrenceTimeMs(pub i64);
 impl From<i64> for OccurrenceTimeMs {
     fn from(value: i64) -> Self {
         Self(value)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChatLabels {
-    owner: String,
-    agent: String,
-}
-
-impl ChatLabels {
-    pub fn new(owner: impl Into<String>, agent: impl Into<String>) -> Self {
-        Self {
-            owner: owner.into(),
-            agent: agent.into(),
-        }
-    }
-}
-
-impl Default for ChatLabels {
-    fn default() -> Self {
-        Self::new("Owner", "Sol")
     }
 }
 
@@ -202,11 +178,6 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
     FamilyPattern {
         pattern: "*/import.*/*/imported.md",
         family: Family::Markdown,
-        root: PatternRoot::DayRooted,
-    },
-    FamilyPattern {
-        pattern: "*/chat/*/chat.jsonl",
-        family: Family::Chat,
         root: PatternRoot::DayRooted,
     },
     FamilyPattern {
@@ -399,7 +370,6 @@ pub fn produce_chunks_by_shape(
     family: Family,
     rel: Option<&str>,
     records: &[JsonObject],
-    chat_labels: &ChatLabels,
 ) -> ProducedChunks {
     let rel_text = rel.unwrap_or("");
     match family {
@@ -425,7 +395,6 @@ pub fn produce_chunks_by_shape(
         Family::ActionLog => action_logs::render(rel_text, records),
         Family::StructuredImport => imports::render(records),
         Family::AiChat => ai_chat::render(rel_text, records),
-        Family::Chat => chat::render(records, chat_labels),
         Family::Browser => browser::render(records),
         Family::DayAccumulator => day_accumulator::render(rel_text, records),
         Family::FacetEntity => facet_entities::render(rel_text, records),
@@ -437,12 +406,7 @@ pub fn produce_chunks_by_shape(
     }
 }
 
-pub fn produce_chunks(
-    family: Family,
-    rel: &str,
-    text: &str,
-    chat_labels: &ChatLabels,
-) -> ProducedChunks {
+pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
     if family == Family::Markdown {
         let formatted = format_markdown(text);
         return ProducedChunks {
@@ -463,7 +427,7 @@ pub fn produce_chunks(
     }
 
     let records = parse_records_for_family(family, text);
-    produce_chunks_by_shape(family, Some(rel), &records, chat_labels)
+    produce_chunks_by_shape(family, Some(rel), &records)
 }
 
 /// Render a raw percept from already-parsed records outside the indexed
@@ -646,7 +610,7 @@ mod tests {
     use super::*;
 
     fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
-        super::produce_chunks(family, rel, text, &ChatLabels::default())
+        super::produce_chunks(family, rel, text)
     }
 
     /// Why a case is allowed to differ from the reference corpus.
@@ -980,24 +944,7 @@ mod tests {
             };
             let rel = case["rel"].as_str().expect("case rel");
             let text = case["input_text"].as_str().expect("case input_text");
-
-            let labels = case
-                .get("context")
-                .and_then(serde_json::Value::as_object)
-                .map(|context| {
-                    ChatLabels::new(
-                        context
-                            .get("owner_name")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("Owner"),
-                        context
-                            .get("agent_name")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("Sol"),
-                    )
-                })
-                .unwrap_or_default();
-            let produced = super::produce_chunks(family, rel, text, &labels);
+            let produced = super::produce_chunks(family, rel, text);
             compared += 1;
             compare_corpus_output(case, id, produced, true, false, &mut mismatches);
         }
@@ -1113,7 +1060,6 @@ mod tests {
                 "20260818/import.text/065323_5/conversation_transcript.jsonl",
                 Family::AiChat,
             ),
-            ("20260508/chat/120000_300/chat.jsonl", Family::Chat),
             (
                 "20260703/suze.browser/000141_317/browser_mail-google-com.jsonl",
                 Family::Browser,
@@ -1540,13 +1486,11 @@ not json
                 Family::Event,
                 "facets/work/events/20260101.jsonl",
                 event_text,
-                &ChatLabels::default(),
             ),
             produce_chunks_by_shape(
                 Family::Event,
                 Some("facets/work/events/20260101.jsonl"),
                 &event_records,
-                &ChatLabels::default(),
             )
         );
 
@@ -1569,8 +1513,7 @@ not json
     #[test]
     fn by_shape_activity_without_path_uses_the_pathless_header() {
         let records = parse_jsonl_objects(r#"{"title":"Planning"}"#);
-        let produced =
-            produce_chunks_by_shape(Family::Activity, None, &records, &ChatLabels::default());
+        let produced = produce_chunks_by_shape(Family::Activity, None, &records);
         assert_eq!(produced.header.as_deref(), Some("# Activities"));
     }
 

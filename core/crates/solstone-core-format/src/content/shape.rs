@@ -14,7 +14,7 @@ pub const SHAPE_SIDECAR_BASENAME: &str = "shape.json";
 
 /// Map a written PascalCase shape name onto a content resolution.
 ///
-/// The seventeen names are the fifteen [`Family`] variants plus the two
+/// The sixteen names are the fourteen [`Family`] variants plus the two
 /// unindexed raw-percept families. Unknown spellings return [`None`].
 pub fn parse_shape_name(name: &str) -> Option<ContentResolution> {
     Some(match name {
@@ -24,7 +24,6 @@ pub fn parse_shape_name(name: &str) -> Option<ContentResolution> {
         "ActionLog" => ContentResolution::Indexed(Family::ActionLog),
         "StructuredImport" => ContentResolution::Indexed(Family::StructuredImport),
         "AiChat" => ContentResolution::Indexed(Family::AiChat),
-        "Chat" => ContentResolution::Indexed(Family::Chat),
         "Browser" => ContentResolution::Indexed(Family::Browser),
         "DayAccumulator" => ContentResolution::Indexed(Family::DayAccumulator),
         "FacetEntity" => ContentResolution::Indexed(Family::FacetEntity),
@@ -138,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_shape_name_accepts_the_seventeen_names() {
+    fn parse_shape_name_accepts_the_sixteen_names() {
         let indexed = [
             ("Markdown", Family::Markdown),
             ("Event", Family::Event),
@@ -146,7 +145,6 @@ mod tests {
             ("ActionLog", Family::ActionLog),
             ("StructuredImport", Family::StructuredImport),
             ("AiChat", Family::AiChat),
-            ("Chat", Family::Chat),
             ("Browser", Family::Browser),
             ("DayAccumulator", Family::DayAccumulator),
             ("FacetEntity", Family::FacetEntity),
@@ -179,24 +177,24 @@ mod tests {
     #[test]
     fn absent_sidecar_uses_derived_classify() {
         let temporary = TempDir::new("absent");
-        let path = content_path(&temporary.path, CHAT_REL);
+        let path = content_path(&temporary.path, BROWSER_REL);
         assert_eq!(
-            resolve_content_shape(&path, CHAT_REL),
-            ContentResolution::Indexed(Family::Chat)
+            resolve_content_shape(&path, BROWSER_REL),
+            ContentResolution::Indexed(Family::Browser)
         );
     }
 
     #[test]
     fn omitted_key_uses_derived_classify() {
         let temporary = TempDir::new("omitted");
-        let path = content_path(&temporary.path, CHAT_REL);
+        let path = content_path(&temporary.path, BROWSER_REL);
         write(
             &path.with_file_name(SHAPE_SIDECAR_BASENAME),
             r#"{"other.jsonl":"Browser"}"#,
         );
         assert_eq!(
-            resolve_content_shape(&path, CHAT_REL),
-            ContentResolution::Indexed(Family::Chat)
+            resolve_content_shape(&path, BROWSER_REL),
+            ContentResolution::Indexed(Family::Browser)
         );
     }
 
@@ -220,6 +218,7 @@ mod tests {
             ("null-value", br#"{"chat.jsonl":null}"#),
             ("unknown-spelling", br#"{"chat.jsonl":"chat"}"#),
             ("unknown-name", br#"{"chat.jsonl":"Unknown"}"#),
+            ("named-chat", br#"{"chat.jsonl":"Chat"}"#),
         ];
         for (label, bytes) in cases {
             let _ = fs::remove_file(&sidecar);
@@ -264,24 +263,14 @@ mod tests {
     #[test]
     fn written_indexed_wins_over_derived_indexed() {
         let temporary = TempDir::new("written-indexed");
-        let chat_path = content_path(&temporary.path, CHAT_REL);
-        write(
-            &chat_path.with_file_name(SHAPE_SIDECAR_BASENAME),
-            r#"{"chat.jsonl":"Browser"}"#,
-        );
-        assert_eq!(
-            resolve_content_shape(&chat_path, CHAT_REL),
-            ContentResolution::Indexed(Family::Browser)
-        );
-
         let browser_path = content_path(&temporary.path, BROWSER_REL);
         write(
             &browser_path.with_file_name(SHAPE_SIDECAR_BASENAME),
-            r#"{"browser_tab.jsonl":"Chat"}"#,
+            r#"{"browser_tab.jsonl":"Activity"}"#,
         );
         assert_eq!(
             resolve_content_shape(&browser_path, BROWSER_REL),
-            ContentResolution::Indexed(Family::Chat)
+            ContentResolution::Indexed(Family::Activity)
         );
     }
 

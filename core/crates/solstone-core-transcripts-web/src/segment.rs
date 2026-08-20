@@ -379,7 +379,7 @@ fn browser_chunks(chunks: &mut Vec<Value>, name: &str, entries: &[Map<String, Va
         .map(|entry| serde_json::to_string(entry).unwrap())
         .collect::<Vec<_>>()
         .join("\n");
-    let produced = produce_chunks(Family::Browser, name, &text, &Default::default());
+    let produced = produce_chunks(Family::Browser, name, &text);
     let start = entries
         .iter()
         .find(|entry| entry.get("t").and_then(Value::as_str) == Some("segment_start"));

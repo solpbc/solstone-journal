@@ -21,7 +21,7 @@ use solstone_core_facets::{
     ActivityRecord, AppendOutcome, activity_value_or_empty, activity_value_string,
     read_detected_entities,
 };
-use solstone_core_format::content::{ChatLabels, Family, produce_chunks_by_shape};
+use solstone_core_format::content::{Family, produce_chunks_by_shape};
 
 use crate::{Clock, http};
 
@@ -380,17 +380,12 @@ fn resolve_participation(
 }
 
 fn payload(record: ActivityRecord) -> Value {
-    let markdown = produce_chunks_by_shape(
-        Family::Activity,
-        None,
-        std::slice::from_ref(&record),
-        &ChatLabels::default(),
-    )
-    .chunks
-    .into_iter()
-    .next()
-    .map(|chunk| chunk.content)
-    .unwrap_or_default();
+    let markdown = produce_chunks_by_shape(Family::Activity, None, std::slice::from_ref(&record))
+        .chunks
+        .into_iter()
+        .next()
+        .map(|chunk| chunk.content)
+        .unwrap_or_default();
     json!({"record":record,"markdown":markdown})
 }
 fn query_value(query: Option<&str>, wanted: &str) -> Option<String> {

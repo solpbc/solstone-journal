@@ -16,7 +16,10 @@ use crate::types::{
     IndexDegraded, Order, SearchHit, SearchMetadata, SearchRequest, SearchResponse,
 };
 
-/// Execute one journal search using only a read-only SQLite connection.
+/// Execute one journal search.
+///
+/// The index is opened read-only after a brief derived-row cleanup on the
+/// shared access path.
 pub fn search(
     journal: &Path,
     request: &SearchRequest,
@@ -212,6 +215,17 @@ fn open_read_only(journal: &Path) -> Result<QueryConnection, IndexAccessError> {
     if !path.is_file() {
         return Err(IndexAccessError::Absent { path });
     }
+    solstone_core_indexer_store::db::prune_authored_chat_paths(journal).map_err(
+        |error| match error {
+            solstone_core_indexer_store::StoreError::Sql(sql_error) => {
+                classify_sql_error(path.clone(), sql_error)
+            }
+            other => IndexAccessError::Unreadable {
+                path: path.clone(),
+                detail: other.to_string(),
+            },
+        },
+    )?;
     let connection = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|error| classify_sql_error(path.clone(), error))?;
     let mut connection = QueryConnection::new(connection, path);

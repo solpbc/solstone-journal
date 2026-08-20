@@ -22,12 +22,11 @@ pub const CATCHUP_STATE_VERSION: u64 = 1;
 pub const KIND_DAILY_CATCHUP: &str = "daily-catchup";
 pub const KIND_SEGMENT_REPAIR: &str = "segment-repair";
 
-const RAW_HASHED_NAMES: [&str; 5] = [
+const RAW_HASHED_NAMES: [&str; 4] = [
     "audio.json",
     "audio.jsonl",
     "screen.jsonl",
     "conversation_transcript.jsonl",
-    "chat.jsonl",
 ];
 const RAW_HASHED_SUFFIXES: [&str; 3] = ["_audio.jsonl", "_screen.jsonl", "_transcript.md"];
 const MEDIA_EXTENSIONS: [&str; 17] = [

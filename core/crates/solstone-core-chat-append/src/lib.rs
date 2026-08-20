@@ -331,7 +331,7 @@ fn append_validated_chat_event_at_local_time(
                 &day,
                 &segment,
                 StreamHints {
-                    kind: Some(Kind::Chat),
+                    kind: Some(Kind::Unknown),
                     host: None,
                     platform: None,
                 },
@@ -979,7 +979,7 @@ mod tests {
         let first_state = fs::read(&state).expect("stream state");
         let first_marker = fs::read(&marker).expect("stream marker");
         let value: Value = serde_json::from_slice(&first_state).expect("stream json");
-        assert_eq!(value["kind"], "chat");
+        assert_eq!(value["kind"], "unknown");
         assert!(value.get("cid").is_none());
         assert!(value.get("did").is_none());
         assert!(value.get("source").is_none());

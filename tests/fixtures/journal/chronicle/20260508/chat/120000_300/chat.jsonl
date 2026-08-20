@@ -1,2 +1,0 @@
-{"kind":"sol_chat_request","ts":1778263200000,"request_id":"fixture-origin-1","summary":"Fixture origin tag","message":"","category":"notice","dedupe":"fixture-origin","dedupe_window":"24h","since_ts":1778259600000,"trigger_talent":"reflection"}
-{"kind":"sol_message","ts":1778263260000,"use_id":"fixture-origin-use-1","text":"Fixture reply with origin tag.","notes":"","requested_target":null,"requested_task":null}

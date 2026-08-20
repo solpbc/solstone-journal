@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::Path;
 
-use solstone_core_format::content::{ChatLabels, Family, produce_chunks};
+use solstone_core_format::content::{Family, produce_chunks};
 
 #[test]
 fn ac6_read_old_ai_chat_fixtures_drop_import_metadata_except_supported_fields() {
@@ -27,7 +27,7 @@ fn ac6_read_old_ai_chat_fixtures_drop_import_metadata_except_supported_fields() 
                 .join(&relative),
         )
         .unwrap();
-        let produced = produce_chunks(Family::AiChat, &relative, &text, &ChatLabels::default());
+        let produced = produce_chunks(Family::AiChat, &relative, &text);
         let header = produced.header.unwrap();
         assert!(!header.contains("async debugging"));
         assert!(!header.contains("ai_conversation"));
@@ -41,7 +41,6 @@ fn ac6_read_old_ai_chat_fixtures_drop_import_metadata_except_supported_fields() 
         r#"{"model":"claude-3","raw":"../../../imports/id/t.txt","topics":"topic","setting":"setting","imported":{"id":"id","facet":"work"}}
 {"speaker":"System","text":"metadata-like"}
 {"start":"00:00:00","speaker":"Human","text":"kept"}"#,
-        &ChatLabels::default(),
     );
     let header = produced.header.unwrap();
     assert_eq!(

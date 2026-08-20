@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 use serde_json::{Map, Value};
 use solstone_core_format::content::{
-    ChatLabels, Family, RawPerceptFamily, iter_talent_text_projections, produce_chunks,
+    Family, RawPerceptFamily, iter_talent_text_projections, produce_chunks,
     produce_raw_percept_chunks,
 };
 use solstone_core_format::segment::segment_parse;
@@ -342,7 +342,6 @@ fn process_segment(segment: &Segment, day: &str, sources: &Sources) -> Vec<Entry
                             .and_then(|name| name.to_str())
                             .unwrap_or_default(),
                         &text,
-                        &ChatLabels::default(),
                     )
                     .chunks
                     .into_iter()

@@ -9,7 +9,7 @@ use std::time::UNIX_EPOCH;
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, params};
 use solstone_core_format::content::{
-    ChatLabels, ContentResolution, Family, classify, produce_chunks, resolve_content_shape,
+    ContentResolution, Family, classify, produce_chunks, resolve_content_shape,
 };
 use solstone_core_format::paths::{relative_to_journal, resolve_journal_path};
 use solstone_core_format::segment::{day_of, time_bucket};
@@ -26,7 +26,6 @@ use solstone_core_indexer::entity_search::{
 };
 use solstone_core_indexer::metadata::extract_path_metadata;
 use solstone_core_indexer::stream::extract_stream;
-use solstone_core_journal_config::{ConfigLoadError, plain_defaults, read_journal_config};
 
 use crate::StoreError;
 use crate::db::{
@@ -110,17 +109,9 @@ pub enum RescanFileStatus {
     Declined,
 }
 
-struct ResolvedChatLabels {
-    labels: ChatLabels,
-    warning: Option<String>,
-}
-
 pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError> {
     let mut conn = open_index(journal)?;
     let mut report = ScanReport::default();
-    let chat_labels = resolve_chat_labels(journal);
-    let default_chat_labels = ChatLabels::default();
-    let mut chat_config_error_reported = false;
     let files = discover_indexable_files(journal)?;
 
     let db_mtimes = load_file_mtimes(&conn)?;
@@ -153,32 +144,8 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
             }
             ContentResolution::Unindexed(_) | ContentResolution::IndexedElsewhere => continue,
         };
-        if family == Family::Chat
-            && let Err(error) = &chat_labels
-        {
-            report.failed += 1;
-            if !chat_config_error_reported {
-                report.warnings.push(error.to_string());
-                chat_config_error_reported = true;
-            }
-            continue;
-        }
-        let (chat_labels, chat_config_warning) = match &chat_labels {
-            Ok(resolved) => (&resolved.labels, resolved.warning.as_deref()),
-            Err(_error) => (&default_chat_labels, None),
-        };
         let tx = conn.transaction()?;
-        let warnings = match ensure_file_current(
-            &tx,
-            journal,
-            rel,
-            path,
-            *mtime,
-            false,
-            family,
-            chat_labels,
-            chat_config_warning,
-        ) {
+        let warnings = match ensure_file_current(&tx, journal, rel, path, *mtime, false, family) {
             Ok(warnings) => warnings,
             Err(StoreError::Io(error)) => {
                 report.skipped += 1;
@@ -296,12 +263,6 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     if !path.is_file() {
         return Err(StoreError::MissingFile(path));
     }
-    let chat_labels = if matches!(family, Some(Family::Chat)) {
-        Some(resolve_chat_labels(journal)?)
-    } else {
-        None
-    };
-    let default_chat_labels = ChatLabels::default();
     let mut edge_resolver = EdgeResolver::new(journal);
     if edge_source.is_some() {
         edge_resolver.preflight_owner_timezone()?;
@@ -311,20 +272,8 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     let tx = conn.transaction()?;
     let mut warnings = Vec::new();
     if let Some(family) = family {
-        let (chat_labels, chat_config_warning) = match &chat_labels {
-            Some(resolved) => (&resolved.labels, resolved.warning.as_deref()),
-            None => (&default_chat_labels, None),
-        };
         warnings.extend(ensure_file_current(
-            &tx,
-            journal,
-            &rel,
-            &path,
-            mtime,
-            true,
-            family,
-            chat_labels,
-            chat_config_warning,
+            &tx, journal, &rel, &path, mtime, true, family,
         )?);
     }
     if edge_source.is_some() {
@@ -736,7 +685,6 @@ fn migrate_segment_aggregate(
             )));
         }
     };
-    let chat_labels = ChatLabels::default();
     let mut warnings = Vec::new();
     for (rel, path) in talent_files {
         let mtime = match file_mtime_secs(&path) {
@@ -757,17 +705,7 @@ fn migrate_segment_aggregate(
                 )));
             }
         };
-        match ensure_file_current(
-            &tx,
-            journal,
-            &rel,
-            &path,
-            mtime,
-            false,
-            family,
-            &chat_labels,
-            None,
-        ) {
+        match ensure_file_current(&tx, journal, &rel, &path, mtime, false, family) {
             Ok(mut file_warnings) => warnings.append(&mut file_warnings),
             Err(StoreError::Io(error)) => {
                 tx.rollback()?;
@@ -948,7 +886,6 @@ fn stored_entity_search_count(conn: &Connection) -> Result<i64, StoreError> {
 // The parameter list is the shared state both callers must agree on; grouping it
 // into a struct would move the same fields behind a name without reducing what a
 // caller has to get right. Accepted deliberately and scoped to this item.
-#[allow(clippy::too_many_arguments)]
 fn ensure_file_current(
     conn: &Connection,
     journal: &Path,
@@ -957,8 +894,6 @@ fn ensure_file_current(
     mtime: i64,
     force: bool,
     family: Family,
-    chat_labels: &ChatLabels,
-    chat_config_warning: Option<&str>,
 ) -> Result<Vec<String>, StoreError> {
     let stored_mtime = conn
         .query_row("SELECT mtime FROM files WHERE path=?", [rel], |row| {
@@ -969,16 +904,7 @@ fn ensure_file_current(
         return Ok(Vec::new());
     }
     conn.execute("DELETE FROM chunks WHERE path=?", [rel])?;
-    let warnings = index_file(
-        conn,
-        journal,
-        rel,
-        path,
-        family,
-        chat_labels,
-        chat_config_warning,
-    )
-    .map_err(|warning| {
+    let warnings = index_file(conn, journal, rel, path, family).map_err(|warning| {
         StoreError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             warning,
@@ -997,17 +923,10 @@ fn index_file(
     rel: &str,
     path: &Path,
     family: Family,
-    chat_labels: &ChatLabels,
-    chat_config_warning: Option<&str>,
 ) -> Result<Vec<String>, String> {
     let text = fs::read_to_string(path)
         .map_err(|error| format!("content read failed for {rel}: {error}"))?;
-    let mut produced = produce_chunks(family, rel, &text, chat_labels);
-    if family == Family::Chat
-        && let Some(warning) = chat_config_warning
-    {
-        produced.warnings.push(warning.to_string());
-    }
+    let produced = produce_chunks(family, rel, &text);
     let metadata = extract_path_metadata(rel);
     let facet = metadata.facet.to_lowercase();
     let agent = produced
@@ -1042,57 +961,6 @@ fn index_file(
         .map_err(|error| format!("chunk insert failed for {rel}: {error}"))?;
     }
     Ok(warnings)
-}
-
-/// Resolve chat labels from a strict journal configuration read.
-fn resolve_chat_labels(journal: &Path) -> Result<ResolvedChatLabels, ConfigLoadError> {
-    let read = read_journal_config(journal)?;
-    let missing = !read.present;
-    let config = read.config.unwrap_or_else(plain_defaults);
-    let identity = config
-        .get("identity")
-        .and_then(serde_json::Value::as_object);
-    let owner = identity
-        .and_then(|identity| identity.get("preferred"))
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| {
-            !value.trim().is_empty() && !solstone_core_journal_config::is_path_shaped_name(value)
-        })
-        .or_else(|| {
-            let identity = config
-                .get("identity")
-                .and_then(serde_json::Value::as_object);
-            identity
-                .and_then(|identity| identity.get("name"))
-                .and_then(serde_json::Value::as_str)
-                .filter(|value| {
-                    !value.trim().is_empty()
-                        && !solstone_core_journal_config::is_path_shaped_name(value)
-                })
-        })
-        .unwrap_or("Owner")
-        .trim();
-    let agent = config
-        .get("agent")
-        .and_then(serde_json::Value::as_object)
-        .and_then(|agent| agent.get("name"))
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| {
-            !value.trim().is_empty() && !solstone_core_journal_config::is_path_shaped_name(value)
-        })
-        .unwrap_or("Sol")
-        .trim();
-    Ok(ResolvedChatLabels {
-        labels: if missing {
-            ChatLabels::default()
-        } else {
-            ChatLabels::new(owner, agent)
-        },
-        warning: missing.then(|| {
-            "chat labels unavailable from journal config; using fallback labels Owner/Sol"
-                .to_string()
-        }),
-    })
 }
 
 fn resolve_rescan_target(journal: &Path, input: &Path) -> Result<(String, PathBuf), StoreError> {
@@ -4542,257 +4410,6 @@ mod tests {
     }
 
     #[test]
-    fn scan_indexes_chat_streams_with_segment_bucket() {
-        let root = temp_root("chat-stream");
-        write(
-            &root,
-            "chronicle/20260508/chat/120000_300/chat.jsonl",
-            r#"{"kind":"owner_message","ts":1,"text":"Need a diff"}
-{"kind":"owner_message","ts":2,"text":"   "}
-{"kind":"sol_message","ts":3,"text":"I can do that"}
-{"kind":"owner_chat_open","ts":4,"request_id":"req","surface":"convey"}
-{"kind":"mystery","ts":5,"text":"skip me"}
-"#,
-        );
-
-        let report = scan_journal(&root, true).expect("scan chat stream");
-        assert_eq!(report.indexed, 1);
-        let conn = Connection::open(db_path(&root)).expect("open db");
-        assert_eq!(
-            count(
-                &conn,
-                "SELECT count(*) FROM chunks WHERE path='20260508/chat/120000_300/chat.jsonl'"
-            ),
-            3
-        );
-        assert_eq!(
-            count(
-                &conn,
-                "SELECT count(*) FROM files WHERE path='20260508/chat/120000_300/chat.jsonl'"
-            ),
-            1
-        );
-        let row: (String, String, String, Option<String>, String) = conn
-            .query_row(
-                "SELECT day, facet, agent, stream, time_bucket FROM chunks WHERE path='20260508/chat/120000_300/chat.jsonl' ORDER BY idx LIMIT 1",
-                [],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    ))
-                },
-            )
-            .expect("chat metadata row");
-        assert_eq!(row.0, "20260508");
-        assert_eq!(row.1, "");
-        assert_eq!(row.2, "chat");
-        assert_eq!(row.3, None);
-        assert_eq!(row.4, "afternoon");
-
-        let contents: Vec<String> = conn
-            .prepare(
-                "SELECT content FROM chunks WHERE path='20260508/chat/120000_300/chat.jsonl' ORDER BY idx",
-            )
-            .expect("prepare chat contents")
-            .query_map([], |row| row.get(0))
-            .expect("query chat contents")
-            .map(|row| row.expect("chat content row"))
-            .collect();
-        assert_eq!(
-            contents,
-            vec![
-                "**Owner** Need a diff".to_string(),
-                "**Owner**".to_string(),
-                "**Sol** I can do that".to_string(),
-            ]
-        );
-        fs::remove_dir_all(root).expect("cleanup chat stream root");
-    }
-
-    fn seed_owner_chat(root: &Path) -> &'static str {
-        let rel = "20260508/chat/120000_300/chat.jsonl";
-        write(
-            root,
-            &format!("chronicle/{rel}"),
-            r#"{"kind":"owner_message","ts":1,"text":"Need a diff"}
-{"kind":"sol_message","ts":2,"text":"I can do that"}
-"#,
-        );
-        rel
-    }
-
-    fn assert_chat_labels(root: &Path, rel: &str, owner: &str, agent: &str) {
-        let conn = Connection::open(db_path(root)).expect("open db");
-        let contents: Vec<String> = conn
-            .prepare("SELECT content FROM chunks WHERE path=? ORDER BY idx")
-            .expect("prepare chat contents")
-            .query_map([rel], |row| row.get(0))
-            .expect("query chat contents")
-            .map(|row| row.expect("chat content row"))
-            .collect();
-        assert_eq!(
-            contents,
-            vec![
-                format!("**{owner}** Need a diff"),
-                format!("**{agent}** I can do that"),
-            ]
-        );
-    }
-
-    #[test]
-    fn scan_uses_journal_config_chat_labels_with_reference_precedence() {
-        for (name, config, owner, agent) in [
-            (
-                "preferred",
-                r#"{"identity":{"preferred":"Preferred","name":"Name"},"agent":{"name":"Helper"}}"#,
-                "Preferred",
-                "Helper",
-            ),
-            (
-                "name",
-                r#"{"identity":{"name":"Name"},"agent":{"name":"Helper"}}"#,
-                "Name",
-                "Helper",
-            ),
-            ("absent", r#"{}"#, "Owner", "Sol"),
-            (
-                "path_shaped",
-                r#"{"identity":{"name":"Name"},"agent":{"name":"~/secret"}}"#,
-                "Name",
-                "Sol",
-            ),
-            (
-                "path_shaped_preferred",
-                r#"{"identity":{"preferred":"~/secret","name":"Name"},"agent":{"name":"Helper"}}"#,
-                "Name",
-                "Helper",
-            ),
-            (
-                "path_shaped_name",
-                r#"{"identity":{"name":"~/secret"},"agent":{"name":"Helper"}}"#,
-                "Owner",
-                "Helper",
-            ),
-            (
-                "usable_owner",
-                r#"{"identity":{"preferred":"Ada","name":"Name"},"agent":{"name":"Helper"}}"#,
-                "Ada",
-                "Helper",
-            ),
-        ] {
-            let root = temp_root(&format!("chat-label-{name}"));
-            let rel = seed_owner_chat(&root);
-            write(&root, "config/journal.json", config);
-
-            let report = scan_journal(&root, true).expect("scan chat labels");
-            assert!(
-                !report
-                    .warnings
-                    .iter()
-                    .any(|warning| warning.contains("chat labels unavailable")),
-                "valid config with absent fields is not a fallback error"
-            );
-            assert_chat_labels(&root, rel, owner, agent);
-            fs::remove_dir_all(root).expect("cleanup chat label root");
-        }
-    }
-
-    #[test]
-    fn scan_missing_chat_config_uses_default_labels_and_warns_per_chat_file() {
-        let root = temp_root("chat-label-missing");
-        let rel = seed_owner_chat(&root);
-
-        let report = scan_journal(&root, true).expect("scan missing chat config");
-        assert!(
-            report
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("chat labels unavailable"))
-        );
-        assert_chat_labels(&root, rel, "Owner", "Sol");
-        fs::remove_dir_all(root).expect("cleanup missing chat config root");
-    }
-
-    #[test]
-    fn scan_corrupt_chat_config_never_indexes_fallback_labels() {
-        let root = temp_root("chat-label-corrupt");
-        let rel = seed_owner_chat(&root);
-        write(
-            &root,
-            "config/journal.json",
-            r#"{"identity":{"timezone":NaN}}"#,
-        );
-        write(
-            &root,
-            "chronicle/20260508/chat/120100_300/chat.jsonl",
-            r#"{"kind":"owner_message","ts":3,"text":"Second chat"}
-{"kind":"sol_message","ts":4,"text":"Still no fallback"}
-"#,
-        );
-        write(
-            &root,
-            "chronicle/20260508/talents/flow.md",
-            "# Flow\n\nStill indexed",
-        );
-
-        let report = scan_journal(&root, true).expect("scan corrupt chat config");
-        assert_eq!(report.failed, 3);
-        assert_eq!(report.warnings.len(), 2);
-        assert!(
-            report
-                .warnings
-                .iter()
-                .all(|warning| warning.starts_with("I couldn't read your settings file"))
-        );
-        let conn = Connection::open(db_path(&root)).expect("open index after corrupt chat scan");
-        assert_eq!(
-            count(
-                &conn,
-                &format!("SELECT count(*) FROM chunks WHERE path='{rel}'")
-            ),
-            0
-        );
-        assert_eq!(
-            count(
-                &conn,
-                "SELECT count(*) FROM chunks WHERE content LIKE '**Owner**%' OR content LIKE '**Sol**%'"
-            ),
-            0
-        );
-        assert_eq!(
-            count(
-                &conn,
-                "SELECT count(*) FROM chunks WHERE path='20260508/talents/flow.md'"
-            ),
-            1
-        );
-        fs::remove_dir_all(root).expect("cleanup corrupt chat config root");
-    }
-
-    #[test]
-    fn rescan_chat_with_corrupt_config_preserves_prior_chunks() {
-        let root = temp_root("chat-rescan-corrupt");
-        let rel = seed_owner_chat(&root);
-        scan_journal(&root, true).expect("scan missing chat config");
-        write(
-            &root,
-            "config/journal.json",
-            r#"{"identity":{"timezone":NaN}}"#,
-        );
-
-        assert!(matches!(
-            rescan_file(&root, Path::new(rel)),
-            Err(StoreError::JournalConfig(_))
-        ));
-        assert_chat_labels(&root, rel, "Owner", "Sol");
-        fs::remove_dir_all(root).expect("cleanup corrupt chat rescan root");
-    }
-
-    #[test]
     fn scan_indexes_at_least_one_chunk_for_every_content_family() {
         let root = temp_root("all-content-families");
         for (rel, text) in [
@@ -4822,11 +4439,6 @@ mod tests {
                 "chronicle/20260101/import.claude/thread/conversation_transcript.jsonl",
                 r#"{"model":"claude"}
 {"start":"00:00:01","speaker":"User","text":"Hello"}
-"#,
-            ),
-            (
-                "chronicle/20260101/chat/090000_300/chat.jsonl",
-                r#"{"kind":"owner_message","ts":1,"text":"Hello"}
 "#,
             ),
             (
@@ -4874,7 +4486,7 @@ mod tests {
         }
 
         let report = scan_journal(&root, true).expect("scan every content family");
-        assert_eq!(report.indexed, 15);
+        assert_eq!(report.indexed, 14);
         let conn = Connection::open(db_path(&root)).expect("open db");
         for rel in [
             "20260101/talents/flow.md",
@@ -4883,7 +4495,6 @@ mod tests {
             "config/actions/20260101.jsonl",
             "20260101/import.ics/imported.jsonl",
             "20260101/import.claude/thread/conversation_transcript.jsonl",
-            "20260101/chat/090000_300/chat.jsonl",
             "20260101/default/090000_300/browser_example.jsonl",
             "20260101/talents/pulse.jsonl",
             "facets/work/entities/20260101.jsonl",
@@ -5253,37 +4864,6 @@ mod tests {
     }
 
     #[test]
-    fn scan_writes_file_row_for_zero_chunk_chat_stream() {
-        let root = temp_root("zero-chat-stream");
-        write(
-            &root,
-            "chronicle/20260508/chat/130000_300/chat.jsonl",
-            r#"{"kind":"owner_chat_open","ts":1,"request_id":"req","surface":"convey"}
-{"kind":"mystery","ts":2,"text":"skip me"}
-"#,
-        );
-
-        let report = scan_journal(&root, true).expect("scan zero chat stream");
-        assert_eq!(report.indexed, 1);
-        let conn = Connection::open(db_path(&root)).expect("open db");
-        assert_eq!(
-            count(
-                &conn,
-                "SELECT count(*) FROM chunks WHERE path='20260508/chat/130000_300/chat.jsonl'"
-            ),
-            0
-        );
-        assert_eq!(
-            count(
-                &conn,
-                "SELECT count(*) FROM files WHERE path='20260508/chat/130000_300/chat.jsonl'"
-            ),
-            1
-        );
-        fs::remove_dir_all(root).expect("cleanup zero chat stream root");
-    }
-
-    #[test]
     fn scan_writes_files_rows_for_zero_chunk_jsonl() {
         let root = temp_root("zero-jsonl");
         write(
@@ -5595,6 +5175,7 @@ not json
     const CHAT_BROWSER_LINE: &str = r#"{"kind":"owner_message","text":"Need a diff","t":"segment_start","title":"Inbox - Gmail","ts":1}
 "#;
     const CHAT_REL: &str = "20260804/chat/120000_60/chat.jsonl";
+    const SHAPE_SCAN_REL: &str = "20260804/workstation/120000_60/talents/sense.json";
 
     fn write_chat_segment(root: &Path, sidecar: Option<&str>) {
         write_stream(root, "20260804", "chat", "120000_60");
@@ -5608,15 +5189,31 @@ not json
         }
     }
 
+    fn write_discovered_shape_segment(root: &Path, sidecar: Option<&str>) {
+        write_stream(root, "20260804", "workstation", "120000_60");
+        write(
+            root,
+            &format!("chronicle/{SHAPE_SCAN_REL}"),
+            CHAT_BROWSER_LINE,
+        );
+        if let Some(sidecar) = sidecar {
+            write(
+                root,
+                "chronicle/20260804/workstation/120000_60/talents/shape.json",
+                sidecar,
+            );
+        }
+    }
+
     #[test]
     fn scan_journal_uses_written_shape_over_path() {
         let root = temp_root("scan-written-browser");
-        write_chat_segment(&root, Some(r#"{"chat.jsonl":"Browser"}"#));
+        write_discovered_shape_segment(&root, Some(r#"{"sense.json":"Browser"}"#));
         let report = scan_journal(&root, true).expect("scan written browser");
         assert_eq!(report.indexed, 1);
         let conn = Connection::open(db_path(&root)).expect("open db");
-        assert_eq!(chunk_content(&conn, CHAT_REL), "## Inbox - Gmail");
-        let row = chunk_row(&conn, CHAT_REL);
+        assert_eq!(chunk_content(&conn, SHAPE_SCAN_REL), "## Inbox - Gmail");
+        let row = chunk_row(&conn, SHAPE_SCAN_REL);
         assert_eq!(row.2, "browser");
         fs::remove_dir_all(root).expect("cleanup scan written browser");
     }
@@ -5653,10 +5250,10 @@ not json
     fn scan_journal_does_not_index_chat_when_sidecar_is_unusable() {
         for (label, sidecar) in [
             ("array", "[]"),
-            ("unknown-spelling", r#"{"chat.jsonl":"Nonsense"}"#),
+            ("unknown-spelling", r#"{"sense.json":"Nonsense"}"#),
         ] {
             let root = temp_root(&format!("scan-unusable-{label}"));
-            write_chat_segment(&root, Some(sidecar));
+            write_discovered_shape_segment(&root, Some(sidecar));
             let report = scan_journal(&root, true).expect("scan unusable sidecar");
             assert_eq!(report.indexed, 0, "{label}");
             assert!(report.skipped >= 1, "{label}");
@@ -5664,7 +5261,7 @@ not json
             assert_eq!(
                 count(
                     &conn,
-                    &format!("SELECT count(*) FROM chunks WHERE path='{CHAT_REL}'")
+                    &format!("SELECT count(*) FROM chunks WHERE path='{SHAPE_SCAN_REL}'")
                 ),
                 0,
                 "{label}"
@@ -5675,39 +5272,6 @@ not json
             );
             fs::remove_dir_all(root).expect("cleanup unusable scan");
         }
-    }
-
-    #[test]
-    fn rescan_file_indexes_written_chat_on_unindexed_audio_path() {
-        let root = temp_root("rescan-written-chat-audio");
-        write_stream(&root, "20260804", "workstation", "120000_60");
-        let rel = "20260804/workstation/120000_60/audio.jsonl";
-        write(
-            root.as_path(),
-            &format!("chronicle/{rel}"),
-            CHAT_BROWSER_LINE,
-        );
-        write(
-            &root,
-            "chronicle/20260804/workstation/120000_60/shape.json",
-            r#"{"audio.jsonl":"Chat"}"#,
-        );
-        write(
-            &root,
-            "config/journal.json",
-            r#"{"identity":{"name":"Owner"},"agent":{"name":"Sol"}}"#,
-        );
-        assert_eq!(
-            rescan_file(&root, Path::new(rel)).expect("rescan written chat on audio"),
-            RescanFileStatus::Indexed {
-                warnings: Vec::new()
-            }
-        );
-        let conn = Connection::open(db_path(&root)).expect("open db");
-        assert_eq!(chunk_content(&conn, rel), "**Owner** Need a diff");
-        let row = chunk_row(&conn, rel);
-        assert_eq!(row.2, "chat");
-        fs::remove_dir_all(root).expect("cleanup rescan written chat audio");
     }
 
     fn chunk_contents_contain(conn: &Connection, needle: &str) -> bool {

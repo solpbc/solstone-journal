@@ -235,6 +235,25 @@ pub fn prune_by_paths(
     Ok(Some(counts))
 }
 
+/// Drop index rows for journal-authored `YYYYMMDD/chat/<segment>/chat.jsonl` paths.
+///
+/// Also matches the optional `chronicle/` prefix. Returns `None` when the journal
+/// has no index and does not create one.
+pub fn prune_authored_chat_paths(journal: &Path) -> Result<Option<StreamPruneCounts>, StoreError> {
+    let path = db_path(journal);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let mut conn = Connection::open(&path)?;
+    conn.execute_batch("PRAGMA busy_timeout=5000;")?;
+    let tx = conn.transaction()?;
+    const PREDICATE: &str = "path LIKE '________/chat/%/chat.jsonl' OR path LIKE 'chronicle/________/chat/%/chat.jsonl'";
+    let chunks = tx.execute(&format!("DELETE FROM chunks WHERE {PREDICATE}"), [])? as u64;
+    let files = tx.execute(&format!("DELETE FROM files WHERE {PREDICATE}"), [])? as u64;
+    tx.commit()?;
+    Ok(Some(StreamPruneCounts { chunks, files }))
+}
+
 fn ensure_schema(conn: &mut Connection) -> Result<(), StoreError> {
     let tx = conn.transaction()?;
     migrate_legacy_chunks(&tx)?;
@@ -1009,6 +1028,125 @@ CREATE TABLE edge_files(path TEXT PRIMARY KEY, mtime INTEGER);
             prune_by_paths(&journal, &["chronicle/20260805/field.audio/070000_17"])
                 .unwrap()
                 .is_none(),
+            "a journal with no index reports no counts"
+        );
+        assert!(
+            !db_path(&journal).exists(),
+            "the prune must not have materialised a database"
+        );
+        fs::remove_dir_all(&journal).unwrap();
+    }
+
+    fn seed_chunk_and_file(conn: &Connection, path: &str, content: &str) {
+        conn.execute("INSERT INTO files(path, mtime) VALUES (?1, 1)", [path])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
+             VALUES (?1, ?2, '20260508', '', '', '', 0, '')",
+            [content, path],
+        )
+        .unwrap();
+    }
+
+    fn count_path(conn: &Connection, table: &str, path: &str) -> i64 {
+        conn.query_row(
+            &format!("SELECT COUNT(*) FROM {table} WHERE path=?1"),
+            [path],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn prune_authored_chat_paths_deletes_both_path_shapes_and_leaves_controls() {
+        let journal = temp_root("prune-authored-chat");
+        let conn = open_index(&journal).unwrap();
+        seed_chunk_and_file(
+            &conn,
+            "20260508/chat/120000_300/chat.jsonl",
+            "NeedADiffNullStream",
+        );
+        seed_chunk_and_file(
+            &conn,
+            "chronicle/20260509/chat/120000_300/chat.jsonl",
+            "NeedADiffChatStream",
+        );
+        seed_chunk_and_file(&conn, "20260508/talents/chat.md", "TalentChatMdControl");
+        seed_chunk_and_file(
+            &conn,
+            "20260508/import.chatgpt/thread/conversation_transcript.jsonl",
+            "ImportChatgptControl",
+        );
+        seed_chunk_and_file(
+            &conn,
+            "facets/chat/logs/chat.jsonl",
+            "FacetsChatActionLogControl",
+        );
+        drop(conn);
+
+        let counts = prune_authored_chat_paths(&journal)
+            .unwrap()
+            .expect("the journal has an index");
+        assert_eq!(counts.chunks, 2);
+        assert_eq!(counts.files, 2);
+
+        let conn = open_index(&journal).unwrap();
+        assert_eq!(
+            count_path(&conn, "chunks", "20260508/chat/120000_300/chat.jsonl"),
+            0
+        );
+        assert_eq!(
+            count_path(&conn, "files", "20260508/chat/120000_300/chat.jsonl"),
+            0
+        );
+        assert_eq!(
+            count_path(
+                &conn,
+                "chunks",
+                "chronicle/20260509/chat/120000_300/chat.jsonl"
+            ),
+            0
+        );
+        assert_eq!(
+            count_path(
+                &conn,
+                "files",
+                "chronicle/20260509/chat/120000_300/chat.jsonl"
+            ),
+            0
+        );
+        assert_eq!(count_path(&conn, "chunks", "20260508/talents/chat.md"), 1);
+        assert_eq!(count_path(&conn, "files", "20260508/talents/chat.md"), 1);
+        assert_eq!(
+            count_path(
+                &conn,
+                "chunks",
+                "20260508/import.chatgpt/thread/conversation_transcript.jsonl"
+            ),
+            1
+        );
+        assert_eq!(
+            count_path(
+                &conn,
+                "files",
+                "20260508/import.chatgpt/thread/conversation_transcript.jsonl"
+            ),
+            1
+        );
+        assert_eq!(
+            count_path(&conn, "chunks", "facets/chat/logs/chat.jsonl"),
+            1
+        );
+        assert_eq!(count_path(&conn, "files", "facets/chat/logs/chat.jsonl"), 1);
+        fs::remove_dir_all(&journal).unwrap();
+    }
+
+    #[test]
+    fn prune_authored_chat_paths_does_not_create_an_index() {
+        let journal = temp_root("prune-authored-chat-no-index");
+        fs::create_dir_all(&journal).unwrap();
+        assert!(
+            prune_authored_chat_paths(&journal).unwrap().is_none(),
             "a journal with no index reports no counts"
         );
         assert!(
