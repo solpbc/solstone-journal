@@ -162,8 +162,8 @@ fn materialized_defaults_only_change_identity_resolution_fields() {
     drop(localtime_guard);
     drop(passwd_guard);
 
-    assert_eq!(plain.len(), 10);
-    assert_eq!(materialized.len(), 10);
+    assert_eq!(plain.len(), 9);
+    assert_eq!(materialized.len(), 9);
     let mut plain_without_identity = plain.clone();
     let mut materialized_without_identity = materialized.clone();
     plain_without_identity.remove("identity");
@@ -215,7 +215,6 @@ fn materialized_defaults_preserve_reference_contract_fields() {
         materialized["describe"]["redact"],
         reference["describe"]["redact"]
     );
-    assert_eq!(materialized["agent"]["name"], reference["agent"]["name"]);
 }
 
 #[test]

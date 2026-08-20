@@ -4,7 +4,7 @@
 /// Return whether a trimmed value looks like a filesystem path.
 ///
 /// True when the trimmed value contains `/` or `\`, or starts with `~`.
-/// A path-shaped agent name is emitted verbatim as a chat speaker label,
+/// A path-shaped owner name is emitted verbatim as a display label,
 /// so write paths refuse it and read paths treat it as missing.
 pub fn is_path_shaped_name(value: &str) -> bool {
     let trimmed = value.trim();

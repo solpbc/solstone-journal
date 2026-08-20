@@ -41,11 +41,6 @@ const DEFAULT_CONFIG_JSON: &str = r#"
   "transcribe": {
     "max_concurrent": 1
   },
-  "agent": {
-    "name": "sol",
-    "name_status": "default",
-    "named_date": null
-  },
   "voice": {
     "openai_api_key": null,
     "model": "gpt-realtime",

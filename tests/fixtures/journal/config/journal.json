@@ -64,10 +64,5 @@
   },
   "env": {
     "TEST_CONFIG_ENV_VAR": "from_config"
-  },
-  "agent": {
-    "name": "sol",
-    "name_status": "default",
-    "named_date": null
   }
 }
