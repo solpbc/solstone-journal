@@ -216,9 +216,14 @@ impl Fixture {
     }
 
     pub fn add_segment(&self, stream: &str, key: &str, files: &[(&str, &[u8])]) {
+        self.add_segment_for_day("20260203", stream, key, files);
+    }
+
+    pub fn add_segment_for_day(&self, day: &str, stream: &str, key: &str, files: &[(&str, &[u8])]) {
         let segment = self
             .path()
-            .join("chronicle/20260203")
+            .join("chronicle")
+            .join(day)
             .join(stream)
             .join(key);
         fs::create_dir_all(&segment).expect("segment directory");

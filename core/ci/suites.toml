@@ -3663,19 +3663,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-transfer::transfer"
-package = "solstone-core-transfer"
-target = "transfer"
-set = "component"
-areas = ["transfer"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-vad-analyze::vad_oracles"
 package = "solstone-core-vad-analyze"
 target = "vad_oracles"

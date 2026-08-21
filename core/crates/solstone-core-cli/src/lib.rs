@@ -4,6 +4,9 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
+use solstone_core_cli_boundary::{
+    JOURNAL_EXPORT_TOMBSTONE, TRANSFER_EXPORT_TOMBSTONE, TRANSFER_IMPORT_TOMBSTONE,
+};
 use solstone_core_format::segment::segment_key;
 use solstone_core_observer::{ObserverCommand, parse_observer_args};
 
@@ -20,14 +23,13 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer export --day YYYYMMDD --output PATH [--journal PATH]\n  solstone-core transfer import --archive PATH [--dry-run] [--journal PATH]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
     "  journal top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
     "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
     "  solstone-core identity [-h | --help] <partner|health|briefing> ...\n",
     "  solstone-core settings [-h | --help] [-v | --verbose] [-d | --debug] [convey [status [--json]]]\n",
     "  solstone-core contract <build|check> ...\n",
-    "  solstone-core export --to LABEL [--only AREAS] [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n",
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
     "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n  solstone-core install-provider <name>\n",
     "  solstone-core streams [args...]\n",
@@ -372,14 +374,12 @@ pub const OBSERVER_PRUNE_USAGE: &str = concat!(
 /// left the native verb answering 64 with `solstone-core`'s top-level usage
 /// for every invocation including --help, so the verb had no help at all.
 pub const TRANSFER_HELP: &str = concat!(
-    "usage: journal transfer [-h] [-v] [-d] {export,import,send} ...\n",
+    "usage: journal transfer [-h] [-v] [-d] {send} ...\n",
     "\n",
     "Transfer observed segments between solstone instances\n",
     "\n",
     "positional arguments:\n",
-    "  {export,import,send}\n",
-    "    export              Create archive from day's segments\n",
-    "    import              Import archive into journal\n",
+    "  {send}\n",
     "    send                Send segments to paired peer\n",
     "\n",
     "options:\n",
@@ -391,38 +391,7 @@ pub const TRANSFER_HELP: &str = concat!(
 /// The single usage line argparse prints on a `journal transfer` error. The
 /// full help body belongs to `--help` only; argparse never prints it on an
 /// error.
-pub const TRANSFER_USAGE: &str =
-    "usage: journal transfer [-h] [-v] [-d] {export,import,send} ...\n";
-
-/// `journal export --help`, verbatim from the Python reference.
-/// It advertises `--key`, which belongs to the RETIRED url-plus-key
-/// destination mode. That is faithful, not a mistake: the reference still
-/// lists the flag and refuses it at runtime, so this is the text an owner
-/// sees today and matching it is the fidelity bar.
-pub const EXPORT_HELP: &str = concat!(
-    "usage: journal export [-h] --to TO [--key KEY] [--only ONLY] [--dry-run]\n",
-    "                      [--day DAY] [-v] [-d]\n",
-    "\n",
-    "Export journal data to a remote solstone instance\n",
-    "\n",
-    "options:\n",
-    "  -h, --help     show this help message and exit\n",
-    "  --to TO        Remote URL (http:// or https://) or paired peer label\n",
-    "  --key KEY      API key for URL mode\n",
-    "  --only ONLY    Export only specific area (segments, entities, facets,\n",
-    "                 imports, config)\n",
-    "  --dry-run      Show what would be exported without sending\n",
-    "  --day DAY      Day or range (YYYYMMDD or YYYYMMDD-YYYYMMDD)\n",
-    "  -v, --verbose  Enable verbose output\n",
-    "  -d, --debug    Enable debug logging\n",
-);
-
-/// The wrapped usage lines argparse prints on a `journal export` error.
-/// argparse never prints the help body on an error.
-pub const EXPORT_USAGE: &str = concat!(
-    "usage: journal export [-h] --to TO [--key KEY] [--only ONLY] [--dry-run]\n",
-    "                      [--day DAY] [-v] [-d]\n",
-);
+pub const TRANSFER_USAGE: &str = "usage: journal transfer [-h] [-v] [-d] {send} ...\n";
 
 /// `journal transcribe --help`, verbatim from the Python reference.
 pub const TRANSCRIBE_HELP: &str = concat!(
@@ -748,36 +717,16 @@ pub const SPL_HELP: &str = concat!(
 pub const TALENT_USAGE: &str =
     "usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...\n";
 
-/// `journal transfer export --help`, verbatim from the reference.
-pub const TRANSFER_EXPORT_HELP: &str = concat!(
-    "usage: journal transfer export [-h] --day DAY [--output OUTPUT]\n",
-    "\n",
-    "options:\n",
-    "  -h, --help           show this help message and exit\n",
-    "  --day DAY            Day to export (YYYYMMDD format)\n",
-    "  --output, -o OUTPUT  Output archive path (default:\n",
-    "                       scratch/{day}_{hostname}.tgz)\n",
-);
-
-/// `journal transfer import --help`, verbatim from the reference.
-pub const TRANSFER_IMPORT_HELP: &str = concat!(
-    "usage: journal transfer import [-h] --archive ARCHIVE [--dry-run]\n",
-    "\n",
-    "options:\n",
-    "  -h, --help            show this help message and exit\n",
-    "  --archive, -a ARCHIVE\n",
-    "                        Archive file to import\n",
-    "  --dry-run             Validate archive without extracting\n",
-);
-
-/// `journal transfer send --help`, verbatim from the reference.
+/// `journal transfer send --help`, extended with native peer-export selection.
 pub const TRANSFER_SEND_HELP: &str = concat!(
-    "usage: journal transfer send [-h] --to TO [--day DAY] [--dry-run]\n",
+    "usage: journal transfer send [-h] --to TO [--day DAY] [--only AREAS] [--dry-run]\n",
     "\n",
     "options:\n",
     "  -h, --help  show this help message and exit\n",
     "  --to TO     Paired peer label\n",
     "  --day DAY   Day or range (YYYYMMDD or YYYYMMDD-YYYYMMDD, default: all days)\n",
+    "  --only AREAS Comma-separated areas: segments, imports, entities, facets, config\n",
+    "                (default: all five areas)\n",
     "  --dry-run   Show what would be sent without uploading\n",
 );
 
@@ -814,7 +763,7 @@ pub enum Command {
     JournalBrainOwner(JournalBrainOwnerCommand),
     Body(BodyCommand),
     Transfer(TransferCommand),
-    Export(ExportOptions),
+    RetiredMover(&'static str),
     Transcribe(TranscribeOptions),
     Think(Vec<OsString>),
     Streams(Vec<OsString>),
@@ -917,8 +866,6 @@ pub enum Command {
     ObserverHelp,
     ObserverPruneHelp,
     TransferUsage,
-    ExportUsage,
-    ExportHelp,
     TranscribeHelp,
     FacetCandidatesHelp,
     FacetCandidatesUsage,
@@ -1053,41 +1000,16 @@ pub enum SettingsParseError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransferCommand {
-    Export(TransferExportOptions),
-    Import(TransferImportOptions),
+    RetiredMover(&'static str),
     Send(TransferSendOptions),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransferExportOptions {
-    pub day: String,
-    pub output: OsString,
-    pub journal_override: Option<OsString>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransferImportOptions {
-    pub archive: OsString,
-    pub dry_run: bool,
-    pub journal_override: Option<OsString>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferSendOptions {
     pub to: String,
     pub day: Option<String>,
-    pub dry_run: bool,
-    pub journal_override: Option<OsString>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExportOptions {
-    pub to: String,
     pub only: Option<String>,
-    pub day: Option<String>,
     pub dry_run: bool,
-    /// Parsed only so the binary can reject the retired option explicitly.
-    pub key: Option<String>,
     pub journal_override: Option<OsString>,
 }
 
@@ -1595,11 +1517,24 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             // interception `journal transfer --help` degrades into a usage error
             // that exits 64 and names solstone-core rather than the verb.
             let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
+            if let Some(first) = rest.first().and_then(|argument| argument.to_str()) {
+                match first {
+                    "export" => {
+                        return Ok(Command::Transfer(TransferCommand::RetiredMover(
+                            TRANSFER_EXPORT_TOMBSTONE,
+                        )));
+                    }
+                    "import" => {
+                        return Ok(Command::Transfer(TransferCommand::RetiredMover(
+                            TRANSFER_IMPORT_TOMBSTONE,
+                        )));
+                    }
+                    _ => {}
+                }
+            }
             if let [first, others @ ..] = rest
                 && others.iter().any(help)
                 && let Some(text) = match first.to_str() {
-                    Some("export") => Some(TRANSFER_EXPORT_HELP),
-                    Some("import") => Some(TRANSFER_IMPORT_HELP),
                     Some("send") => Some(TRANSFER_SEND_HELP),
                     _ => None,
                 }
@@ -1612,17 +1547,8 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             // argparse exits 2 here, not 64.
             Ok(parse_transfer(rest).map_or(Command::TransferUsage, Command::Transfer))
         }
-        [command, rest @ ..] if command == OsStr::new("export") => {
-            // Help is not a token of the export parser; without this it degrades
-            // into a usage error exiting 64 with solstone-core's usage -- the
-            // defect three sibling verbs in this lane already shipped and had
-            // to have repaired.
-            let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
-            if rest.iter().any(help) {
-                return Ok(Command::ExportHelp);
-            }
-            // argparse exits 2 here, not 64.
-            Ok(parse_export(rest).map_or(Command::ExportUsage, Command::Export))
+        [command, ..] if command == OsStr::new("export") => {
+            Ok(Command::RetiredMover(JOURNAL_EXPORT_TOMBSTONE))
         }
         [command, rest @ ..] if command == OsStr::new("navigate") => {
             let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
@@ -2686,87 +2612,17 @@ fn parse_transfer(args: &[OsString]) -> Result<TransferCommand, UsageError> {
         return Err(UsageError);
     };
     match verb.to_str() {
-        Some("export") => parse_transfer_export(rest).map(TransferCommand::Export),
-        Some("import") => parse_transfer_import(rest).map(TransferCommand::Import),
+        Some("export") => Ok(TransferCommand::RetiredMover(TRANSFER_EXPORT_TOMBSTONE)),
+        Some("import") => Ok(TransferCommand::RetiredMover(TRANSFER_IMPORT_TOMBSTONE)),
         Some("send") => parse_transfer_send(rest).map(TransferCommand::Send),
         _ => Err(UsageError),
     }
 }
 
-fn parse_transfer_export(args: &[OsString]) -> Result<TransferExportOptions, UsageError> {
-    let mut day = None;
-    let mut output = None;
-    let mut journal_override = None;
-    let mut index = 0;
-    while index < args.len() {
-        let destination = match args[index].as_os_str() {
-            value if value == OsStr::new("--day") => &mut day,
-            value if value == OsStr::new("--output") => &mut output,
-            value if value == OsStr::new("--journal") => &mut journal_override,
-            _ => return Err(UsageError),
-        };
-        if destination.is_some() {
-            return Err(UsageError);
-        }
-        let value = args.get(index + 1).ok_or(UsageError)?;
-        if value.to_string_lossy().starts_with("--") {
-            return Err(UsageError);
-        }
-        *destination = Some(value.clone());
-        index += 2;
-    }
-    Ok(TransferExportOptions {
-        day: day
-            .ok_or(UsageError)?
-            .into_string()
-            .map_err(|_| UsageError)?,
-        output: output.ok_or(UsageError)?,
-        journal_override,
-    })
-}
-
-fn parse_transfer_import(args: &[OsString]) -> Result<TransferImportOptions, UsageError> {
-    let mut archive = None;
-    let mut dry_run = false;
-    let mut journal_override = None;
-    let mut index = 0;
-    while index < args.len() {
-        let argument = args[index].as_os_str();
-        if argument == OsStr::new("--dry-run") {
-            if dry_run {
-                return Err(UsageError);
-            }
-            dry_run = true;
-            index += 1;
-            continue;
-        }
-        let destination = if argument == OsStr::new("--archive") {
-            &mut archive
-        } else if argument == OsStr::new("--journal") {
-            &mut journal_override
-        } else {
-            return Err(UsageError);
-        };
-        if destination.is_some() {
-            return Err(UsageError);
-        }
-        let value = args.get(index + 1).ok_or(UsageError)?;
-        if value.to_string_lossy().starts_with("--") {
-            return Err(UsageError);
-        }
-        *destination = Some(value.clone());
-        index += 2;
-    }
-    Ok(TransferImportOptions {
-        archive: archive.ok_or(UsageError)?,
-        dry_run,
-        journal_override,
-    })
-}
-
 fn parse_transfer_send(args: &[OsString]) -> Result<TransferSendOptions, UsageError> {
     let mut to = None;
     let mut day = None;
+    let mut only = None;
     let mut dry_run = false;
     let mut journal_override = None;
     let mut index = 0;
@@ -2784,6 +2640,8 @@ fn parse_transfer_send(args: &[OsString]) -> Result<TransferSendOptions, UsageEr
             &mut to
         } else if argument == OsStr::new("--day") {
             &mut day
+        } else if argument == OsStr::new("--only") {
+            &mut only
         } else if argument == OsStr::new("--journal") {
             &mut journal_override
         } else {
@@ -2807,67 +2665,10 @@ fn parse_transfer_send(args: &[OsString]) -> Result<TransferSendOptions, UsageEr
         day: day
             .map(|value| value.into_string().map_err(|_| UsageError))
             .transpose()?,
-        dry_run,
-        journal_override,
-    })
-}
-
-fn parse_export(args: &[OsString]) -> Result<ExportOptions, UsageError> {
-    let mut to = None;
-    let mut only = None;
-    let mut day = None;
-    let mut key = None;
-    let mut journal_override = None;
-    let mut dry_run = false;
-    let mut index = 0;
-    while index < args.len() {
-        let argument = args[index].as_os_str();
-        if argument == OsStr::new("--dry-run") {
-            if dry_run {
-                return Err(UsageError);
-            }
-            dry_run = true;
-            index += 1;
-            continue;
-        }
-        let destination = if argument == OsStr::new("--to") {
-            &mut to
-        } else if argument == OsStr::new("--only") {
-            &mut only
-        } else if argument == OsStr::new("--day") {
-            &mut day
-        } else if argument == OsStr::new("--key") {
-            &mut key
-        } else if argument == OsStr::new("--journal") {
-            &mut journal_override
-        } else {
-            return Err(UsageError);
-        };
-        if destination.is_some() {
-            return Err(UsageError);
-        }
-        let value = args.get(index + 1).ok_or(UsageError)?;
-        if value.to_string_lossy().starts_with("--") {
-            return Err(UsageError);
-        }
-        *destination = Some(value.clone());
-        index += 2;
-    }
-    Ok(ExportOptions {
-        to: to
-            .ok_or(UsageError)?
-            .into_string()
-            .map_err(|_| UsageError)?,
         only: only
             .map(|value| value.into_string().map_err(|_| UsageError))
             .transpose()?,
-        day: day
-            .map(|value| value.into_string().map_err(|_| UsageError))
-            .transpose()?,
         dry_run,
-        key: key
-            .map(|value| value.into_string().map_err(|_| UsageError))
-            .transpose()?,
         journal_override,
     })
 }
@@ -7188,7 +6989,6 @@ mod tests {
             "identity",
             "settings",
             "contract",
-            "export",
             "facet-candidates",
             "install-models",
             "install-provider",
@@ -7422,6 +7222,8 @@ mod tests {
                 "office",
                 "--day",
                 "20260203-20260204",
+                "--only",
+                "segments,config",
                 "--dry-run",
                 "--journal",
                 "/tmp/journal",
@@ -7430,6 +7232,7 @@ mod tests {
                 TransferSendOptions {
                     to: "office".to_string(),
                     day: Some("20260203-20260204".to_string()),
+                    only: Some("segments,config".to_string()),
                     dry_run: true,
                     journal_override: Some("/tmp/journal".into()),
                 }

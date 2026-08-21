@@ -8,8 +8,12 @@
 //! process boundary.
 
 mod generated;
+mod mover_tombstones;
 
 pub use generated::{JOURNAL_HOST_COMMAND_COUNT, JOURNAL_HOST_COMMANDS};
+pub use mover_tombstones::{
+    JOURNAL_EXPORT_TOMBSTONE, TRANSFER_EXPORT_TOMBSTONE, TRANSFER_IMPORT_TOMBSTONE,
+};
 
 #[cfg(test)]
 mod tests {

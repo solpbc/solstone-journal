@@ -112,17 +112,15 @@ fn executable(path: &Path) {
 }
 
 #[test]
-fn export_runs_natively_without_the_poisoned_interpreter() {
+fn export_tombstone_runs_natively_without_the_poisoned_interpreter() {
     let harness = Harness::new();
-    let output = harness.run(&["export", "--to", "no-such-peer", "--dry-run"]);
+    let output = harness.run(&["export", "--help"]);
     assert_eq!(
         output.status.code(),
-        Some(2),
+        Some(64),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!harness.poison.exists(), "export reached Python");
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("journal export: error: no peers paired")
-    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("journal transfer send --to"));
 }

@@ -574,15 +574,15 @@ fn journal_local_operations_fixture_is_the_boundary_census() {
     assert_eq!(
         archive_export["retired_spellings"],
         serde_json::json!(["sol call journal export"]),
-        "the retired archive reach must not retire the root observation service"
+        "the retired sol-call spelling is retained for archive export's migration guidance"
     );
     assert!(
         boundary["identities"]["journal"]["service_commands"]
             .as_array()
             .expect("journal service_commands must be an array")
             .iter()
-            .any(|command| command == "export"),
-        "root journal export remains the observation-service process"
+            .all(|command| command != "export"),
+        "root journal export must not remain a service-process command"
     );
 }
 

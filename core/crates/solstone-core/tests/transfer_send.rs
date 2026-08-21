@@ -2,7 +2,6 @@
 // Copyright (c) 2026 sol pbc
 
 use crate::import_ingest_door::door;
-#[allow(dead_code)]
 use crate::stub_peer;
 
 use std::process::{Command, Output};
@@ -17,10 +16,6 @@ fn plan(manifest: Vec<ResponseAction>, ingest: Vec<ResponseAction>) -> PeerPlan 
             manifest,
         ),
         (
-            // The server's real rule is /journal/<key_prefix>/ingest/segments, added
-            // once and never day-suffixed. This stub previously registered a
-            // day-suffixed path copied from the CLIENT, so it matched the client's
-            // bug and could never fail on it.
             RequestRoute::post(door("POST", "remote-i", "ingest", "segments")),
             ingest,
         ),
@@ -39,7 +34,9 @@ fn fixture(peer: &StubPeer) -> Fixture {
 
 fn run(fixture: &Fixture, extra: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_solstone-core"))
-        .args(["transfer", "send", "--to", "office", "--day", "20260203"])
+        .args([
+            "transfer", "send", "--to", "office", "--only", "segments", "--day", "20260203",
+        ])
         .args(extra)
         .arg("--journal")
         .arg(fixture.path())
@@ -65,7 +62,7 @@ fn live_binary_uploads_over_framed_mtls() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        stdout(&output).contains("Transfer complete: 1 sent, 0 skipped, 0 failed"),
+        stdout(&output).contains("segments: 1 sent"),
         "stdout: {}\nstderr: {}\nrequests: {:?}\nhandshake errors: {:?}",
         stdout(&output),
         String::from_utf8_lossy(&output.stderr),
@@ -101,7 +98,7 @@ fn reserved_files_are_not_uploaded_and_reserved_only_segments_skip() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(stdout(&output).contains("1 sent, 1 skipped, 0 failed"));
+    assert!(stdout(&output).contains("segments: 1 sent, 1 skipped"));
     let uploads = peer.ingest_requests();
     assert_eq!(uploads.len(), 1);
     assert!(
@@ -119,46 +116,51 @@ fn reserved_files_are_not_uploaded_and_reserved_only_segments_skip() {
 }
 
 #[test]
-fn manifest_failure_degrades_to_empty_and_uploads() {
+fn manifest_failure_marks_the_segments_area_failed_without_uploading() {
     let peer = StubPeer::new(plan(
         vec![ResponseAction::status(500, Vec::new())],
         vec![ResponseAction::status(200, Vec::new())],
     ));
     let fixture = fixture(&peer);
     let output = run(&fixture, &[]);
+    assert_eq!(output.status.code(), Some(1));
     assert!(
-        output.status.success(),
+        stdout(&output).contains("segments: FAILED (Manifest query failed: 500"),
         "{}",
-        String::from_utf8_lossy(&output.stderr)
+        stdout(&output)
     );
-    assert_eq!(peer.ingest_requests().len(), 1);
+    assert!(peer.ingest_requests().is_empty());
 }
 
 #[test]
 fn upload_statuses_have_the_expected_retry_and_terminal_behavior() {
-    for (action, uploads, expected, stops_later_segments) in [
+    for (action, uploads, expected, exit, stops_later_segments) in [
         (
             ResponseAction::status(200, Vec::new()),
             1,
-            "1 sent, 0 skipped, 0 failed",
+            "segments: 1 sent",
+            0,
             false,
         ),
         (
             ResponseAction::status(401, Vec::new()),
             1,
-            "Authentication failed: invalid or missing paired-link identity",
+            "segments: FAILED (Authentication failed: invalid or missing API key)",
+            1,
             true,
         ),
         (
             ResponseAction::status(403, Vec::new()),
             1,
-            "Authentication failed: paired-link identity revoked or disabled",
+            "segments: FAILED (Authentication failed: journal source revoked or disabled)",
+            1,
             true,
         ),
         (
             ResponseAction::status(418, Vec::new()),
             1,
-            "0 sent, 0 skipped, 1 failed",
+            "segments: 1 failed",
+            1,
             false,
         ),
     ] {
@@ -168,11 +170,7 @@ fn upload_statuses_have_the_expected_retry_and_terminal_behavior() {
             fixture.add_segment("audio", "130000_30", &[("later.json", b"later")]);
         }
         let output = run(&fixture, &[]);
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        assert_eq!(output.status.code(), Some(exit));
         assert!(stdout(&output).contains(expected), "{}", stdout(&output));
         let requests = peer.ingest_requests();
         assert_eq!(requests.len(), uploads);
@@ -196,12 +194,8 @@ fn upload_statuses_have_the_expected_retry_and_terminal_behavior() {
     ));
     let fixture = fixture(&peer);
     let output = run(&fixture, &[]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(stdout(&output).contains("0 sent, 0 skipped, 1 failed"));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).contains("segments: 1 failed"));
     assert_eq!(peer.ingest_requests().len(), 3);
 }
 
@@ -217,12 +211,8 @@ fn connection_drops_retry_uploads() {
     ));
     let fixture = fixture(&peer);
     let output = run(&fixture, &[]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(stdout(&output).contains("0 sent, 0 skipped, 1 failed"));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).contains("segments: 1 failed"));
     assert_eq!(peer.ingest_requests().len(), 3);
 }
 
@@ -239,9 +229,49 @@ fn dry_run_only_queries_the_manifest() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(stdout(&output).contains("Dry run: would send 1, skip 0"));
+    assert!(stdout(&output).contains("segments: 1 sent"));
     assert!(peer.ingest_requests().is_empty());
     assert_eq!(peer.requests().len(), 1);
+}
+
+#[test]
+fn day_range_limits_transfer_send_to_the_selected_segments_area() {
+    let peer = StubPeer::new(plan(
+        vec![ResponseAction::manifest_empty()],
+        vec![
+            ResponseAction::status(200, Vec::new()),
+            ResponseAction::status(200, Vec::new()),
+        ],
+    ));
+    let fixture = fixture(&peer);
+    fixture.add_segment_for_day(
+        "20260204",
+        "audio",
+        "120000_30",
+        &[("payload.json", b"next day")],
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
+        .args([
+            "transfer",
+            "send",
+            "--to",
+            "office",
+            "--only",
+            "segments",
+            "--day",
+            "20260203-20260204",
+        ])
+        .arg("--journal")
+        .arg(fixture.path())
+        .output()
+        .expect("run transfer send with range");
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout(&output).contains("segments: 2 sent"));
+    assert_eq!(peer.ingest_requests().len(), 2);
+    assert!(peer.requests().iter().all(|request| {
+        request.path == door("GET", "remote-i", "manifest", "segments")
+            || request.path == door("POST", "remote-i", "ingest", "segments")
+    }));
 }
 
 #[test]
@@ -264,7 +294,7 @@ fn matching_manifest_skips_the_segment_without_uploading() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        stdout(&output).contains("Transfer complete: 0 sent, 1 skipped, 0 failed"),
+        stdout(&output).contains("segments: 1 skipped"),
         "stdout: {}\nstderr: {}",
         stdout(&output),
         String::from_utf8_lossy(&output.stderr)

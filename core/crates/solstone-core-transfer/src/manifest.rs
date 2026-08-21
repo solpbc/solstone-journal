@@ -3,33 +3,6 @@
 
 //! Transfer-local manifest target and peer route helpers.
 
-use std::fs;
-use std::io;
-use std::path::Path;
-
-use solstone_core_transfer_manifest::ManifestError;
-
-use crate::TransferError;
-
-pub(crate) fn map_manifest_error(error: ManifestError) -> TransferError {
-    match error {
-        ManifestError::InvalidDay => TransferError::InvalidDay,
-        ManifestError::Invalid(detail) => TransferError::Manifest(detail),
-    }
-}
-
-/// Refuse a symlinked day root before archive-controlled paths use it as containment root.
-pub(crate) fn reject_symlink_day_directory(day_directory: &Path) -> Result<(), TransferError> {
-    match fs::symlink_metadata(day_directory) {
-        Ok(metadata) if metadata.file_type().is_symlink() => Err(
-            TransferError::PoisonedDayDirectory(day_directory.to_path_buf()),
-        ),
-        Ok(_) => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(TransferError::Io(error)),
-    }
-}
-
 fn journal_door_path(key_prefix: &str, suffix: &str) -> String {
     format!("/app/import/journal/{key_prefix}/{suffix}")
 }
