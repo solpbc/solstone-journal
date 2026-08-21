@@ -35,7 +35,8 @@ const LOOPBACK_DOWNLOAD_HOSTS: &[&str] = &["127.0.0.1"];
 const COREML_UNIT: &str = "parakeet-coreml";
 const ENGINE_UNIT: &str = "rfdetr-engine";
 const MODEL_UNIT: &str = "rfdetr-model";
-const ENGINE_REF: &str = "65c0ffcc";
+const ENGINE_VERSION: &str = "v0.1.0-solpbc.5";
+const ENGINE_KEY: &str = "linux-cpu-x64";
 const BINARY: &str = "rfdetr-cli";
 const MODEL_REVISION: &str = "c3dc0c037df499f5503545247df6618415fca643";
 const MODEL_FILE: &str = "rfdetr-nano-f16.gguf";
@@ -1088,7 +1089,7 @@ fn extracted_binary_digest_mismatch_cleans_install_outputs() {
     let upstream_url = Box::leak(format!("http://{address}/fixture.tar.gz").into_boxed_str());
     let engine = Artifact {
         unit: ENGINE_UNIT,
-        version: ENGINE_REF,
+        version: ENGINE_VERSION,
         filename: "fixture.tar.gz",
         sha256: tarball_sha,
         size_bytes: bytes_len as u64,
@@ -1127,10 +1128,13 @@ fn extracted_binary_digest_mismatch_cleans_install_outputs() {
     .unwrap_err();
     server.join().unwrap();
     assert_eq!(error.reason_code, "sha256_mismatch");
-    assert!(!binary_path(&temp).exists());
+    assert!(!binary_path(&temp, ENGINE_KEY).exists());
     assert!(!model_path(&temp).exists());
     assert!(!sidecar_path(&temp).exists());
-    let engine_directory = binary_path(&temp).parent().unwrap().to_path_buf();
+    let engine_directory = binary_path(&temp, ENGINE_KEY)
+        .parent()
+        .unwrap()
+        .to_path_buf();
     assert!(!engine_directory.join("fixture.tar.gz").exists());
     assert!(!engine_directory.join("fixture.tar.gz.tmp").exists());
     assert!(!engine_directory.join(".extract").exists());
@@ -1186,7 +1190,7 @@ fn non_forced_rfdetr_engine_repair_keeps_verified_model_unrequested() {
     let binary_sha256 = Box::leak(format!("{:x}", Sha256::digest(binary_bytes)).into_boxed_str());
     let engine = Artifact {
         unit: ENGINE_UNIT,
-        version: ENGINE_REF,
+        version: ENGINE_VERSION,
         filename: "valid-fixture.tar.gz",
         sha256: tarball_sha256,
         size_bytes: tarball_bytes.len() as u64,
@@ -1199,11 +1203,15 @@ fn non_forced_rfdetr_engine_repair_keeps_verified_model_unrequested() {
     };
 
     fs::create_dir_all(sidecar_path(&temp).parent().unwrap()).unwrap();
+    let legacy_engine = temp.join("cache/providers/rfdetr/engine/65c0ffcc");
+    fs::create_dir_all(&legacy_engine).unwrap();
+    fs::write(legacy_engine.join(BINARY), b"legacy binary").unwrap();
     fs::write(
         sidecar_path(&temp),
         serde_json::to_vec(&json!({
             "status": "installed",
-            "engine_ref": ENGINE_REF,
+            "artifact_key": ENGINE_KEY,
+            "engine_version": ENGINE_VERSION,
             "engine_sha256": "stale-engine-sha256",
             "model_repo": "mudler/rfdetr-cpp-nano",
             "model_revision": MODEL_REVISION,
@@ -1229,6 +1237,7 @@ fn non_forced_rfdetr_engine_repair_keeps_verified_model_unrequested() {
     .unwrap();
 
     assert_eq!(server.join().unwrap(), ["/test/rfdetr-engine"]);
+    assert!(!temp.join("cache/providers/rfdetr/engine").exists());
     assert_eq!(fs::read(&model_path).unwrap(), model_bytes);
     assert_eq!(
         format!("{:x}", Sha256::digest(fs::read(&model_path).unwrap())),

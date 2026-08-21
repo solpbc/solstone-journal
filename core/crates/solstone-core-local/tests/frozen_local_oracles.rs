@@ -29,7 +29,7 @@ const CED_ENGINE_ARM64_SHA256: &str =
 const CED_ENGINE_METAL_SHA256: &str =
     "4c913ba0ece1d06ba2210da9fcaee3d8199ca3c62697c331810f224444e4054b";
 const RFDETR_ENGINE_SHA256: &str =
-    "74f3258a94c975444923be0cc451d90c1e8d9e2595d3cab6876a11086d8357dd";
+    "56231d6675395ed790dba882e0335e4c79616427af558b1820975951cd9d14a7";
 const RFDETR_MODEL_SHA256: &str =
     "d798cc448faa53209b88fc905c91beb1dd104634b95f6948cc4877540a8fd3ee";
 
@@ -219,25 +219,63 @@ fn downloading_installer_specs_match_the_catalog_pins() {
 
     assert!(rfdetr_platform_supported("linux", "x86_64"));
     assert!(rfdetr_platform_supported("linux", "amd64"));
-    assert!(!rfdetr_platform_supported("linux", "aarch64"));
-    assert!(!rfdetr_platform_supported("darwin", "arm64"));
+    assert!(rfdetr_platform_supported("linux", "aarch64"));
+    assert!(rfdetr_platform_supported("darwin", "arm64"));
     let engine = resolve(
         "rfdetr-engine",
         Some(Platform::LinuxX64),
         Some(Backend::Cpu),
     );
     assert_eq!(engine.len(), 1);
-    assert_eq!(engine[0].version, "bin-65c0ffcc-1");
+    assert_eq!(engine[0].version, "v0.1.0-solpbc.5");
     assert_eq!(engine[0].sha256, RFDETR_ENGINE_SHA256);
-    assert_eq!(engine[0].size_bytes, 995_601);
+    assert_eq!(engine[0].size_bytes, 952_974);
     assert_eq!(
         engine[0].extracted_binary_sha256,
-        Some("7c4fb4d499d53509d5099e768510a164c6647b84480c72170b865233504f367c")
+        Some("6f225708e4b9dafc39a085f1323bc426ca037b746b3be9c7c571d9be494306af")
     );
-    assert_eq!(
-        catalog_row(RFDETR_ENGINE_SHA256).filename,
-        "rfdetr-cli-65c0ffcc-linux-cpu-x64.tar.gz"
-    );
+    for (key, platform, backend, sha, size, extracted, filename, upstream_url) in [
+        (
+            "linux-cpu-x64",
+            Platform::LinuxX64,
+            Backend::Cpu,
+            RFDETR_ENGINE_SHA256,
+            952_974,
+            "6f225708e4b9dafc39a085f1323bc426ca037b746b3be9c7c571d9be494306af",
+            "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
+            "https://github.com/solpbc/rf-detr.cpp/releases/download/v0.1.0-solpbc.5/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
+        ),
+        (
+            "linux-cpu-arm64",
+            Platform::LinuxArm64,
+            Backend::Cpu,
+            "2c11e1af6986571d4d9f4d2cf377018973095b10c234a9da40a3edf45cf11f9d",
+            869_316,
+            "14c47251ffd61a3ef0dc358c4b6a88d8718c5c3f266f4d79db9ae1440e3b6ecc",
+            "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz",
+            "https://github.com/solpbc/rf-detr.cpp/releases/download/v0.1.0-solpbc.5/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz",
+        ),
+        (
+            "macos-metal-arm64",
+            Platform::MacosArm64,
+            Backend::Metal,
+            "46b497950c7a73000007abdb9ef54bc8b46ba0a46dcf26f6c0ae51fccd21ad71",
+            994_991,
+            "f15d89e24d44245e2288e0d9839e54d4495d6ebf1071e1f906805f2989d18c9e",
+            "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+            "https://github.com/solpbc/rf-detr.cpp/releases/download/v0.1.0-solpbc.5/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+        ),
+    ] {
+        let row = resolve("rfdetr-engine", Some(platform), Some(backend));
+        assert_eq!(row.len(), 1, "{key}");
+        assert_eq!(row[0].artifact_key, Some(key), "{key}");
+        assert_eq!(row[0].sha256, sha, "{key}");
+        assert_eq!(row[0].size_bytes, size, "{key}");
+        assert_eq!(row[0].extracted_binary_sha256, Some(extracted), "{key}");
+        assert_eq!(row[0].filename, filename, "{key}");
+        assert_eq!(row[0].upstream_url, upstream_url, "{key}");
+        assert_eq!(catalog_row(sha).filename, filename, "{key}");
+    }
     let rfdetr_model = resolve("rfdetr-model", None, None);
     assert_eq!(rfdetr_model.len(), 1);
     assert_eq!(
@@ -252,8 +290,10 @@ fn downloading_installer_specs_match_the_catalog_pins() {
         "rfdetr-nano-f16.gguf"
     );
     assert_eq!(
-        binary_path(journal),
-        PathBuf::from("/synthetic/journal/cache/providers/rfdetr/engine/65c0ffcc/rfdetr-cli")
+        binary_path(journal, "linux-cpu-x64"),
+        PathBuf::from(
+            "/synthetic/journal/cache/providers/rfdetr/v0.1.0-solpbc.5/engine/linux-cpu-x64/rfdetr-cli"
+        )
     );
     assert_eq!(
         model_path(journal),

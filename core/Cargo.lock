@@ -3480,10 +3480,11 @@ dependencies = [
  "image",
  "serde",
  "serde_json",
- "sha2",
+ "solstone-core-assets",
  "solstone-core-generate",
  "solstone-core-journal",
  "solstone-core-journal-io",
+ "solstone-core-local",
  "solstone-core-processing-record",
  "tempfile",
 ]

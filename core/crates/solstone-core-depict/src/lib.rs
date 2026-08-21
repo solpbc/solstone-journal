@@ -8,8 +8,8 @@
 
 use std::env;
 use std::ffi::OsString;
-use std::fs::{self, File};
-use std::io::{Cursor, Read};
+use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
@@ -18,7 +18,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine;
 use image::{DynamicImage, GenericImageView, ImageFormat, imageops::FilterType};
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
+use solstone_core_assets::canonical_host_pair;
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, OneShotClient, RefusalReason,
 };
@@ -26,6 +26,10 @@ use solstone_core_journal::{
     detect_checkout_root, discover_home, read_config_journal, resolve_journal_path,
 };
 use solstone_core_journal_io::{AtomicWriteOptions, write_jsonl};
+use solstone_core_local::install::rfdetr_install::{
+    ENGINE_PROVENANCE_REF, RfdetrInstallError, RfdetrInstallRecord, binary_path,
+    check_rfdetr_model, model_path, rfdetr_artifact_key,
+};
 use solstone_core_processing_record::{
     read_processing_record_header, should_reenter_analysis_output, vocab,
 };
@@ -35,14 +39,7 @@ pub const DESCRIPTION_PROMPT: &str = "Describe this image in detail. Include any
 pub const USAGE: &str = "usage: journal depict [-h] [--redo] FILE\n";
 const MAX_VLM_DIM: u32 = 1920;
 const ENGINE_NAME: &str = "rf-detr.cpp";
-const ENGINE_REF: &str = "65c0ffcc";
-const ENGINE_SHA256: &str = "7c4fb4d499d53509d5099e768510a164c6647b84480c72170b865233504f367c";
 const MODEL_NAME: &str = "rfdetr-nano-f16";
-const MODEL_REPO: &str = "mudler/rfdetr-cpp-nano";
-const MODEL_REVISION: &str = "c3dc0c037df499f5503545247df6618415fca643";
-const MODEL_FILE: &str = "rfdetr-nano-f16.gguf";
-const MODEL_SHA256: &str = "d798cc448faa53209b88fc905c91beb1dd104634b95f6948cc4877540a8fd3ee";
-const MODEL_SIZE: u64 = 63_439_488;
 const THRESHOLD: f64 = 0.25;
 const RFDETR_TIMEOUT: Duration = Duration::from_secs(120);
 const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(20);
@@ -169,13 +166,12 @@ pub struct SystemDetector;
 
 impl Detector for SystemDetector {
     fn detect(&self, full_png: &[u8]) -> Result<Option<Value>, String> {
-        let query = query_rfdetr_paths()?;
-        if query.status != "installed" {
+        let Some(journal) = current_journal_path() else {
             return Ok(None);
-        }
-        let (binary, model) = match (query.binary_path, query.model_path) {
-            (Some(binary), Some(model)) => (binary, model),
-            _ => return Err("installed RF-DETR query omitted paths".to_owned()),
+        };
+        let Some((binary, model)) = rfdetr_paths_at(&journal, env::consts::OS, env::consts::ARCH)?
+        else {
+            return Ok(None);
         };
         let temporary = DetectorTempDir::new()?;
         let input = temporary.path.join("input.png");
@@ -220,47 +216,6 @@ fn wait_for_child(child: &mut Child, timeout: Duration) -> Result<ExitStatus, St
     }
 }
 
-struct RfdetrPaths {
-    status: &'static str,
-    binary_path: Option<PathBuf>,
-    model_path: Option<PathBuf>,
-}
-
-#[derive(Clone, Copy)]
-struct RfdetrInstallSpec {
-    engine_ref: &'static str,
-    engine_sha256: &'static str,
-    model_repo: &'static str,
-    model_revision: &'static str,
-    model_file: &'static str,
-    model_sha256: &'static str,
-    model_size: u64,
-}
-
-const RFDETR_INSTALL_SPEC: RfdetrInstallSpec = RfdetrInstallSpec {
-    engine_ref: ENGINE_REF,
-    engine_sha256: ENGINE_SHA256,
-    model_repo: MODEL_REPO,
-    model_revision: MODEL_REVISION,
-    model_file: MODEL_FILE,
-    model_sha256: MODEL_SHA256,
-    model_size: MODEL_SIZE,
-};
-
-fn query_rfdetr_paths() -> Result<RfdetrPaths, String> {
-    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        return Ok(RfdetrPaths {
-            status: "platform_unavailable",
-            binary_path: None,
-            model_path: None,
-        });
-    }
-    let Some(journal) = current_journal_path() else {
-        return Ok(rfdetr_not_installed());
-    };
-    Ok(query_rfdetr_paths_at(&journal, RFDETR_INSTALL_SPEC))
-}
-
 fn current_journal_path() -> Option<PathBuf> {
     let env_journal = env::var_os("SOLSTONE_JOURNAL");
     if let Some(path) = env_journal.as_deref().filter(|value| !value.is_empty()) {
@@ -285,73 +240,40 @@ fn current_journal_path() -> Option<PathBuf> {
     )
 }
 
-fn query_rfdetr_paths_at(journal: &Path, spec: RfdetrInstallSpec) -> RfdetrPaths {
-    let root = journal.join("cache/providers/rfdetr");
-    let sidecar = root.join(".rfdetr-install.json");
-    let binary = root.join("engine").join(spec.engine_ref).join("rfdetr-cli");
-    let model = root
-        .join("model")
-        .join(spec.model_revision)
-        .join(spec.model_file);
-    let valid = fs::read(&sidecar)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .is_some_and(|record| rfdetr_record_matches(&record, spec))
-        && file_matches(&binary, spec.engine_sha256, None)
-        && file_matches(&model, spec.model_sha256, Some(spec.model_size));
-    if !valid {
-        return rfdetr_not_installed();
-    }
-    RfdetrPaths {
-        status: "installed",
-        binary_path: Some(binary),
-        model_path: Some(model),
-    }
+fn rfdetr_paths_at(
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+) -> Result<Option<(PathBuf, PathBuf)>, String> {
+    let (os_name, arch) = canonical_host_pair(os_name, arch);
+    let Some(key) = rfdetr_artifact_key(os_name, arch) else {
+        return Ok(None);
+    };
+    rfdetr_paths_from_install_check(check_rfdetr_model(journal, os_name, arch), journal, key)
 }
 
-fn rfdetr_record_matches(record: &Value, spec: RfdetrInstallSpec) -> bool {
-    [
-        ("status", "installed"),
-        ("engine_ref", spec.engine_ref),
-        ("engine_sha256", spec.engine_sha256),
-        ("model_repo", spec.model_repo),
-        ("model_revision", spec.model_revision),
-        ("model_file", spec.model_file),
-        ("model_sha256", spec.model_sha256),
-    ]
-    .into_iter()
-    .all(|(field, expected)| record.get(field).and_then(Value::as_str) == Some(expected))
-}
-
-fn file_matches(path: &Path, expected_sha256: &str, expected_size: Option<u64>) -> bool {
-    let Ok(metadata) = fs::metadata(path) else {
-        return false;
-    };
-    if !metadata.is_file() || expected_size.is_some_and(|size| metadata.len() != size) {
-        return false;
-    }
-    let Ok(mut file) = File::open(path) else {
-        return false;
-    };
-    let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 1024 * 1024];
-    loop {
-        let Ok(read) = file.read(&mut buffer) else {
-            return false;
-        };
-        if read == 0 {
-            break;
+fn rfdetr_paths_from_install_check(
+    result: Result<RfdetrInstallRecord, RfdetrInstallError>,
+    journal: &Path,
+    key: &str,
+) -> Result<Option<(PathBuf, PathBuf)>, String> {
+    match result {
+        Ok(RfdetrInstallRecord::Installed) => {
+            Ok(Some((binary_path(journal, key), model_path(journal))))
         }
-        digest.update(&buffer[..read]);
-    }
-    format!("{:x}", digest.finalize()) == expected_sha256
-}
-
-fn rfdetr_not_installed() -> RfdetrPaths {
-    RfdetrPaths {
-        status: "not_installed",
-        binary_path: None,
-        model_path: None,
+        Ok(RfdetrInstallRecord::PlatformUnavailable) => Ok(None),
+        Err(error)
+            if matches!(
+                error.reason_code.as_str(),
+                "sidecar_missing"
+                    | "sidecar_mismatch"
+                    | "unsupported_platform"
+                    | "artifact_registry_mismatch"
+            ) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(format!("RF-DETR {}: {error}", error.reason_code)),
     }
 }
 
@@ -624,7 +546,7 @@ fn detections_block(value: Value) -> Result<Value, String> {
         .clone();
     Ok(json!({
         "engine": ENGINE_NAME,
-        "engine_ref": ENGINE_REF,
+        "engine_ref": ENGINE_PROVENANCE_REF,
         "model": MODEL_NAME,
         "threshold": THRESHOLD,
         "source": "still",
@@ -769,47 +691,35 @@ mod tests {
     #[test]
     fn native_rfdetr_query_requires_the_pinned_sidecar_and_artifacts() {
         let root = tempfile::tempdir().unwrap();
-        let spec = RfdetrInstallSpec {
-            engine_ref: "engine-ref",
-            engine_sha256: "ed9f6f25068608efd412958da4dfc19328ca3511251fa6d5f9c42baf230e32f8",
-            model_repo: "model/repo",
-            model_revision: "model-revision",
-            model_file: "model.gguf",
-            model_sha256: "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4",
-            model_size: 5,
-        };
-        let cache = root.path().join("cache/providers/rfdetr");
-        let binary = cache.join("engine/engine-ref/rfdetr-cli");
-        let model = cache.join("model/model-revision/model.gguf");
-        fs::create_dir_all(binary.parent().unwrap()).unwrap();
-        fs::create_dir_all(model.parent().unwrap()).unwrap();
-        fs::write(&binary, "engine").unwrap();
-        fs::write(&model, "model").unwrap();
-        fs::write(
-            cache.join(".rfdetr-install.json"),
-            json!({
-                "status": "installed",
-                "engine_ref": spec.engine_ref,
-                "engine_sha256": spec.engine_sha256,
-                "model_repo": spec.model_repo,
-                "model_revision": spec.model_revision,
-                "model_file": spec.model_file,
-                "model_sha256": spec.model_sha256,
-            })
-            .to_string(),
+        assert_eq!(
+            rfdetr_paths_at(root.path(), "linux", "x86_64").unwrap(),
+            None
+        );
+
+        for key in ["linux-cpu-x64", "linux-cpu-arm64", "macos-metal-arm64"] {
+            let paths = rfdetr_paths_from_install_check(
+                Ok(RfdetrInstallRecord::Installed),
+                root.path(),
+                key,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(paths.0, binary_path(root.path(), key));
+            assert_eq!(paths.1, model_path(root.path()));
+        }
+
+        let error = rfdetr_paths_from_install_check(
+            Err(RfdetrInstallError::new(
+                "sha256_mismatch",
+                "sha256 mismatch for rfdetr-nano-f16.gguf",
+                65,
+            )),
+            root.path(),
+            "linux-cpu-x64",
         )
-        .unwrap();
-
-        let installed = query_rfdetr_paths_at(root.path(), spec);
-        assert_eq!(installed.status, "installed");
-        assert_eq!(installed.binary_path.as_deref(), Some(binary.as_path()));
-        assert_eq!(installed.model_path.as_deref(), Some(model.as_path()));
-
-        fs::write(&model, "wrong").unwrap();
-        let stale = query_rfdetr_paths_at(root.path(), spec);
-        assert_eq!(stale.status, "not_installed");
-        assert_eq!(stale.binary_path, None);
-        assert_eq!(stale.model_path, None);
+        .unwrap_err();
+        assert!(error.contains("sha256_mismatch"));
+        assert!(error.contains("rfdetr-nano-f16.gguf"));
     }
 
     #[test]

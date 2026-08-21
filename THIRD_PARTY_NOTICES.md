@@ -198,21 +198,27 @@ sol pbc redistributes these artifacts from `updates.solstone.app` on demand
 into the journal provider cache for local object detection. They are not
 bundled in this repository.
 
-### rf-detr.cpp engine binary
+### rf-detr.cpp v0.1.0-solpbc.5 engine
 
-Attribution: rf-detr.cpp (Ettore Di Giacinto / mudler); binary built and
+Attribution: rf-detr.cpp (Ettore Di Giacinto / mudler); binaries CI-built and
 released by sol pbc.
 
 Source:
 
-- Release binary: https://github.com/solpbc/rf-detr.cpp/releases/download/bin-65c0ffcc-1/rfdetr-cli-65c0ffcc-linux-cpu-x64.tar.gz
-- Project: https://github.com/mudler/rf-detr.cpp
-- Pinned engine ref: 65c0ffcc
-- Downloaded file: `rfdetr-cli` (extracted from the tarball)
+- Release binaries: https://github.com/solpbc/rf-detr.cpp/releases/tag/v0.1.0-solpbc.5
+- Project: https://github.com/localai-org/rf-detr.cpp
+- Pinned engine ref: ec73712e
+- Release tag: v0.1.0-solpbc.5
+- Downloaded file: `rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz`
+- SHA-256: `56231d6675395ed790dba882e0335e4c79616427af558b1820975951cd9d14a7`
+- Downloaded file: `rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz`
+- SHA-256: `2c11e1af6986571d4d9f4d2cf377018973095b10c234a9da40a3edf45cf11f9d`
+- Downloaded file: `rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz`
+- SHA-256: `46b497950c7a73000007abdb9ef54bc8b46ba0a46dcf26f6c0ae51fccd21ad71`
 
 License notice: Apache License 2.0 (Apache-2.0).
 
-Apache-2.0 permits sol pbc's redistribution of this engine binary with its
+Apache-2.0 permits sol pbc's redistribution of these engine binaries with their
 required notice and license terms.
 
 ### RF-DETR nano GGUF model weights
