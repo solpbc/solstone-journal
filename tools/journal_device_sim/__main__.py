@@ -14,7 +14,20 @@ from pathlib import Path
 
 from .field_manifest import build_field_manifest
 from .manifest import SCHEMA, ManifestError, load_manifest
+from .process import LinkBridge, LinkProcessError
 from .runner import RunOutcome, SimulationFailure, Simulator, SimulatorConfig
+
+
+def _port(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "must be an integer from 1 to 65535"
+        ) from error
+    if not 1 <= value <= 65535:
+        raise argparse.ArgumentTypeError("must be an integer from 1 to 65535")
+    return value
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -36,6 +49,15 @@ def _parser() -> argparse.ArgumentParser:
     field_manifest.add_argument("--field-root", type=Path, required=True)
     field_manifest.add_argument("--output", type=Path, required=True)
 
+    pair = subparsers.add_parser(
+        "pair", help="store an isolated native credential bundle for a later run"
+    )
+    pair.add_argument("--pair-code", required=True)
+    pair.add_argument("--state-dir", type=Path, required=True)
+    pair.add_argument("--solstone-bin", default="solstone")
+    pair.add_argument("--convey-port", type=_port)
+    pair.add_argument("--request-timeout", type=float, default=90.0)
+
     run = subparsers.add_parser("run", help="run one fixture profile")
     run.add_argument("--manifest", type=Path, required=True)
     run.add_argument("--fixture-root", type=Path)
@@ -48,8 +70,14 @@ def _parser() -> argparse.ArgumentParser:
     connection.add_argument(
         "--pair-code", help="pair-link URL; never written to state or evidence"
     )
+    connection.add_argument(
+        "--paired",
+        action="store_true",
+        help="use the credential bundle already stored under state-dir",
+    )
     run.add_argument("--solstone-bin", default="solstone")
     run.add_argument("--relay-url")
+    run.add_argument("--convey-port", type=_port)
     run.add_argument("--state-dir", type=Path)
     run.add_argument("--evidence", type=Path)
     run.add_argument("--date-mode", choices=("shift", "preserve"), default="shift")
@@ -129,10 +157,36 @@ def _field_manifest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _pair(args: argparse.Namespace) -> int:
+    if args.request_timeout <= 0:
+        raise ManifestError("request_timeout must be positive")
+    state_dir = args.state_dir.absolute()
+    bridge = LinkBridge(
+        solstone_bin=args.solstone_bin,
+        pair_code=args.pair_code,
+        state_dir=state_dir,
+        carrier="direct",
+        relay_url=None,
+        convey_port=args.convey_port,
+        startup_timeout=args.request_timeout,
+    )
+    bridge.ensure_paired()
+    sys.stdout.write(
+        json.dumps(
+            {"paired": True, "state_dir": str(state_dir)},
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    return 0
+
+
 def _run(args: argparse.Namespace) -> int:
+    if args.paired and args.state_dir is None:
+        raise ManifestError("--paired requires an explicit --state-dir")
     manifest = load_manifest(args.manifest, args.fixture_root)
-    state_dir = (args.state_dir or _default_state_dir()).resolve()
-    evidence_path = (args.evidence or (state_dir / "evidence.json")).resolve()
+    state_dir = (args.state_dir or _default_state_dir()).absolute()
+    evidence_path = (args.evidence or (state_dir / "evidence.json")).absolute()
     simulator = Simulator(
         SimulatorConfig(
             manifest=manifest,
@@ -142,8 +196,10 @@ def _run(args: argparse.Namespace) -> int:
             evidence_path=evidence_path,
             bridge_url=args.bridge_url,
             pair_code=args.pair_code,
+            paired=args.paired,
             solstone_bin=args.solstone_bin,
             relay_url=args.relay_url,
+            convey_port=args.convey_port,
             date_mode=args.date_mode,
             anchor_day=args.anchor_day,
             journal_root=args.journal_root.resolve() if args.journal_root else None,
@@ -172,8 +228,10 @@ def main(argv: list[str] | None = None) -> int:
             return _validate(args)
         if args.command == "field-manifest":
             return _field_manifest(args)
+        if args.command == "pair":
+            return _pair(args)
         return _run(args)
-    except (ManifestError, SimulationFailure) as error:
+    except (LinkProcessError, ManifestError, SimulationFailure) as error:
         sys.stderr.write(f"configuration error: {error}\n")
         return 1
 
