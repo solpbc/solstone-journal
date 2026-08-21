@@ -520,6 +520,33 @@ pub(crate) fn download_artifact(
     })
 }
 
+pub(crate) fn ensure_verified(
+    artifact: &Artifact,
+    destination: &Path,
+    policy: &archive::DownloadHostPolicy<'_>,
+    progress: impl FnMut(u64, Option<u64>),
+    fallback_reason_code: &str,
+) -> Result<(), DispatchError> {
+    let origin = archive::origin_url(policy.origin_base_url, artifact.origin_key);
+    archive::ensure_verified_url(
+        &origin,
+        artifact.sha256,
+        Some(artifact.size_bytes),
+        destination,
+        policy,
+        progress,
+    )
+    .map(|_| ())
+    .map_err(|error| {
+        failure(
+            "download",
+            download_artifact_reason_code(&error, fallback_reason_code),
+            error,
+            74,
+        )
+    })
+}
+
 fn write_manifest(kind: &str, object: &Map<String, Value>) -> Result<Value, DispatchError> {
     let root = PathBuf::from(required(object, "root")?);
     let path = PathBuf::from(required(object, "manifest_path")?);
