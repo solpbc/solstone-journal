@@ -452,13 +452,11 @@ pub(crate) async fn pair(
             StatusCode::BAD_REQUEST,
         );
     };
-    let relay_nonce_mismatch = pairing_admission
-        .as_ref()
-        .is_some_and(|Extension(admission)| {
-            matches!(admission, PairingAdmission::Relay(identity) if !identity.matches(nonce))
-                || matches!(admission, PairingAdmission::Direct)
-                    && relay_pairing_nonce_open(&NonceStore::new(&root.0), nonce, now())
-        });
+    let submitted_relay_nonce = relay_pairing_nonce_open(&NonceStore::new(&root.0), nonce, now());
+    let relay_nonce_mismatch = match pairing_admission.as_ref() {
+        Some(Extension(PairingAdmission::Relay(identity))) => !identity.matches(nonce),
+        Some(Extension(PairingAdmission::Direct)) | None => submitted_relay_nonce,
+    };
     if relay_nonce_mismatch {
         return refusal(
             "pairing_request_invalid",
@@ -622,6 +620,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
+    use crate::authorization_gate::DoorRouter;
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, header};
     use axum::routing::get;
@@ -759,6 +758,48 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn unconfined_pair_route_rejects_an_untyped_live_relay_nonce() {
+        let temporary = TempDir::new();
+        committed_identity(temporary.path());
+        let store = NonceStore::new(temporary.path());
+        let nonce = "relay-a";
+        store
+            .add_relay(nonce.into(), "phone".into(), "".into(), now())
+            .expect("relay window");
+        let app = DoorRouter::unconfined(
+            Router::new()
+                .route("/pair", axum::routing::post(pair))
+                .layer(Extension(Arc::new(JournalRoot(
+                    temporary.path().to_path_buf(),
+                )))),
+        )
+        .into_inner();
+        let mut request = Request::post(format!("/pair?token={nonce}"))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"csr":"not reached","device_label":"phone"}"#,
+            ))
+            .expect("request");
+        request.extensions_mut().insert(AccessBasis::PairingPeer {
+            carrier: Carrier::ViaSpl,
+        });
+
+        let response = app.oneshot(request).await.expect("response");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(
+            relay_pairing_nonce_open(&store, nonce, now()),
+            "untyped rejection does not consume the live relay nonce"
+        );
+        assert!(
+            AuthorizationLedger::new(temporary.path())
+                .snapshot()
+                .is_empty(),
+            "untyped rejection does not issue a certificate or mutate the ledger"
+        );
     }
 
     #[tokio::test]

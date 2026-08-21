@@ -107,15 +107,15 @@ impl Drop for RelayAdmissionLease {
 static REGISTRIES: OnceLock<Mutex<HashMap<PathBuf, Weak<RelayAdmissionRegistry>>>> =
     OnceLock::new();
 
-/// Return the process-local registry for this canonical journal root.
+/// Return the process-local registry for this journal root.
 ///
-/// A root that cannot be canonicalized receives an isolated registry. Calls
-/// for that root cannot share a capability across the router and Door, so
-/// relay admission fails closed instead of trusting a non-canonical path.
+/// A root that cannot be canonicalized is keyed by its raw path. This shares
+/// capabilities only between callers that supplied the same path while the
+/// journal root does not yet exist; distinct raw paths remain distinct.
 pub(crate) fn admission_registry_for(journal_root: &Path) -> Arc<RelayAdmissionRegistry> {
-    let Ok(journal_key) = journal_root.canonicalize() else {
-        return Arc::new(RelayAdmissionRegistry::new());
-    };
+    let journal_key = journal_root
+        .canonicalize()
+        .unwrap_or_else(|_| journal_root.to_path_buf());
     let registries = REGISTRIES.get_or_init(|| Mutex::new(HashMap::new()));
     let mut registries = registries
         .lock()
@@ -141,7 +141,7 @@ fn lock_entries(
 mod tests {
     use std::{net::SocketAddr, sync::Arc};
 
-    use super::{RelayAdmissionRegistry, RelayNonceIdentity};
+    use super::{RelayAdmissionRegistry, RelayNonceIdentity, admission_registry_for};
 
     #[test]
     fn take_is_one_shot_and_lease_cleanup_is_idempotent() {
@@ -175,5 +175,23 @@ mod tests {
                 .take(second)
                 .is_some_and(|identity| identity.matches("nonce-b"))
         );
+    }
+
+    #[test]
+    fn nonexistent_root_reuses_its_raw_path_registry() {
+        let temporary = tempfile::TempDir::new_in("/var/tmp").expect("temporary parent");
+        let root = temporary.path().join("journal-not-created-yet");
+        assert!(!root.exists(), "fixture root is intentionally absent");
+        let first = admission_registry_for(&root);
+        let second = admission_registry_for(&root);
+        let address: SocketAddr = "127.0.0.1:4444".parse().expect("socket address");
+        let lease = first.insert(address, RelayNonceIdentity::new("nonce-a".to_owned()));
+
+        assert!(
+            second
+                .take(address)
+                .is_some_and(|identity| identity.matches("nonce-a"))
+        );
+        drop(lease);
     }
 }

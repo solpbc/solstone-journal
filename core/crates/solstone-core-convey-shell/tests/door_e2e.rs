@@ -2870,26 +2870,15 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
             "the relay-only fixture has no direct pairing nonce"
         );
 
-        let arbitrary_loopback = TcpStream::connect((Ipv4Addr::LOCALHOST, 7657))
+        let error = tls_handshake(test_client_config(&[&rustls::version::TLS13], None), 7657)
             .await
-            .expect("ordinary loopback TCP connects");
-        let mut unadmitted = certless_carrier(arbitrary_loopback)
-            .await
-            .expect("the TLS client can finish before the server processes its empty certificate");
-        assert!(
-            exchange_over_carrier(
-                &mut unadmitted,
-                &mut FrameDecoder::new(),
-                1,
-                "POST",
-                "/app/network/pair",
-                &[],
-                b"{}",
-            )
-            .await
-            .is_err(),
-            "an ordinary loopback socket with only relay A live is refused before HTTP"
-        );
+            .expect_err("an unregistered loopback address cannot claim relay A admission");
+        assert!(matches!(
+            error.kind(),
+            std::io::ErrorKind::InvalidData
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::ConnectionReset
+        ));
 
         let direct = mint_from_loopback(&handle, "direct phone").await;
         let direct_nonce = direct["nonce"].as_str().expect("direct nonce");
