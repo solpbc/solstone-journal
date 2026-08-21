@@ -980,7 +980,7 @@ mod tests {
             None,
             |_, _| Ok(()),
             |_, _, _, _| Ok(None),
-            |_, _, _, _| panic!("raw platform must skip rf-detr"),
+            |_, _, _, _| panic!("rf-detr installer must not run"),
             |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
         );
@@ -1003,7 +1003,7 @@ mod tests {
             None,
             |_, _| Ok(()),
             |_, _, _, _| Ok(None),
-            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _, _| panic!("rf-detr installer must not run on an unmapped host"),
             |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
         );
