@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -87,6 +88,10 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="optional read-only sandbox journal root for server-authored/derived output proof",
     )
+    run.add_argument(
+        "--expected-cid",
+        help="authenticated sha256: device CID required for external-bridge white-box proof",
+    )
     run.add_argument("--request-timeout", type=float, default=90.0)
     run.add_argument("--processing-timeout", type=float, default=0.0)
     run.add_argument("--poll-interval", type=float, default=1.0)
@@ -121,7 +126,7 @@ def _validate(args: argparse.Namespace) -> int:
                     for file in manifest.segments[segment_id].files
                 ),
                 "verify_duplicate": profile.verify_duplicate,
-                "verify_processing": profile.verify_processing,
+                "verification": profile.verification,
             }
             for name, profile in sorted(manifest.profiles.items())
         },
@@ -158,8 +163,8 @@ def _field_manifest(args: argparse.Namespace) -> int:
 
 
 def _pair(args: argparse.Namespace) -> int:
-    if args.request_timeout <= 0:
-        raise ManifestError("request_timeout must be positive")
+    if not math.isfinite(args.request_timeout) or args.request_timeout <= 0:
+        raise ManifestError("request_timeout must be a positive finite number")
     state_dir = args.state_dir.absolute()
     bridge = LinkBridge(
         solstone_bin=args.solstone_bin,
@@ -203,6 +208,7 @@ def _run(args: argparse.Namespace) -> int:
             date_mode=args.date_mode,
             anchor_day=args.anchor_day,
             journal_root=args.journal_root.resolve() if args.journal_root else None,
+            expected_cid=args.expected_cid,
             request_timeout=args.request_timeout,
             processing_timeout=args.processing_timeout,
             poll_interval=args.poll_interval,

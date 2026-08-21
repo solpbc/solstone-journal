@@ -1,13 +1,13 @@
 # Journal device simulator
 
-This repository-local, dependency-free Python utility behaves like a linked
-capture device. It sends explicit fixture bytes through the maintained native
-`solstone link` transport, reconciles each submission through journal ingest v3,
-and writes machine-readable evidence.
+This dependency-free Python utility behaves like a linked capture device. It
+sends digest-pinned fixture bytes through the maintained native `solstone link`
+transport, reconciles each submission through journal ingest v3, and writes
+machine-readable evidence.
 
-It does not implement PL, SPL, TLS, pairing, or journal storage. Those remain
-native product boundaries. It also does not run each platform client's tests;
-Linux, macOS, iOS/watchOS, Android, Windows, and tmux must be tested separately.
+The simulator does not implement PL, SPL, TLS, pairing, or journal storage.
+Those remain native product boundaries. It also does not replace each platform
+client's own integration tests.
 
 ## Quick start
 
@@ -26,40 +26,35 @@ python3 -m tools.journal_device_sim run \
   --profile smoke \
   --carrier direct \
   --pair-code 'PAIR-LINK-URL' \
-  --convey-port 5015 \
-  --journal-root /path/to/disposable/journal \
-  --processing-timeout 30
+  --convey-port JOURNAL_CONVEY_PORT \
+  --journal-root /path/to/disposable/journal
 ```
 
-Use `--carrier relay` for SPL. For a bridge already owned by another harness,
-replace `--pair-code` with `--bridge-url http://127.0.0.1:PORT`. Bridge URLs are
-restricted to literal loopback origins. The simulator does not query carrier
-identity from an external bridge, so its evidence marks carrier assurance as
-`caller-asserted`; simulator-owned native children are marked `native-child`.
+The simulator stores native credentials under the run's private state
+directory, starts `solstone link serve --port 0 --direct`, reads the assigned
+loopback port from the native startup line, and owns only that child process.
 
-The paired mode stores credentials under the run's private state directory,
-starts `solstone link serve --port 0`, reads the bound port from its startup
-line, and terminates only that child. Credentials are removed after a passing
-run unless `--keep-credentials` is set. Failed or inconclusive runs retain state
-and credentials. If pairing completed, retry with `--paired` and the same
-`--state-dir`; otherwise open a fresh pairing window unless the journal still
-shows the original pair link as valid.
+For relay testing, `--carrier relay` invokes `solstone link serve --port 0
+--relay-only`. This policy excludes LAN endpoints even when the credential
+bundle contains them. The simulator records owned bridges as
+`native-direct-only` or `native-relay-only`. A caller-supplied `--bridge-url`
+must be a literal loopback origin and is recorded as `caller-asserted`, because
+the simulator does not own or inspect that bridge's process arguments.
 
-`--convey-port` explicitly selects the local journal that the native child will
-serve. When it is omitted, the child follows the normal `solstone` environment,
-including `SOLSTONE_CONVEY_PORT` when a sandbox or another launcher assigns it.
+`--convey-port` selects the local journal served by the native child. When it is
+omitted, the child uses `SOLSTONE_CONVEY_PORT` if present, then the native
+default. The effective port and its source are included in evidence.
 
-If a journal refuses pairing while SPL is active, pair under PL-direct first,
-switch the journal to SPL, and then run through the relay. Use the two-phase form
-with one private state directory:
+If pairing must happen before the journal switches to SPL, use one private
+state directory for both phases:
 
 ```bash
 python3 -m tools.journal_device_sim pair \
   --pair-code 'PAIR-LINK-URL' \
   --state-dir scratch/journal-device-sim/relay-proof \
-  --convey-port 5015
+  --convey-port JOURNAL_CONVEY_PORT
 
-# Switch the receiving journal to SPL using its supported management surface.
+# Switch the disposable journal to SPL through its supported management surface.
 
 python3 -m tools.journal_device_sim run \
   --manifest tools/journal_device_sim/fixtures/smoke/manifest.json \
@@ -67,24 +62,48 @@ python3 -m tools.journal_device_sim run \
   --carrier relay \
   --paired \
   --state-dir scratch/journal-device-sim/relay-proof \
-  --convey-port 5015 \
-  --journal-root /path/to/disposable/journal \
-  --processing-timeout 30
+  --convey-port JOURNAL_CONVEY_PORT \
+  --journal-root /path/to/disposable/journal
 ```
 
-The pair link is passed to the simulator and native child as a command-line
-argument, so treat shell history and local process listings as sensitive. The
-simulator does not echo it or write it to state or evidence. `--paired` requires
-an explicit state directory and refuses absent, incomplete, or linked credential
-state.
+The pair link appears in the simulator and native child's command-line
+arguments, so treat shell history and local process listings as sensitive. The
+simulator does not echo the link or write it to state or evidence; the
+[`test_native_child_owns_pairing_ephemeral_port_and_cleanup`](tests/test_process.py)
+and
+[`test_owned_carrier_assurance_waits_for_native_startup`](tests/test_runner.py)
+regressions pin those output boundaries. `--paired` requires an explicit state
+directory and refuses absent, incomplete, or linked credential state. A
+passing run removes credentials unless `--keep-credentials` is set. Other
+outcomes retain them for controlled retry or diagnosis.
+
+## Verification levels
+
+Each profile declares one `verification` level:
+
+- `contract` exercises the public v3 POST, listing, day-manifest, root-manifest,
+  receiver identity, and carrier-posture contracts. It does not require local
+  journal filesystem access. If `--journal-root` is supplied, custody checks run
+  too.
+- `custody` requires `--journal-root`. It binds the public listing to the exact
+  authenticated device event and selected segment directory, then either
+  streams and hashes the retained raw file or checks an exact terminal
+  processing record.
+- `processing` requires `--journal-root` and one closed processing expectation
+  per submitted file. It checks the successful processing record, exact input
+  size, derived sidecar, and every semantic output row. Empty terminal output
+  can satisfy custody but cannot satisfy processing.
+
+External bridges need `--expected-cid sha256:...` whenever `--journal-root` is
+used. Simulator-owned bridges derive that CID from the exact client certificate
+used by native `link serve`.
 
 ## Fixture manifest
 
-The manifest schema is `solstone.journal-device-sim.fixtures.v1`. Every submitted
-file names its exact relative path, submitted filename, byte size, and SHA-256.
-Loading fails before transport if any byte has drifted, a path escapes the
-fixture root, or a client attempts to submit a journal-authored sidecar such as
-`stream.json`, `ingest.json`, or `events.jsonl`.
+The manifest schema is `solstone.journal-device-sim.fixtures.v1`. Every file
+names its relative fixture path, submitted filename, byte size, and SHA-256.
+Loading fails before transport if bytes drift, a path escapes the fixture root,
+or a submitted name belongs to the journal itself.
 
 ```json
 {
@@ -92,7 +111,8 @@ fixture root, or a client attempts to submit a journal-authored sidecar such as
   "profiles": {
     "smoke": {
       "segments": ["tmux-alpha"],
-      "verify_duplicate": true
+      "verify_duplicate": true,
+      "verification": "contract"
     }
   },
   "segments": [
@@ -119,47 +139,47 @@ fixture root, or a client attempts to submit a journal-authored sidecar such as
 }
 ```
 
-`--date-mode shift` maps the fixture's final day to today while preserving
-relative offsets, so multi-day processing fixtures do not land in the future.
-`--anchor-day YYYYMMDD` makes that final-day mapping deterministic.
-`--date-mode preserve` sends the authored dates.
+Processing expectations are closed over the native media contract. Audio
+inputs use `transcribe`; screen-video inputs use `describe`; and the output is
+the submitted filename with its extension replaced by `.jsonl`. For example,
+`sample.wav` maps to `sample.jsonl`.
 
-The default accepted custody states are `present` and `processed`. A fixture may
-require named derived outputs with `expect.required_outputs`; that requires the
-read-only `--journal-root` check. Profiles verify those outputs by default and
-may set `verify_processing: false` when the intended proof is transport custody
-only. When a journal root is supplied, the simulator always requires the
-server-authored `stream.json`, `ingest.json`, and `events.jsonl` for every
-accepted segment.
+`--date-mode shift` maps the fixture's final day to today while preserving
+relative offsets. `--anchor-day YYYYMMDD` makes that mapping deterministic.
+`--date-mode preserve` sends the authored dates.
 
 ## Recovery and evidence
 
-Before every send, the simulator writes `phase: sending` to `state.json`. If the
-connection closes or the server returns 5xx after bytes land, it queries
-`/app/devices/ingest/segments/{day}` and matches the exact submitted name, size,
-and SHA-256 before retrying. The runner opens fixture payloads read-only; its
-manifest and field-manifest tests cover path confinement and input provenance.
+Before each send, the simulator persists `phase: sending`. A transport error or
+5xx response is ambiguous, so the simulator reconciles the exact submitted
+name, size, digest, requested key, and landed key before deciding whether to
+retry. A received response that violates the v3 contract is a terminal failure,
+not an ambiguous transport result.
 
-Evidence outcomes are `PASS`, `FAIL`, `BLOCKED`, or `INCONCLUSIVE`. The evidence
-records the manifest digest, fixture repository revision when available, date
-mapping, carrier, request count, response, and reconciled listing. `state.json`
-and `evidence.json` omit pair links and credential material. In paired mode,
-native credentials live only under `<state-dir>/credentials` and are removed
-after a passing run unless `--keep-credentials` is set.
+Outcomes are `PASS`, `FAIL`, `BLOCKED`, or `INCONCLUSIVE`. Evidence includes:
+
+- fixture and simulator source provenance;
+- the exact native executable path, digest, and available version string;
+- effective Convey targeting and carrier assurance;
+- the client certificate digest, derived device CID, and non-secret peer
+  identity;
+- bounded response receipts, accepted-response metadata, reconciliation reads,
+  request counts, and journal oracles.
+
+Evidence excludes raw non-JSON or oversized response bodies, simulator-held
+private keys, attestation tokens, relay tokens, pair links, and receiver-status
+endpoint fields. The
+[`test_received_malformed_responses_are_failures_with_safe_receipts`](tests/test_runner.py),
+[`test_prepaired_provenance_exposes_only_non_secret_credential_fields`](tests/test_process.py),
+and
+[`test_receiver_status_evidence_projects_private_endpoints`](tests/test_runner.py)
+regressions pin those projections.
 
 ## Field journal
 
 Clone the public
-[`field_journal`](https://github.com/solpbc/field_journal) beside this repository,
-then use it as a read-only fixture root and upload into a different disposable
-receiving journal. A field manifest must enumerate exact raw input paths and
-digests; do not directory-sweep a field segment because the fixture tree may
-also contain server-authored or derived files. The real 19,200,078-byte WAV at
-`journal/20260201/field.audio/080000_600/audio.wav` is the routine bridge-limit
-canary.
-
-Generate the explicit adapter manifest into simulator state without modifying
-the field journal:
+[`field_journal`](https://github.com/solpbc/field_journal) beside this repository.
+Use it only as a fixture source, and upload into a different disposable journal.
 
 ```bash
 python3 -m tools.journal_device_sim field-manifest \
@@ -167,15 +187,19 @@ python3 -m tools.journal_device_sim field-manifest \
   --output scratch/journal-device-sim/field-manifest.json
 ```
 
-The generator accepts only Git-tracked `audio.{flac,m4a,ogg,opus,wav}` and
-`screen.{mp4,mov,webm}` files at paths named by the field journal's own manifest.
-It creates `field-smoke` (source/format/modality coverage),
-`field-large` (the 19.2 MB custody canary with duplicate proof), and `field-full`
-profiles. `field-smoke` and `field-full` additionally require their named
-derived outputs; `field-large` deliberately remains usable when a disposable
-sandbox has no media model. Run them with the generated manifest plus
-`--fixture-root ../field_journal`; add `--journal-root` and a suitable
-`--processing-timeout` for processing profiles.
+The generator accepts only Git-tracked raw audio and screen-video files named
+by the field journal manifest. Every raw format becomes its own simulated
+segment so derived sidecars cannot alias one another. It emits:
+
+- `field-smoke-custody` and `field-smoke-processing` for representative format
+  coverage;
+- `field-large` for the exact 19,200,078-byte WAV custody and duplicate canary;
+- `field-full-custody` and `field-full-processing` for the complete corpus.
+
+Run the generated manifest with `--fixture-root ../field_journal`. Custody and
+processing profiles also require the receiving `--journal-root`; processing
+runs normally need a suitable `--processing-timeout` and installed media
+providers.
 
 ## Tests
 
@@ -183,18 +207,18 @@ sandbox has no media model. Run them with the generated manifest plus
 make check-journal-device-sim
 ```
 
-The tests are standard-library-only and exercise manifest fail-closed behavior,
-streaming multipart framing, ambiguous-response reconciliation, collision and
-duplicate behavior, and resumable state. Live PL/SPL tests must run separately
-against a real pairing window and carrier.
+The standard-library test suite covers fail-closed manifest handling, streaming
+multipart framing, typed HTTP response failures, ambiguous-response
+reconciliation, collision and duplicate behavior, carrier invocation,
+filesystem confinement, semantic processing checks, cleanup, and resumable
+state. Live PL and SPL checks run separately against disposable journals.
 
-Malformed protocol-version and multipart-contract cases stay in the Rust ingest
-handler's boundary tests: see
+Malformed protocol-version and multipart cases remain in the Rust ingest
+handler's boundary tests:
 [`legacy_fields_and_protocol_versions_are_refused`](../../core/crates/solstone-core-ingest/src/router.rs)
 and
 [`protocol_validation_distinguishes_every_version_refusal`](../../core/crates/solstone-core-ingest/src/validation.rs).
-The simulator supplies `X-Solstone-Protocol-Version: 3`, and the native bridge
-forwards it unchanged. That seam is covered by
-[`proxy_headers_forwards_caller_headers_unchanged`](../../core/crates/solstone-core-sol-link/src/serve.rs)
+The native bridge's v3 forwarding and relay-only policy are covered in
+[`sol_link_serving.rs`](../../core/crates/solstone-core-sol-link/tests/sol_link_serving.rs)
 and
-[`v3_multipart_ingest_request_reaches_carrier_unchanged`](../../core/crates/solstone-core-sol-link/tests/sol_link_serving.rs).
+[`command.rs`](../../core/crates/solstone-core-sol-client/native/think/link/command.rs).

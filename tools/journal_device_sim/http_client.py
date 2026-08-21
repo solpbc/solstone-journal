@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-import http.client
 import hashlib
+import http.client
 import json
 import secrets
 from dataclasses import dataclass
@@ -20,6 +20,38 @@ MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 class HttpRequestError(RuntimeError):
     """The bridge request did not yield a bounded JSON response."""
+
+
+class HttpResponseError(HttpRequestError):
+    """The bridge returned a response that failed the bounded JSON contract."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int,
+        reason_category: str,
+        declared_length: int | None = None,
+        raw: bytes | None = None,
+    ) -> None:
+        actual_length = len(raw) if raw is not None else None
+        raw_sha256 = hashlib.sha256(raw).hexdigest() if raw is not None else None
+        receipt: dict[str, int | str] = {
+            "status": status,
+            "reason_category": reason_category,
+        }
+        if declared_length is not None:
+            receipt["declared_length"] = declared_length
+        if actual_length is not None and raw_sha256 is not None:
+            receipt["actual_length"] = actual_length
+            receipt["raw_sha256"] = raw_sha256
+        self.status = status
+        self.reason_category = reason_category
+        self.declared_length = declared_length
+        self.actual_length = actual_length
+        self.raw_sha256 = raw_sha256
+        self.receipt = receipt
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -117,15 +149,20 @@ class BridgeHttpClient:
     """HTTP/1.1 client restricted to a loopback link-bridge origin."""
 
     def __init__(self, base_url: str, timeout: float = 30.0) -> None:
-        parsed = urlsplit(base_url)
+        try:
+            parsed = urlsplit(base_url)
+            hostname = parsed.hostname
+            port = parsed.port
+        except ValueError as error:
+            raise HttpRequestError("bridge URL is malformed") from error
         if parsed.scheme != "http" or parsed.username or parsed.password:
             raise HttpRequestError("bridge URL must be an unauthenticated http:// URL")
-        if parsed.hostname not in {"127.0.0.1", "::1"}:
+        if hostname not in {"127.0.0.1", "::1"}:
             raise HttpRequestError("bridge URL must resolve explicitly to loopback")
         if parsed.query or parsed.fragment:
             raise HttpRequestError("bridge URL cannot contain a query or fragment")
-        self._host = parsed.hostname
-        self._port = parsed.port or 80
+        self._host = hostname
+        self._port = port or 80
         self._prefix = parsed.path.rstrip("/")
         self._timeout = timeout
 
@@ -134,26 +171,59 @@ class BridgeHttpClient:
 
     def _read_response(self, response: http.client.HTTPResponse) -> HttpResponse:
         declared = response.getheader("Content-Length")
+        declared_size: int | None = None
         if declared is not None:
+            if not declared.isascii() or not declared.isdecimal():
+                raise HttpResponseError(
+                    "response Content-Length is malformed",
+                    status=response.status,
+                    reason_category="malformed_content_length",
+                )
             try:
                 declared_size = int(declared)
             except ValueError as error:
-                raise HttpRequestError(
-                    "response Content-Length is malformed"
+                raise HttpResponseError(
+                    "response Content-Length is malformed",
+                    status=response.status,
+                    reason_category="malformed_content_length",
                 ) from error
             if declared_size > MAX_RESPONSE_BYTES:
-                raise HttpRequestError("response exceeds the 4 MiB evidence bound")
+                raise HttpResponseError(
+                    "response exceeds the 4 MiB evidence bound",
+                    status=response.status,
+                    reason_category="declared_response_too_large",
+                    declared_length=declared_size,
+                )
         raw = response.read(MAX_RESPONSE_BYTES + 1)
         if len(raw) > MAX_RESPONSE_BYTES:
-            raise HttpRequestError("response exceeds the 4 MiB evidence bound")
+            raise HttpResponseError(
+                "response exceeds the 4 MiB evidence bound",
+                status=response.status,
+                reason_category="actual_response_too_large",
+                declared_length=declared_size,
+                raw=raw,
+            )
+        def reject_constant(value: str) -> None:
+            raise ValueError(f"non-finite JSON constant {value}")
+
         try:
-            body = json.loads(raw)
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise HttpRequestError(
-                f"bridge returned HTTP {response.status} with a non-JSON body"
-            ) from error
+            body = json.loads(raw, parse_constant=reject_constant)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError):
+            raise HttpResponseError(
+                f"bridge returned HTTP {response.status} with a non-JSON body",
+                status=response.status,
+                reason_category="non_json_body",
+                declared_length=declared_size,
+                raw=raw,
+            ) from None
         if not isinstance(body, dict):
-            raise HttpRequestError("bridge JSON response must be an object")
+            raise HttpResponseError(
+                "bridge JSON response must be an object",
+                status=response.status,
+                reason_category="non_object_json",
+                declared_length=declared_size,
+                raw=raw,
+            )
         return HttpResponse(status=response.status, body=body)
 
     def get_json(self, path: str, query: dict[str, str] | None = None) -> HttpResponse:

@@ -5,6 +5,10 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
+import json
 import os
 import queue
 import re
@@ -16,7 +20,10 @@ import time
 from collections import deque
 from pathlib import Path
 
-_STARTUP_RE = re.compile(r"forwarding 127\.0\.0\.1:([0-9]+) -> home .+ over pl")
+_STARTUP_RE = re.compile(
+    r"forwarding 127\.0\.0\.1:([0-9]+) -> home .+ "
+    r"(via direct connection|via direct or relay|via relay only)"
+)
 _BUNDLE_FILES = (
     "private.pem",
     "cert.pem",
@@ -24,6 +31,13 @@ _BUNDLE_FILES = (
     "home_attestation.jwt",
     "peer.json",
 )
+_DEFAULT_CONVEY_PORT = 5015
+_MAX_CERT_PEM_BYTES = 64 * 1024
+_MAX_VERSION_OUTPUT = 512
+_MAX_PEER_JSON_BYTES = 64 * 1024
+_CERTIFICATE_BEGIN = b"-----BEGIN CERTIFICATE-----"
+_CERTIFICATE_END = b"-----END CERTIFICATE-----"
+_CERTIFICATE_BODY_RE = re.compile(rb"[A-Za-z0-9+/]+={0,2}")
 
 
 class LinkProcessError(RuntimeError):
@@ -47,9 +61,13 @@ class LinkBridge:
         self._solstone_bin = solstone_bin
         self._pair_code = pair_code
         self._state_dir = state_dir
+        if carrier not in {"direct", "relay"}:
+            raise LinkProcessError("carrier must be direct or relay")
         self._carrier = carrier
         self._relay_url = relay_url
-        self._convey_port = convey_port
+        self._convey_port, self._convey_port_source = self._resolve_convey_port(
+            convey_port
+        )
         self._startup_timeout = startup_timeout
         self._label = "journal-device-sim"
         self._xdg_dir = state_dir / "credentials"
@@ -58,18 +76,214 @@ class LinkBridge:
         self._lines: queue.Queue[str] = queue.Queue(maxsize=256)
         self._log: deque[str] = deque(maxlen=128)
         self._startup_complete = threading.Event()
+        self._resolved_solstone_bin: Path | None = None
+        self._native_provenance: dict[str, str | None] | None = None
+        self._credential_provenance: dict[str, object] | None = None
         self.base_url: str | None = None
 
     @property
     def credential_dir(self) -> Path:
         return self._xdg_dir
 
+    @property
+    def provenance(self) -> dict[str, object]:
+        """Return JSON-ready, non-secret provenance for run evidence."""
+
+        native = None
+        if self._native_provenance is not None:
+            native = dict(self._native_provenance)
+        credentials = None
+        if self._credential_provenance is not None:
+            credentials = {
+                "cert_pem_sha256": self._credential_provenance[
+                    "cert_pem_sha256"
+                ],
+                "client_cid": self._credential_provenance["client_cid"],
+                "peer": dict(self._credential_provenance["peer"]),
+            }
+        return {
+            "native_executable": native,
+            "convey": {
+                "port": self._convey_port,
+                "source": self._convey_port_source,
+            },
+            "credentials": credentials,
+        }
+
+    @staticmethod
+    def _resolve_convey_port(explicit: int | None) -> tuple[int, str]:
+        if explicit is not None:
+            if isinstance(explicit, bool) or not isinstance(explicit, int):
+                raise LinkProcessError(
+                    "Convey port must be an integer from 1 to 65535"
+                )
+            if not 1 <= explicit <= 65535:
+                raise LinkProcessError(
+                    "Convey port must be an integer from 1 to 65535"
+                )
+            return explicit, "explicit"
+        ambient = os.environ.get("SOLSTONE_CONVEY_PORT")
+        if ambient is None:
+            return _DEFAULT_CONVEY_PORT, "default"
+        if re.fullmatch(r"[0-9]+", ambient) is None:
+            raise LinkProcessError(
+                "SOLSTONE_CONVEY_PORT must be an integer from 1 to 65535"
+            )
+        try:
+            port = int(ambient)
+        except ValueError as error:
+            raise LinkProcessError(
+                "SOLSTONE_CONVEY_PORT must be an integer from 1 to 65535"
+            ) from error
+        if not 1 <= port <= 65535:
+            raise LinkProcessError(
+                "SOLSTONE_CONVEY_PORT must be an integer from 1 to 65535"
+            )
+        return port, "ambient"
+
     def _env(self) -> dict[str, str]:
         env = dict(os.environ)
         env["XDG_CONFIG_HOME"] = str(self._xdg_dir)
-        if self._convey_port is not None:
-            env["SOLSTONE_CONVEY_PORT"] = str(self._convey_port)
+        env["SOLSTONE_CONVEY_PORT"] = str(self._convey_port)
         return env
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        try:
+            with path.open("rb") as handle:
+                while chunk := handle.read(1024 * 1024):
+                    digest.update(chunk)
+        except OSError as error:
+            raise LinkProcessError(
+                f"provenance file could not be read: {type(error).__name__}"
+            ) from error
+        return digest.hexdigest()
+
+    @staticmethod
+    def _certificate_der(path: Path) -> bytes:
+        """Decode one bounded certificate PEM to its exact DER bytes."""
+
+        try:
+            metadata = path.stat()
+            if metadata.st_size > _MAX_CERT_PEM_BYTES:
+                raise LinkProcessError("credential cert.pem is too large")
+            pem = path.read_bytes()
+        except LinkProcessError:
+            raise
+        except OSError as error:
+            raise LinkProcessError(
+                f"credential cert.pem could not be read: {type(error).__name__}"
+            ) from error
+        lines = pem.splitlines()
+        if (
+            len(lines) < 3
+            or lines[0] != _CERTIFICATE_BEGIN
+            or lines[-1] != _CERTIFICATE_END
+        ):
+            raise LinkProcessError("credential cert.pem is invalid")
+        body_lines = lines[1:-1]
+        if any(
+            len(line) > 64 or _CERTIFICATE_BODY_RE.fullmatch(line) is None
+            for line in body_lines
+        ):
+            raise LinkProcessError("credential cert.pem is invalid")
+        if any(b"=" in line for line in body_lines[:-1]):
+            raise LinkProcessError("credential cert.pem is invalid")
+        encoded = b"".join(body_lines)
+        if len(encoded) % 4 != 0:
+            raise LinkProcessError("credential cert.pem is invalid")
+        try:
+            certificate_der = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise LinkProcessError("credential cert.pem is invalid") from error
+        if not LinkBridge._is_single_der_sequence(certificate_der):
+            raise LinkProcessError("credential cert.pem is invalid")
+        return certificate_der
+
+    @staticmethod
+    def _is_single_der_sequence(value: bytes) -> bool:
+        if len(value) < 2 or value[0] != 0x30:
+            return False
+        first_length = value[1]
+        if first_length < 0x80:
+            header_length = 2
+            content_length = first_length
+        else:
+            length_octets = first_length & 0x7F
+            if (
+                length_octets == 0
+                or length_octets > 4
+                or len(value) < 2 + length_octets
+            ):
+                return False
+            encoded_length = value[2 : 2 + length_octets]
+            if encoded_length[0] == 0:
+                return False
+            content_length = int.from_bytes(encoded_length, "big")
+            if content_length < 0x80:
+                return False
+            header_length = 2 + length_octets
+        return header_length + content_length == len(value)
+
+    @classmethod
+    def _client_cid(cls, path: Path) -> str:
+        certificate_der = cls._certificate_der(path)
+        return f"sha256:{hashlib.sha256(certificate_der).hexdigest()}"
+
+    def _version_output(self, executable: Path) -> str | None:
+        try:
+            result = subprocess.run(
+                [str(executable), "--version"],
+                env=self._env(),
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=min(max(self._startup_timeout, 0.1), 5.0),
+            )
+        except (OSError, subprocess.TimeoutExpired, UnicodeError):
+            return None
+        if result.returncode != 0:
+            return None
+        output = result.stdout.strip()
+        if not output:
+            return None
+        return output[:_MAX_VERSION_OUTPUT]
+
+    def _native_executable(self) -> str:
+        if self._resolved_solstone_bin is None:
+            found = shutil.which(self._solstone_bin)
+            if found is None:
+                raise LinkProcessError("solstone executable could not be resolved")
+            try:
+                resolved = Path(found).resolve(strict=True)
+                metadata = resolved.stat()
+            except OSError as error:
+                raise LinkProcessError(
+                    f"solstone executable could not be resolved: {type(error).__name__}"
+                ) from error
+            if not stat.S_ISREG(metadata.st_mode):
+                raise LinkProcessError("solstone executable is not a regular file")
+            digest = self._sha256(resolved)
+            version = self._version_output(resolved)
+            if self._sha256(resolved) != digest:
+                raise LinkProcessError(
+                    "solstone executable changed while provenance was captured"
+                )
+            self._resolved_solstone_bin = resolved
+            self._native_provenance = {
+                "path": str(resolved),
+                "sha256": digest,
+                "version": version,
+            }
+            return str(resolved)
+        digest = self._sha256(self._resolved_solstone_bin)
+        assert self._native_provenance is not None
+        if digest != self._native_provenance["sha256"]:
+            raise LinkProcessError(
+                "solstone executable changed after provenance was captured"
+            )
+        return str(self._resolved_solstone_bin)
 
     def _bundle_dir(self) -> Path:
         return self._xdg_dir / "solstone-observer" / "spl" / self._label
@@ -133,6 +347,31 @@ class LinkBridge:
                 raise LinkProcessError(
                     "credential bundle files must be non-empty regular files"
                 )
+        peer_path = self._bundle_dir() / "peer.json"
+        try:
+            if peer_path.stat().st_size > _MAX_PEER_JSON_BYTES:
+                raise LinkProcessError("credential peer.json is too large")
+            peer = json.loads(peer_path.read_text(encoding="utf-8"))
+        except LinkProcessError:
+            raise
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise LinkProcessError("credential peer.json is invalid") from error
+        if not isinstance(peer, dict):
+            raise LinkProcessError("credential peer.json is invalid")
+        instance_id = peer.get("instance_id")
+        home_label = peer.get("home_label")
+        if not isinstance(instance_id, str) or not instance_id:
+            raise LinkProcessError("credential peer.json instance_id is missing")
+        if not isinstance(home_label, str):
+            raise LinkProcessError("credential peer.json home_label is invalid")
+        self._credential_provenance = {
+            "cert_pem_sha256": self._sha256(self._bundle_dir() / "cert.pem"),
+            "client_cid": self._client_cid(self._bundle_dir() / "cert.pem"),
+            "peer": {
+                "instance_id": instance_id,
+                "home_label": home_label,
+            },
+        }
 
     def _prepare_credential_root(self) -> None:
         try:
@@ -173,7 +412,7 @@ class LinkBridge:
             )
         self._prepare_credential_root()
         command = [
-            self._solstone_bin,
+            self._native_executable(),
             "link",
             "join",
             "--code",
@@ -226,7 +465,7 @@ class LinkBridge:
     def start(self) -> str:
         self.ensure_paired()
         command = [
-            self._solstone_bin,
+            self._native_executable(),
             "link",
             "serve",
             "--label",
@@ -236,8 +475,12 @@ class LinkBridge:
         ]
         if self._carrier == "direct":
             command.append("--direct")
-        elif self._relay_url:
-            command.extend(["--relay-url", self._relay_url])
+            expected_policy = "via direct connection"
+        else:
+            command.append("--relay-only")
+            expected_policy = "via relay only"
+            if self._relay_url:
+                command.extend(["--relay-url", self._relay_url])
         try:
             self._process = subprocess.Popen(
                 command,
@@ -272,6 +515,10 @@ class LinkBridge:
                 continue
             match = _STARTUP_RE.fullmatch(line)
             if match:
+                if match.group(2) != expected_policy:
+                    raise LinkProcessError(
+                        "solstone link serve reported an unexpected carrier policy"
+                    )
                 self._startup_complete.set()
                 self.base_url = f"http://127.0.0.1:{int(match.group(1))}"
                 return self.base_url
