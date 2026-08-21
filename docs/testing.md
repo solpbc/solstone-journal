@@ -2,9 +2,10 @@
 
 ## Test Structure
 
-⚠ **There is no Python test suite.** It went with the Python reference cut, along with
-`tests/conftest.py` and the `pytest` markers this section used to describe. `tests/` now holds
-`tests/fixtures/journal/` and nothing else executable.
+⚠ **There is no Python product test suite.** It went with the Python reference cut, along with
+`tests/conftest.py` and the `pytest` markers this section used to describe. The repository-local
+device simulator has a small dependency-free `unittest` suite under
+`tools/journal_device_sim/tests/`; run it with `make check-journal-device-sim`.
 
 - **Framework**: Cargo, for the native Rust workspace
 - **Unit Tests**: live beside their crate, under `core/crates/<crate>/src/` and `core/crates/<crate>/tests/`
@@ -33,6 +34,7 @@ test that writes, scans, or rebuilds journal/index state must use the
 ## Running Tests
 
 - `make test` runs the Rust workspace tests only
+- `make check-journal-device-sim` runs the dependency-free simulator unit and fake-bridge tests
 - Per the [Makefile](../Makefile), `make ci` runs the routine code-focused lane:
   formatting, the CI-topology contract, library/binary Clippy checks, and
   serialized library/binary unit tests. Four library harnesses,
