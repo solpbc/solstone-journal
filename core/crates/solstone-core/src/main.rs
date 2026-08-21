@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::fs;
-use std::io::{self, BufRead, BufReader, IsTerminal, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::ExitCode;
 use std::sync::mpsc;
 use std::thread;
@@ -23,26 +23,25 @@ use solstone_core_cli::{
     CHECK_USAGE, CONFIG_HELP, CONFIG_USAGE, CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE,
     CONTRACT_CHECK_HELP, CONTRACT_CHECK_USAGE, CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP,
     CONVEY_USAGE, CORTEX_HELP, CORTEX_USAGE, CogitateCommand, Command, ContractCommand,
-    ConveyOptions, ENGAGE_HELP, ENGAGE_USAGE, EXPORT_HELP, EXPORT_USAGE, ExportOptions,
-    FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand,
-    GenerateSessionOptions, GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP,
-    HEARTBEAT_USAGE, IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP,
-    IDENTITY_HEALTH_USAGE, IDENTITY_HELP, IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE,
-    IDENTITY_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP,
-    INSTALL_PROVIDER_USAGE, IndexerCommand, IndexerCountsOptions, IndexerFoldEntityEdgesOptions,
-    IndexerOptions, IndexerPrunePathsOptions, IndexerPruneStreamOptions, IndexerQueryOptions,
-    IndexerReadOptions, IndexerSearchOptions, InstallCommand, JournalBrainOwnerCommand,
-    JournalConfigCommand, JournalConfigCommitOptions, JournalConfigExpectArg,
-    JournalConfigReadOptions, JournalPathOptions, LocalCommand, NAVIGATE_HELP, NAVIGATE_USAGE,
-    OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE, OBSERVER_USAGE, RESTART_CONVEY_HELP,
-    RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
-    SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
-    SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP,
-    SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
-    ServiceOptions, ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand,
-    TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, TranscribeOptions,
-    TransferCommand, TransferExportOptions, TransferImportOptions, TransferSendOptions, USAGE,
-    evaluate_args, render_service_diagnostic, version_line,
+    ConveyOptions, ENGAGE_HELP, ENGAGE_USAGE, FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE,
+    GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions,
+    HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE, IDENTITY_BRIEFING_HELP,
+    IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP,
+    IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, INSTALL_MODELS_HELP,
+    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, IndexerCommand,
+    IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
+    IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
+    InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
+    JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand,
+    NAVIGATE_HELP, NAVIGATE_USAGE, OBSERVER_HELP, OBSERVER_PRUNE_HELP, OBSERVER_PRUNE_USAGE,
+    OBSERVER_USAGE, RESTART_CONVEY_HELP, RESTART_CONVEY_USAGE, RestartConveyOptions, SCHEDULE_HELP,
+    SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE,
+    SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP,
+    START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
+    SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome, SettingsParseError,
+    SpeakerResolveCommand, SplCommand, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE,
+    TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferSendOptions, USAGE, evaluate_args,
+    render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod brain_owner;
@@ -227,7 +226,7 @@ fn main() -> ExitCode {
         },
         Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Transfer(command)) => run_transfer(command),
-        Ok(Command::Export(options)) => run_export(options),
+        Ok(Command::RetiredMover(message)) => run_retired_mover(message),
         Ok(Command::Transcribe(options)) => run_transcribe(options),
         Ok(Command::Think(args)) => run_storage_ops_verb("think", args, |arguments, journal| {
             let run = solstone_core_think_cli::run_cli(arguments, journal);
@@ -475,10 +474,6 @@ fn main() -> ExitCode {
             print!("{text}");
             ExitCode::SUCCESS
         }
-        Ok(Command::ExportHelp) => {
-            print!("{EXPORT_HELP}");
-            ExitCode::SUCCESS
-        }
         Ok(Command::TranscribeHelp) => {
             print!("{TRANSCRIBE_HELP}");
             ExitCode::SUCCESS
@@ -486,11 +481,6 @@ fn main() -> ExitCode {
         Ok(Command::FacetCandidatesHelp) => {
             print!("{FACET_CANDIDATES_HELP}");
             ExitCode::SUCCESS
-        }
-        Ok(Command::ExportUsage) => {
-            eprint!("{EXPORT_USAGE}");
-            eprintln!("journal export: error: invalid arguments");
-            ExitCode::from(2)
         }
         Ok(Command::TransferUsage) => {
             eprint!("{TRANSFER_USAGE}");
@@ -914,63 +904,34 @@ fn run_facet_candidates() -> ExitCode {
     facet_candidates::run(&journal.path)
 }
 
-fn run_export(options: ExportOptions) -> ExitCode {
-    if options.to.starts_with("http://") || options.to.starts_with("https://") {
-        eprintln!(
-            "journal export: error: Sending to a URL with a key is retired. Use '--to <label>' to send to a paired peer."
-        );
-        return ExitCode::from(2);
+fn run_retired_mover(message: &str) -> ExitCode {
+    eprintln!("{message}");
+    ExitCode::from(2)
+}
+
+fn run_transfer(command: TransferCommand) -> ExitCode {
+    match command {
+        TransferCommand::RetiredMover(message) => run_retired_mover(message),
+        TransferCommand::Send(options) => run_transfer_send(options),
     }
-    if options.key.is_some() {
-        eprintln!("journal export: error: '--key' is retired; use '--to <label>' without '--key'");
-        return ExitCode::from(2);
-    }
+}
+
+fn run_transfer_send(options: TransferSendOptions) -> ExitCode {
     let journal = match resolve_indexer_journal_path(options.journal_override) {
         Ok(line) => line.path,
         Err(error) => return print_journal_error(error),
     };
-    let requested_all = requested_export_areas_are_full(options.only.as_deref());
-    let to = options.to.clone();
     match solstone_core_transfer::peer_export(
         &journal,
         solstone_core_transfer::PeerExportRequest {
-            to,
+            to: options.to,
             only: options.only,
             day: options.day,
             dry_run: options.dry_run,
         },
     ) {
         Ok(report) => {
-            print_export_summary(&report);
-            if !options.dry_run
-                && requested_all
-                && !report.any_failed
-                && io::stdin().is_terminal()
-                && let Ok(peer) = solstone_core_transfer::resolve_peer(&journal, &options.to)
-            {
-                print!("Unpair \"{}\" now? (y/N) ", peer.label);
-                let _ = io::stdout().flush();
-                let mut answer = String::new();
-                if io::stdin().read_line(&mut answer).is_ok()
-                    && answer.trim().eq_ignore_ascii_case("y")
-                {
-                    match solstone_core_transfer::unpair_peer(&journal, &peer) {
-                        Ok(solstone_core_transfer::UnpairOutcome::Unpaired) => {
-                            println!("Unpaired \"{}\".", peer.label)
-                        }
-                        Ok(solstone_core_transfer::UnpairOutcome::Rejected { status, body }) => {
-                            println!(
-                                "Failed to unpair \"{}\": HTTP {status}: {}",
-                                peer.label,
-                                String::from_utf8_lossy(&body[..body.len().min(200)])
-                            )
-                        }
-                        Err(error) => println!("Failed to unpair \"{}\": {error}", peer.label),
-                    }
-                } else {
-                    println!("Keeping peer \"{}\".", peer.label);
-                }
-            }
+            print_peer_export_summary(&report);
             if report.any_failed {
                 ExitCode::from(1)
             } else {
@@ -984,31 +945,19 @@ fn run_export(options: ExportOptions) -> ExitCode {
                 _ => 2,
             };
             let message = match error {
-                solstone_core_transfer::TransferError::InvalidExportAreas => "--only must contain one or more of: config, entities, facets, imports, segments".to_string(),
+                solstone_core_transfer::TransferError::InvalidExportAreas => {
+                    "--only must contain one or more of: config, entities, facets, imports, segments"
+                        .to_string()
+                }
                 _ => error.to_string(),
             };
-            eprintln!("journal export: error: {message}");
+            eprintln!("journal transfer send: error: {message}");
             ExitCode::from(exit)
         }
     }
 }
 
-fn requested_export_areas_are_full(only: Option<&str>) -> bool {
-    let Some(only) = only else {
-        return true;
-    };
-    let areas = only
-        .split(',')
-        .map(str::trim)
-        .filter(|area| !area.is_empty())
-        .collect::<std::collections::BTreeSet<_>>();
-    areas
-        == ["config", "entities", "facets", "imports", "segments"]
-            .into_iter()
-            .collect()
-}
-
-fn print_export_summary(report: &solstone_core_transfer::PeerExportReport) {
+fn print_peer_export_summary(report: &solstone_core_transfer::PeerExportReport) {
     println!("\n--- Export Summary ---");
     for result in &report.results {
         if let Some(error) = &result.error {
@@ -1036,180 +985,6 @@ fn print_export_summary(report: &solstone_core_transfer::PeerExportReport) {
         }
         println!("  {}: {}", result.area, parts.join(", "));
     }
-}
-
-fn run_transfer(command: TransferCommand) -> ExitCode {
-    match command {
-        TransferCommand::Export(options) => run_transfer_export(options),
-        TransferCommand::Import(options) => run_transfer_import(options),
-        TransferCommand::Send(options) => run_transfer_send(options),
-    }
-}
-
-fn run_transfer_send(options: TransferSendOptions) -> ExitCode {
-    let journal = match resolve_indexer_journal_path(options.journal_override) {
-        Ok(line) => line.path,
-        Err(error) => return print_journal_error(error),
-    };
-    let dry_run = options.dry_run;
-    match solstone_core_transfer::send(
-        &journal,
-        solstone_core_transfer::SendRequest {
-            to: options.to,
-            day: options.day,
-            dry_run,
-        },
-    ) {
-        Ok(report) => match report.terminal {
-            solstone_core_transfer::SendTerminal::AuthenticationInvalid => {
-                println!("Authentication failed: invalid or missing paired-link identity");
-                ExitCode::SUCCESS
-            }
-            solstone_core_transfer::SendTerminal::AuthenticationRevoked => {
-                println!("Authentication failed: paired-link identity revoked or disabled");
-                ExitCode::SUCCESS
-            }
-            solstone_core_transfer::SendTerminal::Complete => {
-                print_transfer_send_report(&report, dry_run);
-                ExitCode::SUCCESS
-            }
-        },
-        Err(error) => {
-            eprintln!("transfer send failed: {error}");
-            ExitCode::from(match error {
-                solstone_core_transfer::TransferError::NoPeersPaired
-                | solstone_core_transfer::TransferError::PeerNotFound { .. }
-                | solstone_core_transfer::TransferError::AmbiguousPeer { .. } => 2,
-                solstone_core_transfer::TransferError::CredentialLoad(_)
-                | solstone_core_transfer::TransferError::InvalidDay => EXIT_DATAERR,
-                solstone_core_transfer::TransferError::Transport(_)
-                | solstone_core_transfer::TransferError::Bridge(_) => EXIT_IOERR,
-                _ => EXIT_IOERR,
-            })
-        }
-    }
-}
-
-fn print_transfer_send_report(report: &solstone_core_transfer::SendReport, dry_run: bool) {
-    let total = report.sent + report.skipped + report.failed;
-    if total == 0 {
-        println!("No segments found to transfer");
-    } else if dry_run {
-        println!(
-            "\nDry run: would send {}, skip {}",
-            report.sent, report.skipped
-        );
-    } else {
-        println!(
-            "\nTransfer complete: {} sent, {} skipped, {} failed, {} bytes transferred",
-            report.sent, report.skipped, report.failed, report.bytes_transferred
-        );
-        if report.sent == 0 && report.skipped > 0 && report.failed == 0 {
-            println!("Nothing to send - remote is up to date");
-        }
-    }
-}
-
-fn run_transfer_export(options: TransferExportOptions) -> ExitCode {
-    let journal = match resolve_indexer_journal_path(options.journal_override) {
-        Ok(line) => line.path,
-        Err(error) => return print_journal_error(error),
-    };
-    match solstone_core_transfer::export(
-        &journal,
-        solstone_core_transfer::ExportRequest {
-            day: options.day,
-            output: PathBuf::from(options.output),
-        },
-    ) {
-        Ok(report) => {
-            println!(
-                "exported day={} segments={} files={} output={}",
-                report.day,
-                report.segments,
-                report.files,
-                report.output.display()
-            );
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            eprintln!("transfer export failed: {error}");
-            ExitCode::from(match error {
-                solstone_core_transfer::TransferError::MissingDay(_)
-                | solstone_core_transfer::TransferError::NoSegments(_) => 2,
-                solstone_core_transfer::TransferError::InvalidDay
-                | solstone_core_transfer::TransferError::Manifest(_) => EXIT_DATAERR,
-                _ => EXIT_IOERR,
-            })
-        }
-    }
-}
-
-fn run_transfer_import(options: TransferImportOptions) -> ExitCode {
-    let journal = match resolve_indexer_journal_path(options.journal_override) {
-        Ok(line) => line.path,
-        Err(error) => return print_journal_error(error),
-    };
-    match solstone_core_transfer::import(
-        &journal,
-        solstone_core_transfer::ImportRequest {
-            archive: PathBuf::from(options.archive),
-            dry_run: options.dry_run,
-        },
-    ) {
-        Ok(report) => {
-            print_transfer_import_report(&report);
-            ExitCode::SUCCESS
-        }
-        Err(solstone_core_transfer::ImportError::Partial { report, reason }) => {
-            print_transfer_import_report(&report);
-            eprintln!("transfer import failed: {reason}");
-            ExitCode::from(EXIT_IOERR)
-        }
-        Err(solstone_core_transfer::ImportError::Fatal(error)) => {
-            eprintln!("transfer import failed: {error}");
-            ExitCode::from(match error {
-                solstone_core_transfer::TransferError::InvalidDay
-                | solstone_core_transfer::TransferError::Manifest(_)
-                | solstone_core_transfer::TransferError::ArchiveMember(_)
-                | solstone_core_transfer::TransferError::ContentMismatch(_) => EXIT_DATAERR,
-                _ => EXIT_IOERR,
-            })
-        }
-    }
-}
-
-fn print_transfer_import_report(report: &solstone_core_transfer::ImportReport) {
-    for outcome in &report.outcomes {
-        match outcome {
-            solstone_core_transfer::SegmentOutcome::Landed { source, target } => {
-                println!("{source}: landed={target}");
-            }
-            solstone_core_transfer::SegmentOutcome::LandedDeconflicted { source, target } => {
-                println!("{source}: landed-deconflicted={target}");
-            }
-            solstone_core_transfer::SegmentOutcome::SkippedAlreadySynced { source } => {
-                println!("{source}: skipped-already-synced");
-            }
-            solstone_core_transfer::SegmentOutcome::Failed { source, reason } => {
-                println!("{source}: failed={reason}");
-            }
-            solstone_core_transfer::SegmentOutcome::NotAttempted { source } => {
-                println!("{source}: not-attempted");
-            }
-        }
-    }
-    println!(
-        "day={} dry-run={} landed={} skipped={} deconflicted={} failed={} not-attempted={} rescan={}",
-        report.day,
-        report.dry_run,
-        report.landed(),
-        report.skipped(),
-        report.deconflicted(),
-        report.failed(),
-        report.not_attempted(),
-        report.rescan.as_str(),
-    );
 }
 
 fn run_convey(options: ConveyOptions) -> ExitCode {
@@ -5612,23 +5387,6 @@ mod tests {
     };
 
     use super::*;
-
-    #[test]
-    fn export_prompt_requires_the_full_area_set() {
-        assert!(requested_export_areas_are_full(None));
-        assert!(requested_export_areas_are_full(Some(
-            "segments,imports,entities,facets,config"
-        )));
-        assert!(requested_export_areas_are_full(Some(
-            " config , entities , facets , imports , segments "
-        )));
-        assert!(!requested_export_areas_are_full(Some(
-            "segments,imports,entities,facets"
-        )));
-        assert!(requested_export_areas_are_full(Some(
-            "segments,segments,imports,entities,facets,config"
-        )));
-    }
 
     struct FailingWriter;
 

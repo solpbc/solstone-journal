@@ -17,6 +17,7 @@ unicode-general-category.workspace = true
 solstone-core-format.workspace = true
 solstone-core-operational-logs.workspace = true
 solstone-core-system-health.workspace = true
+solstone-core-cli-boundary.workspace = true
 
 [dev-dependencies]
 serde.workspace = true

@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -16,7 +17,6 @@ use solstone_core_journal_io::{PathOrDay, iter_segments};
 use solstone_core_transfer_manifest::{ManifestFile, SegmentManifest};
 
 use crate::TransferError;
-use crate::export::hash_file;
 use crate::peer::resolve_peer;
 use crate::peer::{
     MultipartFile, PeerHttpResponse, PeerLoopbackClient, multipart_body, with_peer_bridge,
@@ -613,6 +613,23 @@ fn segment_files(segment: &Path) -> Result<Vec<PathBuf>, TransferError> {
     files.sort();
     Ok(files)
 }
+
+fn hash_file(path: &Path) -> Result<(String, u64), TransferError> {
+    let mut source = fs::File::open(path)?;
+    let mut digest = Sha256::new();
+    let mut size = 0_u64;
+    let mut buffer = [0_u8; 65_536];
+    loop {
+        let read = source.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+        size += read as u64;
+    }
+    Ok((format!("{:x}", digest.finalize()), size))
+}
+
 fn segment_manifest_matches(local: &SegmentManifest, remote: Option<&SegmentManifest>) -> bool {
     local
         .files
@@ -774,7 +791,19 @@ fn sha256(value: &str) -> String {
     format!("{:x}", Sha256::digest(value.as_bytes()))
 }
 fn strip_never_transfer(config: &mut Value) {
-    for path in ["convey.password_hash", "convey.secret"] {
+    for path in [
+        "env.OPENAI_API_KEY",
+        "env.ANTHROPIC_API_KEY",
+        "env.GOOGLE_API_KEY",
+        "env.PLAUD_ACCESS_TOKEN",
+        "convey.password_hash",
+        "convey.secret",
+        "backup.destination.credentials",
+        "backup.daily_key",
+        "backup.recovery_key",
+        "voice.openai_api_key",
+        "pairing.home_address",
+    ] {
         remove_path(config, &path.split('.').collect::<Vec<_>>());
     }
 }
@@ -922,9 +951,41 @@ mod tests {
 
     #[test]
     fn filters_secret_paths_structurally() {
-        let mut value = json!({"convey": {"password_hash": "secret", "secret": "token", "other_field": "keep"}});
+        let mut value = json!({
+            "env": {
+                "OPENAI_API_KEY": "secret",
+                "ANTHROPIC_API_KEY": "secret",
+                "GOOGLE_API_KEY": "secret",
+                "PLAUD_ACCESS_TOKEN": "secret",
+                "other_field": "keep"
+            },
+            "convey": {
+                "password_hash": "secret",
+                "secret": "token",
+                "bind": "127.0.0.1",
+                "other_field": "keep"
+            },
+            "backup": {
+                "destination": {"credentials": {"token": "secret"}, "url": "keep"},
+                "daily_key": "secret",
+                "recovery_key": "secret"
+            },
+            "voice": {"openai_api_key": "secret", "provider": "keep"},
+            "pairing": {"home_address": "secret", "label": "keep"},
+            "identity": {"name": "Keep"}
+        });
         strip_never_transfer(&mut value);
-        assert_eq!(value, json!({"convey": {"other_field": "keep"}}));
+        assert_eq!(
+            value,
+            json!({
+                "env": {"other_field": "keep"},
+                "convey": {"bind": "127.0.0.1", "other_field": "keep"},
+                "backup": {"destination": {"url": "keep"}},
+                "voice": {"provider": "keep"},
+                "pairing": {"label": "keep"},
+                "identity": {"name": "Keep"}
+            })
+        );
     }
 
     #[test]

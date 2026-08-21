@@ -11,7 +11,6 @@ publish = false
 
 [dependencies]
 chrono.workspace = true
-flate2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -22,8 +21,6 @@ solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-transfer-manifest.workspace = true
 solstone-core-entity.workspace = true
-tar.workspace = true
-tempfile = "3.24.0"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "rt-multi-thread", "sync", "time"] }
 ureq.workspace = true

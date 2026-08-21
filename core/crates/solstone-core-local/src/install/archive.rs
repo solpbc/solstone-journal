@@ -8,7 +8,8 @@ use flate2::read::GzDecoder;
 
 pub use solstone_core_artifact_download::{
     ArchiveError, DownloadHostPolicy, PRODUCTION_DOWNLOAD_POLICY, clear_macos_quarantine,
-    download_verified, download_verified_origin, make_executable, origin_url, verify_sha256,
+    download_verified, download_verified_origin, ensure_verified_url, make_executable, origin_url,
+    verify_sha256,
 };
 
 pub fn extract_tar_gz(archive: &Path, destination: &Path) -> Result<(), ArchiveError> {

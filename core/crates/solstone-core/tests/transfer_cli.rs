@@ -1,18 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs;
 use std::process::Command;
 
 #[test]
-fn direct_binary_exports_then_imports_a_segment() {
-    let source = tempfile::tempdir().expect("source journal");
-    let destination = tempfile::tempdir().expect("destination journal");
-    let segment = source.path().join("chronicle/20260203/audio/120000_30");
-    fs::create_dir_all(&segment).expect("segment");
-    fs::write(segment.join("stream.json"), b"stream").expect("stream");
-    fs::write(segment.join("device.json"), b"device").expect("device");
-    let archive = source.path().join("transfer.tgz");
+fn direct_binary_transfer_export_and_import_are_tombstoned_without_archive_io() {
+    let journal = tempfile::tempdir().expect("journal");
+    let archive = journal.path().join("transfer.tgz");
     let binary = env!("CARGO_BIN_EXE_solstone-core");
 
     let export = Command::new(binary)
@@ -24,15 +18,14 @@ fn direct_binary_exports_then_imports_a_segment() {
             "--output",
             archive.to_str().expect("archive path"),
             "--journal",
-            source.path().to_str().expect("source path"),
+            journal.path().to_str().expect("journal path"),
         ])
         .output()
         .expect("export command");
-    assert!(
-        export.status.success(),
-        "{}",
-        String::from_utf8_lossy(&export.stderr)
-    );
+    assert_eq!(export.status.code(), Some(2));
+    assert!(export.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&export.stderr).contains("journal archive export"));
+    assert!(!archive.exists(), "tombstone must not create an archive");
 
     let import = Command::new(binary)
         .args([
@@ -41,35 +34,21 @@ fn direct_binary_exports_then_imports_a_segment() {
             "--archive",
             archive.to_str().expect("archive path"),
             "--journal",
-            destination.path().to_str().expect("destination path"),
+            journal.path().to_str().expect("journal path"),
         ])
         .output()
         .expect("import command");
-    assert!(
-        import.status.success(),
-        "{}",
-        String::from_utf8_lossy(&import.stderr)
-    );
-    assert_eq!(
-        fs::read(
-            destination
-                .path()
-                .join("chronicle/20260203/audio/120000_30/device.json")
-        )
-        .expect("imported file"),
-        b"device"
-    );
+    assert_eq!(import.status.code(), Some(2));
+    assert!(import.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&import.stderr).contains("journal archive merge"));
 }
 
 #[test]
-fn export_refusals_for_missing_or_empty_day_exit_two() {
+fn transfer_export_tombstone_replaces_former_argument_validation() {
     let journal = tempfile::tempdir().expect("journal");
     let output = journal.path().join("archive.tgz");
     let binary = env!("CARGO_BIN_EXE_solstone-core");
     for day in ["20260203", "20260204"] {
-        if day == "20260204" {
-            fs::create_dir_all(journal.path().join("chronicle").join(day)).expect("empty day");
-        }
         let result = Command::new(binary)
             .args([
                 "transfer",
@@ -89,33 +68,16 @@ fn export_refusals_for_missing_or_empty_day_exit_two() {
             "{}",
             String::from_utf8_lossy(&result.stderr)
         );
+        assert!(String::from_utf8_lossy(&result.stderr).contains("journal archive export"));
     }
+    assert!(!output.exists(), "tombstone must not create an archive");
 }
 
 #[test]
-fn direct_binary_import_dry_run_marks_its_summary() {
-    let source = tempfile::tempdir().expect("source journal");
-    let destination = tempfile::tempdir().expect("destination journal");
-    let segment = source.path().join("chronicle/20260203/audio/120000_30");
-    fs::create_dir_all(&segment).expect("segment");
-    fs::write(segment.join("device.json"), b"device").expect("device");
-    let archive = source.path().join("transfer.tgz");
+fn direct_binary_transfer_import_dry_run_is_tombstoned_without_reading_archive() {
+    let journal = tempfile::tempdir().expect("journal");
+    let archive = journal.path().join("missing.tgz");
     let binary = env!("CARGO_BIN_EXE_solstone-core");
-
-    let export = Command::new(binary)
-        .args([
-            "transfer",
-            "export",
-            "--day",
-            "20260203",
-            "--output",
-            archive.to_str().expect("archive path"),
-            "--journal",
-            source.path().to_str().expect("source path"),
-        ])
-        .output()
-        .expect("export command");
-    assert!(export.status.success());
 
     let import = Command::new(binary)
         .args([
@@ -125,18 +87,15 @@ fn direct_binary_import_dry_run_marks_its_summary() {
             archive.to_str().expect("archive path"),
             "--dry-run",
             "--journal",
-            destination.path().to_str().expect("destination path"),
+            journal.path().to_str().expect("journal path"),
         ])
         .output()
         .expect("import command");
+    assert_eq!(import.status.code(), Some(2));
+    assert!(import.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&import.stderr).contains("journal archive merge"));
     assert!(
-        import.status.success(),
-        "{}",
-        String::from_utf8_lossy(&import.stderr)
-    );
-    assert!(
-        String::from_utf8_lossy(&import.stdout).contains("dry-run=true"),
-        "{}",
-        String::from_utf8_lossy(&import.stdout)
+        !archive.exists(),
+        "tombstone must not read or create an archive"
     );
 }

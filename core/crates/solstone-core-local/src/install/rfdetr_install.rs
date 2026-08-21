@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use solstone_core_assets::{Artifact, Backend, Platform};
 use thiserror::Error;
 
-use super::{archive, download_artifact, fit_report, select_artifact};
+use super::{archive, download_artifact, ensure_verified, fit_report, select_artifact};
 
 const ENGINE_UNIT: &str = "rfdetr-engine";
 const MODEL_UNIT: &str = "rfdetr-model";
@@ -229,7 +229,7 @@ fn remove_archive(path: PathBuf) {
     )));
 }
 
-fn cleanup(journal: &Path, engine: &Artifact) {
+fn cleanup(journal: &Path, engine: &Artifact, model: &Artifact) {
     let binary = binary_path(journal);
     let _ = fs::remove_file(&binary);
     let _ = fs::remove_file(binary.with_file_name(format!("{BINARY}.tmp")));
@@ -238,9 +238,11 @@ fn cleanup(journal: &Path, engine: &Artifact) {
     }
     remove_archive(tarball_for(journal, engine));
     let _ = fs::remove_dir_all(extract_path(journal));
-    let model = model_path(journal);
-    let _ = fs::remove_file(&model);
-    let _ = fs::remove_file(model.with_file_name(format!("{MODEL_FILE}.tmp")));
+    let model_path = model_path(journal);
+    if verify(&model_path, model.sha256, None, MODEL_FILE).is_err() {
+        let _ = fs::remove_file(&model_path);
+    }
+    let _ = fs::remove_file(model_path.with_file_name(format!("{MODEL_FILE}.tmp")));
     let _ = fs::remove_file(sidecar_path(journal));
 }
 fn find_binary(root: &Path) -> Option<PathBuf> {
@@ -412,7 +414,7 @@ fn install_rfdetr_with_policy_and_report(
     if report.overall() == fit_report::FitSeverity::Warning {
         log::warn!("rf-detr.cpp host fit warning:\n{rendered}");
     }
-    cleanup(journal, engine);
+    cleanup(journal, engine, model);
     let result = (|| {
         let archive_path = tarball_for(journal, engine);
         download_artifact(engine, &archive_path, policy, |_, _| {}, "download_failed")
@@ -464,7 +466,7 @@ fn install_rfdetr_with_policy_and_report(
             .map_err(|error| RfdetrInstallError::new("install_failed", error.to_string(), 74))?;
         let _ = fs::remove_dir_all(&extract);
         let _ = fs::remove_file(&archive_path);
-        download_artifact(
+        ensure_verified(
             model,
             &model_path(journal),
             policy,
@@ -477,7 +479,7 @@ fn install_rfdetr_with_policy_and_report(
         Ok(record)
     })();
     if result.is_err() {
-        cleanup(journal, engine);
+        cleanup(journal, engine, model);
     }
     result
 }

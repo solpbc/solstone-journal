@@ -4,6 +4,8 @@
 use std::ffi::{OsStr, OsString};
 use std::process::ExitCode;
 
+use solstone_core_cli_boundary::JOURNAL_EXPORT_TOMBSTONE;
+
 pub mod help;
 mod host;
 mod layout;
@@ -33,6 +35,7 @@ pub enum JournalCommand {
         rest: Vec<OsString>,
         verbose: bool,
     },
+    RetiredExport,
     DottedModule,
     Unknown,
 }
@@ -134,6 +137,9 @@ pub fn evaluate_args(args: &[OsString]) -> JournalCommand {
             JournalCommand::Unknown
         };
     }
+    if first == OsStr::new("export") {
+        return JournalCommand::RetiredExport;
+    }
     let Some(value) = first.to_str() else {
         return JournalCommand::Unknown;
     };
@@ -218,6 +224,11 @@ pub fn dispatch(command: JournalCommand, spawner: &dyn ProcessSpawner) -> Outcom
             None => dispatch_process(token, &rest, verbose, spawner),
         },
         JournalCommand::Local { token, rest, .. } => local_ops::dispatch(token, &rest),
+        JournalCommand::RetiredExport => Outcome::LocalFailure {
+            stdout: String::new(),
+            stderr: format!("{JOURNAL_EXPORT_TOMBSTONE}\n"),
+            exit: 64,
+        },
         JournalCommand::DottedModule | JournalCommand::Unknown => Outcome::Rejected,
     }
 }
@@ -357,6 +368,10 @@ mod tests {
             }
         );
         assert_eq!(
+            evaluate_args(&args(&["export", "--help"])),
+            JournalCommand::RetiredExport
+        );
+        assert_eq!(
             evaluate_args(&args(&["archive", "unknown"])),
             JournalCommand::Unknown
         );
@@ -417,16 +432,16 @@ mod tests {
     }
 
     #[test]
-    fn manifest_has_fifty_five_unique_leaf_paths() {
+    fn manifest_has_fifty_four_unique_leaf_paths() {
         let paths = all_leaf_paths();
         let unique = paths
             .iter()
             .map(|path| path.join("\u{0}"))
             .collect::<BTreeSet<_>>();
-        assert_eq!(JOURNAL_COMMAND_COUNT, 55);
+        assert_eq!(JOURNAL_COMMAND_COUNT, 54);
         assert_eq!(paths.len(), JOURNAL_COMMAND_COUNT);
         assert_eq!(unique.len(), JOURNAL_COMMAND_COUNT);
-        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 41);
+        assert_eq!(JOURNAL_HOST_COMMAND_COUNT, 40);
     }
 
     #[test]
@@ -540,6 +555,21 @@ mod tests {
                 stderr: String::new(),
             }
         );
+    }
+
+    #[test]
+    fn retired_export_never_spawns_and_names_its_replacement() {
+        for argv in [["export"].as_slice(), ["export", "--help"].as_slice()] {
+            let outcome = dispatch(evaluate_args(&args(argv)), &PanicSpawner);
+            assert!(matches!(
+                outcome,
+                Outcome::LocalFailure {
+                    stdout,
+                    stderr,
+                    exit: 64,
+                } if stdout.is_empty() && stderr.contains("journal transfer send --to")
+            ));
+        }
     }
 
     #[test]

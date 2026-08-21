@@ -12,7 +12,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use solstone_core_journal_config::read_journal_config;
 use spl_core::bridge::BridgeNames;
 use spl_transport::client::{DialedCarrier, TransportClient};
@@ -37,15 +36,6 @@ pub struct ResolvedPeer {
     pub instance_id: String,
     /// Requested peer label.
     pub label: String,
-}
-
-/// Result of an attempted remote peer unpair.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UnpairOutcome {
-    /// The peer accepted the request and its local bundle was removed.
-    Unpaired,
-    /// The peer rejected the request; the local bundle remains intact.
-    Rejected { status: u16, body: Vec<u8> },
 }
 
 struct TransferCarrierOpener {
@@ -271,39 +261,6 @@ pub fn resolve_peer(journal: &Path, label: &str) -> Result<ResolvedPeer, Transfe
     })
 }
 
-/// Request removal of a paired peer and remove its local bundle on success.
-pub fn unpair_peer(journal: &Path, peer: &ResolvedPeer) -> Result<UnpairOutcome, TransferError> {
-    let fingerprint = certificate_fingerprint(&peer.dir.join("cert.pem"))?;
-    with_peer_bridge(journal, peer, |loopback| {
-        let response = loopback.post(
-            "/app/network/unpair",
-            "application/json",
-            format!(r#"{{"fingerprint": "{fingerprint}"}}"#).into_bytes(),
-        )?;
-        if response.status == 200 {
-            fs::remove_dir_all(&peer.dir)?;
-            Ok(UnpairOutcome::Unpaired)
-        } else {
-            Ok(UnpairOutcome::Rejected {
-                status: response.status,
-                body: response.body,
-            })
-        }
-    })
-}
-
-fn certificate_fingerprint(path: &Path) -> Result<String, TransferError> {
-    let pem = fs::read_to_string(path)
-        .map_err(|error| TransferError::CredentialLoad(format!("{}: {error}", path.display())))?;
-    let certificates = tls::parse_certs(&pem).map_err(|error| {
-        TransferError::CredentialLoad(format!("invalid cert.pem in {}: {error}", path.display()))
-    })?;
-    let certificate = certificates.first().ok_or_else(|| {
-        TransferError::CredentialLoad("cert.pem contains no certificates".to_string())
-    })?;
-    Ok(format!("sha256:{:x}", Sha256::digest(certificate.as_ref())))
-}
-
 pub(crate) struct MultipartFile {
     pub field_name: String,
     pub file_name: String,
@@ -466,4 +423,44 @@ fn escape_multipart(value: &str) -> String {
 }
 fn transport_error(error: impl std::fmt::Display) -> TransferError {
     TransferError::Transport(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_peer;
+
+    use std::fs;
+
+    use serde_json::json;
+
+    #[test]
+    fn peer_resolver_reports_python_compatible_messages() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(
+            resolve_peer(root.path(), "office").unwrap_err().to_string(),
+            "no peers paired (run \"solstone link join --as peer\" first)"
+        );
+        let peers = root.path().join("peers");
+        for (directory, label, instance_id) in [
+            ("z", "zebra", "second"),
+            ("a", "alpha", "first"),
+            ("b", "alpha", "third"),
+        ] {
+            let directory = peers.join(directory);
+            fs::create_dir_all(&directory).unwrap();
+            fs::write(
+                directory.join("peer.json"),
+                json!({"label": label, "instance_id": instance_id}).to_string(),
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            resolve_peer(root.path(), "none").unwrap_err().to_string(),
+            "no peer with label \"none\"; available: alpha, zebra"
+        );
+        assert_eq!(
+            resolve_peer(root.path(), "alpha").unwrap_err().to_string(),
+            "multiple peers with label \"alpha\": first, third; use <journal_root>/peers/<instance_id> directly"
+        );
+    }
 }

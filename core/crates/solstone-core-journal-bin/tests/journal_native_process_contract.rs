@@ -524,12 +524,6 @@ const PROBES: &[Probe] = &[
         stderr_anchor: None,
     },
     Probe {
-        token: "export",
-        argv: &["--nonsense"],
-        expected_exit: 2,
-        stderr_anchor: None,
-    },
-    Probe {
         token: "transcribe",
         argv: &["--nonsense"],
         expected_exit: 2,
@@ -3118,10 +3112,14 @@ fn process_tokens_are_native_cutovers() {
         .iter()
         .map(|spec| spec.token)
         .collect::<BTreeSet<_>>();
-    for token in ["grab", "transfer", "export", "observer", "transcribe"] {
+    for token in ["grab", "transfer", "observer", "transcribe"] {
         assert!(
             native_tokens.contains(token),
             "{token}: native process dispatch is required"
         );
     }
+    assert!(
+        !native_tokens.contains("export"),
+        "export must be intercepted by journal-cli rather than native-process dispatch"
+    );
 }

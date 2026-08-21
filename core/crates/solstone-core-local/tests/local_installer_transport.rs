@@ -153,6 +153,21 @@ fn response_server(responses: Vec<String>) -> (String, thread::JoinHandle<Vec<St
     (format!("http://{address}"), handle)
 }
 
+fn raw_response_server(responses: Vec<Vec<u8>>) -> (String, thread::JoinHandle<Vec<String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let handle = thread::spawn(move || {
+        let mut paths = Vec::new();
+        for response in responses {
+            let (mut stream, _) = listener.accept().unwrap();
+            paths.push(request_path(&mut stream));
+            stream.write_all(&response).unwrap();
+        }
+        paths
+    });
+    (format!("http://{address}"), handle)
+}
+
 fn record_http_hosts(
     listener: TcpListener,
     connections: usize,
@@ -1124,6 +1139,100 @@ fn extracted_binary_digest_mismatch_cleans_install_outputs() {
         !model_path(&temp)
             .with_file_name(format!("{MODEL_FILE}.tmp"))
             .exists()
+    );
+    let _ = fs::remove_dir_all(temp);
+}
+
+#[test]
+fn non_forced_rfdetr_engine_repair_keeps_verified_model_unrequested() {
+    use flate2::{Compression, write::GzEncoder};
+
+    let temp = temp("rfdetr-engine-repair-keeps-model");
+    let model_bytes = b"verified rf-detr fixture model";
+    let model_sha256 = Box::leak(format!("{:x}", Sha256::digest(model_bytes)).into_boxed_str());
+    let model = Artifact {
+        unit: MODEL_UNIT,
+        version: MODEL_REVISION,
+        filename: MODEL_FILE,
+        sha256: model_sha256,
+        size_bytes: model_bytes.len() as u64,
+        upstream_url: "https://example.invalid/model",
+        origin_key: "test/rfdetr-model",
+        artifact_key: None,
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    };
+    let model_path = model_path(&temp);
+    fs::create_dir_all(model_path.parent().unwrap()).unwrap();
+    fs::write(&model_path, model_bytes).unwrap();
+
+    let tarball = temp.join("valid-fixture.tar.gz");
+    let binary_bytes = b"valid rfdetr binary";
+    let file = fs::File::create(&tarball).unwrap();
+    let encoder = GzEncoder::new(file, Compression::default());
+    let mut archive = tar::Builder::new(encoder);
+    let mut header = tar::Header::new_gnu();
+    header.set_size(binary_bytes.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+    archive
+        .append_data(&mut header, BINARY, binary_bytes.as_slice())
+        .unwrap();
+    archive.into_inner().unwrap().finish().unwrap();
+    let tarball_bytes = fs::read(&tarball).unwrap();
+    let tarball_sha256 =
+        Box::leak(format!("{:x}", Sha256::digest(&tarball_bytes)).into_boxed_str());
+    let binary_sha256 = Box::leak(format!("{:x}", Sha256::digest(binary_bytes)).into_boxed_str());
+    let engine = Artifact {
+        unit: ENGINE_UNIT,
+        version: ENGINE_REF,
+        filename: "valid-fixture.tar.gz",
+        sha256: tarball_sha256,
+        size_bytes: tarball_bytes.len() as u64,
+        upstream_url: "https://example.invalid/engine",
+        origin_key: "test/rfdetr-engine",
+        artifact_key: Some("linux-cpu-x64"),
+        platform: Some(Platform::LinuxX64),
+        backend: Some(Backend::Cpu),
+        extracted_binary_sha256: Some(binary_sha256),
+    };
+
+    fs::create_dir_all(sidecar_path(&temp).parent().unwrap()).unwrap();
+    fs::write(
+        sidecar_path(&temp),
+        serde_json::to_vec(&json!({
+            "status": "installed",
+            "engine_ref": ENGINE_REF,
+            "engine_sha256": "stale-engine-sha256",
+            "model_repo": "mudler/rfdetr-cpp-nano",
+            "model_revision": MODEL_REVISION,
+            "model_file": MODEL_FILE,
+            "model_sha256": model.sha256,
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let mut response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        tarball_bytes.len()
+    )
+    .into_bytes();
+    response.extend_from_slice(&tarball_bytes);
+    let (base, server) = raw_response_server(vec![response]);
+    let policy = loopback_download_policy(&base);
+
+    install_rfdetr_with_fixture_artifacts(
+        &temp, "linux", "x86_64", false, &policy, &engine, &model,
+    )
+    .unwrap();
+
+    assert_eq!(server.join().unwrap(), ["/test/rfdetr-engine"]);
+    assert_eq!(fs::read(&model_path).unwrap(), model_bytes);
+    assert_eq!(
+        format!("{:x}", Sha256::digest(fs::read(&model_path).unwrap())),
+        model.sha256
     );
     let _ = fs::remove_dir_all(temp);
 }
