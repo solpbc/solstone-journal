@@ -72,12 +72,16 @@ pub fn rotate_recovery_key(journal: &Path, services: &BackupServices<'_>) -> Rot
             recovery_key_display: None,
         };
     };
+    let restic_path = match services.restic_path() {
+        Ok(path) => path,
+        Err(reason) => return error(reason),
+    };
     let timeout = Some(Duration::from_secs(ROTATION_TIMEOUT_SECONDS));
     let old_id = match capture_current_key_id(
         services.runner,
         &destination,
         &keys.recovery_key,
-        services.restic_path,
+        restic_path,
         timeout,
     ) {
         Ok(id) => id,
@@ -92,7 +96,7 @@ pub fn rotate_recovery_key(journal: &Path, services: &BackupServices<'_>) -> Rot
         &destination,
         &keys.daily_key,
         &candidate,
-        services.restic_path,
+        restic_path,
         timeout,
     ) {
         return map_error(error);
@@ -101,7 +105,7 @@ pub fn rotate_recovery_key(journal: &Path, services: &BackupServices<'_>) -> Rot
         services.runner,
         &destination,
         &candidate,
-        services.restic_path,
+        restic_path,
         timeout,
     ) {
         Ok(status) => status,
@@ -115,7 +119,7 @@ pub fn rotate_recovery_key(journal: &Path, services: &BackupServices<'_>) -> Rot
         &destination,
         &keys.daily_key,
         &old_id,
-        services.restic_path,
+        restic_path,
         timeout,
     ) {
         return map_error(error);
@@ -224,7 +228,7 @@ mod tests {
             runner,
             http,
             clock,
-            restic_path: Path::new("restic"),
+            restic_path: Some(Path::new("/fixture/bin/restic")),
             rclone_path: None,
             version: "test",
             journal_maintenance: maintenance,
@@ -294,14 +298,31 @@ mod tests {
         let http = Http;
         let clock = TestClock;
         let maintenance = Maintenance;
+        let mut services = services(&runner, &http, &clock, &maintenance);
+        services.restic_path = None;
         assert_eq!(
-            rotate_recovery_key(
-                journal.path(),
-                &services(&runner, &http, &clock, &maintenance)
-            )
-            .status,
+            rotate_recovery_key(journal.path(), &services).status,
             "skipped"
         );
+        assert!(runner.commands.borrow().is_empty());
+    }
+    #[test]
+    fn absent_restic_path_fails_only_after_configuration_check() {
+        let journal = journal();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+        let mut services = services(&runner, &http, &clock, &maintenance);
+        services.restic_path = None;
+
+        let result = rotate_recovery_key(journal.path(), &services);
+
+        assert_eq!(result.status, "error");
+        assert_eq!(result.reason_code.as_deref(), Some("restic_unavailable"));
         assert!(runner.commands.borrow().is_empty());
     }
     #[test]

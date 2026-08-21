@@ -149,7 +149,7 @@ mod tests {
                 &runner,
                 &destination(),
                 "PASSWORD",
-                Path::new("restic"),
+                Path::new("/fixture/bin/restic"),
                 None,
             )
             .unwrap();

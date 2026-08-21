@@ -306,6 +306,8 @@ pub struct ResticResult {
 
 #[derive(Debug, Error)]
 pub enum RunnerError {
+    #[error("restic program must include a path separator")]
+    BareProgram,
     #[error("restic --insecure-tls is forbidden")]
     InsecureTls,
     #[error("restic argv contains a secret")]
@@ -344,6 +346,10 @@ pub fn select_summary(parsed: &Value) -> Option<&serde_json::Map<String, Value>>
     }
 }
 
+pub(crate) fn is_explicit_program_path(path: &Path) -> bool {
+    path.components().count() > 1
+}
+
 #[allow(clippy::too_many_arguments)] // Mirrors restic's independent process-boundary inputs.
 pub fn run_restic(
     runner: &dyn ToolRunner,
@@ -357,6 +363,9 @@ pub fn run_restic(
     timeout: Option<Duration>,
     pass_fds: &[BorrowedFd<'_>],
 ) -> Result<ResticResult, RunnerError> {
+    if !is_explicit_program_path(restic_path) {
+        return Err(RunnerError::BareProgram);
+    }
     let (env, secrets) = child_env(repository, password, backend_env);
     let mut argv = args.to_vec();
     if json {
@@ -460,6 +469,7 @@ fn parse_json(text: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
 
     struct Fixture;
     impl ToolRunner for Fixture {
@@ -468,6 +478,22 @@ mod tests {
                 returncode: 0,
                 stdout: b"{\"message_type\":\"summary\"}".to_vec(),
                 stderr: b"PASSWORD BACKEND UNRELATED".to_vec(),
+            })
+        }
+    }
+
+    struct RecordingFixture {
+        calls: Cell<u8>,
+        program: std::cell::RefCell<Option<OsString>>,
+    }
+    impl ToolRunner for RecordingFixture {
+        fn run(&self, request: &ToolRequest) -> io::Result<ToolOutput> {
+            self.calls.set(self.calls.get() + 1);
+            self.program.replace(Some(request.program.clone()));
+            Ok(ToolOutput {
+                returncode: 0,
+                stdout: vec![],
+                stderr: vec![],
             })
         }
     }
@@ -482,6 +508,43 @@ mod tests {
             guard_argv(&["prefix-secret-suffix".into()], &["secret".into()]),
             Err(RunnerError::SecretInArgv)
         ));
+    }
+    #[test]
+    fn refuses_bare_program_before_invoking_runner() {
+        let runner = RecordingFixture {
+            calls: Cell::new(0),
+            program: std::cell::RefCell::new(None),
+        };
+        let result = run_restic(
+            &runner,
+            &["snapshots".into()],
+            "repo",
+            "password",
+            Path::new("restic"),
+            None,
+            false,
+            None,
+            None,
+            &[],
+        );
+        assert!(matches!(result, Err(RunnerError::BareProgram)));
+        assert_eq!(runner.calls.get(), 0);
+
+        run_restic(
+            &runner,
+            &["snapshots".into()],
+            "repo",
+            "password",
+            Path::new("/fixture/bin/restic"),
+            None,
+            false,
+            None,
+            None,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(runner.calls.get(), 1);
+        assert_eq!(runner.program.take(), Some("/fixture/bin/restic".into()));
     }
     #[test]
     fn maps_all_reference_return_codes() {
@@ -506,7 +569,7 @@ mod tests {
             &["snapshots".into()],
             "repo",
             "PASSWORD",
-            Path::new("restic"),
+            Path::new("/fixture/bin/restic"),
             Some(&backend),
             true,
             None,

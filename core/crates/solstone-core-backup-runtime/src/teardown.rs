@@ -113,12 +113,16 @@ pub fn teardown_backup(journal: &Path, services: &BackupServices<'_>) -> Teardow
     let Some(env) = backend(&destination) else {
         return failure("failed");
     };
+    let restic_path = match services.restic_path() {
+        Ok(path) => path,
+        Err(reason) => return failure(reason),
+    };
     let snapshot = match run_restic(
         services.runner,
         &["snapshots".into()],
         &destination.repository,
         &keys.daily_key,
-        services.restic_path,
+        restic_path,
         Some(&env),
         true,
         None,
@@ -143,7 +147,7 @@ pub fn teardown_backup(journal: &Path, services: &BackupServices<'_>) -> Teardow
             &args,
             &destination.repository,
             &keys.daily_key,
-            services.restic_path,
+            restic_path,
             Some(&env),
             false,
             None,
@@ -269,7 +273,7 @@ mod tests {
             runner,
             http,
             clock,
-            restic_path: Path::new("restic"),
+            restic_path: Some(Path::new("/fixture/bin/restic")),
             rclone_path: None,
             version: "test",
             journal_maintenance: maintenance,
@@ -285,7 +289,7 @@ mod tests {
             runner,
             http,
             clock,
-            restic_path: Path::new("restic"),
+            restic_path: Some(Path::new("/fixture/bin/restic")),
             rclone_path: None,
             version: "test",
             journal_maintenance: maintenance,
@@ -316,6 +320,44 @@ mod tests {
     #[test]
     fn formats_epoch_as_utc() {
         assert_eq!(amz_date(0), "19700101T000000Z");
+    }
+    #[test]
+    fn absent_restic_path_reports_existing_unavailable_reason_for_byo_teardown() {
+        let journal = configured_byo();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+        let mut services = services(&runner, &http, &clock, &maintenance);
+        services.restic_path = None;
+
+        let result = teardown_backup(journal.path(), &services);
+
+        assert_eq!(result.status, "error");
+        assert_eq!(result.reason_code.as_deref(), Some("restic_unavailable"));
+        assert!(runner.commands.borrow().is_empty());
+    }
+    #[test]
+    fn absent_restic_path_does_not_change_teardown_skip_path() {
+        let journal = tempfile::tempdir().unwrap();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+        let mut services = services(&runner, &http, &clock, &maintenance);
+        services.restic_path = None;
+
+        let result = teardown_backup(journal.path(), &services);
+
+        assert_eq!(result.status, "skipped");
+        assert_eq!(result.reason_code, None);
+        assert!(runner.commands.borrow().is_empty());
     }
     #[test]
     fn byo_forgets_then_clears_without_deleting_hosted_binding() {

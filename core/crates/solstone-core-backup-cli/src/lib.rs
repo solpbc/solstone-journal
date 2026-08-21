@@ -74,7 +74,7 @@ fn run_cli_with_deps(
         runner,
         http,
         clock: &clock,
-        restic_path: Path::new("restic"),
+        restic_path: None,
         rclone_path: None,
         version: env!("CARGO_PKG_VERSION"),
         journal_maintenance: &maintenance,
@@ -85,7 +85,7 @@ fn run_cli_with_deps(
             match resolve_operational_tools(runner, downloader, journal, append_only, dirs) {
                 Ok(tools) => {
                     let services = BackupServices {
-                        restic_path: &tools.restic_path,
+                        restic_path: Some(&tools.restic_path),
                         rclone_path: tools.rclone_path.as_deref(),
                         ..placeholder
                     };
@@ -1221,7 +1221,7 @@ mod tests {
             runner,
             http,
             clock,
-            restic_path: Path::new("restic"),
+            restic_path: None,
             rclone_path: None,
             version: "test",
             journal_maintenance: maintenance,
@@ -1238,7 +1238,7 @@ mod tests {
             runner,
             http,
             clock,
-            restic_path: Path::new("restic"),
+            restic_path: None,
             rclone_path: None,
             version: "test",
             journal_maintenance: maintenance,
@@ -1733,7 +1733,7 @@ mod tests {
             let services = services_with_runner(&runner, &http, &clock, &maintenance);
             let output =
                 destination_set_from_payload(journal.path(), &services, &s3_payload(), || {
-                    Ok(PathBuf::from("restic"))
+                    Ok(PathBuf::from("/fixture/bin/restic"))
                 });
             assert_eq!(output.exit_code, exit_code);
             let value: Value = serde_json::from_str(&output.stdout).unwrap();
@@ -1792,7 +1792,7 @@ mod tests {
             validation_failure.path(),
             &services,
             &s3_payload(),
-            || Ok(PathBuf::from("restic")),
+            || Ok(PathBuf::from("/fixture/bin/restic")),
         );
         assert!(output.stdout.is_empty());
         assert!(
@@ -1936,7 +1936,7 @@ mod tests {
             "",
             || {
                 order.borrow_mut().push("ensure");
-                Ok(PathBuf::from("restic"))
+                Ok(PathBuf::from("/fixture/bin/restic"))
             },
             |_, _, _, _| {
                 order.borrow_mut().push("init");
@@ -1961,7 +1961,7 @@ mod tests {
                 journal.path(),
                 &services,
                 "",
-                || Ok(PathBuf::from("restic")),
+                || Ok(PathBuf::from("/fixture/bin/restic")),
                 |_, _, _, _| panic!("daily-only branch does not initialize"),
             );
             assert_eq!(output.stdout, "Backup enabled.\n");
@@ -1982,7 +1982,7 @@ mod tests {
                 journal.path(),
                 &services,
                 "",
-                || Ok(PathBuf::from("restic")),
+                || Ok(PathBuf::from("/fixture/bin/restic")),
                 |_, _, _, _| panic!("daily-only refusal does not initialize"),
             );
             assert_eq!(
@@ -2046,7 +2046,7 @@ mod tests {
                         == Some(true)
                 );
                 order.borrow_mut().push("ensure");
-                Ok(PathBuf::from("restic"))
+                Ok(PathBuf::from("/fixture/bin/restic"))
             },
             |_, _, _, _| {
                 order.borrow_mut().push("init");
@@ -2105,7 +2105,7 @@ mod tests {
                 &keys.recovery_key,
                 || {
                     if init_failure {
-                        Ok(PathBuf::from("restic"))
+                        Ok(PathBuf::from("/fixture/bin/restic"))
                     } else {
                         Err("tool unavailable".into())
                     }
@@ -2580,6 +2580,7 @@ mod resolution_tests {
             args(&["recovery-key", "rotate"]),
             args(&["off", "--yes"]),
             args(&["offload", "run"]),
+            args(&["offload", "run", "--dry-run"]),
         ] {
             let runner = RecordingRunner::new();
             run_cli_with_deps(

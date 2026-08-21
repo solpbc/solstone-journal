@@ -541,7 +541,7 @@ fn services<'a>(
         runner: deps.runner.as_ref(),
         http: deps.http.as_ref(),
         clock: deps.clock.as_ref(),
-        restic_path: &tools.restic_path,
+        restic_path: Some(&tools.restic_path),
         rclone_path: tools.rclone_path.as_deref(),
         version: deps.version,
         journal_maintenance: deps.journal_maintenance.as_ref(),
