@@ -51,9 +51,7 @@ fn resolve_convey_port(env: &BTreeMap<String, String>) -> Result<i64, CommandOut
         Some(value) => match value.parse::<i64>() {
             Ok(port) if (1..=65535).contains(&port) => Ok(port),
             _ => Err(CommandOutput::failure(
-                format!(
-                    "SOLSTONE_CONVEY_PORT must be a decimal port in the range 1..=65535; got {value}.\n"
-                ),
+                "SOLSTONE_CONVEY_PORT must be an integer from 1 to 65535.\n",
                 i32::from(EXIT_CONFIG),
             )),
         },
@@ -234,7 +232,25 @@ fn run_top_level_link(
     command_args: &[OsString],
     stdin_provider: &dyn StdinProvider,
 ) -> ExitCode {
-    let env = env::vars().collect::<BTreeMap<_, _>>();
+    run_top_level_link_with_env_provider(all_args, command_args, stdin_provider, &|| {
+        env::vars().collect::<BTreeMap<_, _>>()
+    })
+}
+
+fn run_top_level_link_with_env_provider(
+    all_args: &[OsString],
+    command_args: &[OsString],
+    stdin_provider: &dyn StdinProvider,
+    env_provider: &dyn Fn() -> BTreeMap<String, String>,
+) -> ExitCode {
+    let args = match os_strings_to_strings(command_args) {
+        Some(args) => args,
+        None => return render_output(usage_error_output()),
+    };
+    if let Some(output) = help::render_link_help(&args) {
+        return render_output(output);
+    }
+    let env = env_provider();
     run_top_level_link_with_env(all_args, command_args, stdin_provider, &env)
 }
 
@@ -243,6 +259,26 @@ fn run_top_level_link_with_env(
     command_args: &[OsString],
     stdin_provider: &dyn StdinProvider,
     env: &BTreeMap<String, String>,
+) -> ExitCode {
+    run_top_level_link_with_runtime(
+        all_args,
+        command_args,
+        stdin_provider,
+        env,
+        &|port| Box::new(UreqHttpTransport::new(port)),
+        link_join_pairing_seam(),
+        link_serve_runner(),
+    )
+}
+
+fn run_top_level_link_with_runtime(
+    all_args: &[OsString],
+    command_args: &[OsString],
+    stdin_provider: &dyn StdinProvider,
+    env: &BTreeMap<String, String>,
+    transport_factory: &dyn Fn(i64) -> Box<dyn HttpTransport>,
+    link_pairing: &dyn LinkJoinPairingSeam,
+    link_serve: &dyn LinkServeRunner,
 ) -> ExitCode {
     let args = match os_strings_to_strings(command_args) {
         Some(args) => args,
@@ -260,7 +296,7 @@ fn run_top_level_link_with_env(
         Ok(port) => port,
         Err(output) => return render_output(output),
     };
-    let transport = UreqHttpTransport::new(port);
+    let transport = transport_factory(port);
     let stdin = match stdin_provider.read_if_piped() {
         Ok(Some(value)) => value,
         Ok(None) => String::new(),
@@ -277,9 +313,11 @@ fn run_top_level_link_with_env(
             env,
             stdin: &stdin,
             today: &today,
-            transport: &transport,
+            transport: transport.as_ref(),
             clock: &clock,
             files: &files,
+            link_pairing,
+            link_serve,
         },
     );
     match dispatch {
@@ -293,14 +331,14 @@ fn run_top_level_link_with_env(
                 env,
                 stdin: &stdin,
                 today: &today,
-                transport: &transport,
+                transport: transport.as_ref(),
                 clock: Some(&clock),
                 files: Some(&files),
                 build_identity: None,
                 client_item_ids: None,
                 notification_sink: None,
-                link_pairing: Some(link_join_pairing_seam()),
-                link_serve: Some(link_serve_runner()),
+                link_pairing: Some(link_pairing),
+                link_serve: Some(link_serve),
             };
             run_resident_command(handler, context)
         }
@@ -314,6 +352,8 @@ struct TopLevelLinkRuntime<'a> {
     transport: &'a dyn HttpTransport,
     clock: &'a dyn Clock,
     files: &'a dyn FileProvider,
+    link_pairing: &'a dyn LinkJoinPairingSeam,
+    link_serve: &'a dyn LinkServeRunner,
 }
 
 fn dispatch_top_level_link_with_runtime_seams(
@@ -329,8 +369,8 @@ fn dispatch_top_level_link_with_runtime_seams(
             transport: runtime.transport,
             clock: Some(runtime.clock),
             files: Some(runtime.files),
-            link_pairing: Some(link_join_pairing_seam()),
-            link_serve: Some(link_serve_runner()),
+            link_pairing: Some(runtime.link_pairing),
+            link_serve: Some(runtime.link_serve),
         },
     )
 }
@@ -350,6 +390,18 @@ fn run_dispatched_with_env(
     stdin_provider: &dyn StdinProvider,
     env: &BTreeMap<String, String>,
 ) -> ExitCode {
+    run_dispatched_with_runtime(all_args, command_args, stdin_provider, env, &|port| {
+        Box::new(UreqHttpTransport::new(port))
+    })
+}
+
+fn run_dispatched_with_runtime(
+    all_args: &[OsString],
+    command_args: &[OsString],
+    stdin_provider: &dyn StdinProvider,
+    env: &BTreeMap<String, String>,
+    transport_factory: &dyn Fn(i64) -> Box<dyn HttpTransport>,
+) -> ExitCode {
     let outcome = evaluate_args(all_args);
     if matches!(outcome, Outcome::Unsupported { .. }) {
         return render_output(unsupported_output());
@@ -366,7 +418,7 @@ fn run_dispatched_with_env(
         Ok(port) => port,
         Err(output) => return render_output(output),
     };
-    let transport = UreqHttpTransport::new(port);
+    let transport = transport_factory(port);
     let stdin = match stdin_provider.read_if_piped() {
         Ok(Some(value)) => value,
         Ok(None) => String::new(),
@@ -385,7 +437,7 @@ fn run_dispatched_with_env(
             &stdin,
             &today,
             DispatchSeams {
-                transport: &transport,
+                transport: transport.as_ref(),
                 clock: None,
                 files: Some(&files),
                 build_identity: Some(&build_identity),
@@ -399,7 +451,7 @@ fn run_dispatched_with_env(
             &stdin,
             &today,
             DispatchSeams {
-                transport: &transport,
+                transport: transport.as_ref(),
                 clock: None,
                 files: Some(&files),
                 build_identity: Some(&build_identity),
@@ -413,7 +465,7 @@ fn run_dispatched_with_env(
             &stdin,
             &today,
             DispatchSeams {
-                transport: &transport,
+                transport: transport.as_ref(),
                 clock: None,
                 files: Some(&files),
                 build_identity: Some(&build_identity),
@@ -1037,6 +1089,22 @@ mod tests {
         }
     }
 
+    struct FailingStdinProvider;
+
+    impl StdinProvider for FailingStdinProvider {
+        fn read_if_piped(&self) -> IoResult<Option<String>> {
+            Err(io::Error::other("deliberate stdin failure"))
+        }
+    }
+
+    struct EmptyStdinProvider;
+
+    impl StdinProvider for EmptyStdinProvider {
+        fn read_if_piped(&self) -> IoResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
     fn os_args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
     }
@@ -1076,11 +1144,74 @@ mod tests {
         }
     }
 
+    fn observed_wrapper_ports(env: &BTreeMap<String, String>) -> Vec<i64> {
+        let ports = std::cell::RefCell::new(Vec::new());
+        let factory = |port| {
+            ports.borrow_mut().push(port);
+            Box::new(ScriptedHttpTransport::new(vec![])) as Box<dyn HttpTransport>
+        };
+        let pairing = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let runner = ScriptedLinkServeRunner::new(vec![]);
+
+        assert_eq!(
+            run_dispatched_with_runtime(
+                &os_args(&["status"]),
+                &[],
+                &FailingStdinProvider,
+                env,
+                &factory,
+            ),
+            ExitCode::from(EXIT_TEMPFAIL)
+        );
+        assert_eq!(
+            run_top_level_link_with_runtime(
+                &os_args(&["link", "join", "--code", "not-a-code"]),
+                &os_args(&["join", "--code", "not-a-code"]),
+                &FailingStdinProvider,
+                env,
+                &factory,
+                &pairing,
+                &runner,
+            ),
+            ExitCode::from(EXIT_TEMPFAIL)
+        );
+        pairing.assert_done();
+        runner.assert_done();
+        ports.into_inner()
+    }
+
     #[test]
     fn resolve_convey_port_defaults_when_unset() {
         assert_eq!(
             resolve_convey_port(&BTreeMap::new()),
             Ok(DEFAULT_CONVEY_PORT)
+        );
+    }
+
+    #[test]
+    fn production_wrappers_construct_the_default_convey_target() {
+        assert_eq!(
+            observed_wrapper_ports(&BTreeMap::new()),
+            vec![DEFAULT_CONVEY_PORT, DEFAULT_CONVEY_PORT]
+        );
+    }
+
+    #[test]
+    fn production_wrappers_construct_the_assigned_convey_target() {
+        let env = BTreeMap::from([(SOLSTONE_CONVEY_PORT_ENV.to_string(), "6200".to_string())]);
+        assert_eq!(observed_wrapper_ports(&env), vec![6200, 6200]);
+    }
+
+    #[test]
+    fn link_help_returns_before_collecting_the_process_environment() {
+        assert_eq!(
+            run_top_level_link_with_env_provider(
+                &os_args(&["link", "--help"]),
+                &os_args(&["--help"]),
+                &PanicStdinProvider,
+                &|| panic!("link help must not collect the process environment"),
+            ),
+            ExitCode::SUCCESS
         );
     }
 
@@ -1108,6 +1239,9 @@ mod tests {
     fn run_dispatched_with_env_rejects_zero_convey_port_before_runtime_work() {
         let env = BTreeMap::from([(SOLSTONE_CONVEY_PORT_ENV.to_string(), "0".to_string())]);
         let stdin = PanicStdinProvider;
+        let factory = |_port| -> Box<dyn HttpTransport> {
+            panic!("invalid outbound port must fail before transport construction")
+        };
 
         for (all_args, command_args) in [
             (os_args(&["status"]), vec![]),
@@ -1118,7 +1252,7 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                run_dispatched_with_env(&all_args, &command_args, &stdin, &env),
+                run_dispatched_with_runtime(&all_args, &command_args, &stdin, &env, &factory,),
                 ExitCode::from(EXIT_CONFIG)
             );
         }
@@ -1129,11 +1263,26 @@ mod tests {
         let env = BTreeMap::from([(SOLSTONE_CONVEY_PORT_ENV.to_string(), "0".to_string())]);
         let all_args = os_args(&["link", "join", "--code", "not-a-code"]);
         let command_args = os_args(&["join", "--code", "not-a-code"]);
+        let factory = |_port| -> Box<dyn HttpTransport> {
+            panic!("invalid outbound port must fail before transport construction")
+        };
+        let pairing = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let runner = ScriptedLinkServeRunner::new(vec![]);
 
         assert_eq!(
-            run_top_level_link_with_env(&all_args, &command_args, &PanicStdinProvider, &env),
+            run_top_level_link_with_runtime(
+                &all_args,
+                &command_args,
+                &PanicStdinProvider,
+                &env,
+                &factory,
+                &pairing,
+                &runner,
+            ),
             ExitCode::from(EXIT_CONFIG)
         );
+        pairing.assert_done();
+        runner.assert_done();
     }
 
     #[test]
@@ -1141,11 +1290,26 @@ mod tests {
         let env = BTreeMap::from([(SOLSTONE_CONVEY_PORT_ENV.to_string(), "0".to_string())]);
         let all_args = os_args(&["link", "serve", "--port", "0"]);
         let command_args = os_args(&["serve", "--port", "0"]);
+        let factory = |_port| -> Box<dyn HttpTransport> {
+            panic!("invalid outbound port must fail before transport construction")
+        };
+        let pairing = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let runner = ScriptedLinkServeRunner::new(vec![]);
 
         assert_eq!(
-            run_top_level_link_with_env(&all_args, &command_args, &PanicStdinProvider, &env),
+            run_top_level_link_with_runtime(
+                &all_args,
+                &command_args,
+                &PanicStdinProvider,
+                &env,
+                &factory,
+                &pairing,
+                &runner,
+            ),
             ExitCode::from(EXIT_CONFIG)
         );
+        pairing.assert_done();
+        runner.assert_done();
     }
 
     #[test]
@@ -1156,10 +1320,12 @@ mod tests {
             (SOLSTONE_CONVEY_PORT_ENV.to_string(), "6200".to_string()),
             ("XDG_CONFIG_HOME".to_string(), config.display().to_string()),
         ]);
-        assert_eq!(resolve_convey_port(&env), Ok(6200));
-
         let bundle = write_link_serve_bundle(&config, "laptop");
-        let transport = ScriptedHttpTransport::new(vec![]);
+        let ports = std::cell::RefCell::new(Vec::new());
+        let factory = |port| {
+            ports.borrow_mut().push(port);
+            Box::new(ScriptedHttpTransport::new(vec![])) as Box<dyn HttpTransport>
+        };
         let pairing = ScriptedLinkJoinPairingSeam::new(vec![]);
         let runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
             expected: LinkServeRequest {
@@ -1174,52 +1340,22 @@ mod tests {
                 serve_result: Ok(()),
             }),
         }]);
-        let args = ["link", "serve", "--label", "laptop", "--port", "0"]
-            .iter()
-            .map(|value| (*value).to_string())
-            .collect::<Vec<_>>();
-
-        let LinkDispatch::Resident {
-            handler,
-            args: resident_args,
-        } = dispatch_sol_link_with_seams(
-            &args,
-            &env,
-            "",
-            "20260727",
-            LinkDispatchSeams {
-                transport: &transport,
-                clock: None,
-                files: None,
-                link_pairing: Some(&pairing),
-                link_serve: Some(&runner),
-            },
-        )
-        else {
-            panic!("link serve must resolve as resident");
-        };
+        let all_args = os_args(&["link", "serve", "--label", "laptop", "--port", "0"]);
+        let command_args = os_args(&["serve", "--label", "laptop", "--port", "0"]);
 
         assert_eq!(
-            run_resident_command(
-                handler,
-                CommandContext {
-                    args: &resident_args,
-                    env: &env,
-                    stdin: "",
-                    today: "20260727",
-                    transport: &transport,
-                    clock: None,
-                    files: None,
-                    build_identity: None,
-                    client_item_ids: None,
-                    notification_sink: None,
-                    link_pairing: Some(&pairing),
-                    link_serve: Some(&runner),
-                },
+            run_top_level_link_with_runtime(
+                &all_args,
+                &command_args,
+                &EmptyStdinProvider,
+                &env,
+                &factory,
+                &pairing,
+                &runner,
             ),
             ExitCode::SUCCESS
         );
-        transport.assert_done();
+        assert_eq!(ports.into_inner(), vec![6200]);
         pairing.assert_done();
         runner.assert_done();
     }
@@ -1292,6 +1428,8 @@ mod tests {
                 transport: &transport,
                 clock: &clock,
                 files: &files,
+                link_pairing: link_join_pairing_seam(),
+                link_serve: link_serve_runner(),
             },
         ) {
             LinkDispatch::Buffered(output) => {
