@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import time
 import uuid
@@ -49,8 +50,10 @@ class SimulatorConfig:
     evidence_path: Path
     bridge_url: str | None = None
     pair_code: str | None = None
+    paired: bool = False
     solstone_bin: str = "solstone"
     relay_url: str | None = None
+    convey_port: int | None = None
     date_mode: str = "shift"
     anchor_day: str | None = None
     journal_root: Path | None = None
@@ -148,8 +151,17 @@ class Simulator:
     def __init__(self, config: SimulatorConfig) -> None:
         if config.carrier not in {"direct", "relay"}:
             raise ManifestError("carrier must be direct or relay")
-        if bool(config.bridge_url) == bool(config.pair_code):
-            raise ManifestError("provide exactly one of bridge_url or pair_code")
+        connection_modes = sum(
+            (bool(config.bridge_url), bool(config.pair_code), config.paired)
+        )
+        if connection_modes != 1:
+            raise ManifestError(
+                "provide exactly one of bridge_url, pair_code, or paired"
+            )
+        if config.convey_port is not None and not 1 <= config.convey_port <= 65535:
+            raise ManifestError("convey_port must be an integer from 1 to 65535")
+        if config.bridge_url and config.convey_port is not None:
+            raise ManifestError("convey_port applies only to a simulator-owned bridge")
         if config.max_attempts < 1:
             raise ManifestError("max_attempts must be positive")
         if config.request_timeout <= 0:
@@ -158,9 +170,23 @@ class Simulator:
             raise ManifestError("processing_timeout cannot be negative")
         if config.poll_interval <= 0:
             raise ManifestError("poll_interval must be positive")
-        fixture_root = config.manifest.root.resolve()
-        state_dir = config.state_dir.resolve()
-        evidence_path = config.evidence_path.resolve()
+        if os.path.lexists(config.state_dir):
+            try:
+                state_metadata = config.state_dir.lstat()
+            except OSError as error:
+                raise ManifestError(
+                    f"state directory could not be inspected: {type(error).__name__}"
+                ) from error
+            if not stat.S_ISDIR(state_metadata.st_mode):
+                raise ManifestError("state directory must be a plain directory")
+        try:
+            fixture_root = config.manifest.root.resolve()
+            state_dir = config.state_dir.resolve()
+            evidence_path = config.evidence_path.resolve()
+        except (OSError, RuntimeError) as error:
+            raise ManifestError(
+                f"simulator path could not be resolved: {type(error).__name__}"
+            ) from error
         for path, label in [
             (state_dir, "state directory"),
             (evidence_path, "evidence path"),
@@ -205,6 +231,7 @@ class Simulator:
                 "carrier_assurance": (
                     "caller-asserted" if config.bridge_url else "native-child"
                 ),
+                "convey_port": config.convey_port,
             },
             "manifest": {
                 "path": str(config.manifest.path),
@@ -218,8 +245,13 @@ class Simulator:
         }
 
     def _load_or_create_state(self) -> dict[str, Any]:
-        self.config.state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chmod(self.config.state_dir, 0o700)
+        try:
+            self.config.state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(self.config.state_dir, 0o700)
+        except OSError as error:
+            raise SimulationFailure(
+                f"state directory could not be prepared: {type(error).__name__}"
+            ) from error
         if self.state_path.exists():
             state = _read_json(self.state_path)
             expected = {
@@ -672,41 +704,46 @@ class Simulator:
 
     def run(self) -> RunOutcome:
         bridge: LinkBridge | None = None
+        outcome: RunOutcome | None = None
+        error: str | None = None
         try:
             if self.config.bridge_url:
                 base_url = self.config.bridge_url
             else:
-                assert self.config.pair_code is not None
                 bridge = LinkBridge(
                     solstone_bin=self.config.solstone_bin,
                     pair_code=self.config.pair_code,
                     state_dir=self.config.state_dir,
                     carrier=self.config.carrier,
                     relay_url=self.config.relay_url,
+                    convey_port=self.config.convey_port,
                     startup_timeout=self.config.request_timeout,
                 )
                 base_url = bridge.start()
             client = BridgeHttpClient(base_url, timeout=self.config.request_timeout)
             outcome = self._run_with_client(client)
-            self._write_evidence(outcome, None)
-            if bridge:
-                bridge.stop()
-                if not self.config.keep_credentials:
-                    bridge.remove_credentials()
-                bridge = None
-            return outcome
-        except (ManifestError, SimulationFailure) as error:
-            self._write_evidence(RunOutcome.FAIL, str(error))
-            return RunOutcome.FAIL
-        except LinkProcessError as error:
-            self._write_evidence(RunOutcome.BLOCKED, str(error))
-            return RunOutcome.BLOCKED
-        except SimulationInconclusive as error:
-            self._write_evidence(RunOutcome.INCONCLUSIVE, str(error))
-            return RunOutcome.INCONCLUSIVE
-        except HttpRequestError as error:
-            self._write_evidence(RunOutcome.INCONCLUSIVE, str(error))
-            return RunOutcome.INCONCLUSIVE
+        except (ManifestError, SimulationFailure) as caught:
+            outcome = RunOutcome.FAIL
+            error = str(caught)
+        except LinkProcessError as caught:
+            outcome = RunOutcome.BLOCKED
+            error = str(caught)
+        except (SimulationInconclusive, HttpRequestError) as caught:
+            outcome = RunOutcome.INCONCLUSIVE
+            error = str(caught)
         finally:
             if bridge:
-                bridge.stop()
+                try:
+                    if outcome is RunOutcome.PASS:
+                        bridge.finish(
+                            remove_credentials=not self.config.keep_credentials
+                        )
+                    else:
+                        bridge.stop()
+                except LinkProcessError as cleanup_error:
+                    previous = f"; prior outcome: {error}" if error else ""
+                    outcome = RunOutcome.BLOCKED
+                    error = f"native bridge finalization failed: {cleanup_error}{previous}"
+        assert outcome is not None
+        self._write_evidence(outcome, error)
+        return outcome
