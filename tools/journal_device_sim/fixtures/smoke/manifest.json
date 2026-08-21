@@ -1,0 +1,67 @@
+{
+  "schema": "solstone.journal-device-sim.fixtures.v1",
+  "profiles": {
+    "smoke": {
+      "segments": [
+        "tmux-alpha",
+        "tmux-collision"
+      ],
+      "verify_duplicate": true,
+      "verification": "contract"
+    }
+  },
+  "segments": [
+    {
+      "id": "tmux-alpha",
+      "day": "20260201",
+      "segment": "080000_30",
+      "source": "tmux",
+      "files": [
+        {
+          "path": "alpha.jsonl",
+          "submitted": "tmux.jsonl",
+          "size": 121,
+          "sha256": "53122d1c879c66cb87cb641b78340186b5b83faba26ac6bdf80e2369f1a53783"
+        }
+      ],
+      "meta": {
+        "fixture": "synthetic-benign",
+        "scenario": "initial"
+      },
+      "expect": {
+        "upload_statuses": [
+          "ok"
+        ],
+        "file_statuses": [
+          "present"
+        ]
+      }
+    },
+    {
+      "id": "tmux-collision",
+      "day": "20260201",
+      "segment": "080000_30",
+      "source": "tmux",
+      "files": [
+        {
+          "path": "beta.jsonl",
+          "submitted": "tmux.jsonl",
+          "size": 125,
+          "sha256": "c08a93f0eb35b5e6b76db236bd92961622490c39d2376c7abf090437e5a71cef"
+        }
+      ],
+      "meta": {
+        "fixture": "synthetic-benign",
+        "scenario": "collision"
+      },
+      "expect": {
+        "upload_statuses": [
+          "collision"
+        ],
+        "file_statuses": [
+          "present"
+        ]
+      }
+    }
+  ]
+}
