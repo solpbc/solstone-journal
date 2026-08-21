@@ -178,11 +178,18 @@ pub struct LinkServeBundle {
     pub local_endpoints: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkServeCarrierPolicy {
+    Direct,
+    RelayPermitted,
+    RelayOnly,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkServeRequest {
     pub label: String,
     pub port: u16,
-    pub direct: bool,
+    pub policy: LinkServeCarrierPolicy,
     pub relay_origin: Option<String>,
     pub bundle: LinkServeBundle,
 }

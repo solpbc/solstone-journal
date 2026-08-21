@@ -13,12 +13,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_local::install::rfdetr_install::{
-    RfdetrInstallError, RfdetrInstallRecord, binary_path, check_rfdetr_model, model_path,
+    ENGINE_PROVENANCE_REF, RfdetrInstallError, RfdetrInstallRecord, binary_path,
+    check_rfdetr_model, model_path, rfdetr_artifact_key,
 };
 
 const THRESHOLD: &str = "0.25";
 const ENGINE_NAME: &str = "rf-detr.cpp";
-const ENGINE_REF: &str = "65c0ffcc";
 const MODEL_NAME: &str = "rfdetr-nano-f16";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
@@ -43,7 +43,7 @@ pub fn detections_block(result: &Value, source: &str, gate: &str) -> Result<Valu
         .ok_or("detector result omitted detections")?;
     Ok(json!({
         "engine": ENGINE_NAME,
-        "engine_ref": ENGINE_REF,
+        "engine_ref": ENGINE_PROVENANCE_REF,
         "model": MODEL_NAME,
         "threshold": 0.25,
         "source": source,
@@ -109,13 +109,15 @@ fn wait_for_child(child: &mut Child, timeout: Duration) -> Result<ExitStatus, St
 
 fn native_paths(journal: &Path) -> Result<(PathBuf, PathBuf), String> {
     let (os, arch) = canonical_host_pair(env::consts::OS, env::consts::ARCH);
+    let key = rfdetr_artifact_key(os, arch);
     let result = check_rfdetr_model(journal, os, arch);
-    paths_from_install_check(result, journal)
+    paths_from_install_check(result, journal, key)
 }
 
 fn paths_from_install_check(
     result: Result<RfdetrInstallRecord, RfdetrInstallError>,
     journal: &Path,
+    key: Option<&str>,
 ) -> Result<(PathBuf, PathBuf), String> {
     match result {
         Ok(RfdetrInstallRecord::PlatformUnavailable) => {
@@ -123,7 +125,8 @@ fn paths_from_install_check(
         }
         Err(_) => Err("RF-DETR is not installed".to_owned()),
         Ok(RfdetrInstallRecord::Installed) => {
-            let binary = binary_path(journal);
+            let key = key.ok_or_else(|| "RF-DETR is not installed".to_owned())?;
+            let binary = binary_path(journal, key);
             let model = model_path(journal);
             if !binary.is_file() || !model.is_file() {
                 return Err("RF-DETR is not installed".to_owned());
@@ -198,25 +201,30 @@ mod tests {
         fs::create_dir_all(&journal).expect("create unique journal");
 
         assert_eq!(
-            paths_from_install_check(Ok(RfdetrInstallRecord::PlatformUnavailable), &journal),
+            paths_from_install_check(Ok(RfdetrInstallRecord::PlatformUnavailable), &journal, None),
             Err("RF-DETR is unavailable on this platform".to_owned())
         );
         assert_eq!(
             paths_from_install_check(
                 Err(RfdetrInstallError::new("sidecar_missing", "missing", 65)),
                 &journal,
+                Some("linux-cpu-x64"),
             ),
             Err("RF-DETR is not installed".to_owned())
         );
 
-        let binary = binary_path(&journal);
+        let binary = binary_path(&journal, "linux-cpu-x64");
         let model = model_path(&journal);
         fs::create_dir_all(binary.parent().expect("binary parent")).expect("binary parent");
         fs::create_dir_all(model.parent().expect("model parent")).expect("model parent");
         fs::write(&binary, b"binary").expect("write binary");
         fs::write(&model, b"model").expect("write model");
         assert_eq!(
-            paths_from_install_check(Ok(RfdetrInstallRecord::Installed), &journal),
+            paths_from_install_check(
+                Ok(RfdetrInstallRecord::Installed),
+                &journal,
+                Some("linux-cpu-x64"),
+            ),
             Ok((binary.clone(), model.clone()))
         );
         assert!(binary.starts_with(&journal));
@@ -224,7 +232,11 @@ mod tests {
 
         fs::remove_file(&model).expect("remove installed model");
         assert_eq!(
-            paths_from_install_check(Ok(RfdetrInstallRecord::Installed), &journal),
+            paths_from_install_check(
+                Ok(RfdetrInstallRecord::Installed),
+                &journal,
+                Some("linux-cpu-x64"),
+            ),
             Err("RF-DETR is not installed".to_owned())
         );
         fs::remove_dir_all(&journal).expect("remove unique journal");

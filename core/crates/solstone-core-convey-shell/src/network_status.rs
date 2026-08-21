@@ -687,6 +687,7 @@ mod tests {
     use axum::routing::get;
     use serde_json::json;
     use solstone_core_convey_http::identity::Carrier;
+    use solstone_core_sol_link::establish;
     use solstone_core_sol_link::pairing::addresses::LocalEndpoint;
     use solstone_core_spl::REASON_SERVICE_TOKEN_REJECTED;
     use tower::ServiceExt;
@@ -1168,6 +1169,44 @@ mod tests {
         .expect("JSON");
         assert_eq!(body["state"], "enabled");
         assert_eq!(body["enrolled"], true);
+    }
+
+    #[tokio::test]
+    async fn status_reads_native_committed_link_state() {
+        let temporary = TempDir::new();
+        establish::current_candidate(temporary.path()).expect("candidate");
+        let expected = establish::lock_in(temporary.path(), Some("Native Study")).expect("lock in");
+        assert!(!temporary.path().join("link/state.json").exists());
+        let app = Router::new()
+            .route("/status", get(status))
+            .layer(Extension(Arc::new(JournalRoot(
+                temporary.path().to_owned(),
+            ))));
+
+        let response = app
+            .oneshot(
+                Request::get("/status")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .expect("JSON");
+        assert_eq!(
+            body["instance_id"].as_str(),
+            Some(expected.instance_id.as_str())
+        );
+        assert_eq!(
+            body["home_label"].as_str(),
+            Some(expected.home_label.as_str())
+        );
     }
 
     #[tokio::test]

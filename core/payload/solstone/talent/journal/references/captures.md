@@ -227,7 +227,7 @@ Example frame record:
   ```json
   {
     "engine": "rf-detr.cpp",
-    "engine_ref": "65c0ffcc",
+    "engine_ref": "ec73712e",
     "model": "rfdetr-nano-f16",
     "threshold": 0.25,
     "source": "screen",

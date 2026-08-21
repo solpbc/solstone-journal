@@ -721,6 +721,7 @@ mod tests {
     };
 
     use serde_json::{Value, json};
+    use solstone_core_sol_link::establish;
     use tokio::time::timeout;
 
     use super::{
@@ -1057,6 +1058,22 @@ mod tests {
         let mut corrupt_deps = test_deps(corrupt.path());
         assert!(corrupt_deps.load_relay_endpoint().is_err());
         assert!(corrupt_deps.read_posture().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn process_service_loads_instance_id_from_native_committed_state() -> Result<(), String> {
+        let journal = TempJournal::new()?;
+        establish::current_candidate(journal.path()).map_err(|error| error.to_string())?;
+        let expected = establish::lock_in(journal.path(), Some("Native Service"))
+            .map_err(|error| error.to_string())?;
+        assert!(!journal.path().join("link/state.json").exists());
+
+        let actual = test_deps(journal.path())
+            .load_instance_id()
+            .map_err(|_| "native committed instance ID did not load".to_owned())?;
+
+        assert_eq!(actual, expected.instance_id);
         Ok(())
     }
 

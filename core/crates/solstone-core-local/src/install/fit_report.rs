@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use nix::sys::statvfs::statvfs;
 use solstone_core_assets::resolve;
 
-use super::pins;
+use super::{pins, rfdetr_install::rfdetr_artifact_key};
 use crate::vulkan::{cpu_placement_suffix, select_device};
 use crate::{Backend, BackendChoice, MemorySource, NvidiaProbe, VulkanDevice};
 
@@ -141,18 +141,19 @@ pub fn build_rfdetr_fit_report_with_free_bytes(
     arch: &str,
     available: Result<u64, String>,
 ) -> FitReport {
-    let platform = if os_name == "linux" && matches!(arch, "amd64" | "x64" | "x86_64") {
-        FitCheck {
+    let platform = match rfdetr_artifact_key(os_name, arch) {
+        Some(key) => FitCheck {
             name: "platform",
             severity: FitSeverity::Ok,
-            detail: "pinned rf-detr.cpp artifacts are available for x86_64-linux".to_owned(),
-        }
-    } else {
-        FitCheck {
+            detail: format!("pinned rf-detr.cpp artifacts are available for {key}"),
+        },
+        None => FitCheck {
             name: "platform",
             severity: FitSeverity::Blocked,
-            detail: format!("rf-detr.cpp requires x86_64 Linux, got {os_name}/{arch}"),
-        }
+            detail: format!(
+                "rf-detr.cpp requires darwin/arm64, linux/x86_64, or linux/arm64; got {os_name}/{arch}"
+            ),
+        },
     };
     let cache = journal.join("cache/providers/rfdetr");
     let disk = disk_check(

@@ -13,7 +13,8 @@ use serde_json::json;
 use solstone_core_ingest_contract::CONNECTION_BODY_LIMIT;
 use solstone_core_sol_client::resident::ShutdownSignal;
 use solstone_core_sol_client::seam::{
-    LinkServeBundle, LinkServeEndpoint, LinkServeRequest, LinkServeRunner,
+    LinkServeBundle, LinkServeCarrierPolicy, LinkServeEndpoint, LinkServeErrorKind,
+    LinkServeRelayControlEndpoint, LinkServeRequest, LinkServeRunner, LinkServeTransportErrorKind,
 };
 use solstone_core_sol_link::SplLinkServeRunner;
 use solstone_core_sol_link::serve_test_support::{
@@ -534,15 +535,105 @@ fn body_is_complete(raw: &[u8]) -> bool {
         .is_some_and(|length| raw.len() >= header_end + 4 + length)
 }
 
-fn resident_serve_request(port: u16) -> LinkServeRequest {
+fn request_is_complete(raw: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(raw);
+    let Some(header_end) = text.find("\r\n\r\n") else {
+        return false;
+    };
+    content_length_from_headers(&text[..header_end])
+        .map_or(true, |length| raw.len() >= header_end + 4 + length)
+}
+
+fn spawn_mock_relay(enroll_status: Option<u16>, dial_status: u16) -> (String, Arc<AtomicUsize>) {
+    use std::io::{Read as _, Write as _};
+
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind mock relay");
+    let port = listener.local_addr().expect("mock relay address").port();
+    let enroll_hits = Arc::new(AtomicUsize::new(0));
+    let relay_enroll_hits = enroll_hits.clone();
+    std::thread::spawn(move || {
+        for connection in listener.incoming() {
+            let Ok(mut stream) = connection else {
+                continue;
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("mock relay read timeout");
+            let mut raw = Vec::new();
+            let mut chunk = [0_u8; 4096];
+            while !request_is_complete(&raw) {
+                match stream.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(read) => raw.extend_from_slice(&chunk[..read]),
+                    Err(_) => break,
+                }
+            }
+            let request_line = String::from_utf8_lossy(&raw)
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            let response = if request_line.starts_with("POST /enroll/device") {
+                relay_enroll_hits.fetch_add(1, Ordering::SeqCst);
+                if let Some(status) = enroll_status {
+                    let body = r#"{"error":"rejected"}"#;
+                    format!(
+                        "HTTP/1.1 {status} Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                } else {
+                    let body = r#"{"device_token":"mock-relay-token"}"#;
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                }
+            } else if request_line.starts_with("GET /session/dial") {
+                format!(
+                    "HTTP/1.1 {dial_status} Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+            } else {
+                "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    .to_string()
+            };
+            stream
+                .write_all(response.as_bytes())
+                .expect("write mock relay response");
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+        }
+    });
+    (format!("http://127.0.0.1:{port}"), enroll_hits)
+}
+
+fn spawn_lan_decoy_listener() -> (u16, Arc<AtomicUsize>) {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind LAN decoy");
+    let port = listener.local_addr().expect("LAN decoy address").port();
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let decoy_accepted = accepted.clone();
+    std::thread::spawn(move || {
+        for connection in listener.incoming() {
+            if connection.is_ok() {
+                decoy_accepted.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+    });
+    (port, accepted)
+}
+
+fn resident_serve_request(
+    port: u16,
+    policy: LinkServeCarrierPolicy,
+    relay_origin: Option<&str>,
+    endpoint_port: u16,
+) -> LinkServeRequest {
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("client key");
     let params = CertificateParams::new(vec!["client.test".to_string()]).expect("client params");
     let cert = params.self_signed(&key).expect("client cert");
     LinkServeRequest {
         label: "laptop".to_string(),
         port,
-        direct: true,
-        relay_origin: None,
+        policy,
+        relay_origin: relay_origin.map(str::to_string),
         bundle: LinkServeBundle {
             private_key_pem: key.serialize_pem(),
             client_cert_pem: cert.pem(),
@@ -552,7 +643,7 @@ fn resident_serve_request(port: u16) -> LinkServeRequest {
             home_label: "Home".to_string(),
             endpoints: vec![LinkServeEndpoint {
                 host: "127.0.0.1".to_string(),
-                port: unused_loopback_port(),
+                port: endpoint_port,
             }],
             local_endpoints: json!([{"ip": "127.0.0.1", "port": 7657}]),
         },
@@ -761,7 +852,12 @@ fn resident_serve_answers_the_local_status_route_while_on_duty() {
     // entirely. No journal, relay, or peer is involved: the status route is
     // answered locally and never forwarded upstream.
     let session = SplLinkServeRunner
-        .start(resident_serve_request(0))
+        .start(resident_serve_request(
+            0,
+            LinkServeCarrierPolicy::Direct,
+            None,
+            unused_loopback_port(),
+        ))
         .expect("serve session starts");
     let port = session.bound_port();
 
@@ -797,6 +893,65 @@ fn resident_serve_answers_the_local_status_route_while_on_duty() {
         response.contains("\"manager_alive\":true"),
         "status payload should report an active listener: {response}"
     );
+}
+
+#[test]
+fn serve_relay_only_enrollment_failure_makes_no_lan_connection_attempt() {
+    let (relay_origin, _enroll_hits) = spawn_mock_relay(Some(401), 503);
+    let (decoy_port, decoy_accepted) = spawn_lan_decoy_listener();
+
+    let error = match SplLinkServeRunner.start(resident_serve_request(
+        0,
+        LinkServeCarrierPolicy::RelayOnly,
+        Some(&relay_origin),
+        decoy_port,
+    )) {
+        Ok(_) => panic!("relay-only enrollment rejection must fail before bridge startup"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(
+        error.kind,
+        LinkServeErrorKind::Transport(LinkServeTransportErrorKind::RelayControlRejected {
+            endpoint: LinkServeRelayControlEndpoint::EnrollDevice,
+            status: 401,
+        })
+    ));
+    assert_eq!(decoy_accepted.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn serve_relay_only_dial_failure_after_bridge_startup_leaves_lan_decoy_untouched() {
+    let (relay_origin, enroll_hits) = spawn_mock_relay(None, 503);
+    let (decoy_port, decoy_accepted) = spawn_lan_decoy_listener();
+    let session = SplLinkServeRunner
+        .start(resident_serve_request(
+            0,
+            LinkServeCarrierPolicy::RelayOnly,
+            Some(&relay_origin),
+            decoy_port,
+        ))
+        .expect("relay-only bridge starts after enrollment");
+    let port = session.bound_port();
+
+    let shutdown = Arc::new(GateShutdown::new());
+    let serve_shutdown = Arc::clone(&shutdown);
+    let resident = std::thread::spawn(move || session.serve(serve_shutdown.as_ref()));
+
+    let response = loopback_get(port, "/ordinary").expect("ordinary request response");
+    assert!(
+        response.starts_with("HTTP/1.1 502"),
+        "unexpected ordinary response: {response}"
+    );
+
+    shutdown.release();
+    resident
+        .join()
+        .expect("resident thread")
+        .expect("clean shutdown");
+
+    assert_eq!(decoy_accepted.load(Ordering::SeqCst), 0);
+    assert!(enroll_hits.load(Ordering::SeqCst) >= 1);
 }
 
 fn multipart_ingest_body() -> (String, Vec<u8>) {
