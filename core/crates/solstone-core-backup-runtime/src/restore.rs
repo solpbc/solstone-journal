@@ -68,12 +68,13 @@ fn restic(
     json: bool,
     timeout: u64,
 ) -> Result<crate::runner::ResticResult, RestoreResult> {
+    let restic_path = services.restic_path().map_err(failure)?;
     run_restic(
         services.runner,
         &args,
         &destination.repository,
         key,
-        services.restic_path,
+        restic_path,
         Some(env),
         json,
         None,
@@ -256,7 +257,7 @@ mod tests {
             runner,
             http,
             clock,
-            restic_path: Path::new("restic"),
+            restic_path: Some(Path::new("/fixture/bin/restic")),
             rclone_path: None,
             version: "test",
             journal_maintenance: maintenance,
@@ -294,6 +295,28 @@ mod tests {
             Some("/journal")
         );
         assert_eq!(original_path(Some(&serde_json::json!([]))), None);
+    }
+    #[test]
+    fn absent_restic_path_returns_existing_unavailable_reason_without_runner_call() {
+        let journal = tempfile::tempdir().unwrap();
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).unwrap();
+        let runner = Script(RefCell::new(VecDeque::new()));
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance(RefCell::new(vec![]));
+        let mut services = services(&runner, &http, &clock, &maintenance);
+        services.restic_path = None;
+
+        let result = restore_journal(
+            journal.path(),
+            &services,
+            destination(),
+            &stored.recovery_key,
+        );
+
+        assert_eq!(result.status, "error");
+        assert_eq!(result.reason_code.as_deref(), Some("restic_unavailable"));
+        assert!(runner.0.borrow().is_empty());
     }
     #[test]
     fn integrity_unverified_still_rebuilds_persists_and_scans_without_offload_restore() {

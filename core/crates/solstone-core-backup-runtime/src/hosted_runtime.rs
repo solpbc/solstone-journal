@@ -12,6 +12,8 @@ use solstone_core_backup::{
     load_hosted_binding,
 };
 
+use crate::runner::{RunnerError, is_explicit_program_path};
+
 pub const BROKER_TIMEOUT_SECONDS: u64 = 30;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -277,8 +279,11 @@ pub fn hosted_append_only_session(
     binding: &HostedBinding,
     credentials: &HostedCredentials,
     rclone: &Path,
-) -> HostedResticSession {
-    HostedResticSession {
+) -> Result<HostedResticSession, RunnerError> {
+    if !is_explicit_program_path(rclone) {
+        return Err(RunnerError::BareProgram);
+    }
+    Ok(HostedResticSession {
         destination: Destination {
             repository: format!("rclone:spb:{}/{}", binding.bucket, binding.prefix),
             backend: "rclone".into(),
@@ -313,7 +318,7 @@ pub fn hosted_append_only_session(
             "-o".into(),
             "rclone.args=serve restic --stdio --append-only --config /dev/null".into(),
         ],
-    }
+    })
 }
 
 pub enum RuntimeResolution {
@@ -383,6 +388,39 @@ mod tests {
             prefix: "prefix".into(),
             broker_token: "TOKEN".into(),
         }
+    }
+    fn credentials() -> HostedCredentials {
+        HostedCredentials {
+            access_key_id: "ACCESS".into(),
+            secret_access_key: "SECRET".into(),
+            session_token: "SESSION".into(),
+            endpoint: "https://s3.example".into(),
+            expires_at: "tomorrow".into(),
+        }
+    }
+    #[test]
+    fn append_only_session_refuses_bare_rclone_program() {
+        assert!(matches!(
+            hosted_append_only_session(&binding(), &credentials(), Path::new("rclone")),
+            Err(RunnerError::BareProgram)
+        ));
+        let session = hosted_append_only_session(
+            &binding(),
+            &credentials(),
+            Path::new("/fixture/bin/rclone"),
+        )
+        .unwrap();
+        assert!(
+            session
+                .global_options
+                .contains(&"rclone.program=/fixture/bin/rclone".into())
+        );
+        assert!(
+            !session
+                .global_options
+                .iter()
+                .any(|option| option == "rclone.program=rclone")
+        );
     }
     #[test]
     fn debug_redacts_credentials() {

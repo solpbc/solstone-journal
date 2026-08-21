@@ -167,6 +167,10 @@ fn restore_segment(
             .into_iter()
             .map(|(key, value)| (key, value.as_str().map(str::to_owned)))
             .collect::<BTreeMap<_, _>>();
+        let restic_path = match services.restic_path() {
+            Ok(path) => path,
+            Err(reason) => return (err(&reason), true),
+        };
         let mut args = vec![
             "restore".into(),
             format!(
@@ -185,7 +189,7 @@ fn restore_segment(
             &args,
             &destination.repository,
             &keys.daily_key,
-            services.restic_path,
+            restic_path,
             Some(&env),
             true,
             None,
@@ -502,7 +506,7 @@ mod tests {
             runner,
             http,
             clock,
-            restic_path: Path::new("restic"),
+            restic_path: Some(Path::new("/fixture/bin/restic")),
             rclone_path: None,
             version: "test",
             journal_maintenance: maintenance,
@@ -519,7 +523,7 @@ mod tests {
             runner,
             http,
             clock,
-            restic_path: Path::new("restic"),
+            restic_path: Some(Path::new("/fixture/bin/restic")),
             rclone_path: None,
             version: "test",
             journal_maintenance: maintenance,
@@ -807,6 +811,31 @@ mod tests {
 
         assert_eq!(result.status, "no_op");
         assert_eq!(result.reason.as_deref(), Some("nothing_to_restore"));
+        assert!(runner.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn absent_restic_path_fails_lazily_without_runner_call() {
+        let journal = tempfile::tempdir().unwrap();
+        let segment = marked_segment(journal.path(), "20260111", "110000_011", b"eleven");
+        fs::remove_file(segment.join("raw.webm")).unwrap();
+        fs::create_dir_all(journal.path().join("config")).unwrap();
+        fs::write(
+            journal.path().join("config/journal.json"),
+            r#"{"backup":{"daily_key":"PASSWORDONLY","recovery_key":"0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ","destination":{"repository":"s3:bucket/prefix","backend":"s3","credentials":{"access_key_id":"ACCESSFIXTURE","secret_access_key":"BACKENDSECRET"}}}}"#,
+        )
+        .unwrap();
+        let runner = empty_runner();
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+        let mut services = services(&runner, &http, &clock, &maintenance);
+        services.restic_path = None;
+
+        let result = restore_offload_day(journal.path(), &services, "20260111");
+
+        assert_eq!(result.status, "error");
+        assert_eq!(result.reason.as_deref(), Some("restic_unavailable"));
         assert!(runner.calls.borrow().is_empty());
     }
 

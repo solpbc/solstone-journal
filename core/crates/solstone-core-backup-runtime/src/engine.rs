@@ -97,11 +97,18 @@ pub struct BackupServices<'a> {
     pub http: &'a dyn HttpTransport,
     pub clock: &'a dyn Clock,
     /// A ready pinned restic binary; readiness/install remains phase 1 authority.
-    pub restic_path: &'a Path,
+    pub restic_path: Option<&'a Path>,
     /// Required only for operated append-only backup/archive sessions.
     pub rclone_path: Option<&'a Path>,
     pub version: &'a str,
     pub journal_maintenance: &'a dyn JournalMaintenance,
+}
+
+impl BackupServices<'_> {
+    pub fn restic_path(&self) -> Result<&Path, String> {
+        self.restic_path
+            .ok_or_else(|| "restic_unavailable".to_owned())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -183,6 +190,7 @@ fn runtime(
                     .rclone_path
                     .ok_or_else(|| "rclone_unavailable".to_owned())?;
                 hosted_append_only_session(&binding, &credentials, rclone)
+                    .map_err(|_| "rclone_unavailable")?
             } else {
                 hosted_session(&binding, &credentials).map_err(|_| "failed")?
             };
@@ -217,6 +225,7 @@ fn restic(
     timeout: u64,
     max_repack_size: Option<&str>,
 ) -> Result<crate::runner::ResticResult, String> {
+    let restic_path = services.restic_path()?;
     let mut full = Vec::new();
     full.append(&mut runtime.global_options.clone());
     full.append(&mut args);
@@ -225,7 +234,7 @@ fn restic(
         &full,
         &runtime.destination.repository,
         &runtime.password,
-        services.restic_path,
+        restic_path,
         Some(&runtime.backend_env),
         json_output,
         max_repack_size,
@@ -771,7 +780,7 @@ mod tests {
             runner,
             http,
             clock,
-            restic_path: Path::new("restic"),
+            restic_path: Some(Path::new("/fixture/bin/restic")),
             rclone_path: None,
             version: "test",
             journal_maintenance: maintenance,
@@ -840,6 +849,25 @@ mod tests {
                 .windows(2)
                 .any(|pair| pair == ["--exclude", ".removing_*"])
         );
+    }
+    #[test]
+    fn absent_restic_path_records_existing_unavailable_reason_without_runner_call() {
+        let journal = configured_journal();
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            commands: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+        let mut services = services(&runner, &http, &clock, &maintenance);
+        services.restic_path = None;
+
+        let result = run_backup(journal.path(), &services);
+
+        assert_eq!(result.status, "error");
+        assert_eq!(result.error_reason.as_deref(), Some("restic_unavailable"));
+        assert!(runner.commands.borrow().is_empty());
     }
     #[test]
     fn verification_replaces_even_a_later_last_ok_and_clears_on_error() {

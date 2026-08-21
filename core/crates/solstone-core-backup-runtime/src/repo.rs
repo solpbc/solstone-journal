@@ -300,7 +300,7 @@ mod tests {
             &destination(),
             "daily",
             "recovery",
-            Path::new("restic"),
+            Path::new("/fixture/bin/restic"),
             None,
         )
         .unwrap();
@@ -330,7 +330,7 @@ mod tests {
             &destination(),
             "daily",
             "recovery",
-            Path::new("restic"),
+            Path::new("/fixture/bin/restic"),
             None,
         )
         .unwrap();
@@ -350,7 +350,7 @@ mod tests {
             &destination(),
             "daily",
             "recovery",
-            Path::new("restic"),
+            Path::new("/fixture/bin/restic"),
             None,
         )
         .unwrap();
@@ -371,7 +371,7 @@ mod tests {
                 &destination(),
                 "daily",
                 "recovery",
-                Path::new("restic"),
+                Path::new("/fixture/bin/restic"),
                 None
             )
             .is_err()
@@ -397,7 +397,7 @@ mod tests {
                 &destination(),
                 "daily",
                 "recovery",
-                Path::new("restic"),
+                Path::new("/fixture/bin/restic"),
                 None
             )
             .is_err()
@@ -421,7 +421,7 @@ mod tests {
                 &destination(),
                 "daily",
                 "recovery",
-                Path::new("restic"),
+                Path::new("/fixture/bin/restic"),
                 None
             )
             .is_err()

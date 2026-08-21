@@ -113,7 +113,7 @@ fn run_cli_with_deps(
         runner,
         http,
         clock: &clock,
-        restic_path: Path::new("restic"),
+        restic_path: None,
         rclone_path: None,
         version: env!("CARGO_PKG_VERSION"),
         journal_maintenance: &restore_hooks,
@@ -142,7 +142,7 @@ fn run_cli_with_deps(
             match resolve_operational_tools(runner, downloader, journal, append_only, dirs) {
                 Ok(tools) => {
                     let backup_services = BackupServices {
-                        restic_path: &tools.restic_path,
+                        restic_path: Some(&tools.restic_path),
                         rclone_path: tools.rclone_path.as_deref(),
                         ..placeholder
                     };
@@ -485,7 +485,7 @@ mod composed_tests {
             runner: &runner,
             http: &http,
             clock: &clock,
-            restic_path: Path::new("restic"),
+            restic_path: Some(Path::new("/fixture/bin/restic")),
             rclone_path: None,
             version: "test",
             journal_maintenance: &hooks,
@@ -959,6 +959,7 @@ mod resolution_tests {
             args(&["run", "backup:prune"]),
             args(&["run", "backup:verify"]),
             args(&["run", "backup:offload"]),
+            args(&["run", "backup:offload", "--dry-run"]),
         ] {
             let runner = RecordingRunner::new();
             run_cli_with_deps(
