@@ -25,11 +25,12 @@ use solstone_core_sol_link::ledger::{
 use solstone_core_sol_link::pairing::addresses::{
     PairingSnapshot, SystemInterfaceSource, SystemRouteIpv4Source, snapshot_from_sources,
 };
-use solstone_core_sol_link::pairing::nonces::NonceStore;
+use solstone_core_sol_link::pairing::nonces::{NonceStore, relay_pairing_nonce_open};
 use solstone_core_sol_link::pairing::{
     CeremonyRequest, MintRequest, PairingError, complete_pairing, mint_pairing, pair_response_json,
 };
 
+use crate::door::PairingAdmission;
 use crate::network_status::{identity, local_endpoints, private_link, status};
 use crate::network_writes;
 use crate::pair_window_manager::PairWindowManager;
@@ -420,6 +421,7 @@ fn network_device_json(
 pub(crate) async fn pair(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
+    pairing_admission: Option<Extension<PairingAdmission>>,
     pair_windows: Option<Extension<Arc<PairWindowManager>>>,
     snapshot: Option<Extension<PairingSnapshot>>,
     Query(query): Query<PairTokenQuery>,
@@ -450,6 +452,20 @@ pub(crate) async fn pair(
             StatusCode::BAD_REQUEST,
         );
     };
+    let relay_nonce_mismatch = pairing_admission
+        .as_ref()
+        .is_some_and(|Extension(admission)| {
+            matches!(admission, PairingAdmission::Relay(identity) if !identity.matches(nonce))
+                || matches!(admission, PairingAdmission::Direct)
+                    && relay_pairing_nonce_open(&NonceStore::new(&root.0), nonce, now())
+        });
+    if relay_nonce_mismatch {
+        return refusal(
+            "pairing_request_invalid",
+            "pairing nonce does not match the pairing carrier",
+            StatusCode::FORBIDDEN,
+        );
+    }
     let snapshot = match snapshot {
         Some(Extension(snapshot)) => snapshot,
         None => match snapshot_from_sources(&SystemInterfaceSource, &SystemRouteIpv4Source) {
@@ -1137,7 +1153,9 @@ mod tests {
                 root,
                 "/app/network",
                 Arc::new(OperationRegistry::default()),
-                Arc::new(PairWindowManager::new()),
+                Arc::new(PairWindowManager::new(Arc::new(
+                    crate::relay_admission::RelayAdmissionRegistry::new(),
+                ))),
             ));
         let _shell = crate::router(temporary.path().to_path_buf());
     }

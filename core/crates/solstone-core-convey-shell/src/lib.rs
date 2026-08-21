@@ -125,6 +125,7 @@ mod network_writes;
 mod pair_window_manager;
 pub mod refusal;
 pub mod registry;
+mod relay_admission;
 #[cfg(feature = "host")]
 mod restart;
 pub mod session;
@@ -322,6 +323,8 @@ pub async fn bind_with_authorization(
 ) -> Result<ConveyServeHandle, ConveyServeError> {
     use solstone_core_convey_http::listener::bind_loopback;
 
+    let relay_admissions = relay_admission::admission_registry_for(&options.journal_root);
+    relay_admissions.clear();
     pair_window_manager::cleanup_relay_windows_on_startup(
         &options.journal_root,
         pair_window_manager::unix_seconds(),
@@ -365,6 +368,7 @@ pub async fn bind_with_authorization(
         carrier_loop_iterations: options.carrier_loop_iterations,
         handshake_authorization_read_ticks: options.handshake_authorization_read_ticks,
         authorization_sender,
+        relay_admissions,
     }));
     let loopback_router = options
         .router
@@ -529,7 +533,9 @@ pub fn router(journal_root: PathBuf) -> Router {
     let shell = Arc::new(shell_payload());
     let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
     let operation_registry = Arc::new(OperationRegistry::default());
-    let pair_windows = Arc::new(pair_window_manager::PairWindowManager::new());
+    let pair_windows = Arc::new(pair_window_manager::PairWindowManager::new(
+        relay_admission::admission_registry_for(&journal_root),
+    ));
     let mut routes = Router::new()
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))

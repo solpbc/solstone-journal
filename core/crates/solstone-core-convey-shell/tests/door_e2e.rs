@@ -851,7 +851,6 @@ where
     .expect("pair response")
 }
 
-const PAIR_RELAY_TUNNEL_ID: &str = "door-e2e-pair-window";
 const RELAY_TUNNEL_WRITE_MAX: usize = 64 * 1024;
 
 type PairRelaySocket = WebSocketStream<TcpStream>;
@@ -869,6 +868,7 @@ struct SinglePairRelay {
 struct SinglePairRelayState {
     windows: HashMap<String, PairRelayWindow>,
     tunnels: HashMap<String, PairRelayTunnel>,
+    next_tunnel: u64,
 }
 
 struct PairRelayWindow {
@@ -878,6 +878,7 @@ struct PairRelayWindow {
 
 struct PairRelayTunnel {
     token: String,
+    relay_key: String,
     attach: Option<oneshot::Sender<PairRelaySocket>>,
 }
 
@@ -1026,10 +1027,10 @@ fn inspect_pair_tunnel_attach(
     let Some(tunnel_id) = request.uri().path().strip_prefix("/tunnel/") else {
         return Err(WsStatusCode::NOT_FOUND);
     };
-    if request.uri().query().is_some()
-        || tunnel_id.is_empty()
-        || request.headers().contains_key("sec-pair-key")
-    {
+    let Some(relay_key) = pair_relay_header(request, "sec-pair-key") else {
+        return Err(WsStatusCode::BAD_REQUEST);
+    };
+    if request.uri().query().is_some() || tunnel_id.is_empty() {
         return Err(WsStatusCode::BAD_REQUEST);
     }
     let mut state = lock_pair_relay(state);
@@ -1037,6 +1038,9 @@ fn inspect_pair_tunnel_attach(
         return Err(WsStatusCode::NOT_FOUND);
     };
     if tunnel.token != token {
+        return Err(WsStatusCode::FORBIDDEN);
+    }
+    if tunnel.relay_key != relay_key {
         return Err(WsStatusCode::FORBIDDEN);
     }
     let Some(attach) = tunnel.attach.take() else {
@@ -1112,30 +1116,31 @@ async fn serve_single_pair_dial(
         };
         let token = window.token.clone();
         let offers = window.offers.clone();
-        if state.tunnels.contains_key(PAIR_RELAY_TUNNEL_ID) {
-            return;
-        }
+        let tunnel_id = format!("door-e2e-pair-window-{}", state.next_tunnel);
+        state.next_tunnel += 1;
         let (attach, receiver) = oneshot::channel();
         state.tunnels.insert(
-            PAIR_RELAY_TUNNEL_ID.to_owned(),
+            tunnel_id.clone(),
             PairRelayTunnel {
                 token,
+                relay_key: relay_key.to_owned(),
                 attach: Some(attach),
             },
         );
-        if offers.send(PAIR_RELAY_TUNNEL_ID.to_owned()).is_err() {
-            state.tunnels.remove(PAIR_RELAY_TUNNEL_ID);
+        if offers.send(tunnel_id.clone()).is_err() {
+            state.tunnels.remove(&tunnel_id);
             return;
         }
-        receiver
+        (tunnel_id, receiver)
     };
+    let (tunnel_id, receiver) = receiver;
     let Ok(attach) = receiver.await else {
         return;
     };
     let mut mobile = RelayByteStream::new(websocket);
     let mut home = RelayByteStream::new(attach);
     let _ = tokio::io::copy_bidirectional(&mut mobile, &mut home).await;
-    lock_pair_relay(&state).tunnels.remove(PAIR_RELAY_TUNNEL_ID);
+    lock_pair_relay(&state).tunnels.remove(&tunnel_id);
 }
 
 fn lock_pair_relay<T>(value: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -1303,6 +1308,18 @@ fn relay_key_hex(secret: &[u8; 8]) -> String {
         write!(&mut value, "{byte:02x}").expect("hex string writes");
     }
     value
+}
+
+fn relay_key_from_pair_link(pair_link: &str, relay_origin: &str) -> String {
+    match spl_core::pairlink::parse(pair_link).expect("relay pair link parses") {
+        spl_core::pairlink::ParsedPairLink::Relay(link) => {
+            assert_eq!(link.relay_origin, relay_origin);
+            relay_key_hex(&link.s)
+        }
+        spl_core::pairlink::ParsedPairLink::Direct(_) => {
+            panic!("SPL off-machine mint must emit a v06 relay link")
+        }
+    }
 }
 
 async fn two_pair_requests_on_one_carrier(
@@ -2204,7 +2221,7 @@ async fn pairing_window_admits_a_certless_carrier_only_for_the_pair_route() {
         "no nonce file reads empty"
     );
     assert!(
-        !solstone_core_sol_link::pairing::nonces::pairing_window_open(
+        !solstone_core_sol_link::pairing::nonces::direct_pairing_window_open(
             &no_file_store,
             pairing_now()
         )
@@ -2228,7 +2245,9 @@ async fn pairing_window_admits_a_certless_carrier_only_for_the_pair_route() {
         used_store.snapshot().iter().all(|entry| entry.used),
         "all entries are used"
     );
-    assert!(!solstone_core_sol_link::pairing::nonces::pairing_window_open(&used_store, used_now));
+    assert!(
+        !solstone_core_sol_link::pairing::nonces::direct_pairing_window_open(&used_store, used_now)
+    );
     assert_certless_tls_refused(&used).await;
 
     let expired = Fixture::established(0);
@@ -2251,7 +2270,10 @@ async fn pairing_window_admits_a_certless_carrier_only_for_the_pair_route() {
         "all entries are expired"
     );
     assert!(
-        !solstone_core_sol_link::pairing::nonces::pairing_window_open(&expired_store, expired_now)
+        !solstone_core_sol_link::pairing::nonces::direct_pairing_window_open(
+            &expired_store,
+            expired_now
+        )
     );
     assert_certless_tls_refused(&expired).await;
 
@@ -2280,7 +2302,7 @@ async fn pairing_window_admits_a_certless_carrier_only_for_the_pair_route() {
         "last nonce was just consumed"
     );
     assert!(
-        !solstone_core_sol_link::pairing::nonces::pairing_window_open(
+        !solstone_core_sol_link::pairing::nonces::direct_pairing_window_open(
             &consumed_store,
             consumed_now
         )
@@ -2416,7 +2438,7 @@ async fn pairing_confinement_applies_to_real_certless_carriers_and_unmatched_pat
         .add("first".into(), "phone".into(), "".into(), false, now)
         .expect("open window");
     assert!(
-        solstone_core_sol_link::pairing::nonces::pairing_window_open(&store, now),
+        solstone_core_sol_link::pairing::nonces::direct_pairing_window_open(&store, now),
         "open fixture"
     );
     let mut carrier = live_certless_carrier(door_port(handle.door_outcome()))
@@ -2434,7 +2456,7 @@ async fn pairing_confinement_applies_to_real_certless_carriers_and_unmatched_pat
         "closed fixture is consumed"
     );
     assert!(
-        !solstone_core_sol_link::pairing::nonces::pairing_window_open(&store, now),
+        !solstone_core_sol_link::pairing::nonces::direct_pairing_window_open(&store, now),
         "window closes before route"
     );
     let closed = exchange_over_carrier(
@@ -2455,7 +2477,7 @@ async fn pairing_confinement_applies_to_real_certless_carriers_and_unmatched_pat
         .add("second".into(), "phone".into(), "".into(), false, now)
         .expect("reopen window");
     assert!(
-        solstone_core_sol_link::pairing::nonces::pairing_window_open(&store, now),
+        solstone_core_sol_link::pairing::nonces::direct_pairing_window_open(&store, now),
         "reopened fixture"
     );
     let tunnel_body = b"pairing tunnel may only use /app/network/pair".to_vec();
@@ -2813,50 +2835,194 @@ async fn pair_response_is_canonical_and_omits_empty_local_endpoints_on_raw_json(
 
 #[tokio::test]
 async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(Duration::from_secs(15), async {
         let fixture = Fixture::established(0);
         let relay = SinglePairRelay::bind().await;
         configure_relay_pairing(&fixture, relay.origin());
-        let handle = serve(options(
-            &fixture,
-            pairing_router(&fixture, pairing_snapshot()),
-            7657,
-        ))
+        let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+            AuthorizedClientsRead::Missing,
+        ));
+        let door_base = pairing_router(&fixture, pairing_snapshot());
+        let handle = bind_with_authorization(
+            options(&fixture, pairing_router(&fixture, pairing_snapshot()), 7657),
+            solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+                door_base,
+                fixture.root.clone(),
+                authorization,
+            ),
+            authorization_sender,
+        )
         .await
         .expect("serve relay pairing Door");
         assert_eq!(door_port(handle.door_outcome()), 7657);
 
-        let mint = mint_relay_from_loopback(&handle, "relay phone").await;
-        let nonce = mint["nonce"].as_str().expect("relay nonce").to_owned();
-        let pair_link = mint["pair_link"].as_str().expect("relay pair link");
-        let relay_key = match spl_core::pairlink::parse(pair_link).expect("relay pair link parses")
-        {
-            spl_core::pairlink::ParsedPairLink::Relay(link) => {
-                assert_eq!(link.relay_origin, relay.origin());
-                relay_key_hex(&link.s)
-            }
-            spl_core::pairlink::ParsedPairLink::Direct(_) => {
-                panic!("SPL off-machine mint must emit a v06 relay link")
-            }
-        };
+        let mint_a = mint_relay_from_loopback(&handle, "relay phone A").await;
+        let nonce_a = mint_a["nonce"].as_str().expect("relay nonce A").to_owned();
+        let relay_key_a = relay_key_from_pair_link(
+            mint_a["pair_link"].as_str().expect("relay pair link A"),
+            relay.origin(),
+        );
+        assert!(
+            !solstone_core_sol_link::pairing::nonces::direct_pairing_window_open(
+                &solstone_core_sol_link::pairing::nonces::NonceStore::new(&fixture.root),
+                pairing_now(),
+            ),
+            "the relay-only fixture has no direct pairing nonce"
+        );
 
-        let response = {
-            let mobile = fake_mobile_pair_dial(relay.origin(), &relay_key).await;
-            let mut carrier = certless_carrier(mobile)
-                .await
-                .expect("relay bridge reaches certless Door admission");
-            let response = post_pair_over_certless_stream(
-                &mut carrier,
-                Some(&nonce),
-                serde_json::json!({
-                    "csr": csr_pem("relay phone"),
-                    "device_label": "relay phone",
-                }),
+        let arbitrary_loopback = TcpStream::connect((Ipv4Addr::LOCALHOST, 7657))
+            .await
+            .expect("ordinary loopback TCP connects");
+        let mut unadmitted = certless_carrier(arbitrary_loopback)
+            .await
+            .expect("the TLS client can finish before the server processes its empty certificate");
+        assert!(
+            exchange_over_carrier(
+                &mut unadmitted,
+                &mut FrameDecoder::new(),
+                1,
+                "POST",
+                "/app/network/pair",
+                &[],
+                b"{}",
             )
-            .await;
-            drop(carrier);
-            response
-        };
+            .await
+            .is_err(),
+            "an ordinary loopback socket with only relay A live is refused before HTTP"
+        );
+
+        let direct = mint_from_loopback(&handle, "direct phone").await;
+        let direct_nonce = direct["nonce"].as_str().expect("direct nonce");
+        let mut direct_carrier = live_certless_carrier(7657)
+            .await
+            .expect("direct pairing carrier");
+        let direct_relay_attempt = post_pair_over_certless_stream(
+            &mut direct_carrier,
+            Some(&nonce_a),
+            serde_json::json!({
+                "csr": csr_pem("direct phone against relay A"),
+                "device_label": "direct phone against relay A",
+            }),
+        )
+        .await;
+        assert_eq!(
+            direct_relay_attempt.status, 403,
+            "a direct carrier cannot consume relay A"
+        );
+        let store = solstone_core_sol_link::pairing::nonces::NonceStore::new(&fixture.root);
+        assert!(
+            solstone_core_sol_link::pairing::nonces::relay_pairing_nonce_open(
+                &store,
+                &nonce_a,
+                pairing_now(),
+            ),
+            "the rejected direct request does not consume relay A"
+        );
+        assert_eq!(
+            AuthorizationLedger::new(&fixture.root).snapshot().len(),
+            0,
+            "the rejected direct request does not issue a certificate or mutate the ledger"
+        );
+        drop(direct_carrier);
+        let direct_response = post_pair_over_certless_carrier(
+            7657,
+            Some(direct_nonce),
+            serde_json::json!({
+                "csr": csr_pem("direct phone"),
+                "device_label": "direct phone",
+            }),
+        )
+        .await;
+        assert_eq!(
+            direct_response.status, 200,
+            "direct pairing remains available"
+        );
+        assert!(
+            solstone_core_sol_link::pairing::nonces::relay_pairing_nonce_open(
+                &store,
+                &nonce_a,
+                pairing_now(),
+            ),
+            "direct pairing does not consume relay A"
+        );
+
+        let mint_b = mint_relay_from_loopback(&handle, "relay phone B").await;
+        let nonce_b = mint_b["nonce"].as_str().expect("relay nonce B").to_owned();
+        let relay_key_b = relay_key_from_pair_link(
+            mint_b["pair_link"].as_str().expect("relay pair link B"),
+            relay.origin(),
+        );
+
+        let mobile_a = fake_mobile_pair_dial(relay.origin(), &relay_key_a).await;
+        let mut carrier_a = certless_carrier(mobile_a)
+            .await
+            .expect("relay bridge A reaches certless Door admission");
+        let mut decoder = FrameDecoder::new();
+        let mut ids = FrameDialer::default();
+        let confined = exchange_over_carrier(
+            &mut carrier_a,
+            &mut decoder,
+            ids.allocate(),
+            "POST",
+            "/app/network/pair-start",
+            &[],
+            b"{}",
+        )
+        .await
+        .expect("relay confinement response");
+        assert_eq!(
+            confined.status, 403,
+            "relay admission remains pair-path confined"
+        );
+
+        let mismatched_path = format!("{}?token={nonce_b}", spl_core::PAIR_PATH);
+        let mismatched_body = serde_json::to_vec(&serde_json::json!({
+            "csr": csr_pem("relay phone B mismatch"),
+            "device_label": "relay phone B mismatch",
+        }))
+        .expect("mismatched pair request JSON");
+        let mismatched = exchange_over_carrier(
+            &mut carrier_a,
+            &mut decoder,
+            ids.allocate(),
+            "POST",
+            &mismatched_path,
+            &[("content-type".into(), "application/json".into())],
+            &mismatched_body,
+        )
+        .await
+        .expect("mismatched relay response");
+        assert_eq!(mismatched.status, 403, "relay A cannot submit relay B");
+        assert!(
+            solstone_core_sol_link::pairing::nonces::relay_pairing_nonce_open(
+                &store,
+                &nonce_b,
+                pairing_now(),
+            ),
+            "relay B remains live after A's mismatched request"
+        );
+        let mut ledger_after_mismatch = AuthorizationLedger::new(&fixture.root);
+        assert_eq!(
+            ledger_after_mismatch.snapshot().len(),
+            1,
+            "the mismatched relay request cannot issue a certificate or mutate the ledger"
+        );
+        drop(carrier_a);
+
+        let mobile_b = fake_mobile_pair_dial(relay.origin(), &relay_key_b).await;
+        let mut carrier_b = certless_carrier(mobile_b)
+            .await
+            .expect("relay bridge B reaches certless Door admission");
+        let response = post_pair_over_certless_stream(
+            &mut carrier_b,
+            Some(&nonce_b),
+            serde_json::json!({
+                "csr": csr_pem("relay phone B"),
+                "device_label": "relay phone B",
+            }),
+        )
+        .await;
+        drop(carrier_b);
         assert_eq!(
             response.status,
             200,
@@ -2876,8 +3042,8 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
 
         // A consumed nonce remains in this store until normal GC, but it is no
         // longer live authority and cannot be cancelled or reused.
-        let nonce = solstone_core_sol_link::pairing::nonces::NonceStore::new(&fixture.root)
-            .peek(&nonce)
+        let nonce = store
+            .peek(&nonce_b)
             .expect("consumed relay nonce remains observable for GC");
         assert!(
             nonce.used,
@@ -2885,8 +3051,12 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
         );
         let mut ledger = AuthorizationLedger::new(&fixture.root);
         let entries = ledger.snapshot();
-        assert_eq!(entries.len(), 1, "relay pairing adds exactly one client");
-        assert_eq!(entries[0].fingerprint, fingerprint);
+        assert_eq!(
+            entries.len(),
+            2,
+            "direct and relay B pairing add one client each"
+        );
+        assert!(entries.iter().any(|entry| entry.fingerprint == fingerprint));
 
         handle.shutdown();
     })

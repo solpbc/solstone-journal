@@ -18,10 +18,12 @@ use solstone_core_sol_link::DeviceDoorAuthorization;
 use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsRead, read_authorized_clients,
 };
-use solstone_core_sol_link::pairing::nonces::{NonceStore, pairing_window_open};
+use solstone_core_sol_link::pairing::nonces::{
+    NonceStore, direct_pairing_window_open, relay_pairing_nonce_open,
+};
 use tokio::sync::watch;
 
-use crate::door::PairingWindowAdmission;
+use crate::door::PairingAdmission;
 
 /// Per-router authorization-read instrumentation for black-box contract tests.
 #[doc(hidden)]
@@ -184,12 +186,15 @@ async fn require_pairing_confinement(
         .as_secs()
         .try_into()
         .expect("Unix seconds fit i64");
-    if request
-        .extensions()
-        .get::<PairingWindowAdmission>()
-        .is_none()
-        && !pairing_window_open(&NonceStore::new(&state.journal_root), now)
-    {
+    let store = NonceStore::new(&state.journal_root);
+    let pairing_admitted = match request.extensions().get::<PairingAdmission>() {
+        Some(PairingAdmission::Direct) => true,
+        Some(PairingAdmission::Relay(identity)) => {
+            relay_pairing_nonce_open(&store, identity.nonce_value(), now)
+        }
+        None => direct_pairing_window_open(&store, now),
+    };
+    if !pairing_admitted {
         return pairing_confinement_response("pairing window closed");
     }
     let raw_path = request.uri().path();
@@ -290,6 +295,9 @@ mod tests {
     use solstone_core_sol_link::ledger::{AuthorizationLedger, AuthorizedClientsRead};
     use tokio::sync::watch;
     use tower::ServiceExt;
+
+    use crate::door::PairingAdmission;
+    use crate::relay_admission::RelayNonceIdentity;
 
     use super::{
         AUTHORIZATION_GATE_EXEMPTIONS, AuthorizationExemption, AuthorizationGateState,
@@ -418,5 +426,47 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn relay_admission_requires_its_exact_live_nonce() {
+        let temporary = tempfile::TempDir::new_in("/var/tmp").expect("temporary root");
+        let (_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+            AuthorizedClientsRead::Missing,
+        ));
+        let app = authorized_router_with_router(
+            Router::new().route(spl_core::PAIR_PATH, post(|| async { StatusCode::OK })),
+            temporary.path().to_path_buf(),
+            authorization,
+        )
+        .into_inner();
+        let store = solstone_core_sol_link::pairing::nonces::NonceStore::new(temporary.path());
+        let now = 2_200_000_000;
+        store
+            .add_relay("relay-a".into(), "phone".into(), "".into(), now)
+            .expect("relay window");
+
+        async fn response(app: Router, nonce: &str) -> StatusCode {
+            let mut request = Request::post(spl_core::PAIR_PATH)
+                .body(Body::empty())
+                .expect("request");
+            request.extensions_mut().insert(AccessBasis::PairingPeer {
+                carrier: Carrier::ViaSpl,
+            });
+            request
+                .extensions_mut()
+                .insert(PairingAdmission::Relay(RelayNonceIdentity::new(
+                    nonce.to_owned(),
+                )));
+            app.oneshot(request).await.expect("response").status()
+        }
+
+        assert_eq!(response(app.clone(), "relay-a").await, StatusCode::OK);
+        assert_eq!(
+            response(app.clone(), "relay-b").await,
+            StatusCode::FORBIDDEN
+        );
+        store.consume("relay-a", now).expect("consume relay");
+        assert_eq!(response(app, "relay-a").await, StatusCode::FORBIDDEN);
     }
 }

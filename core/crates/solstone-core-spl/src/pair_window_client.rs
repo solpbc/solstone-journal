@@ -9,6 +9,7 @@
 
 use std::{
     fmt, io,
+    net::{Ipv4Addr, SocketAddr},
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -18,7 +19,7 @@ use futures_util::{Sink, Stream, StreamExt};
 use thiserror::Error;
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
-    net::TcpStream,
+    net::{TcpSocket, TcpStream},
     time::timeout,
 };
 use tokio_tungstenite::{
@@ -344,27 +345,46 @@ pub async fn register_pair_window(
 
 /// Attach the home side of a pairing relay tunnel.
 ///
-/// The attachment uses the service bearer credential only. It deliberately
-/// omits both `Sec-Pair-Key` and every query parameter.
+/// The attachment carries the service bearer credential and relay key as
+/// headers. Neither application credential appears in the request URL.
 pub async fn attach_pair_window_tunnel(
     relay_origin: &str,
     tunnel_id: &str,
     service_token: &ServiceToken,
+    rendezvous_key: &RelayPairKey,
 ) -> Result<PairWindowTunnel, PairWindowClientError> {
-    let request = tunnel_attach_request(relay_origin, tunnel_id, service_token)?;
+    let request = tunnel_attach_request(relay_origin, tunnel_id, service_token, rendezvous_key)?;
     connect(request).await.map(PairWindowTunnel::new)
 }
 
 /// Pipe an attached pairing tunnel into Convey's existing anonymous Door.
 ///
+/// `on_loopback_bound` receives the bridge's pre-bound local address before
+/// Door can accept its connection. Its return value is retained until the
+/// bridge completes or fails.
+///
 /// # Errors
 ///
-/// Returns a class-only bridge failure for either the loopback dial or the
+/// Returns a class-only bridge failure for the loopback bind or dial, or the
 /// subsequent byte copy.
-pub async fn bridge_pair_window_tunnel(
+pub async fn bridge_pair_window_tunnel<OnLoopbackBound, Guard>(
     tunnel: PairWindowTunnel,
-) -> Result<(u64, u64), PairWindowClientError> {
-    let loopback = TcpStream::connect(("127.0.0.1", 7657))
+    on_loopback_bound: OnLoopbackBound,
+) -> Result<(u64, u64), PairWindowClientError>
+where
+    OnLoopbackBound: FnOnce(SocketAddr) -> Guard + Send + 'static,
+    Guard: Send + 'static,
+{
+    let socket = TcpSocket::new_v4().map_err(|_| PairWindowClientError::Bridge)?;
+    socket
+        .bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .map_err(|_| PairWindowClientError::Bridge)?;
+    let local_addr = socket
+        .local_addr()
+        .map_err(|_| PairWindowClientError::Bridge)?;
+    let _admission_lease = on_loopback_bound(local_addr);
+    let loopback = socket
+        .connect(SocketAddr::from((Ipv4Addr::LOCALHOST, 7657)))
         .await
         .map_err(|_| PairWindowClientError::Bridge)?;
     pipe_loopback(tunnel, loopback, &[])
@@ -377,23 +397,35 @@ fn registration_request(
     service_token: &ServiceToken,
     relay_key: &RelayPairKey,
 ) -> Result<Request<()>, PairWindowClientError> {
-    let mut request =
-        authenticated_request(&pair_window_registration_url(relay_origin)?, service_token)?;
-    let relay_key =
-        HeaderValue::from_str(relay_key.as_str()).map_err(|_| PairWindowClientError::Request)?;
-    request.headers_mut().insert("sec-pair-key", relay_key);
-    Ok(request)
+    with_relay_key(
+        authenticated_request(&pair_window_registration_url(relay_origin)?, service_token)?,
+        relay_key,
+    )
 }
 
 fn tunnel_attach_request(
     relay_origin: &str,
     tunnel_id: &str,
     service_token: &ServiceToken,
+    rendezvous_key: &RelayPairKey,
 ) -> Result<Request<()>, PairWindowClientError> {
-    authenticated_request(
-        &pair_window_tunnel_url(relay_origin, tunnel_id)?,
-        service_token,
+    with_relay_key(
+        authenticated_request(
+            &pair_window_tunnel_url(relay_origin, tunnel_id)?,
+            service_token,
+        )?,
+        rendezvous_key,
     )
+}
+
+fn with_relay_key(
+    mut request: Request<()>,
+    relay_key: &RelayPairKey,
+) -> Result<Request<()>, PairWindowClientError> {
+    let relay_key =
+        HeaderValue::from_str(relay_key.as_str()).map_err(|_| PairWindowClientError::Request)?;
+    request.headers_mut().insert("sec-pair-key", relay_key);
+    Ok(request)
 }
 
 fn authenticated_request(
@@ -531,7 +563,7 @@ mod tests {
         let token = token();
         let registration = registration_request("https://relay.test", &token, &relay_key)
             .map_err(|error| error.to_string())?;
-        let attach = tunnel_attach_request("https://relay.test", "offer-1", &token)
+        let attach = tunnel_attach_request("https://relay.test", "offer-1", &token, &relay_key)
             .map_err(|error| error.to_string())?;
 
         assert_eq!(registration.uri().query(), None);
@@ -557,7 +589,13 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("Bearer service-token")
         );
-        assert!(attach.headers().get("sec-pair-key").is_none());
+        assert_eq!(
+            attach
+                .headers()
+                .get("sec-pair-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("e34481a4cde647ba9c9fb29a59e18271")
+        );
 
         let registration_header_names = header_names(&registration);
         let attach_header_names = header_names(&attach);
@@ -579,6 +617,7 @@ mod tests {
                 "authorization",
                 "connection",
                 "host",
+                "sec-pair-key",
                 "sec-websocket-key",
                 "sec-websocket-version",
                 "upgrade",

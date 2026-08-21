@@ -16,20 +16,35 @@ use solstone_core_sol_link::pairing::{
 };
 use solstone_core_spl::{
     LinkServiceTokenRead, PairWindowClientError, PairWindowRegistration, PairWindowSecret,
-    ServiceToken, attach_pair_window_tunnel, bridge_pair_window_tunnel, load_link_service_token,
-    register_pair_window, relay_url,
+    RelayPairKey, ServiceToken, attach_pair_window_tunnel, bridge_pair_window_tunnel,
+    load_link_service_token, register_pair_window, relay_url,
 };
 use tokio::{sync::oneshot, task::JoinHandle, time::timeout};
+
+use crate::relay_admission::{RelayAdmissionRegistry, RelayNonceIdentity};
 
 /// Process-local relay-window registrations, keyed by their local nonce value.
 pub(crate) struct PairWindowManager {
     windows: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
+    relay_admissions: Arc<RelayAdmissionRegistry>,
+}
+
+struct PairWindowTask {
+    journal_root: PathBuf,
+    relay_origin: String,
+    service_token: ServiceToken,
+    relay_key: RelayPairKey,
+    relay_admissions: Arc<RelayAdmissionRegistry>,
+    nonce_value: String,
+    expires_at: i64,
+    registration: PairWindowRegistration,
 }
 
 impl PairWindowManager {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(relay_admissions: Arc<RelayAdmissionRegistry>) -> Self {
         Self {
             windows: Arc::new(Mutex::new(HashMap::new())),
+            relay_admissions,
         }
     }
 
@@ -68,14 +83,16 @@ impl PairWindowManager {
         };
         let response = draft.response();
         let nonce_value = draft.secret_hex().to_owned();
-        self.spawn_window(
-            journal_root.to_path_buf(),
+        self.spawn_window(PairWindowTask {
+            journal_root: journal_root.to_path_buf(),
             relay_origin,
             service_token,
+            relay_key,
+            relay_admissions: Arc::clone(&self.relay_admissions),
             nonce_value,
-            nonce.expires_at,
+            expires_at: nonce.expires_at,
             registration,
-        );
+        });
         Ok(response)
     }
 
@@ -92,6 +109,7 @@ impl PairWindowManager {
         for task in tasks {
             task.abort();
         }
+        self.relay_admissions.clear();
         NonceStore::new(journal_root)
             .cancel_all_relay_windows(now)
             .map_err(PairingError::NonceStore)?;
@@ -109,6 +127,7 @@ impl PairWindowManager {
         nonce_value: &str,
         now: i64,
     ) -> Result<(), PairingError> {
+        self.relay_admissions.remove_for_nonce(nonce_value);
         NonceStore::new(journal_root)
             .cancel(nonce_value, now)
             .map_err(PairingError::NonceStore)?;
@@ -120,40 +139,19 @@ impl PairWindowManager {
         lock_windows(&self.windows).len()
     }
 
-    fn spawn_window(
-        &self,
-        journal_root: PathBuf,
-        relay_origin: String,
-        service_token: ServiceToken,
-        nonce_value: String,
-        expires_at: i64,
-        registration: PairWindowRegistration,
-    ) {
+    fn spawn_window(&self, task: PairWindowTask) {
         let windows = Arc::clone(&self.windows);
-        let task_nonce = nonce_value.clone();
+        let task_nonce = task.nonce_value.clone();
+        let windows_key = task_nonce.clone();
         let (start, started) = oneshot::channel();
         let task = tokio::spawn(async move {
             if started.await.is_ok() {
-                serve_window(
-                    journal_root,
-                    relay_origin,
-                    service_token,
-                    task_nonce.clone(),
-                    expires_at,
-                    registration,
-                )
-                .await;
+                serve_window(task).await;
                 lock_windows(&windows).remove(&task_nonce);
             }
         });
-        lock_windows(&self.windows).insert(nonce_value, task);
+        lock_windows(&self.windows).insert(windows_key, task);
         let _ = start.send(());
-    }
-}
-
-impl Default for PairWindowManager {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -166,26 +164,27 @@ pub(crate) fn cleanup_relay_windows_on_startup(
     Ok(())
 }
 
-async fn serve_window(
-    journal_root: PathBuf,
-    relay_origin: String,
-    service_token: ServiceToken,
-    nonce_value: String,
-    expires_at: i64,
-    mut registration: PairWindowRegistration,
-) {
-    let wait =
-        Duration::from_secs(u64::try_from(expires_at.saturating_sub(unix_seconds())).unwrap_or(0));
-    let offer = timeout(wait, registration.next_offer()).await;
+async fn serve_window(mut task: PairWindowTask) {
+    let wait = Duration::from_secs(
+        u64::try_from(task.expires_at.saturating_sub(unix_seconds())).unwrap_or(0),
+    );
+    let offer = timeout(wait, task.registration.next_offer()).await;
     let tunnel_id = match offer {
         Ok(Ok(offer)) => offer.tunnel_id,
         Ok(Err(_)) | Err(_) => {
-            let _ = registration.close().await;
-            let _ = NonceStore::new(&journal_root).cancel(&nonce_value, unix_seconds());
+            let _ = task.registration.close().await;
+            let _ = NonceStore::new(&task.journal_root).cancel(&task.nonce_value, unix_seconds());
             return;
         }
     };
-    let tunnel = match attach_pair_window_tunnel(&relay_origin, &tunnel_id, &service_token).await {
+    let tunnel = match attach_pair_window_tunnel(
+        &task.relay_origin,
+        &tunnel_id,
+        &task.service_token,
+        &task.relay_key,
+    )
+    .await
+    {
         Ok(tunnel) => tunnel,
         Err(error) => {
             if matches!(error, PairWindowClientError::Rejected(403)) {
@@ -196,14 +195,19 @@ async fn serve_window(
             } else {
                 log::debug!("relay pairing tunnel attach failed");
             }
-            let _ = registration.close().await;
-            let _ = NonceStore::new(&journal_root).cancel(&nonce_value, unix_seconds());
+            let _ = task.registration.close().await;
+            let _ = NonceStore::new(&task.journal_root).cancel(&task.nonce_value, unix_seconds());
             return;
         }
     };
-    let _ = bridge_pair_window_tunnel(tunnel).await;
-    let _ = registration.close().await;
-    let _ = NonceStore::new(&journal_root).cancel(&nonce_value, unix_seconds());
+    let relay_identity = RelayNonceIdentity::new(task.nonce_value.clone());
+    let relay_admissions = Arc::clone(&task.relay_admissions);
+    let _ = bridge_pair_window_tunnel(tunnel, move |local_addr| {
+        relay_admissions.insert(local_addr, relay_identity)
+    })
+    .await;
+    let _ = task.registration.close().await;
+    let _ = NonceStore::new(&task.journal_root).cancel(&task.nonce_value, unix_seconds());
 }
 
 fn service_token(journal_root: &Path) -> Result<ServiceToken, PairingError> {
@@ -252,11 +256,14 @@ mod tests {
     use std::{
         fs, future,
         path::{Path, PathBuf},
+        sync::Arc,
         sync::atomic::{AtomicU64, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
 
     use solstone_core_sol_link::pairing::nonces::NonceStore;
+
+    use crate::relay_admission::RelayAdmissionRegistry;
 
     use super::{PairWindowManager, cleanup_relay_windows_on_startup};
 
@@ -291,7 +298,7 @@ mod tests {
     async fn retire_all_aborts_registered_windows_and_is_empty_safe() {
         let temporary = TempDir::new();
         fs::create_dir_all(temporary.path().join("link")).expect("link directory");
-        let manager = PairWindowManager::new();
+        let manager = PairWindowManager::new(Arc::new(RelayAdmissionRegistry::new()));
         assert_eq!(manager.registered_count(), 0);
         manager
             .retire_all(temporary.path(), 10)
@@ -315,7 +322,7 @@ mod tests {
         store
             .add_relay("nonce".into(), "phone".into(), "observer".into(), 10)
             .expect("relay nonce");
-        let manager = PairWindowManager::new();
+        let manager = PairWindowManager::new(Arc::new(RelayAdmissionRegistry::new()));
         let task = tokio::spawn(async { future::pending::<()>().await });
         super::lock_windows(&manager.windows).insert("nonce".to_owned(), task);
 

@@ -256,13 +256,25 @@ impl NonceStore {
     }
 }
 
-/// The pairing-window predicate has no error channel. An unreadable store is a
-/// closed window, never a request-time 500.
-pub fn pairing_window_open(store: &NonceStore, now: i64) -> bool {
+/// Whether any direct pairing nonce is live.
+///
+/// This predicate has no error channel. An unreadable store is a closed
+/// window, never a request-time 500.
+pub fn direct_pairing_window_open(store: &NonceStore, now: i64) -> bool {
     store
         .snapshot()
         .into_iter()
-        .any(|nonce| !nonce.used && nonce.expires_at > now)
+        .any(|nonce| nonce.kind == NonceKind::Direct && !nonce.used && nonce.expires_at > now)
+}
+
+/// Whether this exact relay-v06 nonce is live.
+///
+/// This is deliberately an exact-value predicate: a live relay nonce does not
+/// authorize another relay carrier.
+pub fn relay_pairing_nonce_open(store: &NonceStore, nonce_value: &str, now: i64) -> bool {
+    store.peek(nonce_value).is_some_and(|nonce| {
+        nonce.kind == NonceKind::RelayV06 && !nonce.used && nonce.expires_at > now
+    })
 }
 
 fn gc_entries(entries: &mut BTreeMap<String, Nonce>, now: i64) {
@@ -408,10 +420,10 @@ mod tests {
         store
             .add("old".into(), "phone".into(), "".into(), false, -400)
             .expect("old");
-        assert!(pairing_window_open(&store, 11));
+        assert!(direct_pairing_window_open(&store, 11));
         assert!(store.consume("live", 11).expect("consume").is_some());
         assert!(store.peek("live").expect("used nonce").used);
-        assert!(!pairing_window_open(&store, 11));
+        assert!(!direct_pairing_window_open(&store, 11));
         assert!(store.consume("live", 11).expect("repeat").is_none());
         assert!(
             store.peek("live").is_none(),
@@ -427,8 +439,8 @@ mod tests {
             .add("bound-live".into(), "phone".into(), "".into(), false, 1_000)
             .expect("live");
         assert_eq!(first.expires_at, 1_000 + NONCE_TTL_SECONDS);
-        assert!(pairing_window_open(&store, first.expires_at - 1));
-        assert!(!pairing_window_open(&store, first.expires_at));
+        assert!(direct_pairing_window_open(&store, first.expires_at - 1));
+        assert!(!direct_pairing_window_open(&store, first.expires_at));
         assert!(
             store
                 .consume("bound-live", first.expires_at - 1)
@@ -454,6 +466,29 @@ mod tests {
     }
 
     #[test]
+    fn relay_window_predicate_requires_the_exact_live_relay_nonce() {
+        let (_temporary, store) = store();
+        store
+            .add("direct".into(), "phone".into(), "".into(), false, 100)
+            .expect("direct nonce");
+        store
+            .add_relay("relay-a".into(), "phone".into(), "".into(), 100)
+            .expect("relay nonce");
+        store
+            .add_relay("relay-expired".into(), "phone".into(), "".into(), -201)
+            .expect("expired relay nonce");
+
+        assert!(direct_pairing_window_open(&store, 101));
+        assert!(relay_pairing_nonce_open(&store, "relay-a", 101));
+        assert!(!relay_pairing_nonce_open(&store, "direct", 101));
+        assert!(!relay_pairing_nonce_open(&store, "relay-b", 101));
+        assert!(!relay_pairing_nonce_open(&store, "relay-expired", 101));
+
+        store.consume("relay-a", 101).expect("consume relay");
+        assert!(!relay_pairing_nonce_open(&store, "relay-a", 101));
+    }
+
+    #[test]
     fn consume_reads_through_its_lock_and_window_maps_bad_states_to_closed() {
         let (temporary, store) = store();
         store
@@ -474,10 +509,10 @@ mod tests {
         );
         for contents in ["not json", "{}"] {
             fs::write(store.path(), contents).expect("bad store");
-            assert!(!pairing_window_open(&store, 2));
+            assert!(!direct_pairing_window_open(&store, 2));
         }
         fs::remove_file(store.path()).expect("remove store");
-        assert!(!pairing_window_open(&store, 2));
+        assert!(!direct_pairing_window_open(&store, 2));
         assert!(!temporary.path().join("link").join("nonces.json").exists());
     }
 

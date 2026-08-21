@@ -644,6 +644,7 @@ struct FakePairRelayWindow {
 
 struct FakePairRelayTunnel {
     token: String,
+    relay_key: String,
     attached: bool,
     bytes_from_home: usize,
 }
@@ -734,15 +735,15 @@ impl FakePairRelay {
     }
 
     async fn send_offer(&self, token: &str, tunnel_id: &str) -> Result<(), String> {
-        let offers = loop {
+        let (relay_key, offers) = loop {
             let notified = self.changed.notified();
-            if let Some(offers) = lock(&self.state)
+            if let Some((relay_key, offers)) = lock(&self.state)
                 .windows
-                .values()
-                .find(|window| window.token == token)
-                .map(|window| window.offers.clone())
+                .iter()
+                .find(|(_, window)| window.token == token)
+                .map(|(relay_key, window)| (relay_key.clone(), window.offers.clone()))
             {
-                break offers;
+                break (relay_key, offers);
             }
             notified.await;
         };
@@ -755,6 +756,7 @@ impl FakePairRelay {
                 tunnel_id.to_owned(),
                 FakePairRelayTunnel {
                     token: token.to_owned(),
+                    relay_key,
                     attached: false,
                     bytes_from_home: 0,
                 },
@@ -881,10 +883,14 @@ fn inspect_pair_tunnel_attach(
             StatusCode::NOT_FOUND,
         );
     };
-    if request.uri().query().is_some()
-        || tunnel_id.is_empty()
-        || request.headers().contains_key("sec-pair-key")
-    {
+    let Some(relay_key) = nonempty_header(request, "sec-pair-key") else {
+        return reject_pair_relay_request(
+            state,
+            PairRelayEndpoint::TunnelAttach,
+            StatusCode::BAD_REQUEST,
+        );
+    };
+    if request.uri().query().is_some() || tunnel_id.is_empty() {
         return reject_pair_relay_request(
             state,
             PairRelayEndpoint::TunnelAttach,
@@ -902,6 +908,14 @@ fn inspect_pair_tunnel_attach(
         );
     };
     if tunnel.token != token {
+        drop(relay_state);
+        return reject_pair_relay_request(
+            state,
+            PairRelayEndpoint::TunnelAttach,
+            StatusCode::FORBIDDEN,
+        );
+    }
+    if tunnel.relay_key != relay_key {
         drop(relay_state);
         return reject_pair_relay_request(
             state,
@@ -1195,12 +1209,14 @@ async fn pair_window_registration_receives_fake_relay_offer() -> Result<(), Stri
 }
 
 #[tokio::test]
-async fn pair_window_tunnel_attach_refuses_mismatched_window_bearer_before_bytes()
+async fn pair_window_tunnel_attach_refuses_mismatched_window_credentials_before_bytes()
 -> Result<(), String> {
     timeout(TEST_TIMEOUT, async {
         let relay = FakePairRelay::bind().await?;
         let secret = pair_window_secret([0x20, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]);
         let relay_key = secret.relay_key();
+        let wrong_relay_key =
+            pair_window_secret([0x21, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]).relay_key();
         let token_a = service_token("home-a-token");
         let token_b = service_token("home-b-token");
         let mut registration = register_pair_window(relay.endpoint(), &token_a, &relay_key)
@@ -1213,14 +1229,25 @@ async fn pair_window_tunnel_attach_refuses_mismatched_window_bearer_before_bytes
             .await
             .map_err(|error| format!("offer read failed: {error}"))?;
         assert_rejected(
-            attach_pair_window_tunnel(relay.endpoint(), &offer.tunnel_id, &token_b).await,
+            attach_pair_window_tunnel(relay.endpoint(), &offer.tunnel_id, &token_b, &relay_key)
+                .await,
+            403,
+        )?;
+        assert_rejected(
+            attach_pair_window_tunnel(
+                relay.endpoint(),
+                &offer.tunnel_id,
+                &token_a,
+                &wrong_relay_key,
+            )
+            .await,
             403,
         )?;
         if relay.bytes_from_home(&offer.tunnel_id) != Some(0) {
             return Err("mismatched bearer reached pairing tunnel bytes".to_owned());
         }
-        if relay.rejected_tunnel_attach_count() != 1 {
-            return Err("fake relay did not record mismatched bearer refusal".to_owned());
+        if relay.rejected_tunnel_attach_count() != 2 {
+            return Err("fake relay did not record mismatched credential refusals".to_owned());
         }
         registration
             .close()
@@ -1251,9 +1278,10 @@ async fn pair_window_tunnel_attach_accepts_matching_window_bearer_and_exchanges_
             .next_offer()
             .await
             .map_err(|error| format!("offer read failed: {error}"))?;
-        let mut tunnel = attach_pair_window_tunnel(relay.endpoint(), &offer.tunnel_id, &token)
-            .await
-            .map_err(|error| format!("matching tunnel attach failed: {error}"))?;
+        let mut tunnel =
+            attach_pair_window_tunnel(relay.endpoint(), &offer.tunnel_id, &token, &relay_key)
+                .await
+                .map_err(|error| format!("matching tunnel attach failed: {error}"))?;
         tunnel
             .write_all(b"pair-window bytes")
             .await
@@ -1323,16 +1351,18 @@ async fn pair_windows_isolate_secrets_bearers_and_used_tunnels() -> Result<(), S
         }
 
         assert_rejected(
-            attach_pair_window_tunnel(relay.endpoint(), &offer_a.tunnel_id, &token_b).await,
+            attach_pair_window_tunnel(relay.endpoint(), &offer_a.tunnel_id, &token_b, &relay_key_a)
+                .await,
             403,
         )?;
         assert_rejected(
-            attach_pair_window_tunnel(relay.endpoint(), &offer_b.tunnel_id, &token_a).await,
+            attach_pair_window_tunnel(relay.endpoint(), &offer_b.tunnel_id, &token_a, &relay_key_b)
+                .await,
             403,
         )?;
 
         let mut tunnel_a =
-            attach_pair_window_tunnel(relay.endpoint(), &offer_a.tunnel_id, &token_a)
+            attach_pair_window_tunnel(relay.endpoint(), &offer_a.tunnel_id, &token_a, &relay_key_a)
                 .await
                 .map_err(|error| format!("window A matching attach failed: {error}"))?;
         tunnel_a
@@ -1353,7 +1383,8 @@ async fn pair_windows_isolate_secrets_bearers_and_used_tunnels() -> Result<(), S
             .await
             .map_err(|_| "window A tunnel shutdown failed".to_owned())?;
         assert_rejected(
-            attach_pair_window_tunnel(relay.endpoint(), &offer_a.tunnel_id, &token_a).await,
+            attach_pair_window_tunnel(relay.endpoint(), &offer_a.tunnel_id, &token_a, &relay_key_a)
+                .await,
             401,
         )?;
         if relay.bytes_from_home(&offer_a.tunnel_id) != Some(1) {

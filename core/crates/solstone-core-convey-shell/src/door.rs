@@ -34,7 +34,9 @@ use solstone_core_sol_link::committed::load_committed_identity;
 use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsRead, read_authorized_clients,
 };
-use solstone_core_sol_link::pairing::nonces::{NonceStore, pairing_window_open};
+use solstone_core_sol_link::pairing::nonces::{
+    NonceStore, direct_pairing_window_open, relay_pairing_nonce_open,
+};
 use solstone_core_sol_link::{
     DeviceDoorAuthorization, DeviceDoorVerifier, spawn_authorization_refresh,
 };
@@ -44,6 +46,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex as AsyncMutex, watch};
 use tokio::time::{Sleep, sleep};
 
+use crate::relay_admission::{RelayAdmissionRegistry, RelayNonceIdentity};
 use crate::session::{SessionState, classify_session};
 use crate::{DoorOutcome, DoorWithheldReason};
 
@@ -53,11 +56,21 @@ const PAIRING_REAPER_INTERVAL: Duration = Duration::from_millis(250);
 const MAX_PAIRING_CARRIERS: usize = 4;
 const MAX_PAIRING_FAILURES: usize = 3;
 
-/// A stream accepted during an open pairing window. The outer confinement
-/// layer preserves that queued admission while retaining its authoritative
-/// closed-window check for streams accepted later.
-#[derive(Clone, Copy)]
-pub(crate) struct PairingWindowAdmission;
+/// A stream accepted under direct or exact relay pairing authority.
+#[derive(Clone, Debug)]
+pub(crate) enum PairingAdmission {
+    Direct,
+    Relay(RelayNonceIdentity),
+}
+
+impl PairingAdmission {
+    fn is_live(&self, store: &NonceStore, now: i64) -> bool {
+        match self {
+            Self::Direct => direct_pairing_window_open(store, now),
+            Self::Relay(identity) => relay_pairing_nonce_open(store, identity.nonce_value(), now),
+        }
+    }
+}
 
 pub(super) struct DoorStartOptions {
     pub journal_root: std::path::PathBuf,
@@ -68,6 +81,7 @@ pub(super) struct DoorStartOptions {
     pub carrier_loop_iterations: Arc<AtomicU64>,
     pub handshake_authorization_read_ticks: Arc<AtomicU64>,
     pub authorization_sender: watch::Sender<DeviceDoorAuthorization>,
+    pub relay_admissions: Arc<RelayAdmissionRegistry>,
 }
 
 pub(super) struct DoorStart {
@@ -110,6 +124,7 @@ struct DoorStartParts {
     carrier_loop_iterations: Arc<AtomicU64>,
     handshake_authorization_read_ticks: Arc<AtomicU64>,
     authorization_sender: watch::Sender<DeviceDoorAuthorization>,
+    relay_admissions: Arc<RelayAdmissionRegistry>,
 }
 
 impl DoorStartParts {
@@ -123,6 +138,7 @@ impl DoorStartParts {
             carrier_loop_iterations: options.carrier_loop_iterations,
             handshake_authorization_read_ticks: options.handshake_authorization_read_ticks,
             authorization_sender: options.authorization_sender,
+            relay_admissions: options.relay_admissions,
         }
     }
 
@@ -136,6 +152,7 @@ impl DoorStartParts {
             carrier_loop_iterations: self.carrier_loop_iterations.clone(),
             handshake_authorization_read_ticks: self.handshake_authorization_read_ticks.clone(),
             authorization_sender: self.authorization_sender.clone(),
+            relay_admissions: self.relay_admissions.clone(),
         }
     }
 }
@@ -338,8 +355,13 @@ struct PairingCarrierRegistry {
     active: AtomicUsize,
     refusals: Arc<AtomicU64>,
     next_id: AtomicU64,
-    carriers: Mutex<std::collections::HashMap<u64, std::sync::Weak<PairingCarrierState>>>,
+    carriers: Mutex<std::collections::HashMap<u64, PairingCarrier>>,
     delay: Arc<dyn PairingDelay>,
+}
+
+struct PairingCarrier {
+    state: std::sync::Weak<PairingCarrierState>,
+    admission: PairingAdmission,
 }
 
 impl PairingCarrierRegistry {
@@ -353,7 +375,10 @@ impl PairingCarrierRegistry {
         }
     }
 
-    fn admit(&self) -> Option<(u64, Arc<PairingCarrierState>, watch::Receiver<bool>)> {
+    fn admit(
+        &self,
+        admission: PairingAdmission,
+    ) -> Option<(u64, Arc<PairingCarrierState>, watch::Receiver<bool>)> {
         if self
             .active
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
@@ -368,7 +393,13 @@ impl PairingCarrierRegistry {
         self.carriers
             .lock()
             .expect("pairing carrier registry lock")
-            .insert(id, Arc::downgrade(&state));
+            .insert(
+                id,
+                PairingCarrier {
+                    state: Arc::downgrade(&state),
+                    admission,
+                },
+            );
         Some((id, state, receiver))
     }
 
@@ -384,13 +415,16 @@ impl PairingCarrierRegistry {
         self.refusals.clone()
     }
 
-    fn reap_closed_windows(&self) {
+    fn reap_closed_windows(&self, journal_root: &std::path::Path, now: i64) {
+        let store = NonceStore::new(journal_root);
         let mut carriers = self.carriers.lock().expect("pairing carrier registry lock");
-        carriers.retain(|_, weak| {
-            let Some(carrier) = weak.upgrade() else {
+        carriers.retain(|_, entry| {
+            let Some(carrier) = entry.state.upgrade() else {
                 return false;
             };
-            if carrier.in_flight.load(Ordering::Acquire) == 0 {
+            if !entry.admission.is_live(&store, now)
+                && carrier.in_flight.load(Ordering::Acquire) == 0
+            {
                 carrier.close();
             }
             true
@@ -411,7 +445,7 @@ type IdentityCell = Arc<Mutex<Option<AcceptedIdentity>>>;
 struct DoorIdentityVerifier {
     inner: Arc<DeviceDoorVerifier>,
     identity: IdentityCell,
-    pairing_window_open: bool,
+    certless_pairing_admitted: bool,
 }
 
 impl std::fmt::Debug for DoorIdentityVerifier {
@@ -426,22 +460,22 @@ impl DoorIdentityVerifier {
     fn new(
         inner: Arc<DeviceDoorVerifier>,
         identity: IdentityCell,
-        pairing_window_open: bool,
+        certless_pairing_admitted: bool,
     ) -> Self {
         Self {
             inner,
             identity,
-            pairing_window_open,
+            certless_pairing_admitted,
         }
     }
 }
 
 impl ClientCertVerifier for DoorIdentityVerifier {
     fn offer_client_auth(&self) -> bool {
-        self.pairing_window_open || self.inner.offer_client_auth()
+        true
     }
     fn client_auth_mandatory(&self) -> bool {
-        !self.pairing_window_open && self.inner.client_auth_mandatory()
+        !self.certless_pairing_admitted
     }
     fn root_hint_subjects(&self) -> &[DistinguishedName] {
         self.inner.root_hint_subjects()
@@ -649,6 +683,7 @@ pub(super) async fn start(options: DoorStartOptions) -> DoorStart {
         carrier_loop_iterations: options.carrier_loop_iterations,
         handshake_authorization_read_ticks: options.handshake_authorization_read_ticks,
         pairing_registry: pairing_registry.clone(),
+        relay_admissions: options.relay_admissions,
     });
     let accept_task = tokio::spawn(accept_loop(
         listener,
@@ -676,14 +711,13 @@ struct DoorConnectionConfig {
     carrier_loop_iterations: Arc<AtomicU64>,
     handshake_authorization_read_ticks: Arc<AtomicU64>,
     pairing_registry: Arc<PairingCarrierRegistry>,
+    relay_admissions: Arc<RelayAdmissionRegistry>,
 }
 
 async fn pairing_reaper(journal_root: PathBuf, registry: Arc<PairingCarrierRegistry>) {
     loop {
         sleep(PAIRING_REAPER_INTERVAL).await;
-        if !pairing_window_open(&NonceStore::new(&journal_root), unix_seconds()) {
-            registry.reap_closed_windows();
-        }
+        registry.reap_closed_windows(&journal_root, unix_seconds());
     }
 }
 
@@ -756,6 +790,14 @@ async fn serve_carrier(
     if let Err(error) = SockRef::from(&stream).set_tcp_keepalive(&keepalive) {
         log::debug!("paired-device door could not configure TCP keepalive: {error}");
     }
+    let store = NonceStore::new(&config.journal_root);
+    let now = unix_seconds();
+    let pairing_admission = peer
+        .and_then(|address| config.relay_admissions.take(address))
+        .filter(|identity| relay_pairing_nonce_open(&store, identity.nonce_value(), now))
+        .map(PairingAdmission::Relay)
+        .or_else(|| direct_pairing_window_open(&store, now).then_some(PairingAdmission::Direct));
+    let certless_pairing_admitted = pairing_admission.is_some();
     let identity: IdentityCell = Arc::new(Mutex::new(None));
     let path = config.authorized_clients_path.clone();
     #[cfg(debug_assertions)]
@@ -778,8 +820,6 @@ async fn serve_carrier(
             DeviceDoorAuthorization::from(AuthorizedClientsRead::Unreadable)
         }
     };
-    let pairing_window_open =
-        pairing_window_open(&NonceStore::new(&config.journal_root), unix_seconds());
     let device_verifier = Arc::new(DeviceDoorVerifier::new(
         config.verifier.clone(),
         authorization,
@@ -790,7 +830,7 @@ async fn serve_carrier(
         client_cert_verifier: Arc::new(DoorIdentityVerifier::new(
             device_verifier,
             identity.clone(),
-            pairing_window_open,
+            certless_pairing_admitted,
         )),
         // Peer stream 9 is refused with `refuse(StreamLimit)` rather than tearing
         // down the carrier, so 8 safely bounds normal parallel requests. Per
@@ -819,13 +859,16 @@ async fn serve_carrier(
             return;
         }
     };
-    let Some(basis) = capture_to_basis(&identity, peer, pairing_window_open) else {
+    let Some(basis) = capture_to_basis(&identity, peer, certless_pairing_admitted) else {
         log::debug!("paired-device carrier completed without an accepted identity");
         return;
     };
     let pairing_carrier = matches!(basis, AccessBasis::PairingPeer { .. });
     let pairing_control = if pairing_carrier {
-        match config.pairing_registry.admit() {
+        let admission = pairing_admission
+            .clone()
+            .expect("pairing basis requires a pairing admission");
+        match config.pairing_registry.admit(admission) {
             Some(control) => Some(control),
             None => {
                 // TLS has completed at this point. Refuse without writing a
@@ -866,14 +909,21 @@ async fn serve_carrier(
                 let Ok(stream) = stream else { break; };
                 let router = router.clone();
                 let basis = basis.clone();
+                let pairing_admission = pairing_admission.clone();
                 let pairing_state = pairing_control.as_ref().map(|(_, state, _)| state.clone());
-                let stream_has_pairing_window_admission = matches!(
-                    &basis,
-                    AccessBasis::PairingPeer { .. }
-                ) && solstone_core_sol_link::pairing::nonces::pairing_window_open(
-                    &NonceStore::new(&config.journal_root),
-                    unix_seconds(),
-                );
+                let stream_pairing_admission = matches!(&basis, AccessBasis::PairingPeer { .. })
+                    .then(|| match &pairing_admission {
+                        Some(PairingAdmission::Direct)
+                            if direct_pairing_window_open(
+                                &NonceStore::new(&config.journal_root),
+                                unix_seconds(),
+                            ) => Some(PairingAdmission::Direct),
+                        Some(PairingAdmission::Relay(identity)) => {
+                            Some(PairingAdmission::Relay(identity.clone()))
+                        }
+                        Some(PairingAdmission::Direct) | None => None,
+                    })
+                    .flatten();
                 tokio::spawn(async move {
                     let builder = mux_builder();
                     // A 60 s production bound is injected through `serve` for tests.
@@ -886,10 +936,9 @@ async fn serve_carrier(
                             constrain_pair_dispatch,
                         ))
                     });
-                    let router = if stream_has_pairing_window_admission {
-                        router.layer(Extension(PairingWindowAdmission))
-                    } else {
-                        router
+                    let router = match stream_pairing_admission {
+                        Some(admission) => router.layer(Extension(admission)),
+                        None => router,
                     };
                     if let Err(error) = serve_connection(stream, router, basis, &builder).await {
                         log::debug!("paired-device door stream failed: {error}");
@@ -1050,14 +1099,14 @@ fn record_completed_handshake(journal_root: &std::path::Path, did: &LinkedDevice
 fn capture_to_basis(
     identity: &IdentityCell,
     peer: Option<SocketAddr>,
-    pairing_window_open: bool,
+    certless_pairing_admitted: bool,
 ) -> Option<AccessBasis> {
     match identity.lock().ok()?.clone() {
         Some(accepted) => Some(AccessBasis::LinkedDevice {
             carrier: carrier_from_peer(peer),
             did: accepted.did,
         }),
-        None if pairing_window_open => Some(AccessBasis::PairingPeer {
+        None if certless_pairing_admitted => Some(AccessBasis::PairingPeer {
             carrier: carrier_from_peer(peer),
         }),
         None => None,
@@ -1172,8 +1221,8 @@ mod access_tests {
     use tower::ServiceExt;
 
     use super::{
-        PairingCarrierRegistry, PairingCarrierState, PairingDelay, constrain_pair_dispatch,
-        linked_device_did, record_pair_dispatch,
+        PairingAdmission, PairingCarrierRegistry, PairingCarrierState, PairingDelay,
+        constrain_pair_dispatch, linked_device_did, record_pair_dispatch,
     };
     use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
 
@@ -1267,24 +1316,30 @@ mod access_tests {
 
     #[test]
     fn reaper_skips_an_in_flight_pair_then_closes_when_it_finishes() {
+        let temporary = tempfile::TempDir::new_in("/var/tmp").expect("temporary journal");
         let registry = PairingCarrierRegistry::new(Arc::new(RecordingDelay::default()));
-        let (_, state, close) = registry.admit().expect("carrier admission");
+        let (_, state, close) = registry
+            .admit(PairingAdmission::Direct)
+            .expect("carrier admission");
         state
             .in_flight
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-        registry.reap_closed_windows();
+        registry.reap_closed_windows(temporary.path(), 0);
         assert!(!*close.borrow(), "in-flight pairing survives the reaper");
         state
             .in_flight
             .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-        registry.reap_closed_windows();
+        registry.reap_closed_windows(temporary.path(), 0);
         assert!(*close.borrow(), "idle pairing carrier is reaped");
     }
 
     #[tokio::test]
     async fn queued_pair_request_is_in_flight_before_it_acquires_the_carrier_lock() {
+        let temporary = tempfile::TempDir::new_in("/var/tmp").expect("temporary journal");
         let registry = PairingCarrierRegistry::new(Arc::new(RecordingDelay::default()));
-        let (_, state, close) = registry.admit().expect("carrier admission");
+        let (_, state, close) = registry
+            .admit(PairingAdmission::Direct)
+            .expect("carrier admission");
         let held_lock = state.pair_lock.lock().await;
         let queued = state.clone();
         let dispatch = tokio::spawn(async move {
@@ -1299,12 +1354,12 @@ mod access_tests {
             1,
             "a request waiting for the pair lock is already in flight"
         );
-        registry.reap_closed_windows();
+        registry.reap_closed_windows(temporary.path(), 0);
         assert!(!*close.borrow(), "the reaper preserves the queued request");
 
         drop(held_lock);
         let _ = dispatch.await.expect("queued dispatch completes");
-        registry.reap_closed_windows();
+        registry.reap_closed_windows(temporary.path(), 0);
         assert!(
             *close.borrow(),
             "the carrier reaps after its queued request finishes"
