@@ -155,11 +155,12 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
     }
 }
 
-fn start(journal: &TempJournal, cap_seconds: Option<u64>) -> SupervisorGuard {
+fn start(journal: &TempJournal, cap_seconds: Option<u64>, extra_args: &[&str]) -> SupervisorGuard {
     let mut command = Command::new(env!("CARGO_BIN_EXE_solstone-core"));
     command
         .args(["supervisor", "--journal"])
         .arg(&journal.0)
+        .args(extra_args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
@@ -516,7 +517,7 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn receive_until_reports_closed_callosum_connection() {
     let journal = TempJournal::new();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (reader, write) = connect(&socket).await;
@@ -538,7 +539,7 @@ async fn receive_until_reports_closed_callosum_connection() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn receive_started_command_reports_closed_callosum_connection() {
     let journal = TempJournal::new();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (reader, write) = connect(&socket).await;
@@ -557,7 +558,7 @@ async fn receive_started_command_reports_closed_callosum_connection() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn status_reader_reports_closed_callosum_connection() {
     let journal = TempJournal::new();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (reader, write) = connect(&socket).await;
@@ -582,7 +583,7 @@ async fn status_reader_reports_closed_callosum_connection() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn timeout_history_reader_reports_closed_callosum_connection() {
     let journal = TempJournal::new();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (reader, write) = connect(&socket).await;
@@ -609,7 +610,7 @@ async fn timeout_history_reader_reports_closed_callosum_connection() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn restarting_reader_reports_closed_callosum_connection() {
     let journal = TempJournal::new();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (reader, write) = connect(&socket).await;
@@ -636,7 +637,7 @@ async fn restarting_reader_reports_closed_callosum_connection() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac9_real_task_over_real_socket_runs_and_reports_back() {
     let journal = TempJournal::new();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (mut reader, mut write) = connect(&socket).await;
@@ -666,7 +667,7 @@ fn ac10_due_schedule_entry_runs_through_real_engine() {
         .expect("schedule JSON"),
     )
     .expect("write schedule");
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &["--no-daily"]);
     wait_for_socket(&mut child, &journal.0.join("health/callosum.sock"));
     let scheduler = journal.0.join("health/scheduler.json");
     let outcome = await_outcome(
@@ -689,6 +690,151 @@ fn ac10_due_schedule_entry_runs_through_real_engine() {
     panic_for_wait("scheduled work did not write completion state", outcome);
 }
 
+#[test]
+fn ac3_no_schedule_skips_invalid_schedule_state_and_reaches_readiness() {
+    let ordinary = TempJournal::new();
+    fs::write(
+        ordinary.0.join("config/schedules.json"),
+        serde_json::to_vec(&json!({"ac3": {
+            "cmd": [env!("CARGO_BIN_EXE_solstone-core-system-test-child"), "lines"],
+            "every": "1m"
+        }}))
+        .expect("schedule JSON"),
+    )
+    .expect("write schedule");
+    let ordinary_health = ordinary.0.join("health");
+    fs::create_dir_all(&ordinary_health).expect("health directory");
+    let ordinary_scheduler = ordinary_health.join("scheduler.json");
+    fs::write(&ordinary_scheduler, b"[]").expect("invalid schedule state");
+
+    let mut ordinary_child = start(&ordinary, None, &[]);
+    let ordinary_ready = ordinary_health.join("supervisor.ready");
+    let mut ordinary_exit = None;
+    let outcome = await_outcome(
+        WaitPolarity::Positive,
+        Duration::from_millis(5),
+        1_600,
+        Instant::now,
+        || match ordinary_child.try_wait() {
+            Ok(Some(status)) => {
+                ordinary_exit = Some(status);
+                PollState::Held
+            }
+            Ok(None) if ordinary_ready.exists() => {
+                PollState::HardFail("ordinary supervisor reached readiness".to_owned())
+            }
+            Ok(None) => PollState::Pending,
+            Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
+        },
+        thread::sleep,
+    );
+    panic_for_wait(
+        "ordinary supervisor did not exit for invalid schedule state",
+        outcome,
+    );
+    assert_eq!(
+        ordinary_exit.expect("ordinary supervisor exit").code(),
+        Some(75)
+    );
+    assert!(!ordinary_ready.exists());
+    assert_eq!(
+        fs::read(&ordinary_scheduler).expect("ordinary schedule state"),
+        b"[]"
+    );
+
+    let disabled = TempJournal::new();
+    let scheduled_marker = disabled.0.join("scheduled-marker");
+    fs::write(
+        disabled.0.join("config/schedules.json"),
+        serde_json::to_vec(&json!({"ac3": {
+            "cmd": [
+                env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+                "ready-sleep",
+                scheduled_marker,
+                "30000"
+            ],
+            "every": "1m"
+        }}))
+        .expect("schedule JSON"),
+    )
+    .expect("write schedule");
+    let disabled_health = disabled.0.join("health");
+    fs::create_dir_all(&disabled_health).expect("health directory");
+    let disabled_scheduler = disabled_health.join("scheduler.json");
+    fs::write(&disabled_scheduler, b"[]").expect("invalid schedule state");
+
+    let mut disabled_child = start(&disabled, None, &["--no-daily", "--no-schedule"]);
+    wait_for_socket(&mut disabled_child, &disabled_health.join("callosum.sock"));
+    assert_eq!(
+        fs::read(&disabled_scheduler).expect("disabled schedule state"),
+        b"[]"
+    );
+    let outcome = await_outcome(
+        WaitPolarity::Negative,
+        Duration::from_millis(10),
+        200,
+        Instant::now,
+        || {
+            if scheduled_marker.exists() {
+                PollState::Pending
+            } else {
+                PollState::Held
+            }
+        },
+        thread::sleep,
+    );
+    panic_for_wait("--no-schedule ran a scheduled command", outcome);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ac4_no_schedule_preserves_inbound_scheduler_name_without_state_file() {
+    let journal = TempJournal::new();
+    let scheduler = journal.0.join("health/scheduler.json");
+    assert!(!scheduler.exists());
+
+    let mut child = start(&journal, None, &["--no-schedule"]);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+    assert!(!scheduler.exists());
+
+    let (mut reader, mut write) = connect(&socket).await;
+    send_message(
+        &mut write,
+        json!({
+            "tract": "supervisor",
+            "event": "request",
+            "cmd": [env!("CARGO_BIN_EXE_solstone-core-system-test-child"), "lines"],
+            "ref": "ac4-task",
+            "scheduler_name": "ac4-schedule"
+        }),
+    )
+    .await;
+    let _ = receive_until(&mut reader, "ac4-task", "started").await;
+    let stopped = receive_until(&mut reader, "ac4-task", "stopped").await;
+    assert_eq!(stopped["exit_code"], json!(0));
+
+    let status = await_bounded_read(
+        "status retaining inbound scheduler name",
+        Duration::from_millis(10),
+        800,
+        async {
+            loop {
+                let status = receive_status(&mut reader).await;
+                if status["recent_tasks"].as_array().is_some_and(|tasks| {
+                    tasks.iter().any(|task| {
+                        task["ref"] == "ac4-task" && task["scheduler_name"] == "ac4-schedule"
+                    })
+                }) {
+                    return status;
+                }
+            }
+        },
+    )
+    .await;
+    assert_eq!(status["schedules"], json!([]));
+    assert!(!scheduler.exists());
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac13_status_projects_live_provider_and_schedule_state() {
     let journal = TempJournal::new();
@@ -702,7 +848,7 @@ async fn ac13_status_projects_live_provider_and_schedule_state() {
     )
     .expect("write schedule");
     journal.install_local_fixture_artifact();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (mut reader, _write) = connect(&socket).await;
@@ -734,7 +880,7 @@ async fn ac13_status_projects_live_provider_and_schedule_state() {
 async fn ac11_capped_task_is_terminated_with_timeout_exit() {
     let journal = TempJournal::new();
     let ready = journal.0.join("task-ready");
-    let mut child = start(&journal, Some(1));
+    let mut child = start(&journal, Some(1), &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (mut reader, mut write) = connect(&socket).await;
@@ -792,7 +938,7 @@ async fn observed_message_submits_live_segment_think_over_socket() {
     let journal = TempJournal::new();
     journal.enable_thinking();
     let _stub_marker = journal.install_journal_stub();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (mut reader, mut write) = connect(&socket).await;
@@ -830,7 +976,7 @@ async fn batch_observed_message_does_not_run_the_journal_stub() {
     let journal = TempJournal::new();
     journal.enable_thinking();
     let stub_marker = journal.install_journal_stub();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (_reader, mut write) = connect(&socket).await;
@@ -853,7 +999,7 @@ async fn activity_recorded_submits_activity_think_over_socket() {
     let journal = TempJournal::new();
     journal.enable_thinking();
     let _stub_marker = journal.install_journal_stub();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (mut reader, mut write) = connect(&socket).await;
@@ -888,7 +1034,7 @@ async fn activity_recorded_submits_activity_think_over_socket() {
 async fn daily_complete_submits_heartbeat_when_pid_file_is_absent() {
     let journal = TempJournal::new();
     let _stub_marker = journal.install_journal_stub();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (mut reader, mut write) = connect(&socket).await;
@@ -908,7 +1054,7 @@ async fn drain_message_forces_day_think_over_socket() {
     let journal = TempJournal::new();
     journal.enable_thinking();
     let _stub_marker = journal.install_journal_stub();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (mut reader, mut write) = connect(&socket).await;
@@ -930,7 +1076,7 @@ async fn drain_message_forces_day_think_over_socket() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn restart_message_restarts_convey_fixture() {
     let journal = TempJournal::new();
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let marker = journal.0.join("health/fixture-convey.marker");
@@ -994,7 +1140,7 @@ async fn segment_events_log_appends_existing_stream_segment() {
     let journal = TempJournal::new();
     let segment = journal.segment_dir("20260102", Some("camera"), "120000_60");
     fs::create_dir_all(&segment).expect("segment directory");
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (_reader, mut write) = connect(&socket).await;
@@ -1012,7 +1158,7 @@ async fn segment_events_log_appends_existing_stream_segment() {
 async fn segment_events_log_does_not_materialize_missing_segment() {
     let journal = TempJournal::new();
     let segment = journal.segment_dir("20260102", None, "120000_60");
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (_reader, mut write) = connect(&socket).await;
@@ -1037,7 +1183,7 @@ async fn cortex_unavailable_threshold_recycles_bundled_local_runtime() {
     // The supervisor's local fixture is the existing synthetic healthy-probe
     // seam; this port is data for the recycle record, not a bound TCP listener.
     journal.write_local_port(4312);
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (_reader, mut write) = connect(&socket).await;
@@ -1081,7 +1227,7 @@ async fn cortex_unavailable_threshold_recycles_bundled_local_runtime() {
 async fn cortex_finish_resets_wedge_failures_before_the_threshold() {
     let journal = TempJournal::new();
     journal.write_local_port(4312);
-    let mut child = start(&journal, None);
+    let mut child = start(&journal, None, &[]);
     let socket = journal.0.join("health/callosum.sock");
     wait_for_socket(&mut child, &socket);
     let (_reader, mut write) = connect(&socket).await;

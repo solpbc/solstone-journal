@@ -216,17 +216,19 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
         {
             eprintln!("supervisor: daily catchup drain failed: {error}");
         }
-        let schedule_sink = SupervisorScheduleSink {
-            queue: state.queue.clone(),
-            server: state.server.clone(),
-        };
-        let _ = state.scheduler.check(
-            ScheduleNow {
-                local: wall.naive_local(),
-                unix_millis: wall.timestamp_millis(),
-            },
-            &schedule_sink,
-        );
+        if let Some(scheduler) = state.scheduler.as_mut() {
+            let schedule_sink = SupervisorScheduleSink {
+                queue: state.queue.clone(),
+                server: state.server.clone(),
+            };
+            let _ = scheduler.check(
+                ScheduleNow {
+                    local: wall.naive_local(),
+                    unix_millis: wall.timestamp_millis(),
+                },
+                &schedule_sink,
+            );
+        }
         if last_sync.elapsed().as_secs_f64() >= DEFAULT_INTERVAL_SECONDS {
             if sync_tick(state) {
                 return true;
@@ -249,10 +251,16 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
                 .observe_current_process(&state.parakeet.processes, status_now);
             let queue = state.queue.collect_status_snapshot(status_now);
             let wall = chrono::Local::now();
-            let schedules = state.scheduler.collect_status(ScheduleNow {
-                local: wall.naive_local(),
-                unix_millis: wall.timestamp_millis(),
-            });
+            let schedules = state
+                .scheduler
+                .as_ref()
+                .map(|scheduler| {
+                    scheduler.collect_status(ScheduleNow {
+                        local: wall.naive_local(),
+                        unix_millis: wall.timestamp_millis(),
+                    })
+                })
+                .unwrap_or_default();
             match plan_status_emission(StatusEmissionInputs {
                 app_observations,
                 app_crashed: state
@@ -564,6 +572,9 @@ fn stale_heartbeat_wire_input(
 }
 
 fn record_schedule_completions(state: &mut SupervisorState) {
+    let Some(scheduler) = state.scheduler.as_ref() else {
+        return;
+    };
     let history = state.queue.history();
     let retained = history
         .iter()
@@ -586,12 +597,9 @@ fn record_schedule_completions(state: &mut SupervisorState) {
             .ended_at
             .duration_since(UNIX_EPOCH)
             .map_or(0.0, |value| value.as_secs_f64());
-        if let Err(error) = state.scheduler.record_completion(
-            &name,
-            ended_at,
-            &record.exit_status,
-            &record.reference,
-        ) {
+        if let Err(error) =
+            scheduler.record_completion(&name, ended_at, &record.exit_status, &record.reference)
+        {
             eprintln!("supervisor: failed to record schedule completion for {name}: {error}");
         }
     }
@@ -1689,9 +1697,8 @@ mod tests {
         assert_eq!(pending(&queue), 0);
     }
 
-    #[test]
-    fn handle_daily_tasks_rollover_forces_flush_and_caps_catchup() {
-        let bed = Bed::new("rollover");
+    fn assert_daily_rollover(name: &str) {
+        let bed = Bed::new(name);
         bed.enable_thinking();
         for day in [
             "20260101", "20260102", "20260103", "20260104", "20260105", "20260106",
@@ -1728,6 +1735,19 @@ mod tests {
             daily_think_argv("20260106"),
             ["journal", "think", "-v", "--day", "20260106"].map(str::to_owned)
         );
+    }
+
+    #[test]
+    fn handle_daily_tasks_rollover_forces_flush_and_caps_catchup() {
+        assert_daily_rollover("rollover");
+    }
+
+    #[test]
+    fn handle_daily_tasks_rollover_does_not_require_schedule_engine() {
+        // `--no-schedule` is represented by no ScheduleEngine being created.
+        // This direct daily fixture therefore exercises the rollover work with
+        // no scheduler dependency at all.
+        assert_daily_rollover("rollover-no-schedule");
     }
 
     #[test]
