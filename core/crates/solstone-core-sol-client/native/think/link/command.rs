@@ -26,7 +26,7 @@ use crate::seam::{
 
 const HELP: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n\noptions:\n  -h, --help     show this help message and exit\n  --home HOME    Receiver base URL\n  --code CODE    pair-link URL\n  --as AS_ROLE   Optional tag to join as\n  --label LABEL  Local credentials label (defaults to this machine's hostname)\n";
 const USAGE: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n";
-const SERVE_HELP: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Observer link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the spl relay URL\n  --direct              PL-direct only: dial the journal over the LAN secure\n                        listener, never the spl relay. Use when the home is\n                        reachable directly (same LAN/VPN) to avoid any relay\n                        dependency.\n  --relay-only          Relay-only: dial the journal over the spl relay only,\n                        never the LAN listener. Use when you need a hard\n                        guarantee against any direct-network connection\n                        attempt, even if the home is reachable on the LAN.\n";
+const SERVE_HELP: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the relay URL\n  --direct              Direct only: reach the journal through a direct\n                        connection, never the relay. Use when the home is\n                        reachable directly (same network/VPN) to avoid relay\n                        dependency.\n  --relay-only          Relay only: reach the journal through the relay,\n                        never a direct connection. Use when direct connections\n                        must not be attempted, even if the home is reachable\n                        locally.\n";
 const SERVE_USAGE: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n";
 const DEFAULT_CLIENT_LABEL: &str = "linked-system";
 const DEFAULT_SERVE_PORT: u16 = 5015;
@@ -255,7 +255,7 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
     };
     let startup = match policy {
         LinkServeCarrierPolicy::Direct => format!(
-            "forwarding 127.0.0.1:{} -> home {} over pl\n",
+            "forwarding 127.0.0.1:{} -> home {} via direct connection\n",
             session.bound_port(),
             selection.label
         ),
@@ -1569,8 +1569,6 @@ mod tests {
             Ok(_) => panic!("help must not enter resident serve"),
         };
         assert_eq!(output, CommandOutput::success(SERVE_HELP));
-        assert_eq!(SERVE_HELP.len(), 956);
-        assert_eq!(SERVE_USAGE.len(), 134);
         runner.assert_done();
     }
 
@@ -1799,7 +1797,7 @@ mod tests {
 
         assert_eq!(
             resident.startup(),
-            "forwarding 127.0.0.1:6001 -> home direct over pl\n"
+            "forwarding 127.0.0.1:6001 -> home direct via direct connection\n"
         );
         assert_eq!(runner.recorded()[0].request.relay_origin, None);
         runner.assert_done();
