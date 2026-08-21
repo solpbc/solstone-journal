@@ -20,14 +20,14 @@ use crate::resident::ResidentCommand;
 use crate::seam::{
     LinkJoinCredential, LinkJoinDirectRequest, LinkJoinPairTarget, LinkJoinPairingError,
     LinkJoinPairingErrorKind, LinkJoinRelayControlEndpoint, LinkJoinRelayErrorKind,
-    LinkJoinRelayRequest, LinkServeBundle, LinkServeEndpoint, LinkServeError, LinkServeErrorKind,
-    LinkServeRequest, LinkServeTransportErrorKind,
+    LinkJoinRelayRequest, LinkServeBundle, LinkServeCarrierPolicy, LinkServeEndpoint,
+    LinkServeError, LinkServeErrorKind, LinkServeRequest, LinkServeTransportErrorKind,
 };
 
 const HELP: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n\noptions:\n  -h, --help     show this help message and exit\n  --home HOME    Receiver base URL\n  --code CODE    pair-link URL\n  --as AS_ROLE   Optional tag to join as\n  --label LABEL  Local credentials label (defaults to this machine's hostname)\n";
 const USAGE: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n";
-const SERVE_HELP: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Observer link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the spl relay URL\n  --direct              PL-direct only: dial the journal over the LAN secure\n                        listener, never the spl relay. Use when the home is\n                        reachable directly (same LAN/VPN) to avoid any relay\n                        dependency.\n";
-const SERVE_USAGE: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct]\n";
+const SERVE_HELP: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Observer link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the spl relay URL\n  --direct              PL-direct only: dial the journal over the LAN secure\n                        listener, never the spl relay. Use when the home is\n                        reachable directly (same LAN/VPN) to avoid any relay\n                        dependency.\n  --relay-only          Relay-only: dial the journal over the spl relay only,\n                        never the LAN listener. Use when you need a hard\n                        guarantee against any direct-network connection\n                        attempt, even if the home is reachable on the LAN.\n";
+const SERVE_USAGE: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n";
 const DEFAULT_CLIENT_LABEL: &str = "linked-system";
 const DEFAULT_SERVE_PORT: u16 = 5015;
 const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
@@ -203,6 +203,11 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
             "unrecognized arguments: {unknown}"
         )));
     }
+    if parsed.direct && parsed.relay_only {
+        return Err(argparse_serve_error(
+            "argument --direct: not allowed with argument --relay-only".to_string(),
+        ));
+    }
     let port = match parsed.port {
         Some(port) => port,
         None => DEFAULT_SERVE_PORT,
@@ -210,6 +215,13 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
     let selection = match resolve_serve_bundle(parsed.label.as_deref(), ctx.env) {
         Ok(selection) => selection,
         Err(error) => return Err(CommandOutput::failure(format!("{error}\n"), 1)),
+    };
+    let policy = if parsed.direct {
+        LinkServeCarrierPolicy::Direct
+    } else if parsed.relay_only {
+        LinkServeCarrierPolicy::RelayOnly
+    } else {
+        LinkServeCarrierPolicy::RelayPermitted
     };
     let relay_origin = if parsed.direct {
         None
@@ -228,7 +240,7 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
     let request = LinkServeRequest {
         label: selection.label.clone(),
         port,
-        direct: parsed.direct,
+        policy,
         relay_origin,
         bundle: selection.bundle,
     };
@@ -241,11 +253,23 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
             ));
         }
     };
-    let startup = format!(
-        "forwarding 127.0.0.1:{} -> home {} over pl\n",
-        session.bound_port(),
-        selection.label
-    );
+    let startup = match policy {
+        LinkServeCarrierPolicy::Direct => format!(
+            "forwarding 127.0.0.1:{} -> home {} over pl\n",
+            session.bound_port(),
+            selection.label
+        ),
+        LinkServeCarrierPolicy::RelayPermitted => format!(
+            "forwarding 127.0.0.1:{} -> home {} via direct or relay\n",
+            session.bound_port(),
+            selection.label
+        ),
+        LinkServeCarrierPolicy::RelayOnly => format!(
+            "forwarding 127.0.0.1:{} -> home {} via relay only\n",
+            session.bound_port(),
+            selection.label
+        ),
+    };
     Ok(ResidentCommand::new(
         startup,
         move |shutdown| match session.serve(shutdown) {
@@ -271,6 +295,7 @@ struct ParsedServeArgs {
     port: Option<u16>,
     relay_url: Option<String>,
     direct: bool,
+    relay_only: bool,
     help: bool,
     unknown: Option<String>,
 }
@@ -339,6 +364,8 @@ fn parse_serve_args(args: &[String]) -> Result<ParsedServeArgs, String> {
             parsed.relay_url = Some(take_value(args, index, "--relay-url")?.to_string());
         } else if token == "--direct" {
             parsed.direct = true;
+        } else if token == "--relay-only" {
+            parsed.relay_only = true;
         } else if parsed.unknown.is_none() {
             parsed.unknown = Some(token.clone());
         }
@@ -1429,14 +1456,14 @@ mod tests {
     fn expected_serve_request(
         label: &str,
         port: u16,
-        direct: bool,
+        policy: LinkServeCarrierPolicy,
         relay_origin: Option<&str>,
         bundle: LinkServeBundle,
     ) -> LinkServeRequest {
         LinkServeRequest {
             label: label.to_string(),
             port,
-            direct,
+            policy,
             relay_origin: relay_origin.map(str::to_string),
             bundle,
         }
@@ -1542,8 +1569,8 @@ mod tests {
             Ok(_) => panic!("help must not enter resident serve"),
         };
         assert_eq!(output, CommandOutput::success(SERVE_HELP));
-        assert_eq!(SERVE_HELP.len(), 643);
-        assert_eq!(SERVE_USAGE.len(), 119);
+        assert_eq!(SERVE_HELP.len(), 956);
+        assert_eq!(SERVE_USAGE.len(), 134);
         runner.assert_done();
     }
 
@@ -1578,6 +1605,18 @@ mod tests {
                 vec!["--port", "65536"],
                 format!(
                     "{SERVE_USAGE}solstone link serve: error: --port must be between 1 and 65535\n"
+                ),
+            ),
+            (
+                vec!["--direct", "--relay-only"],
+                format!(
+                    "{SERVE_USAGE}solstone link serve: error: argument --direct: not allowed with argument --relay-only\n"
+                ),
+            ),
+            (
+                vec!["--relay-only", "--direct"],
+                format!(
+                    "{SERVE_USAGE}solstone link serve: error: argument --direct: not allowed with argument --relay-only\n"
                 ),
             ),
         ];
@@ -1623,7 +1662,13 @@ mod tests {
         runner.assert_done();
 
         let explicit_runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
-            expected: expected_serve_request("beta", 5016, false, Some(DEFAULT_RELAY_URL), beta),
+            expected: expected_serve_request(
+                "beta",
+                5016,
+                LinkServeCarrierPolicy::RelayPermitted,
+                Some(DEFAULT_RELAY_URL),
+                beta,
+            ),
             result: Ok(ExpectedLinkServeSession {
                 bound_port: 5016,
                 serve_result: Ok(()),
@@ -1639,7 +1684,7 @@ mod tests {
         };
         assert_eq!(
             explicit.startup(),
-            "forwarding 127.0.0.1:5016 -> home beta over pl\n"
+            "forwarding 127.0.0.1:5016 -> home beta via direct or relay\n"
         );
         assert_eq!(
             explicit.serve(&ImmediateShutdown),
@@ -1653,7 +1698,7 @@ mod tests {
             expected: expected_serve_request(
                 "alpha",
                 DEFAULT_SERVE_PORT,
-                false,
+                LinkServeCarrierPolicy::RelayPermitted,
                 Some(DEFAULT_RELAY_URL),
                 alpha,
             ),
@@ -1668,7 +1713,7 @@ mod tests {
         };
         assert_eq!(
             defaulted.startup(),
-            "forwarding 127.0.0.1:5015 -> home alpha over pl\n"
+            "forwarding 127.0.0.1:5015 -> home alpha via direct or relay\n"
         );
         default_runner.assert_done();
     }
@@ -1684,7 +1729,13 @@ mod tests {
             json!([{"ip": "192.168.1.10", "port": 7657}]),
         );
         let runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
-            expected: expected_serve_request("alpha", 0, false, Some(DEFAULT_RELAY_URL), bundle),
+            expected: expected_serve_request(
+                "alpha",
+                0,
+                LinkServeCarrierPolicy::RelayPermitted,
+                Some(DEFAULT_RELAY_URL),
+                bundle,
+            ),
             result: Ok(ExpectedLinkServeSession {
                 bound_port: 54321,
                 serve_result: Ok(()),
@@ -1696,7 +1747,7 @@ mod tests {
         };
         assert_eq!(
             resident.startup(),
-            "forwarding 127.0.0.1:54321 -> home alpha over pl\n"
+            "forwarding 127.0.0.1:54321 -> home alpha via direct or relay\n"
         );
         runner.assert_done();
     }
@@ -1716,7 +1767,13 @@ mod tests {
             json!([{"ip": "192.168.1.10", "port": 7657}]),
         );
         let runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
-            expected: expected_serve_request("direct", 6001, true, None, bundle),
+            expected: expected_serve_request(
+                "direct",
+                6001,
+                LinkServeCarrierPolicy::Direct,
+                None,
+                bundle,
+            ),
             result: Ok(ExpectedLinkServeSession {
                 bound_port: 6001,
                 serve_result: Ok(()),
@@ -1749,6 +1806,58 @@ mod tests {
     }
 
     #[test]
+    fn serve_relay_only_flag_produces_relay_only_policy_and_strips_no_bundle_data() {
+        let temp = temp_dir("serve-relay-only");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let bundle = serve_bundle(
+            &config,
+            "relay-only",
+            json!([{"ip": "192.168.1.10", "port": 7657}]),
+        );
+        assert!(!bundle.endpoints.is_empty());
+        let runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
+            expected: expected_serve_request(
+                "relay-only",
+                6002,
+                LinkServeCarrierPolicy::RelayOnly,
+                Some(DEFAULT_RELAY_URL),
+                bundle,
+            ),
+            result: Ok(ExpectedLinkServeSession {
+                bound_port: 6002,
+                serve_result: Ok(()),
+            }),
+        }]);
+
+        let resident = match run_serve(
+            &["--label", "relay-only", "--port", "6002", "--relay-only"],
+            &env,
+            &runner,
+        ) {
+            Ok(resident) => resident,
+            Err(output) => panic!("relay-only serve failed before resident: {output:?}"),
+        };
+
+        assert_eq!(
+            resident.startup(),
+            "forwarding 127.0.0.1:6002 -> home relay-only via relay only\n"
+        );
+        let recorded = runner.recorded();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(
+            recorded[0].request.policy,
+            LinkServeCarrierPolicy::RelayOnly
+        );
+        assert_eq!(
+            recorded[0].request.relay_origin,
+            Some(DEFAULT_RELAY_URL.to_string())
+        );
+        assert!(!recorded[0].request.bundle.endpoints.is_empty());
+        runner.assert_done();
+    }
+
+    #[test]
     fn serve_non_argv_failures_exit_one() {
         let temp = temp_dir("serve-failures");
         let config = temp.join("config");
@@ -1762,7 +1871,7 @@ mod tests {
             expected: expected_serve_request(
                 "laptop",
                 DEFAULT_SERVE_PORT,
-                false,
+                LinkServeCarrierPolicy::RelayPermitted,
                 Some(DEFAULT_RELAY_URL),
                 bundle.clone(),
             ),
@@ -1786,7 +1895,7 @@ mod tests {
             expected: expected_serve_request(
                 "laptop",
                 DEFAULT_SERVE_PORT,
-                false,
+                LinkServeCarrierPolicy::RelayPermitted,
                 Some(DEFAULT_RELAY_URL),
                 bundle,
             ),

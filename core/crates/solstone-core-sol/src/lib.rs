@@ -1331,7 +1331,7 @@ mod tests {
             expected: LinkServeRequest {
                 label: "laptop".to_string(),
                 port: 0,
-                direct: false,
+                policy: solstone_core_sol_client::seam::LinkServeCarrierPolicy::RelayPermitted,
                 relay_origin: Some("https://link.solstone.app".to_string()),
                 bundle,
             },

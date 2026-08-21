@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 use solstone_core_ingest_contract::CONNECTION_BODY_LIMIT;
 use solstone_core_sol_client::resident::ShutdownSignal;
 use solstone_core_sol_client::seam::{
-    LinkServeBundle, LinkServeError, LinkServeErrorKind, LinkServeFailure,
+    LinkServeBundle, LinkServeCarrierPolicy, LinkServeError, LinkServeErrorKind, LinkServeFailure,
     LinkServeRelayControlEndpoint, LinkServeRelayErrorKind, LinkServeRequest, LinkServeRunner,
     LinkServeSession, LinkServeStatusSnapshot, LinkServeTransportErrorKind,
 };
@@ -79,12 +79,14 @@ impl ServeStarter {
             .map_err(|_| LinkServeError::new(LinkServeErrorKind::RuntimeUnavailable))?;
         let enrollment = self.enrollment.clone();
         let credential = runtime.block_on(credential_from_request(&request, enrollment))?;
-        let relay_only = credential.relay_origin.is_some() && credential.endpoints.is_empty();
         let client = Arc::new(
-            if relay_only {
-                TransportClient::new_relay_only(credential, None)
-            } else {
-                TransportClient::new(credential, None)
+            match request.policy {
+                LinkServeCarrierPolicy::RelayOnly => {
+                    TransportClient::new_relay_only(credential, None)
+                }
+                LinkServeCarrierPolicy::Direct | LinkServeCarrierPolicy::RelayPermitted => {
+                    TransportClient::new(credential, None)
+                }
             }
             .map_err(|error| {
                 LinkServeError::new(LinkServeErrorKind::Transport(map_transport_error(error)))
@@ -170,23 +172,28 @@ async fn credential_from_request(
     request: &LinkServeRequest,
     enrollment: Arc<dyn RelayEnrollment>,
 ) -> Result<Credential, LinkServeError> {
-    let token = if request.direct {
-        None
-    } else if let Some(origin) = request.relay_origin.as_deref() {
-        Some(
-            enrollment
-                .enroll(
-                    origin,
-                    &request.bundle.instance_id,
-                    &request.bundle.home_attestation,
-                )
-                .await
-                .map_err(|error| {
-                    LinkServeError::new(LinkServeErrorKind::Transport(map_transport_error(error)))
-                })?,
-        )
-    } else {
-        None
+    let token = match request.policy {
+        LinkServeCarrierPolicy::Direct => None,
+        LinkServeCarrierPolicy::RelayPermitted | LinkServeCarrierPolicy::RelayOnly => {
+            let origin = request
+                .relay_origin
+                .as_deref()
+                .expect("relay policy carries a relay origin");
+            Some(
+                enrollment
+                    .enroll(
+                        origin,
+                        &request.bundle.instance_id,
+                        &request.bundle.home_attestation,
+                    )
+                    .await
+                    .map_err(|error| {
+                        LinkServeError::new(LinkServeErrorKind::Transport(map_transport_error(
+                            error,
+                        )))
+                    })?,
+            )
+        }
     };
     Ok(Credential {
         client_key_pem: request.bundle.private_key_pem.clone(),
@@ -195,21 +202,25 @@ async fn credential_from_request(
         ca_fp_prefix: ca_fp_prefix(&request.bundle)?,
         instance_id: request.bundle.instance_id.clone(),
         home_label: request.bundle.home_label.clone(),
-        endpoints: request
-            .bundle
-            .endpoints
-            .iter()
-            .map(|endpoint| EndpointAddr {
-                host: endpoint.host.clone(),
-                port: endpoint.port,
-            })
-            .collect(),
+        endpoints: match request.policy {
+            LinkServeCarrierPolicy::RelayOnly => Vec::new(),
+            LinkServeCarrierPolicy::Direct | LinkServeCarrierPolicy::RelayPermitted => request
+                .bundle
+                .endpoints
+                .iter()
+                .map(|endpoint| EndpointAddr {
+                    host: endpoint.host.clone(),
+                    port: endpoint.port,
+                })
+                .collect(),
+        },
         home_attestation: Some(request.bundle.home_attestation.clone()),
         local_endpoints: Some(request.bundle.local_endpoints.clone()),
-        relay_origin: if request.direct {
-            None
-        } else {
-            request.relay_origin.clone()
+        relay_origin: match request.policy {
+            LinkServeCarrierPolicy::Direct => None,
+            LinkServeCarrierPolicy::RelayPermitted | LinkServeCarrierPolicy::RelayOnly => {
+                request.relay_origin.clone()
+            }
         },
         device_token: token,
         device_token_expires_at: None,
@@ -631,12 +642,15 @@ mod tests {
         params.self_signed(&key).expect("test ca").pem()
     }
 
-    fn serve_request(direct: bool, relay_origin: Option<&str>) -> LinkServeRequest {
+    fn serve_request(
+        policy: LinkServeCarrierPolicy,
+        relay_origin: Option<&str>,
+    ) -> LinkServeRequest {
         let ca = ca_pem();
         LinkServeRequest {
             label: "laptop".to_string(),
             port: 5015,
-            direct,
+            policy,
             relay_origin: relay_origin.map(str::to_string),
             bundle: LinkServeBundle {
                 private_key_pem: "PRIVATE\n".to_string(),
@@ -678,7 +692,10 @@ mod tests {
             .build()
             .expect("runtime");
         let enrollment = Arc::new(FakeEnrollment::default());
-        let request = serve_request(true, Some("https://poisoned.invalid"));
+        let request = serve_request(
+            LinkServeCarrierPolicy::Direct,
+            Some("https://poisoned.invalid"),
+        );
 
         let credential = runtime
             .block_on(credential_from_request(&request, enrollment.clone()))
@@ -697,7 +714,10 @@ mod tests {
             .build()
             .expect("runtime");
         let enrollment = Arc::new(FakeEnrollment::default());
-        let request = serve_request(false, Some("https://relay.example"));
+        let request = serve_request(
+            LinkServeCarrierPolicy::RelayPermitted,
+            Some("https://relay.example"),
+        );
 
         let credential = runtime
             .block_on(credential_from_request(&request, enrollment.clone()))
@@ -709,6 +729,39 @@ mod tests {
         );
         assert_eq!(credential.device_token.as_deref(), Some("device-token"));
         assert!(credential.device_token_expires_at.is_none());
+        assert_eq!(
+            enrollment.calls(),
+            vec![EnrollmentCall {
+                relay_origin: "https://relay.example".to_string(),
+                instance_id: "home-instance".to_string(),
+                home_attestation: "attestation.jwt".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn relay_only_credentials_enroll_and_have_no_endpoints() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let enrollment = Arc::new(FakeEnrollment::default());
+        let request = serve_request(
+            LinkServeCarrierPolicy::RelayOnly,
+            Some("https://relay.example"),
+        );
+
+        let credential = runtime
+            .block_on(credential_from_request(&request, enrollment.clone()))
+            .expect("relay-only credential");
+
+        assert_eq!(
+            credential.relay_origin,
+            Some("https://relay.example".to_string())
+        );
+        assert_eq!(credential.device_token, Some("device-token".to_string()));
+        assert!(credential.endpoints.is_empty());
+        assert!(!request.bundle.endpoints.is_empty());
         assert_eq!(
             enrollment.calls(),
             vec![EnrollmentCall {
