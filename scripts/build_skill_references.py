@@ -110,6 +110,7 @@ JOURNAL_NAMESPACE_CONTRIBUTIONS = {"health": HEALTH_JOURNAL_NAMESPACES}
 # source root rather than into the package tree. Moving the outputs without
 # moving the generator would recreate them at the old path on the next run.
 PAYLOAD_SRC_ROOT = Path("core/payload")
+NATIVE_SOL_ROOT = Path("core/native-sol")
 SOL_COMMANDS_PATH = PAYLOAD_SRC_ROOT / "solstone/talent/solstone/references/commands.md"
 JOURNAL_COMMANDS_PATH = (
     PAYLOAD_SRC_ROOT / "solstone/talent/journal/references/commands.md"
@@ -176,7 +177,7 @@ def _parse_triggers(description: str) -> tuple[str, ...]:
     triggers: list[str] = []
     for raw_token in description.split(marker, 1)[1].split(","):
         token = raw_token.strip()
-        if token.lower().startswith("sol call"):
+        if token.lower().startswith("solstone call"):
             continue
         token = token.removesuffix(".").strip()
         if token:
@@ -236,9 +237,9 @@ def _load_fragments() -> dict[str, Fragment]:
 
 def _command_names(app_name: str, source: Path) -> tuple[str, ...]:
     authority = (
-        ROOT / "solstone" / "think" / "tools" / "native" / app_name / "authority.toml"
+        ROOT / NATIVE_SOL_ROOT / "think" / "tools" / "native" / app_name / "authority.toml"
         if app_name == "health"
-        else ROOT / "solstone" / "apps" / app_name / "native" / "authority.toml"
+        else ROOT / NATIVE_SOL_ROOT / "apps" / app_name / "native" / "authority.toml"
     )
     try:
         data = tomllib.loads(authority.read_text(encoding="utf-8"))
@@ -276,9 +277,9 @@ def _render_sol(fragments: dict[str, Fragment]) -> str:
     lines = [
         _BANNER,
         "",
-        "# Sol Router Commands",
+        "# Solstone Router Commands",
         "",
-        "Generated inventory of app command guidance for the `sol` router.",
+        "Generated inventory of app command guidance for the `solstone` router.",
         "",
     ]
     for app_name in sorted(fragments):
@@ -287,7 +288,7 @@ def _render_sol(fragments: dict[str, Fragment]) -> str:
         groups = _polarity_groups(verbs)
         lines.extend(
             [
-                f"## {app_name} — `sol call {app_name}`",
+                f"## {app_name} — `solstone call {app_name}`",
                 "",
             ]
         )
