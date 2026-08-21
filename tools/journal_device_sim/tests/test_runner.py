@@ -46,7 +46,9 @@ class FakeIngestState:
         self.fail_first_after_store = False
         self.instance_id = "fake-journal-instance"
         self.status_instance_id: str | None = None
-        self.posture = "direct"
+        self.status_http_status = 200
+        self.status_posture_present = True
+        self.posture: object = "direct"
         self.status_extra: dict[str, Any] = {}
         self.observed: object = False
         self.listing_total_delta = 0
@@ -97,13 +99,15 @@ def handler_for(state: FakeIngestState) -> type[BaseHTTPRequestHandler]:
                 )
                 return
             if parsed.path == "/app/link/api/status":
+                body = {
+                    "instance_id": state.status_instance_id or state.instance_id,
+                    **state.status_extra,
+                }
+                if state.status_posture_present:
+                    body["posture"] = state.posture
                 self._json(
-                    200,
-                    {
-                        "instance_id": state.status_instance_id or state.instance_id,
-                        "posture": state.posture,
-                        **state.status_extra,
-                    },
+                    state.status_http_status,
+                    body,
                 )
                 return
             if parsed.path == "/_solstone/link/status":
@@ -537,23 +541,84 @@ class RunnerTests(unittest.TestCase):
                 ][0]["observed"]
             )
 
-    def test_receiver_status_identity_and_posture_gate_uploads(self) -> None:
-        cases = (
-            ("identity", "another-instance", "direct", "different journals"),
-            ("posture", None, "spl", "posture is not direct"),
+    def test_receiver_status_identity_and_posture_compatibility(self) -> None:
+        passing = (
+            ("direct-home-direct-carrier", "direct", "direct", ["direct", "spl"]),
+            ("spl-home-direct-carrier", "direct", "spl", ["direct", "spl"]),
+            ("spl-home-relay-carrier", "relay", "spl", ["spl"]),
         )
-        for name, status_instance, posture, expected in cases:
+        for name, carrier, posture, accepted in passing:
+            with self.subTest(name=name), TemporaryDirectory() as temporary:
+                state = FakeIngestState()
+                state.posture = posture
+                with FakeServer(state) as bridge_url:
+                    config = replace(
+                        self._config(temporary, bridge_url), carrier=carrier
+                    )
+                    self.assertEqual(Simulator(config).run(), RunOutcome.PASS)
+                evidence = json.loads(
+                    config.evidence_path.read_text(encoding="utf-8")
+                )
+                receiver = evidence["receiver"]
+                self.assertEqual(evidence["schema"], "solstone.journal-device-sim.evidence.v2")
+                self.assertEqual(receiver["carrier"], carrier)
+                self.assertEqual(receiver["accepted_postures"], accepted)
+                self.assertEqual(receiver["observed_posture"], posture)
+                self.assertIs(receiver["posture_compatible"], True)
+                self.assertIs(receiver["identity_status_match"], True)
+                self.assertGreater(state.posts, 0)
+
+        failing = (
+            ("identity", "direct", "another-instance", True, "direct", 200, "different journals", True),
+            ("relay-direct", "relay", None, True, "direct", 200, "not compatible", False),
+            ("direct-missing", "direct", None, False, None, 200, "not compatible", False),
+            ("direct-null", "direct", None, True, None, 200, "not compatible", False),
+            ("direct-unknown", "direct", None, True, "future", 200, "not compatible", False),
+            ("status-http", "direct", None, True, "direct", 503, "HTTP 503", None),
+        )
+        for (
+            name,
+            carrier,
+            status_instance,
+            posture_present,
+            posture,
+            status_http_status,
+            expected_error,
+            expected_compatible,
+        ) in failing:
             with self.subTest(name=name), TemporaryDirectory() as temporary:
                 state = FakeIngestState()
                 state.status_instance_id = status_instance
+                state.status_posture_present = posture_present
                 state.posture = posture
+                state.status_http_status = status_http_status
                 with FakeServer(state) as bridge_url:
-                    config = self._config(temporary, bridge_url)
+                    config = replace(
+                        self._config(temporary, bridge_url), carrier=carrier
+                    )
                     self.assertEqual(Simulator(config).run(), RunOutcome.FAIL)
                 evidence = json.loads(
                     config.evidence_path.read_text(encoding="utf-8")
                 )
-                self.assertIn(expected, evidence["error"])
+                receiver = evidence["receiver"]
+                self.assertIn(expected_error, evidence["error"])
+                self.assertEqual(receiver["carrier"], carrier)
+                self.assertEqual(
+                    receiver["accepted_postures"],
+                    ["direct", "spl"] if carrier == "direct" else ["spl"],
+                )
+                if status_http_status == 200:
+                    self.assertEqual(receiver["observed_posture"], posture)
+                    self.assertIs(
+                        receiver["posture_compatible"], expected_compatible
+                    )
+                else:
+                    self.assertIsNone(receiver["observed_posture"])
+                    self.assertIsNone(receiver["posture_compatible"])
+                self.assertIs(
+                    receiver["identity_status_match"],
+                    status_http_status == 200 and status_instance is None,
+                )
                 self.assertEqual(state.posts, 0)
 
     def test_receiver_status_evidence_projects_private_endpoints(self) -> None:

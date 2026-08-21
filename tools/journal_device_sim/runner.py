@@ -38,7 +38,7 @@ from .manifest import (
 from .process import LinkBridge, LinkProcessError
 
 STATE_SCHEMA = "solstone.journal-device-sim.state.v1"
-EVIDENCE_SCHEMA = "solstone.journal-device-sim.evidence.v1"
+EVIDENCE_SCHEMA = "solstone.journal-device-sim.evidence.v2"
 _SEGMENT_KEY_RE = re.compile(r"^[0-9]{6}_[0-9]+$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _RUN_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -1113,7 +1113,14 @@ class Simulator:
         self.evidence["receiver"] = {
             "identity": None,
             "status": None,
-            "expected_posture": None,
+            "carrier": self.config.carrier,
+            "accepted_postures": (
+                ["direct", "spl"]
+                if self.config.carrier == "direct"
+                else ["spl"]
+            ),
+            "observed_posture": None,
+            "posture_compatible": None,
             "identity_status_match": False,
             "journal_root": None,
         }
@@ -1161,14 +1168,25 @@ class Simulator:
             raise SimulationFailure(
                 f"receiver link status returned HTTP {status.status} ({reason})"
             )
-        expected_posture = "direct" if self.config.carrier == "direct" else "spl"
-        if status.body.get("instance_id") != instance_id:
+        accepted_postures = set(self.evidence["receiver"]["accepted_postures"])
+        observed_posture = status.body.get("posture")
+        posture_compatible = (
+            isinstance(observed_posture, str)
+            and observed_posture in accepted_postures
+        )
+        identity_status_match = status.body.get("instance_id") == instance_id
+        self.evidence["receiver"]["observed_posture"] = observed_posture
+        self.evidence["receiver"]["posture_compatible"] = posture_compatible
+        self.evidence["receiver"]["identity_status_match"] = identity_status_match
+        if not identity_status_match:
             raise SimulationFailure(
                 "receiver identity and link status name different journals"
             )
-        if status.body.get("posture") != expected_posture:
+        if not posture_compatible:
+            accepted = ", ".join(sorted(accepted_postures))
             raise SimulationFailure(
-                f"receiver link posture is not {expected_posture} for the requested carrier"
+                f"receiver link posture is not compatible with the requested "
+                f"{self.config.carrier} carrier (accepted: {accepted})"
             )
         local_identity: dict[str, str] | None = None
         if self.journal_root is not None:
@@ -1189,8 +1207,6 @@ class Simulator:
             )
         self.state["receiver_instance_id"] = instance_id
         self._save_state()
-        self.evidence["receiver"]["expected_posture"] = expected_posture
-        self.evidence["receiver"]["identity_status_match"] = True
         self.evidence["receiver"]["journal_root"] = local_identity
         self.evidence["receiver"]["expected_cid"] = self.expected_cid
 
