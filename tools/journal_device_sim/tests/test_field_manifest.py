@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -99,6 +100,26 @@ class FieldManifestTests(unittest.TestCase):
             audio.write_bytes(b"changed after commit")
             with self.assertRaisesRegex(ManifestError, "differ from HEAD"):
                 build_field_manifest(root)
+
+            if os.name == "posix":
+                with audio.open("wb") as handle:
+                    handle.write(b"RIFF")
+                    handle.seek(19_200_077)
+                    handle.write(b"\x00")
+                untracked = audio_dir / "untracked-secret.wav"
+                untracked.write_bytes(audio.read_bytes())
+                audio.unlink()
+                audio.symlink_to(untracked.name)
+                subprocess.run(
+                    ["git", "-C", str(root), "add", audio.relative_to(root)],
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "-C", str(root), "commit", "-qm", "symlink fixture"],
+                    check=True,
+                )
+                with self.assertRaisesRegex(ManifestError, "cannot be a symlink"):
+                    build_field_manifest(root)
 
 
 if __name__ == "__main__":

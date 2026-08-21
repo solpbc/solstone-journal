@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import http.client
+import hashlib
 import json
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, BinaryIO, Iterable
 from urllib.parse import urlencode, urlsplit
 
 PROTOCOL_HEADER = "X-Solstone-Protocol-Version"
@@ -31,8 +32,18 @@ class HttpResponse:
 class MultipartPart:
     name: str
     filename: str | None
-    data: bytes | Path
+    data: bytes | Path | BinaryIO
     content_type: str
+    size: int | None = None
+    sha256: str | None = None
+
+
+@dataclass(frozen=True)
+class MultipartUpload:
+    filename: str
+    handle: BinaryIO
+    size: int
+    sha256: str
 
 
 def _quoted_header_value(value: str) -> str:
@@ -55,15 +66,51 @@ def _part_prefix(boundary: str, part: MultipartPart) -> bytes:
     ).encode("utf-8")
 
 
-def _data_size(data: bytes | Path) -> int:
-    return len(data) if isinstance(data, bytes) else data.stat().st_size
+def _data_size(part: MultipartPart) -> int:
+    if part.size is not None:
+        return part.size
+    if isinstance(part.data, bytes):
+        return len(part.data)
+    if isinstance(part.data, Path):
+        return part.data.stat().st_size
+    raise HttpRequestError("streaming multipart parts require an explicit size")
 
 
 def multipart_length(boundary: str, parts: Iterable[MultipartPart]) -> int:
     total = 0
     for part in parts:
-        total += len(_part_prefix(boundary, part)) + _data_size(part.data) + 2
+        total += len(_part_prefix(boundary, part)) + _data_size(part) + 2
     return total + len(f"--{boundary}--\r\n".encode("ascii"))
+
+
+def _send_part_data(
+    connection: http.client.HTTPConnection, part: MultipartPart
+) -> None:
+    if isinstance(part.data, bytes):
+        connection.send(part.data)
+        return
+    if isinstance(part.data, Path):
+        with part.data.open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                connection.send(chunk)
+        return
+    if part.size is None or part.sha256 is None:
+        raise HttpRequestError(
+            "streaming multipart files require an exact size and SHA-256"
+        )
+    remaining = part.size
+    digest = hashlib.sha256()
+    while remaining:
+        chunk = part.data.read(min(1024 * 1024, remaining))
+        if not chunk:
+            raise HttpRequestError("fixture file became shorter during upload")
+        connection.send(chunk)
+        digest.update(chunk)
+        remaining -= len(chunk)
+    if part.data.read(1):
+        raise HttpRequestError("fixture file became longer during upload")
+    if digest.hexdigest() != part.sha256:
+        raise HttpRequestError("fixture file digest changed during upload")
 
 
 class BridgeHttpClient:
@@ -132,7 +179,7 @@ class BridgeHttpClient:
         self,
         path: str,
         envelope: dict[str, Any],
-        files: Iterable[tuple[str, Path]],
+        files: Iterable[MultipartUpload],
     ) -> HttpResponse:
         envelope_bytes = json.dumps(
             envelope, sort_keys=True, separators=(",", ":"), ensure_ascii=True
@@ -148,11 +195,13 @@ class BridgeHttpClient:
         parts.extend(
             MultipartPart(
                 name="files",
-                filename=submitted,
-                data=path_value,
+                filename=upload.filename,
+                data=upload.handle,
                 content_type="application/octet-stream",
+                size=upload.size,
+                sha256=upload.sha256,
             )
-            for submitted, path_value in files
+            for upload in files
         )
         boundary = f"solstone-device-sim-{secrets.token_hex(16)}"
         content_length = multipart_length(boundary, parts)
@@ -169,12 +218,7 @@ class BridgeHttpClient:
             connection.endheaders()
             for part in parts:
                 connection.send(_part_prefix(boundary, part))
-                if isinstance(part.data, bytes):
-                    connection.send(part.data)
-                else:
-                    with part.data.open("rb") as handle:
-                        while chunk := handle.read(1024 * 1024):
-                            connection.send(chunk)
+                _send_part_data(connection, part)
                 connection.send(b"\r\n")
             connection.send(f"--{boundary}--\r\n".encode("ascii"))
             return self._read_response(connection.getresponse())
