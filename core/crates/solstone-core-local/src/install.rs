@@ -52,7 +52,8 @@ pub mod test_hooks {
     };
     #[cfg(feature = "test-hooks")]
     use super::rfdetr_install::{
-        RfdetrInstallError, RfdetrInstallRecord, install_rfdetr_with_artifacts,
+        RfdetrInstallError, RfdetrInstallRecord, check_rfdetr_model_with_artifacts,
+        install_rfdetr_with_artifacts,
     };
     use super::{InstallVerb, dispatch, manifest, pins};
 
@@ -198,6 +199,16 @@ pub mod test_hooks {
         model: &Artifact,
     ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
         install_rfdetr_with_artifacts(journal, os_name, arch, force, policy, engine, model)
+    }
+
+    #[cfg(feature = "test-hooks")]
+    pub fn check_rfdetr_model_with_fixture_artifacts(
+        journal: &Path,
+        key: &str,
+        engine: &Artifact,
+        model: &Artifact,
+    ) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
+        check_rfdetr_model_with_artifacts(journal, key, engine, model)
     }
 }
 

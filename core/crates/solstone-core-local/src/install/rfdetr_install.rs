@@ -297,10 +297,10 @@ pub fn check_rfdetr_model(
     let Some(key) = rfdetr_artifact_key(os_name, arch) else {
         return Ok(RfdetrInstallRecord::PlatformUnavailable);
     };
-    check_rfdetr_model_with_artifacts(journal, key, engine(key)?, model()?)
+    check_rfdetr_model_with_rows(journal, key, engine(key)?, model()?)
 }
 
-fn check_rfdetr_model_with_artifacts(
+fn check_rfdetr_model_with_rows(
     journal: &Path,
     key: &str,
     engine: &Artifact,
@@ -356,6 +356,17 @@ fn check_rfdetr_model_with_artifacts(
     )?;
     Ok(RfdetrInstallRecord::Installed)
 }
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) fn check_rfdetr_model_with_artifacts(
+    journal: &Path,
+    key: &str,
+    engine: &Artifact,
+    model: &Artifact,
+) -> Result<RfdetrInstallRecord, RfdetrInstallError> {
+    check_rfdetr_model_with_rows(journal, key, engine, model)
+}
+
 pub fn install_rfdetr(
     journal: &Path,
     os_name: &str,
@@ -421,7 +432,7 @@ fn install_rfdetr_with_policy_and_report(
         Some(rows) => rows,
         None => (engine(key)?, model()?),
     };
-    let ready = check_rfdetr_model_with_artifacts(journal, key, engine, model);
+    let ready = check_rfdetr_model_with_rows(journal, key, engine, model);
     if !force && let Ok(record) = ready {
         return Ok(record);
     }
@@ -496,7 +507,7 @@ fn install_rfdetr_with_policy_and_report(
         .map_err(dispatch_error)?;
         let record = RfdetrInstallRecord::Installed;
         write_sidecar(journal, &record, Some((key, engine, model)))?;
-        check_rfdetr_model_with_artifacts(journal, key, engine, model)?;
+        check_rfdetr_model_with_rows(journal, key, engine, model)?;
         let legacy_engine = root(journal).join("engine");
         if let Err(error) = fs::remove_dir_all(&legacy_engine)
             && error.kind() != std::io::ErrorKind::NotFound

@@ -1203,7 +1203,7 @@ fn non_forced_rfdetr_engine_repair_keeps_verified_model_unrequested() {
     };
 
     fs::create_dir_all(sidecar_path(&temp).parent().unwrap()).unwrap();
-    let legacy_engine = temp.join("cache/providers/rfdetr/engine/65c0ffcc");
+    let legacy_engine = temp.join("cache/providers/rfdetr/engine/legacy-install");
     fs::create_dir_all(&legacy_engine).unwrap();
     fs::write(legacy_engine.join(BINARY), b"legacy binary").unwrap();
     fs::write(

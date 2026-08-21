@@ -569,10 +569,13 @@ pub fn run(arguments: Arguments) -> Result<RunOutcome, DepictError> {
 mod tests {
     use super::*;
     use image::{ImageBuffer, Rgb};
+    use sha2::{Digest, Sha256};
+    use solstone_core_assets::{Artifact, Backend, Platform};
     use solstone_core_generate::{
         GeneratedResponse, ProtocolError, ReasonCode, ReasonCodeValue, RefusedResponse,
         decode_one_shot_response, decode_protocol_error,
     };
+    use solstone_core_local::install::test_hooks::check_rfdetr_model_with_fixture_artifacts;
 
     fn generated(text: &str) -> GenerateResponse {
         GenerateResponse::Generated(Box::new(GeneratedResponse {
@@ -708,18 +711,82 @@ mod tests {
             assert_eq!(paths.1, model_path(root.path()));
         }
 
+        const KEY: &str = "linux-cpu-x64";
+        const ENGINE_VERSION: &str = "fixture-engine-version";
+        const MODEL_FILE: &str = "rfdetr-nano-f16.gguf";
+        const MODEL_REPO: &str = "mudler/rfdetr-cpp-nano";
+        const MODEL_REVISION: &str = "c3dc0c037df499f5503545247df6618415fca643";
+
+        let engine_bytes = b"engine binary";
+        let engine_sha256: &'static str =
+            Box::leak(format!("{:x}", Sha256::digest(engine_bytes)).into_boxed_str());
+        let model_bytes = b"model weights";
+        let model_sha256: &'static str =
+            Box::leak(format!("{:x}", Sha256::digest(model_bytes)).into_boxed_str());
+        let engine = Artifact {
+            unit: "rfdetr-engine",
+            version: ENGINE_VERSION,
+            filename: "fixture-rfdetr-engine.tar.gz",
+            sha256: engine_sha256,
+            size_bytes: engine_bytes.len() as u64,
+            upstream_url: "https://example.invalid/fixture-rfdetr-engine.tar.gz",
+            origin_key: "test/rfdetr-engine",
+            artifact_key: Some(KEY),
+            platform: Some(Platform::LinuxX64),
+            backend: Some(Backend::Cpu),
+            extracted_binary_sha256: Some(engine_sha256),
+        };
+        let model = Artifact {
+            unit: "rfdetr-model",
+            version: MODEL_REVISION,
+            filename: MODEL_FILE,
+            sha256: model_sha256,
+            size_bytes: model_bytes.len() as u64,
+            upstream_url: "https://example.invalid/rfdetr-nano-f16.gguf",
+            origin_key: "test/rfdetr-model",
+            artifact_key: None,
+            platform: None,
+            backend: None,
+            extracted_binary_sha256: None,
+        };
+        let binary = binary_path(root.path(), KEY);
+        let model_file = model_path(root.path());
+        fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        fs::create_dir_all(model_file.parent().unwrap()).unwrap();
+        fs::write(&binary, engine_bytes).unwrap();
+        fs::write(&model_file, model_bytes).unwrap();
+        let sidecar = root
+            .path()
+            .join("cache/providers/rfdetr/.rfdetr-install.json");
+        fs::write(
+            sidecar,
+            json!({
+                "artifact_key": KEY,
+                "engine_version": ENGINE_VERSION,
+                "engine_sha256": engine.sha256,
+                "model_file": MODEL_FILE,
+                "model_repo": MODEL_REPO,
+                "model_revision": MODEL_REVISION,
+                "model_sha256": model.sha256,
+                "status": "installed",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            check_rfdetr_model_with_fixture_artifacts(root.path(), KEY, &engine, &model).unwrap(),
+            RfdetrInstallRecord::Installed
+        );
+
+        fs::write(&model_file, b"tampered data").unwrap();
         let error = rfdetr_paths_from_install_check(
-            Err(RfdetrInstallError::new(
-                "sha256_mismatch",
-                "sha256 mismatch for rfdetr-nano-f16.gguf",
-                65,
-            )),
+            check_rfdetr_model_with_fixture_artifacts(root.path(), KEY, &engine, &model),
             root.path(),
-            "linux-cpu-x64",
+            KEY,
         )
         .unwrap_err();
         assert!(error.contains("sha256_mismatch"));
-        assert!(error.contains("rfdetr-nano-f16.gguf"));
+        assert!(error.contains(MODEL_FILE));
     }
 
     #[test]
