@@ -8,22 +8,30 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import time
 import uuid
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
-from .http_client import BridgeHttpClient, HttpRequestError, HttpResponse
+from .http_client import (
+    BridgeHttpClient,
+    HttpRequestError,
+    HttpResponse,
+    MultipartUpload,
+)
 from .manifest import FixtureManifest, FixtureSegment, ManifestError
 from .process import LinkBridge, LinkProcessError
 
 STATE_SCHEMA = "solstone.journal-device-sim.state.v1"
 EVIDENCE_SCHEMA = "solstone.journal-device-sim.evidence.v1"
+_SEGMENT_KEY_RE = re.compile(r"^[0-9]{6}_[0-9]+$")
 
 
 class RunOutcome(str, Enum):
@@ -137,12 +145,36 @@ def _git_revision(path: Path) -> str | None:
     return result.stdout.strip() or None
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _plain_descendant(root: Path, path: Path, *, directory: bool) -> bool:
+    """Return whether path is a confined, symlink-free descendant of root."""
+
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return False
+    if not relative.parts:
+        return False
+    current = root
+    try:
+        for index, component in enumerate(relative.parts):
+            current = current / component
+            metadata = current.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                return False
+            final = index == len(relative.parts) - 1
+            if final:
+                wanted = (
+                    stat.S_ISDIR(metadata.st_mode)
+                    if directory
+                    else stat.S_ISREG(metadata.st_mode)
+                )
+                if not wanted:
+                    return False
+            elif not stat.S_ISDIR(metadata.st_mode):
+                return False
+        return current.resolve(strict=True).is_relative_to(root)
+    except (OSError, RuntimeError):
+        return False
 
 
 class Simulator:
@@ -207,7 +239,10 @@ class Simulator:
                 )
             if not journal_root.is_dir():
                 raise ManifestError("journal_root must be an existing directory")
+        else:
+            journal_root = None
         self.config = config
+        self.journal_root = journal_root
         self.profile = config.manifest.profiles.get(config.profile)
         if self.profile is None:
             config.manifest.profile_segments(config.profile)
@@ -216,6 +251,7 @@ class Simulator:
         self.day_map = build_day_map(self.segments, config.date_mode, config.anchor_day)
         self.state_path = config.state_dir / "state.json"
         self.state = self._load_or_create_state()
+        self._segment_request_counts: dict[str, int] = {}
         self.evidence: dict[str, Any] = {
             "schema": EVIDENCE_SCHEMA,
             "run_id": self.state["run_id"],
@@ -241,6 +277,7 @@ class Simulator:
             "simulator_revision": _git_revision(Path(__file__).resolve().parents[2]),
             "receiver": None,
             "day_map": self.day_map,
+            "request_count": 0,
             "segments": [],
         }
 
@@ -285,17 +322,67 @@ class Simulator:
         _atomic_json(self.state_path, self.state)
 
     def _verify_fixture_bytes(self, segment: FixtureSegment) -> None:
-        for item in segment.files:
-            actual_size = item.path.stat().st_size
-            if actual_size != item.size:
-                raise SimulationFailure(
-                    f"fixture {segment.fixture_id}/{item.submitted} changed size during the run"
+        with self._fixture_uploads(segment):
+            pass
+
+    @contextmanager
+    def _fixture_uploads(
+        self, segment: FixtureSegment
+    ) -> Iterator[tuple[MultipartUpload, ...]]:
+        with ExitStack() as stack:
+            uploads: list[MultipartUpload] = []
+            for item in segment.files:
+                flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+                flags |= getattr(os, "O_NOFOLLOW", 0)
+                try:
+                    descriptor = os.open(item.path, flags)
+                except OSError as error:
+                    raise SimulationFailure(
+                        f"fixture {segment.fixture_id}/{item.submitted} cannot be opened safely: "
+                        f"{type(error).__name__}"
+                    ) from error
+                try:
+                    metadata = os.fstat(descriptor)
+                    if (
+                        not stat.S_ISREG(metadata.st_mode)
+                        or metadata.st_dev != item.device
+                        or metadata.st_ino != item.inode
+                    ):
+                        raise SimulationFailure(
+                            f"fixture {segment.fixture_id}/{item.submitted} changed identity during the run"
+                        )
+                    if metadata.st_size != item.size:
+                        raise SimulationFailure(
+                            f"fixture {segment.fixture_id}/{item.submitted} changed size during the run"
+                        )
+                    handle = os.fdopen(descriptor, "rb")
+                except Exception:
+                    os.close(descriptor)
+                    raise
+                handle = stack.enter_context(handle)
+                digest = hashlib.sha256()
+                while chunk := handle.read(1024 * 1024):
+                    digest.update(chunk)
+                if digest.hexdigest() != item.sha256:
+                    raise SimulationFailure(
+                        f"fixture {segment.fixture_id}/{item.submitted} changed digest during the run"
+                    )
+                handle.seek(0)
+                uploads.append(
+                    MultipartUpload(
+                        filename=item.submitted,
+                        handle=handle,
+                        size=item.size,
+                        sha256=item.sha256,
+                    )
                 )
-            actual_sha = _sha256(item.path)
-            if actual_sha != item.sha256:
-                raise SimulationFailure(
-                    f"fixture {segment.fixture_id}/{item.submitted} changed digest during the run"
-                )
+            yield tuple(uploads)
+
+    def _record_upload_request(self, fixture_id: str) -> None:
+        self.evidence["request_count"] += 1
+        self._segment_request_counts[fixture_id] = (
+            self._segment_request_counts.get(fixture_id, 0) + 1
+        )
 
     def _envelope(self, segment: FixtureSegment, mapped_day: str) -> dict[str, Any]:
         return {
@@ -397,6 +484,9 @@ class Simulator:
         for item in listing.get("items", []):
             if not isinstance(item, dict) or self._matched_files(item, segment) is None:
                 continue
+            key = item.get("key")
+            if not isinstance(key, str) or not _SEGMENT_KEY_RE.fullmatch(key):
+                continue
             if landed_segment and item.get("key") != landed_segment:
                 continue
             if not landed_segment and not (
@@ -419,22 +509,31 @@ class Simulator:
             if self.profile.verify_processing
             else set()
         )
-        if self.config.journal_root is not None:
+        if self.journal_root is not None:
             required.update({"stream.json", "ingest.json", "events.jsonl"})
         if not required:
             return True, None
-        if self.config.journal_root is None:
+        if self.journal_root is None:
             raise SimulationFailure(
                 f"fixture {segment.fixture_id} requires white-box outputs but no journal root was provided"
             )
-        day_root = self.config.journal_root / "chronicle" / mapped_day
+        if not _SEGMENT_KEY_RE.fullmatch(landed_segment):
+            raise SimulationFailure("receiver returned an invalid landed segment key")
+        day_root = self.journal_root / "chronicle" / mapped_day
         candidates = []
         for path in day_root.glob(f"*/{landed_segment}"):
             ingest_path = path / "ingest.json"
             if (
-                not path.is_dir()
-                or not all((path / output).is_file() for output in required)
-                or not ingest_path.is_file()
+                not _plain_descendant(self.journal_root, path, directory=True)
+                or not all(
+                    _plain_descendant(
+                        self.journal_root, path / output, directory=False
+                    )
+                    for output in required
+                )
+                or not _plain_descendant(
+                    self.journal_root, ingest_path, directory=False
+                )
             ):
                 continue
             try:
@@ -484,7 +583,11 @@ class Simulator:
             value = response.body.get("existing_segment")
         else:
             value = response.body.get("segment")
-        return value if isinstance(value, str) else None
+        return (
+            value
+            if isinstance(value, str) and _SEGMENT_KEY_RE.fullmatch(value)
+            else None
+        )
 
     def _verify_duplicate(
         self,
@@ -495,12 +598,20 @@ class Simulator:
     ) -> dict[str, Any] | None:
         if not self.profile.verify_duplicate:
             return None
-        self._verify_fixture_bytes(segment)
-        duplicate = client.post_multipart(
-            "/app/devices/ingest",
-            envelope,
-            ((file.submitted, file.path) for file in segment.files),
-        )
+        with self._fixture_uploads(segment) as uploads:
+            entry = self.state["segments"].setdefault(segment.fixture_id, {})
+            entry.update(
+                {
+                    "phase": "sending",
+                    "duplicate_attempts": int(entry.get("duplicate_attempts", 0))
+                    + 1,
+                }
+            )
+            self._save_state()
+            self._record_upload_request(segment.fixture_id)
+            duplicate = client.post_multipart(
+                "/app/devices/ingest", envelope, uploads
+            )
         if duplicate.status != 200 or duplicate.body.get("status") != "duplicate":
             raise SimulationFailure(
                 f"fixture {segment.fixture_id} duplicate replay was not idempotent"
@@ -525,6 +636,8 @@ class Simulator:
         response: HttpResponse | None,
     ) -> dict[str, Any]:
         landed_segment = str(item["key"])
+        if not _SEGMENT_KEY_RE.fullmatch(landed_segment):
+            raise SimulationFailure("listing returned an invalid landed segment key")
         entry = self.state["segments"].setdefault(segment.fixture_id, {})
         entry.update(
             {
@@ -552,6 +665,12 @@ class Simulator:
             "requested_segment": segment.segment,
             "landed_segment": landed_segment,
             "upload_attempts": upload_attempts,
+            "duplicate_attempts": int(entry.get("duplicate_attempts", 0)),
+            "request_count": self._segment_request_counts.get(
+                segment.fixture_id, 0
+            ),
+            "lifetime_request_count": upload_attempts
+            + int(entry.get("duplicate_attempts", 0)),
             "resumed": resumed,
             "response": response.body if response else None,
             "response_http_status": response.status if response else None,
@@ -569,9 +688,13 @@ class Simulator:
     ) -> dict[str, Any]:
         mapped_day = self.day_map[segment.day]
         prior = self.state["segments"].get(segment.fixture_id, {})
-        self._verify_fixture_bytes(segment)
         envelope = self._envelope(segment, mapped_day)
         landed_segment = prior.get("landed_segment")
+        if landed_segment is not None and not (
+            isinstance(landed_segment, str)
+            and _SEGMENT_KEY_RE.fullmatch(landed_segment)
+        ):
+            raise SimulationFailure("existing state has an invalid landed segment key")
         retry_after_uncertainty = prior.get("phase") == "sending"
         if prior and (isinstance(landed_segment, str) or retry_after_uncertainty):
             item, journal_path, ready = self._reconcile(
@@ -586,6 +709,7 @@ class Simulator:
                     client, segment, mapped_day, str(item["key"]), wait=True
                 )
             if item is not None and ready:
+                self._verify_fixture_bytes(segment)
                 return self._finish_segment(
                     client=client,
                     segment=segment,
@@ -601,25 +725,27 @@ class Simulator:
         total_attempts = int(prior.get("upload_attempts", 0))
         attempts_this_run = 0
         while attempts_this_run < self.config.max_attempts:
-            attempts_this_run += 1
-            total_attempts += 1
-            entry = self.state["segments"].setdefault(segment.fixture_id, {})
-            entry.update(
-                {
-                    "mapped_day": mapped_day,
-                    "requested_segment": segment.segment,
-                    "upload_attempts": total_attempts,
-                    "phase": "sending",
-                }
-            )
-            self._save_state()
             response: HttpResponse | None = None
             try:
-                response = client.post_multipart(
-                    "/app/devices/ingest",
-                    envelope,
-                    ((item.submitted, item.path) for item in segment.files),
-                )
+                with self._fixture_uploads(segment) as uploads:
+                    attempts_this_run += 1
+                    total_attempts += 1
+                    entry = self.state["segments"].setdefault(
+                        segment.fixture_id, {}
+                    )
+                    entry.update(
+                        {
+                            "mapped_day": mapped_day,
+                            "requested_segment": segment.segment,
+                            "upload_attempts": total_attempts,
+                            "phase": "sending",
+                        }
+                    )
+                    self._save_state()
+                    self._record_upload_request(segment.fixture_id)
+                    response = client.post_multipart(
+                        "/app/devices/ingest", envelope, uploads
+                    )
                 response_status = response.body.get("status")
                 if 200 <= response.status < 300:
                     recovery_duplicate = (
@@ -690,11 +816,20 @@ class Simulator:
             f"last uncertainty: {last_error or 'no matching listing'}"
         )
 
+    def _persist_evidence(self, phase: str) -> None:
+        try:
+            _atomic_json(self.config.evidence_path, self.evidence)
+        except OSError as caught:
+            raise SimulationFailure(
+                f"{phase} evidence write failed at {self.config.evidence_path}: "
+                f"{type(caught).__name__}"
+            ) from caught
+
     def _write_evidence(self, outcome: RunOutcome, error: str | None) -> None:
         self.evidence["finished_at"] = _utc_now()
         self.evidence["result"] = outcome.value
         self.evidence["error"] = error
-        _atomic_json(self.config.evidence_path, self.evidence)
+        self._persist_evidence(f"terminal {outcome.value}")
 
     def _run_with_client(self, client: BridgeHttpClient) -> RunOutcome:
         self._bind_receiver(client)
@@ -703,6 +838,7 @@ class Simulator:
         return RunOutcome.PASS
 
     def run(self) -> RunOutcome:
+        self._persist_evidence("initial")
         bridge: LinkBridge | None = None
         outcome: RunOutcome | None = None
         error: str | None = None

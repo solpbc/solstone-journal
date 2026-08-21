@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import threading
 import unittest
 from dataclasses import replace
@@ -24,6 +25,7 @@ from tools.journal_device_sim.runner import (
     SimulationFailure,
     Simulator,
     SimulatorConfig,
+    _atomic_json,
 )
 
 
@@ -213,8 +215,192 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(
                 all("duplicate_response" in item for item in evidence["segments"])
             )
+            self.assertEqual(evidence["request_count"], 4)
+            self.assertTrue(
+                all(item["upload_attempts"] == 1 for item in evidence["segments"])
+            )
+            self.assertTrue(
+                all(item["duplicate_attempts"] == 1 for item in evidence["segments"])
+            )
+            self.assertTrue(
+                all(item["request_count"] == 2 for item in evidence["segments"])
+            )
+            self.assertTrue(
+                all(
+                    item["lifetime_request_count"] == 2
+                    for item in evidence["segments"]
+                )
+            )
             self.assertEqual(Simulator(config).run(), RunOutcome.PASS)
             self.assertEqual(state.posts, 4)
+            resumed_evidence = json.loads(
+                config.evidence_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(resumed_evidence["request_count"], 0)
+            self.assertTrue(
+                all(
+                    item["request_count"] == 0
+                    for item in resumed_evidence["segments"]
+                )
+            )
+            self.assertTrue(
+                all(
+                    item["lifetime_request_count"] == 2
+                    for item in resumed_evidence["segments"]
+                )
+            )
+
+    @unittest.skipUnless(os.name == "posix", "symlink fixture requires POSIX")
+    def test_fixture_identity_is_pinned_through_the_upload_open(self) -> None:
+        state = FakeIngestState()
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            config = self._config(temporary, bridge_url)
+            fixture_id = config.manifest.profiles["smoke"].segment_ids[0]
+            segment = config.manifest.segments[fixture_id]
+            original = segment.files[0]
+            tracked = Path(temporary) / "tracked.jsonl"
+            tracked.write_bytes(original.path.read_bytes())
+            tracked_metadata = tracked.stat()
+            pinned = replace(
+                original,
+                path=tracked,
+                device=tracked_metadata.st_dev,
+                inode=tracked_metadata.st_ino,
+            )
+            config.manifest.segments[fixture_id] = replace(
+                segment, files=(pinned, *segment.files[1:])
+            )
+            simulator = Simulator(config)
+            untracked = Path(temporary) / "untracked-secret.jsonl"
+            untracked.write_bytes(tracked.read_bytes())
+            tracked.unlink()
+            tracked.symlink_to(untracked.name)
+
+            self.assertEqual(simulator.run(), RunOutcome.FAIL)
+            self.assertEqual(state.posts, 0)
+            evidence = json.loads(config.evidence_path.read_text(encoding="utf-8"))
+            self.assertIn("cannot be opened safely", evidence["error"])
+            self.assertEqual(evidence["request_count"], 0)
+            saved_state = json.loads(
+                (config.state_dir / "state.json").read_text(encoding="utf-8")
+            )
+            self.assertNotIn(fixture_id, saved_state["segments"])
+
+    def test_fixture_digest_is_checked_before_transport_or_attempt_state(self) -> None:
+        state = FakeIngestState()
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            config = self._config(temporary, bridge_url)
+            fixture_id = config.manifest.profiles["smoke"].segment_ids[0]
+            segment = config.manifest.segments[fixture_id]
+            original = segment.files[0]
+            tracked = Path(temporary) / "tracked.jsonl"
+            tracked.write_bytes(original.path.read_bytes())
+            tracked_metadata = tracked.stat()
+            pinned = replace(
+                original,
+                path=tracked,
+                device=tracked_metadata.st_dev,
+                inode=tracked_metadata.st_ino,
+            )
+            config.manifest.segments[fixture_id] = replace(
+                segment, files=(pinned, *segment.files[1:])
+            )
+            simulator = Simulator(config)
+            changed = bytearray(tracked.read_bytes())
+            changed[0] ^= 0xFF
+            tracked.write_bytes(changed)
+            after = tracked.stat()
+            self.assertEqual(after.st_size, pinned.size)
+            self.assertEqual(
+                (after.st_dev, after.st_ino),
+                (pinned.device, pinned.inode),
+            )
+
+            self.assertEqual(simulator.run(), RunOutcome.FAIL)
+            self.assertEqual(state.posts, 0)
+            evidence = json.loads(config.evidence_path.read_text(encoding="utf-8"))
+            self.assertIn("changed digest", evidence["error"])
+            self.assertEqual(evidence["request_count"], 0)
+            saved_state = json.loads(
+                (config.state_dir / "state.json").read_text(encoding="utf-8")
+            )
+            self.assertNotIn(fixture_id, saved_state["segments"])
+
+    def test_evidence_destination_is_writable_before_transport(self) -> None:
+        with TemporaryDirectory() as temporary:
+            config = self._config(temporary, "http://127.0.0.1:9")
+            config.evidence_path.mkdir()
+            simulator = Simulator(config)
+            with patch.object(simulator, "_run_with_client") as run_with_client:
+                with self.assertRaisesRegex(
+                    SimulationFailure, "initial evidence write failed"
+                ):
+                    simulator.run()
+            run_with_client.assert_not_called()
+
+    def test_terminal_evidence_failure_never_leaves_stale_pass(self) -> None:
+        state = FakeIngestState()
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            config = self._config(temporary, bridge_url)
+
+            def fail_terminal_evidence(
+                path: Path, value: dict[str, Any], mode: int = 0o600
+            ) -> None:
+                if path == config.evidence_path and value.get("result") is not None:
+                    raise PermissionError("injected terminal failure")
+                _atomic_json(path, value, mode)
+
+            with patch(
+                "tools.journal_device_sim.runner._atomic_json",
+                side_effect=fail_terminal_evidence,
+            ):
+                with self.assertRaisesRegex(
+                    SimulationFailure, "terminal PASS evidence write failed"
+                ):
+                    Simulator(config).run()
+            self.assertEqual(state.posts, 4)
+            evidence = json.loads(config.evidence_path.read_text(encoding="utf-8"))
+            self.assertIsNone(evidence["result"])
+
+    @unittest.skipUnless(os.name == "posix", "symlink fixture requires POSIX")
+    def test_white_box_outputs_reject_invalid_keys_and_linked_directories(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            journal_root = root / "journal"
+            journal_root.mkdir()
+            base = self._config(temporary, "http://127.0.0.1:9")
+            config = replace(base, journal_root=journal_root)
+            simulator = Simulator(config)
+            segment = simulator.segments[0]
+            with self.assertRaisesRegex(SimulationFailure, "invalid landed segment"):
+                simulator._required_outputs_present(
+                    segment, segment.day, "../../outside"
+                )
+
+            outside = root / "outside-segment"
+            outside.mkdir()
+            (outside / "stream.json").write_text("{}\n", encoding="utf-8")
+            (outside / "events.jsonl").write_text("{}\n", encoding="utf-8")
+            (outside / "ingest.json").write_text(
+                segment.files[0].sha256, encoding="utf-8"
+            )
+            linked = (
+                journal_root
+                / "chronicle"
+                / segment.day
+                / "tmux"
+                / segment.segment
+            )
+            linked.parent.mkdir(parents=True)
+            linked.symlink_to(outside, target_is_directory=True)
+            self.assertEqual(
+                simulator._required_outputs_present(
+                    segment, segment.day, segment.segment
+                ),
+                (False, None),
+            )
 
     def test_server_500_after_store_reconciles_without_retry(self) -> None:
         state = FakeIngestState()

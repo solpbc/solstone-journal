@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,6 +42,8 @@ class FixtureFile:
     submitted: str
     sha256: str
     size: int
+    device: int
+    inode: int
     metadata: dict[str, Any]
 
 
@@ -109,23 +113,70 @@ def _string_list(value: Any, where: str) -> tuple[str, ...]:
     return result
 
 
-def _digest_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _resolve_fixture_path(root: Path, relative: str, where: str) -> Path:
-    candidate = (root / relative).resolve()
+def _digest_file(
+    path: Path, expected: os.stat_result, where: str
+) -> tuple[str, os.stat_result]:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
     try:
-        candidate.relative_to(root)
-    except ValueError as error:
-        raise ManifestError(f"{where} escapes the fixture root") from error
-    if not candidate.is_file():
-        raise ManifestError(f"{where} is not a regular file: {candidate}")
-    return candidate
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_dev != expected.st_dev
+            or opened.st_ino != expected.st_ino
+        ):
+            raise ManifestError(f"{where} changed identity while it was loaded")
+        digest = hashlib.sha256()
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = None
+            while chunk := handle.read(1024 * 1024):
+                digest.update(chunk)
+        return digest.hexdigest(), opened
+    except ManifestError:
+        raise
+    except OSError as error:
+        raise ManifestError(
+            f"cannot read {where} safely: {type(error).__name__}"
+        ) from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _resolve_fixture_path(
+    root: Path, relative: str, where: str
+) -> tuple[Path, os.stat_result]:
+    relative_path = Path(relative)
+    if (
+        relative_path.is_absolute()
+        or not relative_path.parts
+        or any(component in {"", ".", ".."} for component in relative_path.parts)
+    ):
+        raise ManifestError(f"{where} escapes the fixture root")
+    candidate = root / relative_path
+    try:
+        current = root
+        for index, component in enumerate(relative_path.parts):
+            current = current / component
+            metadata = current.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                raise ManifestError(f"{where} cannot contain symlinks")
+            final = index == len(relative_path.parts) - 1
+            if not final and not stat.S_ISDIR(metadata.st_mode):
+                raise ManifestError(f"{where} has a non-directory parent")
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ManifestError(f"{where} is not a regular file: {candidate}")
+        if candidate.resolve(strict=True) != candidate:
+            raise ManifestError(f"{where} does not resolve to its lexical path")
+    except ManifestError:
+        raise
+    except (OSError, RuntimeError) as error:
+        raise ManifestError(
+            f"cannot inspect {where}: {type(error).__name__}"
+        ) from error
+    return candidate, metadata
 
 
 def _validate_submitted(name: str, where: str) -> None:
@@ -164,13 +215,15 @@ def _parse_file(raw: Any, root: Path, where: str) -> FixtureFile:
         raise ManifestError(f"{where}.size must be a non-negative integer")
     metadata = value.get("metadata", {})
     metadata = _object(metadata, f"{where}.metadata")
-    path = _resolve_fixture_path(root, relative, f"{where}.path")
-    actual_size = path.stat().st_size
+    path, path_metadata = _resolve_fixture_path(root, relative, f"{where}.path")
+    actual_sha, opened_metadata = _digest_file(
+        path, path_metadata, f"{where}.path"
+    )
+    actual_size = opened_metadata.st_size
     if actual_size != expected_size:
         raise ManifestError(
             f"{where}.size is {expected_size}, but {path} is {actual_size} bytes"
         )
-    actual_sha = _digest_file(path)
     if actual_sha != expected_sha:
         raise ManifestError(
             f"{where}.sha256 is {expected_sha}, but {path} hashes to {actual_sha}"
@@ -180,6 +233,8 @@ def _parse_file(raw: Any, root: Path, where: str) -> FixtureFile:
         submitted=submitted,
         sha256=expected_sha,
         size=expected_size,
+        device=opened_metadata.st_dev,
+        inode=opened_metadata.st_ino,
         metadata=dict(metadata),
     )
 

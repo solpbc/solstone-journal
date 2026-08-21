@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,35 @@ from .manifest import SCHEMA, ManifestError
 
 _AUDIO_EXTENSIONS = {".flac", ".m4a", ".ogg", ".opus", ".wav"}
 _SCREEN_EXTENSIONS = {".mp4", ".mov", ".webm"}
+
+
+def _require_plain_regular(root: Path, path: Path, label: str) -> str:
+    """Return a tracked-relative path only when no component is a symlink."""
+
+    try:
+        relative = path.relative_to(root)
+    except ValueError as error:
+        raise ManifestError(f"{label} escapes the field journal root") from error
+    current = root
+    try:
+        for component in relative.parts:
+            current = current / component
+            metadata = current.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                raise ManifestError(f"{label} cannot be a symlink: {relative.as_posix()}")
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ManifestError(
+                f"{label} must be a regular file: {relative.as_posix()}"
+            )
+        resolved = path.resolve(strict=True)
+        resolved_relative = resolved.relative_to(root)
+    except ManifestError:
+        raise
+    except (OSError, RuntimeError, ValueError) as error:
+        raise ManifestError(f"cannot inspect {label}: {type(error).__name__}") from error
+    if resolved_relative != relative:
+        raise ManifestError(f"{label} does not resolve to its tracked path")
+    return relative.as_posix()
 
 
 def _sha256(path: Path) -> str:
@@ -116,7 +146,7 @@ def _raw_files(
             f"field segment {day}/{stream}/{segment} exceeds 8 raw files"
         )
     for path in candidates:
-        relative = path.relative_to(root).as_posix()
+        relative = _require_plain_regular(root, path, "field raw fixture")
         if relative not in tracked:
             raise ManifestError(
                 f"field raw fixture is not tracked and cannot enter a manifest: {relative}"
@@ -150,6 +180,9 @@ def build_field_manifest(root: Path) -> dict[str, Any]:
 
     field_root = root.resolve()
     manifest_path = field_root / "manifest.json"
+    manifest_relative = _require_plain_regular(
+        field_root, manifest_path, "field journal manifest"
+    )
     try:
         manifest_bytes = manifest_path.read_bytes()
         source_manifest = json.loads(manifest_bytes)
@@ -161,7 +194,7 @@ def build_field_manifest(root: Path) -> dict[str, Any]:
     if not isinstance(raw_segments, list) or not raw_segments:
         raise ManifestError("field journal manifest has no segments")
     tracked = _tracked_files(field_root)
-    if "manifest.json" not in tracked:
+    if manifest_relative not in tracked:
         raise ManifestError("field journal manifest itself is not tracked")
     segments: list[dict[str, Any]] = []
     selected_paths = {"manifest.json"}

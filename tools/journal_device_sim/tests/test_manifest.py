@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -80,6 +81,16 @@ class ManifestTests(unittest.TestCase):
         relative = f"../{outside.name}"
         with self.assertRaisesRegex(ManifestError, "escapes the fixture root"):
             load_manifest(self._manifest(path=relative))
+
+    @unittest.skipUnless(os.name == "posix", "symlink fixture requires POSIX")
+    def test_manifest_refuses_a_symlinked_fixture(self) -> None:
+        manifest_path = self._manifest()
+        untracked = self.root / "untracked-secret.jsonl"
+        untracked.write_bytes(self.payload.read_bytes())
+        self.payload.unlink()
+        self.payload.symlink_to(untracked.name)
+        with self.assertRaisesRegex(ManifestError, "cannot contain symlinks"):
+            load_manifest(manifest_path)
 
     def test_day_shift_preserves_offsets(self) -> None:
         path = self._manifest()
