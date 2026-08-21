@@ -691,17 +691,47 @@ static ARTIFACTS: &[Artifact] = &[
     },
     Artifact {
         unit: "rfdetr-engine",
-        version: "bin-65c0ffcc-1",
-        filename: "rfdetr-cli-65c0ffcc-linux-cpu-x64.tar.gz",
-        sha256: "74f3258a94c975444923be0cc451d90c1e8d9e2595d3cab6876a11086d8357dd",
-        size_bytes: 995601,
-        upstream_url: "https://github.com/solpbc/rf-detr.cpp/releases/download/bin-65c0ffcc-1/rfdetr-cli-65c0ffcc-linux-cpu-x64.tar.gz",
-        origin_key: "assets/rfdetr-engine/bin-65c0ffcc-1/rfdetr-cli-65c0ffcc-linux-cpu-x64.tar.gz",
+        version: "v0.1.0-solpbc.5",
+        filename: "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
+        sha256: "56231d6675395ed790dba882e0335e4c79616427af558b1820975951cd9d14a7",
+        size_bytes: 952974,
+        upstream_url: "https://github.com/solpbc/rf-detr.cpp/releases/download/v0.1.0-solpbc.5/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
+        origin_key: "assets/rfdetr-engine/v0.1.0-solpbc.5/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
         artifact_key: Some("linux-cpu-x64"),
         platform: Some(Platform::LinuxX64),
         backend: Some(Backend::Cpu),
         extracted_binary_sha256: Some(
-            "7c4fb4d499d53509d5099e768510a164c6647b84480c72170b865233504f367c",
+            "6f225708e4b9dafc39a085f1323bc426ca037b746b3be9c7c571d9be494306af",
+        ),
+    },
+    Artifact {
+        unit: "rfdetr-engine",
+        version: "v0.1.0-solpbc.5",
+        filename: "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz",
+        sha256: "2c11e1af6986571d4d9f4d2cf377018973095b10c234a9da40a3edf45cf11f9d",
+        size_bytes: 869316,
+        upstream_url: "https://github.com/solpbc/rf-detr.cpp/releases/download/v0.1.0-solpbc.5/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz",
+        origin_key: "assets/rfdetr-engine/v0.1.0-solpbc.5/rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-arm64.tar.gz",
+        artifact_key: Some("linux-cpu-arm64"),
+        platform: Some(Platform::LinuxArm64),
+        backend: Some(Backend::Cpu),
+        extracted_binary_sha256: Some(
+            "14c47251ffd61a3ef0dc358c4b6a88d8718c5c3f266f4d79db9ae1440e3b6ecc",
+        ),
+    },
+    Artifact {
+        unit: "rfdetr-engine",
+        version: "v0.1.0-solpbc.5",
+        filename: "rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+        sha256: "46b497950c7a73000007abdb9ef54bc8b46ba0a46dcf26f6c0ae51fccd21ad71",
+        size_bytes: 994991,
+        upstream_url: "https://github.com/solpbc/rf-detr.cpp/releases/download/v0.1.0-solpbc.5/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+        origin_key: "assets/rfdetr-engine/v0.1.0-solpbc.5/rfdetr-v0.1.0-solpbc.5-bin-macos-metal-arm64.tar.gz",
+        artifact_key: Some("macos-metal-arm64"),
+        platform: Some(Platform::MacosArm64),
+        backend: Some(Backend::Metal),
+        extracted_binary_sha256: Some(
+            "f15d89e24d44245e2288e0d9839e54d4495d6ebf1071e1f906805f2989d18c9e",
         ),
     },
     Artifact {
@@ -1163,8 +1193,16 @@ mod tests {
                 711396,
             ),
             (
-                "74f3258a94c975444923be0cc451d90c1e8d9e2595d3cab6876a11086d8357dd",
-                995601,
+                "56231d6675395ed790dba882e0335e4c79616427af558b1820975951cd9d14a7",
+                952974,
+            ),
+            (
+                "2c11e1af6986571d4d9f4d2cf377018973095b10c234a9da40a3edf45cf11f9d",
+                869316,
+            ),
+            (
+                "46b497950c7a73000007abdb9ef54bc8b46ba0a46dcf26f6c0ae51fccd21ad71",
+                994991,
             ),
             (
                 "d798cc448faa53209b88fc905c91beb1dd104634b95f6948cc4877540a8fd3ee",
@@ -1369,7 +1407,7 @@ mod tests {
             .iter()
             .map(|artifact| (artifact.sha256, artifact.size_bytes))
             .collect();
-        assert_eq!(catalog().len(), 43);
+        assert_eq!(catalog().len(), 45);
         assert!(resolve("mlx-snapshot", None, None).is_empty());
         assert_eq!(actual, expected);
     }
@@ -1455,7 +1493,7 @@ mod tests {
             "v0.1.0",
             "b10068",
             "v0.5.0",
-            "bin-65c0ffcc-1",
+            "v0.1.0-solpbc.5",
             "b5e9a4aad6438763c8da16079d77563fbed35c65",
             "e87f176479d0855a907a41277aca2f8ee7a09523",
             "bf0af9f425fa01809cadec671b3cb672709d13e9",
@@ -1510,19 +1548,19 @@ mod tests {
 
     #[test]
     fn rfdetr_extracted_digest_is_metadata_not_a_row() {
-        let row = catalog()
+        let rows = catalog()
             .iter()
-            .find(|artifact| artifact.unit == "rfdetr-engine")
-            .unwrap();
-        assert_eq!(
-            row.extracted_binary_sha256,
-            Some("7c4fb4d499d53509d5099e768510a164c6647b84480c72170b865233504f367c")
-        );
-        assert!(
-            !catalog()
-                .iter()
-                .any(|artifact| artifact.sha256 == row.extracted_binary_sha256.unwrap())
-        );
+            .filter(|artifact| artifact.unit == "rfdetr-engine")
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 3);
+        for row in rows {
+            assert!(row.extracted_binary_sha256.is_some());
+            assert!(
+                !catalog()
+                    .iter()
+                    .any(|artifact| artifact.sha256 == row.extracted_binary_sha256.unwrap())
+            );
+        }
     }
 
     #[test]
