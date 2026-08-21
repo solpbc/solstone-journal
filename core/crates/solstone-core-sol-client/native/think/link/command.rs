@@ -1858,6 +1858,59 @@ mod tests {
     }
 
     #[test]
+    fn serve_relay_only_flag_uses_explicit_relay_url() {
+        let temp = temp_dir("serve-relay-only-override");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let relay_origin = "https://custom-relay.example";
+        let bundle = serve_bundle(
+            &config,
+            "relay-only",
+            json!([{"ip": "192.168.1.10", "port": 7657}]),
+        );
+        let runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
+            expected: expected_serve_request(
+                "relay-only",
+                6003,
+                LinkServeCarrierPolicy::RelayOnly,
+                Some(relay_origin),
+                bundle,
+            ),
+            result: Ok(ExpectedLinkServeSession {
+                bound_port: 6003,
+                serve_result: Ok(()),
+            }),
+        }]);
+
+        let resident = match run_serve(
+            &[
+                "--label",
+                "relay-only",
+                "--port",
+                "6003",
+                "--relay-url",
+                relay_origin,
+                "--relay-only",
+            ],
+            &env,
+            &runner,
+        ) {
+            Ok(resident) => resident,
+            Err(output) => panic!("relay-only serve failed before resident: {output:?}"),
+        };
+
+        assert_eq!(
+            resident.startup(),
+            "forwarding 127.0.0.1:6003 -> home relay-only via relay only\n"
+        );
+        assert_eq!(
+            runner.recorded()[0].request.relay_origin,
+            Some(relay_origin.to_string())
+        );
+        runner.assert_done();
+    }
+
+    #[test]
     fn serve_non_argv_failures_exit_one() {
         let temp = temp_dir("serve-failures");
         let config = temp.join("config");

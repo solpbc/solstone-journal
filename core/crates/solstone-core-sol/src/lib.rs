@@ -1077,8 +1077,9 @@ mod tests {
     }
 
     use solstone_core_sol_client::seam::{
-        ExpectedLinkServeCall, ExpectedLinkServeSession, LinkServeBundle, LinkServeRequest,
-        ScriptedHttpTransport, ScriptedLinkJoinPairingSeam, ScriptedLinkServeRunner,
+        ExpectedLinkServeCall, ExpectedLinkServeSession, LinkServeBundle, LinkServeCarrierPolicy,
+        LinkServeRequest, ScriptedHttpTransport, ScriptedLinkJoinPairingSeam,
+        ScriptedLinkServeRunner,
     };
 
     struct PanicStdinProvider;
@@ -1331,7 +1332,7 @@ mod tests {
             expected: LinkServeRequest {
                 label: "laptop".to_string(),
                 port: 0,
-                policy: solstone_core_sol_client::seam::LinkServeCarrierPolicy::RelayPermitted,
+                policy: LinkServeCarrierPolicy::RelayPermitted,
                 relay_origin: Some("https://link.solstone.app".to_string()),
                 bundle,
             },
