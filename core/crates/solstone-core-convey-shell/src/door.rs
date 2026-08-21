@@ -792,11 +792,17 @@ async fn serve_carrier(
     }
     let store = NonceStore::new(&config.journal_root);
     let now = unix_seconds();
-    let pairing_admission = peer
-        .and_then(|address| config.relay_admissions.take(address))
-        .filter(|identity| relay_pairing_nonce_open(&store, identity.nonce_value(), now))
-        .map(PairingAdmission::Relay)
-        .or_else(|| direct_pairing_window_open(&store, now).then_some(PairingAdmission::Direct));
+    let relay_admission = peer.and_then(|address| config.relay_admissions.take(address));
+    let pairing_admission = match relay_admission {
+        Some(identity) if relay_pairing_nonce_open(&store, identity.nonce_value(), now) => {
+            Some(PairingAdmission::Relay(identity))
+        }
+        // A trusted relay bridge remains relay-typed even when its exact
+        // authority has gone stale. It must fail closed rather than inherit an
+        // unrelated direct window that happens to be live at the same time.
+        Some(_) => None,
+        None => direct_pairing_window_open(&store, now).then_some(PairingAdmission::Direct),
+    };
     let certless_pairing_admitted = pairing_admission.is_some();
     let identity: IdentityCell = Arc::new(Mutex::new(None));
     let path = config.authorized_clients_path.clone();

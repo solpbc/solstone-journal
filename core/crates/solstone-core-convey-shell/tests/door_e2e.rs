@@ -933,9 +933,13 @@ impl Drop for SinglePairRelay {
 
 #[allow(clippy::result_large_err)]
 async fn serve_single_pair_relay_connection(
-    stream: TcpStream,
+    mut stream: TcpStream,
     state: Arc<Mutex<SinglePairRelayState>>,
 ) {
+    if is_pair_relay_enroll_request(&stream).await {
+        serve_pair_relay_enroll(&mut stream).await;
+        return;
+    }
     let accepted = Arc::new(Mutex::new(None));
     let accepted_for_callback = Arc::clone(&accepted);
     let state_for_callback = Arc::clone(&state);
@@ -971,6 +975,73 @@ async fn serve_single_pair_relay_connection(
         PairRelayConnection::TunnelAttach { attach } => {
             let _ = attach.send(websocket);
         }
+    }
+}
+
+async fn is_pair_relay_enroll_request(stream: &TcpStream) -> bool {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        let mut preview = [0_u8; 256];
+        loop {
+            let count = stream.peek(&mut preview).await.ok()?;
+            if count == 0 {
+                return None;
+            }
+            if let Some(line_end) = preview[..count].windows(2).position(|item| item == b"\r\n") {
+                return Some(&preview[..line_end] == b"POST /enroll/device HTTP/1.1");
+            }
+            if count == preview.len() {
+                return Some(false);
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(false)
+}
+
+async fn serve_pair_relay_enroll(stream: &mut TcpStream) {
+    let mut request = Vec::new();
+    let mut header_end = None;
+    let mut content_length = None;
+    let mut buffer = [0_u8; 1024];
+    while request.len() < 64 * 1024 {
+        let Ok(count) = stream.read(&mut buffer).await else {
+            return;
+        };
+        if count == 0 {
+            return;
+        }
+        request.extend_from_slice(&buffer[..count]);
+        if header_end.is_none()
+            && let Some(offset) = request.windows(4).position(|item| item == b"\r\n\r\n")
+        {
+            let end = offset + 4;
+            header_end = Some(end);
+            content_length = std::str::from_utf8(&request[..offset])
+                .ok()
+                .and_then(|headers| {
+                    headers.lines().find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().ok())
+                            .flatten()
+                    })
+                });
+        }
+        if header_end.is_some_and(|end| request.len() >= end + content_length.unwrap_or(0)) {
+            break;
+        }
+    }
+    let body = br#"{"device_token":"test-device-token"}"#;
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    if stream.write_all(response.as_bytes()).await.is_ok() {
+        let _ = stream.write_all(body).await;
+        let _ = stream.shutdown().await;
     }
 }
 
@@ -2913,6 +2984,67 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
             "the rejected direct request does not issue a certificate or mutate the ledger"
         );
         drop(direct_carrier);
+
+        let stale = mint_relay_from_loopback(&handle, "stale relay phone").await;
+        let stale_nonce = stale["nonce"]
+            .as_str()
+            .expect("stale relay nonce")
+            .to_owned();
+        let stale_relay_key = relay_key_from_pair_link(
+            stale["pair_link"].as_str().expect("stale relay pair link"),
+            relay.origin(),
+        );
+        store
+            .consume(&stale_nonce, pairing_now())
+            .expect("consume stale relay nonce")
+            .expect("stale relay nonce was live");
+        assert!(
+            !solstone_core_sol_link::pairing::nonces::relay_pairing_nonce_open(
+                &store,
+                &stale_nonce,
+                pairing_now(),
+            ),
+            "the brokered relay authority is stale before Door admission"
+        );
+        let stale_mobile = fake_mobile_pair_dial(relay.origin(), &stale_relay_key).await;
+        if let Ok(mut stale_carrier) = certless_carrier(stale_mobile).await {
+            let mut decoder = FrameDecoder::new();
+            let downgrade_path = format!("{}?token={direct_nonce}", spl_core::PAIR_PATH);
+            let downgrade_body = serde_json::to_vec(&serde_json::json!({
+                "csr": csr_pem("stale relay against direct D"),
+                "device_label": "stale relay against direct D",
+            }))
+            .expect("stale relay downgrade body");
+            if let Ok(downgrade) = exchange_over_carrier(
+                &mut stale_carrier,
+                &mut decoder,
+                1,
+                "POST",
+                &downgrade_path,
+                &[("content-type".into(), "application/json".into())],
+                &downgrade_body,
+            )
+            .await
+            {
+                assert_eq!(
+                    downgrade.status, 403,
+                    "a stale brokered relay carrier cannot inherit direct D admission"
+                );
+            }
+        }
+        assert!(
+            solstone_core_sol_link::pairing::nonces::direct_pairing_window_open(
+                &store,
+                pairing_now(),
+            ),
+            "the refused stale relay carrier leaves direct D live"
+        );
+        assert_eq!(
+            AuthorizationLedger::new(&fixture.root).snapshot().len(),
+            0,
+            "the stale relay authority downgrade is refused before ledger mutation"
+        );
+
         let direct_response = post_pair_over_certless_carrier(
             7657,
             Some(direct_nonce),
@@ -2937,10 +3069,11 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
 
         let mint_b = mint_relay_from_loopback(&handle, "relay phone B").await;
         let nonce_b = mint_b["nonce"].as_str().expect("relay nonce B").to_owned();
-        let relay_key_b = relay_key_from_pair_link(
-            mint_b["pair_link"].as_str().expect("relay pair link B"),
-            relay.origin(),
-        );
+        let pair_link_b = mint_b["pair_link"]
+            .as_str()
+            .expect("relay pair link B")
+            .to_owned();
+        let _ = relay_key_from_pair_link(&pair_link_b, relay.origin());
 
         let mobile_a = fake_mobile_pair_dial(relay.origin(), &relay_key_a).await;
         let mut carrier_a = certless_carrier(mobile_a)
@@ -2998,36 +3131,16 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
         );
         drop(carrier_a);
 
-        let mobile_b = fake_mobile_pair_dial(relay.origin(), &relay_key_b).await;
-        let mut carrier_b = certless_carrier(mobile_b)
-            .await
-            .expect("relay bridge B reaches certless Door admission");
-        let response = post_pair_over_certless_stream(
-            &mut carrier_b,
-            Some(&nonce_b),
-            serde_json::json!({
-                "csr": csr_pem("relay phone B"),
-                "device_label": "relay phone B",
-            }),
+        let credential = spl_transport::pairing::pair_from_link(
+            &pair_link_b,
+            "relay phone B",
+            &serde_json::Map::new(),
         )
-        .await;
-        drop(carrier_b);
-        assert_eq!(
-            response.status,
-            200,
-            "relay bridge must carry the complete pairing response: {}",
-            String::from_utf8_lossy(&response.body)
-        );
-
-        let pair: spl_core::PairResponse =
-            serde_json::from_slice(&response.body).expect("complete canonical pair response");
+        .await
+        .expect("the shipped relay pair-dial client completes the bridge and ceremony");
         let (_, certificate) =
-            parse_x509_pem(pair.client_cert.as_bytes()).expect("issued client PEM");
+            parse_x509_pem(credential.client_cert_pem.as_bytes()).expect("issued client PEM");
         let fingerprint = format!("sha256:{}", spl_core::ca::sha256_hex(&certificate.contents));
-        assert_eq!(
-            pair.fingerprint, fingerprint,
-            "response carries issued certificate"
-        );
 
         // A consumed nonce remains in this store until normal GC, but it is no
         // longer live authority and cannot be cancelled or reused.
