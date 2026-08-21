@@ -108,7 +108,9 @@
               "operation_retired",
               "paired_device_not_found",
               "pairing_key_invalid",
-              "pairing_relay_unavailable",
+              "relay_pairing_registration_refused",
+              "relay_pairing_registration_timed_out",
+              "relay_pairing_unavailable",
               "pairing_request_invalid",
               "pl_revoked",
               "plaud_validation_unavailable",
@@ -6506,7 +6508,34 @@
             },
             "description": "Pair-window could not be opened with the relay.",
             "x-reason-codes": [
-              "pairing_relay_unavailable"
+              "relay_pairing_registration_refused",
+              "relay_pairing_unavailable"
+            ]
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Pair-window registration did not complete before its deadline.",
+            "x-reason-codes": [
+              "relay_pairing_registration_timed_out"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Pair-window registration succeeded but local pairing authority could not be committed.",
+            "x-reason-codes": [
+              "internal_error"
             ]
           }
         },

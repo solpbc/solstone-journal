@@ -24,7 +24,7 @@ pub enum NonceKind {
 }
 
 /// One persisted pairing nonce.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Nonce {
     pub value: String,
     pub device_label: String,
@@ -35,6 +35,22 @@ pub struct Nonce {
     pub same_machine: bool,
     #[serde(default)]
     pub kind: NonceKind,
+}
+
+impl fmt::Debug for Nonce {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Nonce")
+            .field("value", &"<redacted>")
+            .field("device_label", &self.device_label)
+            .field("issued_at", &self.issued_at)
+            .field("expires_at", &self.expires_at)
+            .field("used", &self.used)
+            .field("role", &self.role)
+            .field("same_machine", &self.same_machine)
+            .field("kind", &self.kind)
+            .finish()
+    }
 }
 
 /// Failure while mutating the nonce store.
@@ -507,6 +523,17 @@ mod tests {
             store.peek("relay").expect("stored relay").kind,
             NonceKind::RelayV06
         );
+    }
+
+    #[test]
+    fn relay_nonce_debug_redacts_the_secret_value() {
+        let (_temporary, store) = store();
+        let value = "0123456789abcdef";
+        let relay = store
+            .add_relay(value.into(), "phone".into(), "observer".into(), 10)
+            .expect("relay nonce");
+
+        assert!(!format!("{relay:?}").contains(value));
     }
 
     #[test]

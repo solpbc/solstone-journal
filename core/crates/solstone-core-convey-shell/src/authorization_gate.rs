@@ -23,14 +23,6 @@ use tokio::sync::watch;
 
 use crate::door::PairingWindowAdmission;
 
-static AUTHORIZATION_GATE_READ_TICKS: AtomicU64 = AtomicU64::new(0);
-
-/// Cumulative count of authorization-ledger reads made by the request gate.
-/// Debug builds only advance it; assert deltas, never an absolute value.
-pub fn authorization_gate_read_ticks() -> u64 {
-    AUTHORIZATION_GATE_READ_TICKS.load(Ordering::Relaxed)
-}
-
 /// Per-router authorization-read instrumentation for black-box contract tests.
 #[doc(hidden)]
 #[derive(Clone, Default)]
@@ -261,8 +253,6 @@ async fn require_authorization(
     // carrier-level revocation is separate and lives in the door's carrier loop.
     // The gate holds no watch borrow: the posture is read from the ledger per request.
     let path = state.authorized_clients_path.clone();
-    #[cfg(debug_assertions)]
-    AUTHORIZATION_GATE_READ_TICKS.fetch_add(1, Ordering::Relaxed);
     if let Some(read_probe) = &state.read_probe {
         read_probe.record();
     }

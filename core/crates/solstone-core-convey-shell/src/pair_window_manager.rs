@@ -185,11 +185,21 @@ async fn serve_window(
             return;
         }
     };
-    let tunnel = attach_pair_window_tunnel(&relay_origin, &tunnel_id, &service_token).await;
-    let Ok(tunnel) = tunnel else {
-        let _ = registration.close().await;
-        let _ = NonceStore::new(&journal_root).cancel(&nonce_value, unix_seconds());
-        return;
+    let tunnel = match attach_pair_window_tunnel(&relay_origin, &tunnel_id, &service_token).await {
+        Ok(tunnel) => tunnel,
+        Err(error) => {
+            if matches!(error, PairWindowClientError::Rejected(403)) {
+                log::debug!(
+                    "relay pairing tunnel attach failed: {}",
+                    PairingError::RelayPairingTunnelInstanceMismatch
+                );
+            } else {
+                log::debug!("relay pairing tunnel attach failed");
+            }
+            let _ = registration.close().await;
+            let _ = NonceStore::new(&journal_root).cancel(&nonce_value, unix_seconds());
+            return;
+        }
     };
     let _ = bridge_pair_window_tunnel(tunnel).await;
     let _ = registration.close().await;

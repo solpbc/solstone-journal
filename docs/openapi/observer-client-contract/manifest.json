@@ -37,7 +37,7 @@
     },
     {
       "path": "projection.openapi.json",
-      "sha256": "7780c76380ae59504c069e388042401b050c60caf9027e1cf22a4cce0c19103e"
+      "sha256": "58ec3c7d36eaf6ec316c756dfdba8d05a510a90f32c238e706677afb2442aacc"
     },
     {
       "path": "vectors.json",
@@ -50,7 +50,7 @@
       "id": "openapi.convey_clients",
       "path": "docs/openapi/convey-clients.json",
       "role": "openapi_source",
-      "sha256": "434d103d7b2accc8d6244f9886884c6c05ce59096bd0b8ee9bfbc67d564f6563"
+      "sha256": "6da25f0c198ca2216eecd22fa4618c9f8fea9af8dbb95c6c9dba94f0328665bc"
     }
   ],
   "observer_protocol_version": 3,
