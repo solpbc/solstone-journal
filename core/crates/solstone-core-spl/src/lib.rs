@@ -12,6 +12,7 @@ mod callosum;
 mod health;
 mod link_state_files;
 mod loopback_pipe;
+mod pair_window_client;
 mod posture_gate;
 mod private_link;
 mod reconnect_backoff;
@@ -41,6 +42,12 @@ pub use link_state_files::{
 };
 pub use loopback_pipe::{
     TCP_TO_WS_READ_MAX, TunnelPipeError, TunnelPipeProgress, pipe_loopback, pipe_tunnel,
+};
+pub use pair_window_client::{
+    PAIR_WINDOW_DIAL_TIMEOUT, PairWindowClientError, PairWindowOffer, PairWindowRegistration,
+    PairWindowSecret, PairWindowTunnel, RelayPairKey, attach_pair_window_tunnel,
+    bridge_pair_window_tunnel, pair_window_registration_url, pair_window_tunnel_url,
+    register_pair_window,
 };
 pub use posture_gate::{
     PostureGate, PostureInput, RelayBlocked, RelayDecision, RelayPermit, ServiceToken, TokenInput,

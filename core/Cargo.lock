@@ -4612,6 +4612,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-sol-link",
+ "spl-core",
  "thiserror 2.0.20",
  "tokio",
  "tokio-tungstenite",
