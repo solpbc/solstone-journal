@@ -31,6 +31,7 @@ use crate::JournalRoot;
 use crate::assets;
 use crate::network::refusal;
 use crate::network_status::private_link_body;
+use crate::pair_window_manager::{PairWindowManager, unix_seconds};
 
 const SERVICE: &str = "spl";
 const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
@@ -289,6 +290,7 @@ async fn private_link_enable(
 async fn private_link_disable(
     Extension(journal): Extension<Arc<JournalRoot>>,
     Extension(operations): Extension<Arc<OperationRegistry>>,
+    pair_windows: Option<Extension<Arc<PairWindowManager>>>,
     override_operations: Option<Extension<NetworkOperationsOverride>>,
     forced_failure: Option<Extension<SplDisableFailureOverride>>,
 ) -> Response {
@@ -304,6 +306,18 @@ async fn private_link_disable(
     }
     match disable_spl(&journal.0) {
         Ok(result) => {
+            if let Some(Extension(pair_windows)) = pair_windows
+                && pair_windows
+                    .retire_all(&journal.0, unix_seconds())
+                    .await
+                    .is_err()
+            {
+                return refusal(
+                    "service_operation_failed",
+                    "",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
             let mut status = serde_json::to_value(private_link_body(
                 &journal.0,
                 Some(operations.operation_raw(SERVICE)),

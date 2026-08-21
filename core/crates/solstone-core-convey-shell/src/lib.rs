@@ -121,6 +121,8 @@ mod network;
 mod network_status;
 #[cfg(feature = "host")]
 mod network_writes;
+#[cfg(feature = "host")]
+mod pair_window_manager;
 pub mod refusal;
 pub mod registry;
 #[cfg(feature = "host")]
@@ -271,6 +273,7 @@ impl ConveyServeHandle {
 #[derive(Debug)]
 pub enum ConveyServeError {
     LoopbackBind { port: u16, source: io::Error },
+    PairingWindowCleanup(solstone_core_sol_link::pairing::nonces::NonceStoreError),
 }
 
 #[cfg(feature = "host")]
@@ -281,6 +284,12 @@ impl std::fmt::Display for ConveyServeError {
                 formatter,
                 "could not bind loopback port {port}: {source}. convey may already be running, including under another login. the default port is shared across logins"
             ),
+            Self::PairingWindowCleanup(error) => {
+                write!(
+                    formatter,
+                    "could not retire stale relay pairing windows: {error}"
+                )
+            }
         }
     }
 }
@@ -312,6 +321,12 @@ pub async fn bind_with_authorization(
     authorization_sender: tokio::sync::watch::Sender<DeviceDoorAuthorization>,
 ) -> Result<ConveyServeHandle, ConveyServeError> {
     use solstone_core_convey_http::listener::bind_loopback;
+
+    pair_window_manager::cleanup_relay_windows_on_startup(
+        &options.journal_root,
+        pair_window_manager::unix_seconds(),
+    )
+    .map_err(ConveyServeError::PairingWindowCleanup)?;
 
     let listeners = bind_loopback(options.loopback_port)
         .await
@@ -514,6 +529,7 @@ pub fn router(journal_root: PathBuf) -> Router {
     let shell = Arc::new(shell_payload());
     let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
     let operation_registry = Arc::new(OperationRegistry::default());
+    let pair_windows = Arc::new(pair_window_manager::PairWindowManager::new());
     let mut routes = Router::new()
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))
@@ -523,11 +539,12 @@ pub fn router(journal_root: PathBuf) -> Router {
         .route("/sse/events", get(sse::events));
     for prefix in network::NETWORK_ROUTE_PREFIXES {
         routes = routes
-            .merge(network::direct_routes(prefix))
+            .merge(network::direct_routes(prefix, pair_windows.clone()))
             .merge(network::router(
                 route_journal_root.clone(),
                 prefix,
                 operation_registry.clone(),
+                pair_windows.clone(),
             ))
             .merge(devices::router(prefix));
     }

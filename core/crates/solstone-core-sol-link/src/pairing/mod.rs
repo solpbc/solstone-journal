@@ -8,7 +8,6 @@ pub mod attestation;
 pub mod nonces;
 
 use std::fmt;
-use std::fs;
 use std::net::Ipv4Addr;
 use std::path::Path;
 
@@ -23,10 +22,10 @@ use crate::ledger::{AuthorizationLedger, AuthorizedClientsMutationError, ClientE
 use self::addresses::{
     AddressError, PairLinkEncodeError, PairingSnapshot, RawInterfaceSource, RouteIpv4Source,
     SystemInterfaceSource, SystemRouteIpv4Source, encode_configured_home_pair_link,
-    encode_pair_link, resolve_pair_link_candidates, snapshot_from_sources,
+    encode_pair_link, encode_relay_pair_link, resolve_pair_link_candidates, snapshot_from_sources,
 };
 use self::attestation::{AttestationError, mint_home_attestation};
-use self::nonces::{NONCE_TTL_SECONDS, NonceStore, NonceStoreError};
+use self::nonces::{NONCE_TTL_SECONDS, Nonce, NonceStore, NonceStoreError};
 
 /// Input accepted by the owner-only pair-start handler.
 #[derive(Clone, Debug)]
@@ -48,6 +47,59 @@ pub struct MintResponse {
     pub expires_in: i64,
     pub device_label: String,
     pub ca_fingerprint: String,
+}
+
+/// An unpersisted relay-pairing authority prepared for remote registration.
+///
+/// The draft intentionally has no formatting implementation: it carries the
+/// link's secret until a relay registration succeeds and the nonce can be
+/// committed locally.
+pub struct RelayPairingDraft {
+    secret: [u8; 8],
+    secret_hex: String,
+    pair_link: String,
+    device_label: String,
+    role: String,
+    ca_fingerprint: String,
+}
+
+impl RelayPairingDraft {
+    /// Return the raw secret only to the redacted relay-key derivation boundary.
+    pub fn secret_bytes(&self) -> [u8; 8] {
+        self.secret
+    }
+
+    /// Return the hexadecimal nonce key used for local commit and retirement.
+    pub fn secret_hex(&self) -> &str {
+        &self.secret_hex
+    }
+
+    /// Device metadata written with the nonce after successful registration.
+    pub fn device_label(&self) -> &str {
+        &self.device_label
+    }
+
+    /// Requested client role written with the nonce after successful registration.
+    pub fn role(&self) -> &str {
+        &self.role
+    }
+
+    /// Return the caller-visible response after successful nonce commit.
+    pub fn response(&self) -> MintResponse {
+        MintResponse {
+            nonce: self.secret_hex.clone(),
+            pair_link: self.pair_link.clone(),
+            expires_in: NONCE_TTL_SECONDS,
+            device_label: self.device_label.clone(),
+            ca_fingerprint: self.ca_fingerprint.clone(),
+        }
+    }
+}
+
+impl Drop for RelayPairingDraft {
+    fn drop(&mut self) {
+        self.secret.fill(0);
+    }
 }
 
 /// Pairing-domain failures retain wire-facing reason and status for the route
@@ -227,12 +279,6 @@ pub fn mint_pairing_from_snapshot(
             "same-machine pairing requires a hardened loopback request",
         ));
     }
-    if is_spl_posture(journal_root) && !same_machine {
-        return Err(PairingError::InvalidOperationForState(
-            "This journal cannot pair this device directly, and relay pairing is not available on this build.",
-        ));
-    }
-
     // Read only: loading this identity never creates or rewrites CA material.
     let identity = load_committed_identity(journal_root)
         .map_err(PairingError::CommittedIdentityUnavailable)?;
@@ -285,6 +331,63 @@ pub fn mint_pairing_from_snapshot(
         device_label: request.device_label.clone(),
         ca_fingerprint,
     })
+}
+
+/// Prepare an unpersisted v06 relay pair-link and its local nonce authority.
+///
+/// This reads the committed identity and draws a fresh secret, but does not
+/// access [`NonceStore`]. The caller must complete relay registration before
+/// calling [`commit_relay_pairing`].
+pub fn mint_relay_pairing_draft(
+    journal_root: &Path,
+    request: &MintRequest,
+    relay_origin: &str,
+) -> Result<RelayPairingDraft, PairingError> {
+    validate_mint_request(request)?;
+    if request.same_machine != Some(false) {
+        return Err(PairingError::PairingRequestInvalid(
+            "relay pairing requires an off-machine request",
+        ));
+    }
+
+    // Read only: loading this identity never creates or rewrites CA material.
+    let identity = load_committed_identity(journal_root)
+        .map_err(PairingError::CommittedIdentityUnavailable)?;
+    let ca_fingerprint = spl_core::ca::sha256_hex(identity.certificate_der());
+    let digest = sha256_bytes(identity.ca().spki_der());
+    let mut ca_fp_spki_prefix = [0_u8; 16];
+    ca_fp_spki_prefix.copy_from_slice(&digest[..16]);
+    let secret = random_relay_secret()?;
+    let secret_hex = hex_lower(&secret);
+    let pair_link = encode_relay_pair_link(secret, ca_fp_spki_prefix, relay_origin)
+        .map_err(PairingError::PairLink)?;
+
+    Ok(RelayPairingDraft {
+        secret,
+        secret_hex,
+        pair_link,
+        device_label: request.device_label.clone(),
+        role: request.role.clone(),
+        ca_fingerprint,
+    })
+}
+
+/// Commit a relay nonce only after its remote registration succeeds.
+pub fn commit_relay_pairing(
+    journal_root: &Path,
+    secret_hex: &str,
+    device_label: &str,
+    role: &str,
+    now: i64,
+) -> Result<Nonce, PairingError> {
+    NonceStore::new(journal_root)
+        .add_relay(
+            secret_hex.to_owned(),
+            device_label.to_owned(),
+            role.to_owned(),
+            now,
+        )
+        .map_err(PairingError::NonceStore)
 }
 
 /// Ceremony input keeps the canonical SPL request type intact.
@@ -387,27 +490,31 @@ fn validate_mint_request(request: &MintRequest) -> Result<(), PairingError> {
     Ok(())
 }
 
-fn is_spl_posture(journal_root: &Path) -> bool {
-    fs::read(journal_root.join("config").join("journal.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .and_then(|value| {
-            value
-                .get("link")?
-                .get("posture")?
-                .as_str()
-                .map(str::to_owned)
-        })
-        .as_deref()
-        == Some("spl")
-}
-
 fn random_nonce() -> Result<String, PairingError> {
     let mut bytes = [0_u8; 16];
     SystemRandom::new()
         .fill(&mut bytes)
         .map_err(|_| PairingError::PairingRequestInvalid("system randomness unavailable"))?;
-    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+    Ok(hex_lower(&bytes))
+}
+
+fn random_relay_secret() -> Result<[u8; 8], PairingError> {
+    let mut secret = [0_u8; 8];
+    SystemRandom::new()
+        .fill(&mut secret)
+        .map_err(|_| PairingError::PairingRequestInvalid("system randomness unavailable"))?;
+    Ok(secret)
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    output
 }
 
 fn nonce_bytes(nonce: &str) -> Result<[u8; 16], PairingError> {
@@ -734,7 +841,40 @@ mod tests {
     }
 
     #[test]
-    fn direct_posture_refusal_and_empty_route_positive_twin() {
+    fn relay_draft_is_unpersisted_then_commits_one_relay_nonce() {
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let first = mint_relay_pairing_draft(temporary.path(), &request(), "https://relay.example")
+            .expect("first relay draft");
+        let second =
+            mint_relay_pairing_draft(temporary.path(), &request(), "https://relay.example")
+                .expect("second relay draft");
+
+        assert_ne!(first.secret_hex(), second.secret_hex());
+        assert!(!temporary.path().join("link/nonces.json").exists());
+        let spl_core::pairlink::ParsedPairLink::Relay(link) =
+            spl_core::pairlink::parse(&first.response().pair_link).expect("relay link parses")
+        else {
+            panic!("draft emits a relay link");
+        };
+        assert_eq!(link.s, first.secret_bytes());
+        assert_eq!(link.relay_origin, "https://relay.example");
+
+        let nonce = commit_relay_pairing(
+            temporary.path(),
+            first.secret_hex(),
+            first.device_label(),
+            first.role(),
+            10,
+        )
+        .expect("relay nonce commits");
+        assert_eq!(nonce.kind, crate::pairing::nonces::NonceKind::RelayV06);
+        assert!(!nonce.same_machine);
+        assert_eq!(NonceStore::new(temporary.path()).snapshot().len(), 1);
+    }
+
+    #[test]
+    fn direct_snapshot_mint_no_longer_owns_the_spl_posture_refusal() {
         let temporary = TempDir::new();
         identity(temporary.path());
         fs::create_dir_all(temporary.path().join("config")).expect("config");
@@ -743,25 +883,16 @@ mod tests {
             r#"{"link":{"posture":"spl"}}"#,
         )
         .expect("posture");
-        let refusal = mint_pairing_from_snapshot(
-            temporary.path(),
-            &request(),
-            1,
-            &PairingSnapshot::default(),
-        )
-        .expect_err("SPL posture refuses direct pairing");
-        assert!(matches!(refusal, PairingError::InvalidOperationForState(_)));
-        assert_eq!(refusal.status(), 400);
-        assert_eq!(refusal.reason(), "invalid_operation_for_state");
+        let snapshot = PairingSnapshot {
+            endpoints: vec![],
+            route_ipv4: Some(Ipv4Addr::new(10, 0, 0, 2)),
+        };
+        assert!(mint_pairing_from_snapshot(temporary.path(), &request(), 1, &snapshot).is_ok());
         fs::write(
             temporary.path().join("config/journal.json"),
             r#"{"link":{"posture":"direct"}}"#,
         )
         .expect("posture");
-        let snapshot = PairingSnapshot {
-            endpoints: vec![],
-            route_ipv4: Some(Ipv4Addr::new(10, 0, 0, 2)),
-        };
         assert!(mint_pairing_from_snapshot(temporary.path(), &request(), 1, &snapshot).is_ok());
     }
 

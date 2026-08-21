@@ -32,6 +32,7 @@ use solstone_core_sol_link::pairing::{
 
 use crate::network_status::{identity, local_endpoints, private_link, status};
 use crate::network_writes;
+use crate::pair_window_manager::PairWindowManager;
 use solstone_core_thinking::confidential::OperationRegistry;
 
 use crate::{JournalRoot, asset_response, assets};
@@ -64,7 +65,7 @@ pub(crate) struct PairTokenQuery {
 
 pub(crate) const NETWORK_ROUTE_PREFIXES: &[&str] = &["/app/network", "/app/link"];
 
-pub(crate) fn direct_routes(prefix: &str) -> Router {
+pub(crate) fn direct_routes(prefix: &str, pair_windows: Arc<PairWindowManager>) -> Router {
     Router::new()
         .route(&format!("{prefix}/pair-start"), post(pair_start))
         .route(
@@ -73,9 +74,15 @@ pub(crate) fn direct_routes(prefix: &str) -> Router {
         )
         .route(&format!("{prefix}/pair"), post(pair))
         .route(&format!("{prefix}/api/devices"), get(devices))
+        .layer(Extension(pair_windows))
 }
 
-pub fn router(journal: Arc<JournalRoot>, prefix: &str, registry: Arc<OperationRegistry>) -> Router {
+pub fn router(
+    journal: Arc<JournalRoot>,
+    prefix: &str,
+    registry: Arc<OperationRegistry>,
+    pair_windows: Arc<PairWindowManager>,
+) -> Router {
     Router::new()
         .route(&format!("{prefix}/"), get(shell))
         .route(&format!("{prefix}/workspace"), get(workspace))
@@ -89,6 +96,7 @@ pub fn router(journal: Arc<JournalRoot>, prefix: &str, registry: Arc<OperationRe
         .merge(network_writes::router(prefix))
         .layer(Extension(journal))
         .layer(Extension(registry))
+        .layer(Extension(pair_windows))
 }
 
 async fn shell() -> Response {
@@ -136,6 +144,7 @@ pub(crate) fn read_posture(journal_root: &std::path::Path) -> &'static str {
 pub(crate) async fn pair_start(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
+    pair_windows: Option<Extension<Arc<PairWindowManager>>>,
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
@@ -176,7 +185,17 @@ pub(crate) async fn pair_start(
         hardened_loopback: hardened_loopback(&basis, &headers),
         configured_home: configured_home(&root.0),
     };
-    match mint_pairing(&root.0, &request, now()) {
+    let minted = if uses_relay_pairing(&root.0, &request) {
+        let Some(Extension(pair_windows)) = pair_windows else {
+            return pairing_refusal(PairingError::RelayPairingUnavailable);
+        };
+        pair_windows
+            .mint_and_register(&root.0, &request, now())
+            .await
+    } else {
+        mint_pairing(&root.0, &request, now())
+    };
+    match minted {
         Ok(response) => Json(json!({
             "nonce": response.nonce,
             "pair_link": response.pair_link,
@@ -401,6 +420,7 @@ fn network_device_json(
 pub(crate) async fn pair(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
+    pair_windows: Option<Extension<Arc<PairWindowManager>>>,
     snapshot: Option<Extension<PairingSnapshot>>,
     Query(query): Query<PairTokenQuery>,
     Json(request): Json<spl_core::PairRequest>,
@@ -447,15 +467,24 @@ pub(crate) async fn pair(
         },
         now(),
     ) {
-        Ok(response) => match pair_response_json(&response) {
-            Ok(value) => {
-                emit_pair_complete(&root.0, &response.fingerprint);
-                Json(value).into_response()
+        Ok(response) => {
+            if let Some(Extension(pair_windows)) = pair_windows {
+                let _ = pair_windows.retire(&root.0, nonce, now()).await;
             }
-            Err(error) => pairing_refusal(error),
-        },
+            match pair_response_json(&response) {
+                Ok(value) => {
+                    emit_pair_complete(&root.0, &response.fingerprint);
+                    Json(value).into_response()
+                }
+                Err(error) => pairing_refusal(error),
+            }
+        }
         Err(error) => pairing_refusal(error),
     }
+}
+
+pub(crate) fn uses_relay_pairing(journal_root: &std::path::Path, request: &MintRequest) -> bool {
+    read_posture(journal_root) == "spl" && request.same_machine == Some(false)
 }
 
 fn response_local_endpoints(snapshot: &PairingSnapshot) -> Option<Value> {
@@ -792,14 +821,14 @@ mod tests {
             )
             .await
             .expect("response");
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let refusal: Value = serde_json::from_slice(
             &to_bytes(response.into_body(), usize::MAX)
                 .await
                 .expect("posture refusal body"),
         )
         .expect("posture refusal JSON");
-        assert_eq!(refusal["reason_code"], "invalid_operation_for_state");
+        assert_eq!(refusal["reason_code"], "relay_pairing_unavailable");
         assert!(!temporary.path().join("link/nonces.json").exists());
         fs::write(
             temporary.path().join("config/journal.json"),
@@ -886,6 +915,36 @@ mod tests {
                 .expect("stored nonce")
                 .same_machine
         );
+    }
+
+    #[test]
+    fn relay_mode_is_only_spl_and_off_machine() {
+        let temporary = TempDir::new();
+        fs::create_dir_all(temporary.path().join("config")).expect("config directory");
+        let mut request = MintRequest {
+            device_label: "phone".to_owned(),
+            role: "observer".to_owned(),
+            same_machine: Some(false),
+            hardened_loopback: false,
+            configured_home: None,
+        };
+
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            r#"{"link":{"posture":"spl"}}"#,
+        )
+        .expect("SPL posture");
+        assert!(uses_relay_pairing(temporary.path(), &request));
+        request.same_machine = Some(true);
+        assert!(!uses_relay_pairing(temporary.path(), &request));
+
+        request.same_machine = Some(false);
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            r#"{"link":{"posture":"direct"}}"#,
+        )
+        .expect("direct posture");
+        assert!(!uses_relay_pairing(temporary.path(), &request));
     }
 
     #[tokio::test]
@@ -1078,6 +1137,7 @@ mod tests {
                 root,
                 "/app/network",
                 Arc::new(OperationRegistry::default()),
+                Arc::new(PairWindowManager::new()),
             ));
         let _shell = crate::router(temporary.path().to_path_buf());
     }

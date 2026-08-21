@@ -198,6 +198,23 @@ impl NonceStore {
         Ok(removed)
     }
 
+    /// Cancel one live relay-v06 window without altering any other authority.
+    ///
+    /// A consumed, expired, direct, or missing entry is retained and returns
+    /// `false`, making repeated cancellation safe.
+    pub fn cancel(&self, value: &str, now: i64) -> Result<bool, NonceStoreError> {
+        let _lock = hold_lock(&self.path, LockOptions::default()).map_err(NonceStoreError::Lock)?;
+        let mut entries = self.read_entries();
+        let removable = entries.get(value).is_some_and(|entry| {
+            entry.kind == NonceKind::RelayV06 && !entry.used && entry.expires_at > now
+        });
+        if removable {
+            entries.remove(value);
+            self.write_entries(&entries)?;
+        }
+        Ok(removable)
+    }
+
     /// Missing, malformed, and unreadable files are deliberately an empty
     /// snapshot, exactly as the reference implementation specifies.
     fn read_entries(&self) -> BTreeMap<String, Nonce> {
@@ -536,5 +553,39 @@ mod tests {
             0,
             "a consumed relay is neither removed nor counted twice"
         );
+    }
+
+    #[test]
+    fn cancel_removes_only_one_live_relay_window() {
+        let (_temporary, store) = store();
+        store
+            .add(
+                "direct".into(),
+                "phone".into(),
+                "observer".into(),
+                false,
+                10,
+            )
+            .expect("direct nonce");
+        store
+            .add_relay("relay-live".into(), "phone".into(), "observer".into(), 10)
+            .expect("live relay");
+        store
+            .add_relay("relay-used".into(), "phone".into(), "observer".into(), 10)
+            .expect("used relay");
+        assert!(
+            store
+                .consume("relay-used", 11)
+                .expect("consume relay")
+                .is_some()
+        );
+
+        assert!(store.cancel("relay-live", 12).expect("cancel relay"));
+        assert!(store.peek("relay-live").is_none());
+        assert!(!store.cancel("relay-live", 12).expect("repeat cancel"));
+        assert!(!store.cancel("relay-used", 12).expect("used relay remains"));
+        assert!(!store.cancel("direct", 12).expect("direct remains"));
+        assert!(store.peek("relay-used").expect("used relay").used);
+        assert!(store.peek("direct").is_some());
     }
 }
