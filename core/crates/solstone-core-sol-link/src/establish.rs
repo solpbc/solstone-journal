@@ -5,9 +5,9 @@
 //!
 //! The Rust-only identity bundle deliberately nests `state.json` in `link/ca/`
 //! beside `cert.pem` and `private.pem`, so `publish_staged_dir` can publish the
-//! complete identity with one create-only rename. Python-written journals keep
-//! `state.json` at `link/state.json`; future production wiring must reconcile
-//! that layout difference before this module becomes a runtime authority.
+//! complete identity with one create-only rename. Legacy journals keep
+//! `state.json` at `link/state.json`; committed-identity and SPL readers accept
+//! both layouts without copying or rewriting either one.
 
 use std::fmt;
 use std::fs;
