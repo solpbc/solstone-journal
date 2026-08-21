@@ -40,9 +40,26 @@ const EXIT_USAGE: u8 = 64;
 const EXIT_CONFIG: u8 = 78;
 const EXIT_TEMPFAIL: u8 = 75;
 const DEFAULT_CONVEY_PORT: i64 = 5015;
+const SOLSTONE_CONVEY_PORT_ENV: &str = "SOLSTONE_CONVEY_PORT";
 const USAGE: &str = "Usage: solstone <command> [args...]\n";
 const SERVICE_MOVED_EXIT: i32 = 2;
 const SOL_SERVICE_CMD_REMOVED_ERROR_TAIL: &str = "('solstone' is the journal-access surface; 'journal' surfaces journal-service commands; see 'journal --help'.)";
+
+fn resolve_convey_port(env: &BTreeMap<String, String>) -> Result<i64, CommandOutput> {
+    match env.get(SOLSTONE_CONVEY_PORT_ENV) {
+        None => Ok(DEFAULT_CONVEY_PORT),
+        Some(value) => match value.parse::<i64>() {
+            Ok(port) if (1..=65535).contains(&port) => Ok(port),
+            _ => Err(CommandOutput::failure(
+                format!(
+                    "SOLSTONE_CONVEY_PORT must be a decimal port in the range 1..=65535; got {value}.\n"
+                ),
+                i32::from(EXIT_CONFIG),
+            )),
+        },
+    }
+}
+
 pub fn run(public_argv0: &str, args: Vec<OsString>) -> ExitCode {
     run_with_stdin_provider(public_argv0, args, &RealStdinProvider)
 }
@@ -217,6 +234,16 @@ fn run_top_level_link(
     command_args: &[OsString],
     stdin_provider: &dyn StdinProvider,
 ) -> ExitCode {
+    let env = env::vars().collect::<BTreeMap<_, _>>();
+    run_top_level_link_with_env(all_args, command_args, stdin_provider, &env)
+}
+
+fn run_top_level_link_with_env(
+    all_args: &[OsString],
+    command_args: &[OsString],
+    stdin_provider: &dyn StdinProvider,
+    env: &BTreeMap<String, String>,
+) -> ExitCode {
     let args = match os_strings_to_strings(command_args) {
         Some(args) => args,
         None => return render_output(usage_error_output()),
@@ -229,8 +256,11 @@ fn run_top_level_link(
         None => return render_output(usage_error_output()),
     };
     let today = Local::now().format("%Y%m%d").to_string();
-    let transport = UreqHttpTransport::new(DEFAULT_CONVEY_PORT);
-    let env = env::vars().collect::<BTreeMap<_, _>>();
+    let port = match resolve_convey_port(env) {
+        Ok(port) => port,
+        Err(output) => return render_output(output),
+    };
+    let transport = UreqHttpTransport::new(port);
     let stdin = match stdin_provider.read_if_piped() {
         Ok(Some(value)) => value,
         Ok(None) => String::new(),
@@ -244,7 +274,7 @@ fn run_top_level_link(
     let dispatch = dispatch_top_level_link_with_runtime_seams(
         &dispatch_args,
         TopLevelLinkRuntime {
-            env: &env,
+            env,
             stdin: &stdin,
             today: &today,
             transport: &transport,
@@ -260,7 +290,7 @@ fn run_top_level_link(
         } => {
             let context = CommandContext {
                 args: &resident_args,
-                env: &env,
+                env,
                 stdin: &stdin,
                 today: &today,
                 transport: &transport,
@@ -310,6 +340,16 @@ fn run_dispatched(
     command_args: &[OsString],
     stdin_provider: &dyn StdinProvider,
 ) -> ExitCode {
+    let env = env::vars().collect::<BTreeMap<_, _>>();
+    run_dispatched_with_env(all_args, command_args, stdin_provider, &env)
+}
+
+fn run_dispatched_with_env(
+    all_args: &[OsString],
+    command_args: &[OsString],
+    stdin_provider: &dyn StdinProvider,
+    env: &BTreeMap<String, String>,
+) -> ExitCode {
     let outcome = evaluate_args(all_args);
     if matches!(outcome, Outcome::Unsupported { .. }) {
         return render_output(unsupported_output());
@@ -322,8 +362,11 @@ fn run_dispatched(
             return ExitCode::from(EXIT_USAGE);
         }
     };
-    let transport = UreqHttpTransport::new(DEFAULT_CONVEY_PORT);
-    let env = env::vars().collect::<BTreeMap<_, _>>();
+    let port = match resolve_convey_port(env) {
+        Ok(port) => port,
+        Err(output) => return render_output(output),
+    };
+    let transport = UreqHttpTransport::new(port);
     let stdin = match stdin_provider.read_if_piped() {
         Ok(Some(value)) => value,
         Ok(None) => String::new(),
@@ -338,7 +381,7 @@ fn run_dispatched(
     let output = match outcome {
         Outcome::Migrated { .. } | Outcome::MovedStub { .. } => dispatch_sol_call_with_seams(
             &args,
-            &env,
+            env,
             &stdin,
             &today,
             DispatchSeams {
@@ -352,7 +395,7 @@ fn run_dispatched(
         ),
         Outcome::Import { .. } => dispatch_sol_import_with_seams(
             &args,
-            &env,
+            env,
             &stdin,
             &today,
             DispatchSeams {
@@ -366,7 +409,7 @@ fn run_dispatched(
         ),
         Outcome::Status { .. } => dispatch_sol_status_with_seams(
             &args,
-            &env,
+            env,
             &stdin,
             &today,
             DispatchSeams {
@@ -981,7 +1024,10 @@ mod tests {
         );
     }
 
-    use solstone_core_sol_client::seam::ScriptedHttpTransport;
+    use solstone_core_sol_client::seam::{
+        ExpectedLinkServeCall, ExpectedLinkServeSession, LinkServeBundle, LinkServeRequest,
+        ScriptedHttpTransport, ScriptedLinkJoinPairingSeam, ScriptedLinkServeRunner,
+    };
 
     struct PanicStdinProvider;
 
@@ -1000,6 +1046,182 @@ mod tests {
             .prefix(&format!("solstone-core-sol-{name}-"))
             .tempdir()
             .expect("tempdir")
+    }
+
+    fn write_link_serve_bundle(config: &Path, label: &str) -> LinkServeBundle {
+        const CERT: &str = "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n";
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join(label);
+        fs::create_dir_all(&bundle_dir).expect("create link serve bundle directory");
+        fs::write(bundle_dir.join("private.pem"), "PRIVATE\n").expect("write private key");
+        fs::write(bundle_dir.join("cert.pem"), CERT).expect("write client certificate");
+        fs::write(bundle_dir.join("chain.pem"), CERT).expect("write certificate chain");
+        fs::write(bundle_dir.join("home_attestation.jwt"), "attestation.jwt")
+            .expect("write home attestation");
+        fs::write(
+            bundle_dir.join("peer.json"),
+            r#"{"instance_id":"home-instance","home_label":"Home","local_endpoints":[]}"#,
+        )
+        .expect("write peer metadata");
+
+        LinkServeBundle {
+            private_key_pem: "PRIVATE\n".to_string(),
+            client_cert_pem: CERT.to_string(),
+            ca_chain_pem: vec![CERT.to_string()],
+            home_attestation: "attestation.jwt".to_string(),
+            instance_id: "home-instance".to_string(),
+            home_label: "Home".to_string(),
+            endpoints: vec![],
+            local_endpoints: json!([]),
+        }
+    }
+
+    #[test]
+    fn resolve_convey_port_defaults_when_unset() {
+        assert_eq!(
+            resolve_convey_port(&BTreeMap::new()),
+            Ok(DEFAULT_CONVEY_PORT)
+        );
+    }
+
+    #[test]
+    fn resolve_convey_port_accepts_decimal_range() {
+        for (value, expected) in [("6200", 6200), ("1", 1), ("65535", 65535)] {
+            let env = BTreeMap::from([(SOLSTONE_CONVEY_PORT_ENV.to_string(), value.to_string())]);
+            assert_eq!(resolve_convey_port(&env), Ok(expected));
+        }
+    }
+
+    #[test]
+    fn resolve_convey_port_rejects_invalid_explicit_values() {
+        for value in ["", "0", "-1", "65536", "abc"] {
+            let env = BTreeMap::from([(SOLSTONE_CONVEY_PORT_ENV.to_string(), value.to_string())]);
+            let output = resolve_convey_port(&env).expect_err("invalid convey port must fail");
+            assert_eq!(output.exit, i32::from(EXIT_CONFIG));
+            assert!(output.stderr.contains(SOLSTONE_CONVEY_PORT_ENV));
+            assert!(output.stderr.contains('1'));
+            assert!(output.stderr.contains("65535"));
+        }
+    }
+
+    #[test]
+    fn run_dispatched_with_env_rejects_zero_convey_port_before_runtime_work() {
+        let env = BTreeMap::from([(SOLSTONE_CONVEY_PORT_ENV.to_string(), "0".to_string())]);
+        let stdin = PanicStdinProvider;
+
+        for (all_args, command_args) in [
+            (os_args(&["status"]), vec![]),
+            (os_args(&["import"]), vec![]),
+            (
+                os_args(&["call", "journal", "search"]),
+                os_args(&["journal", "search"]),
+            ),
+        ] {
+            assert_eq!(
+                run_dispatched_with_env(&all_args, &command_args, &stdin, &env),
+                ExitCode::from(EXIT_CONFIG)
+            );
+        }
+    }
+
+    #[test]
+    fn run_top_level_link_with_env_rejects_zero_convey_port_before_join() {
+        let env = BTreeMap::from([(SOLSTONE_CONVEY_PORT_ENV.to_string(), "0".to_string())]);
+        let all_args = os_args(&["link", "join", "--code", "not-a-code"]);
+        let command_args = os_args(&["join", "--code", "not-a-code"]);
+
+        assert_eq!(
+            run_top_level_link_with_env(&all_args, &command_args, &PanicStdinProvider, &env),
+            ExitCode::from(EXIT_CONFIG)
+        );
+    }
+
+    #[test]
+    fn run_top_level_link_with_env_rejects_zero_convey_port_before_serve() {
+        let env = BTreeMap::from([(SOLSTONE_CONVEY_PORT_ENV.to_string(), "0".to_string())]);
+        let all_args = os_args(&["link", "serve", "--port", "0"]);
+        let command_args = os_args(&["serve", "--port", "0"]);
+
+        assert_eq!(
+            run_top_level_link_with_env(&all_args, &command_args, &PanicStdinProvider, &env),
+            ExitCode::from(EXIT_CONFIG)
+        );
+    }
+
+    #[test]
+    fn link_serve_listener_port_is_independent_of_convey_port() {
+        let root = temp_path("convey-port-link-serve");
+        let config = root.path().join("config");
+        let env = BTreeMap::from([
+            (SOLSTONE_CONVEY_PORT_ENV.to_string(), "6200".to_string()),
+            ("XDG_CONFIG_HOME".to_string(), config.display().to_string()),
+        ]);
+        assert_eq!(resolve_convey_port(&env), Ok(6200));
+
+        let bundle = write_link_serve_bundle(&config, "laptop");
+        let transport = ScriptedHttpTransport::new(vec![]);
+        let pairing = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let runner = ScriptedLinkServeRunner::new(vec![ExpectedLinkServeCall {
+            expected: LinkServeRequest {
+                label: "laptop".to_string(),
+                port: 0,
+                direct: false,
+                relay_origin: Some("https://link.solstone.app".to_string()),
+                bundle,
+            },
+            result: Ok(ExpectedLinkServeSession {
+                bound_port: 54321,
+                serve_result: Ok(()),
+            }),
+        }]);
+        let args = ["link", "serve", "--label", "laptop", "--port", "0"]
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect::<Vec<_>>();
+
+        let LinkDispatch::Resident {
+            handler,
+            args: resident_args,
+        } = dispatch_sol_link_with_seams(
+            &args,
+            &env,
+            "",
+            "20260727",
+            LinkDispatchSeams {
+                transport: &transport,
+                clock: None,
+                files: None,
+                link_pairing: Some(&pairing),
+                link_serve: Some(&runner),
+            },
+        )
+        else {
+            panic!("link serve must resolve as resident");
+        };
+
+        assert_eq!(
+            run_resident_command(
+                handler,
+                CommandContext {
+                    args: &resident_args,
+                    env: &env,
+                    stdin: "",
+                    today: "20260727",
+                    transport: &transport,
+                    clock: None,
+                    files: None,
+                    build_identity: None,
+                    client_item_ids: None,
+                    notification_sink: None,
+                    link_pairing: Some(&pairing),
+                    link_serve: Some(&runner),
+                },
+            ),
+            ExitCode::SUCCESS
+        );
+        transport.assert_done();
+        pairing.assert_done();
+        runner.assert_done();
     }
 
     #[test]
