@@ -6,10 +6,8 @@ capture device. It sends explicit fixture bytes through the maintained native
 and writes machine-readable evidence.
 
 It does not implement PL, SPL, TLS, pairing, or journal storage. Those remain
-native product boundaries. It also does not replace the independent platform
-integration gates: a simulator exercises the journal's composed ingest path, while
-Linux, macOS, iOS/watchOS, Android, Windows, and tmux retain their own integration
-gates.
+native product boundaries. It also does not run each platform client's tests;
+Linux, macOS, iOS/watchOS, Android, Windows, and tmux must be tested separately.
 
 ## Quick start
 
@@ -28,6 +26,7 @@ python3 -m tools.journal_device_sim run \
   --profile smoke \
   --carrier direct \
   --pair-code 'PAIR-LINK-URL' \
+  --convey-port 5015 \
   --journal-root /path/to/disposable/journal \
   --processing-timeout 30
 ```
@@ -42,7 +41,42 @@ The paired mode stores credentials under the run's private state directory,
 starts `solstone link serve --port 0`, reads the bound port from its startup
 line, and terminates only that child. Credentials are removed after a passing
 run unless `--keep-credentials` is set. Failed or inconclusive runs retain state
-so the same command and `--state-dir` can reconcile before retrying.
+and credentials. If pairing completed, retry with `--paired` and the same
+`--state-dir`; otherwise open a fresh pairing window unless the journal still
+shows the original pair link as valid.
+
+`--convey-port` explicitly selects the local journal that the native child will
+serve. When it is omitted, the child follows the normal `solstone` environment,
+including `SOLSTONE_CONVEY_PORT` when a sandbox or another launcher assigns it.
+
+If a journal refuses pairing while SPL is active, pair under PL-direct first,
+switch the journal to SPL, and then run through the relay. Use the two-phase form
+with one private state directory:
+
+```bash
+python3 -m tools.journal_device_sim pair \
+  --pair-code 'PAIR-LINK-URL' \
+  --state-dir scratch/journal-device-sim/relay-proof \
+  --convey-port 5015
+
+# Switch the receiving journal to SPL using its supported management surface.
+
+python3 -m tools.journal_device_sim run \
+  --manifest tools/journal_device_sim/fixtures/smoke/manifest.json \
+  --profile smoke \
+  --carrier relay \
+  --paired \
+  --state-dir scratch/journal-device-sim/relay-proof \
+  --convey-port 5015 \
+  --journal-root /path/to/disposable/journal \
+  --processing-timeout 30
+```
+
+The pair link is passed to the simulator and native child as a command-line
+argument, so treat shell history and local process listings as sensitive. The
+simulator does not echo it or write it to state or evidence. `--paired` requires
+an explicit state directory and refuses absent, incomplete, or linked credential
+state.
 
 ## Fixture manifest
 
@@ -134,8 +168,8 @@ python3 -m tools.journal_device_sim field-manifest \
 ```
 
 The generator accepts only Git-tracked `audio.{flac,m4a,ogg,opus,wav}` and
-`screen.{mp4,mov,webm}` files at paths named by the field journal's own 90-entry
-manifest. It creates `field-smoke` (source/format/modality coverage),
+`screen.{mp4,mov,webm}` files at paths named by the field journal's own manifest.
+It creates `field-smoke` (source/format/modality coverage),
 `field-large` (the 19.2 MB custody canary with duplicate proof), and `field-full`
 profiles. `field-smoke` and `field-full` additionally require their named
 derived outputs; `field-large` deliberately remains usable when a disposable
@@ -151,8 +185,8 @@ make check-journal-device-sim
 
 The tests are standard-library-only and exercise manifest fail-closed behavior,
 streaming multipart framing, ambiguous-response reconciliation, collision and
-duplicate behavior, and resumable state. Live PL/SPL validation remains an
-operator lane because it requires a real pairing window and carrier.
+duplicate behavior, and resumable state. Live PL/SPL tests must run separately
+against a real pairing window and carrier.
 
 Malformed protocol-version and multipart-contract cases stay in the Rust ingest
 handler's boundary tests: see

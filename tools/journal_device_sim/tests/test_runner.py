@@ -15,8 +15,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
+from unittest.mock import patch
 
 from tools.journal_device_sim.manifest import FixtureProfile, load_manifest
+from tools.journal_device_sim.process import LinkProcessError
 from tools.journal_device_sim.runner import (
     RunOutcome,
     SimulationFailure,
@@ -302,6 +304,68 @@ class RunnerTests(unittest.TestCase):
             evidence = json.loads(changed.evidence_path.read_text(encoding="utf-8"))
             self.assertIn("different receiving journal", evidence["error"])
             self.assertEqual(second.posts, 0)
+
+    def test_cleanup_failure_cannot_leave_pass_evidence(self) -> None:
+        class CleanupFailBridge:
+            def __init__(self, base_url: str) -> None:
+                self.base_url = base_url
+                self.finish_calls = 0
+                self.stop_calls = 0
+
+            def start(self) -> str:
+                return self.base_url
+
+            def finish(self, *, remove_credentials: bool) -> None:
+                self.finish_calls += 1
+                self.assert_remove = remove_credentials
+                raise LinkProcessError("credential cleanup failed: PermissionError")
+
+            def stop(self) -> None:
+                self.stop_calls += 1
+
+        state = FakeIngestState()
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            base = self._config(temporary, bridge_url)
+            config = replace(base, bridge_url=None, pair_code="pair-code")
+            bridge = CleanupFailBridge(bridge_url)
+            with patch(
+                "tools.journal_device_sim.runner.LinkBridge", return_value=bridge
+            ):
+                self.assertEqual(Simulator(config).run(), RunOutcome.BLOCKED)
+            evidence = json.loads(config.evidence_path.read_text(encoding="utf-8"))
+            self.assertEqual(evidence["result"], "BLOCKED")
+            self.assertIn("credential cleanup failed", evidence["error"])
+            self.assertEqual(bridge.finish_calls, 1)
+            self.assertTrue(bridge.assert_remove)
+
+    def test_nonpassing_run_becomes_blocked_when_child_cannot_stop(self) -> None:
+        class StopFailBridge:
+            def __init__(self, base_url: str) -> None:
+                self.base_url = base_url
+
+            def start(self) -> str:
+                return self.base_url
+
+            def stop(self) -> None:
+                raise LinkProcessError("child remains live")
+
+        state = FakeIngestState()
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            base = self._config(temporary, bridge_url)
+            config = replace(base, bridge_url=None, pair_code="pair-code")
+            bridge = StopFailBridge(bridge_url)
+            with patch(
+                "tools.journal_device_sim.runner.LinkBridge", return_value=bridge
+            ), patch.object(
+                Simulator,
+                "_run_with_client",
+                side_effect=SimulationFailure("fixture refused"),
+            ):
+                self.assertEqual(Simulator(config).run(), RunOutcome.BLOCKED)
+            evidence = json.loads(config.evidence_path.read_text(encoding="utf-8"))
+            self.assertEqual(evidence["result"], "BLOCKED")
+            self.assertIn("child remains live", evidence["error"])
+            self.assertIn("prior outcome: fixture refused", evidence["error"])
 
     def test_crash_state_reconciles_before_reupload(self) -> None:
         state = FakeIngestState()
