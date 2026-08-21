@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::thread;
 
 use serde_json::{Map, Value, json};
-use solstone_core_brain::{CanonicalInput, canonical_fingerprint, fingerprint_sha256};
+use solstone_core_brain::{CanonicalInput, canonical_json, fingerprint_sha256};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_local::install::pins;
@@ -39,6 +39,8 @@ use super::seams::{RuntimeStoreError, TruthObservationSeam};
 const GIB: u64 = 1024 * 1024 * 1024;
 const LINUX_LOCAL_FLOOR_BYTES: u64 = 4 * GIB;
 const DARWIN_ARM64_LOCAL_FLOOR_BYTES: u64 = 2 * GIB;
+const PARAKEET_ATT_CONTEXT_ENV: &str = "PARAKEET_ATT_CONTEXT";
+const PARAKEET_ATT_CONTEXT: &str = "128";
 
 #[derive(Clone)]
 pub struct ParakeetTruthConfig {
@@ -99,17 +101,18 @@ pub fn resolve_parakeet_backend(
     selected_gpu: Option<&VulkanDevice>,
 ) -> (String, BTreeMap<String, String>, Option<u32>) {
     debug_assert!(matches!(config_device, "auto" | "cpu"));
+    let mut env_updates = BTreeMap::from([(
+        PARAKEET_ATT_CONTEXT_ENV.to_owned(),
+        PARAKEET_ATT_CONTEXT.to_owned(),
+    )]);
     if config_device == "cpu" {
-        return ("cpu".to_owned(), BTreeMap::new(), None);
+        return ("cpu".to_owned(), env_updates, None);
     }
     let Some(gpu) = selected_gpu else {
-        return ("cpu".to_owned(), BTreeMap::new(), None);
+        return ("cpu".to_owned(), env_updates, None);
     };
-    (
-        "vulkan".to_owned(),
-        BTreeMap::from([("GGML_VK_VISIBLE_DEVICES".to_owned(), gpu.index.to_string())]),
-        Some(gpu.index),
-    )
+    env_updates.insert("GGML_VK_VISIBLE_DEVICES".to_owned(), gpu.index.to_string());
+    ("vulkan".to_owned(), env_updates, Some(gpu.index))
 }
 
 pub fn parakeet_physical_thread_count() -> u32 {
@@ -369,8 +372,9 @@ fn parakeet_target_fingerprint(
         "binary_pins": [cpu, vulkan],
         "model_pin": pins::parakeet_model_identity(),
         "cache_root": pins::parakeet_cache_root(journal_path).display().to_string(),
+        "launch_env": {PARAKEET_ATT_CONTEXT_ENV: PARAKEET_ATT_CONTEXT},
     });
-    let input_json = canonical_fingerprint(&CanonicalInput::Json(target)).ok()?;
+    let input_json = canonical_json(&CanonicalInput::Json(target)).ok()?;
     let input_sha256 = fingerprint_sha256(&input_json);
     Some((input_json, input_sha256))
 }
@@ -517,7 +521,13 @@ mod tests {
     fn cpu_backend_ignores_an_injected_gpu() {
         let (backend, env, index) = resolve_parakeet_backend("cpu", Some(&gpu(2)));
         assert_eq!(backend, "cpu");
-        assert!(env.is_empty());
+        assert_eq!(
+            env,
+            BTreeMap::from([(
+                PARAKEET_ATT_CONTEXT_ENV.to_owned(),
+                PARAKEET_ATT_CONTEXT.to_owned(),
+            )])
+        );
         assert_eq!(index, None);
     }
 
@@ -526,7 +536,16 @@ mod tests {
         let gpu = gpu(2);
         let (backend, env, index) = resolve_parakeet_backend("auto", Some(&gpu));
         assert_eq!(backend, "vulkan");
-        assert_eq!(env.get("GGML_VK_VISIBLE_DEVICES"), Some(&"2".to_owned()));
+        assert_eq!(
+            env,
+            BTreeMap::from([
+                (
+                    PARAKEET_ATT_CONTEXT_ENV.to_owned(),
+                    PARAKEET_ATT_CONTEXT.to_owned(),
+                ),
+                ("GGML_VK_VISIBLE_DEVICES".to_owned(), "2".to_owned()),
+            ])
+        );
         assert_eq!(index, Some(2));
     }
 
@@ -534,8 +553,26 @@ mod tests {
     fn auto_backend_without_an_injected_gpu_uses_cpu() {
         let (backend, env, index) = resolve_parakeet_backend("auto", None);
         assert_eq!(backend, "cpu");
-        assert!(env.is_empty());
+        assert_eq!(
+            env,
+            BTreeMap::from([(
+                PARAKEET_ATT_CONTEXT_ENV.to_owned(),
+                PARAKEET_ATT_CONTEXT.to_owned(),
+            )])
+        );
         assert_eq!(index, None);
+    }
+
+    #[test]
+    fn target_fingerprint_carries_the_forced_attention_context() {
+        let (fingerprint_json, _) =
+            parakeet_target_fingerprint(Path::new("/fixture-journal"), "x86_64-unknown-linux-gnu")
+                .expect("fingerprint");
+        let fingerprint: Value = serde_json::from_str(&fingerprint_json).expect("json");
+        assert_eq!(
+            fingerprint["launch_env"][PARAKEET_ATT_CONTEXT_ENV].as_str(),
+            Some(PARAKEET_ATT_CONTEXT)
+        );
     }
 
     #[test]
