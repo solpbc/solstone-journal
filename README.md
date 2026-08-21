@@ -1,4 +1,4 @@
-<img src="docs/static/sol-wordmark.svg" alt="solstone" width="300">
+<img src="docs/static/mark.svg" alt="solstone" width="300">
 
 # The journal
 
