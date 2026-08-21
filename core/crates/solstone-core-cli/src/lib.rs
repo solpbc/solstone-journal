@@ -23,7 +23,7 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--no-schedule] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--remote URL]\n",
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule] [--remote URL]\n",
     "  journal top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
     "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
@@ -427,26 +427,23 @@ pub const TRANSCRIBE_USAGE: &str = concat!(
 );
 
 pub const SUPERVISOR_USAGE: &str = concat!(
-    "usage: journal supervisor [-h] [--no-daily] [--no-schedule] [--no-cortex]\n",
-    "                          [--no-spl] [--no-convey] [--remote REMOTE]\n",
-    "                          [--journal JOURNAL]\n",
-    "                          [-v] [-d]\n",
+    "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "                          [--no-convey] [--no-schedule] [--remote REMOTE]\n",
+    "                          [--journal JOURNAL] [-v] [-d]\n",
     "                          [port]\n",
 );
 
 pub const START_USAGE: &str = concat!(
-    "usage: journal start [-h] [--no-daily] [--no-schedule] [--no-cortex]\n",
-    "                     [--no-spl] [--no-convey] [--remote REMOTE]\n",
-    "                     [--journal JOURNAL]\n",
-    "                     [-v] [-d]\n",
+    "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "                     [--no-convey] [--no-schedule] [--remote REMOTE]\n",
+    "                     [--journal JOURNAL] [-v] [-d]\n",
     "                     [port]\n",
 );
 
 pub const SUPERVISOR_HELP: &str = concat!(
-    "usage: journal supervisor [-h] [--no-daily] [--no-schedule] [--no-cortex]\n",
-    "                          [--no-spl] [--no-convey] [--remote REMOTE]\n",
-    "                          [--journal JOURNAL]\n",
-    "                          [-v] [-d]\n",
+    "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "                          [--no-convey] [--no-schedule] [--remote REMOTE]\n",
+    "                          [--journal JOURNAL] [-v] [-d]\n",
     "                          [port]\n",
     "\n",
     "Monitor journaling health\n",
@@ -457,11 +454,11 @@ pub const SUPERVISOR_HELP: &str = concat!(
     "options:\n",
     "  -h, --help         show this help message and exit\n",
     "  --no-daily         Disable daily processing run at midnight\n",
-    "  --no-schedule      Do not run configured schedules or report their status\n",
     "  --no-cortex        Do not start the Cortex server (run it manually for\n",
     "                     debugging)\n",
     "  --no-spl           Do not start the spl tunnel service\n",
     "  --no-convey        Do not start the Convey web application\n",
+    "  --no-schedule      Do not initialize or run the schedule engine\n",
     "  --remote REMOTE    Remote mode: URL for segment transfer (not yet\n",
     "                     implemented)\n",
     "  --journal JOURNAL  Use this path as the journal root instead of normal\n",
@@ -471,10 +468,9 @@ pub const SUPERVISOR_HELP: &str = concat!(
 );
 
 pub const START_HELP: &str = concat!(
-    "usage: journal start [-h] [--no-daily] [--no-schedule] [--no-cortex]\n",
-    "                     [--no-spl] [--no-convey] [--remote REMOTE]\n",
-    "                     [--journal JOURNAL]\n",
-    "                     [-v] [-d]\n",
+    "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
+    "                     [--no-convey] [--no-schedule] [--remote REMOTE]\n",
+    "                     [--journal JOURNAL] [-v] [-d]\n",
     "                     [port]\n",
     "\n",
     "Monitor journaling health\n",
@@ -485,11 +481,11 @@ pub const START_HELP: &str = concat!(
     "options:\n",
     "  -h, --help         show this help message and exit\n",
     "  --no-daily         Disable daily processing run at midnight\n",
-    "  --no-schedule      Do not run configured schedules or report their status\n",
     "  --no-cortex        Do not start the Cortex server (run it manually for\n",
     "                     debugging)\n",
     "  --no-spl           Do not start the spl tunnel service\n",
     "  --no-convey        Do not start the Convey web application\n",
+    "  --no-schedule      Do not initialize or run the schedule engine\n",
     "  --remote REMOTE    Remote mode: URL for segment transfer (not yet\n",
     "                     implemented)\n",
     "  --journal JOURNAL  Use this path as the journal root instead of normal\n",

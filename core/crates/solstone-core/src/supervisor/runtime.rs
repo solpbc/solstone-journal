@@ -765,14 +765,14 @@ pub(crate) async fn boot_and_tick(
         state: ProviderRuntimeState::new(ProviderName::Parakeet),
         processes: Vec::new(),
     };
+    let wall = chrono::Local::now();
+    let now = ScheduleNow {
+        local: wall.naive_local(),
+        unix_millis: wall.timestamp_millis(),
+    };
     let scheduler = if options.no_schedule {
         None
     } else {
-        let wall = chrono::Local::now();
-        let now = ScheduleNow {
-            local: wall.naive_local(),
-            unix_millis: wall.timestamp_millis(),
-        };
         let mut scheduler = ScheduleEngine::init(
             journal.join("config/schedules.json"),
             journal.join("health/scheduler.json"),

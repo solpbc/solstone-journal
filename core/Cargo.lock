@@ -3995,7 +3995,6 @@ dependencies = [
  "rusqlite",
  "serde_json",
  "sha2",
- "solstone-core-backup-runtime",
  "solstone-core-cli",
  "solstone-core-journal",
  "solstone-core-journal-cli",
