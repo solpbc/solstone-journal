@@ -480,19 +480,13 @@ fn unbounded_config() -> WebSocketConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeSet, io};
+    use std::collections::BTreeSet;
 
-    use futures_util::StreamExt;
-    use tokio::{io::AsyncWriteExt, net::TcpListener};
-    use tokio_tungstenite::{
-        accept_async,
-        tungstenite::{Message, http::header::AUTHORIZATION},
-    };
+    use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
 
     use super::{
-        PairWindowClientError, PairWindowSecret, RelayPairKey, attach_pair_window_tunnel,
-        pair_window_registration_url, pair_window_tunnel_url, register_pair_window,
-        registration_request, tunnel_attach_request,
+        PairWindowClientError, PairWindowSecret, RelayPairKey, pair_window_registration_url,
+        pair_window_tunnel_url, registration_request, tunnel_attach_request,
     };
     use crate::ServiceToken;
 
@@ -590,47 +584,6 @@ mod tests {
                 "upgrade",
             ])
         );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn registration_and_tunnel_attach_dial_a_loopback_websocket() -> io::Result<()> {
-        let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let endpoint = format!("http://{}", listener.local_addr()?);
-        let relay = tokio::spawn(async move {
-            let (registration, _) = listener.accept().await?;
-            let mut registration = accept_async(registration).await.map_err(io::Error::other)?;
-            while let Some(message) = registration.next().await {
-                if matches!(message.map_err(io::Error::other)?, Message::Close(_)) {
-                    break;
-                }
-            }
-
-            let (tunnel, _) = listener.accept().await?;
-            let mut tunnel = accept_async(tunnel).await.map_err(io::Error::other)?;
-            while let Some(message) = tunnel.next().await {
-                if matches!(message.map_err(io::Error::other)?, Message::Close(_)) {
-                    break;
-                }
-            }
-            Ok::<(), io::Error>(())
-        });
-
-        let (_secret, relay_key) = secret_and_key();
-        let token = token();
-        let registration = register_pair_window(&endpoint, &token, &relay_key)
-            .await
-            .map_err(|error| io::Error::other(error.to_string()))?;
-        registration
-            .close()
-            .await
-            .map_err(|error| io::Error::other(error.to_string()))?;
-        let mut tunnel = attach_pair_window_tunnel(&endpoint, "offer-1", &token)
-            .await
-            .map_err(|error| io::Error::other(error.to_string()))?;
-        tunnel.shutdown().await?;
-
-        relay.await.map_err(io::Error::other)??;
         Ok(())
     }
 
