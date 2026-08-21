@@ -3264,6 +3264,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "solstone-core-cli-boundary",
  "solstone-core-doctor",
  "solstone-core-format",
  "solstone-core-observer",
@@ -5014,7 +5015,6 @@ name = "solstone-core-transfer"
 version = "2.0.0"
 dependencies = [
  "chrono",
- "flate2",
  "jsonschema",
  "rcgen",
  "serde",
@@ -5027,7 +5027,6 @@ dependencies = [
  "solstone-core-transfer-manifest",
  "spl-core",
  "spl-transport",
- "tar",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",

@@ -379,7 +379,11 @@ fn install_provider_gates_on_the_supervisor_before_the_name() {
 // --help, exited 64 with solstone-core's top-level usage. The verb shipped with
 // no help at all.
 
-const TRANSFER_MALFORMED: &[&[&str]] = &[&["transfer", "--nonsense"], &["transfer", "bogus"]];
+const TRANSFER_MALFORMED: &[&[&str]] = &[
+    &["transfer"],
+    &["transfer", "--nonsense"],
+    &["transfer", "bogus"],
+];
 
 #[test]
 fn malformed_transfer_invocations_exit_2_not_64() {
@@ -407,13 +411,13 @@ fn malformed_transfer_invocations_exit_2_not_64() {
              got:\n{stderr}",
             args.join(" ")
         );
+        assert!(stderr.contains("{send}"), "{stderr}");
+        assert!(!stderr.contains("{export,import,send}"), "{stderr}");
     }
 }
 
 #[test]
-fn transfer_help_is_served_for_the_verb_and_each_subcommand() {
-    // Each subcommand has its OWN help. A single shared string would pass a
-    // laxer assertion while hiding every subcommand's actual grammar.
+fn transfer_help_advertises_only_the_live_send_subcommand() {
     for (args, expected_usage) in [
         (
             ["transfer", "--help"].as_slice(),
@@ -422,14 +426,6 @@ fn transfer_help_is_served_for_the_verb_and_each_subcommand() {
         (
             ["transfer", "-h"].as_slice(),
             "usage: journal transfer [-h]",
-        ),
-        (
-            ["transfer", "export", "--help"].as_slice(),
-            "usage: journal transfer export",
-        ),
-        (
-            ["transfer", "import", "--help"].as_slice(),
-            "usage: journal transfer import",
         ),
         (
             ["transfer", "send", "--help"].as_slice(),
@@ -453,72 +449,57 @@ fn transfer_help_is_served_for_the_verb_and_each_subcommand() {
              got:\n{stdout}",
             args.join(" ")
         );
+        if args.len() == 2 && args[0] == "transfer" {
+            assert!(stdout.contains("{send}"), "{stdout}");
+            assert!(!stdout.contains("{export,import,send}"), "{stdout}");
+        }
+    }
+}
+
+#[test]
+fn retired_transfer_subcommands_exit_2_with_their_replacements() {
+    for (args, replacement) in [
+        (["transfer", "export"].as_slice(), "journal archive export"),
+        (
+            ["transfer", "export", "--help"].as_slice(),
+            "journal archive export",
+        ),
+        (["transfer", "import"].as_slice(), "journal archive merge"),
+        (
+            ["transfer", "import", "--help"].as_slice(),
+            "journal archive merge",
+        ),
+    ] {
+        let output = run_core(args);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(output.stdout.is_empty(), "{args:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(replacement), "{stderr}");
+        assert!(!stderr.contains("usage: journal transfer"), "{stderr}");
     }
 }
 
 // --- export ---------------------------------------------------------------
 //
-// Export must reject malformed invocations consistently with grab, transfer,
-// and observer. This coverage keeps shared CLI validation changes from omitting
-// the export surface.
+// Export is retired at both its ordinary and help spellings. Its tombstone
+// must not fall through to solstone-core's generic top-level usage.
 
 #[test]
-fn malformed_export_invocations_exit_2_not_64() {
-    for args in [
-        ["export", "--nonsense"].as_slice(),
-        ["export", "bogus"].as_slice(),
-    ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
-            .args(args)
-            .output()
-            .expect("run solstone-core");
-        let code = output.status.code().expect("exit code");
-        assert_eq!(
-            code,
-            2,
-            "`{}` exited {code}; the reference exits 2 (argparse usage error)",
-            args.join(" ")
-        );
+fn direct_export_tombstone_exits_2_with_send_replacement() {
+    for args in [["export"].as_slice(), ["export", "--help"].as_slice()] {
+        let output = run_core(args);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(output.stdout.is_empty(), "{args:?}");
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            stderr.contains("usage: journal export"),
-            "`{}` did not print journal export's usage; got:\n{stderr}",
+            stderr.contains("journal transfer send --to"),
+            "`{}` did not print the export replacement; got:\n{stderr}",
             args.join(" ")
         );
         assert!(
             !stderr.contains("solstone-core --version"),
-            "`{}` printed solstone-core's top-level usage instead of the verb's; \
-             got:\n{stderr}",
+            "`{}` printed only solstone-core's top-level usage; got:\n{stderr}",
             args.join(" ")
-        );
-    }
-}
-
-#[test]
-fn export_help_is_served_and_keeps_the_references_flag_list() {
-    for args in [["export", "--help"].as_slice(), ["export", "-h"].as_slice()] {
-        let output = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
-            .args(args)
-            .output()
-            .expect("run solstone-core");
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "`{}` did not exit 0; the reference serves help here",
-            args.join(" ")
-        );
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            stdout.starts_with("usage: journal export"),
-            "`{}` did not print export's own help; got:\n{stdout}",
-            args.join(" ")
-        );
-        // The reference advertises --key, the retired url-plus-key mode's flag,
-        // and refuses it at runtime. Dropping it from help would diverge from
-        // what an owner sees today; the refusal is a separate concern.
-        assert!(
-            stdout.contains("--key KEY"),
-            "export help dropped the reference's --key line; got:\n{stdout}"
         );
     }
 }

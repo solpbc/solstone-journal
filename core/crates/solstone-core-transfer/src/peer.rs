@@ -467,3 +467,43 @@ fn escape_multipart(value: &str) -> String {
 fn transport_error(error: impl std::fmt::Display) -> TransferError {
     TransferError::Transport(error.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_peer;
+
+    use std::fs;
+
+    use serde_json::json;
+
+    #[test]
+    fn peer_resolver_reports_python_compatible_messages() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(
+            resolve_peer(root.path(), "office").unwrap_err().to_string(),
+            "no peers paired (run \"solstone link join --as peer\" first)"
+        );
+        let peers = root.path().join("peers");
+        for (directory, label, instance_id) in [
+            ("z", "zebra", "second"),
+            ("a", "alpha", "first"),
+            ("b", "alpha", "third"),
+        ] {
+            let directory = peers.join(directory);
+            fs::create_dir_all(&directory).unwrap();
+            fs::write(
+                directory.join("peer.json"),
+                json!({"label": label, "instance_id": instance_id}).to_string(),
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            resolve_peer(root.path(), "none").unwrap_err().to_string(),
+            "no peer with label \"none\"; available: alpha, zebra"
+        );
+        assert_eq!(
+            resolve_peer(root.path(), "alpha").unwrap_err().to_string(),
+            "multiple peers with label \"alpha\": first, third; use <journal_root>/peers/<instance_id> directly"
+        );
+    }
+}
