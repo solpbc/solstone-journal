@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -30,10 +31,32 @@ pub fn authorization_gate_read_ticks() -> u64 {
     AUTHORIZATION_GATE_READ_TICKS.load(Ordering::Relaxed)
 }
 
+/// Per-router authorization-read instrumentation for black-box contract tests.
+#[doc(hidden)]
+#[derive(Clone, Default)]
+pub struct AuthorizationGateReadProbe(Arc<AtomicU64>);
+
+impl AuthorizationGateReadProbe {
+    /// Create a zeroed read counter for one instrumented gate instance.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Number of linked-device authorization reads by that gate instance.
+    pub fn reads(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    fn record(&self) {
+        self.0.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 #[derive(Clone)]
 pub struct AuthorizationGateState {
     pub authorization: watch::Receiver<DeviceDoorAuthorization>,
     pub authorized_clients_path: PathBuf,
+    read_probe: Option<AuthorizationGateReadProbe>,
 }
 
 #[derive(Clone)]
@@ -85,10 +108,26 @@ pub fn authorized_router(
     journal_root: PathBuf,
     authorization: watch::Receiver<DeviceDoorAuthorization>,
 ) -> DoorRouter {
-    authorized_router_with_router(
+    authorized_router_with_router_inner(
         crate::router(journal_root.clone()),
         journal_root,
         authorization,
+        None,
+    )
+}
+
+/// Build an authorization gate with a counter scoped to this router instance.
+#[doc(hidden)]
+pub fn authorized_router_with_read_probe(
+    journal_root: PathBuf,
+    authorization: watch::Receiver<DeviceDoorAuthorization>,
+    read_probe: AuthorizationGateReadProbe,
+) -> DoorRouter {
+    authorized_router_with_router_inner(
+        crate::router(journal_root.clone()),
+        journal_root,
+        authorization,
+        Some(read_probe),
     )
 }
 
@@ -99,6 +138,15 @@ pub fn authorized_router_with_router(
     router: Router,
     journal_root: PathBuf,
     authorization: watch::Receiver<DeviceDoorAuthorization>,
+) -> DoorRouter {
+    authorized_router_with_router_inner(router, journal_root, authorization, None)
+}
+
+fn authorized_router_with_router_inner(
+    router: Router,
+    journal_root: PathBuf,
+    authorization: watch::Receiver<DeviceDoorAuthorization>,
+    read_probe: Option<AuthorizationGateReadProbe>,
 ) -> DoorRouter {
     let authorized_clients_path = AuthorizationLedger::new(&journal_root)
         .authorized_clients_path()
@@ -115,6 +163,7 @@ pub fn authorized_router_with_router(
                 AuthorizationGateState {
                     authorization,
                     authorized_clients_path,
+                    read_probe,
                 },
                 require_authorization,
             ))
@@ -214,6 +263,9 @@ async fn require_authorization(
     let path = state.authorized_clients_path.clone();
     #[cfg(debug_assertions)]
     AUTHORIZATION_GATE_READ_TICKS.fetch_add(1, Ordering::Relaxed);
+    if let Some(read_probe) = &state.read_probe {
+        read_probe.record();
+    }
     let posture = match tokio::time::timeout(
         Duration::from_millis(1000),
         tokio::task::spawn_blocking(move || read_authorized_clients(&path)),
@@ -279,6 +331,7 @@ mod tests {
                     authorized_clients_path: AuthorizationLedger::new(temporary.path())
                         .authorized_clients_path()
                         .to_path_buf(),
+                    read_probe: None,
                 },
                 require_authorization,
             ));

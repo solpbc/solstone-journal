@@ -132,6 +132,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 filetime = "0.2.29"
+futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
 tempfile = "3.24.0"
 rcgen.workspace = true
 rustls.workspace = true
@@ -141,5 +142,6 @@ solstone-core-local.workspace = true
 spl-transport.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
+tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["connect", "handshake"] }
 time = "0.3.54"
 x509-parser = "0.16.0"

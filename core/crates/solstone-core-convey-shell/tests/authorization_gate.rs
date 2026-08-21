@@ -16,7 +16,7 @@ use nix::unistd::mkfifo;
 use serde_json::{Value, json};
 use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceDid};
 use solstone_core_convey_shell::authorization_gate::{
-    authorization_gate_read_ticks, authorized_router,
+    AuthorizationGateReadProbe, authorized_router, authorized_router_with_read_probe,
 };
 use solstone_core_convey_shell::{
     ConveyServeOptions, DoorOutcome, bind_with_authorization, router,
@@ -347,7 +347,9 @@ async fn ac7_gate_reads_every_matched_request_without_posture_memoization() {
     let (_, receiver) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
-    let app = authorized_router(fixture.root.clone(), receiver).into_inner();
+    let reads = AuthorizationGateReadProbe::new();
+    let app = authorized_router_with_read_probe(fixture.root.clone(), receiver, reads.clone())
+        .into_inner();
 
     for (posture, expected) in [
         (DiskPosture::Present, StatusCode::OK),
@@ -356,13 +358,13 @@ async fn ac7_gate_reads_every_matched_request_without_posture_memoization() {
         (DiskPosture::Malformed, StatusCode::FORBIDDEN),
     ] {
         induce_posture(&fixture, posture);
-        let before = authorization_gate_read_ticks();
+        let before = reads.reads();
         for _ in 0..2 {
             let (status, _) =
                 request(app.clone(), "/api/system/status", Some(listed.clone())).await;
             assert_eq!(status, expected);
         }
-        assert_eq!(authorization_gate_read_ticks() - before, 2);
+        assert_eq!(reads.reads() - before, 2);
     }
 }
 

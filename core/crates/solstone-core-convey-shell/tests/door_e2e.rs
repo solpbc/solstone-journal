@@ -4,18 +4,23 @@
 //! Focused host-door coverage. The body-echo route is deliberately in this
 //! integration-test crate, stronger than a feature-gated library test surface.
 
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
+use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant, SystemTime};
 
 use axum::Extension;
 use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
+use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use nix::sys::stat::Mode;
 use nix::unistd::mkfifo;
 use sha2::{Digest, Sha256};
@@ -35,9 +40,19 @@ use spl_core::frame::{
 use spl_core::mux::{ResponseAssembler, WindowedUpload};
 use spl_transport::client::TransportClient;
 use spl_transport::connection::request_once;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::watch;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio_rustls::TlsConnector;
+use tokio_tungstenite::{
+    MaybeTlsStream, WebSocketStream, accept_hdr_async, connect_async,
+    tungstenite::{
+        Message,
+        client::IntoClientRequest,
+        handshake::server::Request as ServerRequest,
+        http::{HeaderValue, StatusCode as WsStatusCode, header::AUTHORIZATION},
+    },
+};
 use x509_parser::extensions::ParsedExtension;
 use x509_parser::oid_registry::{OID_EC_P256, OID_KEY_TYPE_EC_PUBLIC_KEY};
 use x509_parser::pem::parse_x509_pem;
@@ -173,15 +188,18 @@ impl Drop for BlockingAuthorizationFifo {
     }
 }
 
-async fn exchange_over_carrier(
-    carrier: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+async fn exchange_over_carrier<S>(
+    carrier: &mut tokio_rustls::client::TlsStream<S>,
     decoder: &mut FrameDecoder,
     stream_id: u32,
     method: &str,
     path: &str,
     headers: &[(String, String)],
     body: &[u8],
-) -> std::io::Result<spl_core::http::HttpResponse> {
+) -> std::io::Result<spl_core::http::HttpResponse>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let request = spl_core::http::build_request(method, path, headers, body);
     carrier
         .write_all(
@@ -329,13 +347,20 @@ async fn live_certless_carrier(
     let tcp = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
         .await
         .expect("certless TCP carrier");
+    certless_carrier(tcp).await
+}
+
+async fn certless_carrier<S>(stream: S) -> std::io::Result<tokio_rustls::client::TlsStream<S>>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     TlsConnector::from(Arc::new(test_client_config(
         &[&rustls::version::TLS13],
         None,
     )))
     .connect(
         rustls::pki_types::ServerName::try_from("spl.local").expect("name"),
-        tcp,
+        stream,
     )
     .await
 }
@@ -702,6 +727,42 @@ async fn mint_from_loopback(
     serde_json::from_slice(&body).expect("pair-start JSON")
 }
 
+async fn mint_relay_from_loopback(
+    handle: &solstone_core_convey_shell::ConveyServeHandle,
+    label: &str,
+) -> serde_json::Value {
+    let (status, body) = loopback_json_request(
+        handle.loopback_ipv4_addr(),
+        "POST",
+        "/app/network/pair-start",
+        &serde_json::json!({"device_label": label, "same_machine": false}),
+    )
+    .await;
+    assert_eq!(
+        status,
+        200,
+        "relay pair-start: {}",
+        String::from_utf8_lossy(&body)
+    );
+    serde_json::from_slice(&body).expect("relay pair-start JSON")
+}
+
+fn configure_relay_pairing(fixture: &Fixture, relay_origin: &str) {
+    let config = serde_json::json!({
+        "setup": {"completed_at": 1},
+        "link": {"posture": "spl", "relay_url": relay_origin},
+    });
+    fs::write(
+        fixture.root.join("config/journal.json"),
+        serde_json::to_vec(&config).expect("relay config JSON"),
+    )
+    .expect("relay config writes");
+    let token = fixture.root.join("link/tokens/account.json");
+    fs::create_dir_all(token.parent().expect("token parent")).expect("token parent creates");
+    fs::write(token, br#"{"service_token":"door-e2e-service-token"}"#)
+        .expect("service token writes");
+}
+
 fn link_for_door(pair_link: &str, port: u16) -> String {
     let (_, fragment) = pair_link.split_once('#').expect("pair-link fragment");
     let mut blob = spl_core::crockford::decode(fragment).expect("pair-link bytes");
@@ -761,13 +822,24 @@ async fn post_pair_over_certless_carrier(
     let mut carrier = live_certless_carrier(port)
         .await
         .expect("certless pairing carrier");
+    post_pair_over_certless_stream(&mut carrier, token, body).await
+}
+
+async fn post_pair_over_certless_stream<S>(
+    carrier: &mut tokio_rustls::client::TlsStream<S>,
+    token: Option<&str>,
+    body: serde_json::Value,
+) -> spl_core::http::HttpResponse
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut decoder = FrameDecoder::new();
     let path = token.map_or_else(
         || spl_core::PAIR_PATH.to_owned(),
         |token| format!("{}?token={token}", spl_core::PAIR_PATH),
     );
     exchange_over_carrier(
-        &mut carrier,
+        carrier,
         &mut decoder,
         1,
         "POST",
@@ -777,6 +849,460 @@ async fn post_pair_over_certless_carrier(
     )
     .await
     .expect("pair response")
+}
+
+const PAIR_RELAY_TUNNEL_ID: &str = "door-e2e-pair-window";
+const RELAY_TUNNEL_WRITE_MAX: usize = 64 * 1024;
+
+type PairRelaySocket = WebSocketStream<TcpStream>;
+
+/// A test-only relay that brokers one mobile pair-dial into the matching home
+/// attach tunnel. It rejects application credentials in URLs, and it binds
+/// the tunnel attachment to the registration bearer before upgrading either
+/// side into the byte bridge.
+struct SinglePairRelay {
+    origin: String,
+    listener_task: tokio::task::JoinHandle<()>,
+}
+
+#[derive(Default)]
+struct SinglePairRelayState {
+    windows: HashMap<String, PairRelayWindow>,
+    tunnels: HashMap<String, PairRelayTunnel>,
+}
+
+struct PairRelayWindow {
+    token: String,
+    offers: mpsc::UnboundedSender<String>,
+}
+
+struct PairRelayTunnel {
+    token: String,
+    attach: Option<oneshot::Sender<PairRelaySocket>>,
+}
+
+enum PairRelayConnection {
+    Registration {
+        relay_key: String,
+        token: String,
+    },
+    PairDial {
+        relay_key: String,
+    },
+    TunnelAttach {
+        attach: oneshot::Sender<PairRelaySocket>,
+    },
+}
+
+impl SinglePairRelay {
+    async fn bind() -> Self {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("pair relay listener binds");
+        let origin = format!(
+            "http://{}",
+            listener.local_addr().expect("pair relay listener address")
+        );
+        let state = Arc::new(Mutex::new(SinglePairRelayState::default()));
+        let listener_state = Arc::clone(&state);
+        let listener_task = tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let state = Arc::clone(&listener_state);
+                std::mem::drop(tokio::spawn(async move {
+                    serve_single_pair_relay_connection(stream, state).await;
+                }));
+            }
+        });
+        Self {
+            origin,
+            listener_task,
+        }
+    }
+
+    fn origin(&self) -> &str {
+        &self.origin
+    }
+}
+
+impl Drop for SinglePairRelay {
+    fn drop(&mut self) {
+        self.listener_task.abort();
+    }
+}
+
+#[allow(clippy::result_large_err)]
+async fn serve_single_pair_relay_connection(
+    stream: TcpStream,
+    state: Arc<Mutex<SinglePairRelayState>>,
+) {
+    let accepted = Arc::new(Mutex::new(None));
+    let accepted_for_callback = Arc::clone(&accepted);
+    let state_for_callback = Arc::clone(&state);
+    let websocket = accept_hdr_async(stream, move |request: &ServerRequest, response| {
+        match inspect_single_pair_relay_request(request, &state_for_callback) {
+            Ok(connection) => {
+                *lock_pair_relay(&accepted_for_callback) = Some(connection);
+                Ok(response)
+            }
+            Err(status) => Err(pair_relay_rejection(status)),
+        }
+    })
+    .await;
+    let Ok(websocket) = websocket else {
+        return;
+    };
+    let Some(accepted) = lock_pair_relay(&accepted).take() else {
+        return;
+    };
+
+    match accepted {
+        PairRelayConnection::Registration { relay_key, token } => {
+            let (offers, receiver) = mpsc::unbounded_channel();
+            lock_pair_relay(&state)
+                .windows
+                .insert(relay_key.clone(), PairRelayWindow { token, offers });
+            serve_single_pair_relay_registration(websocket, receiver).await;
+            lock_pair_relay(&state).windows.remove(&relay_key);
+        }
+        PairRelayConnection::PairDial { relay_key } => {
+            serve_single_pair_dial(websocket, state, &relay_key).await;
+        }
+        PairRelayConnection::TunnelAttach { attach } => {
+            let _ = attach.send(websocket);
+        }
+    }
+}
+
+fn inspect_single_pair_relay_request(
+    request: &ServerRequest,
+    state: &Arc<Mutex<SinglePairRelayState>>,
+) -> Result<PairRelayConnection, WsStatusCode> {
+    match request.uri().path() {
+        "/session/pair-window" => inspect_pair_window_registration(request),
+        "/session/pair-dial" => inspect_pair_dial(request, state),
+        path if path.starts_with("/tunnel/") => inspect_pair_tunnel_attach(request, state),
+        _ => Err(WsStatusCode::NOT_FOUND),
+    }
+}
+
+fn inspect_pair_window_registration(
+    request: &ServerRequest,
+) -> Result<PairRelayConnection, WsStatusCode> {
+    let Some(token) = pair_relay_bearer(request) else {
+        return Err(WsStatusCode::UNAUTHORIZED);
+    };
+    let Some(relay_key) = pair_relay_header(request, "sec-pair-key") else {
+        return Err(WsStatusCode::BAD_REQUEST);
+    };
+    if request.uri().query().is_some() {
+        return Err(WsStatusCode::BAD_REQUEST);
+    }
+    Ok(PairRelayConnection::Registration { relay_key, token })
+}
+
+fn inspect_pair_dial(
+    request: &ServerRequest,
+    state: &Arc<Mutex<SinglePairRelayState>>,
+) -> Result<PairRelayConnection, WsStatusCode> {
+    let Some(relay_key) = pair_relay_header(request, "sec-pair-key") else {
+        return Err(WsStatusCode::BAD_REQUEST);
+    };
+    if request.uri().query().is_some() || request.headers().contains_key(AUTHORIZATION) {
+        return Err(WsStatusCode::BAD_REQUEST);
+    }
+    if !lock_pair_relay(state).windows.contains_key(&relay_key) {
+        return Err(WsStatusCode::UNAUTHORIZED);
+    }
+    Ok(PairRelayConnection::PairDial { relay_key })
+}
+
+fn inspect_pair_tunnel_attach(
+    request: &ServerRequest,
+    state: &Arc<Mutex<SinglePairRelayState>>,
+) -> Result<PairRelayConnection, WsStatusCode> {
+    let Some(token) = pair_relay_bearer(request) else {
+        return Err(WsStatusCode::UNAUTHORIZED);
+    };
+    let Some(tunnel_id) = request.uri().path().strip_prefix("/tunnel/") else {
+        return Err(WsStatusCode::NOT_FOUND);
+    };
+    if request.uri().query().is_some()
+        || tunnel_id.is_empty()
+        || request.headers().contains_key("sec-pair-key")
+    {
+        return Err(WsStatusCode::BAD_REQUEST);
+    }
+    let mut state = lock_pair_relay(state);
+    let Some(tunnel) = state.tunnels.get_mut(tunnel_id) else {
+        return Err(WsStatusCode::NOT_FOUND);
+    };
+    if tunnel.token != token {
+        return Err(WsStatusCode::FORBIDDEN);
+    }
+    let Some(attach) = tunnel.attach.take() else {
+        return Err(WsStatusCode::UNAUTHORIZED);
+    };
+    Ok(PairRelayConnection::TunnelAttach { attach })
+}
+
+fn pair_relay_bearer(request: &ServerRequest) -> Option<String> {
+    request
+        .headers()
+        .get(AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+        .filter(|token| !token.is_empty())
+        .map(str::to_owned)
+}
+
+fn pair_relay_header(request: &ServerRequest, name: &str) -> Option<String> {
+    request
+        .headers()
+        .get(name)?
+        .to_str()
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn pair_relay_rejection(
+    status: WsStatusCode,
+) -> tokio_tungstenite::tungstenite::handshake::server::ErrorResponse {
+    tokio_tungstenite::tungstenite::http::Response::builder()
+        .status(status)
+        .body(Some("pair relay rejected".to_owned()))
+        .expect("pair relay rejection response")
+}
+
+async fn serve_single_pair_relay_registration(
+    mut websocket: PairRelaySocket,
+    mut offers: mpsc::UnboundedReceiver<String>,
+) {
+    loop {
+        tokio::select! {
+            Some(tunnel_id) = offers.recv() => {
+                let control = format!(r#"{{"type":"incoming","tunnel_id":"{tunnel_id}"}}"#);
+                if websocket.send(Message::Text(control.into())).await.is_err() {
+                    return;
+                }
+            }
+            message = websocket.next() => match message {
+                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => return,
+                Some(Ok(Message::Ping(payload))) => {
+                    if websocket.send(Message::Pong(payload)).await.is_err() {
+                        return;
+                    }
+                }
+                Some(Ok(Message::Binary(_) | Message::Text(_) | Message::Pong(_) | Message::Frame(_))) => {}
+            },
+        }
+    }
+}
+
+async fn serve_single_pair_dial(
+    websocket: PairRelaySocket,
+    state: Arc<Mutex<SinglePairRelayState>>,
+    relay_key: &str,
+) {
+    let receiver = {
+        let mut state = lock_pair_relay(&state);
+        let Some(window) = state.windows.get(relay_key) else {
+            return;
+        };
+        let token = window.token.clone();
+        let offers = window.offers.clone();
+        if state.tunnels.contains_key(PAIR_RELAY_TUNNEL_ID) {
+            return;
+        }
+        let (attach, receiver) = oneshot::channel();
+        state.tunnels.insert(
+            PAIR_RELAY_TUNNEL_ID.to_owned(),
+            PairRelayTunnel {
+                token,
+                attach: Some(attach),
+            },
+        );
+        if offers.send(PAIR_RELAY_TUNNEL_ID.to_owned()).is_err() {
+            state.tunnels.remove(PAIR_RELAY_TUNNEL_ID);
+            return;
+        }
+        receiver
+    };
+    let Ok(attach) = receiver.await else {
+        return;
+    };
+    let mut mobile = RelayByteStream::new(websocket);
+    let mut home = RelayByteStream::new(attach);
+    let _ = tokio::io::copy_bidirectional(&mut mobile, &mut home).await;
+    lock_pair_relay(&state).tunnels.remove(PAIR_RELAY_TUNNEL_ID);
+}
+
+fn lock_pair_relay<T>(value: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    value
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// WebSocket binary frames exposed as the raw stream the pairing TLS ceremony
+/// already uses. This is test-only outer-transport plumbing; the ceremony
+/// itself continues through `post_pair_over_certless_stream` above.
+struct RelayByteStream<S> {
+    socket: WebSocketStream<S>,
+    read_tail: Vec<u8>,
+    read_pos: usize,
+}
+
+impl<S> RelayByteStream<S> {
+    fn new(socket: WebSocketStream<S>) -> Self {
+        Self {
+            socket,
+            read_tail: Vec::new(),
+            read_pos: 0,
+        }
+    }
+
+    fn copy_tail(&mut self, buffer: &mut ReadBuf<'_>) -> bool {
+        if self.read_pos >= self.read_tail.len() {
+            self.read_tail.clear();
+            self.read_pos = 0;
+            return false;
+        }
+        let count = buffer
+            .remaining()
+            .min(self.read_tail.len().saturating_sub(self.read_pos));
+        if count == 0 {
+            return true;
+        }
+        buffer.put_slice(&self.read_tail[self.read_pos..self.read_pos + count]);
+        self.read_pos += count;
+        if self.read_pos == self.read_tail.len() {
+            self.read_tail.clear();
+            self.read_pos = 0;
+        }
+        true
+    }
+}
+
+impl<S> AsyncRead for RelayByteStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        if buffer.remaining() == 0 || self.copy_tail(buffer) {
+            return Poll::Ready(Ok(()));
+        }
+        loop {
+            match Stream::poll_next(Pin::new(&mut self.socket), context) {
+                Poll::Ready(Some(Ok(Message::Binary(bytes)))) => {
+                    if bytes.is_empty() {
+                        continue;
+                    }
+                    self.read_tail = bytes.to_vec();
+                    self.read_pos = 0;
+                    let _ = self.copy_tail(buffer);
+                    return Poll::Ready(Ok(()));
+                }
+                Poll::Ready(Some(Ok(Message::Ping(_) | Message::Pong(_)))) => continue,
+                Poll::Ready(Some(Ok(Message::Close(_))) | None) => return Poll::Ready(Ok(())),
+                Poll::Ready(Some(Ok(Message::Text(_) | Message::Frame(_)))) => {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "unexpected pair relay websocket message",
+                    )));
+                }
+                Poll::Ready(Some(Err(_))) => {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "pair relay websocket read failed",
+                    )));
+                }
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+    }
+}
+
+impl<S> AsyncWrite for RelayByteStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        if buffer.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
+        let mut socket = Pin::new(&mut self.socket);
+        match Sink::poll_ready(socket.as_mut(), context) {
+            Poll::Ready(Ok(())) => {
+                let count = buffer.len().min(RELAY_TUNNEL_WRITE_MAX);
+                Sink::start_send(socket, Message::Binary(buffer[..count].to_vec().into()))
+                    .map_or_else(
+                        |_| {
+                            Poll::Ready(Err(io::Error::new(
+                                io::ErrorKind::BrokenPipe,
+                                "pair relay websocket write failed",
+                            )))
+                        },
+                        |_| Poll::Ready(Ok(count)),
+                    )
+            }
+            Poll::Ready(Err(_)) => Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "pair relay websocket not ready",
+            ))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Sink::poll_flush(Pin::new(&mut self.socket), context).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "pair relay websocket flush failed",
+            )
+        })
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Sink::poll_close(Pin::new(&mut self.socket), context).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "pair relay websocket close failed",
+            )
+        })
+    }
+}
+
+async fn fake_mobile_pair_dial(
+    relay_origin: &str,
+    relay_key: &str,
+) -> RelayByteStream<MaybeTlsStream<TcpStream>> {
+    let url = spl_core::relay::pair_dial_url(relay_origin).expect("pair dial URL");
+    let mut request = url.into_client_request().expect("pair dial request");
+    request.headers_mut().insert(
+        "sec-pair-key",
+        HeaderValue::from_str(relay_key).expect("relay key header"),
+    );
+    let (socket, _) = connect_async(request).await.expect("mobile pair dial");
+    RelayByteStream::new(socket)
+}
+
+fn relay_key_hex(secret: &[u8; 8]) -> String {
+    let bytes = spl_core::relay_window::derive_rk(secret);
+    let mut value = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write;
+        write!(&mut value, "{byte:02x}").expect("hex string writes");
+    }
+    value
 }
 
 async fn two_pair_requests_on_one_carrier(
@@ -1007,7 +1533,7 @@ async fn ac1_publication_tick_counter_advances() {
 async fn ac2_stop_authorization_refresh_stops_only_the_publisher() {
     let fixture = Fixture::established(1);
     assert!(fixture.remove_authorization(0).authorized_removed);
-    let (authorization_sender, authorization_receiver) = watch::channel(
+    let (authorization_sender, mut authorization_receiver) = watch::channel(
         DeviceDoorAuthorization::from(AuthorizedClientsRead::Missing),
     );
     let mut handle = solstone_core_convey_shell::bind_with_authorization(
@@ -1031,10 +1557,13 @@ async fn ac2_stop_authorization_refresh_stops_only_the_publisher() {
     let port = door_port(handle.door_outcome());
 
     handle.stop_authorization_refresh().await;
-    assert!(authorization_receiver.has_changed().is_err());
-    let stopped_at = authorization_publication_ticks();
-    tokio::time::sleep(Duration::from_millis(600)).await;
-    assert_eq!(authorization_publication_ticks(), stopped_at);
+    authorization_receiver.borrow_and_update();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(600), authorization_receiver.changed())
+            .await
+            .is_err(),
+        "the stopped door publisher must not update its own authorization watch"
+    );
     let outcome = door_connection_outcome(&fixture, port).await;
     assert_eq!(
         outcome,
@@ -1154,10 +1683,18 @@ async fn finalize_starts_the_door_boot_withheld_for_an_unestablished_journal() {
 #[tokio::test]
 async fn ac4_shutdown_aborts_every_listener_task() {
     let fixture = Fixture::established(1);
-    let before = authorization_publication_ticks();
-    let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
-        .await
-        .expect("serve");
+    let (authorization_sender, mut authorization_receiver) = watch::channel(
+        DeviceDoorAuthorization::from(AuthorizedClientsRead::Missing),
+    );
+    let handle = bind_with_authorization(
+        options(&fixture, router(fixture.root.clone()), 0),
+        solstone_core_convey_shell::authorization_gate::DoorRouter::unconfined(router(
+            fixture.root.clone(),
+        )),
+        authorization_sender,
+    )
+    .await
+    .expect("serve");
     let loopback = handle.loopback_ipv4_addr();
     let port = door_port(handle.door_outcome());
     assert!(matches!(loopback_status(loopback).await, Ok(200)));
@@ -1175,18 +1712,20 @@ async fn ac4_shutdown_aborts_every_listener_task() {
     )
     .await
     .expect("carrier exchange");
-    tokio::time::sleep(Duration::from_millis(600)).await;
-    assert!(authorization_publication_ticks() > before);
 
     handle.shutdown();
-    let stopped_at = authorization_publication_ticks();
-    tokio::time::sleep(Duration::from_millis(600)).await;
+    authorization_receiver.borrow_and_update();
     assert!(!matches!(
         tokio::time::timeout(Duration::from_secs(1), loopback_status(loopback)).await,
         Ok(Ok(200))
     ));
     assert!(fresh_door_connection_is_refused(&fixture, port).await);
-    assert_eq!(authorization_publication_ticks(), stopped_at);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(600), authorization_receiver.changed())
+            .await
+            .is_err(),
+        "shutdown must stop this door's authorization publisher"
+    );
 }
 
 #[test]
@@ -2273,6 +2812,89 @@ async fn pair_response_is_canonical_and_omits_empty_local_endpoints_on_raw_json(
 }
 
 #[tokio::test]
+async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let fixture = Fixture::established(0);
+        let relay = SinglePairRelay::bind().await;
+        configure_relay_pairing(&fixture, relay.origin());
+        let handle = serve(options(
+            &fixture,
+            pairing_router(&fixture, pairing_snapshot()),
+            7657,
+        ))
+        .await
+        .expect("serve relay pairing Door");
+        assert_eq!(door_port(handle.door_outcome()), 7657);
+
+        let mint = mint_relay_from_loopback(&handle, "relay phone").await;
+        let nonce = mint["nonce"].as_str().expect("relay nonce").to_owned();
+        let pair_link = mint["pair_link"].as_str().expect("relay pair link");
+        let relay_key = match spl_core::pairlink::parse(pair_link).expect("relay pair link parses")
+        {
+            spl_core::pairlink::ParsedPairLink::Relay(link) => {
+                assert_eq!(link.relay_origin, relay.origin());
+                relay_key_hex(&link.s)
+            }
+            spl_core::pairlink::ParsedPairLink::Direct(_) => {
+                panic!("SPL off-machine mint must emit a v06 relay link")
+            }
+        };
+
+        let response = {
+            let mobile = fake_mobile_pair_dial(relay.origin(), &relay_key).await;
+            let mut carrier = certless_carrier(mobile)
+                .await
+                .expect("relay bridge reaches certless Door admission");
+            let response = post_pair_over_certless_stream(
+                &mut carrier,
+                Some(&nonce),
+                serde_json::json!({
+                    "csr": csr_pem("relay phone"),
+                    "device_label": "relay phone",
+                }),
+            )
+            .await;
+            drop(carrier);
+            response
+        };
+        assert_eq!(
+            response.status,
+            200,
+            "relay bridge must carry the complete pairing response: {}",
+            String::from_utf8_lossy(&response.body)
+        );
+
+        let pair: spl_core::PairResponse =
+            serde_json::from_slice(&response.body).expect("complete canonical pair response");
+        let (_, certificate) =
+            parse_x509_pem(pair.client_cert.as_bytes()).expect("issued client PEM");
+        let fingerprint = format!("sha256:{}", spl_core::ca::sha256_hex(&certificate.contents));
+        assert_eq!(
+            pair.fingerprint, fingerprint,
+            "response carries issued certificate"
+        );
+
+        // A consumed nonce remains in this store until normal GC, but it is no
+        // longer live authority and cannot be cancelled or reused.
+        let nonce = solstone_core_sol_link::pairing::nonces::NonceStore::new(&fixture.root)
+            .peek(&nonce)
+            .expect("consumed relay nonce remains observable for GC");
+        assert!(
+            nonce.used,
+            "relay nonce was consumed by the pairing ceremony"
+        );
+        let mut ledger = AuthorizationLedger::new(&fixture.root);
+        let entries = ledger.snapshot();
+        assert_eq!(entries.len(), 1, "relay pairing adds exactly one client");
+        assert_eq!(entries[0].fingerprint, fingerprint);
+
+        handle.shutdown();
+    })
+    .await
+    .expect("relay pairing round trip completes within its bounded timeout");
+}
+
+#[tokio::test]
 async fn minted_pair_link_drives_the_shipped_client_and_reconnects_as_its_fingerprint() {
     let fixture = Fixture::established(0);
     let handle = serve(options(
@@ -2915,6 +3537,7 @@ async fn ac8_dead_publisher_keeps_existing_and_fresh_carriers_usable() {
     let (sender, receiver) = watch::channel(DeviceDoorAuthorization::from(
         AuthorizedClientsRead::Missing,
     ));
+    let mut publication = receiver.clone();
     let door_router = authorized_router(fixture.root.clone(), receiver);
     let mut handle = bind_with_authorization(
         options(&fixture, router(fixture.root.clone()), 0),
@@ -2925,12 +3548,14 @@ async fn ac8_dead_publisher_keeps_existing_and_fresh_carriers_usable() {
     .expect("serve");
     let port = door_port(handle.door_outcome());
     let mut existing = live_carrier(&fixture, port).await;
-    let ticks_before_stop = authorization_publication_ticks();
     handle.stop_authorization_refresh().await;
-    let stopped_at = authorization_publication_ticks();
-    assert!(stopped_at >= ticks_before_stop);
-    tokio::time::sleep(Duration::from_millis(600)).await;
-    assert_eq!(authorization_publication_ticks(), stopped_at);
+    publication.borrow_and_update();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(600), publication.changed())
+            .await
+            .is_err(),
+        "the stopped door publisher must not update its own authorization watch"
+    );
 
     let mut existing_decoder = FrameDecoder::new();
     let mut existing_dialer = FrameDialer::default();
@@ -3136,7 +3761,11 @@ async fn ac15_absent_ca_withholds_door_without_minting_link_material() {
         handle.door_outcome(),
         DoorOutcome::Withheld(DoorWithheldReason::CommittedIdentityUnavailable)
     ));
-    assert_eq!(tree(&fixture.root.join("link")), before);
+    let after = tree(&fixture.root.join("link"))
+        .into_iter()
+        .filter(|path| path != Path::new("nonces.json.lock"))
+        .collect::<Vec<_>>();
+    assert_eq!(after, before);
     handle.shutdown();
 }
 
@@ -3555,7 +4184,11 @@ async fn ac23_unestablished_or_corrupt_session_withholds_door_without_ca_write()
             handle.door_outcome(),
             DoorOutcome::Withheld(DoorWithheldReason::Unestablished | DoorWithheldReason::Corrupt)
         ));
-        assert_eq!(tree(&root.join("link")), before);
+        let after = tree(&root.join("link"))
+            .into_iter()
+            .filter(|path| path != Path::new("nonces.json.lock"))
+            .collect::<Vec<_>>();
+        assert_eq!(after, before);
         handle.shutdown();
         let _ = std::fs::remove_dir_all(root);
     }
