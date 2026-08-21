@@ -66,6 +66,11 @@ pub enum PairingError {
     Attestation(AttestationError),
     Serialization(serde_json::Error),
     Clock,
+    RelayPairingRegistrationRefused,
+    RelayPairingUnavailable,
+    RelayPairingRegistrationTimedOut,
+    RelayPairingNonceCommit,
+    RelayPairingTunnelInstanceMismatch,
 }
 
 impl PairingError {
@@ -73,6 +78,9 @@ impl PairingError {
         match self {
             Self::OperationNoLongerAvailable => 410,
             Self::PairingRequestInvalid(_) | Self::InvalidOperationForState(_) => 400,
+            Self::RelayPairingRegistrationRefused | Self::RelayPairingUnavailable => 503,
+            Self::RelayPairingRegistrationTimedOut => 504,
+            Self::RelayPairingTunnelInstanceMismatch => 502,
             Self::CommittedIdentityUnavailable(_)
             | Self::NonceStore(_)
             | Self::Address(_)
@@ -81,7 +89,8 @@ impl PairingError {
             | Self::Ledger(_)
             | Self::Attestation(_)
             | Self::Serialization(_)
-            | Self::Clock => 500,
+            | Self::Clock
+            | Self::RelayPairingNonceCommit => 500,
         }
     }
 
@@ -91,6 +100,10 @@ impl PairingError {
             Self::InvalidOperationForState(_) => "invalid_operation_for_state",
             Self::OperationNoLongerAvailable => "operation_no_longer_available",
             Self::CommittedIdentityUnavailable(_) => "committed_identity_unavailable",
+            Self::RelayPairingRegistrationRefused => "relay_pairing_registration_refused",
+            Self::RelayPairingUnavailable => "relay_pairing_unavailable",
+            Self::RelayPairingRegistrationTimedOut => "relay_pairing_registration_timed_out",
+            Self::RelayPairingTunnelInstanceMismatch => "relay_pairing_tunnel_instance_mismatch",
             Self::NonceStore(_)
             | Self::Address(_)
             | Self::PairLink(_)
@@ -98,7 +111,8 @@ impl PairingError {
             | Self::Ledger(_)
             | Self::Attestation(_)
             | Self::Serialization(_)
-            | Self::Clock => "internal_error",
+            | Self::Clock
+            | Self::RelayPairingNonceCommit => "internal_error",
         }
     }
 
@@ -116,7 +130,12 @@ impl PairingError {
             | Self::Ledger(_)
             | Self::Attestation(_)
             | Self::Serialization(_)
-            | Self::Clock => None,
+            | Self::Clock
+            | Self::RelayPairingRegistrationRefused
+            | Self::RelayPairingUnavailable
+            | Self::RelayPairingRegistrationTimedOut
+            | Self::RelayPairingNonceCommit
+            | Self::RelayPairingTunnelInstanceMismatch => None,
         }
     }
 }
@@ -141,6 +160,19 @@ impl fmt::Display for PairingError {
             Self::Attestation(error) => error.fmt(formatter),
             Self::Serialization(error) => error.fmt(formatter),
             Self::Clock => formatter.write_str("pairing clock is outside the supported range"),
+            Self::RelayPairingRegistrationRefused => {
+                formatter.write_str("relay pairing registration refused")
+            }
+            Self::RelayPairingUnavailable => formatter.write_str("relay pairing unavailable"),
+            Self::RelayPairingRegistrationTimedOut => {
+                formatter.write_str("relay pairing registration timed out")
+            }
+            Self::RelayPairingNonceCommit => {
+                formatter.write_str("relay pairing nonce commit failed")
+            }
+            Self::RelayPairingTunnelInstanceMismatch => {
+                formatter.write_str("relay pairing tunnel instance mismatch")
+            }
         }
     }
 }
@@ -227,6 +259,9 @@ pub fn mint_pairing_from_snapshot(
                             PairingError::PairingRequestInvalid(
                                 "no usable local address is available for pairing",
                             )
+                        }
+                        error @ PairLinkEncodeError::RelayOriginLength(_) => {
+                            PairingError::PairLink(error)
                         }
                     }
                 })?
@@ -504,6 +539,42 @@ mod tests {
                 .expect("csr PEM"),
             device_label: "phone".into(),
             additional_fields: serde_json::Map::new(),
+        }
+    }
+
+    #[test]
+    fn relay_pairing_errors_are_stable_and_secret_free() {
+        let cases = [
+            (
+                PairingError::RelayPairingRegistrationRefused,
+                503,
+                "relay_pairing_registration_refused",
+            ),
+            (
+                PairingError::RelayPairingUnavailable,
+                503,
+                "relay_pairing_unavailable",
+            ),
+            (
+                PairingError::RelayPairingRegistrationTimedOut,
+                504,
+                "relay_pairing_registration_timed_out",
+            ),
+            (PairingError::RelayPairingNonceCommit, 500, "internal_error"),
+            (
+                PairingError::RelayPairingTunnelInstanceMismatch,
+                502,
+                "relay_pairing_tunnel_instance_mismatch",
+            ),
+        ];
+        let placeholder_secret = "S=0123456789abcdef RK=e34481a4cde647ba9c9fb29a59e18271 https://relay.example/?token=secret";
+
+        for (error, status, reason) in cases {
+            assert_eq!(error.status(), status);
+            assert_eq!(error.reason(), reason);
+            assert_eq!(error.detail(), None);
+            assert!(!format!("{error}").contains(placeholder_secret));
+            assert!(!format!("{error:?}").contains(placeholder_secret));
         }
     }
 

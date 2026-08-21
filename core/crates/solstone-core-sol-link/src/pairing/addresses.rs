@@ -232,10 +232,49 @@ pub fn encode_configured_home_pair_link(
     encode_unchecked_pair_link(&[home], nonce, ca_fp_prefix)
 }
 
+/// Encode a v06 relay pair link.
+///
+/// The caller supplies the first 16 bytes of the SHA-256 digest of the
+/// committed CA's SPKI. This deliberately differs from the direct-link
+/// callers, which currently supply a certificate-DER digest prefix.
+pub fn encode_relay_pair_link(
+    secret: [u8; 8],
+    ca_fp_spki_prefix: [u8; 16],
+    relay_origin: &str,
+) -> Result<String, PairLinkEncodeError> {
+    let custom_origin = if relay_origin == spl_core::pairlink::DEFAULT_RELAY_ORIGIN {
+        None
+    } else {
+        let length = relay_origin.len();
+        if length == 0 || length > u8::MAX as usize {
+            return Err(PairLinkEncodeError::RelayOriginLength(length));
+        }
+        Some(relay_origin.as_bytes())
+    };
+
+    let mut blob = Vec::with_capacity(27 + custom_origin.map_or(0, <[u8]>::len));
+    blob.push(0x06);
+    blob.extend(secret);
+    blob.push(0x01);
+    blob.extend(ca_fp_spki_prefix);
+    match custom_origin {
+        Some(origin) => {
+            blob.push(origin.len() as u8);
+            blob.extend(origin);
+        }
+        None => blob.push(0),
+    }
+    Ok(format!(
+        "https://go.solstone.app/p#{}",
+        spl_core::crockford::encode(&blob)
+    ))
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum PairLinkEncodeError {
     CandidateCount(usize),
     DisallowedAddress,
+    RelayOriginLength(usize),
 }
 
 impl fmt::Display for PairLinkEncodeError {
@@ -247,6 +286,10 @@ impl fmt::Display for PairLinkEncodeError {
             ),
             Self::DisallowedAddress => formatter
                 .write_str("pair-link candidate is outside SPL's allowed direct IPv4 ranges"),
+            Self::RelayOriginLength(length) => write!(
+                formatter,
+                "relay pair-link origin must contain 1 through 255 bytes, got {length}"
+            ),
         }
     }
 }
@@ -528,5 +571,73 @@ mod tests {
         let blob =
             spl_core::crockford::decode(link.split('#').nth(1).expect("fragment")).expect("decode");
         assert_eq!(blob[0], 0x04);
+    }
+
+    #[test]
+    fn relay_links_match_v06_conformance_vectors_and_parse() {
+        let secret = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef];
+        let ca_fp_spki_prefix = [
+            0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab,
+            0xcd, 0xef,
+        ];
+        let vectors = [
+            (
+                spl_core::pairlink::DEFAULT_RELAY_ORIGIN,
+                "060123456789abcdef01deadbeefcafebabe0123456789abcdef00",
+                "0R0J6HB7H6NWVVR1VTPVXVYAZTXBW0938NKRKAYDXW00",
+            ),
+            (
+                "https://relay.example",
+                "060123456789abcdef01deadbeefcafebabe0123456789abcdef1568747470733a2f2f72656c61792e6578616d706c65",
+                "0R0J6HB7H6NWVVR1VTPVXVYAZTXBW0938NKRKAYDXWAPGX3ME1SKMBSFE9JPRRBS5SJQGRBDE1P6A",
+            ),
+        ];
+
+        for (relay_origin, expected_hex, expected_fragment) in vectors {
+            let link = encode_relay_pair_link(secret, ca_fp_spki_prefix, relay_origin)
+                .expect("relay link encodes");
+            let fragment = link.split('#').nth(1).expect("fragment");
+            assert_eq!(fragment, expected_fragment);
+            let blob = spl_core::crockford::decode(fragment).expect("fragment decodes");
+            assert_eq!(hex(&blob), expected_hex);
+
+            let spl_core::pairlink::ParsedPairLink::Relay(parsed) =
+                spl_core::pairlink::parse(&link).expect("relay link parses")
+            else {
+                panic!("v06 link parses as relay");
+            };
+            assert_eq!(parsed.s, secret);
+            assert_eq!(parsed.ca_fp_spki, ca_fp_spki_prefix);
+            assert_eq!(parsed.relay_origin, relay_origin);
+        }
+    }
+
+    #[test]
+    fn relay_secret_uses_the_pinned_relay_key_derivation() {
+        let secret = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef];
+        assert_eq!(
+            spl_core::relay_window::derive_rk(&secret),
+            [
+                0xe3, 0x44, 0x81, 0xa4, 0xcd, 0xe6, 0x47, 0xba, 0x9c, 0x9f, 0xb2, 0x9a, 0x59, 0xe1,
+                0x82, 0x71,
+            ]
+        );
+    }
+
+    #[test]
+    fn relay_encoder_rejects_empty_and_oversized_custom_origins() {
+        assert_eq!(
+            encode_relay_pair_link([0; 8], [0; 16], ""),
+            Err(PairLinkEncodeError::RelayOriginLength(0))
+        );
+        let oversized = "x".repeat(256);
+        assert_eq!(
+            encode_relay_pair_link([0; 8], [0; 16], &oversized),
+            Err(PairLinkEncodeError::RelayOriginLength(256))
+        );
+    }
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 }

@@ -14,8 +14,16 @@ use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_j
 /// Pairing-window lifetime in seconds.
 pub const NONCE_TTL_SECONDS: i64 = 300;
 
-/// One persisted pairing nonce. The JSON field set deliberately matches the
-/// Python store; do not add inferred or runtime-only fields here.
+/// The authority transport carried by a persisted pairing nonce.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NonceKind {
+    #[default]
+    Direct,
+    RelayV06,
+}
+
+/// One persisted pairing nonce.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Nonce {
     pub value: String,
@@ -25,6 +33,8 @@ pub struct Nonce {
     pub used: bool,
     pub role: String,
     pub same_machine: bool,
+    #[serde(default)]
+    pub kind: NonceKind,
 }
 
 /// Failure while mutating the nonce store.
@@ -78,6 +88,36 @@ impl NonceStore {
         same_machine: bool,
         now: i64,
     ) -> Result<Nonce, NonceStoreError> {
+        self.add_with_kind(
+            value,
+            device_label,
+            role,
+            same_machine,
+            NonceKind::Direct,
+            now,
+        )
+    }
+
+    /// Persist a relay-v06 nonce after its remote registration succeeds.
+    pub fn add_relay(
+        &self,
+        value: String,
+        device_label: String,
+        role: String,
+        now: i64,
+    ) -> Result<Nonce, NonceStoreError> {
+        self.add_with_kind(value, device_label, role, false, NonceKind::RelayV06, now)
+    }
+
+    fn add_with_kind(
+        &self,
+        value: String,
+        device_label: String,
+        role: String,
+        same_machine: bool,
+        kind: NonceKind,
+        now: i64,
+    ) -> Result<Nonce, NonceStoreError> {
         let entry = Nonce {
             value: value.clone(),
             device_label,
@@ -86,6 +126,7 @@ impl NonceStore {
             used: false,
             role,
             same_machine,
+            kind,
         };
         let _lock = hold_lock(&self.path, LockOptions::default()).map_err(NonceStoreError::Lock)?;
         let mut entries = self.read_entries();
@@ -137,6 +178,24 @@ impl NonceStore {
             self.write_entries(&entries)?;
         }
         Ok(())
+    }
+
+    /// Cancel live relay-v06 windows without altering direct-pair authority.
+    ///
+    /// Consumed and expired relay entries are left for ordinary GC, so this
+    /// returns only the windows whose authority was actively cancelled.
+    pub fn cancel_all_relay_windows(&self, now: i64) -> Result<usize, NonceStoreError> {
+        let _lock = hold_lock(&self.path, LockOptions::default()).map_err(NonceStoreError::Lock)?;
+        let mut entries = self.read_entries();
+        let before = entries.len();
+        entries.retain(|_, entry| {
+            entry.kind != NonceKind::RelayV06 || entry.used || entry.expires_at <= now
+        });
+        let removed = before - entries.len();
+        if removed != 0 {
+            self.write_entries(&entries)?;
+        }
+        Ok(removed)
     }
 
     /// Missing, malformed, and unreadable files are deliberately an empty
@@ -192,7 +251,15 @@ fn nonce_from_json(value: &serde_json::Value) -> Option<Nonce> {
             .unwrap_or_default()
             .to_owned(),
         same_machine: python_bool(object.get("same_machine")),
+        kind: nonce_kind(object.get("kind")),
     })
+}
+
+fn nonce_kind(value: Option<&serde_json::Value>) -> NonceKind {
+    match value.and_then(serde_json::Value::as_str) {
+        Some("relay_v06") => NonceKind::RelayV06,
+        _ => NonceKind::Direct,
+    }
 }
 
 fn python_string(value: Option<&serde_json::Value>) -> String {
@@ -283,6 +350,7 @@ mod tests {
         assert!(raw.is_array());
         assert_eq!(raw[0]["value"], "nonce");
         assert_eq!(raw[0]["same_machine"], false);
+        assert_eq!(raw[0]["kind"], "direct");
         let mut names = fs::read_dir(temporary.path().join("link"))
             .expect("link directory")
             .map(|entry| {
@@ -389,5 +457,84 @@ mod tests {
         assert!(store.peek("expired").is_some());
         store.gc(300).expect("gc");
         assert!(store.peek("expired").is_none());
+    }
+
+    #[test]
+    fn absent_or_unrecognized_kind_is_direct() {
+        let (temporary, store) = store();
+        fs::create_dir_all(temporary.path().join("link")).expect("link directory");
+        fs::write(
+            store.path(),
+            r#"[
+                {"value":"missing","device_label":"phone","issued_at":1,"expires_at":301,"used":false,"role":"observer","same_machine":false},
+                {"value":"unknown","device_label":"phone","issued_at":1,"expires_at":301,"used":false,"role":"observer","same_machine":false,"kind":"future"},
+                {"value":"malformed","device_label":"phone","issued_at":1,"expires_at":301,"used":false,"role":"observer","same_machine":false,"kind":true}
+            ]"#,
+        )
+        .expect("write store");
+
+        for value in ["missing", "unknown", "malformed"] {
+            assert_eq!(store.peek(value).expect("nonce").kind, NonceKind::Direct);
+        }
+    }
+
+    #[test]
+    fn add_relay_writes_relay_v06_with_off_machine_authority() {
+        let (_temporary, store) = store();
+        let relay = store
+            .add_relay("relay".into(), "phone".into(), "observer".into(), 10)
+            .expect("relay nonce");
+        assert_eq!(relay.kind, NonceKind::RelayV06);
+        assert!(!relay.same_machine);
+        assert_eq!(
+            store.peek("relay").expect("stored relay").kind,
+            NonceKind::RelayV06
+        );
+    }
+
+    #[test]
+    fn relay_cleanup_removes_only_live_relay_windows() {
+        let (_temporary, store) = store();
+        store
+            .add(
+                "direct-same".into(),
+                "phone".into(),
+                "observer".into(),
+                true,
+                10,
+            )
+            .expect("same-machine direct");
+        store
+            .add(
+                "direct-remote".into(),
+                "phone".into(),
+                "observer".into(),
+                false,
+                10,
+            )
+            .expect("remote direct");
+        store
+            .add_relay("relay-live".into(), "phone".into(), "observer".into(), 10)
+            .expect("live relay");
+        store
+            .add_relay("relay-used".into(), "phone".into(), "observer".into(), 10)
+            .expect("used relay");
+        assert!(
+            store
+                .consume("relay-used", 11)
+                .expect("consume relay")
+                .is_some()
+        );
+
+        assert_eq!(store.cancel_all_relay_windows(12).expect("cleanup"), 1);
+        assert!(store.peek("relay-live").is_none());
+        assert!(store.peek("direct-same").is_some());
+        assert!(store.peek("direct-remote").is_some());
+        assert!(store.peek("relay-used").expect("used relay remains").used);
+        assert_eq!(
+            store.cancel_all_relay_windows(12).expect("repeat cleanup"),
+            0,
+            "a consumed relay is neither removed nor counted twice"
+        );
     }
 }
