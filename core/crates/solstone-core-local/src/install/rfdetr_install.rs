@@ -14,7 +14,11 @@ use super::{archive, download_artifact, ensure_verified, fit_report, select_arti
 
 const ENGINE_UNIT: &str = "rfdetr-engine";
 const MODEL_UNIT: &str = "rfdetr-model";
-const ENGINE_VERSION: &str = "v0.1.0-solpbc.5";
+/// The engine pin the installer resolves against. Public because the
+/// owner-facing download disclosure prints it, and a version typed into that
+/// sentence goes silently false at the next bump while the owner reads a
+/// version that is not what arrived.
+pub const ENGINE_VERSION: &str = "v0.1.0-solpbc.5";
 pub const ENGINE_PROVENANCE_REF: &str = "ec73712e";
 const BINARY: &str = "rfdetr-cli";
 const MODEL_REVISION: &str = "c3dc0c037df499f5503545247df6618415fca643";

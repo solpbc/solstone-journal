@@ -31,6 +31,22 @@ fn ced_download_disclosure() -> String {
     )
 }
 
+/// The native rf-detr installer resolves both artifacts through the catalog's
+/// `origin_key` against a single-element host allowlist, revalidated per
+/// redirect hop -- so naming upstream hosts here would name parties this path
+/// never contacts, on the surface whose whole job is to say where bytes come
+/// from.
+///
+/// The source notice names those upstream projects for attribution purposes,
+/// but the owner-facing disclosure must describe the endpoint this install path
+/// actually contacts.
+fn rfdetr_download_disclosure() -> String {
+    format!(
+        "rf-detr assets: downloading the rf-detr.cpp {} engine (Apache-2.0) and the RF-DETR nano GGUF weights (Apache-2.0) from updates.solstone.app. see THIRD_PARTY_NOTICES.md.",
+        rfdetr_install::ENGINE_VERSION
+    )
+}
+
 use solstone_core_assets::canonical_host_pair;
 use solstone_core_local::install::{
     DispatchError, ced_install, coreml_install, fingerprint, fit_report,
@@ -380,24 +396,49 @@ where
             }
         }
     }
-    if let Err(error) = (providers.rfdetr)(
-        &journal,
-        &host.os_name,
-        &host.arch,
-        if options.check {
-            InstallerAction::Check
+    if rfdetr_install::rfdetr_artifact_key(&host.os_name, &host.arch).is_none() {
+        provider_stdout.push(format!(
+            "rf-detr install: unsupported platform {}/{}; skipping rf-detr object-detection assets",
+            host.os_name, host.arch
+        ));
+    } else if options.check {
+        if let Err(error) =
+            (providers.rfdetr)(&journal, &host.os_name, &host.arch, InstallerAction::Check)
+        {
+            return InstallModelsOutcome::failure_with_stdout(
+                variant,
+                error.exit_code,
+                error.to_string(),
+                provider_stdout,
+            );
+        }
+    } else {
+        let ready = if options.force {
+            false
         } else {
-            InstallerAction::Install {
-                force: options.force,
+            match (providers.rfdetr)(&journal, &host.os_name, &host.arch, InstallerAction::Check) {
+                Ok(rfdetr_install::RfdetrInstallRecord::Installed) => true,
+                Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable) | Err(_) => false,
             }
-        },
-    ) {
-        return InstallModelsOutcome::failure_with_stdout(
-            variant,
-            error.exit_code,
-            error.to_string(),
-            provider_stdout,
-        );
+        };
+        if !ready {
+            provider_stdout.push(rfdetr_download_disclosure());
+            if let Err(error) = (providers.rfdetr)(
+                &journal,
+                &host.os_name,
+                &host.arch,
+                InstallerAction::Install {
+                    force: options.force,
+                },
+            ) {
+                return InstallModelsOutcome::failure_with_stdout(
+                    variant,
+                    error.exit_code,
+                    error.to_string(),
+                    provider_stdout,
+                );
+            }
+        }
     }
 
     let Some(variant) = variant else {
@@ -791,7 +832,7 @@ fn ready_line(path: &Path) -> String {
 
 #[cfg(test)]
 mod disclosure_tests {
-    use super::ced_download_disclosure;
+    use super::{ced_download_disclosure, rfdetr_download_disclosure};
     use solstone_core_local::install::coreml_install::PARAKEET_COREML_DOWNLOAD_DISCLOSURE;
 
     /// Every artifact this verb fetches resolves through one primitive with a
@@ -802,6 +843,7 @@ mod disclosure_tests {
     fn native_download_disclosures_name_no_host_but_our_origin() {
         for line in [
             ced_download_disclosure().as_str(),
+            rfdetr_download_disclosure().as_str(),
             PARAKEET_COREML_DOWNLOAD_DISCLOSURE,
         ] {
             assert!(line.contains("updates.solstone.app"), "{line}");
@@ -938,7 +980,7 @@ mod tests {
             None,
             |_, _| Ok(()),
             |_, _, _, _| Ok(None),
-            |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
+            |_, _, _, _| panic!("raw platform must skip rf-detr"),
             |_, _, _| panic!("coreml installer must not run"),
             |_, _, _| panic!("installer must not run"),
         );
@@ -970,7 +1012,200 @@ mod tests {
             outcome.stdout,
             [
                 "ced install: unsupported platform macos/aarch64; skipping ced sound-tag assets",
+                "rf-detr install: unsupported platform macos/aarch64; skipping rf-detr object-detection assets",
                 "parakeet install: unsupported platform macos/aarch64; supported: darwin/arm64, linux/x86_64"
+            ]
+        );
+    }
+
+    #[test]
+    fn rfdetr_not_ready_supported_host_discloses_download() {
+        let journal = tempfile::tempdir().unwrap();
+        let outcome = run_inner_with_test!(
+            host("darwin", "arm64", None),
+            || panic!("probe must not run"),
+            options(InstallModelsVariant::Auto),
+            || Ok(journal.path().to_path_buf()),
+            |_| Ok(()),
+            None,
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, action| match action {
+                InstallerAction::Check => {
+                    Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable)
+                }
+                InstallerAction::Install { force } => {
+                    assert!(!force);
+                    Ok(rfdetr_install::RfdetrInstallRecord::Installed)
+                }
+            },
+            |_, _, action| {
+                assert_eq!(action, InstallerAction::Install { force: false });
+                Ok(journal.path().join("parakeet-tdt-0.6b-v3"))
+            },
+            |_, _, _| panic!("parakeet installer must not run"),
+        );
+        assert_eq!(outcome.exit_code, 0);
+        assert!(outcome.stdout.contains(&rfdetr_download_disclosure()));
+        assert!(
+            outcome
+                .stdout
+                .iter()
+                .any(|line| line.contains(rfdetr_install::ENGINE_VERSION))
+        );
+    }
+
+    #[test]
+    fn rfdetr_check_on_installed_model_has_no_download_disclosure() {
+        let journal = tempfile::tempdir().unwrap();
+        let outcome = run_inner_with_test!(
+            host("darwin", "arm64", None),
+            || panic!("probe must not run"),
+            InstallModelsOptions {
+                check: true,
+                ..options(InstallModelsVariant::Auto)
+            },
+            || Ok(journal.path().to_path_buf()),
+            |_| Ok(()),
+            None,
+            |_, action| {
+                assert_eq!(action, InstallerAction::Check);
+                Ok(())
+            },
+            |_, _, _, action| {
+                assert_eq!(action, InstallerAction::Check);
+                Ok(None)
+            },
+            |_, _, _, action| {
+                assert_eq!(action, InstallerAction::Check);
+                Ok(rfdetr_install::RfdetrInstallRecord::Installed)
+            },
+            |_, _, action| {
+                assert_eq!(action, InstallerAction::Check);
+                Ok(journal.path().join("parakeet-tdt-0.6b-v3"))
+            },
+            |_, _, _| panic!("parakeet installer must not run"),
+        );
+        assert_eq!(outcome.exit_code, 0);
+        assert!(!outcome.stdout.contains(&rfdetr_download_disclosure()));
+    }
+
+    #[test]
+    fn rfdetr_ready_model_skips_reinstall() {
+        let journal = tempfile::tempdir().unwrap();
+        let mut actions = Vec::new();
+        let outcome = run_inner_with_test!(
+            host("darwin", "arm64", None),
+            || panic!("probe must not run"),
+            options(InstallModelsVariant::Auto),
+            || Ok(journal.path().to_path_buf()),
+            |_| Ok(()),
+            None,
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, action| {
+                actions.push(action);
+                Ok(rfdetr_install::RfdetrInstallRecord::Installed)
+            },
+            |_, _, action| {
+                assert_eq!(action, InstallerAction::Install { force: false });
+                Ok(journal.path().join("parakeet-tdt-0.6b-v3"))
+            },
+            |_, _, _| panic!("parakeet installer must not run"),
+        );
+        assert_eq!(outcome.exit_code, 0);
+        assert!(!outcome.stdout.contains(&rfdetr_download_disclosure()));
+        assert_eq!(actions, vec![InstallerAction::Check]);
+    }
+
+    #[test]
+    fn rfdetr_probe_error_falls_through_to_install() {
+        let journal = tempfile::tempdir().unwrap();
+        let outcome = run_inner_with_test!(
+            host("darwin", "arm64", None),
+            || panic!("probe must not run"),
+            options(InstallModelsVariant::Auto),
+            || Ok(journal.path().to_path_buf()),
+            |_| Ok(()),
+            None,
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, action| match action {
+                InstallerAction::Check => Err(rfdetr_install::RfdetrInstallError::new(
+                    "sidecar_missing",
+                    "rf-detr sidecar missing",
+                    65,
+                )),
+                InstallerAction::Install { force } => {
+                    assert!(!force);
+                    Ok(rfdetr_install::RfdetrInstallRecord::Installed)
+                }
+            },
+            |_, _, action| {
+                assert_eq!(action, InstallerAction::Install { force: false });
+                Ok(journal.path().join("parakeet-tdt-0.6b-v3"))
+            },
+            |_, _, _| panic!("parakeet installer must not run"),
+        );
+        assert_eq!(outcome.exit_code, 0);
+        assert!(outcome.stdout.contains(&rfdetr_download_disclosure()));
+    }
+
+    #[test]
+    fn rfdetr_force_discloses_even_when_installed() {
+        let journal = tempfile::tempdir().unwrap();
+        let outcome = run_inner_with_test!(
+            host("darwin", "arm64", None),
+            || panic!("probe must not run"),
+            InstallModelsOptions {
+                force: true,
+                ..options(InstallModelsVariant::Auto)
+            },
+            || Ok(journal.path().to_path_buf()),
+            |_| Ok(()),
+            None,
+            |_, _| Ok(()),
+            |_, _, _, _| Ok(None),
+            |_, _, _, action| {
+                assert_eq!(action, InstallerAction::Install { force: true });
+                Ok(rfdetr_install::RfdetrInstallRecord::Installed)
+            },
+            |_, _, action| {
+                assert_eq!(action, InstallerAction::Install { force: true });
+                Ok(journal.path().join("parakeet-tdt-0.6b-v3"))
+            },
+            |_, _, _| panic!("parakeet installer must not run"),
+        );
+        assert_eq!(outcome.exit_code, 0);
+        assert!(outcome.stdout.contains(&rfdetr_download_disclosure()));
+    }
+
+    #[test]
+    fn windows_skips_rfdetr_between_ced_and_parakeet() {
+        let journal = tempfile::tempdir().unwrap();
+        let outcome = run_inner_with_test!(
+            host("windows", "x86_64", None),
+            || panic!("probe must not run"),
+            options(InstallModelsVariant::Auto),
+            || Ok(journal.path().to_path_buf()),
+            |_| Ok(()),
+            None,
+            |_, action| {
+                assert_eq!(action, InstallerAction::Install { force: false });
+                Ok(())
+            },
+            |_, _, _, _| panic!("windows must skip ced"),
+            |_, _, _, _| panic!("windows must skip rf-detr"),
+            |_, _, _| panic!("windows must skip coreml"),
+            |_, _, _| panic!("windows must skip parakeet"),
+        );
+        assert_eq!(outcome.exit_code, 0);
+        assert_eq!(
+            outcome.stdout,
+            [
+                "ced install: unsupported platform windows/x86_64; skipping ced sound-tag assets",
+                "rf-detr install: unsupported platform windows/x86_64; skipping rf-detr object-detection assets",
+                "parakeet install: unsupported platform windows/x86_64; supported: darwin/arm64, linux/x86_64"
             ]
         );
     }
