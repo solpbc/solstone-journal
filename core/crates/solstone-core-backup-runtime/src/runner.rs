@@ -306,7 +306,7 @@ pub struct ResticResult {
 
 #[derive(Debug, Error)]
 pub enum RunnerError {
-    #[error("restic program must include a path separator")]
+    #[error("tool program must include a path separator")]
     BareProgram,
     #[error("restic --insecure-tls is forbidden")]
     InsecureTls,
@@ -598,7 +598,7 @@ mod tests {
     #[test]
     fn debug_redacts_process_environment_and_raw_output() {
         let request = ToolRequest {
-            program: "restic".into(),
+            program: "/fixture/bin/restic".into(),
             argv: vec!["snapshots".into()],
             env: BTreeMap::from([("RESTIC_PASSWORD".into(), "REQUEST_SECRET".into())]),
             timeout: None,
