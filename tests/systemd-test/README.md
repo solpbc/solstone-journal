@@ -16,7 +16,7 @@ operational playbook in the sol pbc org repo,
 make build               # build the image
 make smoke               # ~30s — verifies systemd --user works end-to-end
 make install             # ~3-5min — tree install, then journal setup
-make observer-ingest     # ~3-5min — install + setup + observer ingest round-trip
+make observer-ingest     # retired v2 migration fixture; not a linked-device test
 make legacy-upgrade      # ~3-5min — install over a seeded legacy non-symlink wrapper
 ```
 
@@ -31,15 +31,13 @@ service status` returns 0. `--skip-models / --skip-skills` are passed by default
 Parakeet / Claude-skill installation is orthogonal to
 the systemd question; use `make full` to drop those flags.
 
-`observer-ingest` extends `install` with one real observer round-trip. It
-registers a loopback observer through `/app/observer/register`, posts a
-minimal contract-covered `screen.jsonl` segment to `/app/observer/ingest`,
-then asserts the segment file and `stream.json` landed under
-`~/journal/chronicle/` and `/app/observer/ingest/segments/<day>` reports
-that segment with `screen.jsonl` present and `observed: true`. This is the
-release gate for package-data omissions such as a missing
-`solstone/think/contract/layout.json`: it installs the built wheel, not the
-source checkout, and drives the route that calls the ingest contract.
+`observer-ingest` is a retired v2 migration fixture. It invokes
+`/app/observer/register` and `/app/observer/ingest`, neither of which is a
+supported linked-device upload route. Do not use it as a product or release
+gate. Supported clients pair first and use the protocol-v3 linked-device
+contract with mTLS.
+The fixture remains only as a record of the package-data check that needs a
+linked-device replacement.
 
 For a pre-publish local tree gate, produce the linux-x86_64 artifacts with
 `solstone-distribution` and point the runner at that directory. The wheel

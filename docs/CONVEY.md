@@ -70,47 +70,6 @@ shape behind `/app/home/api/pulse`, `settings` `/api/providers`, `speakers`
 sol speaking: first-person, lowercase first letter except the I pronoun, no
 exception class names or paths. Put those specifics in `detail`.
 
-### Observer Callosum SSE Feed
-
-Observer clients can open a server-sent events feed at
-`/app/observer/callosum`. The observer key is supplied in the
-`X-Solstone-Observer` header or the `Authorization: Bearer` header. The feed is
-a passive view of the Callosum bus: each `data:` frame is the same event-shaped
-payload the bridge saw (`tract`, `event`, `ts`, plus event fields). Frames are
-post-disk rather than speculative.
-
-This endpoint is inside the observer trust boundary. It performs no redaction
-or per-field filtering because observers are treated as part of the local
-owner-controlled system. If convey moves off-device or into a hosted deployment,
-that assumption must be revisited before exposing this feed.
-
-Keep Callosum events event-shaped. The SSE route should not translate payloads
-into app-specific DTOs or add compatibility aliases; it forwards the bus shape
-and relies on producers to keep `tract`/`event`/`ts` discipline. In a hosted or
-multi-tenant mode, the feed will also need scoping by the observer's authorized
-facet or scope set before forwarding any event.
-
-<!-- BEGIN GENERATED callosum-registry -->
-| Tract | Events |
-|---|---|
-| `activity` | `live`, `recorded` |
-| `cortex` | `request`, `start`, `thinking`, `tool_start`, `tool_end`, `finish`, `error`, `talent_updated`, `info`, `status`, `cancel`, `dry_run`, `progress`, `text_delta`, `tool_budget_exhausted`, `budget_escalation` |
-| `importer` | `started`, `status`, `completed`, `error`, `file_imported`, `enrichment_ready` |
-| `link` | `pair_complete`, `last_seen`, `stream_reset` |
-| `logs` | `exec`, `line`, `exit` |
-| `navigate` | `request` |
-| `notification` | `*` |
-| `observe` | `status`, `observing`, `detected`, `described`, `transcribed`, `observed`, `memory_throttle_started`, `memory_throttle_completed` |
-| `storage` | `warning` |
-| `supervisor` | `started`, `stopped`, `restarting`, `status`, `queue`, `scheduled`, `provider_runtime`, `request`, `restart`, `drain`, `skipped`, `sync_conflict` |
-| `support` | `proactive_suggestion` |
-| `think` | `started`, `status`, `group_started`, `group_completed`, `talent_started`, `talent_completed`, `completed`, `segments_started`, `segments_completed`, `memory_throttle_started`, `memory_throttle_completed`, `daily_complete` |
-| `work` | `talent_queued`, `talent_spawned`, `talent_finished`, `talent_errored`, `result`, `reflection_ready`, `support_draft`, `support_submit_claim` |
-<!-- END GENERATED callosum-registry -->
-
-The observer SSE feed is exercised by the convey-shell SSE tests; a
-registered observer client opens the feed and the bridge emits the ping.
-
 ### Adding a New App
 
 See [APPS.md](APPS.md).
