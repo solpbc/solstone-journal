@@ -121,6 +121,15 @@ fn all_areas_plan() -> PeerPlan {
 
 #[test]
 fn export_all_five_areas_in_one_run() {
+    assert_all_five_areas(&[]);
+}
+
+#[test]
+fn explicit_all_five_area_selection_posts_every_door() {
+    assert_all_five_areas(&["--only", "segments,imports,entities,facets,config"]);
+}
+
+fn assert_all_five_areas(extra: &[&str]) {
     let peer = StubPeer::new(all_areas_plan());
     let fixture = peer.fixture();
     fixture.add_segment("audio", "120000_30", &[("payload.json", b"segment")]);
@@ -134,7 +143,7 @@ fn export_all_five_areas_in_one_run() {
     );
     fixture.set_config(json!({"convey": {"bind": "127.0.0.1"}}));
 
-    let output = run(&fixture, &[]);
+    let output = run(&fixture, extra);
     assert_eq!(
         output.status.code(),
         Some(0),

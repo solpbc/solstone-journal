@@ -13,7 +13,7 @@ mod send;
 
 use thiserror::Error;
 
-pub use peer::{ResolvedPeer, UnpairOutcome, resolve_peer, unpair_peer};
+pub use peer::{ResolvedPeer, resolve_peer};
 pub use peer_export::{PeerExportAreaResult, PeerExportReport, PeerExportRequest, peer_export};
 pub use rescan::{RescanOutcome, send_indexer_rescan};
 
@@ -23,7 +23,7 @@ pub enum TransferError {
     /// The supplied day is invalid.
     #[error("day must be YYYYMMDD")]
     InvalidDay,
-    /// `journal export --only` named no valid export area.
+    /// `journal transfer send --only` named no valid export area.
     #[error("invalid export area selection")]
     InvalidExportAreas,
     /// No paired peers are available in this journal.

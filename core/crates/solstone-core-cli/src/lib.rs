@@ -717,7 +717,7 @@ pub const SPL_HELP: &str = concat!(
 pub const TALENT_USAGE: &str =
     "usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...\n";
 
-/// `journal transfer send --help`, verbatim from the reference.
+/// `journal transfer send --help`, extended with native peer-export selection.
 pub const TRANSFER_SEND_HELP: &str = concat!(
     "usage: journal transfer send [-h] --to TO [--day DAY] [--only AREAS] [--dry-run]\n",
     "\n",
