@@ -23,7 +23,7 @@ pub struct LinkState {
     pub locked_at: Option<i64>,
 }
 
-/// The result of loading `link/state.json` without mutating the journal.
+/// The result of loading committed link state without mutating the journal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LinkStateRead {
     /// A valid identity was read.
