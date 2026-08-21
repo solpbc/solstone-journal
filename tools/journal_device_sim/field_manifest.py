@@ -14,7 +14,7 @@ from typing import Any
 
 from .manifest import SCHEMA, ManifestError
 
-_AUDIO_EXTENSIONS = {".flac", ".m4a", ".ogg", ".opus", ".wav"}
+_AUDIO_EXTENSIONS = {".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"}
 _SCREEN_EXTENSIONS = {".mp4", ".mov", ".webm"}
 
 
@@ -212,43 +212,53 @@ def build_field_manifest(root: Path) -> dict[str, Any]:
             ) from error
         files = _raw_files(field_root, tracked, day, stream, segment)
         selected_paths.update(path.relative_to(field_root).as_posix() for path in files)
-        device_source = "audio" if stream == "field.audio" else "screen"
-        required_output = "audio.jsonl" if device_source == "audio" else "screen.jsonl"
-        fixture_id = f"{day}-{device_source}-{segment}-{field_source}"
-        metadata = {
-            "field_source": field_source,
-            "field_stream": stream,
-            "field_source_id": raw.get("source_id"),
-            "license": raw.get("license"),
-            "description": raw.get("description"),
-            "exercises": raw.get("exercises", []),
-            "has_reference": raw.get("has_reference", False),
-        }
-        segments.append(
-            {
-                "id": fixture_id,
-                "day": day,
-                "segment": segment,
-                "source": device_source,
-                "files": [
-                    {
-                        "path": path.relative_to(field_root).as_posix(),
-                        "submitted": path.name,
-                        "size": path.stat().st_size,
-                        "sha256": _sha256(path),
-                    }
-                    for path in files
-                ],
-                "meta": metadata,
-                "expect": {
-                    "upload_statuses": ["ok"],
-                    "file_statuses": ["present", "processed"],
-                    "required_outputs": [required_output],
-                },
+        modality = "audio" if stream == "field.audio" else "screen"
+        handler = "transcribe" if modality == "audio" else "describe"
+        output = f"{modality}.jsonl"
+        for path in files:
+            extension = path.suffix.lower().lstrip(".")
+            device_source = f"{modality}-{extension}"
+            fixture_id = f"{day}-{device_source}-{segment}-{field_source}"
+            metadata = {
+                "field_source": field_source,
+                "field_stream": stream,
+                "field_format": extension,
+                "field_source_id": raw.get("source_id"),
+                "license": raw.get("license"),
+                "description": raw.get("description"),
+                "exercises": raw.get("exercises", []),
+                "has_reference": raw.get("has_reference", False),
             }
-        )
+            segments.append(
+                {
+                    "id": fixture_id,
+                    "day": day,
+                    "segment": segment,
+                    "source": device_source,
+                    "files": [
+                        {
+                            "path": path.relative_to(field_root).as_posix(),
+                            "submitted": path.name,
+                            "size": path.stat().st_size,
+                            "sha256": _sha256(path),
+                        }
+                    ],
+                    "meta": metadata,
+                    "expect": {
+                        "upload_statuses": ["ok"],
+                        "file_statuses": ["present", "processed"],
+                        "processing": [
+                            {
+                                "input": path.name,
+                                "output": output,
+                                "handler": handler,
+                            }
+                        ],
+                    },
+                }
+            )
     _require_clean_inputs(field_root, selected_paths)
-    canary_id = "20260201-audio-080000_600-chime6"
+    canary_id = "20260201-audio-wav-080000_600-chime6"
     canary = next((segment for segment in segments if segment["id"] == canary_id), None)
     if canary is None:
         raise ManifestError(
@@ -274,20 +284,30 @@ def build_field_manifest(root: Path) -> dict[str, Any]:
             "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         },
         "profiles": {
-            "field-smoke": {
+            "field-smoke-custody": {
                 "segments": _select_smoke(segments),
                 "verify_duplicate": False,
-                "verify_processing": True,
+                "verification": "custody",
+            },
+            "field-smoke-processing": {
+                "segments": _select_smoke(segments),
+                "verify_duplicate": False,
+                "verification": "processing",
             },
             "field-large": {
                 "segments": [canary_id],
                 "verify_duplicate": True,
-                "verify_processing": False,
+                "verification": "custody",
             },
-            "field-full": {
+            "field-full-custody": {
                 "segments": [segment["id"] for segment in segments],
                 "verify_duplicate": False,
-                "verify_processing": True,
+                "verification": "custody",
+            },
+            "field-full-processing": {
+                "segments": [segment["id"] for segment in segments],
+                "verify_duplicate": False,
+                "verification": "processing",
             },
         },
         "segments": segments,

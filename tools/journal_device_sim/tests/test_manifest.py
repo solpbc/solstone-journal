@@ -35,7 +35,13 @@ class ManifestTests(unittest.TestCase):
         }
         manifest = {
             "schema": "solstone.journal-device-sim.fixtures.v1",
-            "profiles": {"smoke": {"segments": ["one"], "verify_duplicate": True}},
+            "profiles": {
+                "smoke": {
+                    "segments": ["one"],
+                    "verify_duplicate": True,
+                    "verification": "custody",
+                }
+            },
             "segments": [
                 {
                     "id": "one",
@@ -81,6 +87,94 @@ class ManifestTests(unittest.TestCase):
         relative = f"../{outside.name}"
         with self.assertRaisesRegex(ManifestError, "escapes the fixture root"):
             load_manifest(self._manifest(path=relative))
+
+    def test_manifest_loads_explicit_custody_scope(self) -> None:
+        manifest = load_manifest(self._manifest())
+        self.assertEqual(manifest.profiles["smoke"].verification, "custody")
+        self.assertEqual(
+            manifest.profile_segments("smoke")[0].expectation.processing,
+            (),
+        )
+
+    def test_manifest_loads_explicit_contract_scope(self) -> None:
+        path = self._manifest()
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["profiles"]["smoke"]["verification"] = "contract"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        manifest = load_manifest(path)
+        self.assertEqual(manifest.profiles["smoke"].verification, "contract")
+
+    def test_processing_scope_requires_an_oracle_for_every_file(self) -> None:
+        path = self._manifest()
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["profiles"]["smoke"]["verification"] = "processing"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        with self.assertRaisesRegex(
+            ManifestError, "requires one processing oracle per submitted file"
+        ):
+            load_manifest(path)
+
+    def test_manifest_loads_closed_processing_contract(self) -> None:
+        path = self._manifest(submitted="sample.wav")
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["segments"][0]["expect"] = {
+            "processing": [
+                {
+                    "input": "sample.wav",
+                    "output": "sample.jsonl",
+                    "handler": "transcribe",
+                }
+            ]
+        }
+        value["profiles"]["smoke"]["verification"] = "processing"
+        path.write_text(json.dumps(value), encoding="utf-8")
+
+        manifest = load_manifest(path)
+        expectation = manifest.profile_segments("smoke")[0].expectation.processing[0]
+        self.assertEqual(expectation.input, "sample.wav")
+        self.assertEqual(expectation.output, "sample.jsonl")
+        self.assertEqual(expectation.handler, "transcribe")
+
+    def test_manifest_accepts_native_mp3_processing_contract(self) -> None:
+        path = self._manifest(submitted="sample.mp3")
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["segments"][0]["expect"] = {
+            "processing": [
+                {
+                    "input": "sample.mp3",
+                    "output": "sample.jsonl",
+                    "handler": "transcribe",
+                }
+            ]
+        }
+        value["profiles"]["smoke"]["verification"] = "processing"
+        path.write_text(json.dumps(value), encoding="utf-8")
+
+        expectation = load_manifest(path).profile_segments("smoke")[
+            0
+        ].expectation.processing[0]
+        self.assertEqual(
+            (expectation.input, expectation.output, expectation.handler),
+            ("sample.mp3", "sample.jsonl", "transcribe"),
+        )
+
+    def test_manifest_rejects_processing_contract_drift(self) -> None:
+        path = self._manifest(submitted="sample.mp4")
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["segments"][0]["expect"] = {
+            "processing": [
+                {
+                    "input": "sample.mp4",
+                    "output": "screen.jsonl",
+                    "handler": "transcribe",
+                }
+            ]
+        }
+        path.write_text(json.dumps(value), encoding="utf-8")
+        with self.assertRaisesRegex(
+            ManifestError, "must map sample.mp4 to describe/sample.jsonl"
+        ):
+            load_manifest(path)
 
     @unittest.skipUnless(os.name == "posix", "symlink fixture requires POSIX")
     def test_manifest_refuses_a_symlinked_fixture(self) -> None:

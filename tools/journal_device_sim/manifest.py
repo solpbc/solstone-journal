@@ -30,6 +30,18 @@ _RESERVED_NAMES = {
 }
 _UPLOAD_STATUSES = {"ok", "collision", "duplicate"}
 _FILE_STATUSES = {"present", "processed", "missing"}
+_VERIFICATION_SCOPES = {"contract", "custody", "processing"}
+_PROCESSING_CONTRACT = {
+    ".flac": "transcribe",
+    ".m4a": "transcribe",
+    ".mp3": "transcribe",
+    ".ogg": "transcribe",
+    ".opus": "transcribe",
+    ".wav": "transcribe",
+    ".mov": "describe",
+    ".mp4": "describe",
+    ".webm": "describe",
+}
 
 
 class ManifestError(ValueError):
@@ -48,10 +60,17 @@ class FixtureFile:
 
 
 @dataclass(frozen=True)
+class ProcessingExpectation:
+    input: str
+    output: str
+    handler: str
+
+
+@dataclass(frozen=True)
 class SegmentExpectation:
     upload_statuses: tuple[str, ...]
     file_statuses: tuple[str, ...]
-    required_outputs: tuple[str, ...]
+    processing: tuple[ProcessingExpectation, ...]
 
 
 @dataclass(frozen=True)
@@ -70,7 +89,7 @@ class FixtureProfile:
     name: str
     segment_ids: tuple[str, ...]
     verify_duplicate: bool
-    verify_processing: bool
+    verification: str
 
 
 @dataclass(frozen=True)
@@ -239,11 +258,12 @@ def _parse_file(raw: Any, root: Path, where: str) -> FixtureFile:
     )
 
 
-def _parse_expectation(raw: Any, where: str) -> SegmentExpectation:
+def _parse_expectation(
+    raw: Any, where: str, files: tuple[FixtureFile, ...]
+) -> SegmentExpectation:
     value = _object(raw if raw is not None else {}, where)
     upload_statuses = tuple(value.get("upload_statuses", ["ok", "collision"]))
     file_statuses = tuple(value.get("file_statuses", ["present", "processed"]))
-    required_outputs = tuple(value.get("required_outputs", []))
     if not upload_statuses or any(
         not isinstance(item, str) or item not in _UPLOAD_STATUSES
         for item in upload_statuses
@@ -258,19 +278,45 @@ def _parse_expectation(raw: Any, where: str) -> SegmentExpectation:
         raise ManifestError(
             f"{where}.file_statuses must use present, processed, or missing"
         )
-    if any(
-        not isinstance(item, str)
-        or not item
-        or item != Path(item).name
-        or "/" in item
-        or "\\" in item
-        for item in required_outputs
-    ):
-        raise ManifestError(f"{where}.required_outputs must contain safe filenames")
+    raw_processing = value.get("processing", [])
+    if not isinstance(raw_processing, list):
+        raise ManifestError(f"{where}.processing must be an array")
+    submitted = {item.submitted for item in files}
+    processing: list[ProcessingExpectation] = []
+    for index, raw_item in enumerate(raw_processing):
+        item_where = f"{where}.processing[{index}]"
+        item = _object(raw_item, item_where)
+        input_name = _string(item.get("input"), f"{item_where}.input")
+        output = _string(item.get("output"), f"{item_where}.output")
+        handler = _string(item.get("handler"), f"{item_where}.handler")
+        if input_name not in submitted:
+            raise ManifestError(f"{item_where}.input must name a submitted file")
+        contract = _PROCESSING_CONTRACT.get(Path(input_name).suffix.lower())
+        if contract is None:
+            raise ManifestError(f"{item_where}.input has no processing contract")
+        expected_handler = contract
+        expected_output = Path(input_name).with_suffix(".jsonl").name
+        if handler != expected_handler or output != expected_output:
+            raise ManifestError(
+                f"{item_where} must map {input_name} to {expected_handler}/{expected_output}"
+            )
+        if output in submitted or output.lower() in _RESERVED_NAMES:
+            raise ManifestError(f"{item_where}.output must be a derived filename")
+        processing.append(
+            ProcessingExpectation(
+                input=input_name,
+                output=output,
+                handler=handler,
+            )
+        )
+    inputs = [item.input for item in processing]
+    outputs = [item.output for item in processing]
+    if len(set(inputs)) != len(inputs) or len(set(outputs)) != len(outputs):
+        raise ManifestError(f"{where}.processing cannot alias inputs or outputs")
     return SegmentExpectation(
         upload_statuses=upload_statuses,
         file_statuses=file_statuses,
-        required_outputs=required_outputs,
+        processing=tuple(processing),
     )
 
 
@@ -309,7 +355,9 @@ def _parse_segment(raw: Any, root: Path, index: int) -> FixtureSegment:
         source=source,
         files=files,
         meta=dict(meta),
-        expectation=_parse_expectation(value.get("expect"), f"{where}.expect"),
+        expectation=_parse_expectation(
+            value.get("expect"), f"{where}.expect", files
+        ),
     )
 
 
@@ -327,14 +375,23 @@ def _parse_profile(
     verify_duplicate = value.get("verify_duplicate", False)
     if not isinstance(verify_duplicate, bool):
         raise ManifestError(f"{where}.verify_duplicate must be boolean")
-    verify_processing = value.get("verify_processing", True)
-    if not isinstance(verify_processing, bool):
-        raise ManifestError(f"{where}.verify_processing must be boolean")
+    verification = value.get("verification")
+    if verification not in _VERIFICATION_SCOPES:
+        raise ManifestError(
+            f"{where}.verification must be contract, custody, or processing"
+        )
+    if verification == "processing":
+        for segment_id in segment_ids:
+            segment = segments[segment_id]
+            if len(segment.expectation.processing) != len(segment.files):
+                raise ManifestError(
+                    f"{where} requires one processing oracle per submitted file in {segment_id}"
+                )
     return FixtureProfile(
         name=name,
         segment_ids=segment_ids,
         verify_duplicate=verify_duplicate,
-        verify_processing=verify_processing,
+        verification=verification,
     )
 
 

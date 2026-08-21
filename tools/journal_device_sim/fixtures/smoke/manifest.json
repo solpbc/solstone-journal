@@ -6,7 +6,8 @@
         "tmux-alpha",
         "tmux-collision"
       ],
-      "verify_duplicate": true
+      "verify_duplicate": true,
+      "verification": "contract"
     }
   },
   "segments": [
