@@ -14,10 +14,12 @@ const REQUIRED_COPY_KEYS = [
   'PAIR_LINK_FIELD_LABEL', 'PAIR_LINK_COPY_LABEL', 'CHECK_PAIRING_CTA', 'PAIR_START_FAIL_BODY',
   'EXPIRED_BUTTON', 'WINDOW_CLOSED_BUTTON', 'SUCCESS_HEADING', 'SUCCESS_SUBHEAD',
   'SUCCESS_VERIFY_NOTE', 'SUCCESS_DONE', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
+  'DEVICE_LABEL_DEFAULT_FORMAT',
 ];
 
 const MARKUP_COPY_KEYS = REQUIRED_COPY_KEYS.filter((key) => ![
   'DEVICE_EMPTY_TITLE', 'DEVICE_EMPTY_BODY', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
+  'DEVICE_LABEL_DEFAULT_FORMAT',
 ].includes(key));
 
 function response(body, status = 200) {
@@ -341,6 +343,7 @@ function createEnvironment(manifestDir, options = {}) {
       PAIR_NETWORK_LINE: 'network {time}',
       SUCCESS_HEADING: 'heading {label}',
       SUCCESS_SUBHEAD: 'subhead {short_fp}',
+      DEVICE_LABEL_DEFAULT_FORMAT: 'label-{month}-{day}',
     },
     appEvents: {
       listen(tract, callback) {
@@ -466,6 +469,34 @@ async function main() {
     assert.strictEqual(env.requests[0].url, '/app/network/pair-start');
   });
 
+  await testCase('pair start sends a non-empty default device label', async () => {
+    const env = createEnvironment(manifestDir);
+    const started = deferred();
+    env.fetchQueue.push(started);
+    env.click(env.opener);
+    const body = JSON.parse(env.requests[0].request.body);
+    assert.strictEqual(typeof body.device_label, 'string');
+    assert.ok(body.device_label);
+    assert.match(body.device_label, /^label-[a-z]{3}-\d{1,2}$/);
+    started.resolve(response(material({ device_label: body.device_label })));
+    await settle();
+  });
+
+  await testCase('completion uses the non-empty label echoed by pair start', async () => {
+    const env = createEnvironment(manifestDir);
+    const started = deferred();
+    env.fetchQueue.push(started);
+    env.click(env.opener);
+    const label = JSON.parse(env.requests[0].request.body).device_label;
+    started.resolve(response(material({ device_label: label })));
+    await settle();
+    env.fetchQueue.push(response({ present: true, used: true }));
+    env.emitLink();
+    await settle();
+    assert.ok(env.nodes.get('link-pairing-success-heading').textContent);
+    assert.ok(env.nodes.get('link-pairing-success-heading').textContent.includes(label));
+  });
+
   await testCase('expires_in 125 formats as 2:05 and arms a 125-second timer', async () => {
     const env = createEnvironment(manifestDir);
     env.fetchQueue.push(response(material()));
@@ -560,6 +591,7 @@ async function main() {
       material({ expires_in: undefined }),
       material({ expires_in: 0 }),
       material({ expires_in: '125' }),
+      material({ device_label: 1 }),
     ]) {
       const env = createEnvironment(manifestDir);
       env.fetchQueue.push(response(bad));

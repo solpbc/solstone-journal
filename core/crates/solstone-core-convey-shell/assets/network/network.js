@@ -129,6 +129,14 @@
       return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
     }
 
+    function defaultDeviceLabel() {
+      const today = new Date();
+      const month = today.toLocaleString('en-US', { month: 'short' }).toLowerCase();
+      return copy('DEVICE_LABEL_DEFAULT_FORMAT')
+        .replace('{month}', month)
+        .replace('{day}', String(today.getDate()));
+    }
+
     function renderCode(pairLink) {
       const qr = global.qrcode(0, 'M');
       const split = pairLink.indexOf('#');
@@ -159,6 +167,7 @@
         && body.ca_fingerprint
         && Number.isFinite(body.expires_in)
         && body.expires_in > 0
+        && (body.device_label === undefined || typeof body.device_label === 'string')
         && typeof global.qrcode === 'function'
       );
     }
@@ -258,7 +267,7 @@
         response = await global.fetch(`${prefix()}/pair-start`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', accept: 'application/json' },
-          body: '{}',
+          body: JSON.stringify({ device_label: defaultDeviceLabel() }),
         });
         body = await responseBody(response);
       } catch (_error) {
