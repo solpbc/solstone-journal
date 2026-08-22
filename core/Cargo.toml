@@ -32,6 +32,7 @@ members = [
     "crates/solstone-core-backup",
     "crates/solstone-core-backup-cli",
     "crates/solstone-core-artifact-download",
+    "crates/solstone-core-ffmpeg-build-support",
     "crates/solstone-core-backup-runtime",
     "crates/solstone-core-offload",
     "crates/solstone-core-maintenance",
@@ -176,6 +177,7 @@ solstone-core-brain = { path = "crates/solstone-core-brain" }
 solstone-core-backup = { path = "crates/solstone-core-backup" }
 solstone-core-backup-cli = { path = "crates/solstone-core-backup-cli" }
 solstone-core-artifact-download = { path = "crates/solstone-core-artifact-download" }
+solstone-core-ffmpeg-build-support = { path = "crates/solstone-core-ffmpeg-build-support" }
 solstone-core-backup-runtime = { path = "crates/solstone-core-backup-runtime" }
 solstone-core-offload = { path = "crates/solstone-core-offload" }
 solstone-core-maintenance = { path = "crates/solstone-core-maintenance" }

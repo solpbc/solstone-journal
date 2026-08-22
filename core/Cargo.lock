@@ -875,6 +875,7 @@ dependencies = [
  "num_cpus",
  "pkg-config",
  "sha2",
+ "solstone-core-ffmpeg-build-support",
  "tar",
  "vcpkg",
 ]
@@ -3536,6 +3537,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "solstone-core-artifact-download",
+ "solstone-core-ffmpeg-build-support",
  "tar",
  "tempfile",
  "toml_edit",
@@ -3660,6 +3662,13 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "solstone-core-ffmpeg-build-support"
+version = "2.0.0"
+dependencies = [
+ "sha2",
 ]
 
 [[package]]
