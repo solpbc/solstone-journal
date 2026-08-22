@@ -36,13 +36,27 @@ loopback port from the native startup line, and owns only that child process.
 
 Unless `--bridge-url` is supplied, the native launcher defaults to the
 source-built `core/target/debug/solstone` in this checkout. Build it first with
-`make build`. The simulator never falls back to `PATH`: `--solstone-bin` is
-only accepted as an absolute override path, and bare or relative values are
-rejected. Before pairing, validating a pre-paired bundle, or starting a native
-bridge, it runs the selected launcher with `--help` and requires stdout byte 0
-to start with `solstone - journal access CLI`. This preflight is bounded and
-fail-closed; if it fails, recover by running `make build` or passing
-`--solstone-bin /abs/path/to/solstone`.
+`make build`. The [`cargo_build_stages_the_public_solstone_launcher_beside_its_native_sibling`](../../core/crates/solstone-core-sol-bin/tests/launcher_staging.rs#L62)
+and [`test_source_built_default_ignores_a_poisoned_path`](tests/test_process.py#L84)
+regressions pin the source-built default. The simulator never falls back to
+`PATH`: `--solstone-bin` is only accepted as an absolute override path, and
+bare or relative values are rejected. The
+[`test_absolute_override_wins_over_a_poisoned_path`](tests/test_process.py#L126),
+[`test_relative_or_bare_native_override_is_rejected_at_construction`](tests/test_process.py#L152),
+and [`test_external_bridge_never_constructs_or_authenticates_native_solstone`](tests/test_runner.py#L545)
+regressions pin that override-only, no-PATH-fallback behavior. Before pairing,
+validating a pre-paired bundle, or starting a native bridge, it runs the
+selected launcher with `--help` and requires stdout byte 0 to start with
+`solstone - journal access CLI`. The
+[`test_native_header_preflight_preserves_version_provenance`](tests/test_process.py#L167),
+[`test_wrong_header_refuses_fresh_and_prepaired_before_bundle_validation`](tests/test_process.py#L186),
+and [`test_impostor_cli_is_refused_before_join_or_serve`](tests/test_process.py#L435)
+regressions pin that preflight's ordering and provenance. This preflight is
+bounded and fail-closed; if it fails, recover by running `make build` or
+passing `--solstone-bin /abs/path/to/solstone`. The
+[`test_header_timeout_refuses_fresh_and_prepaired_and_reaps_children`](tests/test_process.py#L223)
+and [`test_header_preflight_rejects_stdout_and_stderr_overflow`](tests/test_process.py#L271)
+regressions pin that bounded, fail-closed behavior.
 
 For relay testing, `--carrier relay` invokes `solstone link serve --port 0
 --relay-only`. This policy excludes LAN endpoints even when the credential
