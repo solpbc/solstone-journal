@@ -8,6 +8,12 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use solstone_core_ffmpeg_build_support::{
+    BUILD_RUN_ID_ENV, EVIDENCE_DIR, parse_ffmpeg_pin, read_configure_receipt,
+    read_current_run_record, verify_sha256,
+};
 
 use crate::digest::sha256_hex;
 use crate::elf;
@@ -19,7 +25,9 @@ use crate::macho;
 use crate::onnx_runtime;
 use crate::pdfium;
 use crate::promote::{PromoteRequest, isolated_target_dir, promote};
-use crate::provenance::{self, Provenance, bind_cargo_json, lock_digest};
+use crate::provenance::{
+    self, Provenance, bind_cargo_json, bind_ffmpeg_build_script_out_dirs, lock_digest,
+};
 use crate::select::{self, ArtifactId};
 use crate::stage;
 
@@ -27,6 +35,7 @@ pub const ZIG_OVERRIDE: &str = "SOLSTONE_ZIG";
 pub const ONNX_ARCHIVE_OVERRIDE: &str = "SOLSTONE_DISTRIBUTION_ONNX_ARCHIVE";
 pub const ONNX_ARCHIVE_DIR: &str = "SOLSTONE_DISTRIBUTION_ONNX_ARCHIVE_DIR";
 pub const PDFIUM_ARCHIVE_OVERRIDE: &str = "SOLSTONE_DISTRIBUTION_PDFIUM_ARCHIVE";
+pub const FFMPEG_ARCHIVE_OVERRIDE: &str = "SOLSTONE_DISTRIBUTION_FFMPEG_ARCHIVE";
 pub const OFFLINE: &str = "SOLSTONE_DISTRIBUTION_OFFLINE";
 
 #[derive(Debug)]
@@ -156,6 +165,48 @@ fn stage_pdfium_input(
     let staged = pdfium::stage_from_bytes(spec, &bytes)
         .map_err(|error| ProduceError::new(error.to_string()))?;
     Ok((spec, staged))
+}
+
+pub fn select_ffmpeg_input(
+    repo: &Path,
+    archive_override: Option<&OsStr>,
+) -> Result<PathBuf, ProduceError> {
+    let override_selected = archive_override.is_some();
+    let archive = match archive_override {
+        Some(value) if value.is_empty() => {
+            return Err(ProduceError::new(format!(
+                "missing required:\n  {FFMPEG_ARCHIVE_OVERRIDE}"
+            )));
+        }
+        Some(value) => PathBuf::from(value),
+        None => repo.join("target/ffmpeg-source-cache/ffmpeg.tar.gz"),
+    };
+    if !archive.is_file() {
+        let source = if override_selected {
+            format!("{FFMPEG_ARCHIVE_OVERRIDE} {}", archive.display())
+        } else {
+            format!(
+                "FFmpeg archive {} (run solstone-distribution acquire ffmpeg first)",
+                archive.display()
+            )
+        };
+        return Err(ProduceError::new(format!("missing required:\n  {source}")));
+    }
+    let bytes = fs::read(&archive).map_err(|error| {
+        ProduceError::new(format!(
+            "missing required:\n  FFmpeg archive {} ({error})",
+            archive.display()
+        ))
+    })?;
+    let builder_inputs = fs::read_to_string(repo.join("core/distribution/builder-inputs.toml"))?;
+    let pin = parse_ffmpeg_pin(&builder_inputs).map_err(ProduceError::new)?;
+    verify_sha256(&bytes, &pin.sha256).map_err(|error| {
+        ProduceError::new(format!(
+            "unexpected:\n  FFmpeg archive {}: {error}",
+            archive.display()
+        ))
+    })?;
+    archive.canonicalize().map_err(ProduceError::from)
 }
 
 pub fn resolve_zig_binary(
@@ -316,6 +367,9 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         .ancestors()
         .nth(3)
         .ok_or_else(|| ProduceError::new("missing required:\n  repository root"))?;
+    let ffmpeg_archive =
+        select_ffmpeg_input(repo, env::var_os(FFMPEG_ARCHIVE_OVERRIDE).as_deref())?;
+    let ffmpeg_run_id = ffmpeg_build_run_id();
 
     let commit = git_stdout(repo, &["rev-parse", "HEAD"])?;
     let dirty = !git_stdout(repo, &["status", "--porcelain"])?.is_empty();
@@ -423,6 +477,8 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                     vars: &apple_lane_env(target, &onnx_dir),
                     rustflags: &remap.join("\x1f"),
                     epoch: &epoch,
+                    ffmpeg_archive: &ffmpeg_archive,
+                    ffmpeg_run_id: &ffmpeg_run_id,
                 })?,
             );
             build_parakeet_helper(&checkout)?;
@@ -532,6 +588,8 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 vars: &musl_env.vars,
                 rustflags: &musl_rustflags,
                 epoch: &epoch,
+                ffmpeg_archive: &ffmpeg_archive,
+                ffmpeg_run_id: &ffmpeg_run_id,
             })?,
         );
         merge_artifacts(
@@ -547,6 +605,8 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 vars: &gnu_env.vars,
                 rustflags: &gnu_rustflags,
                 epoch: &epoch,
+                ffmpeg_archive: &ffmpeg_archive,
+                ffmpeg_run_id: &ffmpeg_run_id,
             })?,
         );
 
@@ -820,6 +880,8 @@ struct BuildLane<'a> {
     vars: &'a BTreeMap<String, String>,
     rustflags: &'a str,
     epoch: &'a str,
+    ffmpeg_archive: &'a Path,
+    ffmpeg_run_id: &'a str,
 }
 
 fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, ProduceError> {
@@ -837,6 +899,9 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
         .env("LC_ALL", "C.UTF-8")
         .env("LANG", "C.UTF-8")
         .env("CARGO_ENCODED_RUSTFLAGS", lane.rustflags)
+        .env("SOLSTONE_FFMPEG_SOURCE_ARCHIVE", lane.ffmpeg_archive)
+        .env(OFFLINE, "1")
+        .env(BUILD_RUN_ID_ENV, lane.ffmpeg_run_id)
         .env(
             "PATH",
             match lane.zig_dir {
@@ -894,8 +959,106 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
             cargo_rendered_errors(&String::from_utf8_lossy(&output.stdout))
         )));
     }
-    bind_cargo_json(&String::from_utf8_lossy(&output.stdout), lane.triple)
-        .map_err(|error| ProduceError::new(error.to_string()))
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let ffmpeg_out_dirs = bind_ffmpeg_build_script_out_dirs(&stdout);
+    if ffmpeg_out_dirs.len() > 1 {
+        return Err(ProduceError::new(format!(
+            "unexpected:\n  multiple ffmpeg build-script out directories for {}",
+            lane.triple
+        )));
+    }
+    if let Some(out_dir) = ffmpeg_out_dirs.first() {
+        validate_ffmpeg_evidence(
+            &out_dir.join(EVIDENCE_DIR),
+            lane.ffmpeg_run_id,
+            lane.triple,
+            "release",
+        )?;
+    }
+    bind_cargo_json(&stdout, lane.triple).map_err(|error| ProduceError::new(error.to_string()))
+}
+
+fn ffmpeg_build_run_id() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("{}-{nanos}", std::process::id())
+}
+
+fn validate_ffmpeg_evidence(
+    evidence_dir: &Path,
+    expected_run_id: &str,
+    expected_target: &str,
+    expected_profile: &str,
+) -> Result<(), ProduceError> {
+    let record = read_current_run_record(evidence_dir).map_err(incomplete_ffmpeg_evidence)?;
+    if record.run_id != expected_run_id {
+        return Err(incomplete_ffmpeg_evidence(format!(
+            "run id {} does not match {expected_run_id}",
+            record.run_id
+        )));
+    }
+    if record.target != expected_target || record.profile != expected_profile {
+        return Err(incomplete_ffmpeg_evidence(format!(
+            "record target/profile {}/{} does not match {expected_target}/{expected_profile}",
+            record.target, record.profile
+        )));
+    }
+    let stored = read_configure_receipt(evidence_dir, &record.receipt_filename)
+        .map_err(incomplete_ffmpeg_evidence)?;
+    if stored.content_sha256 != record.receipt_sha256 {
+        return Err(incomplete_ffmpeg_evidence(
+            "referenced receipt digest does not match the current-run record",
+        ));
+    }
+    let receipt = stored.receipt;
+    if receipt.target != record.target
+        || receipt.profile != record.profile
+        || receipt.source_sha256 != record.source_sha256
+        || receipt.fingerprint != record.fingerprint
+    {
+        return Err(incomplete_ffmpeg_evidence(
+            "referenced receipt does not match the current-run record",
+        ));
+    }
+    if expected_profile == "release" {
+        validate_release_configure_args(&receipt.args)?;
+    }
+    Ok(())
+}
+
+fn incomplete_ffmpeg_evidence(detail: impl std::fmt::Display) -> ProduceError {
+    ProduceError::new(format!("incomplete FFmpeg configure evidence:\n  {detail}"))
+}
+
+fn validate_release_configure_args(args: &[String]) -> Result<(), ProduceError> {
+    let mistyped_optimization = ["-", "0", "3"].concat();
+    if args.iter().any(|arg| arg.contains(&mistyped_optimization)) {
+        return Err(incomplete_ffmpeg_evidence(
+            "release configure receipt contains invalid optimization flag",
+        ));
+    }
+    if args.iter().any(|arg| arg == "--enable-debug")
+        || !args.iter().any(|arg| arg == "--disable-debug")
+    {
+        return Err(incomplete_ffmpeg_evidence(
+            "release configure receipt does not disable debug",
+        ));
+    }
+    if args.iter().any(|arg| arg == "--disable-stripping")
+        || !args.iter().any(|arg| arg == "--enable-stripping")
+    {
+        return Err(incomplete_ffmpeg_evidence(
+            "release configure receipt does not enable stripping",
+        ));
+    }
+    if !args.iter().any(|arg| arg.contains("-O3")) {
+        return Err(incomplete_ffmpeg_evidence(
+            "release configure receipt does not enable -O3",
+        ));
+    }
+    Ok(())
 }
 
 fn musl_bindgen_args(target: &crate::inventory::Target, zig_lib: &Path) -> String {
@@ -1153,6 +1316,40 @@ fn command_stdout(bin: &Path, args: &[&str]) -> Result<String, ProduceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solstone_core_ffmpeg_build_support::{
+        ConfigureReceipt, ConfigureRunRecord, write_configure_receipt, write_current_run_record,
+    };
+
+    fn write_ffmpeg_pin(repo: &Path, sha256: &str) {
+        let inputs = repo.join("core/distribution/builder-inputs.toml");
+        fs::create_dir_all(inputs.parent().unwrap()).unwrap();
+        fs::write(
+            inputs,
+            format!(
+                "[ffmpeg]\ncommit = \"fixture\"\nfilename = \"fixture.tar.gz\"\nurl = \"https://example.invalid/fixture.tar.gz\"\nsha256 = \"{sha256}\"\nsize = 1\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    fn write_ffmpeg_evidence(
+        evidence_dir: &Path,
+        run_id: &str,
+        configure_executed: bool,
+        args: &[String],
+    ) -> ConfigureRunRecord {
+        let receipt = ConfigureReceipt::new(
+            "x86_64-unknown-linux-gnu",
+            "release",
+            &"a".repeat(64),
+            "/source/configure",
+            args,
+        );
+        let receipt = write_configure_receipt(evidence_dir, &receipt).unwrap();
+        let record = ConfigureRunRecord::new(run_id, &receipt, configure_executed).unwrap();
+        write_current_run_record(evidence_dir, &record).unwrap();
+        record
+    }
 
     #[test]
     fn payload_dest_uses_inventory_prefix() {
@@ -1196,6 +1393,133 @@ mod tests {
             select_onnx_input("linux-x86_64", None, None, false).unwrap(),
             OnnxInput::PinnedUrl
         );
+    }
+
+    #[test]
+    fn ffmpeg_input_selection_is_verified_before_lanes_spawn() {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("target/ffmpeg-source-cache/ffmpeg.tar.gz");
+        fs::create_dir_all(archive.parent().unwrap()).unwrap();
+        fs::write(&archive, b"verified ffmpeg archive").unwrap();
+        write_ffmpeg_pin(root.path(), &sha256_hex(b"verified ffmpeg archive"));
+
+        let default = select_ffmpeg_input(root.path(), None).unwrap();
+        assert_eq!(default, archive.canonicalize().unwrap());
+
+        let override_archive = root.path().join("override.tar.gz");
+        fs::write(&override_archive, b"verified ffmpeg archive").unwrap();
+        assert_eq!(
+            select_ffmpeg_input(root.path(), Some(override_archive.as_os_str())).unwrap(),
+            override_archive.canonicalize().unwrap()
+        );
+
+        let empty = select_ffmpeg_input(root.path(), Some(OsStr::new(""))).unwrap_err();
+        assert!(empty.to_string().contains(FFMPEG_ARCHIVE_OVERRIDE));
+
+        let missing =
+            select_ffmpeg_input(root.path(), Some(OsStr::new("missing.tar.gz"))).unwrap_err();
+        assert!(missing.to_string().contains(FFMPEG_ARCHIVE_OVERRIDE));
+
+        let wrong = root.path().join("wrong.tar.gz");
+        fs::write(&wrong, b"wrong digest").unwrap();
+        assert!(select_ffmpeg_input(root.path(), Some(wrong.as_os_str())).is_err());
+
+        let empty_archive = root.path().join("empty.tar.gz");
+        fs::write(&empty_archive, b"").unwrap();
+        assert!(select_ffmpeg_input(root.path(), Some(empty_archive.as_os_str())).is_err());
+
+        let unreadable = root.path().join("not-an-archive");
+        fs::create_dir_all(&unreadable).unwrap();
+        assert!(select_ffmpeg_input(root.path(), Some(unreadable.as_os_str())).is_err());
+
+        fs::remove_file(&archive).unwrap();
+        let missing_default = select_ffmpeg_input(root.path(), None).unwrap_err();
+        assert!(
+            missing_default
+                .to_string()
+                .contains("solstone-distribution acquire ffmpeg")
+        );
+    }
+
+    #[test]
+    fn ffmpeg_evidence_requires_a_fresh_matching_record_and_receipt() {
+        let root = tempfile::tempdir().unwrap();
+        let evidence = root.path().join(EVIDENCE_DIR);
+        let release_args = vec![
+            "--disable-debug".to_owned(),
+            "--enable-stripping".to_owned(),
+            "--extra-cflags=-O3 -ffast-math".to_owned(),
+        ];
+        let record = write_ffmpeg_evidence(&evidence, "current", true, &release_args);
+        validate_ffmpeg_evidence(&evidence, "current", "x86_64-unknown-linux-gnu", "release")
+            .unwrap();
+
+        let stale =
+            validate_ffmpeg_evidence(&evidence, "next-run", "x86_64-unknown-linux-gnu", "release")
+                .unwrap_err();
+        assert!(stale.to_string().contains("incomplete"));
+
+        fs::remove_file(evidence.join(&record.receipt_filename)).unwrap();
+        assert!(
+            validate_ffmpeg_evidence(&evidence, "current", "x86_64-unknown-linux-gnu", "release")
+                .is_err()
+        );
+
+        let no_record = root.path().join("no-record");
+        fs::create_dir_all(&no_record).unwrap();
+        assert!(
+            validate_ffmpeg_evidence(&no_record, "current", "x86_64-unknown-linux-gnu", "release")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn ffmpeg_evidence_refuses_tampered_or_release_unsafe_receipts() {
+        let root = tempfile::tempdir().unwrap();
+        let evidence = root.path().join(EVIDENCE_DIR);
+        let release_args = vec![
+            "--disable-debug".to_owned(),
+            "--enable-stripping".to_owned(),
+            "--extra-cflags=-O3 -ffast-math".to_owned(),
+        ];
+        let mut record = write_ffmpeg_evidence(&evidence, "current", true, &release_args);
+        record.receipt_sha256 = "tampered".to_owned();
+        write_current_run_record(&evidence, &record).unwrap();
+        assert!(
+            validate_ffmpeg_evidence(&evidence, "current", "x86_64-unknown-linux-gnu", "release")
+                .is_err()
+        );
+
+        for args in [
+            vec![
+                ["-", "0", "3"].concat(),
+                "--disable-debug".to_owned(),
+                "--enable-stripping".to_owned(),
+                "--extra-cflags=-O3".to_owned(),
+            ],
+            vec![
+                "--enable-debug".to_owned(),
+                "--enable-stripping".to_owned(),
+                "--extra-cflags=-O3".to_owned(),
+            ],
+            vec![
+                "--disable-debug".to_owned(),
+                "--disable-stripping".to_owned(),
+                "--extra-cflags=-O3".to_owned(),
+            ],
+        ] {
+            let evidence = root.path().join(format!("case-{}", args.len()));
+            write_ffmpeg_evidence(&evidence, "current", true, &args);
+            assert!(
+                validate_ffmpeg_evidence(
+                    &evidence,
+                    "current",
+                    "x86_64-unknown-linux-gnu",
+                    "release"
+                )
+                .is_err()
+            );
+        }
     }
 
     #[test]

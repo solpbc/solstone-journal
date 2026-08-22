@@ -146,6 +146,28 @@ pub fn bind_cargo_json(
     Ok(artifacts)
 }
 
+pub fn bind_ffmpeg_build_script_out_dirs(lines: &str) -> Vec<PathBuf> {
+    #[derive(serde::Deserialize)]
+    struct Message {
+        reason: Option<String>,
+        package_id: Option<String>,
+        out_dir: Option<String>,
+    }
+
+    lines
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Message>(line).ok())
+        .filter(|message| message.reason.as_deref() == Some("build-script-executed"))
+        .filter(|message| {
+            message
+                .package_id
+                .as_deref()
+                .is_some_and(|id| package_from_id(id, "ffmpeg-sys-next") == "ffmpeg-sys-next")
+        })
+        .filter_map(|message| message.out_dir.map(PathBuf::from))
+        .collect()
+}
+
 fn package_from_id(id: &str, bin: &str) -> String {
     if let Some((name, rest)) = id.split_once(' ')
         && !name.contains(['/', '\\', '+', '#'])

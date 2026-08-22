@@ -755,6 +755,11 @@ fn provenance_refuses_dirty_stale_and_wrong_commit() {
         modern_artifacts.keys().next().unwrap().package,
         "solstone-core-journal-bin"
     );
+    let ffmpeg_build_script = r#"{"reason":"build-script-executed","package_id":"path+file:///repo/core/vendor/ffmpeg-sys-next#ffmpeg-sys-next@9.0.0","out_dir":"/work/ffmpeg-out"}"#;
+    assert_eq!(
+        provenance::bind_ffmpeg_build_script_out_dirs(ffmpeg_build_script),
+        vec![PathBuf::from("/work/ffmpeg-out")]
+    );
 }
 
 #[cfg(test)]
