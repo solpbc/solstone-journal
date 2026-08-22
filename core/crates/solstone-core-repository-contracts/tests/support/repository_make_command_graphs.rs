@@ -237,6 +237,15 @@ fn write_acquire_shim(path: &Path, body: &str) {
     );
 }
 
+fn write_acquire_and_build_cargo_shim(path: &Path, acquire_body: &str) {
+    write_executable(
+        path,
+        &format!(
+            "#!/bin/sh\nset -eu\ncase \" $* \" in\n  *\" acquire \"*)\n    if [ -n \"${{SOLSTONE_ACQUIRE_LOG:-}}\" ]; then\n        printf '%s\\0' \"$@\" >> \"$SOLSTONE_ACQUIRE_LOG\"\n    fi\n{acquire_body}\n    exit 0\n    ;;\nesac\nprintf '%s\\0' \"$@\" > \"$SOLSTONE_CARGO_ARGV\"\nprintf 'ORT_PREFER_DYNAMIC_LINK=%s\\nORT_LIB_PATH=%s\\nDYLD_LIBRARY_PATH=%s\\nLD_LIBRARY_PATH=%s\\n' \"${{ORT_PREFER_DYNAMIC_LINK-}}\" \"${{ORT_LIB_PATH-}}\" \"${{DYLD_LIBRARY_PATH-}}\" \"${{LD_LIBRARY_PATH-}}\" > \"$SOLSTONE_CARGO_ENV\"\n"
+        ),
+    );
+}
+
 fn nul_argv(path: &Path) -> Vec<String> {
     fs::read(path)
         .expect("read NUL argv log")

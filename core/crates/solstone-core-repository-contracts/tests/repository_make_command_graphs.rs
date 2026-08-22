@@ -592,24 +592,79 @@ fn sandbox_processing_build_uses_the_effective_target_and_replaces_the_payload()
 }
 
 #[test]
-fn sandbox_processing_build_refuses_an_invalid_source_before_cargo() {
-    let temp = TempDir::new("sandbox-processing-source-negative");
+fn sandbox_processing_build_self_stages_missing_source_then_builds() {
+    let temp = TempDir::new("sandbox-processing-self-staging");
     write_host_makefile(&temp.path, "Linux", "x86_64");
     let shims = temp.path.join("shims");
     fs::create_dir(&shims).expect("create Cargo shim directory");
-    write_native_cargo_shim(&shims.join("cargo"));
+    write_acquire_and_build_cargo_shim(
+        &shims.join("cargo"),
+        "    dir=target/speakers-analyze-runtime-link/linux-x86_64\n    mkdir -p \"$dir\"\n    : > \"$dir/libonnxruntime.so.1.25.0\"\n    : > \"$dir/libonnxruntime.so.1\"\n    : > \"$dir/libonnxruntime.so\"",
+    );
+    let acquire_log = temp.path.join("acquire.log");
     let argv_log = temp.path.join("cargo.argv");
+    let env_log = temp.path.join("cargo.env");
     let output = fixture_make_command(&temp.path, &shims, "build-sandbox-processing")
+        .env("SOLSTONE_ACQUIRE_LOG", &acquire_log)
         .env("SOLSTONE_CARGO_ARGV", &argv_log)
-        .env("SOLSTONE_CARGO_ENV", temp.path.join("cargo.env"))
+        .env("SOLSTONE_CARGO_ENV", &env_log)
         .env_remove("CARGO_TARGET_DIR")
         .output()
-        .expect("run sandbox processing source negative");
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains(SANDBOX_RUNTIME_NAMES[0]));
-    assert!(stderr.contains("make check-rust-onnx-stage"));
-    assert!(!argv_log.exists(), "invalid source stage invoked Cargo");
+        .expect("run sandbox processing self-staging build");
+    assert!(
+        output.status.success(),
+        "sandbox processing self-staging build failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let acquire_argv = nul_argv(&acquire_log);
+    assert_eq!(
+        acquire_argv.iter().filter(|arg| *arg == "--target").count(),
+        1,
+        "self-staging must invoke acquire onnx exactly once"
+    );
+    assert!(
+        acquire_argv
+            .windows(2)
+            .any(|pair| pair == ["--target", "linux-x86_64"])
+    );
+
+    let argv = nul_argv(&argv_log);
+    assert_eq!(argv.first().map(String::as_str), Some("build"));
+    assert!(
+        argv.windows(2)
+            .any(|pair| pair == ["-p", "solstone-core-speakers-analyze"])
+    );
+    assert!(
+        argv.windows(2)
+            .any(|pair| pair == ["-p", "solstone-core-vad-analyze"])
+    );
+    let source_dir = temp
+        .path
+        .join("target/speakers-analyze-runtime-link/linux-x86_64");
+    let recorded_env = fs::read_to_string(&env_log).expect("read Cargo environment");
+    assert!(recorded_env.contains("ORT_PREFER_DYNAMIC_LINK=true"));
+    assert!(recorded_env.contains(&format!(
+        "ORT_LIB_PATH={}",
+        fs::canonicalize(&source_dir)
+            .expect("canonical source runtime directory")
+            .display()
+    )));
+
+    let payload_dir = temp
+        .path
+        .join("core/target/lib/solstone-core-speakers-analyze");
+    for name in SANDBOX_RUNTIME_NAMES {
+        assert!(payload_dir.join(name).is_file());
+        assert!(
+            !fs::symlink_metadata(payload_dir.join(name))
+                .expect("inspect final runtime entry")
+                .file_type()
+                .is_symlink(),
+            "final runtime entry {name} must be a regular file"
+        );
+    }
 }
 
 #[test]
@@ -658,7 +713,7 @@ fn sandbox_processing_check_rejects_invalid_payload_before_helpers() {
         write_host_makefile(&temp.path, "Linux", "x86_64");
         let shims = temp.path.join("shims");
         fs::create_dir(&shims).expect("create Cargo shim directory");
-        write_native_cargo_shim(&shims.join("cargo"));
+        write_acquire_and_build_cargo_shim(&shims.join("cargo"), "");
         let target_dir = temp.path.join("core/target");
         let payload_dir = if state == "missing" {
             target_dir.join("lib/solstone-core-speakers-analyze")
@@ -678,10 +733,12 @@ fn sandbox_processing_check_rejects_invalid_payload_before_helpers() {
             .expect("link final runtime entry");
         }
         write_sandbox_processing_helpers(&target_dir);
+        let acquire_log = temp.path.join("acquire.log");
         let argv_log = temp.path.join("cargo.argv");
         let helper_env_log = temp.path.join("helper.env");
         let output =
             fixture_make_command(&temp.path, &shims, "check-rust-sandbox-processing-build")
+                .env("SOLSTONE_ACQUIRE_LOG", &acquire_log)
                 .env("SOLSTONE_CARGO_ARGV", &argv_log)
                 .env("SOLSTONE_CARGO_ENV", temp.path.join("cargo.env"))
                 .env("SOLSTONE_HELPER_ENV_LOG", &helper_env_log)
@@ -695,6 +752,10 @@ fn sandbox_processing_check_rejects_invalid_payload_before_helpers() {
         assert!(
             !argv_log.exists(),
             "check invoked Cargo for {state} payload"
+        );
+        assert!(
+            !acquire_log.exists(),
+            "check attempted acquisition/repair for {state} payload"
         );
         assert!(
             !helper_env_log.exists(),
@@ -752,13 +813,15 @@ fn sandbox_processing_check_uses_only_the_existing_payload_and_clears_loader_pat
     write_host_makefile(&temp.path, "Linux", "x86_64");
     let shims = temp.path.join("shims");
     fs::create_dir(&shims).expect("create Cargo shim directory");
-    write_native_cargo_shim(&shims.join("cargo"));
+    write_acquire_and_build_cargo_shim(&shims.join("cargo"), "");
     let target_dir = temp.path.join("core/target");
     seed_sandbox_payload(&target_dir);
     write_sandbox_processing_helpers(&target_dir);
+    let acquire_log = temp.path.join("acquire.log");
     let argv_log = temp.path.join("cargo.argv");
     let helper_env_log = temp.path.join("helper.env");
     let output = fixture_make_command(&temp.path, &shims, "check-rust-sandbox-processing-build")
+        .env("SOLSTONE_ACQUIRE_LOG", &acquire_log)
         .env("SOLSTONE_CARGO_ARGV", &argv_log)
         .env("SOLSTONE_CARGO_ENV", temp.path.join("cargo.env"))
         .env("SOLSTONE_HELPER_ENV_LOG", &helper_env_log)
@@ -773,6 +836,7 @@ fn sandbox_processing_check_uses_only_the_existing_payload_and_clears_loader_pat
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!argv_log.exists(), "check invoked Cargo");
+    assert!(!acquire_log.exists(), "check attempted acquisition/repair");
     let helper_env = fs::read_to_string(&helper_env_log).expect("read helper environment log");
     assert!(helper_env.contains("solstone-core-speakers-analyze LD=unset DYLD=unset"));
     assert!(helper_env.contains("solstone-core-vad-analyze LD=unset DYLD=unset"));

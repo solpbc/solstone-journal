@@ -501,8 +501,7 @@ build-sandbox-processing:
 	payload_dir="$$target_dir/lib/solstone-core-speakers-analyze"; \
 	if [ -L "$$target_dir/lib" ]; then echo "build-sandbox-processing refuses symlinked target library directory: $$target_dir/lib" >&2; exit 1; fi; \
 	if [ -L "$$payload_dir" ]; then echo "build-sandbox-processing refuses symlinked payload directory: $$payload_dir" >&2; exit 1; fi; \
-	$(REQUIRE_SUPPORTED_ONNX_HOST); \
-	$(REQUIRE_ONNX_HOST_RUNTIME); \
+	$(MAKE) --no-print-directory check-rust-onnx-stage; \
 	$(VAD_ANALYZE_HOST_ORT_ENV) cargo build --manifest-path $(RUST_MANIFEST) -p solstone-core-speakers-analyze -p solstone-core-vad-analyze --locked; \
 	rm -rf -- "$$payload_dir"; \
 	mkdir -p "$$payload_dir"; \
