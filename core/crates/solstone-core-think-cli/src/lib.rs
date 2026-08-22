@@ -524,6 +524,11 @@ mod tests {
         finish_fields: Mutex<solstone_core_cortex_client::FinishFields>,
         dispatch_failure: Mutex<Option<context::DispatchFailure>>,
         dispatch_failures: Mutex<std::collections::BTreeMap<String, context::DispatchFailure>>,
+        end_states:
+            Mutex<std::collections::BTreeMap<String, solstone_core_cortex_client::UseEndState>>,
+        timed_out: Mutex<Vec<solstone_core_cortex_client::TimedOutUse>>,
+        omit_ids: Mutex<BTreeSet<String>>,
+        wait_error: Mutex<Option<String>>,
     }
 
     #[derive(Default)]
@@ -565,21 +570,34 @@ mod tests {
         ) -> Result<solstone_core_cortex_client::WaitForUsesReport, String> {
             self.waits.lock().unwrap().push(use_ids.to_vec());
             self.deadlines.lock().unwrap().push(deadline);
+            if let Some(error) = self.wait_error.lock().unwrap().clone() {
+                return Err(error);
+            }
+            let timed_out = self.timed_out.lock().unwrap().clone();
+            let omit_ids = self.omit_ids.lock().unwrap().clone();
+            let end_states = self.end_states.lock().unwrap().clone();
             let finish_fields = *self.finish_fields.lock().unwrap();
             Ok(solstone_core_cortex_client::WaitForUsesReport {
                 completed: use_ids
                     .iter()
+                    .filter(|id| {
+                        !timed_out.iter().any(|timeout| timeout.use_id() == *id)
+                            && !omit_ids.contains(*id)
+                    })
                     .map(|id| {
                         (
                             id.clone(),
                             solstone_core_cortex_client::UseCompletion {
-                                end_state: solstone_core_cortex_client::UseEndState::Finish,
+                                end_state: end_states
+                                    .get(id)
+                                    .copied()
+                                    .unwrap_or(solstone_core_cortex_client::UseEndState::Finish),
                                 finish_fields,
                             },
                         )
                     })
                     .collect(),
-                timed_out: Vec::new(),
+                timed_out,
             })
         }
     }
@@ -2639,6 +2657,13 @@ mod tests {
         let idle_result = run_segment(&context, journal.path(), "090000_300", false, false);
         assert_eq!((idle_result.success, idle_result.failed), (1, 0));
         assert_eq!(
+            canonical_terminals(
+                &jsonl_records(&journal.path().join("segment.jsonl")),
+                "sense"
+            ),
+            vec![("talent.complete", Some("use-1"), Some("finish"))]
+        );
+        assert_eq!(
             serde_json::from_slice::<Value>(&fs::read(idle.join("talents/density.json")).unwrap())
                 .unwrap()["classification"],
             "idle"
@@ -2672,6 +2697,13 @@ mod tests {
         );
         let redundant = run_segment(&context, journal.path(), "091000_300", false, false);
         assert_eq!((redundant.success, redundant.failed), (1, 0));
+        assert!(
+            canonical_terminals(
+                &jsonl_records(&journal.path().join("segment.jsonl")),
+                "sense"
+            )
+            .contains(&("talent.complete", Some("use-2"), Some("finish")))
+        );
         assert_eq!(
             serde_json::from_slice::<Value>(&fs::read(current.join("timeline.json")).unwrap())
                 .unwrap()["continuation_of"],
@@ -3587,6 +3619,484 @@ mod tests {
                 "Post-phase: journal indexer --rescan\n",
                 "Post-phase: journal journal-stats\n",
             )
+        );
+    }
+
+    fn jsonl_records(path: &Path) -> Vec<Value> {
+        fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
+    fn canonical_terminals<'a>(
+        records: &'a [Value],
+        name: &'a str,
+    ) -> Vec<(&'a str, Option<&'a str>, Option<&'a str>)> {
+        records
+            .iter()
+            .filter_map(|record| {
+                let event = record.get("event").and_then(Value::as_str)?;
+                if event != "talent.complete" && event != "talent.fail" {
+                    return None;
+                }
+                (record.get("name").and_then(Value::as_str) == Some(name)).then_some((
+                    event,
+                    record.get("use_id").and_then(Value::as_str),
+                    record.get("state").and_then(Value::as_str),
+                ))
+            })
+            .collect()
+    }
+
+    fn write_analyzed_screen(journal: &Path, day: &str, segment: &str) {
+        let path = segment_dir(journal, day, segment).join("screen.jsonl");
+        fs::write(path, "{\"timestamp\":\"2026-08-13T09:00:00Z\"}\n").unwrap();
+    }
+
+    fn transcripts_shell() -> axum::response::Response {
+        axum::response::Response::new(axum::body::Body::from("shell"))
+    }
+
+    fn segment_think(journal: &Path, day: &str, key: &str) -> Option<String> {
+        let runtime = dispatch::runtime().unwrap();
+        runtime.block_on(async {
+            use axum::body::{Body, to_bytes};
+            use axum::http::Request;
+            use chrono::TimeZone;
+            use tower::ServiceExt;
+            let app = solstone_core_transcripts_web::router(
+                journal.to_path_buf(),
+                solstone_core_transcripts_web::Clock::fixed(
+                    chrono::Utc.with_ymd_and_hms(2026, 8, 13, 12, 0, 0).unwrap(),
+                ),
+                transcripts_shell,
+            );
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/app/transcripts/api/segments/{day}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let payload: Value = serde_json::from_slice(&body).unwrap();
+            payload["segments"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|segment| segment["key"].as_str() == Some(key))
+                .and_then(|segment| segment["think"].as_str().map(str::to_owned))
+        })
+    }
+
+    fn floor_context(journal: &Path, roots: &Path) -> (context::ThinkContext, Arc<Recorder>) {
+        let (talent_root, apps_root) = talent_roots(
+            roots,
+            &[
+                (
+                    "sense",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":1,\"output\":\"json\"\n}",
+                ),
+                (
+                    "documents",
+                    "{\n\"type\":\"generate\",\"schedule\":\"segment\",\"priority\":2,\"output\":\"md\"\n}",
+                ),
+            ],
+        );
+        let (context, recorder) = recorder_context(journal, "20260813", 9);
+        (context.with_talent_roots(talent_root, apps_root), recorder)
+    }
+
+    #[test]
+    fn segment_drain_outcomes_emit_one_canonical_terminal_and_preserve_mode_result() {
+        struct Case {
+            name: &'static str,
+            configure: fn(&Recorder),
+            event: &'static str,
+            state: &'static str,
+            success: usize,
+            failed: usize,
+            failed_names: &'static [&'static str],
+            success_names: &'static [&'static str],
+            need_sense_output: bool,
+        }
+        let cases = [
+            Case {
+                name: "finish",
+                configure: |_| {},
+                event: "talent.complete",
+                state: "finish",
+                success: 1,
+                failed: 0,
+                failed_names: &[],
+                success_names: &["sense"],
+                need_sense_output: true,
+            },
+            Case {
+                name: "end_state",
+                configure: |recorder| {
+                    recorder.end_states.lock().unwrap().insert(
+                        "use-1".to_owned(),
+                        solstone_core_cortex_client::UseEndState::Error,
+                    );
+                },
+                event: "talent.fail",
+                state: "error",
+                success: 0,
+                failed: 1,
+                failed_names: &["sense (error)"],
+                success_names: &[],
+                need_sense_output: false,
+            },
+            Case {
+                name: "timeout",
+                configure: |recorder| {
+                    recorder.timed_out.lock().unwrap().push(
+                        solstone_core_cortex_client::TimedOutUse::GenuineTimeout {
+                            use_id: "use-1".to_owned(),
+                        },
+                    );
+                },
+                event: "talent.fail",
+                state: "timeout",
+                success: 0,
+                failed: 1,
+                failed_names: &["sense (timeout)"],
+                success_names: &[],
+                need_sense_output: false,
+            },
+            Case {
+                name: "lost",
+                configure: |recorder| {
+                    recorder.timed_out.lock().unwrap().push(
+                        solstone_core_cortex_client::TimedOutUse::LostAtDeadline {
+                            use_id: "use-1".to_owned(),
+                        },
+                    );
+                },
+                event: "talent.fail",
+                state: "lost",
+                success: 0,
+                failed: 1,
+                failed_names: &["sense (lost)"],
+                success_names: &[],
+                need_sense_output: false,
+            },
+            Case {
+                name: "missing_completion",
+                configure: |recorder| {
+                    recorder.omit_ids.lock().unwrap().insert("use-1".to_owned());
+                },
+                event: "talent.fail",
+                state: "missing_completion",
+                success: 0,
+                failed: 1,
+                failed_names: &["sense (unknown)"],
+                success_names: &[],
+                need_sense_output: false,
+            },
+            Case {
+                name: "wait_failed",
+                configure: |recorder| {
+                    *recorder.wait_error.lock().unwrap() = Some("unavailable".to_owned());
+                },
+                event: "talent.fail",
+                state: "wait_failed",
+                success: 0,
+                failed: 1,
+                failed_names: &["sense (unavailable)"],
+                success_names: &[],
+                need_sense_output: false,
+            },
+        ];
+        for case in cases {
+            let journal = tempdir().unwrap();
+            let roots = tempdir().unwrap();
+            let (context, recorder) = segment_context(
+                journal.path(),
+                roots.path(),
+                "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+            );
+            segment_dir(journal.path(), "20260813", "090000_300");
+            if case.need_sense_output {
+                write_sense_output(
+                    &context,
+                    "090000_300",
+                    serde_json::json!({"density":"active","content_type":"work"}),
+                );
+            }
+            (case.configure)(&recorder);
+            let result = run_segment(&context, journal.path(), "090000_300", false, false);
+            assert_eq!(
+                (
+                    result.success,
+                    result.failed,
+                    result.failed_names,
+                    result.success_names
+                ),
+                (
+                    case.success,
+                    case.failed,
+                    case.failed_names
+                        .iter()
+                        .map(|name| (*name).to_owned())
+                        .collect(),
+                    case.success_names
+                        .iter()
+                        .map(|name| (*name).to_owned())
+                        .collect(),
+                ),
+                "{}",
+                case.name
+            );
+            let records = jsonl_records(&journal.path().join("segment.jsonl"));
+            assert!(
+                records
+                    .iter()
+                    .all(|record| record.get("event").and_then(Value::as_str)
+                        != Some("talent.completed")),
+                "{}",
+                case.name
+            );
+            assert_eq!(
+                canonical_terminals(&records, "sense"),
+                vec![(case.event, Some("use-1"), Some(case.state))],
+                "{}",
+                case.name
+            );
+        }
+    }
+
+    #[test]
+    fn segment_post_drain_early_returns_keep_the_sense_finish_terminal() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, _) = segment_context(
+            journal.path(),
+            roots.path(),
+            "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
+        );
+        segment_dir(journal.path(), "20260813", "090000_300");
+        let output = sense_output_path(&context, "090000_300");
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(&output, "not json").unwrap();
+        let parse = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!(parse.failed_names, vec!["sense (output_parse)"]);
+        let parse_log = jsonl_records(&journal.path().join("segment.jsonl"));
+        assert_eq!(
+            canonical_terminals(&parse_log, "sense"),
+            vec![("talent.complete", Some("use-1"), Some("finish"))]
+        );
+
+        fs::write(&output, r#"{"density":1,"content_type":"work"}"#).unwrap();
+        let invalid = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!(invalid.failed_names, vec!["sense (output_invalid)"]);
+        let invalid_log = jsonl_records(&journal.path().join("segment.jsonl"));
+        assert_eq!(
+            canonical_terminals(&invalid_log, "sense").len(),
+            2,
+            "density non-string still terminalizes Sense"
+        );
+
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"idle","content_type":"idle"}),
+        );
+        let idle = run_segment(&context, journal.path(), "090000_300", false, false);
+        assert_eq!((idle.success, idle.failed), (1, 0));
+        assert!(
+            canonical_terminals(
+                &jsonl_records(&journal.path().join("segment.jsonl")),
+                "sense"
+            )
+            .len()
+                >= 3
+        );
+    }
+
+    #[test]
+    fn unmatched_latest_documents_dispatch_is_awaiting_until_its_use_id_completes() {
+        let journal = tempdir().unwrap();
+        write_analyzed_screen(journal.path(), "20260813", "090000_300");
+        let health = journal
+            .path()
+            .join("chronicle/20260813/health/9_segment.jsonl");
+        fs::create_dir_all(health.parent().unwrap()).unwrap();
+        let base = concat!(
+            r#"{"event":"sense.complete","ts":9,"mode":"segment","day":"20260813","stream":"default","segment":"090000_300","density":"active"}"#,
+            "\n",
+            r#"{"event":"talent.dispatch","ts":9,"mode":"segment","day":"20260813","stream":"default","segment":"090000_300","name":"documents","use_id":"old"}"#,
+            "\n",
+            r#"{"event":"talent.complete","ts":9,"mode":"segment","day":"20260813","stream":"default","segment":"090000_300","name":"documents","use_id":"old","state":"finish"}"#,
+            "\n",
+            r#"{"event":"talent.dispatch","ts":9,"mode":"segment","day":"20260813","stream":"default","segment":"090000_300","name":"documents","use_id":"new"}"#,
+            "\n",
+        );
+        fs::write(&health, base).unwrap();
+        let source = solstone_core_system_health::FilesystemHealthLogSource::new(journal.path());
+        let progress =
+            solstone_core_system_health::read_segment_progress(&source, "20260813").unwrap();
+        assert_eq!(
+            solstone_core_system_health::segment_fully_thought(
+                solstone_core_system_health::lookup_segment_progress(
+                    &progress.value,
+                    "default",
+                    "090000_300",
+                )
+            ),
+            solstone_core_system_health::ThoughtVerdict::Floor("documents".to_owned())
+        );
+        assert_eq!(
+            segment_think(journal.path(), "20260813", "090000_300").as_deref(),
+            Some("awaiting")
+        );
+
+        fs::write(
+            &health,
+            format!(
+                "{base}{}\n",
+                r#"{"event":"talent.complete","ts":9,"mode":"segment","day":"20260813","stream":"default","segment":"090000_300","name":"documents","use_id":"other","state":"finish"}"#
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            segment_think(journal.path(), "20260813", "090000_300").as_deref(),
+            Some("awaiting")
+        );
+
+        fs::write(
+            &health,
+            format!(
+                "{base}{}\n",
+                r#"{"event":"talent.complete","ts":9,"mode":"segment","day":"20260813","stream":"default","segment":"090000_300","name":"documents","use_id":"new","state":"finish"}"#
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            segment_think(journal.path(), "20260813", "090000_300").as_deref(),
+            Some("thought")
+        );
+    }
+
+    #[test]
+    fn composed_segment_run_log_drives_transcripts_thought_and_awaiting() {
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, recorder) = floor_context(journal.path(), roots.path());
+        write_analyzed_screen(journal.path(), "20260813", "090000_300");
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"work"}),
+        );
+        let log_path = run_log::path(&context.day_dir, context.now_ms, "segment");
+        let mut log = run_log::RunLogWriter::open(&log_path);
+        let result = segment::run(
+            &context,
+            &mut log,
+            "090000_300",
+            false,
+            Some("default"),
+            2,
+            Some(std::time::Duration::from_secs(610)),
+            false,
+            &[],
+        )
+        .unwrap();
+        assert_eq!((result.success, result.failed), (2, 0));
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
+        let records = jsonl_records(&log_path);
+        assert!(
+            records
+                .iter()
+                .all(|record| record.get("event").and_then(Value::as_str)
+                    != Some("talent.completed"))
+        );
+        for name in ["sense", "documents"] {
+            let terminals = canonical_terminals(&records, name);
+            assert_eq!(terminals.len(), 1, "{name}");
+            assert_eq!(terminals[0].0, "talent.complete");
+            assert_eq!(terminals[0].2, Some("finish"));
+            let use_id = terminals[0].1.expect("use_id");
+            assert!(records.iter().any(|record| {
+                record.get("event").and_then(Value::as_str) == Some("talent.dispatch")
+                    && record.get("name").and_then(Value::as_str) == Some(name)
+                    && record.get("use_id").and_then(Value::as_str) == Some(use_id)
+            }));
+        }
+        let source = solstone_core_system_health::FilesystemHealthLogSource::new(journal.path());
+        let progress =
+            solstone_core_system_health::read_segment_progress(&source, "20260813").unwrap();
+        let row = &progress.value[&solstone_core_system_health::SegmentIdentity {
+            stream: Some("default".to_owned()),
+            segment: "090000_300".to_owned(),
+        }];
+        assert!(row.completed.contains("sense"));
+        assert!(row.completed.contains("documents"));
+        assert_eq!(
+            segment_think(journal.path(), "20260813", "090000_300").as_deref(),
+            Some("thought")
+        );
+
+        let stripped = records
+            .iter()
+            .filter(|record| {
+                !matches!(
+                    record.get("event").and_then(Value::as_str),
+                    Some("talent.complete" | "talent.fail")
+                )
+            })
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        fs::write(&log_path, stripped).unwrap();
+        assert_eq!(
+            segment_think(journal.path(), "20260813", "090000_300").as_deref(),
+            Some("awaiting")
+        );
+    }
+
+    #[test]
+    fn unopenable_segment_sidecar_keeps_mode_result_warns_and_folds_awaiting() {
+        let _log_guard = capture_logs();
+        let journal = tempdir().unwrap();
+        let roots = tempdir().unwrap();
+        let (context, _) = floor_context(journal.path(), roots.path());
+        write_analyzed_screen(journal.path(), "20260813", "090000_300");
+        write_sense_output(
+            &context,
+            "090000_300",
+            serde_json::json!({"density":"active","content_type":"work"}),
+        );
+        let health = context.day_dir.join("health");
+        fs::write(&health, b"not a directory").unwrap();
+        let log_path = run_log::path(&context.day_dir, context.now_ms, "segment");
+        let mut log = run_log::RunLogWriter::open(&log_path);
+        assert_eq!(warnings().len(), 1);
+        let result = segment::run(
+            &context,
+            &mut log,
+            "090000_300",
+            false,
+            Some("default"),
+            2,
+            Some(std::time::Duration::from_secs(610)),
+            false,
+            &[],
+        )
+        .unwrap();
+        assert_eq!((result.success, result.failed), (2, 0));
+        assert_eq!(warnings().len(), 1);
+        assert_eq!(
+            segment_think(journal.path(), "20260813", "090000_300").as_deref(),
+            Some("awaiting")
         );
     }
 }

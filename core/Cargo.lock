@@ -4870,6 +4870,7 @@ dependencies = [
 name = "solstone-core-think-cli"
 version = "2.0.0"
 dependencies = [
+ "axum",
  "chrono",
  "filetime",
  "glob",
@@ -4893,8 +4894,10 @@ dependencies = [
  "solstone-core-system-health",
  "solstone-core-talent-config",
  "solstone-core-talent-runtime",
+ "solstone-core-transcripts-web",
  "tempfile",
  "tokio",
+ "tower",
 ]
 
 [[package]]
