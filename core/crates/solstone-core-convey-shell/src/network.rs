@@ -1323,7 +1323,6 @@ mod tests {
             "link-pair-link-label",
             "link-pair-link-input",
             "link-pair-link-copy",
-            "link-device-label",
             "link-pair-ca-fp",
             "link-pair-cancel",
             "link-pair-error",
@@ -1415,7 +1414,7 @@ mod tests {
         for expected in [
             "function applyCopy",
             "function findById",
-            "const NetworkRender = { applyCopy, resolve };",
+            "const NetworkRender = { applyCopy, resolve, initPairingCeremony };",
         ] {
             assert!(NETWORK_SCRIPT.contains(expected), "missing {expected}");
         }

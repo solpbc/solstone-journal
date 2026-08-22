@@ -134,6 +134,7 @@
             "CA_FP_LABEL": "fingerprint",
             "CA_FP_NOTE": "the device checks this when it scans, so no one on your wifi can impersonate home.",
             "CHECK_AGAIN_LABEL": "check again",
+            "CHECK_PAIRING_CTA": "check pairing",
             "DETAILS_DISCLOSURE": "verify this is really your home",
             "DEVICE_ACTION_LABELS": {
               "copy_fingerprint": "copy fingerprint",
@@ -187,7 +188,8 @@
             "PAIR_LINK_FIELD_LABEL": "pairing link",
             "PAIR_LINK_HOST": "go.solstone.app",
             "PAIR_LINK_PATH": "/p",
-            "PAIR_NETWORK_LINE": "this device needs to be on your network (or your VPN) to pair. expires in 5:00.",
+            "PAIR_NETWORK_LINE": "this device needs to be on your network (or your VPN) to pair. expires in {time}.",
+            "PAIR_START_FAIL_BODY": "couldn't start pairing. try again.",
             "PRESENTATION_COMPUTER_LABEL": "computer",
             "PRESENTATION_GLASSES_LABEL": "glasses",
             "PRESENTATION_PHONE_LABEL": "phone",

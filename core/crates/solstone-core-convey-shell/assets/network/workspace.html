@@ -1,6 +1,7 @@
+<script src="/static/pairing-qr.js"></script>
 <script src="/app/network/static/network.js"></script>
 
-<main id="link-workspace-root" class="link-dashboard">
+<main id="link-workspace-root" class="link-dashboard" tabindex="-1">
   <div id="link-state-gate" class="link-state-gate" aria-live="polite"></div>
   <div id="link-dashboard-content" hidden>
   <p class="link-brandlock"><span class="link-lockdot" aria-hidden="true"></span><span data-copy="BRANDLOCK_LINE"></span></p>
@@ -174,6 +175,56 @@
         </div>
       </div>
     </section>
+  </div>
+
+  <div id="link-pairing-dialog" class="modal" role="dialog" aria-modal="true" aria-labelledby="link-pairing-dialog-title" hidden>
+    <div class="modal-content link-pairing-content">
+      <button type="button" class="modal-close" data-pairing-action="close" aria-label="close">&times;</button>
+      <h3 id="link-pairing-dialog-title" data-copy="MODAL_TITLE"></h3>
+      <div id="link-pairing-starting" role="status" aria-busy="true">
+        <span class="surface-state-spinner" aria-hidden="true"></span>
+      </div>
+      <div id="link-pairing-material" hidden>
+        <p id="link-pairing-label-row" hidden><span id="link-device-label" aria-labelledby="link-pairing-dialog-title"></span></p>
+        <ol class="link-pairing-steps">
+          <li data-copy="STEP_1"></li>
+          <li data-copy="STEP_2"></li>
+          <li data-copy="STEP_3"></li>
+        </ol>
+        <p id="link-pairing-network-line" class="modal-warning" data-copy="PAIR_NETWORK_LINE"></p>
+        <div id="link-pairing-qr" class="link-pairing-qr"></div>
+        <div class="credential-label" data-copy="PAIR_LINK_FIELD_LABEL"></div>
+        <div class="command-box link-pairing-link-box">
+          <code id="link-pairing-link-value"></code>
+          <button type="button" class="copy-btn" data-pairing-action="copy" data-copy="PAIR_LINK_COPY_LABEL"></button>
+        </div>
+        <details class="link-pairing-details">
+          <summary data-copy="DETAILS_DISCLOSURE"></summary>
+          <p><span data-copy="CA_FP_LABEL"></span>: <code id="link-pairing-fingerprint"></code></p>
+          <p class="modal-warning" data-copy="CA_FP_NOTE"></p>
+        </details>
+        <div class="modal-actions">
+          <button type="button" id="link-pairing-check" class="modal-primary-btn" data-pairing-action="check" data-copy="CHECK_PAIRING_CTA" hidden></button>
+          <button type="button" data-pairing-action="close" data-copy="SUCCESS_DONE"></button>
+        </div>
+      </div>
+      <div id="link-pairing-expired" hidden>
+        <div class="modal-actions"><button type="button" class="modal-primary-btn" data-pairing-action="regenerate" data-copy="EXPIRED_BUTTON"></button></div>
+      </div>
+      <div id="link-pairing-unavailable" hidden>
+        <p data-copy="PAIR_START_FAIL_BODY"></p>
+        <div class="modal-actions"><button type="button" class="modal-primary-btn" data-pairing-action="regenerate" data-copy="CHECK_AGAIN_LABEL"></button></div>
+      </div>
+      <div id="link-pairing-window-closed" hidden>
+        <div class="modal-actions"><button type="button" class="modal-primary-btn" data-pairing-action="regenerate" data-copy="WINDOW_CLOSED_BUTTON"></button></div>
+      </div>
+      <div id="link-pairing-complete" hidden>
+        <h3 id="link-pairing-success-heading" data-copy="SUCCESS_HEADING"></h3>
+        <p id="link-pairing-success-subhead" data-copy="SUCCESS_SUBHEAD"></p>
+        <p class="modal-warning" data-copy="SUCCESS_VERIFY_NOTE"></p>
+        <div class="modal-actions"><button type="button" class="modal-primary-btn" data-pairing-action="close" data-copy="SUCCESS_DONE"></button></div>
+      </div>
+    </div>
   </div>
 
   <!-- Observer Key Modal (for viewing existing keys) -->
@@ -509,6 +560,35 @@
 #keyModal .modal-content {
   max-width: 600px;
   padding: 1.5em;
+}
+#link-pairing-dialog[hidden] {
+  display: none;
+}
+#link-pairing-dialog:not([hidden]) {
+  display: block;
+}
+#link-pairing-dialog .link-pairing-content {
+  max-width: 560px;
+}
+.link-pairing-steps {
+  padding-left: 1.4em;
+  line-height: 1.55;
+}
+.link-pairing-qr {
+  display: flex;
+  justify-content: center;
+  margin: 1em 0;
+}
+.link-pairing-qr svg {
+  max-width: 100%;
+  height: auto;
+}
+.link-pairing-link-box code {
+  display: block;
+  padding-right: 4.5em;
+}
+.link-pairing-details {
+  margin-top: 1em;
 }
 .modal-close {
   position: absolute;
@@ -1422,6 +1502,13 @@
   function initLink() {
     if (linkInitialized) return;
     linkInitialized = true;
+    window.linkPairingCeremony = window.NetworkRender?.initPairingCeremony?.({
+      beforeOpen() {
+        window.closeKeyModal?.();
+      },
+      clipboardWriteText,
+      showToast,
+    });
     refreshStatus();
     refreshPrivateLinkStatus();
     loadIdentity();
@@ -1481,11 +1568,14 @@ const GROUP_LABELS = {
 };
 
 function emptyStateHTML() {
-  return window.SurfaceState.empty({
-    heading: 'set up your first device',
+  const copy = (key) => window.NetworkRender?.resolve(window.LinkCopy, key) || '';
+  const empty = window.SurfaceState.empty({
+    heading: copy('DEVICE_EMPTY_TITLE'),
     headingLevel: 'h3',
-    desc: 'once you set one up, it\'ll show up here with what it\'s reported.'
+    desc: copy('DEVICE_EMPTY_BODY'),
+    action: `<button type="button" class="modal-primary-btn" data-pairing-action="open" data-copy="DEVICE_PAIR_CTA">${escapeHtml(copy('DEVICE_PAIR_CTA'))}</button>`,
   });
+  return empty;
 }
 
 function verdictAvailable(observer) {
@@ -1803,6 +1893,7 @@ async function viewObserverKey(keyPrefix, button) {
 }
 
 function showKeyModal(name, key, trigger) {
+  window.linkPairingCeremony?.close({ restoreFocus: false });
   modalObserverName.textContent = name;
   serverUrlText.textContent = window.location.origin;
   currentFullKey = key;

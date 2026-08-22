@@ -111,9 +111,9 @@ mod tests {
     }
 
     #[test]
-    fn network_copy_payload_has_exactly_109_constants() {
+    fn network_copy_payload_has_exactly_111_constants() {
         let network = payload(network_copy_json());
-        assert_eq!(network.len(), 109);
+        assert_eq!(network.len(), 111);
     }
 
     #[test]

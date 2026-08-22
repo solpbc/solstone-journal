@@ -17,9 +17,7 @@ PRESENTATION_GLASSES_LABEL = "glasses"
 STEP_1 = "open the camera on the device you're adding"
 STEP_2 = "point it at this code"
 STEP_3 = "tap the link to open solstone"
-PAIR_NETWORK_LINE = (
-    "this device needs to be on your network (or your VPN) to pair. expires in 5:00."
-)
+PAIR_NETWORK_LINE = "this device needs to be on your network (or your VPN) to pair. expires in {time}."
 DETAILS_DISCLOSURE = "verify this is really your home"
 CA_FP_LABEL = "fingerprint"
 CA_FP_NOTE = (
@@ -128,6 +126,8 @@ REACH_SPL_TRUST_LINE = (
 REACH_SPL_MANAGE_LABEL = "manage your private network at services.solstone.app →"
 REACH_SPL_CONNECTING_NOTE = "your home is connecting. this is usually quick."
 CHECK_AGAIN_LABEL = "check again"
+CHECK_PAIRING_CTA = "check pairing"
+PAIR_START_FAIL_BODY = "couldn't start pairing. try again."
 PRIVATE_LINK_DISABLE_CTA = "turn off your private network"
 PRIVATE_LINK_SETTING_UP = "setting up your private network…"
 PRIVATE_LINK_PORTAL_CTA = "continue to approve →"
