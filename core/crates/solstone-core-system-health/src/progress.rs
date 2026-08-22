@@ -8,10 +8,19 @@ use crate::read::read_day_records;
 use crate::{FoldRead, HealthError, HealthLogSource, SegmentIdentity, SegmentProgress};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SegmentTerminal {
+enum ProgressKind {
+    Dispatch,
     Complete,
     Fail,
     Capped,
+}
+
+#[derive(Debug, Clone)]
+struct ProgressRecord {
+    ts: i64,
+    sequence: usize,
+    kind: ProgressKind,
+    use_id: Option<String>,
 }
 
 pub fn read_segment_progress<S: HealthLogSource>(
@@ -21,10 +30,10 @@ pub fn read_segment_progress<S: HealthLogSource>(
     let scanned = read_day_records(source, day)?;
     let mut latest_sense: BTreeMap<SegmentIdentity, (i64, Option<String>)> = BTreeMap::new();
     let mut latest_change: BTreeMap<SegmentIdentity, (i64, Option<String>)> = BTreeMap::new();
-    let mut dispatched: BTreeMap<SegmentIdentity, BTreeSet<String>> = BTreeMap::new();
-    let mut terminals: BTreeMap<SegmentIdentity, BTreeMap<String, (i64, SegmentTerminal)>> =
+    let mut records: BTreeMap<SegmentIdentity, BTreeMap<String, Vec<ProgressRecord>>> =
         BTreeMap::new();
     let mut unconfigured: BTreeMap<SegmentIdentity, BTreeSet<String>> = BTreeMap::new();
+    let mut sequence = 0;
     for record in scanned.value {
         let Some(payload) = record.event.payload() else {
             continue;
@@ -49,32 +58,42 @@ pub fn read_segment_progress<S: HealthLogSource>(
                 record.ts,
                 payload.change_class.clone(),
             ),
-            HealthEvent::TalentDispatch(_) => {
-                if let Some(name) = payload.name.clone() {
-                    dispatched.entry(key).or_default().insert(name);
-                }
-            }
-            HealthEvent::TalentComplete(_) => update_terminal(
-                &mut terminals,
+            HealthEvent::TalentDispatch(_) => push_record(
+                &mut records,
+                &mut sequence,
                 key,
                 payload.name.clone(),
                 record.ts,
-                SegmentTerminal::Complete,
+                ProgressKind::Dispatch,
+                payload.use_id.clone(),
             ),
-            HealthEvent::TalentFail(_) => update_terminal(
-                &mut terminals,
+            HealthEvent::TalentComplete(_) => push_record(
+                &mut records,
+                &mut sequence,
                 key,
                 payload.name.clone(),
                 record.ts,
-                SegmentTerminal::Fail,
+                ProgressKind::Complete,
+                payload.use_id.clone(),
+            ),
+            HealthEvent::TalentFail(_) => push_record(
+                &mut records,
+                &mut sequence,
+                key,
+                payload.name.clone(),
+                record.ts,
+                ProgressKind::Fail,
+                payload.use_id.clone(),
             ),
             HealthEvent::TalentSkip(_) if payload.reason.as_deref() == Some("capped") => {
-                update_terminal(
-                    &mut terminals,
+                push_record(
+                    &mut records,
+                    &mut sequence,
                     key,
                     payload.name.clone(),
                     record.ts,
-                    SegmentTerminal::Capped,
+                    ProgressKind::Capped,
+                    payload.use_id.clone(),
                 )
             }
             HealthEvent::TalentSkip(_) if payload.reason.as_deref() == Some("no_config") => {
@@ -88,29 +107,35 @@ pub fn read_segment_progress<S: HealthLogSource>(
     let keys = latest_sense
         .keys()
         .chain(latest_change.keys())
-        .chain(dispatched.keys())
-        .chain(terminals.keys())
+        .chain(records.keys())
         .chain(unconfigured.keys())
         .cloned()
         .collect::<BTreeSet<_>>();
     let value = keys
         .into_iter()
         .map(|key| {
-            let terminal = terminals.get(&key);
-            let completed = terminal
-                .into_iter()
-                .flat_map(|entries| entries.iter())
-                .filter_map(|(name, (_, state))| {
-                    (*state == SegmentTerminal::Complete).then_some(name.clone())
-                })
-                .collect();
-            let capped_by_skip = terminal
-                .into_iter()
-                .flat_map(|entries| entries.iter())
-                .filter_map(|(name, (_, state))| {
-                    (*state == SegmentTerminal::Capped).then_some(name.clone())
-                })
-                .collect();
+            let mut dispatched = BTreeSet::new();
+            let mut completed = BTreeSet::new();
+            let mut capped_by_skip = BTreeSet::new();
+            if let Some(by_name) = records.remove(&key) {
+                for (name, mut entries) in by_name {
+                    entries.sort_by_key(|item| (item.ts, item.sequence));
+                    if entries
+                        .iter()
+                        .any(|item| item.kind == ProgressKind::Dispatch)
+                    {
+                        dispatched.insert(name.clone());
+                    }
+                    if qualifying_terminal(&entries)
+                        .is_some_and(|item| item.kind == ProgressKind::Capped)
+                    {
+                        capped_by_skip.insert(name.clone());
+                    }
+                    if name_is_completed(&entries) {
+                        completed.insert(name);
+                    }
+                }
+            }
             let progress = SegmentProgress {
                 sensed: latest_sense.contains_key(&key),
                 density: latest_sense
@@ -119,7 +144,7 @@ pub fn read_segment_progress<S: HealthLogSource>(
                 change_class: latest_change
                     .get(&key)
                     .and_then(|(_, change)| change.clone()),
-                dispatched: dispatched.remove(&key).unwrap_or_default(),
+                dispatched,
                 completed,
                 unconfigured: unconfigured.remove(&key).unwrap_or_default(),
                 capped_by_skip,
@@ -133,6 +158,30 @@ pub fn read_segment_progress<S: HealthLogSource>(
     })
 }
 
+fn push_record(
+    records: &mut BTreeMap<SegmentIdentity, BTreeMap<String, Vec<ProgressRecord>>>,
+    sequence: &mut usize,
+    key: SegmentIdentity,
+    name: Option<String>,
+    ts: i64,
+    kind: ProgressKind,
+    use_id: Option<String>,
+) {
+    let Some(name) = name else { return };
+    *sequence += 1;
+    records
+        .entry(key)
+        .or_default()
+        .entry(name)
+        .or_default()
+        .push(ProgressRecord {
+            ts,
+            sequence: *sequence,
+            kind,
+            use_id,
+        });
+}
+
 fn update_latest(
     values: &mut BTreeMap<SegmentIdentity, (i64, Option<String>)>,
     key: SegmentIdentity,
@@ -144,16 +193,36 @@ fn update_latest(
     }
 }
 
-fn update_terminal(
-    values: &mut BTreeMap<SegmentIdentity, BTreeMap<String, (i64, SegmentTerminal)>>,
-    key: SegmentIdentity,
-    name: Option<String>,
-    ts: i64,
-    state: SegmentTerminal,
-) {
-    let Some(name) = name else { return };
-    let terminals = values.entry(key).or_default();
-    if terminals.get(&name).is_none_or(|(latest, _)| ts >= *latest) {
-        terminals.insert(name, (ts, state));
+fn latest_terminal(entries: &[ProgressRecord]) -> Option<&ProgressRecord> {
+    entries
+        .iter()
+        .rfind(|item| item.kind != ProgressKind::Dispatch)
+}
+
+fn qualifying_terminal(entries: &[ProgressRecord]) -> Option<&ProgressRecord> {
+    let last_dispatch = entries
+        .iter()
+        .rfind(|item| item.kind == ProgressKind::Dispatch);
+    let Some(dispatch) = last_dispatch else {
+        return latest_terminal(entries);
+    };
+    // Legacy dispatch/terminal rows on disk predate use_id correlation and
+    // cannot be rewritten, so a missing use_id on either side falls back to
+    // record order.
+    entries.iter().rfind(|item| {
+        item.kind != ProgressKind::Dispatch
+            && (item.ts, item.sequence) > (dispatch.ts, dispatch.sequence)
+            && use_id_matches(&dispatch.use_id, &item.use_id)
+    })
+}
+
+fn name_is_completed(entries: &[ProgressRecord]) -> bool {
+    qualifying_terminal(entries).is_some_and(|item| item.kind == ProgressKind::Complete)
+}
+
+fn use_id_matches(dispatch: &Option<String>, terminal: &Option<String>) -> bool {
+    match (dispatch, terminal) {
+        (Some(left), Some(right)) => left == right,
+        _ => true,
     }
 }

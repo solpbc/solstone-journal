@@ -43,8 +43,11 @@ solstone-core-talent-runtime.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "time"] }
 
 [dev-dependencies]
+axum = { workspace = true, features = ["tokio"] }
 filetime = "0.2.29"
+solstone-core-transcripts-web.workspace = true
 tempfile = "3.24.0"
+tower.workspace = true
 
 [[test]]
 name = "think_cli_callosum_transport"

@@ -10,7 +10,9 @@ use std::process::ExitCode;
 
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value, json};
-use solstone_core_generate::{ContentPart, GenerateRequest, GenerateResponse, OneShotClient};
+use solstone_core_generate::{
+    ContentPart, GenerateRequest, GenerateResponse, OneShotClient, ReasonCodeValue, RefusedResponse,
+};
 use solstone_core_system_health::{DataState, read_segment_data_state};
 
 pub mod assemble;
@@ -159,6 +161,10 @@ pub enum RuntimeOutcome {
     },
     PrepareFailed(prepare::PrepareFailure),
     StageFailed(StageError),
+    GenerateRefused {
+        error: StageError,
+        response: Box<RefusedResponse>,
+    },
 }
 
 pub fn run_worker(_args: &[String], journal: &Path) -> ExitCode {
@@ -365,12 +371,10 @@ fn generate_and_write(
             response.text.clone()
         }
         Ok(GenerateResponse::Refused(response)) => {
-            return RuntimeOutcome::StageFailed(stage_error(
-                "generate",
-                "runtime",
-                prepared,
-                response.detail,
-            ));
+            return RuntimeOutcome::GenerateRefused {
+                error: stage_error("generate", "runtime", prepared, response.detail.clone()),
+                response: Box::new(response),
+            };
         }
         Err(error) => {
             return RuntimeOutcome::StageFailed(stage_error(
@@ -601,6 +605,20 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
         RuntimeOutcome::StageFailed(error) => emit(
             writer,
             json!({"event":"error", "terminal":true, "name":error.talent, "error":error.to_string()}),
+        ),
+        RuntimeOutcome::GenerateRefused { error, response } => emit(
+            writer,
+            json!({
+                "event": "error",
+                "terminal": true,
+                "name": error.talent,
+                "error": error.to_string(),
+                "reason": response.reason.as_str(),
+                "reason_code": response.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+                "retryable": response.retryable,
+                "blocking": response.blocking,
+                "provider": response.provider,
+            }),
         ),
     }
 }
@@ -1131,6 +1149,119 @@ mod tests {
         assert_eq!(error.phase, "commit");
         assert_eq!(error.stage, "story");
         assert_eq!(error.talent, "conversation");
+    }
+
+    #[test]
+    fn criterion_1_and_2_and_4_generate_refusal_preserves_structured_facts() {
+        let live_detail = "the configured provider could not produce a usable response";
+        let cases: [(&str, Option<&str>, bool, bool, bool, bool, &str); 3] = [
+            (
+                "known",
+                Some("provider_response_invalid"),
+                true,
+                false,
+                true,
+                false,
+                "openai",
+            ),
+            ("absent", None, false, true, false, true, "openai"),
+            (
+                "unknown",
+                Some("future_code"),
+                true,
+                false,
+                false,
+                true,
+                "openai",
+            ),
+        ];
+        for (label, reason_code, stub_retryable, stub_blocking, retryable, blocking, provider) in
+            cases
+        {
+            let (root, paths, context) = fixture(
+                "plain",
+                r#"{
+"type":"generate", "load":{"transcripts":false}
+}"#,
+            );
+            let client = OneShotClient::at_path(test_support::refused_one_shot_stub(
+                root.path(),
+                reason_code,
+                stub_retryable,
+                stub_blocking,
+                provider,
+                live_detail,
+            ));
+            let mut start = Vec::new();
+            let outcome = execute_request(
+                json!({"name":"plain", "day":"20260101", "prompt":"hello"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+                &paths,
+                &context,
+                &client,
+                &mut start,
+            );
+            let RuntimeOutcome::GenerateRefused { error, response } = &outcome else {
+                panic!("{label}: expected GenerateRefused, got {outcome:?}");
+            };
+            assert_eq!(error.phase, "generate", "{label}");
+            assert_eq!(error.stage, "runtime", "{label}");
+            assert_eq!(error.talent, "plain", "{label}");
+            assert_eq!(
+                response.reason.as_str(),
+                "provider-response-invalid",
+                "{label}"
+            );
+            assert_eq!(response.provider.as_deref(), Some(provider), "{label}");
+            assert_eq!(
+                response.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+                reason_code,
+                "{label}"
+            );
+            assert_eq!(response.retryable, retryable, "{label}");
+            assert_eq!(response.blocking, blocking, "{label}");
+            assert!(
+                !response
+                    .detail
+                    .contains("fixture provider-response-invalid"),
+                "{label}"
+            );
+            assert_eq!(&response.detail, live_detail, "{label}");
+            assert!(
+                !error
+                    .to_string()
+                    .contains("fixture provider-response-invalid"),
+                "{label}"
+            );
+            let mut emitted = Vec::new();
+            emit_outcome(&mut emitted, outcome);
+            let output_events = events(&emitted);
+            assert_eq!(output_events.len(), 1, "{label}");
+            let event = &output_events[0];
+            assert_eq!(event["event"], "error", "{label}");
+            assert_eq!(event["terminal"], true, "{label}");
+            assert_eq!(event["name"], "plain", "{label}");
+            let error_text = event["error"].as_str().expect("error string");
+            assert!(
+                error_text.contains("generate hook 'runtime' for talent 'plain'"),
+                "{label}: {error_text}"
+            );
+            assert!(error_text.contains(live_detail), "{label}: {error_text}");
+            assert!(
+                !error_text.contains("fixture provider-response-invalid"),
+                "{label}"
+            );
+            assert_eq!(event["reason"], "provider-response-invalid", "{label}");
+            match reason_code {
+                Some(code) => assert_eq!(event["reason_code"], code, "{label}"),
+                None => assert!(event["reason_code"].is_null(), "{label}"),
+            }
+            assert_eq!(event["retryable"], retryable, "{label}");
+            assert_eq!(event["blocking"], blocking, "{label}");
+            assert_eq!(event["provider"], provider, "{label}");
+        }
     }
 
     #[test]

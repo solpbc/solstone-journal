@@ -395,6 +395,14 @@ pub(crate) fn dispatch_direct(
     })
 }
 
+/// Per-use drain result visible to a mode-local observer. Fail carries the
+/// canonical `state` string for a run-log terminal; accounting stays in the drain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DrainOutcome {
+    Finish,
+    Fail(&'static str),
+}
+
 /// Shared equivalent of `_drain_priority_batch` (`thinking.py:991-1042`).
 /// The client policy is `think()` and its explicit outcome deadline is 610 seconds.
 pub(crate) fn drain(
@@ -410,6 +418,16 @@ pub(crate) fn drain_with_deadline(
     runtime: &tokio::runtime::Runtime,
     pending: Vec<PendingUse>,
     deadline: Option<Duration>,
+) -> ModeResult {
+    drain_with_deadline_observed(context, runtime, pending, deadline, &mut |_, _| {})
+}
+
+pub(crate) fn drain_with_deadline_observed(
+    context: &ThinkContext,
+    runtime: &tokio::runtime::Runtime,
+    pending: Vec<PendingUse>,
+    deadline: Option<Duration>,
+    observer: &mut dyn FnMut(&PendingUse, DrainOutcome),
 ) -> ModeResult {
     let mut result = ModeResult::default();
     if pending.is_empty() {
@@ -435,6 +453,7 @@ pub(crate) fn drain_with_deadline(
                             .as_deref()
                             .unwrap_or_else(|| timeout_cause(timeout)),
                     ));
+                    observer(&item, DrainOutcome::Fail(timeout_cause(timeout)));
                     continue;
                 }
                 match report.completed.get(&item.use_id) {
@@ -444,6 +463,7 @@ pub(crate) fn drain_with_deadline(
                         maybe_rescan_output(context, &item, completion);
                         result.success += 1;
                         result.success_names.push(label);
+                        observer(&item, DrainOutcome::Finish);
                     }
                     Some(completion) => {
                         result.failed += 1;
@@ -455,6 +475,7 @@ pub(crate) fn drain_with_deadline(
                                 completion.end_state.as_str(),
                             ),
                         ));
+                        observer(&item, DrainOutcome::Fail(completion.end_state.as_str()));
                     }
                     None => {
                         result.failed += 1;
@@ -462,6 +483,7 @@ pub(crate) fn drain_with_deadline(
                             &label,
                             &failure_cause(&context.journal, &item.use_id, "unknown"),
                         ));
+                        observer(&item, DrainOutcome::Fail("missing_completion"));
                     }
                 }
             }
@@ -475,6 +497,7 @@ pub(crate) fn drain_with_deadline(
                     &item_label(&item.name, item.facet.as_deref()),
                     &cause,
                 ));
+                observer(&item, DrainOutcome::Fail("wait_failed"));
             }
         }
     }

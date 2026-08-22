@@ -58,3 +58,36 @@ pub fn one_shot_stub_with_schema_validation(
     fs::set_permissions(&path, permissions).unwrap();
     path
 }
+
+/// Install a one-shot v2 refused-response stub and return its executable path.
+pub fn refused_one_shot_stub(
+    root: &std::path::Path,
+    reason_code: Option<&str>,
+    retryable: bool,
+    blocking: bool,
+    provider: &str,
+    detail: &str,
+) -> PathBuf {
+    let path = root.join("refused-one-shot-stub.sh");
+    let response = serde_json::json!({
+        "schema": "solstone-generate-response-v2",
+        "id": null,
+        "outcome": "refused",
+        "reason": "provider-response-invalid",
+        "reason_code": reason_code,
+        "retryable": retryable,
+        "blocking": blocking,
+        "reset_at_ms": null,
+        "provider": provider,
+        "detail": detail,
+    });
+    fs::write(
+        &path,
+        format!("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{}'\n", response),
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&path).unwrap().permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(&path, permissions).unwrap();
+    path
+}

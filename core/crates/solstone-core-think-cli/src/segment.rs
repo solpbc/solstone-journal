@@ -21,7 +21,8 @@ use solstone_core_talent_config::{
 
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
-    ModeResult, PendingUse, dispatch_direct, drain_with_deadline, merge_mode_result, runtime,
+    DrainOutcome, ModeResult, PendingUse, dispatch_direct, drain_with_deadline_observed,
+    merge_mode_result, runtime,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -220,7 +221,15 @@ pub(crate) fn run(
         ));
     }
     let result = sense_use.map_or_else(ModeResult::default, |sense_use| {
-        drain_with_deadline(context, &runtime, vec![sense_use], timeout)
+        drain_with_deadline_observed(
+            context,
+            &runtime,
+            vec![sense_use],
+            timeout,
+            &mut |item, outcome| {
+                log_use_terminal(log, context, segment, stream, item, outcome);
+            },
+        )
     });
     context.status.update(segment_status(
         context,
@@ -350,7 +359,16 @@ pub(crate) fn run(
             }
         }
         if max_concurrency != 0 && pending.len() as i64 >= max_concurrency {
-            drain_selected(context, &runtime, &mut pending, timeout, &mut total);
+            drain_selected(
+                context,
+                &runtime,
+                &mut pending,
+                timeout,
+                &mut total,
+                &mut |item, outcome| {
+                    log_use_terminal(log, context, segment, stream, item, outcome);
+                },
+            );
         }
         context.status.update(segment_status(
             context,
@@ -362,7 +380,16 @@ pub(crate) fn run(
     }
     // Source-derived, not measured: thinking.py:1994-2010 drains the final
     // partial selection batch; zero means one unlimited final batch.
-    drain_selected(context, &runtime, &mut pending, timeout, &mut total);
+    drain_selected(
+        context,
+        &runtime,
+        &mut pending,
+        timeout,
+        &mut total,
+        &mut |item, outcome| {
+            log_use_terminal(log, context, segment, stream, item, outcome);
+        },
+    );
     complete(log, context, segment, stream, total.clone());
     Ok(total)
 }
@@ -470,13 +497,14 @@ fn drain_selected(
     pending: &mut Vec<PendingUse>,
     timeout: Option<Duration>,
     total: &mut ModeResult,
+    observer: &mut dyn FnMut(&PendingUse, DrainOutcome),
 ) {
     if pending.is_empty() {
         return;
     }
     merge(
         total,
-        drain_with_deadline(context, runtime, std::mem::take(pending), timeout),
+        drain_with_deadline_observed(context, runtime, std::mem::take(pending), timeout, observer),
     );
 }
 
@@ -1067,6 +1095,31 @@ fn write_activity_provenance(
     }
     let bytes = serde_json::to_vec(&serde_json::json!({"schema_version":1,"facet":facet,"activity_id":activity_id,"input_hash":input_hash})).map_err(|error| error.to_string())?;
     atomic_replace(&path, &bytes, AtomicWriteOptions::default()).map_err(|error| error.to_string())
+}
+
+fn log_use_terminal(
+    log: &mut RunLogWriter<std::fs::File>,
+    context: &ThinkContext,
+    segment: &str,
+    stream: Option<&str>,
+    item: &PendingUse,
+    outcome: DrainOutcome,
+) {
+    let (event, state) = match outcome {
+        DrainOutcome::Finish => ("talent.complete", "finish"),
+        DrainOutcome::Fail(state) => ("talent.fail", state),
+    };
+    let fields = segment_event(
+        context,
+        segment,
+        stream,
+        Map::from_iter([
+            ("name".to_owned(), Value::String(item.name.clone())),
+            ("use_id".to_owned(), Value::String(item.use_id.clone())),
+            ("state".to_owned(), Value::String(state.to_owned())),
+        ]),
+    );
+    log.log(event, context.now_ms, fields);
 }
 
 fn log_dispatch(

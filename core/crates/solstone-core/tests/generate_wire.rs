@@ -753,8 +753,14 @@ fn lane_refusals_use_fixture_fields_without_network_calls() {
         assert_eq!(output.stderr, b"");
         let response = stdout_json(&output);
         let expected = &fixture_vector(vector_id)["response"];
-        for name in ["reason", "detail"] {
-            assert_eq!(response[name], expected[name], "{vector_id} {name}");
+        assert_eq!(response["reason"], expected["reason"], "{vector_id} reason");
+        if name == "google-missing-key" || name == "openai-missing-key" {
+            assert_eq!(
+                response["detail"], "the configured provider could not produce a usable response",
+                "{vector_id} detail"
+            );
+        } else {
+            assert_eq!(response["detail"], expected["detail"], "{vector_id} detail");
         }
         if name == "google-missing-key" {
             assert_eq!(response["provider"], "google");
@@ -802,9 +808,13 @@ fn unreachable_byo_endpoint_uses_the_endpoint_unreachable_code() {
     assert_eq!(output.stderr, b"");
     let response = stdout_json(&output);
     let expected = &fixture_vector("refused-provider-response-invalid")["response"];
-    for name in ["reason", "provider", "detail"] {
+    for name in ["reason", "provider"] {
         assert_eq!(response[name], expected[name], "{name}");
     }
+    assert_eq!(
+        response["detail"],
+        "the configured provider could not produce a usable response"
+    );
     assert_eq!(response["reason_code"], "local_endpoint_unreachable");
     assert_eq!(response["retryable"], true);
     assert_eq!(response["blocking"], true);
@@ -812,7 +822,7 @@ fn unreachable_byo_endpoint_uses_the_endpoint_unreachable_code() {
 }
 
 #[test]
-fn bundled_failure_uses_provider_response_invalid_fixture_details() {
+fn bundled_failure_uses_provider_response_invalid_reason() {
     let journal = root("bundled-failure");
     write_config(&journal, bundled_config(false));
     let (port, server) = serve(r#"{"choices":"bad"}"#);
@@ -822,9 +832,13 @@ fn bundled_failure_uses_provider_response_invalid_fixture_details() {
     assert_eq!(output.stderr, b"");
     let response = stdout_json(&output);
     let expected = &fixture_vector("refused-provider-response-invalid")["response"];
-    for name in ["reason", "provider", "detail"] {
+    for name in ["reason", "provider"] {
         assert_eq!(response[name], expected[name], "{name}");
     }
+    assert_eq!(
+        response["detail"],
+        "the configured provider could not produce a usable response"
+    );
     assert_eq!(response["reason_code"], "response_invalid");
     assert_eq!(response["retryable"], false);
     assert_eq!(response["blocking"], true);
