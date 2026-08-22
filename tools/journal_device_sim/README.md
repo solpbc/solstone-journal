@@ -34,6 +34,16 @@ The simulator stores native credentials under the run's private state
 directory, starts `solstone link serve --port 0 --direct`, reads the assigned
 loopback port from the native startup line, and owns only that child process.
 
+Unless `--bridge-url` is supplied, the native launcher defaults to the
+source-built `core/target/debug/solstone` in this checkout. Build it first with
+`make build`. The simulator never falls back to `PATH`: `--solstone-bin` is
+only accepted as an absolute override path, and bare or relative values are
+rejected. Before pairing, validating a pre-paired bundle, or starting a native
+bridge, it runs the selected launcher with `--help` and requires stdout byte 0
+to start with `solstone - journal access CLI`. This preflight is bounded and
+fail-closed; if it fails, recover by running `make build` or passing
+`--solstone-bin /abs/path/to/solstone`.
+
 For relay testing, `--carrier relay` invokes `solstone link serve --port 0
 --relay-only`. This policy excludes LAN endpoints even when the credential
 bundle contains them. The simulator records owned bridges as
@@ -159,7 +169,8 @@ not an ambiguous transport result.
 Outcomes are `PASS`, `FAIL`, `BLOCKED`, or `INCONCLUSIVE`. Evidence includes:
 
 - fixture and simulator source provenance;
-- the exact native executable path, digest, and available version string;
+- the native launcher selection mode, exact executable path, digest, and
+  available version string;
 - effective Convey targeting and carrier assurance;
 - the client certificate digest, derived device CID, and non-secret peer
   identity;
