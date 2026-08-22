@@ -685,9 +685,9 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 8633,
+          "text_bytes": 8624,
           "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
-          "text_sha256": "b00a3f844c069644f104e12531ef839ef0084fff08e8c3e9bb566143c1812e85"
+          "text_sha256": "fd6a69438a6e29f898945f39609ae7e2f0460b663ff2060673d5184fb523c18f"
         },
         "sends_idempotency_key": false
       },
@@ -1388,9 +1388,9 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 8633,
+          "text_bytes": 8624,
           "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
-          "text_sha256": "b00a3f844c069644f104e12531ef839ef0084fff08e8c3e9bb566143c1812e85"
+          "text_sha256": "fd6a69438a6e29f898945f39609ae7e2f0460b663ff2060673d5184fb523c18f"
         },
         "sends_idempotency_key": false
       },
@@ -3162,9 +3162,9 @@
             "Content-Type": "text/html; charset=utf-8"
           },
           "status": 200,
-          "text_bytes": 8633,
+          "text_bytes": 8624,
           "text_prefix": "<!DOCTYPE html>\n<!-- SPDX-License-Identifier: AGPL-3.0-only -->\n<!-- Copyright (c) 2026 sol pbc -->\n<html lang=\"en\" data-solstone-shell=\"spa\">\n<head>\n<script>\n  if (new URLSearchParams(window.location",
-          "text_sha256": "b00a3f844c069644f104e12531ef839ef0084fff08e8c3e9bb566143c1812e85"
+          "text_sha256": "fd6a69438a6e29f898945f39609ae7e2f0460b663ff2060673d5184fb523c18f"
         },
         "sends_idempotency_key": false
       },

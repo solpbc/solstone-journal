@@ -22,9 +22,7 @@ SPK_OVERVIEW_OWNER_BUILT_PREFIX = "built"
 SPK_OVERVIEW_OWNER_REFRESHED_PREFIX = "refreshed"
 SPK_OVERVIEW_OWNER_BUILT_UNKNOWN = "unknown"
 SPK_OWNER_TEACH_TITLE = "teach your voice"
-SPK_OWNER_TEACH_BODY = (
-    "pick longer statements that are yours. they keep your voice separate from other speakers."
-)
+SPK_OWNER_TEACH_BODY = "pick longer statements that are yours. they keep your voice separate from other speakers."
 SPK_OWNER_TEACH_START_LABEL = "start teaching"
 SPK_OWNER_TEACH_LOADING = "finding teachable statements..."
 SPK_OWNER_TEACH_PARTIAL = "some of today could not be included"
@@ -94,9 +92,7 @@ SPK_SHEET_TITLE = "someone keeps showing up"
 SPK_SHEET_LEDE_MANY = "this voice has shown up in {count} conversations, all kept in your journal. say who this is and they will be recognized from now on."
 SPK_SHEET_LEDE_ONE = "this voice has shown up in 1 conversation, kept in your journal. say who this is and they will be recognized from now on."
 SPK_SHELF_CANDIDATES = "these people were around this voice:"
-SPK_SHELF_NO_EVIDENCE = (
-    "nobody else was around this voice. search your people:"
-)
+SPK_SHELF_NO_EVIDENCE = "nobody else was around this voice. search your people:"
 SPK_EVIDENCE_SCREEN_MANY = "on screen in {count} of these conversations"
 SPK_EVIDENCE_SCREEN_ONE = "on screen in 1 of these conversations"
 SPK_EVIDENCE_MEETING_MANY = "in your meeting notes on {count} of those days"
@@ -165,10 +161,10 @@ OWNER_REJECTION_COOLDOWN_GUIDANCE = (
 OWNER_NEEDS_CONFIRM_VOICE_TEXT = (
     "a voice that sounds like you showed up. confirm it in speakers"
 )
-NEEDS_YOU_RECURRING_MANY = (
-    "a voice keeps showing up. it has been in {count} conversations, kept in your journal."
+NEEDS_YOU_RECURRING_MANY = "a voice keeps showing up. it has been in {count} conversations, kept in your journal."
+NEEDS_YOU_RECURRING_ONE = (
+    "a voice keeps showing up. it has been in 1 conversation, kept in your journal."
 )
-NEEDS_YOU_RECURRING_ONE = "a voice keeps showing up. it has been in 1 conversation, kept in your journal."
 TR_NOT_IN_NEW_VOICES = (
     "this voice isn't in new voices yet. it needs to show up a few more times."
 )

@@ -17,7 +17,9 @@ PRESENTATION_GLASSES_LABEL = "glasses"
 STEP_1 = "open the camera on the device you're adding"
 STEP_2 = "point it at this code"
 STEP_3 = "tap the link to open solstone"
-PAIR_NETWORK_LINE = "this device needs to be on your network (or your VPN) to pair. expires in {time}."
+PAIR_NETWORK_LINE = (
+    "this device needs to be on your network (or your VPN) to pair. expires in {time}."
+)
 DETAILS_DISCLOSURE = "verify this is really your home"
 CA_FP_LABEL = "fingerprint"
 CA_FP_NOTE = (

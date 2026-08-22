@@ -192,9 +192,7 @@ def main(*, root: Path = ROOT, paths: list[Path] | None = None) -> int:
     args = parser.parse_args()
 
     selected_paths = paths or (
-        _all_python_files(root=root)
-        if args.all
-        else _tracked_python_files(root=root)
+        _all_python_files(root=root) if args.all else _tracked_python_files(root=root)
     )
     findings = scan(selected_paths, root=root) + dependency_findings(root=root)
 

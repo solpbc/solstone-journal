@@ -337,8 +337,8 @@ def _brain_state_write_calls(root: Path, path: Path, text: str) -> list[Finding]
         tree = ast.parse(text, filename=str(path))
     except SyntaxError:
         return []
-    writer_aliases, helper_paths, helper_aliases, module_aliases = _brain_write_bindings(
-        tree
+    writer_aliases, helper_paths, helper_aliases, module_aliases = (
+        _brain_write_bindings(tree)
     )
     findings: list[Finding] = []
     for node in ast.walk(tree):
@@ -351,8 +351,10 @@ def _brain_state_write_calls(root: Path, path: Path, text: str) -> list[Finding]
             _contains_brain_path_literal(argument)
             for argument in (*node.args, *(keyword.value for keyword in node.keywords))
         )
-        helper_target = bool(node.args) and isinstance(node.args[0], ast.Name) and (
-            node.args[0].id in helper_paths
+        helper_target = (
+            bool(node.args)
+            and isinstance(node.args[0], ast.Name)
+            and (node.args[0].id in helper_paths)
         )
         inline_helper_target = bool(node.args) and _is_brain_path_helper_call(
             node.args[0], helper_aliases, module_aliases

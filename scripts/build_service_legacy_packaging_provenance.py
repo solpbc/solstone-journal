@@ -689,7 +689,9 @@ def canonicalize_wheel_sbom(path: Path, *, source_root: Path = ROOT) -> None:
     csv.writer(record, lineterminator="\n").writerows(rows)
     members[record_path] = record.getvalue().encode()
 
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", dir=path.parent
+    )
     os.close(descriptor)
     temporary = Path(temporary_name)
     try:

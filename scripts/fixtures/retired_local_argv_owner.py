@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 
+
 def _build_local_llama_cmd(plan, port):
     binary_path = _required_plan_path(plan.binary_path, "binary_path")
     model_path = _required_plan_path(plan.model_path, "model_path")

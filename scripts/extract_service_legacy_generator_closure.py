@@ -52,7 +52,9 @@ class Statement:
     def text(self) -> str:
         segment = ast.get_source_segment(self.source, self.node)
         if segment is None:
-            raise ClosureError(f"cannot recover source for {self.source_path}:{self.name}")
+            raise ClosureError(
+                f"cannot recover source for {self.source_path}:{self.name}"
+            )
         return segment
 
     def provenance(self) -> dict[str, object]:
@@ -130,7 +132,11 @@ class FreeNameCollector(ast.NodeVisitor):
 
 
 def _annotations(args: ast.arguments, returns: ast.expr | None) -> list[ast.expr]:
-    annotations = [argument.annotation for argument in [*args.posonlyargs, *args.args, *args.kwonlyargs] if argument.annotation]
+    annotations = [
+        argument.annotation
+        for argument in [*args.posonlyargs, *args.args, *args.kwonlyargs]
+        if argument.annotation
+    ]
     if args.vararg and args.vararg.annotation:
         annotations.append(args.vararg.annotation)
     if args.kwarg and args.kwarg.annotation:
@@ -141,7 +147,9 @@ def _annotations(args: ast.arguments, returns: ast.expr | None) -> list[ast.expr
 
 
 def _argument_names(args: ast.arguments) -> set[str]:
-    names = {argument.arg for argument in [*args.posonlyargs, *args.args, *args.kwonlyargs]}
+    names = {
+        argument.arg for argument in [*args.posonlyargs, *args.args, *args.kwonlyargs]
+    }
     if args.vararg:
         names.add(args.vararg.arg)
     if args.kwarg:
@@ -166,20 +174,30 @@ class ModuleScope:
     def _index(self) -> None:
         for node in self.tree.body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                self.bindings[node.name] = Statement(self.path, self.source, node, "definition", node.name)
+                self.bindings[node.name] = Statement(
+                    self.path, self.source, node, "definition", node.name
+                )
             elif isinstance(node, (ast.Assign, ast.AnnAssign)):
-                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                targets = (
+                    node.targets if isinstance(node, ast.Assign) else [node.target]
+                )
                 for target in targets:
                     for name in _bound_names(target):
-                        self.bindings[name] = Statement(self.path, self.source, node, "assignment", name)
+                        self.bindings[name] = Statement(
+                            self.path, self.source, node, "assignment", name
+                        )
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     name = alias.asname or alias.name.split(".", 1)[0]
-                    self.bindings[name] = Statement(self.path, self.source, node, "import", name)
+                    self.bindings[name] = Statement(
+                        self.path, self.source, node, "import", name
+                    )
             elif isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     name = alias.asname or alias.name
-                    self.bindings[name] = Statement(self.path, self.source, node, "import", name)
+                    self.bindings[name] = Statement(
+                        self.path, self.source, node, "import", name
+                    )
 
     def relative_path(self) -> str:
         try:
@@ -197,7 +215,9 @@ def _bound_names(node: ast.AST) -> set[str]:
 
 
 class ClosureExtractor:
-    def __init__(self, root: Path, service_path: Path, stdlib_modules: set[str]) -> None:
+    def __init__(
+        self, root: Path, service_path: Path, stdlib_modules: set[str]
+    ) -> None:
         self.root = root.resolve()
         self.stdlib_modules = stdlib_modules
         self.scopes: dict[Path, ModuleScope] = {}
@@ -220,13 +240,19 @@ class ClosureExtractor:
         imports = [statement.text for statement in import_statements]
         definitions = [statement.text for statement in self.definitions.values()]
         future = [statement.text for statement in future_statements]
-        future.extend(text for text in imports if text.startswith("from __future__ import "))
+        future.extend(
+            text for text in imports if text.startswith("from __future__ import ")
+        )
         future = list(dict.fromkeys(future))
         ordinary_imports = [text for text in imports if text not in future]
         source = "\n\n".join([*future, *ordinary_imports, *definitions]) + "\n"
         provenance = [
             _relative_provenance(statement, self.root)
-            for statement in [*future_statements, *import_statements, *self.definitions.values()]
+            for statement in [
+                *future_statements,
+                *import_statements,
+                *self.definitions.values(),
+            ]
         ]
         return source, provenance
 
@@ -235,7 +261,13 @@ class ClosureExtractor:
         for node in self.service.tree.body:
             if isinstance(node, ast.ImportFrom) and node.module == "__future__":
                 imports.append(
-                    Statement(self.service.path, self.service.source, node, "future_import", "__future__")
+                    Statement(
+                        self.service.path,
+                        self.service.source,
+                        node,
+                        "future_import",
+                        "__future__",
+                    )
                 )
         return imports
 
@@ -245,7 +277,9 @@ class ClosureExtractor:
         try:
             statement = scope.bindings[name]
         except KeyError as exc:
-            raise ClosureError(f"unresolved closure name {name!r} in {scope.relative_path()}") from exc
+            raise ClosureError(
+                f"unresolved closure name {name!r} in {scope.relative_path()}"
+            ) from exc
         key = (statement.path, statement.node.lineno)
         if key in self.definitions or key in self.imports or key in self.visiting:
             return
@@ -263,23 +297,37 @@ class ClosureExtractor:
     def resolve_import(self, scope: ModuleScope, statement: Statement) -> None:
         node = statement.node
         if isinstance(node, ast.Import):
-            alias = next(alias for alias in node.names if (alias.asname or alias.name.split(".", 1)[0]) == statement.name)
+            alias = next(
+                alias
+                for alias in node.names
+                if (alias.asname or alias.name.split(".", 1)[0]) == statement.name
+            )
             module = alias.name
             if self.is_stdlib(module):
-                self.imports[(statement.path, statement.node.lineno).__repr__()] = statement
+                self.imports[(statement.path, statement.node.lineno).__repr__()] = (
+                    statement
+                )
                 return
             first_party = self.module_file(scope, module, 0)
             if first_party is not None:
-                raise ClosureError(f"first-party module import requires a named symbol: {module}")
+                raise ClosureError(
+                    f"first-party module import requires a named symbol: {module}"
+                )
             raise ClosureError(f"third-party import in generator closure: {module}")
         if not isinstance(node, ast.ImportFrom):
             raise AssertionError(f"unexpected import node: {type(node).__name__}")
-        alias = next(alias for alias in node.names if (alias.asname or alias.name) == statement.name)
+        alias = next(
+            alias
+            for alias in node.names
+            if (alias.asname or alias.name) == statement.name
+        )
         module = node.module or ""
         first_party = self.module_file(scope, module, node.level)
         if first_party is not None:
             if alias.name == "*":
-                raise ClosureError(f"star import in generator closure: {scope.relative_path()}")
+                raise ClosureError(
+                    f"star import in generator closure: {scope.relative_path()}"
+                )
             self.resolve_name(self.scope_for(first_party), alias.name)
             return
         if self.is_stdlib(module):
@@ -295,7 +343,10 @@ class ClosureExtractor:
             package = scope.path.parent
             for _ in range(level - 1):
                 package = package.parent
-            parts = [*package.relative_to(self.root).parts, *filter(None, module.split("."))]
+            parts = [
+                *package.relative_to(self.root).parts,
+                *filter(None, module.split(".")),
+            ]
         else:
             parts = list(filter(None, module.split(".")))
         if not parts:
@@ -333,11 +384,15 @@ modules.update(name for _, name, _ in pkgutil.iter_modules([stdlib]))
 modules.update({"__future__", "builtins"})
 print(json.dumps(sorted(modules)))
 """
-    result = subprocess.run([str(python), "-c", program], check=True, capture_output=True, text=True)
+    result = subprocess.run(
+        [str(python), "-c", program], check=True, capture_output=True, text=True
+    )
     return set(json.loads(result.stdout))
 
 
-def capture_environment(python: Path, sandbox: Path, journal: Path, site_packages: Path) -> dict[str, str]:
+def capture_environment(
+    python: Path, sandbox: Path, journal: Path, site_packages: Path
+) -> dict[str, str]:
     return {
         "HOME": str(sandbox / "home"),
         "LANG": "C.UTF-8",
@@ -416,7 +471,14 @@ open(result_path, "w", encoding="utf-8").write(json.dumps(payload, indent=2, sor
     (sandbox / "home").mkdir()
     site_packages.mkdir()
     subprocess.run(
-        [str(python), "-c", program, str(source_file), str(request_file), str(result_file)],
+        [
+            str(python),
+            "-c",
+            program,
+            str(source_file),
+            str(request_file),
+            str(result_file),
+        ],
         check=True,
         cwd=sandbox,
         env=environment,
@@ -426,10 +488,18 @@ open(result_path, "w", encoding="utf-8").write(json.dumps(payload, indent=2, sor
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, required=True, help="historical checkout root")
-    parser.add_argument("--service", type=Path, required=True, help="service.py path relative to --root")
-    parser.add_argument("--python", type=Path, required=True, help="pinned interpreter executable")
-    parser.add_argument("--output", type=Path, required=True, help="scratch JSON output path")
+    parser.add_argument(
+        "--root", type=Path, required=True, help="historical checkout root"
+    )
+    parser.add_argument(
+        "--service", type=Path, required=True, help="service.py path relative to --root"
+    )
+    parser.add_argument(
+        "--python", type=Path, required=True, help="pinned interpreter executable"
+    )
+    parser.add_argument(
+        "--output", type=Path, required=True, help="scratch JSON output path"
+    )
     parser.add_argument("--port", type=int, default=5015)
     args = parser.parse_args()
     root = args.root.resolve()
@@ -450,7 +520,9 @@ def main() -> int:
         "synthetic_source": source,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return 0
 
 

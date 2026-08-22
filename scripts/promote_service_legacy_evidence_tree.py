@@ -47,15 +47,26 @@ def promote_tree(staged: Path, destination: Path, expected_files: int) -> None:
             raise PromotionError(
                 f"promotion failed and rollback also failed; current data is at {backup}: {rollback_error}"
             ) from error
-        raise PromotionError(f"promotion failed; restored previous fixture tree: {error}") from error
+        raise PromotionError(
+            f"promotion failed; restored previous fixture tree: {error}"
+        ) from error
     shutil.rmtree(backup)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--staged", type=Path, required=True, help="complete staged fixture directory")
-    parser.add_argument("--destination", type=Path, required=True, help="current fixture directory to replace")
-    parser.add_argument("--expected-files", type=int, required=True, help="required JSON fixture count")
+    parser.add_argument(
+        "--staged", type=Path, required=True, help="complete staged fixture directory"
+    )
+    parser.add_argument(
+        "--destination",
+        type=Path,
+        required=True,
+        help="current fixture directory to replace",
+    )
+    parser.add_argument(
+        "--expected-files", type=int, required=True, help="required JSON fixture count"
+    )
     args = parser.parse_args()
     promote_tree(args.staged.resolve(), args.destination.resolve(), args.expected_files)
     return 0

@@ -164,9 +164,7 @@ def active_sol_cli_reference_errors() -> list[str]:
         cwd=REPO_ROOT,
     )
     candidates = [
-        REPO_ROOT / path.decode("utf-8")
-        for path in tracked.split(b"\0")
-        if path
+        REPO_ROOT / path.decode("utf-8") for path in tracked.split(b"\0") if path
     ]
     for path in candidates:
         try:

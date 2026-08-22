@@ -24,7 +24,9 @@ RELAY_UNAVAILABLE = "relay_unavailable"
 RELAY_REJECTED = "relay_rejected"
 
 SPL_PRIVATE_LINK_ALREADY_ENABLED_DETAIL = "your private network is already on"
-SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL = "couldn't prepare the consent link"
+SPL_PRIVATE_LINK_CONSENT_LINK_PREPARE_FAILED_DETAIL = (
+    "couldn't prepare the consent link"
+)
 
 # Build-facing, literal-only subset for convey-shell's constrained parser.
 SPL_OUTCOME_GUIDANCE = {
