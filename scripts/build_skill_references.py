@@ -237,7 +237,13 @@ def _load_fragments() -> dict[str, Fragment]:
 
 def _command_names(app_name: str, source: Path) -> tuple[str, ...]:
     authority = (
-        ROOT / NATIVE_SOL_ROOT / "think" / "tools" / "native" / app_name / "authority.toml"
+        ROOT
+        / NATIVE_SOL_ROOT
+        / "think"
+        / "tools"
+        / "native"
+        / app_name
+        / "authority.toml"
         if app_name == "health"
         else ROOT / NATIVE_SOL_ROOT / "apps" / app_name / "native" / "authority.toml"
     )

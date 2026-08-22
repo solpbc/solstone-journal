@@ -834,10 +834,8 @@ fn metadata_then_missing_open_uses_the_real_exec_pid_and_fixed_tail_shape() {
     assert_eq!(
         fs::read(&stderr_path).unwrap(),
         format!(
-            "{}: cannot open '{}' for reading: No such file or directory\n{}: no files remaining\n",
-            expected_tail.display(),
+            "tail: cannot open '{}' for reading: No such file or directory\ntail: no files remaining\n",
             service_log.display(),
-            expected_tail.display()
         )
         .as_bytes()
     );

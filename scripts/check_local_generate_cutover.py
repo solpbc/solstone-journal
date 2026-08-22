@@ -94,11 +94,16 @@ def _bundled_calls(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast
     return walker.calls
 
 
-def scan_source(source: str, filename: str, relative: str) -> list[tuple[str, int, str]]:
+def scan_source(
+    source: str, filename: str, relative: str
+) -> list[tuple[str, int, str]]:
     tree = ast.parse(source, filename=filename)
     findings: list[tuple[str, int, str]] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name in RETIRED:
+        if (
+            isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name in RETIRED
+        ):
             findings.append((relative, node.lineno, f"retired symbol {node.name}"))
     for function in (
         node
@@ -109,7 +114,11 @@ def scan_source(source: str, filename: str, relative: str) -> list[tuple[str, in
         for call in _bundled_calls(function):
             if _forbidden_call(call):
                 findings.append(
-                    (relative, call.lineno, "bundled branch owns local transport/admission")
+                    (
+                        relative,
+                        call.lineno,
+                        "bundled branch owns local transport/admission",
+                    )
                 )
     return findings
 

@@ -4,6 +4,7 @@
 
 def run_generate(endpoint):
     if endpoint.is_bundled:
+
         def nested_helper():
             return resolve_context_window()
 

@@ -15,38 +15,76 @@ ROOT = Path(__file__).resolve().parent.parent
 OWNER_FUNCTIONS: frozenset[tuple[str, str]] = frozenset(
     {("solstone/apps/thinking/local_bootstrap.py", "_mark_native_launch_failure")}
 )
-TRANSPORT_MODULES = frozenset({
-    "solstone/think/providers/local_install.py",
-    "solstone/think/providers/mlx_install.py",
-})
-CALLER_MODULES = frozenset({
-    "solstone/think/install_provider.py",
-    "solstone/apps/thinking/local_bootstrap.py",
-})
-RETIRED_DEFINITIONS = frozenset({
-    "_safe_extract_tarball", "_download_file", "_chmod_executable",
-    "_clear_macos_quarantine", "_is_legacy_cuda_oci_tree",
-    "_cleanup_legacy_cuda_oci_dirs", "install_llama_server",
-    "_install_cuda_llama_server", "install_model", "_MLX_MODEL_REGISTRY",
-    "create_gemma4_variant", "_rewrite_config", "_rewrite_processor_config",
-    "_manifest_inventory_for_tree", "_write_snapshot_manifest", "_write_variant_manifest",
-    "_sha256_file", "_verify_sha256", "_write_vulkan_manifest",
-    "_write_cuda_manifest", "_write_model_manifest", "LLAMA_SERVER_PINS",
-    "CUDA_SERVER_PIN",
-})
-RETIRED_LOCAL_REFERENCES = frozenset({
-    "CUDA_SERVER_PIN", "LLAMA_SERVER_PINS", "_safe_extract_tarball",
-    "_download_file", "_chmod_executable", "_clear_macos_quarantine",
-    "_is_legacy_cuda_oci_tree", "_cleanup_legacy_cuda_oci_dirs",
-    "install_llama_server", "_install_cuda_llama_server", "install_model",
-    "_sha256_file", "_verify_sha256", "_write_vulkan_manifest",
-    "_write_cuda_manifest", "_write_model_manifest",
-})
-RETIRED_MLX_REFERENCES = frozenset({
-    "_MLX_MODEL_REGISTRY", "create_gemma4_variant", "_rewrite_config",
-    "_rewrite_processor_config", "_manifest_inventory_for_tree",
-    "_write_snapshot_manifest", "_write_variant_manifest",
-})
+TRANSPORT_MODULES = frozenset(
+    {
+        "solstone/think/providers/local_install.py",
+        "solstone/think/providers/mlx_install.py",
+    }
+)
+CALLER_MODULES = frozenset(
+    {
+        "solstone/think/install_provider.py",
+        "solstone/apps/thinking/local_bootstrap.py",
+    }
+)
+RETIRED_DEFINITIONS = frozenset(
+    {
+        "_safe_extract_tarball",
+        "_download_file",
+        "_chmod_executable",
+        "_clear_macos_quarantine",
+        "_is_legacy_cuda_oci_tree",
+        "_cleanup_legacy_cuda_oci_dirs",
+        "install_llama_server",
+        "_install_cuda_llama_server",
+        "install_model",
+        "_MLX_MODEL_REGISTRY",
+        "create_gemma4_variant",
+        "_rewrite_config",
+        "_rewrite_processor_config",
+        "_manifest_inventory_for_tree",
+        "_write_snapshot_manifest",
+        "_write_variant_manifest",
+        "_sha256_file",
+        "_verify_sha256",
+        "_write_vulkan_manifest",
+        "_write_cuda_manifest",
+        "_write_model_manifest",
+        "LLAMA_SERVER_PINS",
+        "CUDA_SERVER_PIN",
+    }
+)
+RETIRED_LOCAL_REFERENCES = frozenset(
+    {
+        "CUDA_SERVER_PIN",
+        "LLAMA_SERVER_PINS",
+        "_safe_extract_tarball",
+        "_download_file",
+        "_chmod_executable",
+        "_clear_macos_quarantine",
+        "_is_legacy_cuda_oci_tree",
+        "_cleanup_legacy_cuda_oci_dirs",
+        "install_llama_server",
+        "_install_cuda_llama_server",
+        "install_model",
+        "_sha256_file",
+        "_verify_sha256",
+        "_write_vulkan_manifest",
+        "_write_cuda_manifest",
+        "_write_model_manifest",
+    }
+)
+RETIRED_MLX_REFERENCES = frozenset(
+    {
+        "_MLX_MODEL_REGISTRY",
+        "create_gemma4_variant",
+        "_rewrite_config",
+        "_rewrite_processor_config",
+        "_manifest_inventory_for_tree",
+        "_write_snapshot_manifest",
+        "_write_variant_manifest",
+    }
+)
 RETIRED_IMPORTS = frozenset({"tarfile", "hashlib", "httpx"})
 
 
@@ -60,7 +98,9 @@ def _call_name(node: ast.Call) -> str | None:
 
 def _local_argument(node: ast.Call) -> bool:
     values = [*node.args, *(keyword.value for keyword in node.keywords)]
-    return any(isinstance(value, ast.Constant) and value.value == "local" for value in values)
+    return any(
+        isinstance(value, ast.Constant) and value.value == "local" for value in values
+    )
 
 
 class _BodyWalker(ast.NodeVisitor):
@@ -76,27 +116,46 @@ class _BodyWalker(ast.NodeVisitor):
         return None
 
     def visit_Import(self, node: ast.Import) -> None:
-        if self.relative_path in TRANSPORT_MODULES and any(alias.name.split(".")[0] in RETIRED_IMPORTS for alias in node.names):
+        if self.relative_path in TRANSPORT_MODULES and any(
+            alias.name.split(".")[0] in RETIRED_IMPORTS for alias in node.names
+        ):
             self.findings.append((self.relative_path, node.lineno, self.function_name))
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        if self.relative_path in TRANSPORT_MODULES and node.module and node.module.split(".")[0] in RETIRED_IMPORTS:
+        if (
+            self.relative_path in TRANSPORT_MODULES
+            and node.module
+            and node.module.split(".")[0] in RETIRED_IMPORTS
+        ):
             self.findings.append((self.relative_path, node.lineno, self.function_name))
 
     def visit_Call(self, node: ast.Call) -> None:
-        if self.relative_path in CALLER_MODULES and (self.relative_path, self.function_name) not in OWNER_FUNCTIONS:
-            if _call_name(node) in {"acquire_install_lease", "begin_or_replace_install_attempt"} and _local_argument(node):
-                self.findings.append((self.relative_path, node.lineno, self.function_name))
+        if (
+            self.relative_path in CALLER_MODULES
+            and (self.relative_path, self.function_name) not in OWNER_FUNCTIONS
+        ):
+            if _call_name(node) in {
+                "acquire_install_lease",
+                "begin_or_replace_install_attempt",
+            } and _local_argument(node):
+                self.findings.append(
+                    (self.relative_path, node.lineno, self.function_name)
+                )
         self.generic_visit(node)
 
 
-def scan_source(source: str, filename: str, relative_path: str) -> list[tuple[str, int, str]]:
+def scan_source(
+    source: str, filename: str, relative_path: str
+) -> list[tuple[str, int, str]]:
     tree = ast.parse(source, filename=filename)
     findings: list[tuple[str, int, str]] = []
     for node in tree.body:
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            if relative_path in TRANSPORT_MODULES and any(isinstance(target, ast.Name) and target.id in RETIRED_DEFINITIONS for target in targets):
+            if relative_path in TRANSPORT_MODULES and any(
+                isinstance(target, ast.Name) and target.id in RETIRED_DEFINITIONS
+                for target in targets
+            ):
                 findings.append((relative_path, node.lineno, "<module>"))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             if relative_path in TRANSPORT_MODULES and node.name in RETIRED_DEFINITIONS:
@@ -112,8 +171,12 @@ def scan_source(source: str, filename: str, relative_path: str) -> list[tuple[st
     return findings
 
 
-def scan_file(path: Path, relative_path: str | None = None) -> list[tuple[str, int, str]]:
-    return scan_source(path.read_text(encoding="utf-8"), str(path), relative_path or path.as_posix())
+def scan_file(
+    path: Path, relative_path: str | None = None
+) -> list[tuple[str, int, str]]:
+    return scan_source(
+        path.read_text(encoding="utf-8"), str(path), relative_path or path.as_posix()
+    )
 
 
 def scan_directory(directory: Path) -> list[tuple[str, int, str]]:
@@ -122,8 +185,12 @@ def scan_directory(directory: Path) -> list[tuple[str, int, str]]:
         name = path.relative_to(directory).as_posix()
         source = path.read_text(encoding="utf-8")
         # Negative twins exercise both rule families without mirroring production paths.
-        findings.extend(scan_source(source, str(path), "solstone/think/providers/local_install.py"))
-        findings.extend(scan_source(source, str(path), "solstone/apps/thinking/local_bootstrap.py"))
+        findings.extend(
+            scan_source(source, str(path), "solstone/think/providers/local_install.py")
+        )
+        findings.extend(
+            scan_source(source, str(path), "solstone/apps/thinking/local_bootstrap.py")
+        )
         findings = [(name, line, function) for _path, line, function in findings]
     return findings
 
@@ -194,8 +261,7 @@ def scan_retired_references(root: Path) -> list[tuple[str, int, str]]:
                     node.value.id in local_modules
                     and node.attr in RETIRED_LOCAL_REFERENCES
                 ) or (
-                    node.value.id in mlx_modules
-                    and node.attr in RETIRED_MLX_REFERENCES
+                    node.value.id in mlx_modules and node.attr in RETIRED_MLX_REFERENCES
                 ):
                     findings.append((relative, node.lineno, "retired_reference"))
     return findings
@@ -211,7 +277,9 @@ def scan_production(root: Path) -> list[tuple[str, int, str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check local install transport ownership")
+    parser = argparse.ArgumentParser(
+        description="Check local install transport ownership"
+    )
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args(argv)
     findings = scan_production(args.root)

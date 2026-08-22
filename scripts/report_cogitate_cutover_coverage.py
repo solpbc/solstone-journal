@@ -61,14 +61,16 @@ def coverage(paths: list[Path], *, root: Path) -> Counter[str]:
 
 def main(*, root: Path = checker.ROOT, paths: list[Path] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--all", action="store_true", help="inspect every file on disk"
-    )
+    parser.add_argument("--all", action="store_true", help="inspect every file on disk")
     args = parser.parse_args()
-    selected_paths = paths if paths is not None else (
-        checker._all_python_files(root=root)
-        if args.all
-        else checker._tracked_python_files(root=root)
+    selected_paths = (
+        paths
+        if paths is not None
+        else (
+            checker._all_python_files(root=root)
+            if args.all
+            else checker._tracked_python_files(root=root)
+        )
     )
     counts = coverage(selected_paths, root=root)
     findings = checker.scan(selected_paths, root=root)

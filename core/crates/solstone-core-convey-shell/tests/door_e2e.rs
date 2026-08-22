@@ -2915,7 +2915,7 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
         ));
         let door_base = pairing_router(&fixture, pairing_snapshot());
         let handle = bind_with_authorization(
-            options(&fixture, pairing_router(&fixture, pairing_snapshot()), 7657),
+            options(&fixture, pairing_router(&fixture, pairing_snapshot()), 0),
             solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
                 door_base,
                 fixture.root.clone(),
@@ -2925,7 +2925,39 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
         )
         .await
         .expect("serve relay pairing Door");
-        assert_eq!(door_port(handle.door_outcome()), 7657);
+        let port = door_port(handle.door_outcome());
+        assert_ne!(port, 0, "relay pairing Door must bind an OS-selected port");
+
+        let other_fixture = Fixture::established(0);
+        let (other_authorization_sender, other_authorization) = watch::channel(
+            DeviceDoorAuthorization::from(AuthorizedClientsRead::Missing),
+        );
+        let other_door_base = pairing_router(&other_fixture, pairing_snapshot());
+        let other_handle = bind_with_authorization(
+            options(
+                &other_fixture,
+                pairing_router(&other_fixture, pairing_snapshot()),
+                0,
+            ),
+            solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+                other_door_base,
+                other_fixture.root.clone(),
+                other_authorization,
+            ),
+            other_authorization_sender,
+        )
+        .await
+        .expect("serve concurrent relay pairing Door");
+        let other_port = door_port(other_handle.door_outcome());
+        assert_ne!(
+            other_port, 0,
+            "concurrent relay pairing Door must bind a port"
+        );
+        assert_ne!(
+            port, other_port,
+            "concurrent Doors must not share a fixed port"
+        );
+        other_handle.shutdown();
 
         let mint_a = mint_relay_from_loopback(&handle, "relay phone A").await;
         let nonce_a = mint_a["nonce"].as_str().expect("relay nonce A").to_owned();
@@ -2941,7 +2973,7 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
             "the relay-only fixture has no direct pairing nonce"
         );
 
-        let error = tls_handshake(test_client_config(&[&rustls::version::TLS13], None), 7657)
+        let error = tls_handshake(test_client_config(&[&rustls::version::TLS13], None), port)
             .await
             .expect_err("an unregistered loopback address cannot claim relay A admission");
         assert!(matches!(
@@ -2953,7 +2985,7 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
 
         let direct = mint_from_loopback(&handle, "direct phone").await;
         let direct_nonce = direct["nonce"].as_str().expect("direct nonce");
-        let mut direct_carrier = live_certless_carrier(7657)
+        let mut direct_carrier = live_certless_carrier(port)
             .await
             .expect("direct pairing carrier");
         let direct_relay_attempt = post_pair_over_certless_stream(
@@ -3046,7 +3078,7 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
         );
 
         let direct_response = post_pair_over_certless_carrier(
-            7657,
+            port,
             Some(direct_nonce),
             serde_json::json!({
                 "csr": csr_pem("direct phone"),

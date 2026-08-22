@@ -176,6 +176,13 @@ fn write_host_makefile(root: &Path, system: &str, arch: &str) {
         );
     }
     fs::write(root.join("Makefile"), makefile).expect("write host Makefile fixture");
+    let live_use_script = root.join("scripts/check_rust_target_live_use.sh");
+    fs::create_dir_all(live_use_script.parent().expect("live-use script parent"))
+        .expect("create live-use script parent");
+    write_executable(
+        &live_use_script,
+        include_str!("../../../../../scripts/check_rust_target_live_use.sh"),
+    );
     fs::create_dir_all(root.join("core")).expect("create fixture core directory");
     fs::write(root.join("core/Cargo.toml"), "[workspace]\nmembers = []\n")
         .expect("write fixture Cargo manifest");

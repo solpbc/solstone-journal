@@ -57,9 +57,7 @@ def _source_files(root: Path) -> list[Path]:
 
 def _rust_files(root: Path) -> list[Path]:
     return sorted(
-        path
-        for path in (root / "core").rglob("*.rs")
-        if "tests" not in path.parts
+        path for path in (root / "core").rglob("*.rs") if "tests" not in path.parts
     )
 
 
@@ -72,7 +70,11 @@ def _call_name(node: ast.Call) -> str | None:
 
 
 def _literal_string(node: ast.AST) -> str | None:
-    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+    return (
+        node.value
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        else None
+    )
 
 
 def _python_findings(root: Path, path: Path) -> list[Finding]:
@@ -91,23 +93,52 @@ def _python_findings(root: Path, path: Path) -> list[Finding]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if _matches_python_module(alias.name):
-                    add(node.lineno, "served-python-coupling", alias.name, "production import reaches the Python thinking module")
+                    add(
+                        node.lineno,
+                        "served-python-coupling",
+                        alias.name,
+                        "production import reaches the Python thinking module",
+                    )
         elif isinstance(node, ast.ImportFrom) and node.module:
-            imports_parent_thinking = (
-                node.module in {"solstone.apps", "apps"}
-                and any(alias.name == "thinking" for alias in node.names)
+            imports_parent_thinking = node.module in {"solstone.apps", "apps"} and any(
+                alias.name == "thinking" for alias in node.names
             )
-            imports_thinking = _matches_python_module(node.module) or imports_parent_thinking
+            imports_thinking = (
+                _matches_python_module(node.module) or imports_parent_thinking
+            )
             if imports_thinking:
-                detail = f"{node.module}.thinking" if imports_parent_thinking else node.module
-                add(node.lineno, "served-python-coupling", detail, "production import reaches the Python thinking module")
+                detail = (
+                    f"{node.module}.thinking"
+                    if imports_parent_thinking
+                    else node.module
+                )
+                add(
+                    node.lineno,
+                    "served-python-coupling",
+                    detail,
+                    "production import reaches the Python thinking module",
+                )
         elif isinstance(node, ast.Call):
             name = _call_name(node)
             first = _literal_string(node.args[0]) if node.args else None
-            if name in {"import_module", "importlib.import_module"} and first and _matches_python_module(first):
-                add(node.lineno, "served-python-coupling", first, "runtime module-name import reaches the Python thinking module")
+            if (
+                name in {"import_module", "importlib.import_module"}
+                and first
+                and _matches_python_module(first)
+            ):
+                add(
+                    node.lineno,
+                    "served-python-coupling",
+                    first,
+                    "runtime module-name import reaches the Python thinking module",
+                )
             elif name == "url_for" and first and first.startswith("app:thinking."):
-                add(node.lineno, "served-python-coupling", first, "request-time endpoint name requires the Python thinking blueprint")
+                add(
+                    node.lineno,
+                    "served-python-coupling",
+                    first,
+                    "request-time endpoint name requires the Python thinking blueprint",
+                )
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             if _matches_python_module(node.value):
                 add(
@@ -265,9 +296,7 @@ def scan(root: Path) -> tuple[list[Finding], list[Finding]]:
         for path in _source_files(root)
         for finding in _python_findings(root, path)
     ] + [
-        finding
-        for path in _rust_files(root)
-        for finding in _rust_findings(root, path)
+        finding for path in _rust_files(root) for finding in _rust_findings(root, path)
     ]
     findings.sort(key=lambda item: (item.file, item.line, item.kind, item.detail))
     return (
@@ -284,24 +313,37 @@ def _print_finding(finding: Finding) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--json", action="store_true", help="emit machine-readable findings")
+    parser.add_argument(
+        "--json", action="store_true", help="emit machine-readable findings"
+    )
     args = parser.parse_args(argv)
     blocking, recorded = scan(ROOT)
     if args.json:
-        print(json.dumps({
-            "blocking": [asdict(item) for item in blocking],
-            "recorded": [asdict(item) for item in recorded],
-            "blocking_count": len(blocking),
-            "recorded_count": len(recorded),
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "blocking": [asdict(item) for item in blocking],
+                    "recorded": [asdict(item) for item in recorded],
+                    "blocking_count": len(blocking),
+                    "recorded_count": len(recorded),
+                },
+                indent=2,
+            )
+        )
     else:
-        print(f"thinking cutover: {len(blocking)} blocking finding(s); {len(recorded)} recorded finding(s)")
+        print(
+            f"thinking cutover: {len(blocking)} blocking finding(s); {len(recorded)} recorded finding(s)"
+        )
         for finding in [*blocking, *recorded]:
             _print_finding(finding)
         if blocking:
-            print("\nShipped request code or native build inputs still reach the Python thinking tree.")
+            print(
+                "\nShipped request code or native build inputs still reach the Python thinking tree."
+            )
         else:
-            print("\nthinking cutover: clean -- no shipped request or native build input reaches the Python thinking tree.")
+            print(
+                "\nthinking cutover: clean -- no shipped request or native build input reaches the Python thinking tree."
+            )
     return 1 if blocking else 0
 
 

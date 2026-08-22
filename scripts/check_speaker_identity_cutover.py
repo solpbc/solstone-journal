@@ -725,7 +725,10 @@ def check(root: Path, census_path: Path, *, all_files: bool = False) -> list[Fin
     ]
 
     for entry in expected_entries:
-        if entry.role == ENTITY_MERGE_WRITER_ROLE and not _entity_merge_writer_entry_is_valid(entry):
+        if (
+            entry.role == ENTITY_MERGE_WRITER_ROLE
+            and not _entity_merge_writer_entry_is_valid(entry)
+        ):
             findings.append(
                 Finding(
                     f"{entry.file}:{entry.line}",

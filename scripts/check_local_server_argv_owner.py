@@ -24,8 +24,10 @@ _LOCAL_PROCESS_NAMES: frozenset[str] = frozenset(
 
 
 def _is_test_file(rel: Path) -> bool:
-    return "tests" in rel.parts or rel.name == "conftest.py" or (
-        rel.name.startswith("test_") and rel.suffix == ".py"
+    return (
+        "tests" in rel.parts
+        or rel.name == "conftest.py"
+        or (rel.name.startswith("test_") and rel.suffix == ".py")
     )
 
 
@@ -60,9 +62,13 @@ def _assigned_names(node: ast.AST) -> set[str]:
 
 
 def _is_launch_call(node: ast.Call) -> bool:
-    return isinstance(node.func, ast.Name) and node.func.id == "_launch_process" and any(
-        isinstance(argument, ast.Name) and argument.id in _LOCAL_PROCESS_NAMES
-        for argument in node.args
+    return (
+        isinstance(node.func, ast.Name)
+        and node.func.id == "_launch_process"
+        and any(
+            isinstance(argument, ast.Name) and argument.id in _LOCAL_PROCESS_NAMES
+            for argument in node.args
+        )
     )
 
 
@@ -110,11 +116,11 @@ class _FunctionBodyWalker(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def _is_local_server_argv(
-    values: set[str], *, launched_as_local_process: bool
-) -> bool:
-    return _HOST in values and _PORT in values and (
-        bool(values & _LLAMA_FLAGS) or launched_as_local_process
+def _is_local_server_argv(values: set[str], *, launched_as_local_process: bool) -> bool:
+    return (
+        _HOST in values
+        and _PORT in values
+        and (bool(values & _LLAMA_FLAGS) or launched_as_local_process)
     )
 
 
@@ -149,7 +155,9 @@ class _FunctionCollector(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def scan_source(source: str, filename: str, relative_path: str) -> list[tuple[str, int, str]]:
+def scan_source(
+    source: str, filename: str, relative_path: str
+) -> list[tuple[str, int, str]]:
     """Return local-server argv ownership violations from one Python source file."""
     tree = ast.parse(source, filename=filename)
     collector = _FunctionCollector()
@@ -162,7 +170,9 @@ def scan_source(source: str, filename: str, relative_path: str) -> list[tuple[st
     ]
 
 
-def scan_file(path: Path, relative_path: str | None = None) -> list[tuple[str, int, str]]:
+def scan_file(
+    path: Path, relative_path: str | None = None
+) -> list[tuple[str, int, str]]:
     return scan_source(
         path.read_text(encoding="utf-8"),
         str(path),
