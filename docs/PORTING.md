@@ -36,6 +36,8 @@ A crate that adds C/C++ build steps or native linkage is not done after
 musl, Linux aarch64 musl, and macOS arm64. Toolchain and linker behavior
 belongs in checked-in release paths, not a local shell profile.
 
+The opt-in processing bundle is this tree's first direct rpath proof. After `make check-rust-onnx-stage`, run `make build-sandbox-processing` and then `make check-rust-sandbox-processing-build` against the same Cargo target; the check proves both helpers start without loader-path variables and performs no build or repair. For the negative proof, copy a helper to a sibling-less scratch directory, clear both loader-path variables, and confirm the loader fails before a structured request error is emitted.
+
 ## Related
 
 - [testing.md](testing.md) — `make ci` / `make ci-full`

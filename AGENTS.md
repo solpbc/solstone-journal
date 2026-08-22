@@ -130,6 +130,8 @@ Verified against `Makefile`. Grouped by use.
 | Target | When to use |
 |--------|-------------|
 | `make` / `make all` / `make build` | Build the native Rust workspace, excluding the three host-native helper packages during the conversion freeze. |
+| `make build-sandbox-processing` | Opt in to build the two native processing helpers and their shared runtime bundle into the effective Cargo target directory. |
+| `make check-rust-sandbox-processing-build` | Verify an existing processing bundle and both helpers’ loader-independent startup; it never builds or repairs. |
 | `make format` | Format the Rust workspace with Cargo fmt; modifies Rust source. |
 | `make format-check` | Cargo fmt dry-run (`cargo fmt --all -- --check`); one of the Rust-only CI checks. |
 | `make test` | Alias for `make check-rust-test`: Rust workspace tests only, excluding the three host-native helper packages covered by the default `onnx-host-tests` full-gate leg. |

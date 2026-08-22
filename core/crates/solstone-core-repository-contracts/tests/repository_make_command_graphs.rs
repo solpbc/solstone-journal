@@ -5,6 +5,49 @@
 
 include!("support/repository_make_command_graphs.rs");
 
+const SANDBOX_RUNTIME_NAMES: [&str; 3] = [
+    "libonnxruntime.so.1.25.0",
+    "libonnxruntime.so.1",
+    "libonnxruntime.so",
+];
+
+fn seed_sandbox_payload(target_dir: &Path) -> PathBuf {
+    let payload_dir = target_dir.join("lib/solstone-core-speakers-analyze");
+    fs::create_dir_all(&payload_dir).expect("create sandbox processing payload directory");
+    for name in SANDBOX_RUNTIME_NAMES {
+        fs::write(payload_dir.join(name), []).expect("write sandbox processing runtime fixture");
+    }
+    payload_dir
+}
+
+fn write_sandbox_processing_helpers(target_dir: &Path) {
+    let helper_dir = target_dir.join("debug");
+    fs::create_dir_all(&helper_dir).expect("create sandbox processing helper directory");
+    for (name, schema) in [
+        (
+            "solstone-core-speakers-analyze",
+            "solstone-speaker-analyze-error-v1",
+        ),
+        ("solstone-core-vad-analyze", "solstone-vad-error-v1"),
+    ] {
+        write_executable(
+            &helper_dir.join(name),
+            &format!(
+                "#!/bin/sh\nset -eu\nprintf '%s LD=%s DYLD=%s\\n' '{name}' \"${{LD_LIBRARY_PATH-unset}}\" \"${{DYLD_LIBRARY_PATH-unset}}\" >> \"$SOLSTONE_HELPER_ENV_LOG\"\nprintf '%s\\n' '{{\"schema\":\"{schema}\",\"reason\":\"malformed-request\"}}' >&2\nexit 64\n"
+            ),
+        );
+    }
+}
+
+fn fixture_make_command(root: &Path, shims: &Path, target: &str) -> Command {
+    let mut command = Command::new("make");
+    command
+        .arg(target)
+        .current_dir(root)
+        .env("PATH", fixture_path(shims));
+    command
+}
+
 #[test]
 fn make_ci_never_executes_forbidden_interpreters() {
     assert_gate_never_executes_forbidden_interpreters("ci", &["fmt", "run", "clippy", "test"]);
@@ -459,6 +502,225 @@ fn onnx_stage_preserves_a_failed_staging_status_even_if_files_were_repaired() {
         String::from_utf8_lossy(&output.stderr)
             .contains("failed to stage the pinned host ONNX Runtime")
     );
+}
+
+#[test]
+fn sandbox_processing_build_uses_the_effective_target_and_replaces_the_payload() {
+    for configured_target in [false, true] {
+        let temp = TempDir::new("sandbox-processing-build");
+        write_host_makefile(&temp.path, "Linux", "x86_64");
+        let shims = temp.path.join("shims");
+        fs::create_dir(&shims).expect("create Cargo shim directory");
+        write_native_cargo_shim(&shims.join("cargo"));
+        let source_dir = seed_runtime(&temp.path, "linux-x86_64", &SANDBOX_RUNTIME_NAMES, &[]);
+        for name in SANDBOX_RUNTIME_NAMES.iter().skip(1) {
+            fs::remove_file(source_dir.join(name)).expect("remove source runtime copy");
+            std::os::unix::fs::symlink(SANDBOX_RUNTIME_NAMES[0], source_dir.join(name))
+                .expect("create source runtime link");
+        }
+
+        let target_dir = if configured_target {
+            temp.path.join("private-cargo-target")
+        } else {
+            temp.path.join("core/target")
+        };
+        let stale_dir = target_dir.join("lib/solstone-core-speakers-analyze");
+        fs::create_dir_all(&stale_dir).expect("create stale runtime payload directory");
+        fs::write(stale_dir.join("stale"), b"stale").expect("write stale runtime payload entry");
+        let argv_log = temp.path.join("cargo.argv");
+        let env_log = temp.path.join("cargo.env");
+        let mut command = fixture_make_command(&temp.path, &shims, "build-sandbox-processing");
+        command
+            .env("SOLSTONE_CARGO_ARGV", &argv_log)
+            .env("SOLSTONE_CARGO_ENV", &env_log);
+        if configured_target {
+            command.env("CARGO_TARGET_DIR", &target_dir);
+        } else {
+            command.env_remove("CARGO_TARGET_DIR");
+        }
+        let output = command
+            .output()
+            .expect("run sandbox processing build fixture");
+        assert!(
+            output.status.success(),
+            "sandbox processing build failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let argv = nul_argv(&argv_log);
+        assert_eq!(argv.first().map(String::as_str), Some("build"));
+        assert!(
+            argv.windows(2)
+                .any(|pair| { pair == ["-p", "solstone-core-speakers-analyze"] })
+        );
+        assert!(
+            argv.windows(2)
+                .any(|pair| pair == ["-p", "solstone-core-vad-analyze"])
+        );
+        let recorded_env = fs::read_to_string(&env_log).expect("read Cargo environment");
+        assert!(recorded_env.contains("ORT_PREFER_DYNAMIC_LINK=true"));
+        assert!(recorded_env.contains(&format!(
+            "ORT_LIB_PATH={}",
+            fs::canonicalize(&source_dir)
+                .expect("canonical source runtime directory")
+                .display()
+        )));
+
+        let payload_dir = target_dir.join("lib/solstone-core-speakers-analyze");
+        assert!(!payload_dir.join("stale").exists());
+        for name in SANDBOX_RUNTIME_NAMES {
+            assert!(payload_dir.join(name).is_file());
+            assert!(
+                !fs::symlink_metadata(payload_dir.join(name))
+                    .expect("inspect final runtime entry")
+                    .file_type()
+                    .is_symlink(),
+                "final runtime entry {name} must be a regular file"
+            );
+        }
+        for name in SANDBOX_RUNTIME_NAMES.iter().skip(1) {
+            assert!(
+                fs::symlink_metadata(source_dir.join(name))
+                    .expect("inspect source runtime entry")
+                    .file_type()
+                    .is_symlink(),
+                "source stage link {name} must remain accepted"
+            );
+        }
+    }
+}
+
+#[test]
+fn sandbox_processing_build_refuses_an_invalid_source_before_cargo() {
+    let temp = TempDir::new("sandbox-processing-source-negative");
+    write_host_makefile(&temp.path, "Linux", "x86_64");
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create Cargo shim directory");
+    write_native_cargo_shim(&shims.join("cargo"));
+    let argv_log = temp.path.join("cargo.argv");
+    let output = fixture_make_command(&temp.path, &shims, "build-sandbox-processing")
+        .env("SOLSTONE_CARGO_ARGV", &argv_log)
+        .env("SOLSTONE_CARGO_ENV", temp.path.join("cargo.env"))
+        .env_remove("CARGO_TARGET_DIR")
+        .output()
+        .expect("run sandbox processing source negative");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(SANDBOX_RUNTIME_NAMES[0]));
+    assert!(stderr.contains("make check-rust-onnx-stage"));
+    assert!(!argv_log.exists(), "invalid source stage invoked Cargo");
+}
+
+#[test]
+fn sandbox_processing_check_rejects_invalid_payload_before_helpers() {
+    for state in ["missing", "corrupt", "symlink"] {
+        let temp = TempDir::new(&format!("sandbox-processing-payload-{state}"));
+        write_host_makefile(&temp.path, "Linux", "x86_64");
+        let shims = temp.path.join("shims");
+        fs::create_dir(&shims).expect("create Cargo shim directory");
+        write_native_cargo_shim(&shims.join("cargo"));
+        let target_dir = temp.path.join("core/target");
+        let payload_dir = if state == "missing" {
+            target_dir.join("lib/solstone-core-speakers-analyze")
+        } else {
+            seed_sandbox_payload(&target_dir)
+        };
+        if state == "corrupt" {
+            fs::write(payload_dir.join(SANDBOX_RUNTIME_NAMES[1]), b"corrupt")
+                .expect("corrupt final runtime entry");
+        } else if state == "symlink" {
+            fs::remove_file(payload_dir.join(SANDBOX_RUNTIME_NAMES[1]))
+                .expect("remove final runtime entry");
+            std::os::unix::fs::symlink(
+                SANDBOX_RUNTIME_NAMES[0],
+                payload_dir.join(SANDBOX_RUNTIME_NAMES[1]),
+            )
+            .expect("link final runtime entry");
+        }
+        write_sandbox_processing_helpers(&target_dir);
+        let argv_log = temp.path.join("cargo.argv");
+        let helper_env_log = temp.path.join("helper.env");
+        let output =
+            fixture_make_command(&temp.path, &shims, "check-rust-sandbox-processing-build")
+                .env("SOLSTONE_CARGO_ARGV", &argv_log)
+                .env("SOLSTONE_CARGO_ENV", temp.path.join("cargo.env"))
+                .env("SOLSTONE_HELPER_ENV_LOG", &helper_env_log)
+                .env_remove("CARGO_TARGET_DIR")
+                .output()
+                .expect("run sandbox processing payload negative");
+        assert!(!output.status.success(), "{state} final payload passed");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("make build-sandbox-processing"));
+        assert!(stderr.contains("expected sha256"));
+        assert!(
+            !argv_log.exists(),
+            "check invoked Cargo for {state} payload"
+        );
+        assert!(
+            !helper_env_log.exists(),
+            "check invoked helpers before rejecting {state} payload"
+        );
+        match state {
+            "missing" => {
+                assert!(stderr.contains(SANDBOX_RUNTIME_NAMES[0]));
+                assert!(stderr.contains("actual missing, non-file, or unreadable"));
+                assert!(!payload_dir.exists(), "missing payload was repaired");
+            }
+            "corrupt" => {
+                assert!(stderr.contains(SANDBOX_RUNTIME_NAMES[1]));
+                assert!(stderr.contains(EMPTY_SHA256));
+                assert_eq!(
+                    fs::read(payload_dir.join(SANDBOX_RUNTIME_NAMES[1]))
+                        .expect("read corrupt final runtime entry"),
+                    b"corrupt"
+                );
+            }
+            "symlink" => {
+                assert!(stderr.contains(SANDBOX_RUNTIME_NAMES[1]));
+                assert!(stderr.contains("actual symbolic link; regular file required"));
+                assert!(
+                    fs::symlink_metadata(payload_dir.join(SANDBOX_RUNTIME_NAMES[1]))
+                        .expect("inspect linked final runtime entry")
+                        .file_type()
+                        .is_symlink()
+                );
+            }
+            _ => unreachable!("fixture state is known"),
+        }
+    }
+}
+
+#[test]
+fn sandbox_processing_check_uses_only_the_existing_payload_and_clears_loader_paths() {
+    let temp = TempDir::new("sandbox-processing-check");
+    write_host_makefile(&temp.path, "Linux", "x86_64");
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create Cargo shim directory");
+    write_native_cargo_shim(&shims.join("cargo"));
+    let target_dir = temp.path.join("core/target");
+    seed_sandbox_payload(&target_dir);
+    write_sandbox_processing_helpers(&target_dir);
+    let argv_log = temp.path.join("cargo.argv");
+    let helper_env_log = temp.path.join("helper.env");
+    let output = fixture_make_command(&temp.path, &shims, "check-rust-sandbox-processing-build")
+        .env("SOLSTONE_CARGO_ARGV", &argv_log)
+        .env("SOLSTONE_CARGO_ENV", temp.path.join("cargo.env"))
+        .env("SOLSTONE_HELPER_ENV_LOG", &helper_env_log)
+        .env("LD_LIBRARY_PATH", "fixture-loader-path")
+        .env("DYLD_LIBRARY_PATH", "fixture-loader-path")
+        .env_remove("CARGO_TARGET_DIR")
+        .output()
+        .expect("run sandbox processing check fixture");
+    assert!(
+        output.status.success(),
+        "sandbox processing check failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!argv_log.exists(), "check invoked Cargo");
+    let helper_env = fs::read_to_string(&helper_env_log).expect("read helper environment log");
+    assert!(helper_env.contains("solstone-core-speakers-analyze LD=unset DYLD=unset"));
+    assert!(helper_env.contains("solstone-core-vad-analyze LD=unset DYLD=unset"));
 }
 
 #[test]

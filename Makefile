@@ -16,7 +16,7 @@ export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-journal-device-sim check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover brand-sync FORCE
+.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-journal-device-sim check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover brand-sync FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -194,6 +194,9 @@ REQUIRE_SUPPORTED_ONNX_HOST = test -n "$(ONNX_RUNTIME_HOST_TARGET)" || { echo "u
 # callers can therefore prescribe a repair that can actually fix the failure.
 define DEFINE_ONNX_RUNTIME_VALIDATOR
 validate_onnx_runtime() { \
+	runtime_dir="$$1"; \
+	repair_command="$$2"; \
+	require_regular_file="$$3"; \
 	validation_error=''; \
 	if [ ! -x "$(ONNX_RUNTIME_HOST_HASH_PROGRAM)" ]; then \
 		validation_error="ONNX Runtime checksum verifier is unavailable: $(ONNX_RUNTIME_HOST_HASH_PROGRAM); install or repair that verifier and retry"; \
@@ -209,19 +212,23 @@ validate_onnx_runtime() { \
 		return 20; \
 	fi; \
 	for library in $(ONNX_RUNTIME_HOST_LINK_NAMES); do \
-		library_path="$(ONNX_RUNTIME_HOST_LINK_DIR)/$$library"; \
+		library_path="$$runtime_dir/$$library"; \
 		if [ ! -f "$$library_path" ] || [ ! -r "$$library_path" ]; then \
-			validation_error="invalid pinned host ONNX Runtime file: $$library_path (expected sha256 $(ONNX_RUNTIME_HOST_DIGEST), actual missing, non-file, or unreadable); run 'make check-rust-onnx-stage' and retry"; \
+			validation_error="invalid pinned host ONNX Runtime file: $$library_path (expected sha256 $(ONNX_RUNTIME_HOST_DIGEST), actual missing, non-file, or unreadable); run '$$repair_command' and retry"; \
+			return 10; \
+		fi; \
+		if [ "$$require_regular_file" = true ] && [ -L "$$library_path" ]; then \
+			validation_error="invalid pinned host ONNX Runtime file: $$library_path (expected sha256 $(ONNX_RUNTIME_HOST_DIGEST), actual symbolic link; regular file required); run '$$repair_command' and retry"; \
 			return 10; \
 		fi; \
 		if digest_output=$$("$(ONNX_RUNTIME_HOST_HASH_PROGRAM)" $(ONNX_RUNTIME_HOST_HASH_ARGS) "$$library_path" 2>&1); then digest_status=0; else digest_status=$$?; fi; \
 		actual_digest=$${digest_output%%[[:space:]]*}; \
 		if [ "$$digest_status" -ne 0 ] || [ -z "$$actual_digest" ]; then \
-			validation_error="could not checksum pinned host ONNX Runtime file: $$library_path (expected sha256 $(ONNX_RUNTIME_HOST_DIGEST), actual checksum input failure); run 'make check-rust-onnx-stage' and retry"; \
+			validation_error="could not checksum pinned host ONNX Runtime file: $$library_path (expected sha256 $(ONNX_RUNTIME_HOST_DIGEST), actual checksum input failure); run '$$repair_command' and retry"; \
 			return 10; \
 		fi; \
 		if [ "$$actual_digest" != "$(ONNX_RUNTIME_HOST_DIGEST)" ]; then \
-			validation_error="invalid pinned host ONNX Runtime file: $$library_path (expected sha256 $(ONNX_RUNTIME_HOST_DIGEST), actual $$actual_digest); run 'make check-rust-onnx-stage' and retry"; \
+			validation_error="invalid pinned host ONNX Runtime file: $$library_path (expected sha256 $(ONNX_RUNTIME_HOST_DIGEST), actual $$actual_digest); run '$$repair_command' and retry"; \
 			return 10; \
 		fi; \
 	done; \
@@ -229,7 +236,8 @@ validate_onnx_runtime() { \
 }
 endef
 
-REQUIRE_ONNX_HOST_RUNTIME = $(DEFINE_ONNX_RUNTIME_VALIDATOR); if validate_onnx_runtime; then :; else validation_status=$$?; echo "$$validation_error" >&2; exit "$$validation_status"; fi
+REQUIRE_ONNX_HOST_RUNTIME = $(DEFINE_ONNX_RUNTIME_VALIDATOR); if validate_onnx_runtime "$(ONNX_RUNTIME_HOST_LINK_DIR)" "make check-rust-onnx-stage" false; then :; else validation_status=$$?; echo "$$validation_error" >&2; exit "$$validation_status"; fi
+REQUIRE_SANDBOX_PROCESSING_PAYLOAD = $(DEFINE_ONNX_RUNTIME_VALIDATOR); if validate_onnx_runtime "$(RUST_TARGET_DIR)/lib/solstone-core-speakers-analyze" "make build-sandbox-processing" true; then :; else validation_status=$$?; echo "$$validation_error" >&2; exit "$$validation_status"; fi
 override PDF_RUNTIME_HOST_TARGET :=
 override PDF_RUNTIME_HOST_LIBRARY :=
 override PDF_RUNTIME_HOST_DIGEST :=
@@ -304,7 +312,7 @@ UV_OPTIONAL_GOALS := \
 	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
 	check-rust-unit check-rust-doc check-rust-test check-rust-race \
 	check-rust-ios check-rust-macos check-rust-deny check-rust-describe-cli-stubs \
-	check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-ready check-rust-onnx-test \
+	check-rust-vad-analyze-test build-sandbox-processing check-rust-sandbox-processing-build check-rust-onnx-stage check-rust-onnx-ready check-rust-onnx-test \
 	check-rust-pdf-stage check-rust-pdf-ready check-rust-pdf-test $(PDF_RUNTIME_HOST_LINK_DIR) \
 	check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries \
 	check-rust-ci-topology ci ci-under-poison ci-full ci-full-under-poison ci-full-plan \
@@ -413,7 +421,7 @@ check-rust-onnx-stage:
 	@set -u; \
 	$(REQUIRE_SUPPORTED_ONNX_HOST); \
 	$(DEFINE_ONNX_RUNTIME_VALIDATOR); \
-	if validate_onnx_runtime; then \
+	if validate_onnx_runtime "$(ONNX_RUNTIME_HOST_LINK_DIR)" "make check-rust-onnx-stage" false; then \
 		echo "host ONNX Runtime verified at $(ONNX_RUNTIME_HOST_LINK_DIR)"; \
 		exit 0; \
 	else \
@@ -429,7 +437,7 @@ check-rust-onnx-stage:
 		echo "failed to stage the pinned host ONNX Runtime" >&2; \
 		exit 1; \
 	fi; \
-	if validate_onnx_runtime; then \
+	if validate_onnx_runtime "$(ONNX_RUNTIME_HOST_LINK_DIR)" "make check-rust-onnx-stage" false; then \
 		echo "host ONNX Runtime staged and verified at $(ONNX_RUNTIME_HOST_LINK_DIR)"; \
 	else \
 		validation_status=$$?; \
@@ -479,6 +487,58 @@ ci-full-prep-pdf:
 check-rust-onnx-ready:
 	@set -eu; $(REQUIRE_ONNX_HOST_RUNTIME)
 	@echo "host ONNX Runtime ready at $(ONNX_RUNTIME_HOST_LINK_DIR)"
+
+# This is the tree's first proof that the helpers' compiled rpath actually
+# resolves. Every other ONNX gate runs with $(VAD_ANALYZE_HOST_ORT_ENV), which
+# supplies a loader override; this check deliberately does not rebuild because
+# rebuilding would repair its own negative case.
+build-sandbox-processing:
+	@$(REQUIRE_CARGO)
+	@set -eu; \
+	target_dir="$(RUST_TARGET_DIR)"; \
+	[ -n "$$target_dir" ] || { echo "build-sandbox-processing requires a non-empty RUST_TARGET_DIR" >&2; exit 2; }; \
+	[ "$$target_dir" != / ] || { echo "build-sandbox-processing refuses RUST_TARGET_DIR=/" >&2; exit 2; }; \
+	$(REQUIRE_SUPPORTED_ONNX_HOST); \
+	$(REQUIRE_ONNX_HOST_RUNTIME); \
+	$(VAD_ANALYZE_HOST_ORT_ENV) cargo build --manifest-path $(RUST_MANIFEST) -p solstone-core-speakers-analyze -p solstone-core-vad-analyze --locked; \
+	payload_dir="$$target_dir/lib/solstone-core-speakers-analyze"; \
+	rm -rf -- "$$payload_dir"; \
+	mkdir -p "$$payload_dir"; \
+	for library in $(ONNX_RUNTIME_HOST_LINK_NAMES); do \
+		cp "$(ONNX_RUNTIME_HOST_LINK_DIR)/$$library" "$$payload_dir/$$library"; \
+	done; \
+	$(REQUIRE_SANDBOX_PROCESSING_PAYLOAD)
+
+check-rust-sandbox-processing-build:
+	@set -eu; \
+	$(REQUIRE_SUPPORTED_ONNX_HOST); \
+	$(REQUIRE_SANDBOX_PROCESSING_PAYLOAD); \
+	for helper in solstone-core-speakers-analyze solstone-core-vad-analyze; do \
+		helper_path="$(RUST_TARGET_DIR)/debug/$$helper"; \
+		[ -x "$$helper_path" ] || { echo "sandbox processing helper is missing or not executable: $$helper_path" >&2; exit 1; }; \
+	done; \
+	if output=$$(env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH "$(RUST_TARGET_DIR)/debug/solstone-core-speakers-analyze" </dev/null 2>&1); then \
+		echo "solstone-core-speakers-analyze unexpectedly accepted an empty request" >&2; \
+		exit 1; \
+	else \
+		run_status=$$?; \
+	fi; \
+	[ "$$run_status" -eq 64 ] || { echo "solstone-core-speakers-analyze exited $$run_status, expected usage exit 64" >&2; echo "$$output" >&2; exit 1; }; \
+	case "$$output" in \
+		*'"schema":"solstone-speaker-analyze-error-v1"'*'"reason":"malformed-request"'*) ;; \
+		*) echo "solstone-core-speakers-analyze did not emit its malformed-request record" >&2; echo "$$output" >&2; exit 1 ;; \
+	esac; \
+	if output=$$(env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH "$(RUST_TARGET_DIR)/debug/solstone-core-vad-analyze" </dev/null 2>&1); then \
+		echo "solstone-core-vad-analyze unexpectedly accepted an empty request" >&2; \
+		exit 1; \
+	else \
+		run_status=$$?; \
+	fi; \
+	[ "$$run_status" -eq 64 ] || { echo "solstone-core-vad-analyze exited $$run_status, expected usage exit 64" >&2; echo "$$output" >&2; exit 1; }; \
+	case "$$output" in \
+		*'"schema":"solstone-vad-error-v1"'*'"reason":"malformed-request"'*) ;; \
+		*) echo "solstone-core-vad-analyze did not emit its malformed-request record" >&2; echo "$$output" >&2; exit 1 ;; \
+	esac
 
 check-rust-pdf-ready:
 	@set -eu; $(REQUIRE_PDF_HOST_RUNTIME)
