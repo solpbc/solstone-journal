@@ -181,10 +181,10 @@ pub fn mint_hex() -> Result<String, getrandom::Error> {
 }
 
 pub fn portal_url(base: &str, nonce: &str, instance: &str) -> String {
-    // Origin matches hosted.manage_url; /enable/spb is the external portal path,
-    // not a local Convey route. Relative URLs would window.open onto this journal.
+    // /enable/backup is the external services-portal handoff endpoint, not a local
+    // Convey route. Keep this URL absolute so the browser does not target this journal.
     format!(
-        "{}/enable/spb?nonce={nonce}&instance={instance}",
+        "{}/enable/backup?nonce={nonce}&instance={instance}",
         base.trim_end_matches('/')
     )
 }

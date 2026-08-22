@@ -1188,6 +1188,34 @@ async fn destination_returns_distinct_reason_codes_from_cat_config() {
     }
 }
 
+fn assert_enable_portal_url(url: &str) {
+    let relative = url.strip_prefix("https://services.solstone.app").unwrap();
+    let (path, query) = relative.split_once('?').unwrap();
+    assert_eq!(path, "/enable/backup");
+    let nonce = query
+        .split("nonce=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap();
+    let instance = query
+        .split("instance=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap();
+    for value in [nonce, instance] {
+        assert_eq!(value.len(), 32);
+        assert!(
+            value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        );
+    }
+}
+
 #[tokio::test]
 async fn enable_hosted_returns_portal_url() {
     let root = crate::test_support::root("healthy");
@@ -1200,9 +1228,7 @@ async fn enable_hosted_returns_portal_url() {
     assert_eq!(body["operation"]["kind"], "enable_hosted");
     assert_eq!(body["operation"]["phase"], "setting_up");
     let url = body["operation"]["portal_url"].as_str().unwrap();
-    assert!(url.contains("/enable/spb"));
-    assert!(url.contains("nonce="));
-    assert!(url.contains("instance="));
+    assert_enable_portal_url(url);
 }
 
 #[tokio::test]
@@ -1330,12 +1356,7 @@ async fn unbound_restore_hosted_returns_portal_and_restoring_phase() {
     assert_eq!(status, 200);
     assert_eq!(body["operation"]["kind"], "restore_hosted");
     assert_eq!(body["operation"]["phase"], "restoring");
-    assert!(
-        body["operation"]["portal_url"]
-            .as_str()
-            .unwrap()
-            .contains("/enable/spb")
-    );
+    assert_enable_portal_url(body["operation"]["portal_url"].as_str().unwrap());
 }
 
 #[tokio::test]
