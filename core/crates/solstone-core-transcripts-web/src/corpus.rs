@@ -1149,6 +1149,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn short_audio_is_visible_while_zero_duration_audio_is_not() {
+        let root = TempDir::new().expect("journal");
+        config(root.path());
+        segment(
+            root.path(),
+            DAY,
+            "import.audio",
+            "070000_17",
+            &[("audio.jsonl", b"{}\n")],
+        );
+        segment(
+            root.path(),
+            DAY,
+            "import.audio",
+            "073000_0",
+            &[("audio.jsonl", b"{}\n")],
+        );
+
+        let (status, _, body) =
+            response(app(root.path()), "/app/transcripts/api/ranges/20260731").await;
+
+        assert_eq!(status, StatusCode::OK);
+        let ranges = serde_json::from_slice::<Value>(&body).unwrap();
+        assert_eq!(
+            ranges["audio"],
+            json!([{
+                "start": "07:00",
+                "end": "07:15",
+                "streams": ["import.audio"],
+                "state": "pending",
+                "think": null,
+            }])
+        );
+    }
+
+    #[tokio::test]
     async fn live_endpoints_have_exact_shapes_and_combined_payload_matches() {
         let root = root();
         let app = app(root.path());

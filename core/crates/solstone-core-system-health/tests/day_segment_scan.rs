@@ -77,9 +77,11 @@ fn vocabulary_is_closed_without_widening_sensed_terminals() {
 }
 
 #[test]
-fn day_scan_reports_hand_derived_six_segment_fixture() {
+fn day_scan_reports_hand_derived_seven_segment_fixture() {
     let temporary = TempDir::new().unwrap();
     let root = temporary.path();
+    let short = segment(root, Some("import.audio"), "070000_17");
+    write(&short, "audio.jsonl", "{}\n");
     let audio = segment(root, Some("import.audio"), "080000_300");
     write(&audio, "audio.jsonl", "{}\n{\"start\":0}\n");
     let screen = segment(root, Some("import.screen"), "081500_300");
@@ -100,19 +102,23 @@ fn day_scan_reports_hand_derived_six_segment_fixture() {
     assert_eq!(
         audio_ranges,
         [
+            ("07:00".into(), "07:15".into()),
             ("08:00".into(), "08:15".into()),
             ("08:30".into(), "08:45".into()),
             ("09:15".into(), "09:30".into())
         ]
     );
     assert_eq!(screen_ranges, [("08:15".into(), "08:45".into())]);
-    assert_eq!(segments.len(), 6);
+    assert_eq!(segments.len(), 7);
     assert_eq!(segments[0].types, ["audio"]);
-    assert_eq!(segments[1].types, ["screen"]);
-    assert_eq!(segments[2].types, ["audio", "screen"]);
-    assert_eq!(segments[3].types, ["browser"]);
-    assert_eq!(segments[4].types, ["markdown"]);
-    assert_eq!(segments[5].stream, "_default");
+    assert_eq!(segments[0].start, "07:00");
+    assert_eq!(segments[0].end, "07:01");
+    assert_eq!(segments[1].types, ["audio"]);
+    assert_eq!(segments[2].types, ["screen"]);
+    assert_eq!(segments[3].types, ["audio", "screen"]);
+    assert_eq!(segments[4].types, ["browser"]);
+    assert_eq!(segments[5].types, ["markdown"]);
+    assert_eq!(segments[6].stream, "_default");
 }
 
 #[test]

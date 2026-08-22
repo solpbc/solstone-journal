@@ -68,8 +68,15 @@ pub fn scan_day<S: SegmentSource>(
             u64::from(times.hour) * 3_600 + u64::from(times.minute) * 60 + u64::from(times.second);
         let start = format_time(start_seconds);
         // This shares Python's end-of-day clamp with chronological consumers;
-        // rendering remains the same `HH:MM` display format.
-        let end = format_time(end_seconds);
+        // rendering remains the same `HH:MM` display format. A positive segment
+        // that collapses into its start minute needs a visible end for range attachment.
+        let natural_end = format_time(end_seconds);
+        let end = if end_seconds > start_seconds && natural_end == start {
+            let next_minute = start_seconds - (start_seconds % 60) + 60;
+            format_time(next_minute.min(86_399))
+        } else {
+            natural_end
+        };
         // The card check uses the path parent, which differs from Segment.stream
         // for direct day children; do not replace this with segment.stream.
         let parent_name = segment
