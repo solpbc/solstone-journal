@@ -498,10 +498,12 @@ build-sandbox-processing:
 	target_dir="$(RUST_TARGET_DIR)"; \
 	[ -n "$$target_dir" ] || { echo "build-sandbox-processing requires a non-empty RUST_TARGET_DIR" >&2; exit 2; }; \
 	[ "$$target_dir" != / ] || { echo "build-sandbox-processing refuses RUST_TARGET_DIR=/" >&2; exit 2; }; \
+	payload_dir="$$target_dir/lib/solstone-core-speakers-analyze"; \
+	if [ -L "$$target_dir/lib" ]; then echo "build-sandbox-processing refuses symlinked target library directory: $$target_dir/lib" >&2; exit 1; fi; \
+	if [ -L "$$payload_dir" ]; then echo "build-sandbox-processing refuses symlinked payload directory: $$payload_dir" >&2; exit 1; fi; \
 	$(REQUIRE_SUPPORTED_ONNX_HOST); \
 	$(REQUIRE_ONNX_HOST_RUNTIME); \
 	$(VAD_ANALYZE_HOST_ORT_ENV) cargo build --manifest-path $(RUST_MANIFEST) -p solstone-core-speakers-analyze -p solstone-core-vad-analyze --locked; \
-	payload_dir="$$target_dir/lib/solstone-core-speakers-analyze"; \
 	rm -rf -- "$$payload_dir"; \
 	mkdir -p "$$payload_dir"; \
 	for library in $(ONNX_RUNTIME_HOST_LINK_NAMES); do \
@@ -515,7 +517,7 @@ check-rust-sandbox-processing-build:
 	$(REQUIRE_SANDBOX_PROCESSING_PAYLOAD); \
 	for helper in solstone-core-speakers-analyze solstone-core-vad-analyze; do \
 		helper_path="$(RUST_TARGET_DIR)/debug/$$helper"; \
-		[ -x "$$helper_path" ] || { echo "sandbox processing helper is missing or not executable: $$helper_path" >&2; exit 1; }; \
+		[ -x "$$helper_path" ] || { echo "sandbox processing helper is missing or not executable: $$helper_path; run 'make build-sandbox-processing' and retry" >&2; exit 1; }; \
 	done; \
 	if output=$$(env -u LD_LIBRARY_PATH -u DYLD_LIBRARY_PATH "$(RUST_TARGET_DIR)/debug/solstone-core-speakers-analyze" </dev/null 2>&1); then \
 		echo "solstone-core-speakers-analyze unexpectedly accepted an empty request" >&2; \

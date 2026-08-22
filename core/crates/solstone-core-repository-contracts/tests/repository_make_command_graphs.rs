@@ -613,6 +613,45 @@ fn sandbox_processing_build_refuses_an_invalid_source_before_cargo() {
 }
 
 #[test]
+fn sandbox_processing_build_refuses_a_symlinked_target_library_directory() {
+    let temp = TempDir::new("sandbox-processing-symlinked-library-directory");
+    write_host_makefile(&temp.path, "Linux", "x86_64");
+    let shims = temp.path.join("shims");
+    fs::create_dir(&shims).expect("create Cargo shim directory");
+    write_native_cargo_shim(&shims.join("cargo"));
+    seed_runtime(&temp.path, "linux-x86_64", &SANDBOX_RUNTIME_NAMES, &[]);
+    let target_dir = temp.path.join("core/target");
+    fs::create_dir_all(&target_dir).expect("create target directory");
+    let outside_dir = temp.path.join("outside-target");
+    fs::create_dir(&outside_dir).expect("create outside directory");
+    let sentinel = outside_dir.join("sentinel");
+    fs::write(&sentinel, b"preserve me").expect("write outside sentinel");
+    let target_library_dir = target_dir.join("lib");
+    std::os::unix::fs::symlink(&outside_dir, &target_library_dir)
+        .expect("link target library directory outside the target");
+    let argv_log = temp.path.join("cargo.argv");
+    let output = fixture_make_command(&temp.path, &shims, "build-sandbox-processing")
+        .env("SOLSTONE_CARGO_ARGV", &argv_log)
+        .env("SOLSTONE_CARGO_ENV", temp.path.join("cargo.env"))
+        .env_remove("CARGO_TARGET_DIR")
+        .output()
+        .expect("run sandbox processing symlink negative");
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains(target_library_dir.to_string_lossy().as_ref())
+    );
+    assert!(
+        !argv_log.exists(),
+        "symlinked target library directory invoked Cargo"
+    );
+    assert_eq!(
+        fs::read(&sentinel).expect("read outside sentinel"),
+        b"preserve me"
+    );
+}
+
+#[test]
 fn sandbox_processing_check_rejects_invalid_payload_before_helpers() {
     for state in ["missing", "corrupt", "symlink"] {
         let temp = TempDir::new(&format!("sandbox-processing-payload-{state}"));
@@ -652,7 +691,7 @@ fn sandbox_processing_check_rejects_invalid_payload_before_helpers() {
         assert!(!output.status.success(), "{state} final payload passed");
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains("make build-sandbox-processing"));
-        assert!(stderr.contains("expected sha256"));
+        assert!(stderr.contains(EMPTY_SHA256));
         assert!(
             !argv_log.exists(),
             "check invoked Cargo for {state} payload"
@@ -663,13 +702,25 @@ fn sandbox_processing_check_rejects_invalid_payload_before_helpers() {
         );
         match state {
             "missing" => {
-                assert!(stderr.contains(SANDBOX_RUNTIME_NAMES[0]));
-                assert!(stderr.contains("actual missing, non-file, or unreadable"));
+                assert!(
+                    stderr.contains(
+                        payload_dir
+                            .join(SANDBOX_RUNTIME_NAMES[0])
+                            .to_string_lossy()
+                            .as_ref()
+                    )
+                );
                 assert!(!payload_dir.exists(), "missing payload was repaired");
             }
             "corrupt" => {
-                assert!(stderr.contains(SANDBOX_RUNTIME_NAMES[1]));
-                assert!(stderr.contains(EMPTY_SHA256));
+                assert!(
+                    stderr.contains(
+                        payload_dir
+                            .join(SANDBOX_RUNTIME_NAMES[1])
+                            .to_string_lossy()
+                            .as_ref()
+                    )
+                );
                 assert_eq!(
                     fs::read(payload_dir.join(SANDBOX_RUNTIME_NAMES[1]))
                         .expect("read corrupt final runtime entry"),
@@ -677,10 +728,14 @@ fn sandbox_processing_check_rejects_invalid_payload_before_helpers() {
                 );
             }
             "symlink" => {
-                assert!(stderr.contains(SANDBOX_RUNTIME_NAMES[1]));
-                assert!(stderr.contains("actual symbolic link; regular file required"));
+                let linked_runtime = payload_dir.join(SANDBOX_RUNTIME_NAMES[1]);
+                assert!(stderr.contains(linked_runtime.to_string_lossy().as_ref()));
+                assert_eq!(
+                    fs::read(&linked_runtime).expect("read linked runtime content"),
+                    b""
+                );
                 assert!(
-                    fs::symlink_metadata(payload_dir.join(SANDBOX_RUNTIME_NAMES[1]))
+                    fs::symlink_metadata(&linked_runtime)
                         .expect("inspect linked final runtime entry")
                         .file_type()
                         .is_symlink()
