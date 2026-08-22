@@ -3195,6 +3195,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-sol-bin::launcher_staging"
+package = "solstone-core-sol-bin"
+target = "launcher_staging"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-sol-client::json_numeric_roundtrip"
 package = "solstone-core-sol-client"
 target = "json_numeric_roundtrip"
