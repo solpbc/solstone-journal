@@ -1364,7 +1364,7 @@ ifeq ($(HOST_SYSTEM),Linux)
 		--setenv CARGO_TARGET_DIR "$(RUST_TARGET_DIR)" \
 		--setenv CARGO_INCREMENTAL 0 --setenv CARGO_PROFILE_DEV_DEBUG 0 \
 		--setenv CARGO_NET_OFFLINE true --setenv SOLSTONE_CI_CONTAINED 1 \
-		$(MAKE) --no-print-directory CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 ci-contained
+		$(MAKE) --no-print-directory ci-contained CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
 else
 	$(call run-rust-gate-under-poison,ci-under-poison)
 endif
