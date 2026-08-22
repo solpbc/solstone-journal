@@ -96,7 +96,7 @@ class SimulatorConfig:
     bridge_url: str | None = None
     pair_code: str | None = None
     paired: bool = False
-    solstone_bin: str = "solstone"
+    solstone_bin: str | None = None
     relay_url: str | None = None
     convey_port: int | None = None
     date_mode: str = "shift"

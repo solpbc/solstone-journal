@@ -507,6 +507,7 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(
                 all(item["duplicate_attempts"] == 1 for item in evidence["segments"])
             )
+
             self.assertTrue(
                 all(item["request_count"] == 2 for item in evidence["segments"])
             )
@@ -540,6 +541,17 @@ class RunnerTests(unittest.TestCase):
                     "items"
                 ][0]["observed"]
             )
+
+    def test_external_bridge_never_constructs_or_authenticates_native_solstone(self) -> None:
+        state = FakeIngestState()
+        with TemporaryDirectory() as temporary, FakeServer(state) as bridge_url:
+            config = self._config(temporary, bridge_url)
+            with patch(
+                "tools.journal_device_sim.runner.LinkBridge",
+                side_effect=AssertionError("external bridge must not resolve native solstone"),
+            ) as native_bridge:
+                self.assertEqual(Simulator(config).run(), RunOutcome.PASS)
+            native_bridge.assert_not_called()
 
     def test_receiver_status_identity_and_posture_compatibility(self) -> None:
         passing = (

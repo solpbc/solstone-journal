@@ -55,7 +55,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     pair.add_argument("--pair-code", required=True)
     pair.add_argument("--state-dir", type=Path, required=True)
-    pair.add_argument("--solstone-bin", default="solstone")
+    pair.add_argument(
+        "--solstone-bin",
+        default=None,
+        help=(
+            "absolute native solstone path (bare/relative paths are rejected); defaults to source-built "
+            "core/target/debug/solstone (run make build first)"
+        ),
+    )
     pair.add_argument("--convey-port", type=_port)
     pair.add_argument("--request-timeout", type=float, default=90.0)
 
@@ -76,7 +83,14 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="use the credential bundle already stored under state-dir",
     )
-    run.add_argument("--solstone-bin", default="solstone")
+    run.add_argument(
+        "--solstone-bin",
+        default=None,
+        help=(
+            "absolute native solstone path (bare/relative paths are rejected); defaults to source-built "
+            "core/target/debug/solstone (run make build first)"
+        ),
+    )
     run.add_argument("--relay-url")
     run.add_argument("--convey-port", type=_port)
     run.add_argument("--state-dir", type=Path)

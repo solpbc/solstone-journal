@@ -12,6 +12,7 @@ import json
 import os
 import queue
 import re
+import selectors
 import shutil
 import stat
 import subprocess
@@ -35,6 +36,9 @@ _DEFAULT_CONVEY_PORT = 5015
 _MAX_CERT_PEM_BYTES = 64 * 1024
 _MAX_VERSION_OUTPUT = 512
 _MAX_PEER_JSON_BYTES = 64 * 1024
+_MAX_HELP_OUTPUT_BYTES = 64 * 1024
+_HELP_PREFLIGHT_TIMEOUT_S = 5.0
+_NATIVE_ROOT_HEADER = b"solstone - journal access CLI"
 _CERTIFICATE_BEGIN = b"-----BEGIN CERTIFICATE-----"
 _CERTIFICATE_END = b"-----END CERTIFICATE-----"
 _CERTIFICATE_BODY_RE = re.compile(rb"[A-Za-z0-9+/]+={0,2}")
@@ -50,7 +54,7 @@ class LinkBridge:
     def __init__(
         self,
         *,
-        solstone_bin: str,
+        solstone_bin: str | None,
         pair_code: str | None,
         state_dir: Path,
         carrier: str,
@@ -58,7 +62,24 @@ class LinkBridge:
         convey_port: int | None,
         startup_timeout: float,
     ) -> None:
-        self._solstone_bin = solstone_bin
+        if solstone_bin is None:
+            self._solstone_bin = str(
+                Path(__file__).resolve().parent.parents[1]
+                / "core"
+                / "target"
+                / "debug"
+                / "solstone"
+            )
+            self._native_selection_mode = "source-build-default"
+            self._expected_solstone_bin = self._solstone_bin
+        elif os.path.isabs(solstone_bin):
+            self._solstone_bin = solstone_bin
+            self._native_selection_mode = "override"
+            self._expected_solstone_bin = None
+        else:
+            raise LinkProcessError(
+                "solstone_bin must be an absolute path; omit it for the source-built default"
+            )
         self._pair_code = pair_code
         self._state_dir = state_dir
         if carrier not in {"direct", "relay"}:
@@ -231,57 +252,283 @@ class LinkBridge:
         certificate_der = cls._certificate_der(path)
         return f"sha256:{hashlib.sha256(certificate_der).hexdigest()}"
 
-    def _version_output(self, executable: Path) -> str | None:
+    @staticmethod
+    def _reap_native_probe(process: subprocess.Popen[bytes]) -> None:
+        if process.poll() is not None:
+            try:
+                process.wait()
+            except OSError:
+                pass
+            return
+        try:
+            process.terminate()
+        except (OSError, ProcessLookupError):
+            pass
+        try:
+            process.wait(timeout=0.2)
+            return
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        try:
+            process.kill()
+        except (OSError, ProcessLookupError):
+            pass
+        try:
+            process.wait(timeout=0.2)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    def _run_bounded_native_probe(
+        self,
+        executable: Path,
+        args: list[str],
+        *,
+        stdout_limit: int,
+        stderr_limit: int,
+        timeout: float,
+    ) -> tuple[int | None, bytes, bytes, str | None]:
+        process: subprocess.Popen[bytes] | None = None
+        selector = selectors.DefaultSelector()
+        stdout = bytearray()
+        stderr = bytearray()
+        buffers = {"stdout": stdout, "stderr": stderr}
+        limits = {"stdout": stdout_limit, "stderr": stderr_limit}
+        streams: dict[int, tuple[str, object]] = {}
+        try:
+            try:
+                process = subprocess.Popen(
+                    [str(executable), *args],
+                    env=self._env(),
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+            except OSError as error:
+                return None, b"", b"", f"probe-spawn-error:{type(error).__name__}"
+            assert process.stdout is not None
+            assert process.stderr is not None
+            for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
+                descriptor = stream.fileno()
+                os.set_blocking(descriptor, False)
+                selector.register(descriptor, selectors.EVENT_READ, name)
+                streams[descriptor] = (name, stream)
+
+            deadline = time.monotonic() + timeout
+            while streams:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None, bytes(stdout), bytes(stderr), "probe-timeout"
+                try:
+                    ready = selector.select(remaining)
+                except OSError as error:
+                    return (
+                        None,
+                        bytes(stdout),
+                        bytes(stderr),
+                        f"probe-read-error:{type(error).__name__}",
+                    )
+                for key, _events in ready:
+                    name = key.data
+                    buffer = buffers[name]
+                    limit = limits[name]
+                    try:
+                        chunk = os.read(key.fd, min(8192, limit + 1 - len(buffer)))
+                    except BlockingIOError:
+                        continue
+                    except OSError as error:
+                        return (
+                            None,
+                            bytes(stdout),
+                            bytes(stderr),
+                            f"probe-read-error:{type(error).__name__}",
+                        )
+                    if not chunk:
+                        selector.unregister(key.fd)
+                        streams.pop(key.fd, None)
+                        continue
+                    buffer.extend(chunk)
+                    if len(buffer) > limit:
+                        return (
+                            None,
+                            bytes(stdout),
+                            bytes(stderr),
+                            f"{name}-overflow",
+                        )
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None, bytes(stdout), bytes(stderr), "probe-timeout"
+            try:
+                return process.wait(timeout=remaining), bytes(stdout), bytes(stderr), None
+            except subprocess.TimeoutExpired:
+                return None, bytes(stdout), bytes(stderr), "probe-timeout"
+            except OSError as error:
+                return (
+                    None,
+                    bytes(stdout),
+                    bytes(stderr),
+                    f"probe-wait-error:{type(error).__name__}",
+                )
+        finally:
+            selector.close()
+            if process is not None:
+                self._reap_native_probe(process)
+                for stream in (process.stdout, process.stderr):
+                    if stream is not None:
+                        try:
+                            stream.close()
+                        except OSError:
+                            pass
+
+    @staticmethod
+    def _source_revision() -> str:
+        repo_root = Path(__file__).resolve().parent.parents[1]
         try:
             result = subprocess.run(
-                [str(executable), "--version"],
-                env=self._env(),
+                ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=min(max(self._startup_timeout, 0.1), 5.0),
+                timeout=5,
             )
         except (OSError, subprocess.TimeoutExpired, UnicodeError):
-            return None
+            return "unknown"
         if result.returncode != 0:
+            return "unknown"
+        return result.stdout.strip() or "unknown"
+
+    def _native_auth_error(
+        self,
+        condition: str,
+        *,
+        resolved: Path | None = None,
+        digest: str | None = None,
+        version: str | None = None,
+    ) -> LinkProcessError:
+        selected = str(resolved) if resolved is not None else self._solstone_bin
+        expected = self._expected_solstone_bin or "not-applicable"
+        return LinkProcessError(
+            "solstone native launcher authentication failed: "
+            f"selection_mode={self._native_selection_mode}; "
+            f"resolved_path={selected}; "
+            f"expected_path={expected}; "
+            f"simulator_revision={self._source_revision()}; "
+            f"sha256={digest or 'unavailable'}; "
+            f"version={version or 'unavailable'}; "
+            f"condition={condition}; "
+            "recovery: run `make build` or pass "
+            "`--solstone-bin /abs/path/to/solstone`"
+        )
+
+    def _authenticate_native_header(self, executable: Path, digest: str) -> bytes:
+        status, stdout, _stderr, condition = self._run_bounded_native_probe(
+            executable,
+            ["--help"],
+            stdout_limit=_MAX_HELP_OUTPUT_BYTES,
+            stderr_limit=_MAX_HELP_OUTPUT_BYTES,
+            timeout=_HELP_PREFLIGHT_TIMEOUT_S,
+        )
+        if condition is not None:
+            raise self._native_auth_error(condition, resolved=executable, digest=digest)
+        if status != 0:
+            raise self._native_auth_error(
+                f"nonzero-help-exit:{status}", resolved=executable, digest=digest
+            )
+        if not stdout.startswith(_NATIVE_ROOT_HEADER):
+            raise self._native_auth_error(
+                "wrong-header", resolved=executable, digest=digest
+            )
+        try:
+            stdout.decode("utf-8")
+        except UnicodeDecodeError:
+            raise self._native_auth_error(
+                "help-decode-error", resolved=executable, digest=digest
+            ) from None
+        return stdout
+
+    def _version_output(self, executable: Path) -> str | None:
+        status, stdout, _stderr, condition = self._run_bounded_native_probe(
+            executable,
+            ["--version"],
+            stdout_limit=_MAX_HELP_OUTPUT_BYTES,
+            stderr_limit=_MAX_HELP_OUTPUT_BYTES,
+            timeout=min(max(self._startup_timeout, 0.1), _HELP_PREFLIGHT_TIMEOUT_S),
+        )
+        if condition is not None or status != 0:
             return None
-        output = result.stdout.strip()
+        try:
+            output = stdout.decode("utf-8").strip()
+        except UnicodeDecodeError:
+            return None
         if not output:
             return None
         return output[:_MAX_VERSION_OUTPUT]
 
     def _native_executable(self) -> str:
         if self._resolved_solstone_bin is None:
-            found = shutil.which(self._solstone_bin)
-            if found is None:
-                raise LinkProcessError("solstone executable could not be resolved")
             try:
-                resolved = Path(found).resolve(strict=True)
+                resolved = Path(self._solstone_bin).resolve(strict=True)
                 metadata = resolved.stat()
-            except OSError as error:
-                raise LinkProcessError(
-                    f"solstone executable could not be resolved: {type(error).__name__}"
+            except FileNotFoundError:
+                raise self._native_auth_error("missing") from None
+            except (OSError, RuntimeError) as error:
+                raise self._native_auth_error(
+                    f"unreadable:{type(error).__name__}"
                 ) from error
             if not stat.S_ISREG(metadata.st_mode):
-                raise LinkProcessError("solstone executable is not a regular file")
-            digest = self._sha256(resolved)
+                raise self._native_auth_error("non-regular", resolved=resolved)
+            if metadata.st_mode & 0o111 == 0:
+                raise self._native_auth_error("not-executable", resolved=resolved)
+            try:
+                digest = self._sha256(resolved)
+            except LinkProcessError as error:
+                raise self._native_auth_error(
+                    f"unreadable:{type(error).__name__}", resolved=resolved
+                ) from error
+            self._authenticate_native_header(resolved, digest)
             version = self._version_output(resolved)
-            if self._sha256(resolved) != digest:
-                raise LinkProcessError(
-                    "solstone executable changed while provenance was captured"
+            try:
+                current_digest = self._sha256(resolved)
+            except LinkProcessError as error:
+                raise self._native_auth_error(
+                    f"changed-candidate:current-digest-unavailable:{type(error).__name__}",
+                    resolved=resolved,
+                    digest=digest,
+                    version=version,
+                ) from error
+            if current_digest != digest:
+                raise self._native_auth_error(
+                    f"changed-candidate:recorded={digest}:current={current_digest}",
+                    resolved=resolved,
+                    digest=digest,
+                    version=version,
                 )
             self._resolved_solstone_bin = resolved
             self._native_provenance = {
                 "path": str(resolved),
                 "sha256": digest,
                 "version": version,
+                "selection_mode": self._native_selection_mode,
             }
             return str(resolved)
-        digest = self._sha256(self._resolved_solstone_bin)
         assert self._native_provenance is not None
-        if digest != self._native_provenance["sha256"]:
-            raise LinkProcessError(
-                "solstone executable changed after provenance was captured"
+        recorded_digest = self._native_provenance["sha256"]
+        assert isinstance(recorded_digest, str)
+        try:
+            digest = self._sha256(self._resolved_solstone_bin)
+        except LinkProcessError as error:
+            raise self._native_auth_error(
+                f"changed-candidate:current-digest-unavailable:{type(error).__name__}",
+                resolved=self._resolved_solstone_bin,
+                digest=recorded_digest,
+                version=self._native_provenance["version"],
+            ) from error
+        if digest != recorded_digest:
+            raise self._native_auth_error(
+                f"changed-candidate:recorded={recorded_digest}:current={digest}",
+                resolved=self._resolved_solstone_bin,
+                digest=recorded_digest,
+                version=self._native_provenance["version"],
             )
         return str(self._resolved_solstone_bin)
 
@@ -399,6 +646,7 @@ class LinkBridge:
             ) from error
 
     def ensure_paired(self) -> None:
+        executable = self._native_executable()
         if self._path_exists(self._bundle_dir()):
             self._validate_bundle()
             if self._pair_code is not None:
@@ -412,7 +660,7 @@ class LinkBridge:
             )
         self._prepare_credential_root()
         command = [
-            self._native_executable(),
+            executable,
             "link",
             "join",
             "--code",

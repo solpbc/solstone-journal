@@ -10,10 +10,98 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.journal_device_sim.__main__ import main
+from tools.journal_device_sim.__main__ import _parser, main
 
 
 class CliTests(unittest.TestCase):
+    def test_pair_and_run_default_to_the_source_built_launcher(self) -> None:
+        parser = _parser()
+        pair = parser.parse_args(
+            ["pair", "--pair-code", "pair-code", "--state-dir", "state"]
+        )
+        run = parser.parse_args(
+            [
+                "run",
+                "--manifest",
+                "manifest.json",
+                "--profile",
+                "smoke",
+                "--carrier",
+                "direct",
+                "--bridge-url",
+                "http://127.0.0.1:43127",
+            ]
+        )
+        self.assertIsNone(pair.solstone_bin)
+        self.assertIsNone(run.solstone_bin)
+        for command in ("pair", "run"):
+            with self.subTest(command=command):
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout), self.assertRaises(
+                    SystemExit
+                ) as exit:
+                    parser.parse_args([command, "--help"])
+                self.assertEqual(exit.exception.code, 0)
+                help_text = " ".join(stdout.getvalue().split())
+                self.assertIn("source-built core/target/debug/solstone", help_text)
+                self.assertIn("bare/relative paths are rejected", help_text)
+
+    def test_pair_rejects_relative_and_bare_solstone_bin(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            for value in ("solstone", "./solstone"):
+                with self.subTest(value=value):
+                    stderr = io.StringIO()
+                    with contextlib.redirect_stderr(stderr):
+                        status = main(
+                            [
+                                "pair",
+                                "--pair-code",
+                                "pair-code",
+                                "--state-dir",
+                                str(Path(temporary) / value.replace("/", "_")),
+                                "--solstone-bin",
+                                value,
+                            ]
+                        )
+                    self.assertEqual(status, 1)
+                    self.assertIn("solstone_bin must be an absolute path", stderr.getvalue())
+
+    def test_simulator_owned_run_reports_relative_solstone_bin_configuration(self) -> None:
+        manifest = (
+            Path(__file__).resolve().parents[1] / "fixtures" / "smoke" / "manifest.json"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            for value in ("solstone", "./solstone"):
+                with self.subTest(value=value):
+                    evidence = Path(temporary) / f"{value.replace('/', '_')}.json"
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        status = main(
+                            [
+                                "run",
+                                "--manifest",
+                                str(manifest),
+                                "--profile",
+                                "smoke",
+                                "--carrier",
+                                "direct",
+                                "--pair-code",
+                                "pair-code",
+                                "--state-dir",
+                                str(Path(temporary) / value.replace("/", "_")),
+                                "--evidence",
+                                str(evidence),
+                                "--solstone-bin",
+                                value,
+                            ]
+                        )
+                    self.assertEqual(status, 2)
+                    self.assertIn("BLOCKED", stdout.getvalue())
+                    payload = json.loads(evidence.read_text(encoding="utf-8"))
+                    self.assertIn(
+                        "solstone_bin must be an absolute path", payload["error"]
+                    )
+
     def test_validate_reports_explicit_verification_scope(self) -> None:
         manifest = (
             Path(__file__).resolve().parents[1] / "fixtures" / "smoke" / "manifest.json"
@@ -60,6 +148,17 @@ class CliTests(unittest.TestCase):
             target.mkdir()
             linked = root / "linked"
             linked.symlink_to(target, target_is_directory=True)
+            native = root / "native-solstone"
+            native.write_text(
+                "#!/bin/sh\n"
+                "case \"$1\" in\n"
+                "  --help) printf '%s\\n' 'solstone - journal access CLI' ;;\n"
+                "  --version) printf '%s\\n' 'solstone-test 3.1.4' ;;\n"
+                "  *) exit 8 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            native.chmod(0o700)
             commands = (
                 [
                     "pair",
@@ -68,7 +167,7 @@ class CliTests(unittest.TestCase):
                     "--state-dir",
                     str(linked),
                     "--solstone-bin",
-                    "unused",
+                    str(native),
                 ],
                 [
                     "run",
