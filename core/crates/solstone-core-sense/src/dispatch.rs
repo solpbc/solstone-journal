@@ -22,7 +22,8 @@ use crate::config::{
 use crate::events;
 use crate::memory::{Admission, SystemMemoryProbe};
 use crate::registry::{
-    HandlerSpec, command_for, default_registry, match_handler, segment_dir, with_program,
+    DispatcherResolveError, HandlerSpec, command_for, default_registry, match_handler,
+    resolve_dispatcher_in, segment_dir,
 };
 use crate::work::{SegmentContext, SegmentKey, SegmentState, WorkItem};
 
@@ -62,6 +63,7 @@ struct WorkerContext {
     verbose: bool,
     debug: bool,
     batch: BatchContext,
+    program: Result<PathBuf, DispatcherResolveError>,
     tally: Arc<JobTally>,
 }
 
@@ -104,7 +106,6 @@ pub struct SenseDispatcher {
     pools: HashMap<&'static str, Mutex<WorkerPool>>,
     workers: Mutex<Vec<thread::JoinHandle<()>>>,
     admission: Admission,
-    handler_program: Option<PathBuf>,
     batch: BatchContext,
     pub(crate) tally: Arc<JobTally>,
 }
@@ -138,7 +139,7 @@ impl SenseDispatcher {
             debug,
             outbound,
             admission,
-            None,
+            resolve_program_from_current_exe(),
             BatchContext::default(),
         )
     }
@@ -159,7 +160,7 @@ impl SenseDispatcher {
             debug,
             outbound,
             Admission::new(Arc::new(SystemMemoryProbe)),
-            Some(program),
+            Ok(program),
             BatchContext::default(),
         )
     }
@@ -183,7 +184,7 @@ impl SenseDispatcher {
                 describe_workers: Some(describe_workers),
                 child_environment,
             },
-            None,
+            resolve_program_from_current_exe(),
         )
     }
 
@@ -206,7 +207,7 @@ impl SenseDispatcher {
                 describe_workers: Some(describe_workers),
                 child_environment: BTreeMap::new(),
             },
-            Some(program),
+            Ok(program),
         )
     }
 
@@ -216,7 +217,7 @@ impl SenseDispatcher {
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
         batch: BatchContext,
-        handler_program: Option<PathBuf>,
+        program: Result<PathBuf, DispatcherResolveError>,
     ) -> Self {
         Self::new_inner(
             journal,
@@ -224,7 +225,7 @@ impl SenseDispatcher {
             debug,
             outbound,
             Admission::new(Arc::new(SystemMemoryProbe)),
-            handler_program,
+            program,
             batch,
         )
     }
@@ -235,7 +236,7 @@ impl SenseDispatcher {
         debug: bool,
         outbound: mpsc::Sender<Outbound>,
         admission: Admission,
-        handler_program: Option<PathBuf>,
+        program: Result<PathBuf, DispatcherResolveError>,
         batch: BatchContext,
     ) -> Self {
         let state = Arc::new(Mutex::new(State {
@@ -267,6 +268,7 @@ impl SenseDispatcher {
                     verbose,
                     debug,
                     batch: batch.clone(),
+                    program: program.clone(),
                     tally: Arc::clone(&tally),
                 };
                 let worker = thread::Builder::new()
@@ -284,7 +286,6 @@ impl SenseDispatcher {
             pools,
             workers: Mutex::new(worker_handles),
             admission,
-            handler_program,
             batch,
             tally,
         }
@@ -353,14 +354,11 @@ impl SenseDispatcher {
             .batch
             .describe_workers
             .unwrap_or_else(|| resolve_concurrency(&config, "describe"));
-        let mut registry = default_registry(crate::config::describe_per_proc_jobs(
+        let registry = default_registry(crate::config::describe_per_proc_jobs(
             &config,
             describe_workers,
             &self.journal,
         ));
-        if let Some(program) = &self.handler_program {
-            with_program(&mut registry, program);
-        }
         let dir = segment_dir(&self.journal, day, stream.as_deref(), segment);
         let paths: Vec<_> = files
             .iter()
@@ -502,6 +500,18 @@ impl SenseDispatcher {
     }
 }
 
+fn resolve_program_from_current_exe() -> Result<PathBuf, DispatcherResolveError> {
+    let executable = match std::env::current_exe() {
+        Ok(executable) => executable,
+        Err(error) => {
+            return Err(DispatcherResolveError::CurrentExe {
+                message: error.to_string(),
+            });
+        }
+    };
+    resolve_dispatcher_in(executable.parent().unwrap_or_else(|| Path::new(".")))
+}
+
 struct WorkerPool {
     senders: Vec<mpsc::Sender<Job>>,
     next: usize,
@@ -551,6 +561,22 @@ fn run_job(
     let segment_context = job.item.context.clone();
     let key = segment_context.key.clone();
     let file = job.item.file_path.clone();
+    let program = match &worker_context.program {
+        Ok(program) => program,
+        Err(error) => {
+            worker_context.tally.failure();
+            complete(
+                state,
+                outbound,
+                &worker_context.journal,
+                &key,
+                Some(&file),
+                Some(format!("{} {error}", job.item.handler)),
+                None,
+            );
+            return;
+        }
+    };
     let admitted = worker_context.admission.wait(
         &stage,
         &job.config,
@@ -579,6 +605,7 @@ fn run_job(
     }
     let command = command_for(
         &job.spec,
+        program,
         &file,
         worker_context.verbose,
         worker_context.debug,
@@ -590,7 +617,7 @@ fn run_job(
         fields: events::detected(
             &worker_context.journal,
             &file,
-            &command,
+            &job.item.handler,
             &reference,
             &segment_context,
         ),
@@ -1021,14 +1048,20 @@ mod tests {
             .extra
             .insert("files".into(), json!(["audio.flac", "screen.webm"]));
         dispatcher.handle(&message);
+        let mut describe_detected = false;
         let observed = loop {
             let event = receiver
                 .recv_timeout(Duration::from_secs(2))
                 .expect("segment completes");
+            if event.event == "detected" {
+                assert_eq!(event.fields["handler"], "describe");
+                describe_detected = true;
+            }
             if event.event == "observed" {
                 break event;
             }
         };
+        assert!(describe_detected, "describe fixture path emits detected");
         assert_eq!(observed.fields["error"], true);
         assert!(
             observed.fields["errors"][0]
@@ -1182,5 +1215,57 @@ mod tests {
             Some("no handlers"),
         );
         assert!(!marker.exists());
+    }
+
+    #[test]
+    fn unresolved_dispatcher_completes_a_matched_file_without_detected() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        std::fs::create_dir_all(temp.path().join("config")).expect("config");
+        std::fs::write(
+            temp.path().join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"openai"}}}"#,
+        )
+        .expect("settings");
+        let file = temp
+            .path()
+            .join("chronicle/20260812/one/120000_1/audio.flac");
+        std::fs::create_dir_all(file.parent().expect("segment")).expect("segment");
+        std::fs::write(&file, b"audio").expect("audio");
+        let (outbound, receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new_inner(
+            temp.path().to_path_buf(),
+            false,
+            false,
+            outbound,
+            Admission::new(Arc::new(SystemMemoryProbe)),
+            Err(DispatcherResolveError::Missing {
+                path: PathBuf::from("/opt/solstone-core-journal"),
+            }),
+            BatchContext::default(),
+        );
+        let mut message = observing("one", "120000_1");
+        message.extra.insert("files".into(), json!(["audio.flac"]));
+        dispatcher.handle(&message);
+        let mut saw_detected = false;
+        let observed = loop {
+            let event = receiver
+                .recv_timeout(Duration::from_secs(2))
+                .expect("segment completes");
+            if event.event == "detected" {
+                saw_detected = true;
+            }
+            if event.event == "observed" {
+                break event;
+            }
+        };
+        assert!(!saw_detected, "resolve failure must not emit detected");
+        assert_eq!(observed.fields["error"], true);
+        assert_eq!(
+            observed.fields["errors"][0].as_str().expect("error"),
+            "transcribe dispatcher missing: /opt/solstone-core-journal"
+        );
+        let (failed, ran) = dispatcher.tally.snapshot();
+        assert!(failed >= 1);
+        assert!(ran >= 1);
     }
 }

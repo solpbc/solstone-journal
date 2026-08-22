@@ -11,24 +11,10 @@ use crate::work::{SegmentContext, SegmentState};
 pub fn detected(
     journal: &Path,
     file: &Path,
-    command: &[String],
+    handler: &str,
     reference: &str,
     context: &SegmentContext,
 ) -> Map<String, Value> {
-    let handler = if command
-        .first()
-        .is_some_and(|v| v == "journal" || v == "solstone")
-        && command.len() > 1
-    {
-        command[1].clone()
-    } else {
-        command
-            .first()
-            .and_then(|v| Path::new(v).file_name())
-            .and_then(|v| v.to_str())
-            .unwrap_or_default()
-            .to_owned()
-    };
     let file = file
         .strip_prefix(journal)
         .map(|v| v.display().to_string())
@@ -116,12 +102,43 @@ mod tests {
         let v = detected(
             Path::new("/j"),
             Path::new("/j/chronicle/a"),
-            &["journal".into(), "describe".into()],
+            "describe",
             "r",
             &c,
         );
         assert_eq!(v["handler"], "describe");
+        assert_eq!(v["file"], "chronicle/a");
+        assert_eq!(v["ref"], "r");
+        assert_eq!(v["day"], "20260101");
+        assert_eq!(v["segment"], "120000_1");
+        assert_eq!(v["observer"], "o");
         assert_eq!(v["stream"], "s");
+    }
+
+    #[test]
+    fn detected_handler_matches_each_registry_spec() {
+        let context = SegmentContext {
+            key: SegmentKey {
+                day: "20260101".into(),
+                stream: None,
+                segment: "120000_1".into(),
+            },
+            observer: None,
+            batch: false,
+            meta: None,
+        };
+        let specs = crate::registry::default_registry(10);
+        assert_eq!(specs.len(), 3);
+        for spec in specs {
+            let fields = detected(
+                Path::new("/j"),
+                Path::new("/j/file"),
+                spec.name,
+                "r",
+                &context,
+            );
+            assert_eq!(fields["handler"], spec.name);
+        }
     }
     #[test]
     fn observed_includes_error_once_shape() {
