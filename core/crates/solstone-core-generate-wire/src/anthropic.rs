@@ -730,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn blank_configured_key_refuses_with_fixture_detail_before_post() {
+    fn blank_configured_key_refuses_before_post() {
         let mut transport = StubTransport::default();
         let result =
             anthropic_generate_with(&request(), &config(Some("  \t"), None), &mut transport);
@@ -744,7 +744,7 @@ mod tests {
             "anthropic",
             Some("request".into()),
         );
-        assert_eq!(refusal.detail, "fixture provider-response-invalid");
+        assert_eq!(refusal.detail, crate::refusal::LIVE_PROVIDER_FAILURE_DETAIL);
     }
 
     #[test]

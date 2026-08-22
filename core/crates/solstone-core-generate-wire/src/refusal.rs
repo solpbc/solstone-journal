@@ -7,76 +7,92 @@ use solstone_core_generate::{
 
 use crate::{LaneOutcome, SanitizedFinishReason, ValidationFailure};
 
+pub(crate) const LIVE_PROVIDER_FAILURE_DETAIL: &str =
+    "the configured provider could not produce a usable response";
+
 pub fn refusal_for(
     outcome: &LaneOutcome,
     resolved_provider: &str,
     request_id: Option<String>,
 ) -> RefusedResponse {
-    let (vector_id, reason, reason_code) = match outcome {
+    let (vector_id, reason, reason_code, live_detail) = match outcome {
         LaneOutcome::NoEngine => (
             "refused-no-engine-configured",
             RefusalReason::NoEngineConfigured,
             Some("thinking_engine_not_chosen".to_owned()),
+            None,
         ),
         LaneOutcome::AttestationNotVerified => (
             "refused-attestation-not-verified",
             RefusalReason::AttestationNotVerified,
             Some("attestation_not_yet_verified".to_owned()),
+            None,
         ),
         LaneOutcome::AttestationFailed => (
             "refused-attestation-failed",
             RefusalReason::AttestationFailed,
             Some("attestation_failed".to_owned()),
+            None,
         ),
         LaneOutcome::AttestationStale => (
             "refused-attestation-stale",
             RefusalReason::AttestationStale,
             Some("attestation_stale".to_owned()),
+            None,
         ),
         LaneOutcome::BundledFailure(failure) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
+            Some(LIVE_PROVIDER_FAILURE_DETAIL),
         ),
         LaneOutcome::EndpointFailure(failure) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
+            Some(LIVE_PROVIDER_FAILURE_DETAIL),
         ),
         LaneOutcome::AnthropicFailure(failure) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
+            Some(LIVE_PROVIDER_FAILURE_DETAIL),
         ),
         LaneOutcome::OpenAiFailure(failure) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
+            Some(LIVE_PROVIDER_FAILURE_DETAIL),
         ),
         LaneOutcome::GoogleFailure(failure) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             failure.reason_code.clone(),
+            Some(LIVE_PROVIDER_FAILURE_DETAIL),
         ),
         LaneOutcome::ValidationFailure(ValidationFailure::ProviderResponseInvalid) => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
             Some("provider_response_invalid".to_owned()),
+            None,
         ),
         LaneOutcome::ValidationFailure(ValidationFailure::IncompleteJson { finish_reason }) => (
             "refused-incomplete-json",
             RefusalReason::IncompleteJson,
             matches!(finish_reason, SanitizedFinishReason::MaxTokens)
                 .then(|| "incomplete_json_length".to_owned()),
+            None,
         ),
         LaneOutcome::ValidationFailure(ValidationFailure::NonResponsiveOutput) => (
             "refused-non-responsive-output",
             RefusalReason::NonResponsiveOutput,
             Some("non_responsive".to_owned()),
+            None,
         ),
         LaneOutcome::UnimplementedLane => (
             "refused-provider-response-invalid",
             RefusalReason::ProviderResponseInvalid,
+            None,
             None,
         ),
         LaneOutcome::BundledLocal
@@ -94,10 +110,11 @@ pub fn refusal_for(
         .iter()
         .find(|vector| vector["id"].as_str() == Some(vector_id))
         .expect("generate contract required refusal vector is present");
-    let detail = vector["response"]["detail"]
+    let fixture_detail = vector["response"]["detail"]
         .as_str()
         .expect("generate contract refusal detail is a string")
         .to_owned();
+    let detail = live_detail.map(str::to_owned).unwrap_or(fixture_detail);
     let (reason_code, retryable, blocking) = classify_reason_code(reason_code);
     RefusedResponse {
         id: request_id,
@@ -273,7 +290,12 @@ mod tests {
             );
             assert_eq!(refusal.retryable, retryable);
             assert_eq!(refusal.blocking, blocking);
-            assert_eq!(refusal.detail, "fixture provider-response-invalid");
+            assert_eq!(refusal.detail, LIVE_PROVIDER_FAILURE_DETAIL);
+            assert!(
+                !refusal
+                    .detail
+                    .contains("specific failure detail must not escape the fixture fallback")
+            );
         }
     }
 
@@ -303,7 +325,7 @@ mod tests {
             );
             assert_eq!(refusal.retryable, retryable);
             assert_eq!(refusal.blocking, blocking);
-            assert_eq!(refusal.detail, "fixture provider-response-invalid");
+            assert_eq!(refusal.detail, LIVE_PROVIDER_FAILURE_DETAIL);
         }
     }
 
@@ -333,7 +355,7 @@ mod tests {
             );
             assert_eq!(refusal.retryable, retryable);
             assert_eq!(refusal.blocking, blocking);
-            assert_eq!(refusal.detail, "fixture provider-response-invalid");
+            assert_eq!(refusal.detail, LIVE_PROVIDER_FAILURE_DETAIL);
         }
     }
 
@@ -363,7 +385,7 @@ mod tests {
             );
             assert_eq!(refusal.retryable, retryable);
             assert_eq!(refusal.blocking, blocking);
-            assert_eq!(refusal.detail, "fixture provider-response-invalid");
+            assert_eq!(refusal.detail, LIVE_PROVIDER_FAILURE_DETAIL);
         }
     }
 
@@ -393,7 +415,7 @@ mod tests {
             );
             assert_eq!(refusal.retryable, retryable);
             assert_eq!(refusal.blocking, blocking);
-            assert_eq!(refusal.detail, "fixture provider-response-invalid");
+            assert_eq!(refusal.detail, LIVE_PROVIDER_FAILURE_DETAIL);
         }
     }
 

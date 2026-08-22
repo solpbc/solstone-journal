@@ -1350,7 +1350,7 @@ mod tests {
         );
         let refusal =
             crate::refusal_for(&crate::LaneOutcome::EndpointFailure(failed), "local", None);
-        assert_eq!(refusal.detail, "fixture provider-response-invalid");
+        assert_eq!(refusal.detail, crate::refusal::LIVE_PROVIDER_FAILURE_DETAIL);
         let _ = std::fs::remove_dir_all(journal);
     }
 
@@ -1512,7 +1512,7 @@ mod tests {
                 "local",
                 None,
             );
-            assert_eq!(refusal.detail, "fixture provider-response-invalid");
+            assert_eq!(refusal.detail, crate::refusal::LIVE_PROVIDER_FAILURE_DETAIL);
             assert!(!refusal.detail.contains(credential));
             assert_eq!(
                 transport.get_credentials,
