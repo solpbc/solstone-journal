@@ -599,7 +599,7 @@ check-rust-msrv:
 			cargo check --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked; \
 		cargo_status=$$?; \
 		set -e; \
-		if $(CURDIR)/scripts/check_rust_target_live_use.sh "$$msrv_target"; then \
+		if $(CURDIR)/scripts/check_rust_target_live_use.sh "$$msrv_target" --cargo-environment; then \
 			rm -rf -- "$$msrv_target"; \
 		else \
 			echo "MSRV target retained because a live process still uses it: $$msrv_target" >&2; \

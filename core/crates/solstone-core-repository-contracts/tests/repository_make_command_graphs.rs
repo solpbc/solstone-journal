@@ -244,18 +244,8 @@ fn msrv_target_is_owned_and_reclaimed_on_success_and_failure() {
         let temp = TempDir::new("msrv-owned-target");
         let root = &temp.path;
         write_host_makefile(root, "Linux", "x86_64");
-        let scripts = root.join("scripts");
         let shims = root.join("shims");
-        fs::create_dir(&scripts).expect("create scripts fixture directory");
         fs::create_dir(&shims).expect("create shim fixture directory");
-        let live_use = scripts.join("check_rust_target_live_use.sh");
-        fs::copy(
-            repo_root().join("scripts/check_rust_target_live_use.sh"),
-            &live_use,
-        )
-        .expect("copy live-use census into fixture");
-        fs::set_permissions(&live_use, fs::Permissions::from_mode(0o755))
-            .expect("make live-use census executable");
         write_executable(
             &shims.join("rustup"),
             "#!/bin/sh\nprintf '%s\\n' '1.95.0-x86_64-unknown-linux-gnu'\n",
@@ -316,30 +306,21 @@ fn msrv_target_is_retained_while_a_descendant_still_uses_it() {
     let temp = TempDir::new("msrv-live-descendant");
     let root = &temp.path;
     write_host_makefile(root, "Linux", "x86_64");
-    let scripts = root.join("scripts");
     let shims = root.join("shims");
-    fs::create_dir(&scripts).expect("create scripts fixture directory");
     fs::create_dir(&shims).expect("create shim fixture directory");
-    let live_use = scripts.join("check_rust_target_live_use.sh");
-    fs::copy(
-        repo_root().join("scripts/check_rust_target_live_use.sh"),
-        &live_use,
-    )
-    .expect("copy live-use census into fixture");
-    fs::set_permissions(&live_use, fs::Permissions::from_mode(0o755))
-        .expect("make live-use census executable");
     write_executable(
         &shims.join("rustup"),
         "#!/bin/sh\nprintf '%s\\n' '1.95.0-x86_64-unknown-linux-gnu'\n",
     );
     write_executable(
         &shims.join("cargo"),
-        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" > \"$SOLSTONE_MSRV_TARGET_LOG\"\nmkdir -p \"$CARGO_TARGET_DIR\"\n/bin/sh -c 'printf \"%s\\n\" \"$$\" > \"$1\"; cd \"$2\"; : > child-ready; exec /bin/sleep 30' child \"$SOLSTONE_CHILD_PID_LOG\" \"$CARGO_TARGET_DIR\" </dev/null >/dev/null 2>&1 &\nwhile [ ! -e \"$CARGO_TARGET_DIR/child-ready\" ]; do /bin/sleep 0.01; done\nexit 23\n",
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" > \"$SOLSTONE_MSRV_TARGET_LOG\"\nmkdir -p \"$CARGO_TARGET_DIR\"\n/bin/sh -c 'printf \"%s\\n\" \"$$\" > \"$1\"; : > \"$2\"; exec /bin/sleep 30' child \"$SOLSTONE_CHILD_PID_LOG\" \"$SOLSTONE_CHILD_READY\" </dev/null >/dev/null 2>&1 &\nwhile [ ! -e \"$SOLSTONE_CHILD_READY\" ]; do /bin/sleep 0.01; done\nexit 23\n",
     );
 
     let configured_target = root.join("private-cargo-target");
     let target_log = root.join("msrv-target.log");
     let child_pid_log = root.join("child.pid");
+    let child_ready = root.join("child.ready");
     let output = Command::new("make")
         .arg("check-rust-msrv")
         .current_dir(root)
@@ -347,6 +328,7 @@ fn msrv_target_is_retained_while_a_descendant_still_uses_it() {
         .env("CARGO_TARGET_DIR", &configured_target)
         .env("SOLSTONE_MSRV_TARGET_LOG", &target_log)
         .env("SOLSTONE_CHILD_PID_LOG", &child_pid_log)
+        .env("SOLSTONE_CHILD_READY", &child_ready)
         .output()
         .expect("run live-descendant MSRV fixture");
     assert!(!output.status.success(), "failing Cargo status was masked");

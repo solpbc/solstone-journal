@@ -3,15 +3,20 @@
 # Copyright (c) 2026 sol pbc
 #
 # Refuse to wipe RUST_TARGET_DIR while a live process has an open file,
-# mapping, cwd, or executable under it.
+# mapping, cwd, executable, or Cargo target environment reference under it.
 set -eu
 
-if [ "$#" -lt 1 ]; then
-	echo "usage: $0 RUST_TARGET_DIR" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ] ||
+	{ [ "$#" -eq 2 ] && [ "$2" != "--cargo-environment" ]; }; then
+	echo "usage: $0 RUST_TARGET_DIR [--cargo-environment]" >&2
 	exit 1
 fi
 
 TARGET=$1
+CHECK_CARGO_ENVIRONMENT=false
+if [ "$#" -eq 2 ]; then
+	CHECK_CARGO_ENVIRONMENT=true
+fi
 if [ ! -e "$TARGET" ]; then
 	exit 0
 fi
@@ -53,6 +58,13 @@ Linux)
 		fi
 		if exe=$(readlink "$proc/exe" 2>/dev/null); then
 			check_path "$pid" exe "$exe"
+		fi
+		if [ "$CHECK_CARGO_ENVIRONMENT" = true ]; then
+			if { tr '\000' '\n' <"$proc/environ"; } 2>/dev/null |
+				grep -F -x "CARGO_TARGET_DIR=$TARGET" >/dev/null 2>&1; then
+				echo "pid $pid env CARGO_TARGET_DIR=$TARGET"
+				hits=$((hits + 1))
+			fi
 		fi
 		if [ -d "$proc/fd" ]; then
 			for fd in "$proc/fd"/*; do
