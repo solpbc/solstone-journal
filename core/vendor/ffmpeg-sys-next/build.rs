@@ -15,7 +15,8 @@ use flate2::read::GzDecoder;
 use solstone_core_ffmpeg_build_support::{
     BUILD_RUN_ID_ENV, ConfigureReceipt, ConfigureRunRecord, EVIDENCE_DIR, SourceAdmission,
     configure_mode_args, parse_build_profile, parse_debug_env, parse_ffmpeg_pin,
-    read_configure_receipt, run_fetch_if_selected, select_source_admission, verify_sha256,
+    read_configure_receipt, run_fetch_if_selected, select_source_admission, sha256_hex,
+    verify_sha256,
     write_configure_receipt, write_current_run_record,
 };
 use tar::Archive;
@@ -329,6 +330,32 @@ fn prepare_source(admitted: &SourcePreparation) -> io::Result<()> {
         ));
     }
     Ok(())
+}
+
+fn admitted_source_sha256(admitted: &SourcePreparation) -> io::Result<String> {
+    if admitted.admission == SourceAdmission::UseArchive {
+        return Ok(admitted.pin.sha256.clone());
+    }
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(source())
+        .args(["rev-parse", "HEAD"])
+        .output()?;
+    if !output.status.success() {
+        return Err(io::Error::other(format!(
+            "git rev-parse failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    let commit = String::from_utf8(output.stdout)
+        .map_err(io::Error::other)?
+        .trim()
+        .to_owned();
+    if commit.is_empty() {
+        return Err(io::Error::other("git rev-parse returned an empty commit"));
+    }
+    Ok(sha256_hex(format!("git-commit\0{commit}").as_bytes()))
 }
 
 fn switch(configure: &mut Command, feature: &str, name: &str) {
@@ -1268,21 +1295,25 @@ fn main() {
         let target = env::var("TARGET").expect("missing required: TARGET");
         let configure = configure_command(sysroot.as_deref()).unwrap();
         let planned = captured_configure(&configure);
-        let expected_receipt = ConfigureReceipt::new(
-            &target,
-            &admitted.profile,
-            &admitted.pin.sha256,
-            &planned.program,
-            &planned.args,
-        );
+        let expected_receipt = (admitted.admission == SourceAdmission::UseArchive).then(|| {
+            ConfigureReceipt::new(
+                &target,
+                &admitted.profile,
+                &admitted.pin.sha256,
+                &planned.program,
+                &planned.args,
+            )
+        });
         let evidence_dir = output().join(EVIDENCE_DIR);
-        let cached_receipt = if search().join("lib").join("libavutil.a").is_file() {
-            read_configure_receipt(&evidence_dir, &expected_receipt.filename().unwrap())
-                .ok()
-                .filter(|stored| stored.receipt == expected_receipt)
-        } else {
-            None
-        };
+        let cached_receipt = expected_receipt.as_ref().and_then(|expected| {
+            search()
+                .join("lib")
+                .join("libavutil.a")
+                .is_file()
+                .then(|| read_configure_receipt(&evidence_dir, &expected.filename().unwrap()).ok())
+                .flatten()
+                .filter(|stored| stored.receipt == *expected)
+        });
         let (receipt, configure_executed) = if let Some(receipt) = cached_receipt {
             (receipt, false)
         } else {
@@ -1291,15 +1322,18 @@ fn main() {
             fs::create_dir_all(output()).expect("failed to create build directory");
             prepare_source(&admitted).unwrap();
             let executed = build(configure).unwrap();
+            let source_sha256 = admitted_source_sha256(&admitted).unwrap();
             let receipt = ConfigureReceipt::new(
                 &target,
                 &admitted.profile,
-                &admitted.pin.sha256,
+                &source_sha256,
                 &executed.program,
                 &executed.args,
             );
-            if receipt.fingerprint != expected_receipt.fingerprint {
-                panic!("configure command changed between cache check and execution");
+            if let Some(expected) = expected_receipt {
+                if receipt.fingerprint != expected.fingerprint {
+                    panic!("configure command changed between cache check and execution");
+                }
             }
             (
                 write_configure_receipt(&evidence_dir, &receipt).unwrap(),

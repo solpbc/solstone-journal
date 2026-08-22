@@ -960,22 +960,28 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
         )));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let ffmpeg_out_dirs = bind_ffmpeg_build_script_out_dirs(&stdout);
-    if ffmpeg_out_dirs.len() > 1 {
-        return Err(ProduceError::new(format!(
-            "unexpected:\n  multiple ffmpeg build-script out directories for {}",
-            lane.triple
-        )));
-    }
-    if let Some(out_dir) = ffmpeg_out_dirs.first() {
-        validate_ffmpeg_evidence(
-            &out_dir.join(EVIDENCE_DIR),
-            lane.ffmpeg_run_id,
-            lane.triple,
-            "release",
-        )?;
-    }
+    let ffmpeg_out_dir =
+        require_single_ffmpeg_out_dir(bind_ffmpeg_build_script_out_dirs(&stdout), lane.triple)?;
+    validate_ffmpeg_evidence(
+        &ffmpeg_out_dir.join(EVIDENCE_DIR),
+        lane.ffmpeg_run_id,
+        lane.triple,
+        "release",
+    )?;
     bind_cargo_json(&stdout, lane.triple).map_err(|error| ProduceError::new(error.to_string()))
+}
+
+fn require_single_ffmpeg_out_dir(
+    out_dirs: Vec<PathBuf>,
+    target: &str,
+) -> Result<PathBuf, ProduceError> {
+    if let [out_dir] = out_dirs.as_slice() {
+        return Ok(out_dir.clone());
+    }
+    Err(ProduceError::new(format!(
+        "incomplete FFmpeg configure evidence:\n  expected one ffmpeg build-script out directory for {target}, found {}",
+        out_dirs.len()
+    )))
 }
 
 fn ffmpeg_build_run_id() -> String {
@@ -1470,6 +1476,23 @@ mod tests {
         assert!(
             validate_ffmpeg_evidence(&no_record, "current", "x86_64-unknown-linux-gnu", "release")
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn ffmpeg_evidence_requires_exactly_one_build_script_result() {
+        let target = "x86_64-unknown-linux-gnu";
+        assert!(require_single_ffmpeg_out_dir(Vec::new(), target).is_err());
+        assert!(
+            require_single_ffmpeg_out_dir(
+                vec![PathBuf::from("first"), PathBuf::from("second")],
+                target,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            require_single_ffmpeg_out_dir(vec![PathBuf::from("only")], target).unwrap(),
+            PathBuf::from("only")
         );
     }
 

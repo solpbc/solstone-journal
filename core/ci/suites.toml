@@ -604,6 +604,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-ffmpeg-build-support"
+package = "solstone-core-ffmpeg-build-support"
+set = "component"
+areas = ["media"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-format"
 package = "solstone-core-format"
 set = "component"
