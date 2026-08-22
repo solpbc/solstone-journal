@@ -36,6 +36,14 @@ RUST_BIN := core/target/debug
 RUST_TARGET_DIR := $(if $(strip $(CARGO_TARGET_DIR)),$(abspath $(CARGO_TARGET_DIR)),$(CURDIR)/core/target)
 CI_CARGO_HOME := $(if $(strip $(CARGO_HOME)),$(abspath $(CARGO_HOME)),$(HOME)/.cargo)
 CI_RUSTUP_HOME := $(if $(strip $(RUSTUP_HOME)),$(abspath $(RUSTUP_HOME)),$(HOME)/.rustup)
+# CI is evidence collection, not an interactive debugger session. Pin these
+# settings at the public and internal entry points so direct shells, recursive
+# Make, and hostile caller assignments cannot silently recreate incremental or
+# workspace debuginfo output. The built-in dev profile name stays unchanged,
+# preserving the existing debug/ paths and cross-step reuse.
+CI_CARGO_ENV_TARGETS := ci ci-contained ci-under-poison ci-full ci-full-under-poison ci-full-plan ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
+$(CI_CARGO_ENV_TARGETS): override export CARGO_INCREMENTAL := 0
+$(CI_CARGO_ENV_TARGETS): override export CARGO_PROFILE_DEV_DEBUG := 0
 FFMPEG_SOURCE_ARCHIVE := $(CURDIR)/target/ffmpeg-source-cache/ffmpeg.tar.gz
 ONNX_RUNTIME_ARCHIVE_DIR := $(CURDIR)/target/speakers-analyze-runtime-cache
 SERVICE_LEGACY_EVIDENCE_ROOT ?= core/fixtures/service_legacy_evidence
@@ -477,10 +485,10 @@ ci-full-prep-cargo:
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --no-run --locked
 
 ci-full-prep-onnx:
-	@$(MAKE) --no-print-directory check-rust-onnx-stage
+	@$(MAKE) --no-print-directory CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 check-rust-onnx-stage
 
 ci-full-prep-pdf:
-	@$(MAKE) --no-print-directory check-rust-pdf-stage
+	@$(MAKE) --no-print-directory CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 check-rust-pdf-stage
 
 # Read-only native-runtime readiness checks. The runner may verify prepared
 # inputs, but only the explicit prep targets above are allowed to repair them.
@@ -582,7 +590,21 @@ check-rust-msrv:
 	@$(REQUIRE_CARGO)
 	@$(REQUIRE_RUSTUP)
 	@rustup toolchain list 2>/dev/null | grep -Eq '^1\.95\.0(-|[[:space:]])' || { echo "Rust toolchain 1.95.0 is required for the MSRV gate; run rustup toolchain install 1.95.0" >&2; exit 1; }
-	RUSTUP_TOOLCHAIN=1.95.0 cargo check --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked
+	@set -eu; \
+		mkdir -p "$(RUST_TARGET_DIR)"; \
+		msrv_parent=$$(cd "$(RUST_TARGET_DIR)" && pwd -P); \
+		msrv_target=$$(mktemp -d "$$msrv_parent/ci-msrv-1.95.0-XXXXXX"); \
+		set +e; \
+		CARGO_TARGET_DIR="$$msrv_target" CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 RUSTUP_TOOLCHAIN=1.95.0 \
+			cargo check --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked; \
+		cargo_status=$$?; \
+		set -e; \
+		if $(CURDIR)/scripts/check_rust_target_live_use.sh "$$msrv_target"; then \
+			rm -rf -- "$$msrv_target"; \
+		else \
+			echo "MSRV target retained because a live process still uses it: $$msrv_target" >&2; \
+		fi; \
+		exit "$$cargo_status"
 
 check-rust-clippy:
 	@$(REQUIRE_CARGO)
@@ -1319,7 +1341,8 @@ define run-rust-gate-under-poison
 			'exit 97' > "$$shim_dir/$$interpreter"; \
 		chmod 755 "$$shim_dir/$$interpreter"; \
 	done; \
-	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 SOLSTONE_POISON_LOG="$$shim_dir/poison.log" $(MAKE) $(1)
+	PATH="$$shim_dir:$$PATH" SOLSTONE_CI_POISONED=1 SOLSTONE_POISON_LOG="$$shim_dir/poison.log" \
+		$(MAKE) CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 $(1)
 endef
 
 .PHONY: ci ci-contained ci-under-poison ci-full ci-full-under-poison
@@ -1338,8 +1361,10 @@ ifeq ($(HOST_SYSTEM),Linux)
 		--ro-bind "$(CURDIR)" "$(CURDIR)" --bind "$(RUST_TARGET_DIR)" "$(RUST_TARGET_DIR)" \
 		--chdir "$(CURDIR)" --setenv HOME /var/tmp/home --setenv TMPDIR /var/tmp \
 		--setenv CARGO_HOME "$(CI_CARGO_HOME)" --setenv RUSTUP_HOME "$(CI_RUSTUP_HOME)" \
+		--setenv CARGO_TARGET_DIR "$(RUST_TARGET_DIR)" \
+		--setenv CARGO_INCREMENTAL 0 --setenv CARGO_PROFILE_DEV_DEBUG 0 \
 		--setenv CARGO_NET_OFFLINE true --setenv SOLSTONE_CI_CONTAINED 1 \
-		$(MAKE) --no-print-directory ci-contained
+		$(MAKE) --no-print-directory CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 ci-contained
 else
 	$(call run-rust-gate-under-poison,ci-under-poison)
 endif

@@ -120,6 +120,261 @@ fn make_clean_reclaims_default_and_configured_cargo_targets() {
 }
 
 #[test]
+fn ci_entrypoints_override_hostile_cargo_disk_settings() {
+    #[derive(Clone, Copy, Debug)]
+    enum OverrideChannel {
+        Environment,
+        EnvironmentWins,
+        CommandLine,
+        Makeflags,
+    }
+
+    for gate in ["ci", "ci-full", "ci-full-prep", "ci-full-prep-cargo"] {
+        for channel in [
+            OverrideChannel::Environment,
+            OverrideChannel::EnvironmentWins,
+            OverrideChannel::CommandLine,
+            OverrideChannel::Makeflags,
+        ] {
+            let temp = TempDir::new("ci-cargo-disk-settings");
+            let root = &temp.path;
+            let system = if cfg!(target_os = "macos") {
+                "Darwin"
+            } else {
+                "Linux"
+            };
+            let arch = String::from_utf8(
+                Command::new("/usr/bin/uname")
+                    .arg("-m")
+                    .output()
+                    .expect("inspect fixture host architecture")
+                    .stdout,
+            )
+            .expect("host architecture is UTF-8");
+            write_host_makefile(root, system, arch.trim());
+            let runtime_target = if cfg!(target_os = "macos") {
+                "macos-arm64"
+            } else if matches!(arch.trim(), "aarch64" | "arm64") {
+                "linux-aarch64"
+            } else {
+                "linux-x86_64"
+            };
+            let onnx_names = if cfg!(target_os = "macos") {
+                ["libonnxruntime.1.25.0.dylib", "libonnxruntime.dylib"].as_slice()
+            } else {
+                [
+                    "libonnxruntime.so.1.25.0",
+                    "libonnxruntime.so.1",
+                    "libonnxruntime.so",
+                ]
+                .as_slice()
+            };
+            seed_runtime(root, runtime_target, onnx_names, &[]);
+            let pdf_name = if cfg!(target_os = "macos") {
+                "libpdfium.dylib"
+            } else {
+                "libpdfium.so"
+            };
+            let pdf_dir = root.join("target/pdfium-runtime-link").join(runtime_target);
+            fs::create_dir_all(&pdf_dir).expect("create PDF runtime fixture directory");
+            fs::write(pdf_dir.join(pdf_name), []).expect("write PDF runtime fixture");
+
+            let shims = root.join("shims");
+            let target = root.join("private-cargo-target");
+            let cargo_log = target.join("cargo.log");
+            let environment_log = target.join("cargo.env");
+            fs::create_dir(&shims).expect("create Cargo shim directory");
+            fs::create_dir(&target).expect("create configured Cargo target");
+            write_recording_cargo_shim(&shims.join("cargo"));
+
+            let mut command = Command::new("make");
+            command
+                .arg(gate)
+                .current_dir(root)
+                .env("PATH", fixture_path(&shims))
+                .env("CARGO_TARGET_DIR", &target)
+                .env("SOLSTONE_CI_CARGO_LOG", &cargo_log)
+                .env("SOLSTONE_CI_CARGO_ENV_LOG", &environment_log);
+            match channel {
+                OverrideChannel::Environment => {
+                    command
+                        .env("CARGO_INCREMENTAL", "1")
+                        .env("CARGO_PROFILE_DEV_DEBUG", "2");
+                }
+                OverrideChannel::EnvironmentWins => {
+                    command
+                        .arg("-e")
+                        .env("CARGO_INCREMENTAL", "1")
+                        .env("CARGO_PROFILE_DEV_DEBUG", "2");
+                }
+                OverrideChannel::CommandLine => {
+                    command.args(["CARGO_INCREMENTAL=1", "CARGO_PROFILE_DEV_DEBUG=2"]);
+                }
+                OverrideChannel::Makeflags => {
+                    command.env("MAKEFLAGS", "CARGO_INCREMENTAL=1 CARGO_PROFILE_DEV_DEBUG=2");
+                }
+            }
+            let output = command.output().expect("run disk-lean CI fixture");
+            assert!(
+                output.status.success(),
+                "make {gate} failed under {channel:?} Cargo settings:\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+
+            let expected = format!("0|0|{}", target.display());
+            let observed = fs::read_to_string(&environment_log)
+                .expect("CI entry point must execute a Cargo-backed command");
+            assert!(
+                observed.lines().next().is_some(),
+                "make {gate} under {channel:?} did not record a Cargo invocation"
+            );
+            assert!(
+                observed.lines().all(|line| line == expected),
+                "make {gate} under {channel:?} leaked hostile Cargo settings or lost the configured target:\n{observed}"
+            );
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn msrv_target_is_owned_and_reclaimed_on_success_and_failure() {
+    for cargo_exit in [0, 23] {
+        let temp = TempDir::new("msrv-owned-target");
+        let root = &temp.path;
+        write_host_makefile(root, "Linux", "x86_64");
+        let scripts = root.join("scripts");
+        let shims = root.join("shims");
+        fs::create_dir(&scripts).expect("create scripts fixture directory");
+        fs::create_dir(&shims).expect("create shim fixture directory");
+        let live_use = scripts.join("check_rust_target_live_use.sh");
+        fs::copy(
+            repo_root().join("scripts/check_rust_target_live_use.sh"),
+            &live_use,
+        )
+        .expect("copy live-use census into fixture");
+        fs::set_permissions(&live_use, fs::Permissions::from_mode(0o755))
+            .expect("make live-use census executable");
+        write_executable(
+            &shims.join("rustup"),
+            "#!/bin/sh\nprintf '%s\\n' '1.95.0-x86_64-unknown-linux-gnu'\n",
+        );
+        write_executable(
+            &shims.join("cargo"),
+            "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" > \"$SOLSTONE_MSRV_TARGET_LOG\"\nmkdir -p \"$CARGO_TARGET_DIR\"\nprintf '%s' owned > \"$CARGO_TARGET_DIR/owned-sentinel\"\nexit \"$SOLSTONE_CARGO_EXIT\"\n",
+        );
+
+        let configured_target = root.join("private-cargo-target");
+        fs::create_dir(&configured_target).expect("create configured Cargo target");
+        let unrelated = configured_target.join("unrelated-sentinel");
+        fs::write(&unrelated, b"preserve me").expect("write unrelated target sentinel");
+        let target_log = root.join("msrv-target.log");
+        let output = Command::new("make")
+            .arg("check-rust-msrv")
+            .current_dir(root)
+            .env("PATH", fixture_path(&shims))
+            .env("CARGO_TARGET_DIR", &configured_target)
+            .env("SOLSTONE_CARGO_EXIT", cargo_exit.to_string())
+            .env("SOLSTONE_MSRV_TARGET_LOG", &target_log)
+            .output()
+            .expect("run isolated MSRV fixture");
+        assert_eq!(
+            output.status.success(),
+            cargo_exit == 0,
+            "MSRV gate changed Cargo's status:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let owned_target = PathBuf::from(
+            fs::read_to_string(&target_log)
+                .expect("read isolated MSRV target")
+                .trim(),
+        );
+        assert!(owned_target.starts_with(&configured_target));
+        assert!(
+            owned_target
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("ci-msrv-1.95.0-"))
+        );
+        assert!(
+            !owned_target.exists(),
+            "isolated MSRV target survived after Cargo exited"
+        );
+        assert_eq!(
+            fs::read(&unrelated).expect("read unrelated target sentinel"),
+            b"preserve me"
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn msrv_target_is_retained_while_a_descendant_still_uses_it() {
+    let temp = TempDir::new("msrv-live-descendant");
+    let root = &temp.path;
+    write_host_makefile(root, "Linux", "x86_64");
+    let scripts = root.join("scripts");
+    let shims = root.join("shims");
+    fs::create_dir(&scripts).expect("create scripts fixture directory");
+    fs::create_dir(&shims).expect("create shim fixture directory");
+    let live_use = scripts.join("check_rust_target_live_use.sh");
+    fs::copy(
+        repo_root().join("scripts/check_rust_target_live_use.sh"),
+        &live_use,
+    )
+    .expect("copy live-use census into fixture");
+    fs::set_permissions(&live_use, fs::Permissions::from_mode(0o755))
+        .expect("make live-use census executable");
+    write_executable(
+        &shims.join("rustup"),
+        "#!/bin/sh\nprintf '%s\\n' '1.95.0-x86_64-unknown-linux-gnu'\n",
+    );
+    write_executable(
+        &shims.join("cargo"),
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$CARGO_TARGET_DIR\" > \"$SOLSTONE_MSRV_TARGET_LOG\"\nmkdir -p \"$CARGO_TARGET_DIR\"\n/bin/sh -c 'printf \"%s\\n\" \"$$\" > \"$1\"; cd \"$2\"; : > child-ready; exec /bin/sleep 30' child \"$SOLSTONE_CHILD_PID_LOG\" \"$CARGO_TARGET_DIR\" </dev/null >/dev/null 2>&1 &\nwhile [ ! -e \"$CARGO_TARGET_DIR/child-ready\" ]; do /bin/sleep 0.01; done\nexit 23\n",
+    );
+
+    let configured_target = root.join("private-cargo-target");
+    let target_log = root.join("msrv-target.log");
+    let child_pid_log = root.join("child.pid");
+    let output = Command::new("make")
+        .arg("check-rust-msrv")
+        .current_dir(root)
+        .env("PATH", fixture_path(&shims))
+        .env("CARGO_TARGET_DIR", &configured_target)
+        .env("SOLSTONE_MSRV_TARGET_LOG", &target_log)
+        .env("SOLSTONE_CHILD_PID_LOG", &child_pid_log)
+        .output()
+        .expect("run live-descendant MSRV fixture");
+    assert!(!output.status.success(), "failing Cargo status was masked");
+    let owned_target = PathBuf::from(
+        fs::read_to_string(&target_log)
+            .expect("read isolated MSRV target")
+            .trim(),
+    );
+    assert!(
+        owned_target.exists(),
+        "MSRV target was removed while a child process used it"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("MSRV target retained"),
+        "retention diagnostic was absent: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let child_pid = fs::read_to_string(&child_pid_log).expect("read child PID");
+    let kill = Command::new("/bin/kill")
+        .arg(child_pid.trim())
+        .status()
+        .expect("terminate exact fixture child");
+    assert!(kill.success(), "failed to terminate exact fixture child");
+    fs::remove_dir_all(&owned_target).expect("remove retained fixture target after child exit");
+}
+
+#[test]
 fn manual_race_gate_is_selectable_without_uv() {
     let root = repo_root();
     let mut targets = ci_registry(&root)

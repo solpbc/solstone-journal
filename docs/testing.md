@@ -28,8 +28,8 @@ A Rust test sets `SOLSTONE_JOURNAL` itself. There is no autouse fixture.
 
 The `tests/fixtures/journal/` directory contains immutable mock input with sample
 facets, agents, transcripts, and indexed data. Tests may read it directly. Any
-test that writes, scans, or rebuilds journal/index state must use the
-`journal_copy` fixture or a smaller journal under `tmp_path`.
+test that writes, scans, or rebuilds journal/index state must first copy the
+needed input into a temporary directory such as `tempfile::TempDir`.
 
 ## Running Tests
 
@@ -49,9 +49,9 @@ test that writes, scans, or rebuilds journal/index state must use the
   process-launch, network-constructor, or native-runtime call it detects in
   scanned unit-test code. On Linux, `make ci` requires Bubblewrap and runs with
   the network, PID, IPC, and UTS namespaces unshared, the checkout read-only
-  except for the Cargo target directory, disk-backed temporary storage, and
-  Cargo offline. On macOS, the same Rust checks run locked and offline without
-  the Linux containment layer.
+  except for the Cargo target directory, temporary storage rooted under
+  `/var/tmp`, and Cargo offline. On macOS, the same Rust checks run locked and
+  offline without the Linux containment layer.
 - On a cold checkout or after cleaning `core/target`, run
   `make ci-full-prep-cargo` before `make ci` to materialize the build graph.
 - Prepare the full gate explicitly with `make ci-full-prep`. Preparation owns
@@ -63,7 +63,9 @@ test that writes, scans, or rebuilds journal/index state must use the
 - `make ci-full` runs the default full-gate plan defined in
   `core/ci/suites.toml`. It keeps going after a failing registry entry, applies
   a timeout to every selected registry entry,
-  and writes a revision-bound JSON receipt under `core/target/ci-receipts/`.
+  and writes a revision-bound JSON receipt under `target/ci-receipts/`. With
+  default Cargo target settings, this is outside `core/target`, so `make clean`
+  leaves the evidence intact.
   Outcomes are `PASS`, `FAIL`, `BLOCKED`, `SKIP`, or `INCONCLUSIVE`; anything
   except `PASS` or a platform `SKIP` makes the command fail. Execution requires
   a clean Git worktree so the receipt is bound to the clean starting revision.
@@ -97,7 +99,7 @@ test that writes, scans, or rebuilds journal/index state must use the
   `SUPERVISOR_RACE_INCONCLUSIVE` marker when that helper returns an inconclusive outcome,
   and join `RUST_RACE_TEST_TARGETS` so `make check-rust-race` covers them.
 - Run one crate's tests with `cargo test -p <crate>`. ⚠ That does **not** run a
-  dependency's tests; use `--workspace` when you need the sweep
+  dependency's tests; use `--workspace` when you need the sweep.
 ## Worktree Development
 
 Run the full stack (supervisor + callosum + sense + cortex + convey) against test fixture data:
@@ -115,7 +117,9 @@ curl -s http://localhost:$(cat tests/fixtures/journal/health/convey.port)/
 
 Notes:
 
-- Agents won't execute without API keys — this is expected in worktrees
+- Agents won't execute without API keys. This is expected in worktrees.
 - Output artifacts go in `scratch/` (git-ignored)
 - Service logs: `tests/fixtures/journal/health/<service>.log`
-- `make dev` writes runtime artifacts (stats cache, health logs, task logs) into the fixtures journal — these are covered by `tests/fixtures/journal/.gitignore` and should never be committed
+- `make dev` writes runtime artifacts (stats cache, health logs, task logs) into
+  the fixtures journal. They are covered by `tests/fixtures/journal/.gitignore`
+  and should never be committed.

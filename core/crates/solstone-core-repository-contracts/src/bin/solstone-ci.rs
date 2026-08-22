@@ -452,9 +452,7 @@ fn execute(
         .map_err(|error| format!("system clock: {error}"))?
         .as_secs();
     let current_platform = env::consts::OS;
-    let log_root = repo
-        .join("core/target/ci-logs")
-        .join(format!("{revision}-{started_unix}"));
+    let log_root = default_log_root(repo, &revision, started_unix);
     fs::create_dir_all(&log_root)
         .map_err(|error| format!("create log directory {}: {error}", log_root.display()))?;
     let mut prerequisite_cache = BTreeMap::<String, Result<(), String>>::new();
@@ -610,10 +608,7 @@ fn execute(
         selectors,
         results,
     };
-    let path = receipt_path.unwrap_or_else(|| {
-        repo.join("core/target/ci-receipts")
-            .join(format!("{revision}-{started_unix}.json"))
-    });
+    let path = receipt_path.unwrap_or_else(|| default_receipt_path(repo, &revision, started_unix));
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| format!("create receipt directory {}: {error}", parent.display()))?;
@@ -685,6 +680,7 @@ fn run_item(
         .map_err(|error| format!("clone log {}: {error}", log_path.display()))?;
     let before = child_cpu_usage()?;
     let mut command = Command::new(&argv[0]);
+    pin_ci_cargo_environment(&mut command);
     command
         .args(&argv[1..])
         .current_dir(repo)
@@ -727,6 +723,23 @@ fn run_item(
             Err(error) => return Err(format!("wait for {}: {error}", item.id)),
         }
     }
+}
+
+const CI_CARGO_ENVIRONMENT: [(&str, &str); 2] =
+    [("CARGO_INCREMENTAL", "0"), ("CARGO_PROFILE_DEV_DEBUG", "0")];
+
+fn pin_ci_cargo_environment(command: &mut Command) {
+    command.envs(CI_CARGO_ENVIRONMENT);
+}
+
+fn default_log_root(repo: &Path, revision: &str, started_unix: u64) -> PathBuf {
+    repo.join("target/ci-logs")
+        .join(format!("{revision}-{started_unix}"))
+}
+
+fn default_receipt_path(repo: &Path, revision: &str, started_unix: u64) -> PathBuf {
+    repo.join("target/ci-receipts")
+        .join(format!("{revision}-{started_unix}.json"))
 }
 
 #[cfg(unix)]
@@ -1105,6 +1118,35 @@ mod tests {
                 default_full: true,
             }],
         }
+    }
+
+    #[test]
+    fn spawned_ci_commands_pin_disk_lean_cargo_settings() {
+        assert_eq!(
+            CI_CARGO_ENVIRONMENT,
+            [("CARGO_INCREMENTAL", "0"), ("CARGO_PROFILE_DEV_DEBUG", "0")]
+        );
+    }
+
+    #[test]
+    fn default_ci_evidence_lives_outside_the_cargo_target() {
+        let repo = Path::new("/checkout");
+        assert_eq!(
+            default_log_root(repo, "abc123", 42),
+            PathBuf::from("/checkout/target/ci-logs/abc123-42")
+        );
+        assert_eq!(
+            default_receipt_path(repo, "abc123", 42),
+            PathBuf::from("/checkout/target/ci-receipts/abc123-42.json")
+        );
+    }
+
+    #[test]
+    fn explicit_receipt_override_remains_authoritative() {
+        let (_, receipt) =
+            parse_selectors(["--receipt".to_owned(), "custom/receipt.json".to_owned()].into_iter())
+                .expect("explicit receipt parses");
+        assert_eq!(receipt, Some(PathBuf::from("custom/receipt.json")));
     }
 
     #[test]

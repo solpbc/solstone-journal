@@ -60,7 +60,7 @@ fn write_forbidden_shim(path: &Path) {
 }
 
 fn write_recording_cargo_shim(path: &Path) {
-    let script = "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CI_CARGO_LOG\"\ncase \"$*\" in\n  *'--bin solstone-core-depict'*)\n    printf '%s\\n' '{\"schema\":\"solstone-depict-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 1\n    ;;\n  *'--bin solstone-core-speakers-analyze'*)\n    printf '%s\\n' '{\"schema\":\"solstone-speaker-analyze-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 64\n    ;;\n  *'--bin solstone-core-vad-analyze'*)\n    printf '%s\\n' '{\"schema\":\"solstone-vad-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 64\n    ;;\nesac\n";
+    let script = "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CI_CARGO_LOG\"\nif [ -n \"${SOLSTONE_CI_CARGO_ENV_LOG:-}\" ]; then\n    printf '%s|%s|%s\\n' \"${CARGO_INCREMENTAL-unset}\" \"${CARGO_PROFILE_DEV_DEBUG-unset}\" \"${CARGO_TARGET_DIR-unset}\" >> \"$SOLSTONE_CI_CARGO_ENV_LOG\"\nfi\ncase \"$*\" in\n  *'--bin solstone-core-depict'*)\n    printf '%s\\n' '{\"schema\":\"solstone-depict-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 1\n    ;;\n  *'--bin solstone-core-speakers-analyze'*)\n    printf '%s\\n' '{\"schema\":\"solstone-speaker-analyze-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 64\n    ;;\n  *'--bin solstone-core-vad-analyze'*)\n    printf '%s\\n' '{\"schema\":\"solstone-vad-error-v1\",\"reason\":\"malformed-request\"}' >&2\n    exit 64\n    ;;\nesac\n";
     fs::write(path, script).expect("write recording Cargo shim");
     fs::set_permissions(path, fs::Permissions::from_mode(0o755))
         .expect("make recording Cargo shim executable");
