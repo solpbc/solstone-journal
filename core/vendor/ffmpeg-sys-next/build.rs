@@ -12,7 +12,12 @@ use std::process::Command;
 use std::str;
 
 use flate2::read::GzDecoder;
-use sha2::{Digest, Sha256};
+use solstone_core_ffmpeg_build_support::{
+    BUILD_RUN_ID_ENV, ConfigureReceipt, ConfigureRunRecord, EVIDENCE_DIR, SourceAdmission,
+    configure_mode_args, parse_build_profile, parse_debug_env, parse_ffmpeg_pin,
+    read_configure_receipt, run_fetch_if_selected, select_source_admission, verify_sha256,
+    write_configure_receipt, write_current_run_record,
+};
 use tar::Archive;
 
 use bindgen::callbacks::{
@@ -76,10 +81,13 @@ static LIBRARIES: &[Library] = &[
 
 const SOLSTONE_FFMPEG_SOURCE_ARCHIVE: &str = "SOLSTONE_FFMPEG_SOURCE_ARCHIVE";
 const SOLSTONE_DISTRIBUTION_OFFLINE: &str = "SOLSTONE_DISTRIBUTION_OFFLINE";
-const SOLSTONE_FFMPEG_ARCHIVE_ROOT: &str =
-    "FFmpeg-03d9533176e98bb9fbf569c1f34968e73e948dd9";
-const SOLSTONE_FFMPEG_ARCHIVE_SHA256: &str =
-    "ba7070db2f8a0590e3bbad428c8ffbec33f80b0a430bcad79c2cfb756e84ff8b";
+
+struct SourcePreparation {
+    pin: solstone_core_ffmpeg_build_support::FfmpegPin,
+    profile: String,
+    admission: SourceAdmission,
+    archive_path: Option<PathBuf>,
+}
 
 #[derive(Debug)]
 struct Callbacks;
@@ -194,36 +202,73 @@ fn fetch() -> io::Result<()> {
     }
 }
 
-fn prepare_source() -> io::Result<()> {
+fn ffmpeg_pin() -> io::Result<solstone_core_ffmpeg_build_support::FfmpegPin> {
+    let builder_inputs =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../distribution/builder-inputs.toml");
+    let builder_inputs = fs::read_to_string(builder_inputs)?;
+    parse_ffmpeg_pin(&builder_inputs).map_err(io::Error::other)
+}
+
+fn admit_source() -> io::Result<SourcePreparation> {
     println!("cargo:rerun-if-env-changed={SOLSTONE_FFMPEG_SOURCE_ARCHIVE}");
     println!("cargo:rerun-if-env-changed={SOLSTONE_DISTRIBUTION_OFFLINE}");
-    let Some(archive_path) = env::var_os(SOLSTONE_FFMPEG_SOURCE_ARCHIVE) else {
-        if env::var_os(SOLSTONE_DISTRIBUTION_OFFLINE).is_some() {
-            return Err(io::Error::other(format!(
-                "missing required: {SOLSTONE_FFMPEG_SOURCE_ARCHIVE}"
-            )));
-        }
-        return fetch();
+    println!("cargo:rerun-if-changed=../../distribution/builder-inputs.toml");
+
+    let profile = env::var("PROFILE")
+        .map_err(|error| io::Error::other(format!("missing required:\n  PROFILE ({error})")))?;
+    let build_profile = parse_build_profile(&profile).map_err(io::Error::other)?;
+    let pin = ffmpeg_pin()?;
+    let archive_path = env::var_os(SOLSTONE_FFMPEG_SOURCE_ARCHIVE);
+    let archive_present = archive_path.as_ref().is_some_and(|path| !path.is_empty());
+    let offline_present = env::var_os(SOLSTONE_DISTRIBUTION_OFFLINE).is_some();
+    let admission = select_source_admission(build_profile, archive_present, offline_present)
+        .map_err(io::Error::other)?;
+    let archive_path = if admission == SourceAdmission::UseArchive {
+        let archive_path = archive_path
+            .filter(|path| !path.is_empty())
+            .ok_or_else(|| {
+                io::Error::other(format!(
+                    "missing required:\n  {SOLSTONE_FFMPEG_SOURCE_ARCHIVE}"
+                ))
+            })?;
+        let archive_path = PathBuf::from(archive_path);
+        let bytes = fs::read(&archive_path)?;
+        verify_sha256(&bytes, &pin.sha256).map_err(io::Error::other)?;
+        Some(archive_path)
+    } else {
+        None
     };
-    if archive_path.is_empty() {
-        return Err(io::Error::other(format!(
-            "missing required: {SOLSTONE_FFMPEG_SOURCE_ARCHIVE}"
-        )));
+    Ok(SourcePreparation {
+        pin,
+        profile,
+        admission,
+        archive_path,
+    })
+}
+
+fn prepare_source(admitted: &SourcePreparation) -> io::Result<()> {
+    if admitted.admission == SourceAdmission::Fetch {
+        run_fetch_if_selected(admitted.admission, || {
+            fetch().map_err(|error| error.to_string())
+        })
+        .map_err(io::Error::other)?;
+        return Ok(());
     }
-    let archive_path = PathBuf::from(archive_path);
-    let bytes = fs::read(&archive_path)?;
-    let digest = format!("{:x}", Sha256::digest(&bytes));
-    if digest != SOLSTONE_FFMPEG_ARCHIVE_SHA256 {
-        return Err(io::Error::other(format!(
-            "unexpected: FFmpeg archive digest {digest}"
-        )));
-    }
+
+    let archive_path = admitted.archive_path.as_ref().ok_or_else(|| {
+        io::Error::other(format!(
+            "missing required:\n  {SOLSTONE_FFMPEG_SOURCE_ARCHIVE}"
+        ))
+    })?;
+    let bytes = fs::read(archive_path)?;
+    verify_sha256(&bytes, &admitted.pin.sha256).map_err(io::Error::other)?;
 
     let destination = source();
     let _ = fs::remove_dir_all(&destination);
     fs::create_dir_all(&destination)?;
     let decoder = GzDecoder::new(bytes.as_slice());
     let mut archive = Archive::new(decoder);
+    let archive_root = admitted.pin.archive_root();
     let mut configure_seen = false;
     for entry in archive.entries()? {
         let mut entry = entry?;
@@ -233,7 +278,7 @@ fn prepare_source() -> io::Result<()> {
         }
         let path = entry.path()?.into_owned();
         let mut components = path.components();
-        if components.next() != Some(Component::Normal(SOLSTONE_FFMPEG_ARCHIVE_ROOT.as_ref())) {
+        if components.next() != Some(Component::Normal(Path::new(&archive_root).as_os_str())) {
             return Err(io::Error::other(format!(
                 "unexpected: FFmpeg archive member {}",
                 path.display()
@@ -407,7 +452,7 @@ fn validated_cpu_flag(var: &str, value: String) -> String {
     value
 }
 
-fn build(sysroot: Option<&str>) -> io::Result<()> {
+fn configure_command(sysroot: Option<&str>) -> io::Result<Command> {
     let source_dir = source();
     if cfg!(target_os = "windows") {
         let path = env::var("PATH").unwrap_or_default();
@@ -428,7 +473,6 @@ fn build(sysroot: Option<&str>) -> io::Result<()> {
 
     // Command's path is not relative to command's current_dir
     let configure_path = source_dir.join("configure");
-    assert!(configure_path.exists());
     let mut configure = if cfg!(target_os = "windows") {
         if Command::new("sh")
             .arg("-c")
@@ -615,16 +659,11 @@ fn build(sysroot: Option<&str>) -> io::Result<()> {
         configure.arg("--extra-cflags=-fPIC");
     }
 
-    // control debug build
-    if env::var("DEBUG").is_ok() {
-        configure.arg("--enable-debug");
-        configure.arg("--disable-stripping");
-    } else {
-        configure.arg("--disable-debug");
-        configure.arg("--enable-stripping");
-        configure.arg("--extra-cflags=-03 -ffast-math -funroll-loops");
-        #[cfg(not(target_os = "windows"))]
-        configure.arg("--extra-ldflags=-flto");
+    let debug = env::var("DEBUG")
+        .map_err(|error| io::Error::other(format!("missing required:\n  DEBUG ({error})")))?;
+    let configure_mode = parse_debug_env(&debug).map_err(io::Error::other)?;
+    for arg in configure_mode_args(configure_mode, cfg!(target_os = "windows")) {
+        configure.arg(arg);
     }
 
     // make it static
@@ -859,7 +898,32 @@ fn build(sysroot: Option<&str>) -> io::Result<()> {
     // time on platforms like mac which spawns thousands of nullabilty complieance warnings
     configure.arg("--extra-cflags=-w");
 
-    // run ./configure
+    Ok(configure)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CapturedConfigure {
+    program: String,
+    args: Vec<String>,
+}
+
+fn captured_configure(configure: &Command) -> CapturedConfigure {
+    CapturedConfigure {
+        program: configure.get_program().to_string_lossy().into_owned(),
+        args: configure
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect(),
+    }
+}
+
+fn build(mut configure: Command) -> io::Result<CapturedConfigure> {
+    if !source().join("configure").is_file() {
+        return Err(io::Error::other("missing required: FFmpeg configure"));
+    }
+
+    // This is the exact process invocation: capture it immediately before execution.
+    let captured = captured_configure(&configure);
     let output = configure
         .output()
         .unwrap_or_else(|_| panic!("{:?} failed", configure));
@@ -900,7 +964,7 @@ fn build(sysroot: Option<&str>) -> io::Result<()> {
         return Err(io::Error::other("make install failed"));
     }
 
-    Ok(())
+    Ok(captured)
 }
 
 #[cfg(not(target_env = "msvc"))]
@@ -1187,6 +1251,7 @@ fn link_to_libraries(statik: bool, target_os: &str) {
 
 fn main() {
     println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
+    println!("cargo:rerun-if-env-changed={BUILD_RUN_ID_ENV}");
 
     let statik = env::var("CARGO_FEATURE_STATIC").is_ok();
     let ffmpeg_major_version: u32 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap();
@@ -1199,11 +1264,51 @@ fn main() {
             search().join("lib").to_string_lossy()
         );
         link_to_libraries(statik, &target_os);
-        if fs::metadata(search().join("lib").join("libavutil.a")).is_err() {
+        let admitted = admit_source().unwrap();
+        let target = env::var("TARGET").expect("missing required: TARGET");
+        let configure = configure_command(sysroot.as_deref()).unwrap();
+        let planned = captured_configure(&configure);
+        let expected_receipt = ConfigureReceipt::new(
+            &target,
+            &admitted.profile,
+            &admitted.pin.sha256,
+            &planned.program,
+            &planned.args,
+        );
+        let evidence_dir = output().join(EVIDENCE_DIR);
+        let cached_receipt = if search().join("lib").join("libavutil.a").is_file() {
+            read_configure_receipt(&evidence_dir, &expected_receipt.filename().unwrap())
+                .ok()
+                .filter(|stored| stored.receipt == expected_receipt)
+        } else {
+            None
+        };
+        let (receipt, configure_executed) = if let Some(receipt) = cached_receipt {
+            (receipt, false)
+        } else {
+            let _ = fs::remove_dir_all(search());
+            let _ = fs::remove_dir_all(source());
             fs::create_dir_all(output()).expect("failed to create build directory");
-            prepare_source().unwrap();
-            build(sysroot.as_deref()).unwrap();
-        }
+            prepare_source(&admitted).unwrap();
+            let executed = build(configure).unwrap();
+            let receipt = ConfigureReceipt::new(
+                &target,
+                &admitted.profile,
+                &admitted.pin.sha256,
+                &executed.program,
+                &executed.args,
+            );
+            if receipt.fingerprint != expected_receipt.fingerprint {
+                panic!("configure command changed between cache check and execution");
+            }
+            (
+                write_configure_receipt(&evidence_dir, &receipt).unwrap(),
+                true,
+            )
+        };
+        let run_id = env::var(BUILD_RUN_ID_ENV).unwrap_or_else(|_| "local".to_owned());
+        let record = ConfigureRunRecord::new(&run_id, &receipt, configure_executed).unwrap();
+        write_current_run_record(&evidence_dir, &record).unwrap();
 
         // Check additional required libraries.
         {

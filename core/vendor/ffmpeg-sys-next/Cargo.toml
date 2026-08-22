@@ -150,5 +150,8 @@ version = "0.10"
 [build-dependencies.tar]
 version = "0.4"
 
+[build-dependencies.solstone-core-ffmpeg-build-support]
+path = "../../crates/solstone-core-ffmpeg-build-support"
+
 [target.'cfg(target_env = "msvc")'.build-dependencies.vcpkg]
 version = "0.2"
