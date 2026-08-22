@@ -126,7 +126,7 @@ pub fn read_segment_progress<S: HealthLogSource>(
                     {
                         dispatched.insert(name.clone());
                     }
-                    if latest_terminal(&entries)
+                    if qualifying_terminal(&entries)
                         .is_some_and(|item| item.kind == ProgressKind::Capped)
                     {
                         capped_by_skip.insert(name.clone());
@@ -199,24 +199,25 @@ fn latest_terminal(entries: &[ProgressRecord]) -> Option<&ProgressRecord> {
         .rfind(|item| item.kind != ProgressKind::Dispatch)
 }
 
-fn name_is_completed(entries: &[ProgressRecord]) -> bool {
+fn qualifying_terminal(entries: &[ProgressRecord]) -> Option<&ProgressRecord> {
     let last_dispatch = entries
         .iter()
         .rfind(|item| item.kind == ProgressKind::Dispatch);
     let Some(dispatch) = last_dispatch else {
-        return latest_terminal(entries).is_some_and(|item| item.kind == ProgressKind::Complete);
+        return latest_terminal(entries);
     };
     // Legacy dispatch/terminal rows on disk predate use_id correlation and
     // cannot be rewritten, so a missing use_id on either side falls back to
     // record order.
-    entries
-        .iter()
-        .rfind(|item| {
-            item.kind != ProgressKind::Dispatch
-                && (item.ts, item.sequence) > (dispatch.ts, dispatch.sequence)
-                && use_id_matches(&dispatch.use_id, &item.use_id)
-        })
-        .is_some_and(|item| item.kind == ProgressKind::Complete)
+    entries.iter().rfind(|item| {
+        item.kind != ProgressKind::Dispatch
+            && (item.ts, item.sequence) > (dispatch.ts, dispatch.sequence)
+            && use_id_matches(&dispatch.use_id, &item.use_id)
+    })
+}
+
+fn name_is_completed(entries: &[ProgressRecord]) -> bool {
+    qualifying_terminal(entries).is_some_and(|item| item.kind == ProgressKind::Complete)
 }
 
 fn use_id_matches(dispatch: &Option<String>, terminal: &Option<String>) -> bool {

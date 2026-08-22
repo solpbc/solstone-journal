@@ -1154,7 +1154,7 @@ mod tests {
     #[test]
     fn criterion_1_and_2_and_4_generate_refusal_preserves_structured_facts() {
         let live_detail = "the configured provider could not produce a usable response";
-        let cases: [(&str, Option<&str>, bool, bool, bool, bool); 3] = [
+        let cases: [(&str, Option<&str>, bool, bool, bool, bool, &str); 3] = [
             (
                 "known",
                 Some("provider_response_invalid"),
@@ -1162,11 +1162,22 @@ mod tests {
                 false,
                 true,
                 false,
+                "openai",
             ),
-            ("absent", None, false, true, false, true),
-            ("unknown", Some("future_code"), true, false, false, true),
+            ("absent", None, false, true, false, true, "openai"),
+            (
+                "unknown",
+                Some("future_code"),
+                true,
+                false,
+                false,
+                true,
+                "openai",
+            ),
         ];
-        for (label, reason_code, stub_retryable, stub_blocking, retryable, blocking) in cases {
+        for (label, reason_code, stub_retryable, stub_blocking, retryable, blocking, provider) in
+            cases
+        {
             let (root, paths, context) = fixture(
                 "plain",
                 r#"{
@@ -1178,7 +1189,7 @@ mod tests {
                 reason_code,
                 stub_retryable,
                 stub_blocking,
-                "local",
+                provider,
                 live_detail,
             ));
             let mut start = Vec::new();
@@ -1203,7 +1214,7 @@ mod tests {
                 "provider-response-invalid",
                 "{label}"
             );
-            assert_eq!(response.provider.as_deref(), Some("local"), "{label}");
+            assert_eq!(response.provider.as_deref(), Some(provider), "{label}");
             assert_eq!(
                 response.reason_code.as_ref().map(ReasonCodeValue::as_wire),
                 reason_code,
@@ -1217,6 +1228,7 @@ mod tests {
                     .contains("fixture provider-response-invalid"),
                 "{label}"
             );
+            assert_eq!(&response.detail, live_detail, "{label}");
             assert!(
                 !error
                     .to_string()
@@ -1236,6 +1248,7 @@ mod tests {
                 error_text.contains("generate hook 'runtime' for talent 'plain'"),
                 "{label}: {error_text}"
             );
+            assert!(error_text.contains(live_detail), "{label}: {error_text}");
             assert!(
                 !error_text.contains("fixture provider-response-invalid"),
                 "{label}"
@@ -1247,7 +1260,7 @@ mod tests {
             }
             assert_eq!(event["retryable"], retryable, "{label}");
             assert_eq!(event["blocking"], blocking, "{label}");
-            assert_eq!(event["provider"], "local", "{label}");
+            assert_eq!(event["provider"], provider, "{label}");
         }
     }
 

@@ -418,3 +418,85 @@ fn fold_verdicts_keep_nongating_superseded_unconfigured_capped_idle_and_redundan
     let classification = classify_segment_completion(&[gating], &progress);
     assert_eq!(classification.not_thought, 1);
 }
+
+#[test]
+fn capped_by_skip_anchors_to_latest_dispatch_like_completed() {
+    let root = root();
+    write(
+        &root,
+        "20990202",
+        "001.jsonl",
+        &[
+            r#"{"event":"sense.complete","ts":1,"mode":"segment","stream":"default","segment":"stale","density":"active"}"#,
+            r#"{"event":"talent.skip","ts":2,"mode":"segment","stream":"default","segment":"stale","name":"documents","reason":"capped","use_id":"old"}"#,
+            r#"{"event":"talent.dispatch","ts":3,"mode":"segment","stream":"default","segment":"stale","name":"documents","use_id":"new"}"#,
+            r#"{"event":"talent.complete","ts":4,"mode":"segment","stream":"default","segment":"stale","name":"documents","use_id":"other"}"#,
+            r#"{"event":"sense.complete","ts":5,"mode":"segment","stream":"default","segment":"order-cap","density":"active"}"#,
+            r#"{"event":"talent.dispatch","ts":6,"mode":"segment","stream":"default","segment":"order-cap","name":"documents","use_id":"new"}"#,
+            r#"{"event":"talent.skip","ts":7,"mode":"segment","stream":"default","segment":"order-cap","name":"documents","reason":"capped"}"#,
+            r#"{"event":"sense.complete","ts":8,"mode":"segment","stream":"default","segment":"order-dispatch","density":"active"}"#,
+            r#"{"event":"talent.dispatch","ts":9,"mode":"segment","stream":"default","segment":"order-dispatch","name":"documents"}"#,
+            r#"{"event":"talent.skip","ts":10,"mode":"segment","stream":"default","segment":"order-dispatch","name":"documents","reason":"capped","use_id":"new"}"#,
+            r#"{"event":"sense.complete","ts":11,"mode":"segment","stream":"default","segment":"mismatch","density":"active"}"#,
+            r#"{"event":"talent.dispatch","ts":12,"mode":"segment","stream":"default","segment":"mismatch","name":"documents","use_id":"new"}"#,
+            r#"{"event":"talent.skip","ts":13,"mode":"segment","stream":"default","segment":"mismatch","name":"documents","reason":"capped","use_id":"other"}"#,
+            r#"{"event":"sense.complete","ts":14,"mode":"segment","stream":"default","segment":"fail-after","density":"active"}"#,
+            r#"{"event":"talent.dispatch","ts":15,"mode":"segment","stream":"default","segment":"fail-after","name":"documents","use_id":"new"}"#,
+            r#"{"event":"talent.skip","ts":16,"mode":"segment","stream":"default","segment":"fail-after","name":"documents","reason":"capped","use_id":"new"}"#,
+            r#"{"event":"talent.fail","ts":17,"mode":"segment","stream":"default","segment":"fail-after","name":"documents","use_id":"new"}"#,
+            r#"{"event":"sense.complete","ts":18,"mode":"segment","stream":"default","segment":"complete-after","density":"active"}"#,
+            r#"{"event":"talent.dispatch","ts":19,"mode":"segment","stream":"default","segment":"complete-after","name":"documents","use_id":"new"}"#,
+            r#"{"event":"talent.skip","ts":20,"mode":"segment","stream":"default","segment":"complete-after","name":"documents","reason":"capped","use_id":"new"}"#,
+            r#"{"event":"talent.complete","ts":21,"mode":"segment","stream":"default","segment":"complete-after","name":"documents","use_id":"new"}"#,
+        ],
+    );
+    let progress = progress_for(&root, "20990202");
+    let row = |segment: &str| {
+        &progress[&SegmentIdentity {
+            stream: Some("default".into()),
+            segment: segment.into(),
+        }]
+    };
+
+    assert!(!row("stale").capped_by_skip.contains("documents"));
+    assert!(!row("stale").completed.contains("documents"));
+    assert_eq!(
+        thought_for(&progress, "stale"),
+        ThoughtVerdict::Floor("documents".into())
+    );
+
+    assert!(row("order-cap").capped_by_skip.contains("documents"));
+    assert!(!row("order-cap").completed.contains("documents"));
+    assert_eq!(
+        thought_for(&progress, "order-cap"),
+        ThoughtVerdict::Complete
+    );
+
+    assert!(row("order-dispatch").capped_by_skip.contains("documents"));
+    assert!(!row("order-dispatch").completed.contains("documents"));
+    assert_eq!(
+        thought_for(&progress, "order-dispatch"),
+        ThoughtVerdict::Complete
+    );
+
+    assert!(!row("mismatch").capped_by_skip.contains("documents"));
+    assert!(!row("mismatch").completed.contains("documents"));
+    assert_eq!(
+        thought_for(&progress, "mismatch"),
+        ThoughtVerdict::Floor("documents".into())
+    );
+
+    assert!(!row("fail-after").capped_by_skip.contains("documents"));
+    assert!(!row("fail-after").completed.contains("documents"));
+    assert_eq!(
+        thought_for(&progress, "fail-after"),
+        ThoughtVerdict::Floor("documents".into())
+    );
+
+    assert!(!row("complete-after").capped_by_skip.contains("documents"));
+    assert!(row("complete-after").completed.contains("documents"));
+    assert_eq!(
+        thought_for(&progress, "complete-after"),
+        ThoughtVerdict::Complete
+    );
+}
