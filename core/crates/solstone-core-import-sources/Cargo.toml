@@ -55,5 +55,6 @@ tempfile = "3.24.0"
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
+nix = { workspace = true, features = ["process", "signal"] }
 serde_json.workspace = true
 solstone-core-indexer-store.workspace = true

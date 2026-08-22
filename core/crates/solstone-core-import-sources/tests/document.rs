@@ -9,7 +9,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[cfg(unix)]
+use std::time::Instant;
+
 use image::{ImageBuffer, ImageFormat, Rgba};
+#[cfg(unix)]
+use nix::{sys::signal::kill, unistd::Pid};
 use serde_json::Value;
 use solstone_core_generate::{
     ClientError, ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, RefusalReason,
@@ -22,6 +27,14 @@ use solstone_core_import_sources::document::{
 };
 use solstone_core_indexer_store::scan::RescanFileStatus;
 use solstone_core_segment::{StreamAdvance, UnboundStreamAdvanceError};
+
+#[cfg(unix)]
+const PDF_WORKER_STDOUT_MAX_BYTES: usize = 8 * 1024 * 1024;
+#[cfg(unix)]
+const PDF_WORKER_STDERR_MAX_BYTES: usize = 64 * 1024;
+#[cfg(unix)]
+const WORKER_SUCCESS_RESPONSE: &str =
+    r#"{"schema":"sol-pdf/1","engine":"test","page_count":1,"pages":[{"index":1,"text":"text"}]}"#;
 
 #[test]
 fn ac1_document_text_layer_imports_verbatim_with_zero_model_calls() {
@@ -419,6 +432,213 @@ fn system_pdf_worker_reads_large_stdout_without_timeout() {
 
 #[cfg(unix)]
 #[test]
+fn system_pdf_worker_accepts_stdout_at_byte_limit() {
+    let tree = TestTree::new();
+    let source = tree.pdf("stdout-at-limit.pdf", b"source");
+    let prefix =
+        r#"{"schema":"sol-pdf/1","engine":"test","page_count":1,"pages":[{"index":1,"text":""#;
+    let suffix = r#""}]}"#;
+    let padding = PDF_WORKER_STDOUT_MAX_BYTES - prefix.len() - suffix.len();
+    let script = write_executable_script(
+        &tree,
+        "stdout-at-limit-worker.sh",
+        &format!(
+            "#!/bin/sh\nprintf '%s' '{prefix}'\nhead -c {padding} /dev/zero | tr '\\000' x\nprintf '%s' '{suffix}'\n"
+        ),
+    );
+    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+
+    let payload = worker
+        .execute(&PdfWorkerRequest {
+            command: PdfCommand::Extract,
+            source,
+            password: None,
+            render: None,
+        })
+        .unwrap();
+
+    assert_eq!(payload.pages[0].text.as_deref().unwrap().len(), padding);
+}
+
+#[cfg(unix)]
+#[test]
+fn system_pdf_worker_accepts_interleaved_stderr_at_byte_limit() {
+    let tree = TestTree::new();
+    let source = tree.pdf("stderr-at-limit.pdf", b"source");
+    let first = PDF_WORKER_STDERR_MAX_BYTES / 2;
+    let second = PDF_WORKER_STDERR_MAX_BYTES - first;
+    let script = write_executable_script(
+        &tree,
+        "stderr-at-limit-worker.sh",
+        &format!(
+            "#!/bin/sh\nhead -c {first} /dev/zero | tr '\\000' x >&2\nprintf '%s' '{WORKER_SUCCESS_RESPONSE}'\nhead -c {second} /dev/zero | tr '\\000' x >&2\n"
+        ),
+    );
+    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+
+    let payload = worker
+        .execute(&PdfWorkerRequest {
+            command: PdfCommand::Extract,
+            source,
+            password: None,
+            render: None,
+        })
+        .unwrap();
+
+    assert_eq!(payload.schema, "sol-pdf/1");
+}
+
+#[cfg(unix)]
+#[test]
+fn system_pdf_worker_rejects_stdout_over_byte_limit_after_exit() {
+    let tree = TestTree::new();
+    let source = tree.pdf("stdout-over-limit.pdf", b"source");
+    let script = write_executable_script(
+        &tree,
+        "stdout-over-limit-worker.sh",
+        &format!(
+            "#!/bin/sh\nhead -c {} /dev/zero | tr '\\000' x\n",
+            PDF_WORKER_STDOUT_MAX_BYTES + 1
+        ),
+    );
+    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+
+    let failure = worker
+        .execute(&PdfWorkerRequest {
+            command: PdfCommand::Extract,
+            source,
+            password: None,
+            render: None,
+        })
+        .unwrap_err();
+
+    assert_worker_stream_limit(failure, "stdout", PDF_WORKER_STDOUT_MAX_BYTES);
+}
+
+#[cfg(unix)]
+#[test]
+fn system_pdf_worker_rejects_stderr_over_byte_limit_after_exit() {
+    let tree = TestTree::new();
+    let source = tree.pdf("stderr-over-limit.pdf", b"source");
+    let script = write_executable_script(
+        &tree,
+        "stderr-over-limit-worker.sh",
+        &format!(
+            "#!/bin/sh\nprintf '%s' '{WORKER_SUCCESS_RESPONSE}'\nhead -c {} /dev/zero | tr '\\000' x >&2\n",
+            PDF_WORKER_STDERR_MAX_BYTES + 1
+        ),
+    );
+    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+
+    let failure = worker
+        .execute(&PdfWorkerRequest {
+            command: PdfCommand::Extract,
+            source,
+            password: None,
+            render: None,
+        })
+        .unwrap_err();
+
+    assert_worker_stream_limit(failure, "stderr", PDF_WORKER_STDERR_MAX_BYTES);
+}
+
+#[cfg(unix)]
+#[test]
+fn system_pdf_worker_kills_stdout_over_byte_limit_before_timeout() {
+    let tree = TestTree::new();
+    let source = tree.pdf("stdout-over-limit-live.pdf", b"source");
+    let script = write_executable_script(
+        &tree,
+        "stdout-over-limit-live-worker.sh",
+        &format!(
+            "#!/bin/sh\nmarker=\"$0.pid\"\nprintf '%s\\n' \"$$\" > \"$marker\"\nhead -c {} /dev/zero | tr '\\000' x\nexec sleep 300\n",
+            PDF_WORKER_STDOUT_MAX_BYTES + 1
+        ),
+    );
+    let marker = PathBuf::from(format!("{}.pid", script.display()));
+    let worker = SystemPdfWorker::new(script, Duration::from_secs(30));
+
+    let started = Instant::now();
+    let failure = worker
+        .execute(&PdfWorkerRequest {
+            command: PdfCommand::Extract,
+            source,
+            password: None,
+            render: None,
+        })
+        .unwrap_err();
+
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_worker_stream_limit(failure, "stdout", PDF_WORKER_STDOUT_MAX_BYTES);
+    let pid = fs::read_to_string(marker).unwrap().trim().parse().unwrap();
+    assert!(kill(Pid::from_raw(pid), None).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn system_pdf_worker_kills_stderr_over_byte_limit_before_timeout() {
+    let tree = TestTree::new();
+    let source = tree.pdf("stderr-over-limit-live.pdf", b"source");
+    let script = write_executable_script(
+        &tree,
+        "stderr-over-limit-live-worker.sh",
+        &format!(
+            "#!/bin/sh\nmarker=\"$0.pid\"\nprintf '%s\\n' \"$$\" > \"$marker\"\nprintf '%s' '{WORKER_SUCCESS_RESPONSE}'\nhead -c {} /dev/zero | tr '\\000' x >&2\nexec sleep 300\n",
+            PDF_WORKER_STDERR_MAX_BYTES + 1
+        ),
+    );
+    let marker = PathBuf::from(format!("{}.pid", script.display()));
+    let worker = SystemPdfWorker::new(script, Duration::from_secs(30));
+
+    let started = Instant::now();
+    let failure = worker
+        .execute(&PdfWorkerRequest {
+            command: PdfCommand::Extract,
+            source,
+            password: None,
+            render: None,
+        })
+        .unwrap_err();
+
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_worker_stream_limit(failure, "stderr", PDF_WORKER_STDERR_MAX_BYTES);
+    let pid = fs::read_to_string(marker).unwrap().trim().parse().unwrap();
+    assert!(kill(Pid::from_raw(pid), None).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn system_pdf_worker_keeps_in_budget_error_response_exit_code() {
+    let tree = TestTree::new();
+    let source = tree.pdf("in-budget-error.pdf", b"source");
+    let script = write_executable_script(
+        &tree,
+        "in-budget-error-worker.sh",
+        "#!/bin/sh\nprintf '%s\\n' '{\"error\":\"corrupt\",\"detail\":\"bad PDF\"}'\nexit 4\n",
+    );
+    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+
+    let failure = worker
+        .execute(&PdfWorkerRequest {
+            command: PdfCommand::Extract,
+            source,
+            password: None,
+            render: None,
+        })
+        .unwrap_err();
+
+    assert!(matches!(
+        failure,
+        WorkerFailure::Process {
+            exit_code: Some(4),
+            error,
+            detail: Some(detail),
+        } if error == "corrupt" && detail == "bad PDF"
+    ));
+}
+
+#[cfg(unix)]
+#[test]
 fn document_rejects_invalid_worker_protocol_before_artifact_writes() {
     let tree = TestTree::new();
     let source = tree.pdf("invalid.pdf", b"source");
@@ -726,6 +946,17 @@ fn png_bytes() -> Vec<u8> {
     let mut bytes = std::io::Cursor::new(Vec::new());
     image.write_to(&mut bytes, ImageFormat::Png).unwrap();
     bytes.into_inner()
+}
+
+#[cfg(unix)]
+fn assert_worker_stream_limit(failure: WorkerFailure, stream: &str, maximum_bytes: usize) {
+    match failure {
+        WorkerFailure::ProtocolViolation { detail } => {
+            assert!(detail.contains(stream));
+            assert!(detail.contains(&maximum_bytes.to_string()));
+        }
+        failure => panic!("expected stream limit violation, got {failure:?}"),
+    }
 }
 
 struct TestTree {
