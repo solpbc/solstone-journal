@@ -20,6 +20,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 mod production_processes;
 
 use production_processes::{NATIVE_PROCESS_SPECS, NativeProcessSpec, PROCESS_SPECS};
+use sha2::{Digest, Sha256};
 use solstone_core_cli::{
     CHECK_HELP, CHECK_USAGE, DESCRIBE_USAGE, HEALTH_USAGE, INSTALL_MODELS_HELP,
     INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, SCHEDULE_USAGE, SPL_USAGE,
@@ -784,6 +785,48 @@ fn make_executable(path: &Path) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("make fixture executable");
 }
 
+fn install_ready_restic_fixture(home: &Path) -> PathBuf {
+    let (tool_dir, platform_os) = if cfg!(target_os = "macos") {
+        (
+            home.join("Library/Application Support/solstone/restic"),
+            "darwin",
+        )
+    } else {
+        (home.join(".cache/solstone/restic"), "linux")
+    };
+    let platform_arch = match env::consts::ARCH {
+        "x86_64" | "amd64" => "amd64",
+        "aarch64" | "arm64" => "arm64",
+        other => panic!("unsupported Restic fixture architecture: {other}"),
+    };
+    fs::create_dir_all(&tool_dir).expect("create Restic fixture directory");
+    let binary = tool_dir.join("restic");
+    fs::write(
+        &binary,
+        "#!/bin/sh\ncase \" $* \" in\n*\" version \"*) printf 'restic 0.19.0 compiled with go1.test on test/test\\n' ;;\n*\" backup \"*) printf '[{\"message_type\":\"summary\",\"snapshot_id\":\"fixture-snapshot\"}]\\n' ;;\n*) exit 0 ;;\nesac\n",
+    )
+    .expect("write Restic fixture");
+    make_executable(&binary);
+    let digest = format!(
+        "{:x}",
+        Sha256::digest(fs::read(&binary).expect("read Restic fixture"))
+    );
+    fs::write(
+        tool_dir.join(".install-complete"),
+        serde_json::to_vec(&serde_json::json!({
+            "schema_version": 1,
+            "tool": "restic",
+            "version": "0.19.0",
+            "sha256": digest,
+            "platform": {"os": platform_os, "arch": platform_arch},
+            "binary_path": binary.to_string_lossy(),
+        }))
+        .expect("encode Restic fixture sentinel"),
+    )
+    .expect("write Restic fixture sentinel");
+    binary
+}
+
 fn locate_workspace_binary(package: &str, binary: &str) -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_manifest = manifest_dir
@@ -1294,6 +1337,8 @@ fn native_backup_grammar_never_reaches_a_poisoned_interpreter() {
     fs::write(&shell, POISON_INTERPRETER).expect("write poison shell");
     make_executable(&shell);
     fs::create_dir_all(context.journal).expect("create backup journal root");
+    let restic = install_ready_restic_fixture(context.home);
+    assert!(restic.starts_with(context.home));
 
     // These cover every owner-facing backup leaf under the same sibling/PATH
     // interpreter poison as the registration contract. The success cases use
@@ -1332,13 +1377,6 @@ fn native_backup_grammar_never_reaches_a_poisoned_interpreter() {
 
     // The representative success body receives a release-shaped restic JSON
     // fixture. It proves the native runner boundary without a live repository.
-    let restic = context.sibling_dir.join("restic");
-    fs::write(
-        &restic,
-        "#!/bin/sh\ncase \" $* \" in\n*\" backup \"*) printf '[{\"message_type\":\"summary\",\"snapshot_id\":\"fixture-snapshot\"}]\\n' ;;\n*) exit 0 ;;\nesac\n",
-    )
-    .expect("write restic fixture");
-    make_executable(&restic);
     let recovery = "0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ";
     let config = context.journal.join("config/journal.json");
     fs::create_dir_all(config.parent().expect("backup config parent"))

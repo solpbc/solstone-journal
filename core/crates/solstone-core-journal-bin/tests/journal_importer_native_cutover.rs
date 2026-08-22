@@ -7,6 +7,7 @@ use std::env;
 use std::fs::{self, File};
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -255,6 +256,17 @@ fn path(path: &Path) -> String {
 }
 
 fn assert_case(harness: &Harness, mode: &str, case: &Case) {
+    let _rescan_listener = case
+        .args
+        .windows(2)
+        .any(|pair| pair[0] == "--source" && pair[1] == "journal_archive")
+        .then(|| {
+            let health = harness.journal.join("health");
+            fs::create_dir_all(&health).expect("health directory");
+            let socket = health.join("callosum.sock");
+            let _ = fs::remove_file(&socket);
+            UnixListener::bind(socket).expect("archive rescan listener")
+        });
     let output = harness.run_importer(&case.args);
     assert_eq!(
         output.status.code(),

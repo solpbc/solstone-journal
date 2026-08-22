@@ -32,7 +32,7 @@ fn assert_process_group_gone(process_group: i32) {
 }
 
 #[test]
-fn workspace_asset_matches_pinned_journal_source() {
+fn workspace_asset_matches_pinned_native_source() {
     let source = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/assets/transcripts/workspace.html"
@@ -40,7 +40,7 @@ fn workspace_asset_matches_pinned_journal_source() {
     let ground = std::process::Command::new("git")
         .args([
             "show",
-            "f17280333736016c219d3f6a4b3a263763529833:solstone/apps/transcripts/workspace.html",
+            "b0cdfae851ec2cc725fe49c8643d288c1d01cd75:core/crates/solstone-core-transcripts-web/assets/transcripts/workspace.html",
         ])
         .output()
         .unwrap();

@@ -46,13 +46,21 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex as AsyncMutex, watch};
 use tokio::time::{Sleep, sleep};
 
-use crate::relay_admission::{RelayAdmissionRegistry, RelayNonceIdentity};
+use crate::relay_admission::{RelayAdmissionClaim, RelayAdmissionRegistry, RelayNonceIdentity};
 use crate::session::{SessionState, classify_session};
 use crate::{DoorOutcome, DoorWithheldReason};
 
 const MAX_CONCURRENT_STREAMS: usize = 8;
 const AUTHORIZATION_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
 const PAIRING_REAPER_INTERVAL: Duration = Duration::from_millis(250);
+// `HomeStream::poll_shutdown` queues the SPL close frame but does not wait for
+// the carrier driver to flush it. Give that local queue one reaper tick to
+// drain before closing a one-shot pairing carrier.
+const PAIRING_CARRIER_DRAIN_GRACE: Duration = Duration::from_millis(250);
+// A peer may pre-open an unrelated logical stream and never send a request.
+// Close independently of stream bookkeeping after either success or the
+// failure cap so four peers cannot retain every cert-less carrier slot.
+const PAIRING_CLOSE_DEADLINE: Duration = Duration::from_secs(5);
 const MAX_PAIRING_CARRIERS: usize = 4;
 const MAX_PAIRING_FAILURES: usize = 3;
 
@@ -113,6 +121,7 @@ impl DoorStart {
 pub(super) struct DoorLifecycle {
     parts: DoorStartParts,
     running: Mutex<Option<DoorStart>>,
+    stopped: AtomicBool,
 }
 
 struct DoorStartParts {
@@ -162,18 +171,31 @@ impl DoorLifecycle {
         Self {
             parts: DoorStartParts::from_options(options),
             running: Mutex::new(None),
+            stopped: AtomicBool::new(false),
         }
     }
 
     pub(super) async fn ensure_started(&self) -> bool {
+        if self.stopped.load(Ordering::Acquire) {
+            return false;
+        }
         if self.is_bound() {
-            return true;
+            return !self.stopped.load(Ordering::Acquire);
         }
         let started = start(self.parts.to_options()).await;
+        self.install_started(started)
+    }
+
+    fn install_started(&self, started: DoorStart) -> bool {
         let mut running = self.running.lock().expect("door lifecycle lock");
+        if self.stopped.load(Ordering::Acquire) {
+            started.abort();
+            self.parts.relay_admissions.clear_door_port();
+            return false;
+        }
         if running
             .as_ref()
-            .is_some_and(|current| matches!(current.outcome, DoorOutcome::Bound(_)))
+            .is_some_and(|current| matches!(&current.outcome, DoorOutcome::Bound(_)))
         {
             started.abort();
             return true;
@@ -182,6 +204,11 @@ impl DoorLifecycle {
         if ok || running.is_none() {
             if let Some(previous) = running.take() {
                 previous.abort();
+            }
+            if let DoorOutcome::Bound(address) = &started.outcome {
+                self.parts.relay_admissions.set_door_port(address.port());
+            } else {
+                self.parts.relay_admissions.clear_door_port();
             }
             *running = Some(started);
             ok
@@ -251,10 +278,12 @@ impl DoorLifecycle {
     }
 
     pub(super) fn shutdown(&self) {
+        self.stopped.store(true, Ordering::Release);
         let running = self.running.lock().expect("door lifecycle lock");
         if let Some(current) = running.as_ref() {
             current.abort();
         }
+        self.parts.relay_admissions.clear_door_port();
     }
 }
 
@@ -310,7 +339,11 @@ impl PairingDelay for TokioPairingDelay {
 struct PairingCarrierState {
     pair_lock: AsyncMutex<()>,
     in_flight: AtomicUsize,
+    active_streams: AtomicUsize,
     failures: AtomicUsize,
+    successful_response_pending: AtomicBool,
+    dispatch_sealed: AtomicBool,
+    close_deadline_armed: AtomicBool,
     close_after_response: AtomicBool,
     close_sender: watch::Sender<bool>,
     delay: Arc<dyn PairingDelay>,
@@ -323,7 +356,11 @@ impl PairingCarrierState {
             Arc::new(Self {
                 pair_lock: AsyncMutex::new(()),
                 in_flight: AtomicUsize::new(0),
+                active_streams: AtomicUsize::new(0),
                 failures: AtomicUsize::new(0),
+                successful_response_pending: AtomicBool::new(false),
+                dispatch_sealed: AtomicBool::new(false),
+                close_deadline_armed: AtomicBool::new(false),
                 close_after_response: AtomicBool::new(false),
                 close_sender,
                 delay,
@@ -336,7 +373,17 @@ impl PairingCarrierState {
         let _ = self.close_sender.send(true);
     }
 
-    async fn dispatch_pair<F>(&self, dispatch: F) -> Response
+    fn arm_close_deadline(self: &Arc<Self>) {
+        if !self.close_deadline_armed.swap(true, Ordering::AcqRel) {
+            let deadline_state = Arc::clone(self);
+            tokio::spawn(async move {
+                deadline_state.delay.delay(PAIRING_CLOSE_DEADLINE).await;
+                deadline_state.close();
+            });
+        }
+    }
+
+    async fn dispatch_pair<F>(self: &Arc<Self>, dispatch: F) -> Response
     where
         F: Future<Output = Response>,
     {
@@ -345,6 +392,9 @@ impl PairingCarrierState {
         self.in_flight.fetch_add(1, Ordering::AcqRel);
         let _in_flight = InFlightPair(&self.in_flight);
         let _lock = self.pair_lock.lock().await;
+        if self.dispatch_sealed.load(Ordering::Acquire) {
+            return StatusCode::TOO_MANY_REQUESTS.into_response();
+        }
         let response = dispatch.await;
         record_pair_dispatch(self, response.status()).await;
         response
@@ -424,6 +474,7 @@ impl PairingCarrierRegistry {
             };
             if !entry.admission.is_live(&store, now)
                 && carrier.in_flight.load(Ordering::Acquire) == 0
+                && !carrier.successful_response_pending.load(Ordering::Acquire)
             {
                 carrier.close();
             }
@@ -742,15 +793,28 @@ async fn constrain_pair_dispatch(
     state.dispatch_pair(next.run(request)).await
 }
 
-async fn record_pair_dispatch(state: &PairingCarrierState, status: StatusCode) {
+async fn record_pair_dispatch(state: &Arc<PairingCarrierState>, status: StatusCode) {
     if status.is_success() {
         state.failures.store(0, Ordering::Release);
+        // Consuming the nonce makes this carrier look stale to the reaper before
+        // the mux and TLS drivers have finished delivering the successful
+        // response. Preserve it until the stream writer finishes, then close
+        // this one-shot carrier so it cannot retain a pairing slot.
+        state
+            .successful_response_pending
+            .store(true, Ordering::Release);
+        state.close_after_response.store(true, Ordering::Release);
+        state.arm_close_deadline();
         return;
     }
     let failures = state.failures.fetch_add(1, Ordering::AcqRel) + 1;
     if failures >= MAX_PAIRING_FAILURES {
-        // The stream task signals closure after this response has been written.
+        // Seal while holding the dispatch lock. A queued fourth request checks
+        // this state after acquiring that same lock, so it cannot start a new
+        // ceremony while the carrier drains or a sibling stream remains open.
+        state.dispatch_sealed.store(true, Ordering::Release);
         state.close_after_response.store(true, Ordering::Release);
+        state.arm_close_deadline();
         return;
     }
     if status == StatusCode::GONE {
@@ -793,17 +857,21 @@ async fn serve_carrier(
     let store = NonceStore::new(&config.journal_root);
     let now = unix_seconds();
     let relay_admission = peer.and_then(|address| config.relay_admissions.take(address));
-    let pairing_admission = match relay_admission {
-        Some(identity) if relay_pairing_nonce_open(&store, identity.nonce_value(), now) => {
-            Some(PairingAdmission::Relay(identity))
+    let (pairing_admission, certless_pairing_admitted) = match relay_admission {
+        Some(RelayAdmissionClaim::Current(identity))
+            if relay_pairing_nonce_open(&store, identity.nonce_value(), now) =>
+        {
+            (Some(PairingAdmission::Relay(identity)), true)
         }
         // A trusted relay bridge remains relay-typed even when its exact
         // authority has gone stale. It must fail closed rather than inherit an
         // unrelated direct window that happens to be live at the same time.
-        Some(_) => None,
-        None => direct_pairing_window_open(&store, now).then_some(PairingAdmission::Direct),
+        Some(RelayAdmissionClaim::Current(identity) | RelayAdmissionClaim::Stale(identity)) => {
+            (Some(PairingAdmission::Relay(identity)), true)
+        }
+        None if direct_pairing_window_open(&store, now) => (Some(PairingAdmission::Direct), true),
+        None => (None, false),
     };
-    let certless_pairing_admitted = pairing_admission.is_some();
     let identity: IdentityCell = Arc::new(Mutex::new(None));
     let path = config.authorized_clients_path.clone();
     #[cfg(debug_assertions)]
@@ -917,6 +985,9 @@ async fn serve_carrier(
                 let basis = basis.clone();
                 let pairing_admission = pairing_admission.clone();
                 let pairing_state = pairing_control.as_ref().map(|(_, state, _)| state.clone());
+                if let Some(state) = &pairing_state {
+                    state.active_streams.fetch_add(1, Ordering::AcqRel);
+                }
                 let stream_pairing_admission = matches!(&basis, AccessBasis::PairingPeer { .. })
                     .then(|| match &pairing_admission {
                         Some(PairingAdmission::Direct)
@@ -949,11 +1020,12 @@ async fn serve_carrier(
                     if let Err(error) = serve_connection(stream, router, basis, &builder).await {
                         log::debug!("paired-device door stream failed: {error}");
                     }
-                    if pairing_state
-                        .as_ref()
-                        .is_some_and(|state| state.close_after_response.load(Ordering::Acquire))
-                    {
-                        pairing_state.expect("pairing state checked").close();
+                    if let Some(state) = pairing_state {
+                        let remaining = state.active_streams.fetch_sub(1, Ordering::AcqRel) - 1;
+                        if remaining == 0 && state.close_after_response.load(Ordering::Acquire) {
+                        state.delay.delay(PAIRING_CARRIER_DRAIN_GRACE).await;
+                        state.close();
+                        }
                     }
                 });
             }
@@ -1163,6 +1235,77 @@ mod tests {
     use super::*;
 
     #[test]
+    fn completed_start_cannot_publish_after_shutdown() {
+        let (authorization_sender, _) = watch::channel(DeviceDoorAuthorization::from(
+            AuthorizedClientsRead::Missing,
+        ));
+        let relay_admissions = Arc::new(RelayAdmissionRegistry::new());
+        let lifecycle = DoorLifecycle::new(DoorStartOptions {
+            journal_root: PathBuf::from("/var/tmp/solstone-door-stopped-unit"),
+            port: 0,
+            handshake_timeout: Duration::from_secs(1),
+            stream_stall_timeout: Duration::from_secs(1),
+            router: Router::new(),
+            carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+            handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
+            authorization_sender,
+            relay_admissions: Arc::clone(&relay_admissions),
+        });
+        lifecycle.shutdown();
+
+        assert!(!lifecycle.install_started(DoorStart {
+            outcome: DoorOutcome::Bound("127.0.0.1:47657".parse().expect("Door address")),
+            refresh_task: None,
+            accept_task: None,
+            pairing_reaper_task: None,
+            pairing_cap_refusals: None,
+        }));
+        assert_eq!(lifecycle.bound_addr(), None);
+        assert_eq!(relay_admissions.door_availability(), None);
+    }
+
+    #[test]
+    fn losing_concurrent_start_does_not_advance_the_running_door_generation() {
+        let (authorization_sender, _) = watch::channel(DeviceDoorAuthorization::from(
+            AuthorizedClientsRead::Missing,
+        ));
+        let relay_admissions = Arc::new(RelayAdmissionRegistry::new());
+        let lifecycle = DoorLifecycle::new(DoorStartOptions {
+            journal_root: PathBuf::from("/var/tmp/solstone-door-concurrent-start-unit"),
+            port: 0,
+            handshake_timeout: Duration::from_secs(1),
+            stream_stall_timeout: Duration::from_secs(1),
+            router: Router::new(),
+            carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+            handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
+            authorization_sender,
+            relay_admissions: Arc::clone(&relay_admissions),
+        });
+        let first_address = "127.0.0.1:47657".parse().expect("first Door address");
+        assert!(lifecycle.install_started(DoorStart {
+            outcome: DoorOutcome::Bound(first_address),
+            refresh_task: None,
+            accept_task: None,
+            pairing_reaper_task: None,
+            pairing_cap_refusals: None,
+        }));
+        let first_generation = relay_admissions
+            .door_availability()
+            .expect("first Door generation");
+
+        assert!(lifecycle.install_started(DoorStart {
+            outcome: DoorOutcome::Bound("127.0.0.1:47658".parse().expect("losing Door address")),
+            refresh_task: None,
+            accept_task: None,
+            pairing_reaper_task: None,
+            pairing_cap_refusals: None,
+        }));
+
+        assert_eq!(lifecycle.bound_addr(), Some(first_address));
+        assert!(relay_admissions.is_current(first_generation));
+    }
+
+    #[test]
     fn ac5_peer_mode_vectors() {
         assert_eq!(
             carrier_from_peer(Some("127.0.0.1:1".parse().unwrap())),
@@ -1261,10 +1404,18 @@ mod access_tests {
         }
     }
 
+    struct PendingDelay;
+
+    impl PairingDelay for PendingDelay {
+        fn delay(&self, _duration: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+            Box::pin(std::future::pending())
+        }
+    }
+
     #[tokio::test]
     async fn pair_dispatch_cap_counts_pair_failures_and_records_only_410_backoff() {
         let delay = Arc::new(RecordingDelay::default());
-        let (state, _) = PairingCarrierState::new(delay.clone());
+        let (state, close) = PairingCarrierState::new(delay.clone());
         // Non-pair failures never reach record_pair_dispatch; this direct
         // helper assertion models the guarded middleware's early return.
         assert_eq!(state.failures.load(std::sync::atomic::Ordering::Acquire), 0);
@@ -1275,8 +1426,31 @@ mod access_tests {
             delay.0.lock().expect("delay recorder lock").as_slice(),
             &[Duration::from_secs(1)]
         );
+        state
+            .active_streams
+            .store(1, std::sync::atomic::Ordering::Release);
         record_pair_dispatch(&state, StatusCode::OK).await;
+        tokio::task::yield_now().await;
         assert_eq!(state.failures.load(std::sync::atomic::Ordering::Acquire), 0);
+        assert!(
+            state
+                .successful_response_pending
+                .load(std::sync::atomic::Ordering::Acquire),
+            "successful pairing remains live until its response reaches the client"
+        );
+        assert!(
+            state
+                .close_after_response
+                .load(std::sync::atomic::Ordering::Acquire),
+            "successful pairing closes its one-shot carrier after the response"
+        );
+        assert!(
+            *close.borrow(),
+            "the injected hard deadline closes despite unrelated stream state"
+        );
+        state
+            .successful_response_pending
+            .store(false, std::sync::atomic::Ordering::Release);
         record_pair_dispatch(&state, StatusCode::GONE).await;
         record_pair_dispatch(&state, StatusCode::GONE).await;
         record_pair_dispatch(&state, StatusCode::GONE).await;
@@ -1289,10 +1463,45 @@ mod access_tests {
             delay.0.lock().expect("delay recorder lock").as_slice(),
             &[
                 Duration::from_secs(1),
+                Duration::from_secs(5),
                 Duration::from_secs(1),
                 Duration::from_secs(1)
             ],
-            "the closing third failure does not request a delay"
+            "the closing third failure skips backoff and reuses the armed hard deadline"
+        );
+    }
+
+    #[tokio::test]
+    async fn third_failure_seals_dispatch_and_closes_despite_a_stalled_sibling_stream() {
+        let (state, close) = PairingCarrierState::new(Arc::new(RecordingDelay::default()));
+        state
+            .active_streams
+            .store(1, std::sync::atomic::Ordering::Release);
+
+        for _ in 0..3 {
+            let response = state
+                .dispatch_pair(async { StatusCode::BAD_REQUEST.into_response() })
+                .await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+
+        let fourth_ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let ran = fourth_ran.clone();
+        let fourth = state
+            .dispatch_pair(async move {
+                ran.store(true, std::sync::atomic::Ordering::Release);
+                StatusCode::OK.into_response()
+            })
+            .await;
+        assert_eq!(fourth.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(
+            !fourth_ran.load(std::sync::atomic::Ordering::Acquire),
+            "a fourth pairing ceremony is never dispatched"
+        );
+        tokio::task::yield_now().await;
+        assert!(
+            *close.borrow(),
+            "the hard deadline closes even while a sibling stream stays active"
         );
     }
 
@@ -1340,9 +1549,9 @@ mod access_tests {
     }
 
     #[tokio::test]
-    async fn queued_pair_request_is_in_flight_before_it_acquires_the_carrier_lock() {
+    async fn successful_pair_response_is_not_reaped_before_peer_closure() {
         let temporary = tempfile::TempDir::new_in("/var/tmp").expect("temporary journal");
-        let registry = PairingCarrierRegistry::new(Arc::new(RecordingDelay::default()));
+        let registry = PairingCarrierRegistry::new(Arc::new(PendingDelay));
         let (_, state, close) = registry
             .admit(PairingAdmission::Direct)
             .expect("carrier admission");
@@ -1367,8 +1576,8 @@ mod access_tests {
         let _ = dispatch.await.expect("queued dispatch completes");
         registry.reap_closed_windows(temporary.path(), 0);
         assert!(
-            *close.borrow(),
-            "the carrier reaps after its queued request finishes"
+            !*close.borrow(),
+            "the reaper preserves a successful response until its peer closes"
         );
     }
 }

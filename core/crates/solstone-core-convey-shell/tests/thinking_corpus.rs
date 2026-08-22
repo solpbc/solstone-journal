@@ -395,6 +395,24 @@ fn is_generators_missing_body_deviation(phase: &str, case: &Value) -> bool {
         && case.get("request_json").is_none()
 }
 
+fn runtime_status_deviation_path(_phase: &str, case: &Value) -> Option<&'static str> {
+    if case
+        .pointer("/json/providers/local_runtime/status")
+        .and_then(Value::as_str)
+        == Some("ok")
+    {
+        Some("providers.local_runtime.status")
+    } else if case
+        .pointer("/json/local_runtime/status")
+        .and_then(Value::as_str)
+        == Some("ok")
+    {
+        Some("local_runtime.status")
+    } else {
+        None
+    }
+}
+
 fn assert_generators_missing_body_deviation(
     response: &(StatusCode, String, Option<String>, Vec<u8>),
 ) {
@@ -418,7 +436,7 @@ fn replay_full_recorded_case(
     journal: &Path,
     case: &Value,
     response: &(StatusCode, String, Option<String>, Vec<u8>),
-) -> (usize, bool) {
+) -> (usize, bool, bool) {
     let path = case["path"].as_str().expect("path");
     assert_eq!(
         response.0.as_u16(),
@@ -459,6 +477,30 @@ fn replay_full_recorded_case(
             {
                 set_path(&mut value, path, placeholder(kind.as_str().expect("kind")));
             }
+            let runtime_status_deviation = runtime_status_deviation_path(phase, case);
+            if let Some(path) = runtime_status_deviation {
+                let actual_status = if path == "providers.local_runtime.status" {
+                    &value["providers"]["local_runtime"]["status"]
+                } else {
+                    &value["local_runtime"]["status"]
+                };
+                let reference_status = if path == "providers.local_runtime.status" {
+                    &case["json"]["providers"]["local_runtime"]["status"]
+                } else {
+                    &case["json"]["local_runtime"]["status"]
+                };
+                assert_eq!(
+                    actual_status.as_str(),
+                    Some("blocked"),
+                    "{phase} {path} native status"
+                );
+                assert_eq!(
+                    reference_status.as_str(),
+                    Some("ok"),
+                    "{phase} {path} reference status"
+                );
+                set_path(&mut value, path, "ok");
+            }
             let hash = sha256(canonical_json(&value).as_bytes());
             normalized_response = Some(value);
             hash
@@ -466,6 +508,12 @@ fn replay_full_recorded_case(
         other => panic!("unknown body arm {other:?}"),
     };
     if actual_hash != case["body_sha256"].as_str().expect("body hash") {
+        if runtime_status_deviation_path(phase, case).is_some()
+            && let Some(actual) = normalized_response.as_ref()
+        {
+            assert_eq!(actual, &case["json"], "{phase} {path} normalized JSON");
+            return (body_arm(case), false, true);
+        }
         // This explicit 198-vector allowlist is the only semantic fallback
         // outside the corrupt API-envelope bucket. Native `error_envelope()`
         // emits {"error","reason_code","detail"} in insertion order with
@@ -480,7 +528,7 @@ fn replay_full_recorded_case(
         {
             normalize_journal_root(&mut actual, &journal.display().to_string());
             assert_eq!(&actual, expected, "{phase} {path} envelope fields");
-            return (body_arm(case), true);
+            return (body_arm(case), true, false);
         }
         if let Some(actual) = normalized_response {
             panic!(
@@ -494,7 +542,11 @@ fn replay_full_recorded_case(
         case["body_sha256"].as_str().expect("body hash"),
         "{phase} {path} body"
     );
-    (body_arm(case), false)
+    (
+        body_arm(case),
+        false,
+        runtime_status_deviation_path(phase, case).is_some(),
+    )
 }
 
 fn superseded_presentation_asset(path: &str) -> Option<&'static [u8]> {
@@ -778,7 +830,7 @@ fn assert_top_level_keys(body: &Value, mut expected: Vec<&str>) {
 /// generator's recorded order. Every recorded request body is sent. Each
 /// established phase contains 35 non-GET cases; the trailing
 /// `DELETE /api/local/endpoint` remains order-dependent, but is not unique.
-/// The result has one arm per fixture record: byte pins, two documented native
+/// The result has one arm per fixture record: byte pins, three documented native
 /// deviations, corrupt semantic envelopes, and the explicit shared-envelope
 /// serialization fallback remain mutually exclusive assertion buckets.
 #[tokio::test]
@@ -792,6 +844,7 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
     let mut superseded_presentation = 0;
     let mut no_slash_deviations = 0;
     let mut generators_missing_body_deviation = 0;
+    let mut runtime_status_deviations = 0;
     for phase in [
         "unestablished",
         "corrupt",
@@ -835,11 +888,13 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
                 assert_superseded_presentation_case(phase, case, &response, expected_asset);
                 superseded_presentation += 1;
             } else {
-                let (replayed_arm, fallback) =
+                let (replayed_arm, fallback, runtime_status_deviation) =
                     replay_full_recorded_case(phase, index, &journal.0, case, &response);
                 assert_eq!(replayed_arm, arm, "{phase} index {index} arm");
                 if fallback {
                     established_error_envelope_fallback += 1;
+                } else if runtime_status_deviation {
+                    runtime_status_deviations += 1;
                 } else {
                     byte_pinned += 1;
                 }
@@ -850,19 +905,21 @@ async fn all_fixture_cases_replay_in_recorded_phase_order_with_bodies() {
     }
     assert_eq!(count, 448);
     assert_eq!(arms, [361, 55, 32]);
-    assert_eq!(byte_pinned, 181);
+    assert_eq!(byte_pinned, 155);
     assert_eq!(corrupt_semantic, 49);
     assert_eq!(established_error_envelope_fallback, 198);
     assert_eq!(superseded_presentation, 12);
     assert_eq!(no_slash_deviations, 2);
     assert_eq!(generators_missing_body_deviation, 6);
+    assert_eq!(runtime_status_deviations, 26);
     assert_eq!(
         byte_pinned
             + corrupt_semantic
             + established_error_envelope_fallback
             + superseded_presentation
             + no_slash_deviations
-            + generators_missing_body_deviation,
+            + generators_missing_body_deviation
+            + runtime_status_deviations,
         448
     );
 }
@@ -907,7 +964,7 @@ fn fixture_body_arms_are_361_55_32_across_all_448_cases() {
             .as_array()
             .expect("deviations")
             .len(),
-        2
+        3
     );
 }
 

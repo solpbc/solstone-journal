@@ -2222,7 +2222,7 @@ areas = ["media"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
 timeout = "standard"
-default_full = true
+default_full = false
 required_features = ["test-stubs"]
 runtime = "none"
 

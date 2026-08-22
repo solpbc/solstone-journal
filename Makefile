@@ -41,7 +41,7 @@ CI_RUSTUP_HOME := $(if $(strip $(RUSTUP_HOME)),$(abspath $(RUSTUP_HOME)),$(HOME)
 # Make, and hostile caller assignments cannot silently recreate incremental or
 # workspace debuginfo output. The built-in dev profile name stays unchanged,
 # preserving the existing debug/ paths and cross-step reuse.
-CI_CARGO_ENV_TARGETS := ci ci-contained ci-under-poison ci-full ci-full-under-poison ci-full-plan ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
+CI_CARGO_ENV_TARGETS := ci ci-contained ci-under-poison ci-prep-ffmpeg ci-full ci-full-under-poison ci-full-plan ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
 $(CI_CARGO_ENV_TARGETS): override export CARGO_INCREMENTAL := 0
 $(CI_CARGO_ENV_TARGETS): override export CARGO_PROFILE_DEV_DEBUG := 0
 FFMPEG_SOURCE_ARCHIVE := $(CURDIR)/target/ffmpeg-source-cache/ffmpeg.tar.gz
@@ -324,7 +324,7 @@ UV_OPTIONAL_GOALS := \
 	check-rust-pdf-stage check-rust-pdf-ready check-rust-pdf-test $(PDF_RUNTIME_HOST_LINK_DIR) \
 	check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries \
 	check-rust-ci-topology ci ci-under-poison ci-full ci-full-under-poison ci-full-plan \
-	ci-contained \
+	ci-contained ci-prep-ffmpeg \
 	ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf \
 	verify test build format format-check \
 	check-service-legacy-evidence service-legacy-evidence-capture audit \
@@ -467,19 +467,25 @@ check-rust-pdf-stage:
 	@set -eu; $(REQUIRE_PDF_HOST_RUNTIME)
 	@echo "host PDFium runtime staged and verified at $(PDF_RUNTIME_HOST_LINK_DIR)"
 
-.PHONY: ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
+.PHONY: ci-prep-ffmpeg ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
 .NOTPARALLEL: ci-full-prep
+ci ci-contained ci-under-poison ci-prep-ffmpeg: export SOLSTONE_FFMPEG_SOURCE_ARCHIVE := $(FFMPEG_SOURCE_ARCHIVE)
+ci ci-contained ci-under-poison ci-prep-ffmpeg: export SOLSTONE_DISTRIBUTION_OFFLINE := 1
 ci-full ci-full-under-poison ci-full-prep ci-full-prep-cargo: export SOLSTONE_FFMPEG_SOURCE_ARCHIVE := $(FFMPEG_SOURCE_ARCHIVE)
 ci-full ci-full-under-poison ci-full-prep ci-full-prep-cargo: export SOLSTONE_DISTRIBUTION_OFFLINE := 1
 ci-full ci-full-under-poison ci-full-prep check-rust-distribution check-rust-distribution-under-poison: export SOLSTONE_DISTRIBUTION_ONNX_ARCHIVE_DIR := $(ONNX_RUNTIME_ARCHIVE_DIR)
 
-# Preparation is the only full-CI surface allowed to fetch Cargo inputs or
-# repair native runtime stages. The validation runner itself stays offline.
-ci-full-prep: ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
-
-ci-full-prep-cargo:
+# Preparation is the only CI surface allowed to fetch Cargo inputs or repair
+# native runtime stages. The contained validation runners themselves stay
+# offline.
+ci-prep-ffmpeg:
 	@$(REQUIRE_CARGO)
 	$(SOLSTONE_DISTRIBUTION_ACQUIRE) acquire ffmpeg --dest $(FFMPEG_SOURCE_ARCHIVE)
+
+ci-full-prep: ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf
+
+ci-full-prep-cargo: ci-prep-ffmpeg
+	@$(REQUIRE_CARGO)
 	cargo fetch --manifest-path $(RUST_MANIFEST) --locked
 	cargo check --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --lib --bins --locked
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --no-run --locked
@@ -1346,7 +1352,7 @@ define run-rust-gate-under-poison
 endef
 
 .PHONY: ci ci-contained ci-under-poison ci-full ci-full-under-poison
-ci:
+ci: ci-prep-ffmpeg
 ifeq ($(HOST_SYSTEM),Linux)
 	@set -eu; \
 	command -v bwrap >/dev/null 2>&1 || { echo "bubblewrap is required for contained Linux CI; install bwrap and retry" >&2; exit 1; }; \

@@ -5,6 +5,8 @@
 
 use std::{
     collections::HashMap,
+    future::Future,
+    net::{Ipv4Addr, SocketAddrV4},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
@@ -21,7 +23,7 @@ use solstone_core_spl::{
 };
 use tokio::{sync::oneshot, task::JoinHandle, time::timeout};
 
-use crate::relay_admission::{RelayAdmissionRegistry, RelayNonceIdentity};
+use crate::relay_admission::{DoorAvailability, RelayAdmissionRegistry, RelayNonceIdentity};
 
 /// Process-local relay-window registrations, keyed by their local nonce value.
 pub(crate) struct PairWindowManager {
@@ -35,6 +37,7 @@ struct PairWindowTask {
     service_token: ServiceToken,
     relay_key: RelayPairKey,
     relay_admissions: Arc<RelayAdmissionRegistry>,
+    door: DoorAvailability,
     nonce_value: String,
     expires_at: i64,
     registration: PairWindowRegistration,
@@ -59,26 +62,90 @@ impl PairWindowManager {
         request: &MintRequest,
         now: i64,
     ) -> Result<MintResponse, PairingError> {
+        self.with_available_door(|door| {
+            self.mint_and_register_after_door_check(journal_root, request, now, door)
+        })
+        .await
+    }
+
+    async fn with_available_door<T, Operation, OperationFuture>(
+        &self,
+        operation: Operation,
+    ) -> Result<T, PairingError>
+    where
+        Operation: FnOnce(DoorAvailability) -> OperationFuture,
+        OperationFuture: Future<Output = Result<T, PairingError>>,
+    {
+        let door = self
+            .relay_admissions
+            .door_availability()
+            .ok_or(PairingError::RelayPairingUnavailable)?;
+        operation(door).await
+    }
+
+    async fn register_while_current<Registration, Register, RegisterFuture, Close, CloseFuture>(
+        &self,
+        door: DoorAvailability,
+        register: Register,
+        close: Close,
+    ) -> Result<Registration, PairingError>
+    where
+        Register: FnOnce() -> RegisterFuture,
+        RegisterFuture: Future<Output = Result<Registration, PairingError>>,
+        Close: FnOnce(Registration) -> CloseFuture,
+        CloseFuture: Future<Output = ()>,
+    {
+        let registration = register().await?;
+        if !self.relay_admissions.is_current(door) {
+            close(registration).await;
+            return Err(PairingError::RelayPairingUnavailable);
+        }
+        Ok(registration)
+    }
+
+    async fn mint_and_register_after_door_check(
+        &self,
+        journal_root: &Path,
+        request: &MintRequest,
+        now: i64,
+        door: DoorAvailability,
+    ) -> Result<MintResponse, PairingError> {
         let relay_origin = relay_url(journal_root);
         let service_token = service_token(journal_root)?;
         let draft = mint_relay_pairing_draft(journal_root, request, &relay_origin)?;
         let relay_secret = PairWindowSecret::from(draft.secret_bytes());
         let relay_key = relay_secret.relay_key();
-        let registration = register_pair_window(&relay_origin, &service_token, &relay_key)
-            .await
-            .map_err(registration_error)?;
+        let registration = self
+            .register_while_current(
+                door,
+                || async {
+                    register_pair_window(&relay_origin, &service_token, &relay_key)
+                        .await
+                        .map_err(registration_error)
+                },
+                |registration: PairWindowRegistration| async move {
+                    let _ = registration.close().await;
+                },
+            )
+            .await?;
 
-        let nonce = match commit_relay_pairing(
-            journal_root,
-            draft.secret_hex(),
-            draft.device_label(),
-            draft.role(),
-            now,
-        ) {
-            Ok(nonce) => nonce,
-            Err(_) => {
+        let nonce = match self.relay_admissions.while_current(door, || {
+            commit_relay_pairing(
+                journal_root,
+                draft.secret_hex(),
+                draft.device_label(),
+                draft.role(),
+                now,
+            )
+        }) {
+            Some(Ok(nonce)) => nonce,
+            Some(Err(_)) => {
                 let _ = registration.close().await;
                 return Err(PairingError::RelayPairingNonceCommit);
+            }
+            None => {
+                let _ = registration.close().await;
+                return Err(PairingError::RelayPairingUnavailable);
             }
         };
         let response = draft.response();
@@ -89,6 +156,7 @@ impl PairWindowManager {
             service_token,
             relay_key,
             relay_admissions: Arc::clone(&self.relay_admissions),
+            door,
             nonce_value,
             expires_at: nonce.expires_at,
             registration,
@@ -109,7 +177,7 @@ impl PairWindowManager {
         for task in tasks {
             task.abort();
         }
-        self.relay_admissions.clear();
+        self.relay_admissions.clear_admissions();
         NonceStore::new(journal_root)
             .cancel_all_relay_windows(now)
             .map_err(PairingError::NonceStore)?;
@@ -202,9 +270,16 @@ async fn serve_window(mut task: PairWindowTask) {
     };
     let relay_identity = RelayNonceIdentity::new(task.nonce_value.clone());
     let relay_admissions = Arc::clone(&task.relay_admissions);
-    let _ = bridge_pair_window_tunnel(tunnel, move |local_addr| {
-        relay_admissions.insert(local_addr, relay_identity)
-    })
+    let door = task.door;
+    let _ = bridge_pair_window_tunnel(
+        tunnel,
+        SocketAddrV4::new(Ipv4Addr::LOCALHOST, door.port()),
+        move |local_addr| {
+            relay_admissions
+                .insert_while_current(local_addr, relay_identity, door)
+                .ok_or(PairWindowClientError::Bridge)
+        },
+    )
     .await;
     let _ = task.registration.close().await;
     let _ = NonceStore::new(&task.journal_root).cancel(&task.nonce_value, unix_seconds());
@@ -257,11 +332,11 @@ mod tests {
         fs, future,
         path::{Path, PathBuf},
         sync::Arc,
-        sync::atomic::{AtomicU64, Ordering},
+        sync::atomic::{AtomicU64, AtomicUsize, Ordering},
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use solstone_core_sol_link::pairing::nonces::NonceStore;
+    use solstone_core_sol_link::pairing::{PairingError, nonces::NonceStore};
 
     use crate::relay_admission::RelayAdmissionRegistry;
 
@@ -295,15 +370,91 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn door_availability_gates_the_registration_operation() {
+        let relay_admissions = Arc::new(RelayAdmissionRegistry::new());
+        let manager = PairWindowManager::new(Arc::clone(&relay_admissions));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let unavailable_calls = Arc::clone(&calls);
+
+        assert!(matches!(
+            manager
+                .with_available_door(|_| async move {
+                    unavailable_calls.fetch_add(1, Ordering::AcqRel);
+                    Ok(())
+                })
+                .await,
+            Err(PairingError::RelayPairingUnavailable)
+        ));
+        assert_eq!(calls.load(Ordering::Acquire), 0);
+
+        relay_admissions.set_door_port(47_657);
+        let available_calls = Arc::clone(&calls);
+        assert!(matches!(
+            manager
+                .with_available_door(|_| async move {
+                    available_calls.fetch_add(1, Ordering::AcqRel);
+                    Err::<(), _>(PairingError::RelayPairingRegistrationRefused)
+                })
+                .await,
+            Err(PairingError::RelayPairingRegistrationRefused)
+        ));
+        assert_eq!(calls.load(Ordering::Acquire), 1);
+    }
+
+    #[tokio::test]
+    async fn door_invalidation_closes_a_pending_registration() {
+        let relay_admissions = Arc::new(RelayAdmissionRegistry::new());
+        relay_admissions.set_door_port(47_657);
+        let door = relay_admissions
+            .door_availability()
+            .expect("published Door availability");
+        let manager = PairWindowManager::new(Arc::clone(&relay_admissions));
+        let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let closed_by_helper = Arc::clone(&closed);
+        let (started_sender, started_receiver) = tokio::sync::oneshot::channel();
+        let (release_sender, release_receiver) = tokio::sync::oneshot::channel();
+
+        let registration = manager.register_while_current(
+            door,
+            || async move {
+                let _ = started_sender.send(());
+                let _ = release_receiver.await;
+                Ok(())
+            },
+            move |()| async move {
+                closed_by_helper.store(true, Ordering::Release);
+            },
+        );
+        let invalidate = async {
+            started_receiver.await.expect("registration starts");
+            relay_admissions.clear_door_port();
+            let _ = release_sender.send(());
+        };
+        let (result, ()) = tokio::join!(registration, invalidate);
+
+        assert!(matches!(result, Err(PairingError::RelayPairingUnavailable)));
+        assert!(closed.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
     async fn retire_all_aborts_registered_windows_and_is_empty_safe() {
         let temporary = TempDir::new();
         fs::create_dir_all(temporary.path().join("link")).expect("link directory");
-        let manager = PairWindowManager::new(Arc::new(RelayAdmissionRegistry::new()));
+        let relay_admissions = Arc::new(RelayAdmissionRegistry::new());
+        relay_admissions.set_door_port(47_657);
+        let published_door = relay_admissions
+            .door_availability()
+            .expect("published Door");
+        let manager = PairWindowManager::new(Arc::clone(&relay_admissions));
         assert_eq!(manager.registered_count(), 0);
         manager
             .retire_all(temporary.path(), 10)
             .await
             .expect("empty retire");
+        assert!(
+            relay_admissions.is_current(published_door),
+            "disabling and later re-enabling Private Link must not unpublish the bound Door"
+        );
 
         let task = tokio::spawn(async { future::pending::<()>().await });
         super::lock_windows(&manager.windows).insert("nonce".to_owned(), task);

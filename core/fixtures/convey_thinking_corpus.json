@@ -32,12 +32,20 @@
       "why": "a raise is not a refusal. Every sibling route on this surface answers missing_request_body for the identical input, and the reference's own generator comments approve of that answer; reproducing the 500 would be preserving a defect, not fidelity."
     },
     {
-      "method": "GET",
+      "method": "GET and POST",
       "native": "the session gate's own answer -- 302 to /init when unestablished, 500 in the owner's voice when corrupt -- and the 308 in the six established phases",
       "path": "/app/thinking",
       "reference": "308 to /app/thinking/ in EVERY phase -- Werkzeug raises the strict-slash redirect during URL matching, which is before before_request, so the session gate never sees it",
       "when": "the journal is unestablished or its config is corrupt",
       "why": "the redirect is a route in the native shell, so it sits INSIDE the session-gate layer rather than ahead of it. Matching the reference here would mean widening a shared, closed session-gate exemption inventory for a redirect, and the owner-visible result is better without it: someone who has not set up a journal is sent to setup rather than to a page that will immediately send them to setup. \u26a0 This is a FRAMEWORK difference, not a narrowed contract -- the 308 itself is reproduced wherever the gate admits the request."
+    },
+    {
+      "method": "GET",
+      "native": "local_runtime.status is blocked when the readable runtime phase is stopped",
+      "path": "/app/thinking/api/state and /app/thinking/api/providers",
+      "reference": "local_runtime.status is ok next to the stopped phase",
+      "when": "an established projection has no running local runtime",
+      "why": "runtime status now reports whether thinking can run, not merely whether the health record was readable. A stopped runtime cannot honestly report ok."
     }
   ],
   "phases": {

@@ -9,13 +9,17 @@
 
 use std::{
     fmt, io,
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
 };
 
-use futures_util::{Sink, Stream, StreamExt};
+use bytes::Bytes;
+use futures_util::{
+    Sink, SinkExt, Stream, StreamExt,
+    stream::{SplitSink, SplitStream},
+};
 use thiserror::Error;
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
@@ -32,7 +36,10 @@ use tokio_tungstenite::{
     },
 };
 
-use crate::{ListenControl, ServiceToken, parse_listen_control, pipe_loopback};
+use crate::{
+    BufferedWsReader, ListenControl, ServiceToken, WsByteSink, WsByteSource, WsClosed,
+    parse_listen_control, pipe_tunnel,
+};
 
 /// Bound for a pairing relay DNS, connect, and WebSocket-upgrade attempt.
 pub const PAIR_WINDOW_DIAL_TIMEOUT: Duration = Duration::from_secs(10);
@@ -42,6 +49,44 @@ const PAIR_WINDOW_PATH: &str = "/session/pair-window";
 const TUNNEL_WRITE_MAX: usize = 64 * 1024;
 
 type RelayStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+struct PairWindowTunnelReader {
+    inner: SplitStream<RelayStream>,
+}
+
+impl WsByteSource for PairWindowTunnelReader {
+    async fn next_message(&mut self) -> Result<Option<Bytes>, WsClosed> {
+        loop {
+            match self.inner.next().await {
+                Some(Ok(Message::Binary(bytes))) => return Ok(Some(bytes)),
+                Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_))) => {}
+                Some(Ok(Message::Close(_)) | Err(_)) | None => return Err(WsClosed),
+                Some(Ok(Message::Text(_))) => return Err(WsClosed),
+            }
+        }
+    }
+}
+
+struct PairWindowTunnelWriter {
+    inner: SplitSink<RelayStream, Message>,
+}
+
+impl WsByteSink for PairWindowTunnelWriter {
+    async fn send(&mut self, bytes: Bytes) -> Result<(), WsClosed> {
+        self.inner
+            .send(Message::Binary(bytes))
+            .await
+            .map_err(|_| WsClosed)
+    }
+
+    async fn close(&mut self) -> Result<(), WsClosed> {
+        self.inner
+            .send(Message::Close(None))
+            .await
+            .map_err(|_| WsClosed)?;
+        self.inner.close().await.map_err(|_| WsClosed)
+    }
+}
 
 /// A redacted eight-byte pairing secret.
 ///
@@ -359,9 +404,10 @@ pub async fn attach_pair_window_tunnel(
 
 /// Pipe an attached pairing tunnel into Convey's existing anonymous Door.
 ///
+/// `door_addr` is the Door listener selected by the owning Convey process.
 /// `on_loopback_bound` receives the bridge's pre-bound local address before
-/// Door can accept its connection. Its return value is retained until the
-/// bridge completes or fails.
+/// Door can accept its connection. It may reject a stale Door generation; its
+/// successful return value is retained until the bridge completes or fails.
 ///
 /// # Errors
 ///
@@ -369,10 +415,11 @@ pub async fn attach_pair_window_tunnel(
 /// subsequent byte copy.
 pub async fn bridge_pair_window_tunnel<OnLoopbackBound, Guard>(
     tunnel: PairWindowTunnel,
+    door_addr: SocketAddrV4,
     on_loopback_bound: OnLoopbackBound,
 ) -> Result<(u64, u64), PairWindowClientError>
 where
-    OnLoopbackBound: FnOnce(SocketAddr) -> Guard + Send + 'static,
+    OnLoopbackBound: FnOnce(SocketAddr) -> Result<Guard, PairWindowClientError> + Send + 'static,
     Guard: Send + 'static,
 {
     let socket = TcpSocket::new_v4().map_err(|_| PairWindowClientError::Bridge)?;
@@ -382,14 +429,19 @@ where
     let local_addr = socket
         .local_addr()
         .map_err(|_| PairWindowClientError::Bridge)?;
-    let _admission_lease = on_loopback_bound(local_addr);
+    let _admission_lease = on_loopback_bound(local_addr)?;
     let loopback = socket
-        .connect(SocketAddr::from((Ipv4Addr::LOCALHOST, 7657)))
+        .connect(SocketAddr::V4(door_addr))
         .await
         .map_err(|_| PairWindowClientError::Bridge)?;
-    pipe_loopback(tunnel, loopback, &[])
-        .await
-        .map_err(|_| PairWindowClientError::Bridge)
+    let PairWindowTunnel { socket, .. } = tunnel;
+    let (writer, reader) = socket.split();
+    let mut reader = BufferedWsReader::new(PairWindowTunnelReader { inner: reader });
+    let mut writer = PairWindowTunnelWriter { inner: writer };
+    let progress = pipe_tunnel(&mut reader, &mut writer, loopback).await;
+    let _ = writer.close().await;
+    let progress = progress.map_err(|_| PairWindowClientError::Bridge)?;
+    Ok((progress.websocket_to_tcp, progress.tcp_to_websocket))
 }
 
 fn registration_request(

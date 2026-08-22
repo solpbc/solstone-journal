@@ -50,10 +50,3 @@ pub fn contains(needle: &str) -> bool {
         .iter()
         .any(|entry| entry.contains(needle))
 }
-
-pub fn is_empty() -> bool {
-    LOGS.get_or_init(|| Mutex::new(Vec::new()))
-        .lock()
-        .expect("warn capture lock")
-        .is_empty()
-}

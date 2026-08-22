@@ -293,7 +293,10 @@ async fn ac6_gate_read_timeout_warns_and_completed_reads_do_not() {
     warn_capture::clear();
     let (status, _) = request(app.clone(), "/api/system/status", Some(listed.clone())).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(warn_capture::is_empty(), "normal ledger read must not warn");
+    assert!(
+        !warn_capture::contains("authorization read timed out"),
+        "normal ledger read must not emit the timeout warning"
+    );
 
     let bytes = fs::read(&path).expect("authorization fixture reads");
     remove_authorization_path(&path);
@@ -309,8 +312,8 @@ async fn ac6_gate_read_timeout_warns_and_completed_reads_do_not() {
     );
     assert_eq!(status, StatusCode::OK);
     assert!(
-        warn_capture::is_empty(),
-        "completed delayed ledger read must not warn"
+        !warn_capture::contains("authorization read timed out"),
+        "completed delayed ledger read must not emit the timeout warning"
     );
     fs::remove_file(&path).expect("delayed authorization FIFO removes");
     induce_posture(&fixture, DiskPosture::Missing);

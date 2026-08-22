@@ -1,6 +1,7 @@
 [package]
 name    = "ffmpeg-sys-next"
 version = "9.0.0"
+publish = false
 build   = "build.rs"
 links   = "ffmpeg"
 edition = "2024"

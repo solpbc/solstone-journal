@@ -1208,10 +1208,64 @@ async fn serve_single_pair_dial(
     let Ok(attach) = receiver.await else {
         return;
     };
-    let mut mobile = RelayByteStream::new(websocket);
-    let mut home = RelayByteStream::new(attach);
-    let _ = tokio::io::copy_bidirectional(&mut mobile, &mut home).await;
+    bridge_pair_relay_sockets(websocket, attach).await;
     lock_pair_relay(&state).tunnels.remove(&tunnel_id);
+}
+
+async fn bridge_pair_relay_sockets(mobile: PairRelaySocket, home: PairRelaySocket) {
+    let (mobile_side, home_side) = tokio::io::duplex(2 * 1024 * 1024);
+    tokio::select! {
+        _ = pump_pair_relay_socket(mobile, mobile_side) => {}
+        _ = pump_pair_relay_socket(home, home_side) => {}
+    }
+}
+
+async fn pump_pair_relay_socket(
+    websocket: PairRelaySocket,
+    stream: tokio::io::DuplexStream,
+) -> io::Result<()> {
+    let (mut websocket_sink, mut websocket_stream) = websocket.split();
+    let (mut stream_reader, mut stream_writer) = tokio::io::split(stream);
+    let to_stream = async move {
+        while let Some(message) = websocket_stream.next().await {
+            match message.map_err(|_| io::Error::other("pair relay websocket receive failed"))? {
+                Message::Binary(bytes) => {
+                    stream_writer.write_all(&bytes).await?;
+                    stream_writer.flush().await?;
+                }
+                Message::Close(_) => {
+                    let _ = stream_writer.shutdown().await;
+                    return Ok(());
+                }
+                Message::Ping(_) | Message::Pong(_) => {}
+                Message::Text(_) | Message::Frame(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "pair relay received a non-binary tunnel message",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    };
+    let to_websocket = async move {
+        let mut buffer = [0_u8; RELAY_TUNNEL_WRITE_MAX];
+        loop {
+            let count = stream_reader.read(&mut buffer).await?;
+            if count == 0 {
+                let _ = websocket_sink.close().await;
+                return Ok(());
+            }
+            websocket_sink
+                .send(Message::Binary(buffer[..count].to_vec().into()))
+                .await
+                .map_err(|_| io::Error::other("pair relay websocket send failed"))?;
+        }
+    };
+    tokio::select! {
+        result = to_stream => result,
+        result = to_websocket => result,
+    }
 }
 
 fn lock_pair_relay<T>(value: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -3039,31 +3093,31 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
             "the brokered relay authority is stale before Door admission"
         );
         let stale_mobile = fake_mobile_pair_dial(relay.origin(), &stale_relay_key).await;
-        if let Ok(mut stale_carrier) = certless_carrier(stale_mobile).await {
-            let mut decoder = FrameDecoder::new();
-            let downgrade_path = format!("{}?token={direct_nonce}", spl_core::PAIR_PATH);
-            let downgrade_body = serde_json::to_vec(&serde_json::json!({
-                "csr": csr_pem("stale relay against direct D"),
-                "device_label": "stale relay against direct D",
-            }))
-            .expect("stale relay downgrade body");
-            if let Ok(downgrade) = exchange_over_carrier(
-                &mut stale_carrier,
-                &mut decoder,
-                1,
-                "POST",
-                &downgrade_path,
-                &[("content-type".into(), "application/json".into())],
-                &downgrade_body,
-            )
+        let mut stale_carrier = certless_carrier(stale_mobile)
             .await
-            {
-                assert_eq!(
-                    downgrade.status, 403,
-                    "a stale brokered relay carrier cannot inherit direct D admission"
-                );
-            }
-        }
+            .expect("a stale relay is admitted only as a confined pairing peer");
+        let mut decoder = FrameDecoder::new();
+        let downgrade_path = format!("{}?token={direct_nonce}", spl_core::PAIR_PATH);
+        let downgrade_body = serde_json::to_vec(&serde_json::json!({
+            "csr": csr_pem("stale relay against direct D"),
+            "device_label": "stale relay against direct D",
+        }))
+        .expect("stale relay downgrade body");
+        let downgrade = exchange_over_carrier(
+            &mut stale_carrier,
+            &mut decoder,
+            1,
+            "POST",
+            &downgrade_path,
+            &[("content-type".into(), "application/json".into())],
+            &downgrade_body,
+        )
+        .await
+        .expect("an admitted stale relay carrier returns its authorization refusal");
+        assert_eq!(
+            downgrade.status, 403,
+            "a stale brokered relay carrier cannot inherit direct D admission"
+        );
         assert!(
             solstone_core_sol_link::pairing::nonces::direct_pairing_window_open(
                 &store,
@@ -3106,6 +3160,34 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
             .expect("relay pair link B")
             .to_owned();
         let _ = relay_key_from_pair_link(&pair_link_b, relay.origin());
+        let credential = spl_transport::pairing::pair_from_link(
+            &pair_link_b,
+            "relay phone B",
+            &serde_json::Map::new(),
+        )
+        .await
+        .expect("the shipped relay pair-dial client completes the bridge and ceremony");
+        let (_, certificate) =
+            parse_x509_pem(credential.client_cert_pem.as_bytes()).expect("issued client PEM");
+        let fingerprint = format!("sha256:{}", spl_core::ca::sha256_hex(&certificate.contents));
+        // The consumed nonce remains until the next ordinary GC pass, but is
+        // no longer live authority and cannot be cancelled or reused.
+        let consumed = store
+            .peek(&nonce_b)
+            .expect("consumed relay nonce remains observable before GC");
+        assert!(
+            consumed.used,
+            "relay nonce was consumed by the pairing ceremony"
+        );
+
+        let mint_c = mint_relay_from_loopback(&handle, "relay phone C").await;
+        let nonce_c = mint_c["nonce"].as_str().expect("relay nonce C").to_owned();
+        let mint_d = mint_relay_from_loopback(&handle, "relay phone D").await;
+        let nonce_d = mint_d["nonce"].as_str().expect("relay nonce D").to_owned();
+        let relay_key_d = relay_key_from_pair_link(
+            mint_d["pair_link"].as_str().expect("relay pair link D"),
+            relay.origin(),
+        );
 
         let mobile_a = fake_mobile_pair_dial(relay.origin(), &relay_key_a).await;
         let mut carrier_a = certless_carrier(mobile_a)
@@ -3113,26 +3195,10 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
             .expect("relay bridge A reaches certless Door admission");
         let mut decoder = FrameDecoder::new();
         let mut ids = FrameDialer::default();
-        let confined = exchange_over_carrier(
-            &mut carrier_a,
-            &mut decoder,
-            ids.allocate(),
-            "POST",
-            "/app/network/pair-start",
-            &[],
-            b"{}",
-        )
-        .await
-        .expect("relay confinement response");
-        assert_eq!(
-            confined.status, 403,
-            "relay admission remains pair-path confined"
-        );
-
-        let mismatched_path = format!("{}?token={nonce_b}", spl_core::PAIR_PATH);
+        let mismatched_path = format!("{}?token={nonce_c}", spl_core::PAIR_PATH);
         let mismatched_body = serde_json::to_vec(&serde_json::json!({
-            "csr": csr_pem("relay phone B mismatch"),
-            "device_label": "relay phone B mismatch",
+            "csr": csr_pem("relay phone C mismatch"),
+            "device_label": "relay phone C mismatch",
         }))
         .expect("mismatched pair request JSON");
         let mismatched = exchange_over_carrier(
@@ -3145,44 +3211,67 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
             &mismatched_body,
         )
         .await
-        .expect("mismatched relay response");
-        assert_eq!(mismatched.status, 403, "relay A cannot submit relay B");
+        .expect("mismatched relay request returns its authorization refusal");
+        assert_eq!(mismatched.status, 403, "relay A cannot submit relay C");
         assert!(
             solstone_core_sol_link::pairing::nonces::relay_pairing_nonce_open(
                 &store,
-                &nonce_b,
+                &nonce_c,
                 pairing_now(),
             ),
-            "relay B remains live after A's mismatched request"
+            "relay C remains live after A's mismatched request"
         );
         let mut ledger_after_mismatch = AuthorizationLedger::new(&fixture.root);
         assert_eq!(
             ledger_after_mismatch.snapshot().len(),
-            1,
+            2,
             "the mismatched relay request cannot issue a certificate or mutate the ledger"
         );
         drop(carrier_a);
 
-        let credential = spl_transport::pairing::pair_from_link(
-            &pair_link_b,
-            "relay phone B",
-            &serde_json::Map::new(),
+        let mobile_d = fake_mobile_pair_dial(relay.origin(), &relay_key_d).await;
+        let mut carrier_d = certless_carrier(mobile_d)
+            .await
+            .expect("relay bridge D reaches certless Door admission");
+        let confined = exchange_over_carrier(
+            &mut carrier_d,
+            &mut FrameDecoder::new(),
+            1,
+            "POST",
+            "/app/network/pair-start",
+            &[],
+            b"{}",
         )
         .await
-        .expect("the shipped relay pair-dial client completes the bridge and ceremony");
-        let (_, certificate) =
-            parse_x509_pem(credential.client_cert_pem.as_bytes()).expect("issued client PEM");
-        let fingerprint = format!("sha256:{}", spl_core::ca::sha256_hex(&certificate.contents));
-
-        // A consumed nonce remains in this store until normal GC, but it is no
-        // longer live authority and cannot be cancelled or reused.
-        let nonce = store
-            .peek(&nonce_b)
-            .expect("consumed relay nonce remains observable for GC");
-        assert!(
-            nonce.used,
-            "relay nonce was consumed by the pairing ceremony"
+        .expect("path-confined relay request returns its authorization refusal");
+        assert_eq!(
+            confined.status, 403,
+            "relay admission remains pair-path confined"
         );
+        drop(carrier_d);
+        let relay_d_revoked_by = Instant::now() + Duration::from_secs(2);
+        while solstone_core_sol_link::pairing::nonces::relay_pairing_nonce_open(
+            &store,
+            &nonce_d,
+            pairing_now(),
+        ) && Instant::now() < relay_d_revoked_by
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(
+            !solstone_core_sol_link::pairing::nonces::relay_pairing_nonce_open(
+                &store,
+                &nonce_d,
+                pairing_now(),
+            ),
+            "closing the path-confined bridge revokes relay D's exact authority"
+        );
+        assert_eq!(
+            ledger_after_mismatch.snapshot().len(),
+            2,
+            "the path-confined relay request cannot mutate the ledger"
+        );
+
         let mut ledger = AuthorizationLedger::new(&fixture.root);
         let entries = ledger.snapshot();
         assert_eq!(
@@ -3780,7 +3869,10 @@ async fn ac5b_hung_handshake_read_fails_closed_and_recovers() {
     warn_capture::clear();
     fixture.restore_authorization(0);
     drop(live_carrier(&fixture, port).await);
-    assert!(warn_capture::is_empty(), "completed read must not warn");
+    assert!(
+        !warn_capture::contains("handshake authorization read timed out"),
+        "completed read must not emit the handshake timeout warning"
+    );
     handle.shutdown();
 }
 

@@ -43,44 +43,154 @@ impl fmt::Debug for RelayNonceIdentity {
 /// identity claim inferred from a loopback peer. The bridge reserves that
 /// exact address before connecting Door; merely originating from `127.0.0.1`
 /// never grants relay admission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DoorAvailability {
+    port: u16,
+    generation: u64,
+}
+
+pub(crate) enum RelayAdmissionClaim {
+    Current(RelayNonceIdentity),
+    Stale(RelayNonceIdentity),
+}
+
+struct RelayAdmissionEntry {
+    identity: RelayNonceIdentity,
+    door: DoorAvailability,
+    revoked: bool,
+}
+
+impl DoorAvailability {
+    pub(crate) fn port(self) -> u16 {
+        self.port
+    }
+}
+
+#[derive(Default)]
+struct DoorState {
+    port: Option<u16>,
+    generation: u64,
+}
+
 pub(crate) struct RelayAdmissionRegistry {
-    entries: Mutex<HashMap<SocketAddr, RelayNonceIdentity>>,
+    entries: Mutex<HashMap<SocketAddr, RelayAdmissionEntry>>,
+    door: Mutex<DoorState>,
 }
 
 impl RelayAdmissionRegistry {
     pub(crate) fn new() -> Self {
         Self {
             entries: Mutex::new(HashMap::new()),
+            door: Mutex::new(DoorState::default()),
         }
     }
 
-    pub(crate) fn insert(
+    pub(crate) fn set_door_port(&self, port: u16) {
+        let mut door = lock_door(&self.door);
+        door.generation = door.generation.saturating_add(1);
+        door.port = Some(port);
+    }
+
+    pub(crate) fn door_availability(&self) -> Option<DoorAvailability> {
+        let door = lock_door(&self.door);
+        door.port.map(|port| DoorAvailability {
+            port,
+            generation: door.generation,
+        })
+    }
+
+    pub(crate) fn is_current(&self, availability: DoorAvailability) -> bool {
+        self.door_availability() == Some(availability)
+    }
+
+    pub(crate) fn while_current<T>(
+        &self,
+        availability: DoorAvailability,
+        operation: impl FnOnce() -> T,
+    ) -> Option<T> {
+        let door = lock_door(&self.door);
+        (door.port == Some(availability.port) && door.generation == availability.generation)
+            .then(operation)
+    }
+
+    pub(crate) fn insert_while_current(
         self: &Arc<Self>,
         local_addr: SocketAddr,
         identity: RelayNonceIdentity,
-    ) -> RelayAdmissionLease {
-        lock_entries(&self.entries).insert(local_addr, identity);
-        RelayAdmissionLease {
+        availability: DoorAvailability,
+    ) -> Option<RelayAdmissionLease> {
+        let door = lock_door(&self.door);
+        if door.port != Some(availability.port) || door.generation != availability.generation {
+            return None;
+        }
+        let lease_identity = identity.clone();
+        lock_entries(&self.entries).insert(
+            local_addr,
+            RelayAdmissionEntry {
+                identity,
+                door: availability,
+                revoked: false,
+            },
+        );
+        Some(RelayAdmissionLease {
             registry: Arc::clone(self),
             local_addr,
-        }
+            identity: lease_identity,
+            door: availability,
+        })
     }
 
     /// Consume the capability for exactly one accepted socket.
-    pub(crate) fn take(&self, local_addr: SocketAddr) -> Option<RelayNonceIdentity> {
-        lock_entries(&self.entries).remove(&local_addr)
+    pub(crate) fn take(&self, local_addr: SocketAddr) -> Option<RelayAdmissionClaim> {
+        let entry = lock_entries(&self.entries).remove(&local_addr)?;
+        Some(if !entry.revoked && self.is_current(entry.door) {
+            RelayAdmissionClaim::Current(entry.identity)
+        } else {
+            RelayAdmissionClaim::Stale(entry.identity)
+        })
     }
 
-    pub(crate) fn remove(&self, local_addr: SocketAddr) {
-        lock_entries(&self.entries).remove(&local_addr);
+    fn remove_if_owned(
+        &self,
+        local_addr: SocketAddr,
+        identity: &RelayNonceIdentity,
+        door: DoorAvailability,
+    ) {
+        let mut entries = lock_entries(&self.entries);
+        if let Some(entry) = entries.get_mut(&local_addr)
+            && entry.identity == *identity
+            && entry.door == door
+        {
+            entry.revoked = true;
+        }
     }
 
     pub(crate) fn remove_for_nonce(&self, nonce_value: &str) {
-        lock_entries(&self.entries).retain(|_, identity| !identity.matches(nonce_value));
+        for entry in lock_entries(&self.entries).values_mut() {
+            if entry.identity.matches(nonce_value) {
+                entry.revoked = true;
+            }
+        }
+    }
+
+    /// Stop new bridges from dialing Door without changing the type of an
+    /// already-connected relay carrier. Its address capability remains live
+    /// until Door consumes it or the owning bridge lease drops.
+    pub(crate) fn clear_door_port(&self) {
+        let mut door = lock_door(&self.door);
+        door.generation = door.generation.saturating_add(1);
+        door.port = None;
+    }
+
+    pub(crate) fn clear_admissions(&self) {
+        for entry in lock_entries(&self.entries).values_mut() {
+            entry.revoked = true;
+        }
     }
 
     pub(crate) fn clear(&self) {
         lock_entries(&self.entries).clear();
+        self.clear_door_port();
     }
 }
 
@@ -96,11 +206,14 @@ impl fmt::Debug for RelayAdmissionRegistry {
 pub(crate) struct RelayAdmissionLease {
     registry: Arc<RelayAdmissionRegistry>,
     local_addr: SocketAddr,
+    identity: RelayNonceIdentity,
+    door: DoorAvailability,
 }
 
 impl Drop for RelayAdmissionLease {
     fn drop(&mut self) {
-        self.registry.remove(self.local_addr);
+        self.registry
+            .remove_if_owned(self.local_addr, &self.identity, self.door);
     }
 }
 
@@ -130,29 +243,40 @@ pub(crate) fn admission_registry_for(journal_root: &Path) -> Arc<RelayAdmissionR
 }
 
 fn lock_entries(
-    entries: &Mutex<HashMap<SocketAddr, RelayNonceIdentity>>,
-) -> std::sync::MutexGuard<'_, HashMap<SocketAddr, RelayNonceIdentity>> {
+    entries: &Mutex<HashMap<SocketAddr, RelayAdmissionEntry>>,
+) -> std::sync::MutexGuard<'_, HashMap<SocketAddr, RelayAdmissionEntry>> {
     entries
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn lock_door(door: &Mutex<DoorState>) -> std::sync::MutexGuard<'_, DoorState> {
+    door.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 #[cfg(test)]
 mod tests {
     use std::{net::SocketAddr, sync::Arc};
 
-    use super::{RelayAdmissionRegistry, RelayNonceIdentity, admission_registry_for};
+    use super::{
+        DoorAvailability, RelayAdmissionClaim, RelayAdmissionRegistry, RelayNonceIdentity,
+        admission_registry_for,
+    };
 
     #[test]
     fn take_is_one_shot_and_lease_cleanup_is_idempotent() {
         let registry = Arc::new(RelayAdmissionRegistry::new());
         let address: SocketAddr = "127.0.0.1:4444".parse().expect("socket address");
-        let lease = registry.insert(address, RelayNonceIdentity::new("nonce-a".to_owned()));
+        registry.set_door_port(47_657);
+        let door = registry.door_availability().expect("Door availability");
+        let lease = registry
+            .insert_while_current(address, RelayNonceIdentity::new("nonce-a".to_owned()), door)
+            .expect("current admission");
 
         assert!(
             registry
                 .take(address)
-                .is_some_and(|identity| identity.matches("nonce-a"))
+                .is_some_and(|claim| matches!(claim, RelayAdmissionClaim::Current(identity) if identity.matches("nonce-a")))
         );
         assert!(registry.take(address).is_none());
         drop(lease);
@@ -164,16 +288,25 @@ mod tests {
         let registry = Arc::new(RelayAdmissionRegistry::new());
         let first: SocketAddr = "127.0.0.1:4444".parse().expect("first address");
         let second: SocketAddr = "127.0.0.1:4445".parse().expect("second address");
-        let _first = registry.insert(first, RelayNonceIdentity::new("nonce-a".to_owned()));
-        let _second = registry.insert(second, RelayNonceIdentity::new("nonce-b".to_owned()));
+        registry.set_door_port(47_657);
+        let door = registry.door_availability().expect("Door availability");
+        let _first = registry
+            .insert_while_current(first, RelayNonceIdentity::new("nonce-a".to_owned()), door)
+            .expect("first admission");
+        let _second = registry
+            .insert_while_current(second, RelayNonceIdentity::new("nonce-b".to_owned()), door)
+            .expect("second admission");
 
         registry.remove_for_nonce("nonce-a");
 
-        assert!(registry.take(first).is_none());
+        assert!(matches!(
+            registry.take(first),
+            Some(RelayAdmissionClaim::Stale(_))
+        ));
         assert!(
             registry
                 .take(second)
-                .is_some_and(|identity| identity.matches("nonce-b"))
+                .is_some_and(|claim| matches!(claim, RelayAdmissionClaim::Current(identity) if identity.matches("nonce-b")))
         );
     }
 
@@ -185,13 +318,116 @@ mod tests {
         let first = admission_registry_for(&root);
         let second = admission_registry_for(&root);
         let address: SocketAddr = "127.0.0.1:4444".parse().expect("socket address");
-        let lease = first.insert(address, RelayNonceIdentity::new("nonce-a".to_owned()));
+        first.set_door_port(47_657);
+        let door = first.door_availability().expect("Door availability");
+        let lease = first
+            .insert_while_current(address, RelayNonceIdentity::new("nonce-a".to_owned()), door)
+            .expect("current admission");
 
         assert!(
             second
                 .take(address)
-                .is_some_and(|identity| identity.matches("nonce-a"))
+                .is_some_and(|claim| matches!(claim, RelayAdmissionClaim::Current(identity) if identity.matches("nonce-a")))
         );
         drop(lease);
+    }
+
+    #[test]
+    fn clearing_door_port_keeps_existing_capability_typed_but_stale() {
+        let registry = Arc::new(RelayAdmissionRegistry::new());
+        let address: SocketAddr = "127.0.0.1:4444".parse().expect("socket address");
+        assert_eq!(registry.door_availability(), None);
+        registry.set_door_port(47_657);
+        let door = registry.door_availability().expect("Door availability");
+        let lease = registry
+            .insert_while_current(address, RelayNonceIdentity::new("nonce-a".to_owned()), door)
+            .expect("current admission");
+        assert_eq!(
+            registry.door_availability().map(DoorAvailability::port),
+            Some(47_657)
+        );
+        registry.clear_door_port();
+        assert_eq!(registry.door_availability(), None);
+        assert!(
+            matches!(registry.take(address), Some(RelayAdmissionClaim::Stale(_))),
+            "Door shutdown must keep the trusted relay source typed and fail closed"
+        );
+        drop(lease);
+    }
+
+    #[test]
+    fn clearing_all_admissions_also_unpublishes_door() {
+        let registry = Arc::new(RelayAdmissionRegistry::new());
+        let address: SocketAddr = "127.0.0.1:4444".parse().expect("socket address");
+        registry.set_door_port(47_657);
+        let door = registry.door_availability().expect("Door availability");
+        let _lease = registry
+            .insert_while_current(address, RelayNonceIdentity::new("nonce-a".to_owned()), door)
+            .expect("current admission");
+
+        registry.clear();
+
+        assert_eq!(registry.door_availability(), None);
+        assert!(registry.take(address).is_none());
+    }
+
+    #[test]
+    fn clearing_admissions_preserves_the_published_door_generation() {
+        let registry = Arc::new(RelayAdmissionRegistry::new());
+        registry.set_door_port(47_657);
+        let door = registry.door_availability().expect("Door availability");
+        let address: SocketAddr = "127.0.0.1:4444".parse().expect("socket address");
+        let _lease = registry
+            .insert_while_current(address, RelayNonceIdentity::new("nonce-a".to_owned()), door)
+            .expect("current admission");
+
+        registry.clear_admissions();
+
+        assert!(registry.is_current(door));
+        assert!(matches!(
+            registry.take(address),
+            Some(RelayAdmissionClaim::Stale(_))
+        ));
+    }
+
+    #[test]
+    fn republishing_the_same_port_invalidates_the_prior_generation() {
+        let registry = Arc::new(RelayAdmissionRegistry::new());
+        registry.set_door_port(47_657);
+        let first = registry.door_availability().expect("first Door generation");
+        let stale_address: SocketAddr = "127.0.0.1:4444".parse().expect("stale address");
+        let _stale_lease = registry
+            .insert_while_current(
+                stale_address,
+                RelayNonceIdentity::new("nonce-a".to_owned()),
+                first,
+            )
+            .expect("first-generation admission");
+
+        registry.clear_door_port();
+        registry.set_door_port(47_657);
+
+        assert!(!registry.is_current(first));
+        assert_eq!(
+            registry.door_availability().map(DoorAvailability::port),
+            Some(47_657)
+        );
+        assert!(
+            matches!(
+                registry.take(stale_address),
+                Some(RelayAdmissionClaim::Stale(_))
+            ),
+            "a bridge admitted for the old generation cannot authenticate to a same-port replacement"
+        );
+        assert!(
+            registry
+                .insert_while_current(
+                    "127.0.0.1:4445".parse().expect("late address"),
+                    RelayNonceIdentity::new("nonce-b".to_owned()),
+                    first,
+                )
+                .is_none(),
+            "the pre-dial callback rejects a stale generation"
+        );
     }
 }

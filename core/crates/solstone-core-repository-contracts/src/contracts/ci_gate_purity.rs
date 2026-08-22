@@ -452,8 +452,55 @@ fn routine_ci_is_fail_closed_and_contained_on_linux() {
         "routine CI temporary storage must remain disk-backed under /var/tmp"
     );
     assert!(
+        makefile.contains(
+            "ci ci-contained ci-under-poison ci-prep-ffmpeg: export SOLSTONE_FFMPEG_SOURCE_ARCHIVE := $(FFMPEG_SOURCE_ARCHIVE)"
+        ),
+        "routine CI must use the prepared pinned FFmpeg source archive"
+    );
+    assert!(
+        makefile
+            .contains("ci ci-contained ci-under-poison ci-prep-ffmpeg: export SOLSTONE_DISTRIBUTION_OFFLINE := 1"),
+        "routine CI must fail closed instead of fetching FFmpeg inside containment"
+    );
+    assert!(
+        makefile.contains("ci: ci-prep-ffmpeg"),
+        "routine CI must acquire its pinned FFmpeg archive before containment"
+    );
+    let ffmpeg_prep = target_body(&makefile, "ci-prep-ffmpeg");
+    assert!(
+        ffmpeg_prep.contains("acquire ffmpeg")
+            && ffmpeg_prep.contains("--dest $(FFMPEG_SOURCE_ARCHIVE)"),
+        "routine CI prep must materialize the pinned FFmpeg archive"
+    );
+    assert!(
         target_body(&makefile, "ci-contained").contains("SOLSTONE_CI_CONTAINED"),
         "the contained entry point must reject direct use"
+    );
+}
+
+#[test]
+fn default_full_runs_the_describe_cli_stub_matrix_once() {
+    let registry = ci_registry(&repo_root());
+    let leg = registry
+        .legs
+        .iter()
+        .find(|leg| leg.id == "describe-stubs")
+        .expect("registry must retain the describe-stubs leg");
+    let suite = registry
+        .suites
+        .iter()
+        .find(|suite| suite.id == "solstone-core-describe::cli")
+        .expect("registry must retain the selectable describe CLI suite");
+
+    assert!(
+        leg.default_full,
+        "the census-bearing stub leg must run by default"
+    );
+    assert_eq!(leg.make_target, "check-rust-describe-cli-stubs");
+    assert_eq!(suite.required_features, ["test-stubs"]);
+    assert!(
+        !suite.default_full,
+        "the describe CLI matrix must not run twice in default full CI"
     );
 }
 
@@ -792,15 +839,17 @@ fn full_ci_stages_host_runtimes_before_entering_the_poisoned_gate() {
     );
     let cargo_prep = target_body(&makefile, "ci-full-prep-cargo");
     assert!(
-        cargo_prep.contains("acquire ffmpeg")
-            && !cargo_prep.contains("python3")
-            && cargo_prep.contains("FFMPEG_SOURCE_ARCHIVE")
+        !cargo_prep.contains("python3")
             && cargo_prep.contains("cargo check")
             && cargo_prep.contains("$(RUST_HOST_EXCLUDES)")
             && cargo_prep.contains("cargo test")
             && cargo_prep.contains("$(RUST_ROUTINE_EXCLUDES)")
             && cargo_prep.contains("--no-run"),
         "full prep must materialize both routine static and unit build graphs"
+    );
+    assert!(
+        makefile.contains("ci-full-prep-cargo: ci-prep-ffmpeg"),
+        "full Cargo prep must share the pinned FFmpeg acquisition step"
     );
     assert!(
         makefile.contains(

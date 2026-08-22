@@ -2,9 +2,8 @@
 
 ## Test Structure
 
-⚠ **There is no Python product test suite.** It went with the Python reference cut, along with
-`tests/conftest.py` and the `pytest` markers this section used to describe. The repository-local
-device simulator has a small dependency-free `unittest` suite under
+⚠ **There is no Python product test suite.** The repository-local device simulator has a small
+dependency-free `unittest` suite under
 `tools/journal_device_sim/tests/`; run it with `make check-journal-device-sim`.
 
 - **Framework**: Cargo, for the native Rust workspace
@@ -89,8 +88,10 @@ needed input into a temporary directory such as `tempfile::TempDir`.
   Cargo targets. The default plan includes MSRV, all-target Clippy, doctest,
   dependency-policy, native runtime/helper, shipped-binary, and Apple-platform
   coverage. It includes every registered integration target except
-  `solstone-core-speakers::discovery_semantics`, plus each package-scope entry
-  marked `default_full = true`.
+  `solstone-core-speakers::discovery_semantics` and
+  `solstone-core-describe::cli`; the latter runs once through the default
+  `describe-stubs` leg, which also checks its stub census. Package-scope entries
+  marked `default_full = true` run as well.
 - `make check-rust-race` remains a selectable, repeated contention lane rather
   than part of the default full plan. Live-service validation remains an
   operator lane and is never inferred from a successful automated receipt.
