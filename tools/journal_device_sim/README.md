@@ -183,7 +183,8 @@ Outcomes are `PASS`, `FAIL`, `BLOCKED`, or `INCONCLUSIVE`. Evidence includes:
 
 - fixture and simulator source provenance;
 - the native launcher selection mode, exact executable path, digest, and
-  available version string;
+  available version string
+  ([`test_source_built_default_ignores_a_poisoned_path`](tests/test_process.py#L84));
 - effective Convey targeting and carrier assurance;
 - the client certificate digest, derived device CID, and non-secret peer
   identity;
