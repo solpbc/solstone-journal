@@ -1507,6 +1507,10 @@ mod tests {
                 "--disable-stripping".to_owned(),
                 "--extra-cflags=-O3".to_owned(),
             ],
+            vec![
+                "--disable-debug".to_owned(),
+                "--enable-stripping".to_owned(),
+            ],
         ] {
             let evidence = root.path().join(format!("case-{}", args.len()));
             write_ffmpeg_evidence(&evidence, "current", true, &args);
