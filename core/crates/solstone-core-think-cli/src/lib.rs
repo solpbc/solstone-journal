@@ -3651,6 +3651,34 @@ mod tests {
             .collect()
     }
 
+    fn named_records<'a>(records: &'a [Value], event: &'a str, name: &'a str) -> Vec<&'a Value> {
+        records
+            .iter()
+            .filter(|record| {
+                record.get("event").and_then(Value::as_str) == Some(event)
+                    && record.get("name").and_then(Value::as_str) == Some(name)
+            })
+            .collect()
+    }
+
+    fn assert_terminal_matches_dispatch_fold_keys(records: &[Value], name: &str) {
+        let dispatches = named_records(records, "talent.dispatch", name);
+        let mut terminals = named_records(records, "talent.complete", name);
+        terminals.extend(named_records(records, "talent.fail", name));
+        assert_eq!(dispatches.len(), 1, "{name} dispatch");
+        assert_eq!(terminals.len(), 1, "{name} terminal");
+        let dispatch = dispatches[0];
+        let terminal = terminals[0];
+        assert_eq!(
+            terminal.get("mode").and_then(Value::as_str),
+            Some("segment")
+        );
+        assert_eq!(terminal.get("day"), dispatch.get("day"));
+        assert_eq!(terminal.get("segment"), dispatch.get("segment"));
+        assert_eq!(terminal.get("stream"), dispatch.get("stream"));
+        assert_eq!(terminal.get("use_id"), dispatch.get("use_id"));
+    }
+
     fn write_analyzed_screen(journal: &Path, day: &str, segment: &str) {
         let path = segment_dir(journal, day, segment).join("screen.jsonl");
         fs::write(path, "{\"timestamp\":\"2026-08-13T09:00:00Z\"}\n").unwrap();
@@ -3869,11 +3897,14 @@ mod tests {
                 "{}",
                 case.name
             );
+            assert_terminal_matches_dispatch_fold_keys(&records, "sense");
         }
     }
 
-    #[test]
-    fn segment_post_drain_early_returns_keep_the_sense_finish_terminal() {
+    fn isolated_sense_run(
+        segment: &str,
+        prepare: impl FnOnce(&context::ThinkContext, &Path),
+    ) -> (dispatch::ModeResult, Vec<Value>) {
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
         let (context, _) = segment_context(
@@ -3881,43 +3912,79 @@ mod tests {
             roots.path(),
             "{\n\"type\": \"generate\", \"schedule\": \"segment\", \"priority\": 1, \"output\": \"json\"\n}\n",
         );
-        segment_dir(journal.path(), "20260813", "090000_300");
-        let output = sense_output_path(&context, "090000_300");
-        fs::create_dir_all(output.parent().unwrap()).unwrap();
-        fs::write(&output, "not json").unwrap();
-        let parse = run_segment(&context, journal.path(), "090000_300", false, false);
-        assert_eq!(parse.failed_names, vec!["sense (output_parse)"]);
-        let parse_log = jsonl_records(&journal.path().join("segment.jsonl"));
+        prepare(&context, journal.path());
+        let result = run_segment(&context, journal.path(), segment, false, false);
+        (result, jsonl_records(&journal.path().join("segment.jsonl")))
+    }
+
+    fn assert_sole_sense_finish(records: &[Value]) {
         assert_eq!(
-            canonical_terminals(&parse_log, "sense"),
+            canonical_terminals(records, "sense"),
             vec![("talent.complete", Some("use-1"), Some("finish"))]
         );
+        assert_terminal_matches_dispatch_fold_keys(records, "sense");
+    }
 
-        fs::write(&output, r#"{"density":1,"content_type":"work"}"#).unwrap();
-        let invalid = run_segment(&context, journal.path(), "090000_300", false, false);
+    #[test]
+    fn segment_post_drain_early_returns_keep_the_sense_finish_terminal() {
+        let (parse, parse_log) = isolated_sense_run("090000_300", |context, journal| {
+            segment_dir(journal, "20260813", "090000_300");
+            let output = sense_output_path(context, "090000_300");
+            fs::create_dir_all(output.parent().unwrap()).unwrap();
+            fs::write(output, "not json").unwrap();
+        });
+        assert_eq!(parse.failed_names, vec!["sense (output_parse)"]);
+        assert_sole_sense_finish(&parse_log);
+
+        let (invalid, invalid_log) = isolated_sense_run("090000_300", |context, journal| {
+            segment_dir(journal, "20260813", "090000_300");
+            let output = sense_output_path(context, "090000_300");
+            fs::create_dir_all(output.parent().unwrap()).unwrap();
+            fs::write(output, r#"{"density":1,"content_type":"work"}"#).unwrap();
+        });
         assert_eq!(invalid.failed_names, vec!["sense (output_invalid)"]);
-        let invalid_log = jsonl_records(&journal.path().join("segment.jsonl"));
-        assert_eq!(
-            canonical_terminals(&invalid_log, "sense").len(),
-            2,
-            "density non-string still terminalizes Sense"
-        );
+        assert_sole_sense_finish(&invalid_log);
 
-        write_sense_output(
-            &context,
-            "090000_300",
-            serde_json::json!({"density":"idle","content_type":"idle"}),
-        );
-        let idle = run_segment(&context, journal.path(), "090000_300", false, false);
+        let (idle, idle_log) = isolated_sense_run("090000_300", |context, journal| {
+            segment_dir(journal, "20260813", "090000_300");
+            write_sense_output(
+                context,
+                "090000_300",
+                serde_json::json!({"density":"idle","content_type":"idle"}),
+            );
+        });
         assert_eq!((idle.success, idle.failed), (1, 0));
-        assert!(
-            canonical_terminals(
-                &jsonl_records(&journal.path().join("segment.jsonl")),
-                "sense"
+        assert_sole_sense_finish(&idle_log);
+
+        let (redundant, redundant_log) = isolated_sense_run("091000_300", |context, journal| {
+            let previous = segment_dir(journal, "20260813", "090500_300");
+            let current = segment_dir(journal, "20260813", "091000_300");
+            fs::write(previous.join("imported.md"), "same transcript words").unwrap();
+            fs::write(current.join("imported.md"), "same transcript words").unwrap();
+            let sensor = solstone_core_system_health::detect_segment_change(
+                journal,
+                "20260813",
+                Some("default"),
+                "091000_300",
+                &current,
+                None,
+                "2026-08-13T00:00:00+00:00",
+            )["sensors"]
+                .clone();
+            fs::create_dir_all(previous.join("talents")).unwrap();
+            fs::write(
+                previous.join("talents/change.json"),
+                serde_json::to_vec(&serde_json::json!({"sensors": sensor})).unwrap(),
             )
-            .len()
-                >= 3
-        );
+            .unwrap();
+            write_sense_output(
+                context,
+                "091000_300",
+                serde_json::json!({"density":"active","content_type":"work"}),
+            );
+        });
+        assert_eq!((redundant.success, redundant.failed), (1, 0));
+        assert_sole_sense_finish(&redundant_log);
     }
 
     #[test]

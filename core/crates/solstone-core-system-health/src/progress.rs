@@ -206,7 +206,9 @@ fn name_is_completed(entries: &[ProgressRecord]) -> bool {
     let Some(dispatch) = last_dispatch else {
         return latest_terminal(entries).is_some_and(|item| item.kind == ProgressKind::Complete);
     };
-    // Either side None → matched by record order alone.
+    // Legacy dispatch/terminal rows on disk predate use_id correlation and
+    // cannot be rewritten, so a missing use_id on either side falls back to
+    // record order.
     entries
         .iter()
         .rfind(|item| {
