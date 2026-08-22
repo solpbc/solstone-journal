@@ -532,9 +532,136 @@ fn send_request(
     {
         Ok(value) => Ok(value),
         Err(ClientError::Unreachable { .. }) => Err(stderr(SERVICE_DOWN_MESSAGE)),
-        Err(error) => Err(stderr(error.message())),
+        Err(error) => Err(stderr(error.detail().unwrap_or_else(|| error.message()))),
     }
 }
 fn stderr(value: impl AsRef<str>) -> CommandOutput {
     CommandOutput::failure(format!("{}\n", value.as_ref()), 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::command::{CommandContext, CommandOutput};
+    use crate::seam::{ExpectedHttpCall, ScriptedHttpTransport};
+    use crate::transport::{ApiRequest, HttpMethod, HttpResponse, QueryParam, TimeoutPolicy};
+
+    fn expected_search(result: Result<HttpResponse, ClientError>) -> ExpectedHttpCall {
+        ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Get,
+                path: "/app/search/api/search".to_string(),
+                params: vec![
+                    QueryParam::single("limit", "10"),
+                    QueryParam::single("q", "needle"),
+                ],
+                json: None,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result,
+        }
+    }
+
+    fn run_search(transport: &ScriptedHttpTransport) -> CommandOutput {
+        let args = vec!["needle".to_string()];
+        let env = BTreeMap::new();
+        search(CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            today: "20260723",
+            transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+        })
+    }
+
+    #[test]
+    fn search_prefers_rejection_detail() {
+        let transport =
+            ScriptedHttpTransport::new(vec![expected_search(Err(ClientError::ReasonRejected {
+                status: 400,
+                error: "search rejected".to_string(),
+                reason_code: Some("index_unavailable".to_string()),
+                detail: Some("journal index is empty".to_string()),
+                payload: Box::new(Value::Null),
+            }))]);
+
+        assert_eq!(
+            run_search(&transport),
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "journal index is empty\n".to_string(),
+                exit: 1,
+            }
+        );
+        transport.assert_done();
+    }
+
+    #[test]
+    fn search_falls_back_to_rejection_message_without_detail() {
+        let transport =
+            ScriptedHttpTransport::new(vec![expected_search(Err(ClientError::ReasonRejected {
+                status: 400,
+                error: "search rejected".to_string(),
+                reason_code: Some("index_unavailable".to_string()),
+                detail: None,
+                payload: Box::new(Value::Null),
+            }))]);
+
+        assert_eq!(
+            run_search(&transport),
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "search rejected\n".to_string(),
+                exit: 1,
+            }
+        );
+        transport.assert_done();
+    }
+
+    #[test]
+    fn search_keeps_the_service_down_message_for_unreachable() {
+        let transport = ScriptedHttpTransport::new(vec![expected_search(Err(
+            ClientError::unreachable(Some("connection refused".to_string())),
+        ))]);
+
+        assert_eq!(
+            run_search(&transport),
+            CommandOutput {
+                stdout: String::new(),
+                stderr: format!("{SERVICE_DOWN_MESSAGE}\n"),
+                exit: 1,
+            }
+        );
+        transport.assert_done();
+    }
+
+    #[test]
+    fn search_renders_empty_results_as_success() {
+        let transport = ScriptedHttpTransport::new(vec![expected_search(Ok(HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: b"[]".to_vec(),
+            policy: TimeoutPolicy::Api,
+        }))]);
+
+        assert_eq!(
+            run_search(&transport),
+            CommandOutput {
+                stdout: "[]\n".to_string(),
+                stderr: String::new(),
+                exit: 0,
+            }
+        );
+        transport.assert_done();
+    }
 }
