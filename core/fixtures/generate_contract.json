@@ -506,7 +506,7 @@
     "response": 0
   },
   "fixture": "solstone-generate-contract",
-  "fixture_version": 5,
+  "fixture_version": 6,
   "framing": {
     "one_shot": {
       "id": "optional",
@@ -519,6 +519,9 @@
         "minimum": 1
       },
       "id": "required",
+      "journal": {
+        "flag": "--journal"
+      },
       "line_limit_bytes": 67108864,
       "selector": "--session",
       "stdin": "ndjson",

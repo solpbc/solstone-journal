@@ -2432,7 +2432,18 @@ fn run_generate_one_shot() -> ExitCode {
     };
     let request_id = request.id.clone();
     let endpoint_runtime = solstone_core_generate_wire::EndpointRuntime::default();
-    let response = match generate_response_for_request(&request, &endpoint_runtime) {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal.path,
+        Err(error) => {
+            return generate_protocol_exit(
+                request_id,
+                "internal-failure",
+                journal_path_error_detail(error),
+                generate_exit_code("internal_failure"),
+            );
+        }
+    };
+    let response = match generate_response_for_request(&request, &endpoint_runtime, &journal) {
         Ok(response) => response,
         Err(detail) => {
             return generate_protocol_exit(
@@ -2457,20 +2468,17 @@ fn run_generate_one_shot() -> ExitCode {
 fn generate_response_for_request(
     request: &solstone_core_generate::GenerateRequest,
     endpoint_runtime: &solstone_core_generate_wire::EndpointRuntime,
+    journal: &Path,
 ) -> Result<solstone_core_generate::GenerateResponse, String> {
     let request_id = request.id.clone();
-    let journal = match resolve_process_journal_path() {
-        Ok(journal) => journal.path,
-        Err(error) => return Err(journal_path_error_detail(error)),
-    };
-    let config = match read_journal_config(&journal) {
+    let config = match read_journal_config(journal) {
         Ok(read) => read.config.unwrap_or_default(),
         Err(error) => return Err(format!("could not read journal config: {error}")),
     };
     let (provider, outcome) = solstone_core_generate_wire::resolve_lane(&config);
     let response = match outcome {
         solstone_core_generate_wire::LaneOutcome::BundledLocal => {
-            match solstone_core_generate_wire::bundled_generate(request, &journal) {
+            match solstone_core_generate_wire::bundled_generate(request, journal) {
                 Ok(solstone_core_local::GenerateResult::Success(mut success)) => {
                     let usage = success
                         .usage
@@ -2481,7 +2489,7 @@ fn generate_response_for_request(
                         .unwrap_or_else(|| json!({}));
                     let assessment = solstone_core_generate_wire::assess_provider_result(
                         solstone_core_generate_wire::ProviderResultView {
-                            journal_path: &journal,
+                            journal_path: journal,
                             context: &request.context,
                             model: &success.model,
                             text: &success.text,
@@ -2533,13 +2541,13 @@ fn generate_response_for_request(
             endpoint_result_response(
                 solstone_core_generate_wire::endpoint_generate(
                     request,
-                    &journal,
+                    journal,
                     &endpoint,
                     &config,
                     endpoint_runtime,
                 ),
                 request,
-                &journal,
+                journal,
                 &provider,
                 request_id.clone(),
             )?
@@ -2547,7 +2555,7 @@ fn generate_response_for_request(
         solstone_core_generate_wire::LaneOutcome::ConfidentialEndpoint(endpoint) => {
             match solstone_core_generate_wire::confidential_generate(
                 request,
-                &journal,
+                journal,
                 &endpoint,
                 &config,
                 endpoint_runtime,
@@ -2556,7 +2564,7 @@ fn generate_response_for_request(
                     endpoint_result_response(
                         solstone_core_generate_wire::EndpointResult::Generated(success),
                         request,
-                        &journal,
+                        journal,
                         &provider,
                         request_id.clone(),
                     )?
@@ -2565,7 +2573,7 @@ fn generate_response_for_request(
                     endpoint_result_response(
                         solstone_core_generate_wire::EndpointResult::Failed(failure),
                         request,
-                        &journal,
+                        journal,
                         &provider,
                         request_id.clone(),
                     )?
@@ -2604,7 +2612,7 @@ fn generate_response_for_request(
                 solstone_core_generate_wire::AnthropicResult::Generated(mut success) => {
                     let assessment = solstone_core_generate_wire::assess_provider_result(
                         solstone_core_generate_wire::ProviderResultView {
-                            journal_path: &journal,
+                            journal_path: journal,
                             context: &request.context,
                             model: &success.model,
                             text: &success.text,
@@ -2653,7 +2661,7 @@ fn generate_response_for_request(
                 solstone_core_generate_wire::OpenAiResult::Generated(mut success) => {
                     let assessment = solstone_core_generate_wire::assess_provider_result(
                         solstone_core_generate_wire::ProviderResultView {
-                            journal_path: &journal,
+                            journal_path: journal,
                             context: &request.context,
                             model: &success.model,
                             text: &success.text,
@@ -2702,7 +2710,7 @@ fn generate_response_for_request(
                 solstone_core_generate_wire::GoogleResult::Generated(mut success) => {
                     let assessment = solstone_core_generate_wire::assess_provider_result(
                         solstone_core_generate_wire::ProviderResultView {
-                            journal_path: &journal,
+                            journal_path: journal,
                             context: &request.context,
                             model: &success.model,
                             text: &success.text,
@@ -2839,15 +2847,29 @@ fn run_generate_session(options: GenerateSessionOptions) -> ExitCode {
             );
         }
     };
+    let GenerateSessionConfig {
+        session,
+        explicit_journal,
+    } = config;
     // The framing itself lives in the wire crate. What stays here is what only
     // the binary can decide: which lane answers a request, and what the process
     // does when the protocol cannot continue.
     let outcome = solstone_core_generate_wire::run_session(
         io::BufReader::new(io::stdin()),
         Box::new(io::stdout()),
-        config,
+        session,
         solstone_core_generate_wire::SessionHost {
-            respond: generate_response_for_request,
+            respond:
+                move |request: &solstone_core_generate::GenerateRequest,
+                      runtime: &solstone_core_generate_wire::EndpointRuntime| {
+                    let journal = match &explicit_journal {
+                        Some(path) => path.clone(),
+                        None => resolve_process_journal_path()
+                            .map(|resolved| resolved.path)
+                            .map_err(journal_path_error_detail)?,
+                    };
+                    generate_response_for_request(request, runtime, &journal)
+                },
             fail: |id, reason, detail| generate_protocol_exit_and_terminate(id, reason, detail),
             // Bare EOF means the caller disappeared: answer nothing further, write no
             // further usage, exit. The contract declares 0, 64 and 70 only, and the
@@ -2871,9 +2893,14 @@ fn run_generate_session(options: GenerateSessionOptions) -> ExitCode {
     }
 }
 
+struct GenerateSessionConfig {
+    session: solstone_core_generate_wire::SessionConfig,
+    explicit_journal: Option<PathBuf>,
+}
+
 fn generate_session_config(
     options: &GenerateSessionOptions,
-) -> Result<solstone_core_generate_wire::SessionConfig, String> {
+) -> Result<GenerateSessionConfig, String> {
     let session = &solstone_core_generate::contract()["framing"]["session"];
     let selector = session["selector"]
         .as_str()
@@ -2882,6 +2909,9 @@ fn generate_session_config(
     let flag = concurrency["flag"]
         .as_str()
         .ok_or_else(|| "session concurrency flag is not a string".to_owned())?;
+    let journal_flag = session["journal"]["flag"]
+        .as_str()
+        .ok_or_else(|| "session journal flag is not a string".to_owned())?;
     let minimum = concurrency["minimum"]
         .as_u64()
         .ok_or_else(|| "session concurrency minimum is not an integer".to_owned())?;
@@ -2893,18 +2923,36 @@ fn generate_session_config(
         .as_str()
         .ok_or_else(|| "session terminal schema is not a string".to_owned())?
         .to_owned();
-    let [actual_flag, value] = options.arguments.as_slice() else {
-        return Err(format!("expected {selector} {flag} <positive integer>"));
-    };
-    if actual_flag != std::ffi::OsStr::new(flag) {
-        return Err(format!("expected {selector} {flag} <positive integer>"));
+    let expected =
+        || format!("expected {selector} {flag} <positive integer> [{journal_flag} <journal path>]");
+    let mut max_in_flight = None;
+    let mut explicit_journal = None;
+    let mut pairs = options.arguments.chunks_exact(2);
+    for pair in &mut pairs {
+        let [actual_flag, value] = pair else {
+            unreachable!("chunks_exact(2) yields pairs")
+        };
+        if actual_flag == OsStr::new(flag) {
+            if max_in_flight.is_some() {
+                return Err(format!("{flag} was provided more than once for {selector}"));
+            }
+            let value = value.to_str().ok_or_else(&expected)?;
+            max_in_flight = Some(value.parse::<usize>().map_err(|_| expected())?);
+        } else if actual_flag == OsStr::new(journal_flag) {
+            if explicit_journal.is_some() {
+                return Err(format!(
+                    "{journal_flag} was provided more than once for {selector}"
+                ));
+            }
+            explicit_journal = Some(PathBuf::from(value));
+        } else {
+            return Err(expected());
+        }
     }
-    let value = value
-        .to_str()
-        .ok_or_else(|| format!("expected {selector} {flag} <positive integer>"))?;
-    let max_in_flight = value
-        .parse::<usize>()
-        .map_err(|_| format!("expected {selector} {flag} <positive integer>"))?;
+    if !pairs.remainder().is_empty() {
+        return Err(expected());
+    }
+    let max_in_flight = max_in_flight.ok_or_else(expected)?;
     let minimum = usize::try_from(minimum)
         .map_err(|_| "session concurrency minimum is not a supported integer".to_owned())?;
     if max_in_flight < minimum {
@@ -2912,10 +2960,13 @@ fn generate_session_config(
             "{flag} is below the fixture minimum of {minimum} for {selector}"
         ));
     }
-    Ok(solstone_core_generate_wire::SessionConfig {
-        max_in_flight,
-        line_limit_bytes,
-        terminal_schema,
+    Ok(GenerateSessionConfig {
+        session: solstone_core_generate_wire::SessionConfig {
+            max_in_flight,
+            line_limit_bytes,
+            terminal_schema,
+        },
+        explicit_journal,
     })
 }
 
@@ -5413,6 +5464,123 @@ mod tests {
         assert_eq!(EXIT_IOERR, 74);
         assert_eq!(EXIT_TEMPFAIL, 75);
         assert_eq!(EXIT_PROTOCOL, 76);
+    }
+
+    fn session_options(arguments: Vec<OsString>) -> GenerateSessionOptions {
+        GenerateSessionOptions { arguments }
+    }
+
+    fn expected_session_arguments() -> String {
+        let session = &solstone_core_generate::contract()["framing"]["session"];
+        let selector = session["selector"].as_str().unwrap();
+        let concurrency_flag = session["concurrency"]["flag"].as_str().unwrap();
+        let journal_flag = session["journal"]["flag"].as_str().unwrap();
+        format!(
+            "expected {selector} {concurrency_flag} <positive integer> [{journal_flag} <journal path>]"
+        )
+    }
+
+    fn session_error(arguments: Vec<OsString>) -> String {
+        match generate_session_config(&session_options(arguments)) {
+            Ok(_) => panic!("generate session arguments unexpectedly parsed"),
+            Err(error) => error,
+        }
+    }
+
+    #[test]
+    fn generate_session_config_accepts_optional_journal_in_either_order() {
+        let session = &solstone_core_generate::contract()["framing"]["session"];
+        let concurrency_flag = session["concurrency"]["flag"].as_str().unwrap();
+        let journal_flag = session["journal"]["flag"].as_str().unwrap();
+
+        let absent =
+            generate_session_config(&session_options(vec![concurrency_flag.into(), "2".into()]))
+                .unwrap();
+        assert_eq!(absent.session.max_in_flight, 2);
+        assert_eq!(absent.explicit_journal, None);
+
+        for arguments in [
+            vec![
+                journal_flag.into(),
+                "journal-a".into(),
+                concurrency_flag.into(),
+                "3".into(),
+            ],
+            vec![
+                concurrency_flag.into(),
+                "3".into(),
+                journal_flag.into(),
+                "journal-a".into(),
+            ],
+        ] {
+            let config = generate_session_config(&session_options(arguments)).unwrap();
+            assert_eq!(config.session.max_in_flight, 3);
+            assert_eq!(config.explicit_journal, Some(PathBuf::from("journal-a")));
+        }
+    }
+
+    #[test]
+    fn generate_session_config_rejects_incomplete_duplicate_and_unknown_pairs() {
+        let session = &solstone_core_generate::contract()["framing"]["session"];
+        let selector = session["selector"].as_str().unwrap();
+        let concurrency_flag = session["concurrency"]["flag"].as_str().unwrap();
+        let journal_flag = session["journal"]["flag"].as_str().unwrap();
+        let minimum = session["concurrency"]["minimum"].as_u64().unwrap();
+        let expected = expected_session_arguments();
+
+        for arguments in [
+            vec![concurrency_flag.into(), "2".into(), journal_flag.into()],
+            vec![concurrency_flag.into()],
+            vec![journal_flag.into(), "journal-a".into()],
+            vec!["--unknown".into(), "journal-a".into()],
+        ] {
+            assert_eq!(session_error(arguments), expected);
+        }
+
+        assert_eq!(
+            session_error(vec![
+                concurrency_flag.into(),
+                "2".into(),
+                concurrency_flag.into(),
+                "2".into(),
+            ]),
+            format!("{concurrency_flag} was provided more than once for {selector}")
+        );
+        assert_eq!(
+            session_error(vec![
+                concurrency_flag.into(),
+                "2".into(),
+                journal_flag.into(),
+                "journal-a".into(),
+                journal_flag.into(),
+                "journal-b".into(),
+            ]),
+            format!("{journal_flag} was provided more than once for {selector}")
+        );
+        assert_eq!(
+            session_error(vec![concurrency_flag.into(), "0".into()]),
+            format!("{concurrency_flag} is below the fixture minimum of {minimum} for {selector}")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn generate_session_config_preserves_non_utf8_journal_path() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let session = &solstone_core_generate::contract()["framing"]["session"];
+        let concurrency_flag = session["concurrency"]["flag"].as_str().unwrap();
+        let journal_flag = session["journal"]["flag"].as_str().unwrap();
+        let journal = OsString::from_vec(b"journal-\xff".to_vec());
+        let config = generate_session_config(&session_options(vec![
+            concurrency_flag.into(),
+            "2".into(),
+            journal_flag.into(),
+            journal.clone(),
+        ]))
+        .unwrap();
+
+        assert_eq!(config.explicit_journal, Some(PathBuf::from(journal)));
     }
 
     #[test]

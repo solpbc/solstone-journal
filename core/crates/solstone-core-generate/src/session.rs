@@ -173,13 +173,15 @@ impl InFlightGate {
 
 /// A one-child, newline-framed generate session.
 ///
-/// Build it with [`Self::at_path`] or [`Self::sibling`], configure it with
-/// [`Self::with_env`], then start it with [`Self::spawn`]. [`Self::recv`] blocks
-/// until one submitted request completes, in response-arrival order.
+/// Build it with [`Self::at_path`], configure it with
+/// [`Self::with_prefix_arguments`], [`Self::with_session_journal`], or
+/// [`Self::with_env`], then start it with [`Self::spawn`]. [`Self::recv`] blocks until one
+/// submitted request completes, in response-arrival order.
 pub struct SessionClient {
     executable: PathBuf,
     prefix_arguments: Vec<std::ffi::OsString>,
-    environment: BTreeMap<String, String>,
+    session_journal: Option<PathBuf>,
+    environment: BTreeMap<std::ffi::OsString, std::ffi::OsString>,
     runtime: Option<SessionRuntime>,
 }
 
@@ -188,6 +190,7 @@ impl SessionClient {
         Self {
             executable: path.into(),
             prefix_arguments: Vec::new(),
+            session_journal: None,
             environment: BTreeMap::new(),
             runtime: None,
         }
@@ -201,12 +204,21 @@ impl SessionClient {
         self
     }
 
-    pub fn with_env(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn with_session_journal(mut self, path: impl Into<PathBuf>) -> Self {
+        self.session_journal = Some(path.into());
+        self
+    }
+
+    pub fn with_env(
+        mut self,
+        name: impl Into<std::ffi::OsString>,
+        value: impl Into<std::ffi::OsString>,
+    ) -> Self {
         self.environment.insert(name.into(), value.into());
         self
     }
 
-    pub fn sibling() -> Result<Self, SessionLaunchError> {
+    pub fn sibling_path() -> Result<PathBuf, SessionLaunchError> {
         let current = env::current_exe().map_err(|error| {
             SessionLaunchError::new(SessionLaunchReason::Resolve(error.to_string()))
         })?;
@@ -217,7 +229,7 @@ impl SessionClient {
         })?;
         let path = parent.join("solstone-core");
         if Path::new(&path).is_file() {
-            Ok(Self::at_path(path))
+            Ok(path)
         } else {
             Err(SessionLaunchError::new(SessionLaunchReason::Resolve(
                 format!("missing sibling executable {}", path.display()),
@@ -225,11 +237,10 @@ impl SessionClient {
         }
     }
 
-    pub fn spawn(mut self, max_in_flight: usize) -> Result<Self, SessionLaunchError> {
-        if self.runtime.is_some() {
-            return Err(SessionLaunchError::new(SessionLaunchReason::AlreadyStarted));
-        }
-
+    pub fn session_arguments(
+        &self,
+        max_in_flight: usize,
+    ) -> Result<Vec<std::ffi::OsString>, SessionLaunchError> {
         let session = &contract()["framing"]["session"];
         let selector = session["selector"].as_str().ok_or_else(|| {
             SessionLaunchError::new(SessionLaunchReason::Contract(
@@ -247,17 +258,36 @@ impl SessionClient {
                 "session concurrency minimum is not an integer".to_owned(),
             ))
         })? as usize;
+        let journal_flag = session["journal"]["flag"].as_str().ok_or_else(|| {
+            SessionLaunchError::new(SessionLaunchReason::Contract(
+                "session journal flag is not a string".to_owned(),
+            ))
+        })?;
         if max_in_flight < minimum {
             return Err(SessionLaunchError::new(
                 SessionLaunchReason::InvalidConcurrency,
             ));
         }
 
+        let mut arguments = self.prefix_arguments.clone();
+        arguments.push(selector.into());
+        arguments.push(flag.into());
+        arguments.push(max_in_flight.to_string().into());
+        if let Some(path) = &self.session_journal {
+            arguments.push(journal_flag.into());
+            arguments.push(path.as_os_str().to_owned());
+        }
+        Ok(arguments)
+    }
+
+    pub fn spawn(mut self, max_in_flight: usize) -> Result<Self, SessionLaunchError> {
+        if self.runtime.is_some() {
+            return Err(SessionLaunchError::new(SessionLaunchReason::AlreadyStarted));
+        }
+
+        let arguments = self.session_arguments(max_in_flight)?;
         let mut child = Command::new(&self.executable)
-            .args(&self.prefix_arguments)
-            .arg(selector)
-            .arg(flag)
-            .arg(max_in_flight.to_string())
+            .args(arguments)
             .envs(&self.environment)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

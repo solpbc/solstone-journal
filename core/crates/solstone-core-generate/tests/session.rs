@@ -66,7 +66,7 @@ fn request(id: &str) -> GenerateRequest {
 fn client(journal: &Journal) -> SessionClient {
     SessionClient::at_path(support::core_binary())
         .with_prefix_arguments(support::prefix())
-        .with_env("SOLSTONE_JOURNAL", journal.path.to_string_lossy())
+        .with_env("SOLSTONE_JOURNAL", journal.path.as_os_str())
         .spawn(2)
         .unwrap()
 }

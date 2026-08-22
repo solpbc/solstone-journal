@@ -7,6 +7,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -14,7 +15,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use solstone_core_generate::{
     ContentPart, GenerateRequest, GenerateResponse, GeneratedResponse, RefusalReason,
-    SessionClient, SessionCompletion,
+    SessionClient, SessionCompletion, encode_session_request_line,
 };
 
 const RECEIVE_BOUND: Duration = Duration::from_secs(10);
@@ -46,10 +47,10 @@ impl Journal {
         journal
     }
 
-    fn external_local(port: u16) -> Self {
+    fn external_local(port: u16, served_model_id: &str) -> Self {
         let journal = Self::at_temp_path();
         journal.write_config(&format!(
-            r#"{{"providers":{{"active":{{"provider":"local"}},"local":{{"endpoint_url":"http://127.0.0.1:{port}","served_model_id":"stub"}}}}}}"#
+            r#"{{"providers":{{"active":{{"provider":"local"}},"local":{{"endpoint_url":"http://127.0.0.1:{port}","served_model_id":"{served_model_id}","served_context_window":4096}}}}}}"#
         ));
         journal
     }
@@ -72,6 +73,7 @@ impl Drop for Journal {
 struct StubState {
     completion_text: String,
     hold_completion: bool,
+    requests: AtomicUsize,
     inferences: AtomicUsize,
     stopping: AtomicBool,
     released: Mutex<bool>,
@@ -100,6 +102,7 @@ impl LocalStub {
         let state = Arc::new(StubState {
             completion_text,
             hold_completion,
+            requests: AtomicUsize::new(0),
             inferences: AtomicUsize::new(0),
             stopping: AtomicBool::new(false),
             released: Mutex::new(false),
@@ -139,6 +142,14 @@ impl LocalStub {
         *self.state.released.lock().unwrap() = true;
         self.state.release.notify_all();
         let _ = TcpStream::connect(("127.0.0.1", self.port));
+    }
+
+    fn requests(&self) -> usize {
+        self.state.requests.load(Ordering::Acquire)
+    }
+
+    fn inferences(&self) -> usize {
+        self.state.inferences.load(Ordering::Acquire)
     }
 }
 
@@ -187,6 +198,7 @@ fn handle_local_request(mut stream: TcpStream, state: Arc<StubState>) {
         .next()
         .unwrap_or_default()
         .to_owned();
+    state.requests.fetch_add(1, Ordering::Release);
     let body = if request_line.starts_with("GET /health ") {
         r#"{"loaded_model":"local"}"#.to_owned()
     } else if request_line.starts_with("GET /props ") {
@@ -242,7 +254,23 @@ fn request(id: &str, text: String) -> GenerateRequest {
 fn client(journal: &Journal, max_in_flight: usize) -> SessionClient {
     SessionClient::at_path(support::core_binary())
         .with_prefix_arguments(support::prefix())
-        .with_env("SOLSTONE_JOURNAL", journal.path.to_string_lossy())
+        .with_env("SOLSTONE_JOURNAL", journal.path.as_os_str().to_owned())
+        .spawn(max_in_flight)
+        .unwrap()
+}
+
+fn explicit_client(
+    explicit_journal: &Journal,
+    inherited_journal: &Journal,
+    max_in_flight: usize,
+) -> SessionClient {
+    SessionClient::at_path(support::core_binary())
+        .with_prefix_arguments(support::prefix())
+        .with_session_journal(&explicit_journal.path)
+        .with_env(
+            "SOLSTONE_JOURNAL",
+            inherited_journal.path.as_os_str().to_owned(),
+        )
         .spawn(max_in_flight)
         .unwrap()
 }
@@ -259,6 +287,44 @@ fn generated(client: &SessionClient) -> Box<GeneratedResponse> {
         panic!("expected generated response")
     };
     response
+}
+
+fn assert_unconsulted_journal(journal: &Journal, stub: &LocalStub, config: &[u8]) {
+    assert_eq!(stub.requests(), 0, "the inherited endpoint was contacted");
+    assert_eq!(stub.inferences(), 0, "the inherited endpoint inferred");
+    assert!(
+        !journal.path.join("tokens").exists(),
+        "the inherited journal recorded token usage"
+    );
+    assert!(
+        !journal.path.join("health").exists(),
+        "the inherited journal materialized health state"
+    );
+    assert_eq!(
+        fs::read(journal.path.join("config/journal.json")).unwrap(),
+        config,
+        "the inherited journal config changed"
+    );
+}
+
+fn token_log_lines(journal: &Journal) -> Vec<String> {
+    let entries = fs::read_dir(journal.path.join("tokens"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
+    assert_eq!(entries.len(), 1, "exactly one daily token log is expected");
+    let name = entries[0]
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap();
+    assert_eq!(name.len(), 14);
+    assert!(name[..8].bytes().all(|byte| byte.is_ascii_digit()));
+    assert_eq!(&name[8..], ".jsonl");
+    fs::read_to_string(&entries[0])
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
 }
 
 #[test]
@@ -303,6 +369,154 @@ fn criterion_18_real_child_rechecks_config_for_each_session_request() {
 }
 
 #[test]
+fn criterion_20_explicit_session_journal_is_used_for_the_lifetime_of_the_child() {
+    let explicit_stub = LocalStub::normal();
+    let inherited_stub = LocalStub::normal();
+    let explicit = Journal::external_local(explicit_stub.port, "explicit-model");
+    let inherited = Journal::external_local(inherited_stub.port, "inherited-model");
+    let inherited_config = fs::read(inherited.path.join("config/journal.json")).unwrap();
+    let client = explicit_client(&explicit, &inherited, 2);
+
+    let mut before = request("explicit-before", "before".to_owned());
+    before.max_output_tokens = 512;
+    client.submit(before).unwrap();
+    let response = generated(&client);
+    assert_eq!(response.id.as_deref(), Some("explicit-before"));
+    assert_eq!(response.model, "explicit-model");
+    assert!(response.request_budget.is_some());
+
+    explicit.set_no_engine();
+    client
+        .submit(request("explicit-after", "after".to_owned()))
+        .unwrap();
+    let GenerateResponse::Refused(refusal) = next(&client) else {
+        panic!("the second request must reread the explicit journal config")
+    };
+    assert_eq!(refusal.reason, RefusalReason::NoEngineConfigured);
+    client.close().unwrap();
+
+    assert_eq!(explicit_stub.inferences(), 1);
+    assert_eq!(token_log_lines(&explicit).len(), 1);
+    assert_unconsulted_journal(&inherited, &inherited_stub, &inherited_config);
+    explicit_stub.finish();
+    inherited_stub.finish();
+}
+
+#[test]
+fn criterion_21_explicit_missing_journal_does_not_fall_back_to_inherited_journal() {
+    let inherited_stub = LocalStub::normal();
+    let explicit = Journal::at_temp_path();
+    let inherited = Journal::external_local(inherited_stub.port, "inherited-model");
+    let inherited_config = fs::read(inherited.path.join("config/journal.json")).unwrap();
+    let client = explicit_client(&explicit, &inherited, 1);
+
+    client
+        .submit(request("missing", "missing".to_owned()))
+        .unwrap();
+    let GenerateResponse::Refused(refusal) = next(&client) else {
+        panic!("a missing explicit journal config must not fall back")
+    };
+    assert_eq!(refusal.reason, RefusalReason::NoEngineConfigured);
+    client.close().unwrap();
+
+    assert!(
+        !explicit.path.join("config/journal.json").exists(),
+        "reading a missing explicit config must not materialize it"
+    );
+    assert_unconsulted_journal(&inherited, &inherited_stub, &inherited_config);
+    inherited_stub.finish();
+}
+
+#[test]
+fn criterion_22_explicit_no_engine_does_not_fall_back_to_inherited_journal() {
+    let inherited_stub = LocalStub::normal();
+    let explicit = Journal::at_temp_path();
+    explicit.set_no_engine();
+    let inherited = Journal::external_local(inherited_stub.port, "inherited-model");
+    let inherited_config = fs::read(inherited.path.join("config/journal.json")).unwrap();
+    let client = explicit_client(&explicit, &inherited, 2);
+
+    for id in ["first", "second"] {
+        client.submit(request(id, id.to_owned())).unwrap();
+        let GenerateResponse::Refused(refusal) = next(&client) else {
+            panic!("the explicit no-engine config must refuse")
+        };
+        assert_eq!(refusal.reason, RefusalReason::NoEngineConfigured);
+    }
+    client.close().unwrap();
+
+    assert_unconsulted_journal(&inherited, &inherited_stub, &inherited_config);
+    inherited_stub.finish();
+}
+
+#[test]
+fn criterion_23_unreadable_explicit_config_is_an_internal_failure() {
+    let inherited_stub = LocalStub::normal();
+    let explicit = Journal::at_temp_path();
+    explicit.write_config("{");
+    let inherited = Journal::external_local(inherited_stub.port, "inherited-model");
+    let inherited_config = fs::read(inherited.path.join("config/journal.json")).unwrap();
+    let session = &solstone_core_generate::contract()["framing"]["session"];
+    let selector = session["selector"].as_str().unwrap();
+    let concurrency_flag = session["concurrency"]["flag"].as_str().unwrap();
+    let journal_flag = session["journal"]["flag"].as_str().unwrap();
+    let request =
+        encode_session_request_line(&request("unreadable", "unreadable".to_owned())).unwrap();
+    // ⚠ The child must fail on the request, not on end-of-input. `wait_with_output`
+    // drops the pipe as it starts waiting, so a plain write-then-wait races the
+    // unreadable-config failure against a bare EOF and the child can win by exiting
+    // 0 on clean shutdown. Hold stdin open until the child has exited so the only
+    // thing it can be reacting to is the request itself. Both pipes are drained on
+    // threads because the child may write either one before it exits.
+    let mut child = support::generate_command()
+        .arg(selector)
+        .arg(concurrency_flag)
+        .arg("1")
+        .arg(journal_flag)
+        .arg(&explicit.path)
+        .env("SOLSTONE_JOURNAL", &inherited.path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(request.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut stdout_pipe = child.stdout.take().unwrap();
+    let mut stderr_pipe = child.stderr.take().unwrap();
+    let stdout_reader = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        stdout_pipe.read_to_end(&mut buffer).unwrap();
+        buffer
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        stderr_pipe.read_to_end(&mut buffer).unwrap();
+        buffer
+    });
+
+    let status = child.wait().unwrap();
+    drop(stdin);
+    let stdout = stdout_reader.join().unwrap();
+    let stderr = stderr_reader.join().unwrap();
+
+    assert_eq!(status.code(), Some(70));
+    assert!(stdout.is_empty());
+    let lines = std::str::from_utf8(&stderr)
+        .unwrap()
+        .lines()
+        .collect::<Vec<_>>();
+    assert_eq!(lines.len(), 1);
+    let error = serde_json::from_str::<serde_json::Value>(lines[0]).unwrap();
+    assert_eq!(error["reason"], "internal-failure");
+    assert_unconsulted_journal(&inherited, &inherited_stub, &inherited_config);
+    inherited_stub.finish();
+}
+
+#[test]
 fn criterion_19_real_child_reports_applied_hints() {
     let bundled_stub = LocalStub::normal();
     let bundled_journal = Journal::bundled_local(bundled_stub.port);
@@ -332,9 +546,10 @@ fn criterion_19_real_child_reports_applied_hints() {
     bundled_stub.finish();
 
     let external_stub = LocalStub::normal();
-    let external_journal = Journal::external_local(external_stub.port);
+    let external_journal = Journal::external_local(external_stub.port, "stub");
     let external = client(&external_journal, 1);
     let mut requested = request("external", "external".to_owned());
+    requested.max_output_tokens = 512;
     requested.attempt_index = 2;
     requested.exclusive_admission = true;
     external.submit(requested).unwrap();

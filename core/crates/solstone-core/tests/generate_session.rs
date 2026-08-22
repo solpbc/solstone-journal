@@ -592,7 +592,7 @@ fn session_client_prefix_constructor_runs_core_subcommand() {
     journal.set_port(stub.port);
     let client = SessionClient::at_path(env!("CARGO_BIN_EXE_solstone-core"))
         .with_prefix_arguments(["generate".into()])
-        .with_env("SOLSTONE_JOURNAL", journal.path.to_string_lossy())
+        .with_env("SOLSTONE_JOURNAL", journal.path.as_os_str())
         .spawn(1)
         .expect("start core session client");
     client

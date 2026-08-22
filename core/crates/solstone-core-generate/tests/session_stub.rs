@@ -146,7 +146,7 @@ fn criterion_4_limits_child_observed_in_flight_requests() {
         .with_env("SOLSTONE_GENERATE_SESSION_STUB_MODE", "bound")
         .with_env(
             "SOLSTONE_GENERATE_SESSION_STUB_STATS_PATH",
-            stats_path.to_string_lossy(),
+            stats_path.as_os_str(),
         )
         .spawn(2)
         .unwrap();

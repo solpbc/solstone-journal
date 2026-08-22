@@ -4,6 +4,7 @@
 //! Describe-local generate-session stub. Kept separate from generate's contract stub.
 
 use std::env;
+use std::ffi::OsStr;
 use std::io::{self, BufRead, Write};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -14,9 +15,35 @@ use solstone_core_generate::{
 };
 
 fn main() {
-    let args = env::args().collect::<Vec<_>>();
-    assert_eq!(args.get(1).map(String::as_str), Some("generate"));
-    assert_eq!(args.get(2).map(String::as_str), Some("--session"));
+    let args = env::args_os().collect::<Vec<_>>();
+    assert_eq!(
+        args.get(1).map(|value| value.as_os_str()),
+        Some(OsStr::new("generate"))
+    );
+    let session = &contract()["framing"]["session"];
+    let selector = session["selector"].as_str().unwrap();
+    assert_eq!(
+        args.get(2).map(|value| value.as_os_str()),
+        Some(OsStr::new(selector))
+    );
+    let concurrency_flag = session["concurrency"]["flag"].as_str().unwrap();
+    let journal_flag = session["journal"]["flag"].as_str().unwrap();
+    let mut concurrency_seen = false;
+    let mut journal_seen = false;
+    let pairs = &args[3..];
+    assert_eq!(pairs.len() % 2, 0);
+    for pair in pairs.chunks_exact(2) {
+        if pair[0].as_os_str() == OsStr::new(concurrency_flag) {
+            assert!(!concurrency_seen);
+            concurrency_seen = true;
+        } else if pair[0].as_os_str() == OsStr::new(journal_flag) {
+            assert!(!journal_seen);
+            journal_seen = true;
+        } else {
+            panic!("unexpected generate session flag: {:?}", pair[0]);
+        }
+    }
+    assert!(concurrency_seen);
     let mode =
         env::var("SOLSTONE_DESCRIBE_SESSION_STUB_MODE").unwrap_or_else(|_| "generated".to_owned());
     if let Some(path) = env::var_os("SOLSTONE_DESCRIBE_SESSION_STUB_PID_PATH") {

@@ -290,9 +290,10 @@ process per completion.
 
 **Entering it, and bounding it.** ⛔ **The framing is not auto-detected** — one-shot reads stdin to
 end-of-file, which is structurally incompatible with a session that keeps stdin open, so a child that
-guessed wrong would hang rather than error. The caller declares the framing and its concurrency bound
-on the command line when it launches the child. The declared selector and bound live in the contract
-fixture alongside everything else.
+guessed wrong would hang rather than error. The caller declares the framing, concurrency bound, and
+any optional framing values on the command line when it launches the child. The declared vocabulary
+lives in the contract fixture alongside everything else. An explicit Journal root is one such value:
+it travels in the child argv and binds that session without changing process environment.
 
 **Two failure classes exist only in this framing, and both carry the same classifications a refusal
 does.** A **desynchronised stream** — a non-record line on stdout, or a well-formed record bearing an

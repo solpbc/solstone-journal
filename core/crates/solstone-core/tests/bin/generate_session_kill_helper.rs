@@ -13,7 +13,7 @@ fn main() {
     let journal = env::var_os("SOLSTONE_JOURNAL").expect("journal path is configured");
     let client = SessionClient::at_path(core)
         .with_prefix_arguments(["generate".into()])
-        .with_env("SOLSTONE_JOURNAL", journal.to_string_lossy())
+        .with_env("SOLSTONE_JOURNAL", journal)
         .spawn(1)
         .expect("core generate session starts");
     client.submit(request()).expect("request submits");

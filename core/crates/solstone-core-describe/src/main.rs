@@ -128,6 +128,7 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), CliError> {
             pipeline::run(pipeline::DescribeOptions {
                 video: &arguments.video_path,
                 journal,
+                explicit_journal: arguments.journal.as_deref(),
                 jobs: arguments.jobs,
                 redo: arguments.redo,
                 config: config.winnow,

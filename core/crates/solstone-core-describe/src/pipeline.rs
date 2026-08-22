@@ -115,6 +115,7 @@ impl Drop for RowTemp {
 pub struct DescribeOptions<'a> {
     pub video: &'a Path,
     pub journal: &'a Path,
+    pub explicit_journal: Option<&'a Path>,
     pub jobs: usize,
     pub redo: bool,
     pub config: WinnowConfig,
@@ -209,7 +210,7 @@ pub fn run_with_factory(
         .and_then(|v| v.to_str())
         .unwrap_or("describe");
     let session = factory
-        .spawn(options.jobs)
+        .spawn(options.jobs, options.explicit_journal)
         .map_err(|_| blocked(options.journal, work_key, None, None, None))?;
     let instruction = request::system_instruction(&options.redact_rules);
     let frame_pngs = decoded
