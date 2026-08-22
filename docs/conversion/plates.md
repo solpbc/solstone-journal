@@ -121,8 +121,9 @@ dispatches to a sibling not installed there and exits **70**, which `sense` reco
 and notifies. Holding the cut would have stranded a landed handler behind a signing credential no
 session can obtain. ⚠ The mac wheel **builds**; only signing is missing.
 
-⚠ **The dispatcher spawns handlers by NAME** (`["journal", "describe", …]`), so the `journal` entry
-point must be on `PATH`. An absolute-path invocation without it makes **every** handler spawn fail.
+⚠ **The dispatcher spawns the sibling `solstone-core-journal`** (`[<abs>/solstone-core-journal, "describe", …]`),
+resolved from the running executable. `PATH` is not consulted; a missing or non-executable sibling fails
+closed as a per-file segment error naming the candidate path.
 
 🔴 **The dispatcher is the plate.** Its behaviour is not incidental: skip and defer gates, re-entry rules, the memory gate, the watchdog, `exit 69` hold-raw, and segment completion all live there, and none of it is in a handler. ⚠ **Two more that were never written down and the native port carries:** the **deferred / no-engine gate** — for a *live* (non-batch) segment, `mode == "deferred"` or no thinking engine chosen means no file is tracked, **no handler spawns**, and `observed` is emitted immediately with note `deferred` / `no_engine`, which is the owner's don't-process-live switch — and **`<day>/health/stream.updated`**, touched on completion for **live segments only**, with named downstream consumers; ⛔ batch (re-process / importer) segments must not advance it. ⚠ `observe/{hear,screen,see,grab,pdf_worker}.py` (2,269 lines) carry `observe/` names but are **read-side or other plates entirely** — sense reaches none of them.
 
@@ -948,7 +949,7 @@ share/  notices and licences
 
 ⚠ **This is also a warning about how the plate gets tested.** The obvious smallest-loop proof — capture → segment → index → findable → reads back — **does not reach cortex or the talent runtime**, so an artifact can pass it with thinking dead. ✅ **A tree is not proven until a talent runs from it.**
 
-⚠ **`journal` must be on `PATH`, not merely present.** The sense dispatcher spawns handlers by name (`["journal", "describe", …]`), so an install that lays the tree down without exporting `bin/` makes **every** handler spawn fail rather than one. See `P-segment-sense`.
+⚠ **The dispatcher binary must sit beside the running executable, not merely on `PATH`.** The sense dispatcher spawns `[<abs>/solstone-core-journal, "describe", …]` with no `PATH` fallback, so an install that omits the co-located dispatcher makes **every** handler fail closed as a per-file segment error naming the candidate path rather than one. See `P-segment-sense`.
 
 **Containers, all derived from the one tree:** `.tar.gz` is the primitive · `.deb` and `.rpm` relocate it under a system prefix and put the three launchers on `PATH` · macOS takes the same tree signed and notarized. ⛔ Windows is unsupported and is not a container.
 

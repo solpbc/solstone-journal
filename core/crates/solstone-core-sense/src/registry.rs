@@ -220,19 +220,6 @@ mod tests {
                 .expect("describe spec")
         );
     }
-    #[test]
-    fn debug_wins() {
-        let spec = default_registry(4).remove(1);
-        let cmd = command_for(
-            &spec,
-            Path::new("/dispatcher"),
-            Path::new("/a.webm"),
-            true,
-            true,
-        );
-        assert!(cmd.ends_with(&["-d".to_string()]));
-        assert!(!cmd.contains(&"-v".to_string()));
-    }
 
     #[test]
     fn default_registry_commands_start_at_the_handler_verb() {

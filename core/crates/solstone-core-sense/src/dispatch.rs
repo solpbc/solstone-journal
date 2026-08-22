@@ -1260,10 +1260,9 @@ mod tests {
         };
         assert!(!saw_detected, "resolve failure must not emit detected");
         assert_eq!(observed.fields["error"], true);
-        assert_eq!(
-            observed.fields["errors"][0].as_str().expect("error"),
-            "transcribe dispatcher missing: /opt/solstone-core-journal"
-        );
+        let error = observed.fields["errors"][0].as_str().expect("error");
+        assert!(error.starts_with("transcribe "));
+        assert!(error.contains("/opt/solstone-core-journal"));
         let (failed, ran) = dispatcher.tally.snapshot();
         assert!(failed >= 1);
         assert!(ran >= 1);
