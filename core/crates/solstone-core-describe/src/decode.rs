@@ -132,18 +132,7 @@ pub fn process_video_with_transform<T: PreHashTransform>(
 
     result.width = Some(decoder.width());
     result.height = Some(decoder.height());
-    let mut scaler = match ffmpeg::software::scaling::context::Context::get(
-        decoder.format(),
-        decoder.width(),
-        decoder.height(),
-        ffmpeg::format::Pixel::RGB24,
-        decoder.width(),
-        decoder.height(),
-        ffmpeg::software::scaling::flag::Flags::BILINEAR,
-    ) {
-        Ok(scaler) => scaler,
-        Err(_) => return decode_failed(result),
-    };
+    let mut scaler: Option<ffmpeg::software::scaling::context::Context> = None;
 
     let mut frame_id = 0_u64;
     let mut state = WinnowState::new(config);
@@ -202,10 +191,34 @@ pub fn process_video_with_transform<T: PreHashTransform>(
     result
 }
 
+fn rgb_scaler_for<'a>(
+    slot: &'a mut Option<ffmpeg::software::scaling::context::Context>,
+    decoded: &ffmpeg::frame::Video,
+) -> Result<&'a mut ffmpeg::software::scaling::context::Context, ffmpeg::Error> {
+    let matches_frame = slot.as_ref().is_some_and(|scaler| {
+        let input = scaler.input();
+        input.format == decoded.format()
+            && input.width == decoded.width()
+            && input.height == decoded.height()
+    });
+    if !matches_frame {
+        *slot = Some(ffmpeg::software::scaling::context::Context::get(
+            decoded.format(),
+            decoded.width(),
+            decoded.height(),
+            ffmpeg::format::Pixel::RGB24,
+            decoded.width(),
+            decoded.height(),
+            ffmpeg::software::scaling::flag::Flags::BILINEAR,
+        )?);
+    }
+    slot.as_mut().ok_or(ffmpeg::Error::Bug)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn receive_frames<T: PreHashTransform>(
     decoder: &mut ffmpeg::decoder::Video,
-    scaler: &mut ffmpeg::software::scaling::context::Context,
+    scaler: &mut Option<ffmpeg::software::scaling::context::Context>,
     time_base: ffmpeg::Rational,
     transform: &mut T,
     frame_id: &mut u64,
@@ -225,7 +238,7 @@ fn receive_frames<T: PreHashTransform>(
                 *frame_id += 1;
                 let timestamp = pts as f64 * f64::from(time_base);
                 let mut rgb = ffmpeg::frame::Video::empty();
-                scaler.run(&decoded, &mut rgb)?;
+                rgb_scaler_for(scaler, &decoded)?.run(&decoded, &mut rgb)?;
                 let mut frame = rgb_frame(&rgb).ok_or(ffmpeg::Error::InvalidData)?;
                 let aruco = match transform.apply(*frame_id, timestamp, &mut frame) {
                     PreHashOutcome::Apply { aruco } => aruco,

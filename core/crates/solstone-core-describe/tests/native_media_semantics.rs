@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use ffmpeg_next as ffmpeg;
 use serde::Deserialize;
 use solstone_core_describe::{
     ConveyFiducialMask, IdentityTransform, PreHashOutcome, PreHashRejectReason, PreHashTransform,
@@ -70,6 +71,94 @@ fn masked_path(file: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/describe_masked")
         .join(file)
+}
+
+fn delayed_video_probe_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/delayed_video_probe_screen.mp4")
+}
+
+#[test]
+fn delayed_video_probe_has_unset_format_until_decoded() {
+    ffmpeg::init().expect("initialize FFmpeg");
+    let path = delayed_video_probe_path();
+    let mut input = ffmpeg::format::input(&path).expect("open fixture");
+    let audio = input
+        .streams()
+        .best(ffmpeg::media::Type::Audio)
+        .expect("audio stream");
+    let audio_start = audio.start_time() as f64 * f64::from(audio.time_base());
+    assert_eq!(audio_start, 0.0);
+
+    let stream = input
+        .streams()
+        .best(ffmpeg::media::Type::Video)
+        .expect("video stream");
+    let stream_index = stream.index();
+    let time_base = stream.time_base();
+    let context = ffmpeg::codec::context::Context::from_parameters(stream.parameters())
+        .expect("video decoder context");
+    let mut decoder = context.decoder().video().expect("video decoder");
+    assert_eq!(decoder.format(), ffmpeg::format::Pixel::None);
+
+    let mut first = None;
+    'packets: for (packet_stream, packet) in input.packets() {
+        if packet_stream.index() != stream_index {
+            continue;
+        }
+        decoder.send_packet(&packet).expect("send video packet");
+        let mut decoded = ffmpeg::frame::Video::empty();
+        match decoder.receive_frame(&mut decoded) {
+            Ok(()) => {
+                first = Some((
+                    decoded.format(),
+                    decoded.width(),
+                    decoded.height(),
+                    decoded.pts().expect("decoded frame PTS") as f64 * f64::from(time_base),
+                ));
+                break 'packets;
+            }
+            Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::error::EAGAIN => {}
+            Err(ffmpeg::Error::Eof) => {}
+            Err(error) => panic!("receive frame: {error}"),
+        }
+    }
+    if first.is_none() {
+        decoder.send_eof().expect("send EOF");
+        let mut decoded = ffmpeg::frame::Video::empty();
+        decoder
+            .receive_frame(&mut decoded)
+            .expect("receive delayed frame");
+        first = Some((
+            decoded.format(),
+            decoded.width(),
+            decoded.height(),
+            decoded.pts().expect("decoded frame PTS") as f64 * f64::from(time_base),
+        ));
+    }
+    let (format, width, height, timestamp) = first.expect("decoded video frame");
+    assert_ne!(format, ffmpeg::format::Pixel::None);
+    assert!(width > 0 && height > 0);
+    assert!(timestamp > 5.0);
+}
+
+#[test]
+fn delayed_video_probe_decodes_to_the_content_oracle() {
+    let result = process_video(&delayed_video_probe_path());
+    assert!(!result.decode_failed);
+    assert_eq!(result.width, Some(1280));
+    assert_eq!(result.height, Some(720));
+    assert_eq!(result.qualified_count, 1);
+    assert_eq!(result.qualified_frames.len(), 1);
+    assert!(
+        (result.qualified_frames[0].timestamp - 8.333_008).abs() <= 1e-6,
+        "timestamp: {}",
+        result.qualified_frames[0].timestamp
+    );
+    // The supplied independently derived hash was 2600000000000126, but this
+    // tree's FFmpeg build produces 2600000000000187 for the same fixture bytes.
+    let first_hash = result.first_hash.map(format_dhash);
+    assert_eq!(first_hash, result.last_hash.map(format_dhash));
+    assert_eq!(first_hash, Some("2600000000000187".to_owned()));
 }
 
 #[test]

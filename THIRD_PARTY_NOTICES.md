@@ -1,9 +1,11 @@
 # third-party notices
 
-This file records third-party model weights bundled with solstone and
-provider artifacts downloaded at runtime into the journal provider cache. The
-solstone source code remains AGPL-3.0-only; the notices below apply only to the
-listed model files and runtime provider artifacts.
+This file records third-party materials used by solstone, including model
+weights bundled with solstone, provider artifacts downloaded at runtime into
+the journal provider cache, and test fixtures derived from permissively
+licensed sources. The solstone source code remains AGPL-3.0-only; the notices
+below apply only to the listed model files, runtime provider artifacts, and
+test fixtures.
 
 <!-- Six runtime sections previously said "not bundled"; CUDA and Vulkan/CPU
 used application-component wording. Each section below states its own redistribution terms. -->
@@ -42,6 +44,47 @@ License notice: BSD 3-Clause License (BSD-3-Clause).
 | `solstone_journal_models/assets/wespeaker-resnet34-256.onnx` | WeSpeaker ResNet34 speaker embedding model trained on VoxCeleb | `wespeaker_en_voxceleb_resnet34.onnx` from the k2-fsa/sherpa-onnx `speaker-recongition-models` release | CC-BY-4.0 | `5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94` |
 | `solstone_journal_models/assets/pyannote-segmentation-3.0.onnx` | `pyannote/segmentation-3.0` speaker segmentation model | `onnx/model.onnx` from `onnx-community/pyannote-segmentation-3.0` | MIT | `057ee564753071c0b09b5b611648b50ac188d50846bff5f01e9f7bbf1591ea25` |
 | `solstone_journal_models/assets/silero_vad_v6.onnx` | Silero VAD voice activity detection model | ONNX model from `snakers4/silero-vad` | MIT | `4cbf549b8326f60f80f2536d9eefeb450a9abe83365a098031c89719f1be17d2` |
+
+## bundled test fixtures
+
+### Paradigm Shift AI delayed-video regression fixture
+
+`core/crates/solstone-core-describe/tests/fixtures/delayed_video_probe_screen.mp4`
+is a 9.4-second stream-copy subset of source item
+`cmcc8u6yc00va1p1ydsdu52zy` from the Computer Use Dataset by Paradigm Shift AI.
+the source is `journal/20260201/field.screen/094500_300/screen.mp4` at
+`solpbc/field_journal` commit `c1edcc8909f907075916e9ad0f63701da7b607b5`
+(SHA-256 `09fa691b99e4d0450922ae39d5be9c16231dd2fa00328d6057c5e0e92e4df6d1`).
+the committed subset has SHA-256
+`091fa2d732148a0c1e611a72bd320d9db200a790a0fcdf17cfc83d7280d2c17d`.
+
+source:
+
+- Dataset: https://huggingface.co/datasets/anaisleila/computer-use-data-psai
+- Provider: Paradigm Shift AI
+
+license notice: MIT License.
+
+Copyright (c) 2025 Paradigm Shift AI
+Anais Howland, Ashwin Thinnappan, Jameel Shahid Mohammed
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ## runtime-downloaded provider artifacts (parakeet-cpp)
 

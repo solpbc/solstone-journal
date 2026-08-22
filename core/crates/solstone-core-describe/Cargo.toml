@@ -50,6 +50,7 @@ path = "tests/cli.rs"
 required-features = ["test-stubs"]
 
 [dev-dependencies]
+ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format", "software-scaling", "build"] }
 tempfile = "3.24.0"
 
 [lints]
