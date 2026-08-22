@@ -771,7 +771,12 @@ where
         Value::Array(items) if items.first().is_some_and(Value::is_string) => {
             let block = items[0].as_str().expect("first item checked");
             let mut preserved = vec![system_instruction.unwrap_or_default().into()];
-            preserved.extend(items[1..].iter().map(python_text));
+            preserved.extend(
+                items[1..]
+                    .iter()
+                    .filter(|item| image_part(item).is_none())
+                    .map(python_text),
+            );
             let trailing = items[1..].to_vec();
             (
                 block,
@@ -1471,6 +1476,70 @@ mod tests {
             json!(format!("{TRUNCATION_MARKER}\n\n## newest\nb\n"))
         );
         assert_eq!(budget.unwrap().dropped_entries, 1);
+    }
+
+    #[test]
+    fn fit_contents_excludes_only_direct_trailing_image_parts_from_preserved_budget() {
+        let data = "x".repeat(4_096);
+        let image = json!({"type":"image","mime_type":"image/png","data":data.clone()});
+        let mut count = |text: &str| u32::try_from(text.len()).unwrap();
+
+        let contents = json!(["short", image]);
+        let (fitted, budget) = fit_contents(&contents, None, 256, 1_024, &mut count).unwrap();
+        assert_eq!(fitted, contents);
+        assert_eq!(fitted[1]["data"], data);
+        assert_eq!(budget, None);
+
+        let contents = json!(["short", image, "ordinary sibling"]);
+        let (fitted, budget) = fit_contents(&contents, None, 256, 1_024, &mut count).unwrap();
+        assert_eq!(fitted, contents);
+        assert_eq!(budget, None);
+
+        let contents = json!(["short", image, data]);
+        assert!(
+            matches!(fit_contents(&contents, None, 256, 1_024, &mut count), Err(GenerateError { reason_code, .. }) if reason_code == "context_preserved_overflow")
+        );
+    }
+
+    #[test]
+    fn fit_contents_counts_oversized_non_image_objects_as_preserved_content() {
+        let data = "x".repeat(4_096);
+        let contents = json!([
+            "short",
+            {"type":"other","mime_type":"image/png","data":data},
+        ]);
+        let mut count = |text: &str| u32::try_from(text.len()).unwrap();
+
+        assert!(
+            matches!(fit_contents(&contents, None, 256, 1_024, &mut count), Err(GenerateError { reason_code, .. }) if reason_code == "context_preserved_overflow")
+        );
+    }
+
+    #[test]
+    fn bundled_text_first_image_uses_only_the_image_token_estimate() {
+        let data = "x".repeat(7_000);
+        let request = input(json!([
+            "short",
+            {"type":"image","mime_type":"image/png","data":data.clone()},
+        ]));
+        let prepared = prepare_bundled_request(
+            &request,
+            &server(),
+            ContextWindow {
+                window: 10_000,
+                slots: 1,
+            },
+            |text| u32::try_from(text.len()).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(prepared.request_budget.image_tokens, ESTIMATED_IMAGE_TOKENS);
+        assert_eq!(
+            serde_json::to_string(&prepared.body).unwrap(),
+            format!(
+                r#"{{"model":"served-model","messages":[{{"role":"user","content":[{{"type":"text","text":"short"}},{{"type":"image_url","image_url":{{"url":"data:image/png;base64,{data}"}}}}]}}],"temperature":0.3,"max_tokens":512,"stream":false,"chat_template_kwargs":{{"enable_thinking":false}},"top_p":0.8,"top_k":20,"min_p":0.0,"presence_penalty":1.5}}"#
+            )
+        );
     }
 
     #[test]

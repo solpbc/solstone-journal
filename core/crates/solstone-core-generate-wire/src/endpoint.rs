@@ -1275,6 +1275,53 @@ mod tests {
     }
 
     #[test]
+    fn served_window_text_first_image_is_not_counted_as_preserved_text() {
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let data = "x".repeat(12_000);
+        let mut request = request(None);
+        request.contents = vec![
+            ContentPart::Text {
+                text: "short".into(),
+            },
+            ContentPart::Image {
+                mime_type: "image/png".into(),
+                data: data.clone(),
+            },
+        ];
+        let mut transport = StubTransport {
+            post_script: vec![Ok(response())],
+            ..Default::default()
+        };
+        let result = endpoint_generate_with(
+            &request,
+            &journal,
+            &endpoint("http://endpoint"),
+            &served_window_config(),
+            &runtime,
+            &mut transport,
+            Instant::now(),
+        );
+        let EndpointResult::Generated(generated) = result else {
+            panic!("served-window image request must succeed");
+        };
+
+        assert_eq!(transport.posts.len(), 1);
+        assert_eq!(
+            transport.posts[0]["messages"][0]["content"][1]["image_url"]["url"],
+            json!(format!("data:image/png;base64,{data}"))
+        );
+        assert_eq!(
+            generated
+                .request_budget
+                .expect("served-window request budget")
+                .image_tokens,
+            ESTIMATED_IMAGE_TOKENS
+        );
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
     fn invalid_endpoint_response_uses_contract_provider_response_invalid() {
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
