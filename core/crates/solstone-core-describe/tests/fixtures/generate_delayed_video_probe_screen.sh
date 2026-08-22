@@ -45,7 +45,8 @@ fi
 
 running_ffmpeg_version=$(ffmpeg -version | sed -n '1p')
 if [[ "$running_ffmpeg_version" != *"$REFERENCE_FFMPEG_VERSION"* ]]; then
-    echo "WARNING: fixture reference FFmpeg is $REFERENCE_FFMPEG_VERSION; running $running_ffmpeg_version" >&2
+    echo "fixture reference FFmpeg is $REFERENCE_FFMPEG_VERSION; running $running_ffmpeg_version" >&2
+    exit 1
 fi
 
 ffmpeg -hide_banner -loglevel error -y -i "$source_file" -map 0 -c copy -t 9.4 -map_metadata -1 -fflags +bitexact "$temporary_output"

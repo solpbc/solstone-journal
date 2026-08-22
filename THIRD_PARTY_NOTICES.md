@@ -1,11 +1,9 @@
 # third-party notices
 
-This file records third-party materials used by solstone, including model
+this file records third-party materials used by solstone, including model
 weights bundled with solstone, provider artifacts downloaded at runtime into
 the journal provider cache, and test fixtures derived from permissively
-licensed sources. The solstone source code remains AGPL-3.0-only; the notices
-below apply only to the listed model files, runtime provider artifacts, and
-test fixtures.
+licensed sources.
 
 <!-- Six runtime sections previously said "not bundled"; CUDA and Vulkan/CPU
 used application-component wording. Each section below states its own redistribution terms. -->
