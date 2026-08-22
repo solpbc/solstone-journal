@@ -262,3 +262,54 @@ pub fn backdate_started(slot: &SharedOperationSlot, age: Duration) {
         current.started = Instant::now().checked_sub(age).unwrap_or_else(Instant::now);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::portal_url;
+
+    fn parse_portal_url(url: &str) -> (&str, &str, &str, Vec<(&str, &str)>) {
+        let (scheme, remainder) = url.split_once("://").expect("scheme separator");
+        let authority_end = remainder.find('/').expect("authority/path separator");
+        let (authority, path_and_query) = remainder.split_at(authority_end);
+        let (path, query) = path_and_query
+            .split_once('?')
+            .expect("path/query separator");
+
+        let mut query_pairs = query
+            .split('&')
+            .map(|pair| pair.split_once('=').expect("query key/value separator"))
+            .collect::<Vec<_>>();
+        query_pairs.sort_unstable();
+
+        assert!(
+            query_pairs.windows(2).all(|pair| pair[0].0 != pair[1].0),
+            "duplicate query key"
+        );
+
+        (scheme, authority, path, query_pairs)
+    }
+
+    #[test]
+    fn portal_url_uses_exact_backup_handoff_route_and_query() {
+        let nonce = "alpha-nonce-1";
+        let instance = "beta-instance-2";
+        let url = portal_url("http://portal.example.test:8123/", nonce, instance);
+
+        let (scheme, authority, path, query_pairs) = parse_portal_url(&url);
+
+        assert_eq!(scheme, "http");
+        assert_eq!(authority, "portal.example.test:8123");
+        assert_eq!(path, "/enable/backup");
+        assert_eq!(query_pairs, vec![("instance", instance), ("nonce", nonce)]);
+    }
+
+    #[test]
+    fn old_spb_handoff_path_is_not_the_backup_handoff_path() {
+        let old_url = "http://portal.example.test:8123/enable/spb?nonce=alpha-nonce-1&instance=beta-instance-2";
+
+        let (_, _, path, _) = parse_portal_url(old_url);
+
+        assert_ne!(path, "/enable/backup");
+        assert_eq!(path, "/enable/spb");
+    }
+}
