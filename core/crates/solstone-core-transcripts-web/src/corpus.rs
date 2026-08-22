@@ -1148,6 +1148,39 @@ mod tests {
         assert_eq!(value[0]["state"], "pending");
     }
 
+    #[test]
+    fn segment_ending_at_slot_boundary_does_not_attach_to_next_range() {
+        let segment = TranscriptSegment {
+            key: "070000_900".into(),
+            stream: "field".into(),
+            start: "07:00".into(),
+            end: "07:15".into(),
+            types: vec!["audio".into()],
+            data_state: BTreeMap::from([("audio".into(), "pending".into())]),
+            think: None,
+        };
+
+        let ranges = attach_visible_streams_to_ranges(
+            &[
+                ("07:00".into(), "07:15".into()),
+                ("07:15".into(), "07:30".into()),
+            ],
+            &[segment],
+            "audio",
+        );
+
+        assert_eq!(
+            serde_json::to_value(ranges).unwrap(),
+            json!([{
+                "start": "07:00",
+                "end": "07:15",
+                "streams": ["field"],
+                "state": "pending",
+                "think": null,
+            }])
+        );
+    }
+
     #[tokio::test]
     async fn short_audio_is_visible_while_zero_duration_audio_is_not() {
         let root = TempDir::new().expect("journal");
