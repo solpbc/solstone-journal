@@ -84,7 +84,7 @@ fn health_durable_files_are_inventoried_and_brain_key_is_not() {
         .map(|entry| entry.member_name().as_str())
         .collect();
     assert!(members.contains(&"health/pruning-runs/x.jsonl"));
-    assert!(!members.iter().any(|name| *name == "health/brain.json"));
+    assert!(!members.contains(&"health/brain.json"));
     assert!(!members.iter().any(|name| name.starts_with("apps/")));
     assert!(
         source
