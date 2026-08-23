@@ -106,9 +106,32 @@ pub fn sanitize_os_bytes_for_terminal(input: &[u8]) -> String {
     output
 }
 
+const TERMINAL_RENDER_LIMIT: usize = 2048;
+const TRUNCATION_MARKER: &str = "…[truncated]";
+
+/// Sanitize helper bytes, then cap the rendered output at 2048 Unicode scalars.
+///
+/// Truncated results end with `…[truncated]` (12 scalars). The cap includes
+/// the marker: 2036 content scalars + 12 marker scalars.
+#[must_use]
+pub fn sanitize_os_bytes_for_terminal_bounded(input: &[u8]) -> String {
+    let sanitized = sanitize_os_bytes_for_terminal(input);
+    let count = sanitized.chars().count();
+    if count <= TERMINAL_RENDER_LIMIT {
+        return sanitized;
+    }
+    let keep = TERMINAL_RENDER_LIMIT - TRUNCATION_MARKER.chars().count();
+    let mut output: String = sanitized.chars().take(keep).collect();
+    output.push_str(TRUNCATION_MARKER);
+    output
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{sanitize_for_terminal, sanitize_os_bytes_for_terminal};
+    use super::{
+        TERMINAL_RENDER_LIMIT, TRUNCATION_MARKER, sanitize_for_terminal,
+        sanitize_os_bytes_for_terminal, sanitize_os_bytes_for_terminal_bounded,
+    };
 
     fn decode_terminal_bytes(input: &str) -> Vec<u8> {
         let mut output = Vec::new();
@@ -178,5 +201,52 @@ mod tests {
                 input
             );
         }
+    }
+
+    #[test]
+    fn bounded_render_leaves_short_input_untruncated() {
+        let rendered = sanitize_os_bytes_for_terminal_bounded(b"plain helper stderr");
+        assert_eq!(rendered, "plain helper stderr");
+        assert!(!rendered.contains(TRUNCATION_MARKER));
+        assert!(rendered.chars().count() <= TERMINAL_RENDER_LIMIT);
+    }
+
+    #[test]
+    fn bounded_render_keeps_exactly_the_limit_without_a_marker() {
+        let input = "a".repeat(TERMINAL_RENDER_LIMIT);
+        let rendered = sanitize_os_bytes_for_terminal_bounded(input.as_bytes());
+        assert_eq!(rendered.chars().count(), TERMINAL_RENDER_LIMIT);
+        assert!(!rendered.contains(TRUNCATION_MARKER));
+    }
+
+    #[test]
+    fn bounded_render_caps_at_2048_scalars_including_the_marker() {
+        let input = "a".repeat(TERMINAL_RENDER_LIMIT + 1);
+        let rendered = sanitize_os_bytes_for_terminal_bounded(input.as_bytes());
+        assert!(rendered.ends_with(TRUNCATION_MARKER));
+        assert_eq!(rendered.chars().count(), TERMINAL_RENDER_LIMIT);
+        assert_eq!(
+            rendered.chars().count() - TRUNCATION_MARKER.chars().count(),
+            2036
+        );
+    }
+
+    #[test]
+    fn bounded_render_caps_after_sanitize_expansion() {
+        let input = b"\n".repeat(1025);
+        let unbounded = sanitize_os_bytes_for_terminal(&input);
+        assert!(unbounded.chars().count() > TERMINAL_RENDER_LIMIT);
+        let rendered = sanitize_os_bytes_for_terminal_bounded(&input);
+        assert!(rendered.ends_with(TRUNCATION_MARKER));
+        assert_eq!(rendered.chars().count(), TERMINAL_RENDER_LIMIT);
+    }
+
+    #[test]
+    fn truncation_marker_appears_only_when_truncated() {
+        assert!(!sanitize_os_bytes_for_terminal_bounded(b"ok").contains(TRUNCATION_MARKER));
+        assert!(
+            sanitize_os_bytes_for_terminal_bounded("b".repeat(3000).as_bytes())
+                .contains(TRUNCATION_MARKER)
+        );
     }
 }

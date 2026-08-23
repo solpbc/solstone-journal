@@ -241,7 +241,7 @@ fn loader_failure_json_has_reason_library_and_house_fields() {
 #[test]
 fn oversized_loader_stderr_still_classifies_cannot_load() {
     let temp = TempDir::new();
-    let noise_bytes = warm::STDERR_LIMIT + 1;
+    let noise_bytes = solstone_core_system_health::STDERR_LIMIT + 1;
     #[cfg(target_os = "linux")]
     let failure = "printf '%s: error while loading shared libraries: libwarm-oversize.so: cannot open shared object file: No such file or directory\\n' \"$0\" >&2\nexit 127";
     #[cfg(target_os = "macos")]
