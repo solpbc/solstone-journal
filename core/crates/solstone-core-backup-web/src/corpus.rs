@@ -2294,6 +2294,42 @@ async fn hosted_poll_restore_uses_slot_recovery_key() {
 }
 
 #[tokio::test]
+async fn hosted_poll_restore_failure_publishes_no_destination_or_recovery_state() {
+    let root = crate::test_support::root("fresh");
+    let before = fs::read(root.path().join("config/journal.json")).unwrap();
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    let http = Arc::new(
+        HttpScript::with_responses(vec![Ok(credentials_response())])
+            .with_poll_responses(vec![Ok(approved_poll_response())]),
+    );
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(ScriptRunner::with_outputs(vec![
+            version_output(),
+            output(0, "[{\"paths\":[\"/original\"]}]"),
+            output(1, ""),
+        ])),
+        http,
+        Some(restic.path().to_path_buf()),
+    );
+    let _ = post_json(
+        &deps,
+        "/app/backup/restore-hosted",
+        Some(json!({"recovery_key": crate::test_support::RECOVERY_KEY})),
+    )
+    .await;
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "error");
+    assert_ne!(done["operation"]["phase"], "degraded");
+    assert_eq!(
+        fs::read(root.path().join("config/journal.json")).unwrap(),
+        before
+    );
+    assert_ne!(done["mode"], "operated");
+}
+
+#[tokio::test]
 async fn hosted_poll_stale_generation_cannot_persist_binding() {
     let root = crate::test_support::root("healthy");
     let restic = tempfile::tempdir().unwrap();
