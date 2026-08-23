@@ -12,11 +12,13 @@ use solstone_core_entity::{
     record_entity_resolution_from_name_evidence,
 };
 
+use crate::admission::{
+    admissible_person_pool, admissible_resolution_entities, saved_choice_excluded_by_admission,
+};
 use crate::evidence::{
     CandidateEvidence, assemble_candidate_evidence, candidate_name_channels, ordered_dedup,
 };
 use crate::layer1::Label;
-use crate::person_guard::is_admissible_person;
 use solstone_core_speaker_id::calibration::RESOLUTION_FUZZY_THRESHOLD;
 
 /// Inputs loaded once by the attribution orchestrator for structural attribution.
@@ -40,7 +42,7 @@ pub struct Layer2Result {
     pub labels: BTreeMap<i64, Label>,
     pub candidate_entity_ids: BTreeSet<String>,
     pub candidate_evidence: Vec<CandidateEvidence>,
-    pub candidate_names: Vec<String>,
+    pub resolved_candidate_names: Vec<String>,
 }
 
 /// Apply candidate resolution and the single-speaker structural heuristics.
@@ -67,34 +69,38 @@ pub fn apply_structural_heuristics(
         .iter()
         .filter(|entity| !entity.is_blocked())
         .collect::<Vec<_>>();
-    let resolution_entities = available_entities
-        .iter()
-        .map(|entity| entity.resolution_entity())
-        .collect::<Vec<EntityResolutionEntity>>();
+    let pool = admissible_person_pool(&available_entities);
+    let resolution_entities = admissible_resolution_entities(&pool);
     let mut candidate_entity_ids = BTreeSet::new();
     let mut name_entity_ids = HashMap::new();
 
     for name in &candidate_names {
         if let Some(entity) = resolve_entity(
             &inputs,
-            &resolution_entities,
             &available_entities,
+            &pool,
+            &resolution_entities,
             name,
             "candidate_name",
-        )? && is_admissible_person(entity.entity_type())
-        {
+        )? {
             candidate_entity_ids.insert(entity.id.clone());
             name_entity_ids.insert(name.clone(), entity.id.clone());
         }
     }
 
     let candidate_evidence = assemble_candidate_evidence(&name_channels, &name_entity_ids);
+    let resolved_candidate_names = candidate_names
+        .iter()
+        .filter(|name| name_entity_ids.contains_key(*name))
+        .cloned()
+        .collect();
 
     if inputs.speakers.len() == 1 {
         if let Some(entity) = resolve_entity(
             &inputs,
-            &resolution_entities,
             &available_entities,
+            &pool,
+            &resolution_entities,
             &inputs.speakers[0],
             "structural_single_speaker",
         )? {
@@ -110,12 +116,12 @@ pub fn apply_structural_heuristics(
         && inputs.setting_names.len() == 1
         && let Some(entity) = resolve_entity(
             &inputs,
-            &resolution_entities,
             &available_entities,
+            &pool,
+            &resolution_entities,
             &inputs.setting_names[0],
             "structural_setting",
         )?
-        && is_admissible_person(entity.entity_type())
     {
         apply_replacement_labels(
             &mut labels,
@@ -130,22 +136,27 @@ pub fn apply_structural_heuristics(
         labels,
         candidate_entity_ids,
         candidate_evidence,
-        candidate_names,
+        resolved_candidate_names,
     })
 }
 
 fn resolve_entity<'a>(
     inputs: &Layer2Inputs<'_>,
+    unblocked: &[&JournalEntity],
+    pool: &[&'a JournalEntity],
     resolution_entities: &[EntityResolutionEntity],
-    available_entities: &[&'a JournalEntity],
     name: &str,
     field: &str,
 ) -> Result<Option<&'a JournalEntity>, EntityResolutionError> {
+    let scope = json!({"kind": "journal"});
+    if saved_choice_excluded_by_admission(inputs.journal_root, &scope, name, unblocked)? {
+        return Ok(None);
+    }
     let resolution = record_entity_resolution_from_name_evidence(
         inputs.journal_root,
         name,
         resolution_entities,
-        json!({"kind": "journal"}),
+        scope,
         json!({
             "lane": "apps.speakers.attribution",
             "day": inputs.day,
@@ -160,7 +171,7 @@ fn resolve_entity<'a>(
     }
     Ok(resolution
         .entity_index
-        .and_then(|index| available_entities.get(index).copied()))
+        .and_then(|index| pool.get(index).copied()))
 }
 
 fn apply_replacement_labels(

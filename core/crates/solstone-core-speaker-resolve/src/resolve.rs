@@ -265,7 +265,7 @@ pub fn resolve(
         unmatched,
         unmatched_texts,
         source: Some(source),
-        candidates: layer2.candidate_names,
+        candidates: layer2.resolved_candidate_names,
         metadata: ResolveMetadata {
             owner_centroid_last_refreshed_at: owner.last_refreshed_at,
             voiceprint_versions: layer3.voiceprint_versions,

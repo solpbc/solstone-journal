@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
-use solstone_core_entity::{EntityResolutionError, JournalEntity, load_all_journal_entities};
+use solstone_core_entity::{
+    EntityResolutionError, JournalEntity, ambiguity_id, load_all_journal_entities,
+};
 use solstone_core_speaker_resolve::layer1::Label;
 use solstone_core_speaker_resolve::layer2::{
     Layer2Inputs, Layer2Result, apply_structural_heuristics,
@@ -55,6 +57,37 @@ fn write_entity(root: &Path, id: &str, name: &str, entity_type: Option<&str>, pr
 
 fn journal_entities(root: &Path) -> Vec<JournalEntity> {
     load_all_journal_entities(root).expect("load journal entities")
+}
+
+fn write_resolved_choice(root: &Path, query: &str, entity_id: &str) {
+    let normalized = solstone_core_entity_matching::normalize_resolution_query(query);
+    let row = json!({
+        "schema_version": 1,
+        "ambiguity_id": ambiguity_id(&format!("journal|{normalized}")),
+        "scope": {"kind": "journal"},
+        "normalized_query": normalized,
+        "original_query": query,
+        "latest_query": query,
+        "first_seen": "2026-08-01T00:00:00Z",
+        "last_seen": "2026-08-01T00:00:00Z",
+        "observed_tier": 8,
+        "status": "resolved",
+        "resolved_entity_id": entity_id,
+        "resolved_at": "2026-08-01T00:00:00Z",
+        "ranked_candidates": [{
+            "id": entity_id,
+            "name": query,
+            "tier": 8,
+            "score": 90.0
+        }],
+        "origins": [{"lane": "test"}],
+        "origin_keys": ["test"],
+        "occurrence_count": 1,
+        "audit": {"prior_choices": []}
+    });
+    let path = root.join("entities/ambiguities.jsonl");
+    fs::create_dir_all(path.parent().expect("ambiguities parent")).expect("create entities");
+    fs::write(&path, format!("{row}\n")).expect("write resolved choice");
 }
 
 fn labels(sentence_ids: &[i64]) -> BTreeMap<i64, Label> {
@@ -179,7 +212,7 @@ fn ac6_setting_person_has_label_and_candidate_evidence() {
 }
 
 #[test]
-fn structural_single_speaker_branch_remains_unguarded_for_non_person() {
+fn structural_single_speaker_does_not_label_a_non_person() {
     let temporary = TempDir::new();
     write_entity(temporary.path(), "tool", "Terminal", Some("Tool"), false);
     let speakers = ["Terminal".to_owned()];
@@ -191,11 +224,7 @@ fn structural_single_speaker_branch_remains_unguarded_for_non_person() {
         &HashSet::new(),
     )
     .expect("apply layer 2");
-    assert_eq!(result.labels[&1].speaker.as_deref(), Some("tool"));
-    assert_eq!(
-        result.labels[&1].method.as_deref(),
-        Some("structural_single_speaker")
-    );
+    assert_eq!(result.labels[&1].speaker, None);
     assert!(result.candidate_entity_ids.is_empty());
 }
 
@@ -290,4 +319,98 @@ fn ac11_margin_declined_structural_relabel_is_demoted_and_preserved() {
     .expect("apply layer 2");
     assert_eq!(result.labels[&1].confidence.as_deref(), Some("medium"));
     assert_eq!(result.labels[&1].owner_margin_declined, Some(true));
+}
+
+#[test]
+fn same_name_person_and_tool_admits_the_person_as_candidate() {
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "alex", "Alex", Some("Person"), false);
+    write_entity(temporary.path(), "tool", "Alex", Some("Tool"), false);
+    let speakers = ["Alex".to_owned(), "Other".to_owned()];
+    let result = apply(
+        &temporary,
+        &speakers,
+        &[],
+        &journal_entities(temporary.path()),
+        &HashSet::new(),
+    )
+    .expect("apply layer 2");
+    assert_eq!(
+        result.candidate_entity_ids.iter().collect::<Vec<_>>(),
+        [&"alex".to_owned()]
+    );
+    assert_eq!(result.resolved_candidate_names, ["Alex"]);
+    assert_eq!(result.labels[&1].speaker, None);
+}
+
+#[test]
+fn same_name_person_and_tool_labels_via_structural_setting() {
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "alex", "Alex", Some("Person"), false);
+    write_entity(temporary.path(), "tool", "Alex", Some("Tool"), false);
+    let settings = ["Alex".to_owned()];
+    let result = apply(
+        &temporary,
+        &[],
+        &settings,
+        &journal_entities(temporary.path()),
+        &HashSet::new(),
+    )
+    .expect("apply layer 2");
+    assert_eq!(result.labels[&1].speaker.as_deref(), Some("alex"));
+    assert_eq!(
+        result.labels[&1].method.as_deref(),
+        Some("structural_setting")
+    );
+    assert!(result.candidate_entity_ids.contains("alex"));
+}
+
+#[test]
+fn two_same_named_unblocked_persons_remain_ambiguous() {
+    let temporary = TempDir::new();
+    write_entity(
+        temporary.path(),
+        "sam-one",
+        "Sam Person",
+        Some("Person"),
+        false,
+    );
+    write_entity(
+        temporary.path(),
+        "sam-two",
+        "Sam Person",
+        Some("Person"),
+        false,
+    );
+    let settings = ["Sam Person".to_owned()];
+    let result = apply(
+        &temporary,
+        &[],
+        &settings,
+        &journal_entities(temporary.path()),
+        &HashSet::new(),
+    )
+    .expect("apply layer 2");
+    assert_eq!(result.labels[&1].speaker, None);
+    assert!(result.candidate_entity_ids.is_empty());
+    assert!(result.resolved_candidate_names.is_empty());
+}
+
+#[test]
+fn saved_choice_naming_a_present_tool_is_unmatched_without_error() {
+    let temporary = TempDir::new();
+    write_entity(temporary.path(), "tool", "Terminal", Some("Tool"), false);
+    write_resolved_choice(temporary.path(), "Terminal", "tool");
+    let speakers = ["Terminal".to_owned()];
+    let result = apply(
+        &temporary,
+        &speakers,
+        &[],
+        &journal_entities(temporary.path()),
+        &HashSet::new(),
+    )
+    .expect("saved Tool choice must not raise");
+    assert_eq!(result.labels[&1].speaker, None);
+    assert!(result.candidate_entity_ids.is_empty());
+    assert!(result.resolved_candidate_names.is_empty());
 }
