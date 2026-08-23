@@ -4100,6 +4100,7 @@ name = "solstone-core-journal-archive"
 version = "2.0.0"
 dependencies = [
  "nix",
+ "solstone-core-journal-io",
  "zip",
 ]
 

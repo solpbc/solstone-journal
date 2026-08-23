@@ -114,22 +114,23 @@ fn publication_is_descriptor_relative_and_has_no_ambient_or_process_reach() {
 }
 
 #[test]
-fn filesystem_root_reopens_are_literal_and_argument_free() {
+fn source_no_longer_reacquires_a_journal_root() {
     let source = SOURCES
         .iter()
         .find_map(|(name, source)| (*name == "source").then_some(*source))
         .expect("source module registered");
 
-    assert!(source.contains("fn open_absolute_filesystem_root() -> Result<OwnedFd, ArchiveError>"));
-    assert!(source.contains("open(\"/\", DIRECTORY_FLAGS, Mode::empty())"));
-    assert_eq!(
-        source.matches("open_absolute_filesystem_root()?").count(),
-        3,
-        "two root-self reopens plus the non-root traversal open"
-    );
-    assert!(!source.contains("OsString::from(\".\")"));
-    assert!(!source.contains("openat(&authoritative"));
-    assert!(!source.contains("openat(&first"));
+    for forbidden in [
+        "open_absolute_filesystem_root",
+        "open(\"/\"",
+        "REQUESTED_ROOT_FLAGS",
+        "canonicalize",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "source still reacquires a journal root via {forbidden}"
+        );
+    }
 }
 
 #[test]
@@ -281,6 +282,7 @@ fn manifest_declares_only_runtime_dependencies() {
         dependency_lines(MANIFEST),
         vec![
             "nix = { workspace = true, features = [\"dir\", \"user\"] }",
+            "solstone-core-journal-io = { workspace = true }",
             "zip = { version = \"=2.4.2\", default-features = false, features = [\"deflate\"] }",
         ],
     );

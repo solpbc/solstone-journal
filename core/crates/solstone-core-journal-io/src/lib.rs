@@ -12,6 +12,7 @@ pub mod atomic;
 pub mod deconflict;
 pub mod entry;
 pub mod errors;
+pub mod journal_root;
 pub mod lease;
 pub mod locking;
 pub mod name_admission;
@@ -39,6 +40,9 @@ pub use errors::{
     AppendError, AtomicWriteError, ExistingParentLockError, LeaseError, LockError, LockTimeout,
     MalformedDataError, PathError, PathEscapeError, ReadError, SegmentIdentityError, SnapshotError,
 };
+#[cfg(feature = "test-hooks")]
+pub use journal_root::{AcquisitionPrimitive, run_with_acquisition_fault};
+pub use journal_root::{JournalEntryKind, JournalRoot, JournalRootError, ObjectIdentity};
 pub use lease::{
     DEFAULT_LEASE_ATTEMPTS, DEFAULT_LEASE_MODE, DEFAULT_LEASE_RETRY_MAX, FileLease, LeaseOptions,
     acquire_file_lease,

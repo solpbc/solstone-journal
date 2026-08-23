@@ -4,11 +4,11 @@
 //! Capability-safe, read-only inventory of portable journal archive sources.
 //!
 //! This crate deliberately owns no archive publication, command-line surface,
-//! or generic filesystem traversal API. [`ArchiveSource`] retains a descriptor
-//! for one acquired journal root and exposes only its frozen, verified archive
-//! inventory plus a checked encoder for a caller-owned output file. It owns no
-//! output-path selection, publication, command-line, HTTP, or generic
-//! filesystem traversal API.
+//! or generic filesystem traversal API. [`ArchiveSource`] retains a
+//! [`solstone_core_journal_io::JournalRoot`] and exposes only its frozen, verified
+//! archive inventory plus a checked encoder for a caller-owned output file. It
+//! does not acquire a journal root, and owns no output-path selection,
+//! publication, command-line, HTTP, or generic filesystem traversal API.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
@@ -33,8 +33,9 @@ pub use entry::{
     ArchiveMemberName, IncludedRootName, Inventory, InventoryEntry, OpenedInventoryFile,
     SkippedRootName,
 };
-pub use error::{ArchiveError, JournalEntryKind};
+pub use error::ArchiveError;
 pub use publish::{ArchivePublicationError, publish_archive};
+pub use solstone_core_journal_io::JournalEntryKind;
 pub use source::ArchiveSource;
 pub use target::{
     ArchiveOutputTarget, ExplicitArchiveOutputRequest, ExplicitTargetError,

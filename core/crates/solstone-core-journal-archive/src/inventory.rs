@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::ffi::{OsStr, OsString};
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 
 use crate::deny::{DenyAction, deny_member, deny_top_level};
@@ -16,7 +16,7 @@ use crate::{
     SkippedRootName,
 };
 
-pub(crate) fn build(root: &OwnedFd) -> Result<Inventory, ArchiveError> {
+pub(crate) fn build(root: &impl AsFd) -> Result<Inventory, ArchiveError> {
     let mut inventory = Inventory::default();
     let mut entries = Vec::new();
 

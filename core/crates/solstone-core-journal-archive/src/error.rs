@@ -6,26 +6,17 @@ use std::fmt;
 use std::io;
 use std::path::PathBuf;
 
-use crate::ArchiveMemberName;
+use solstone_core_journal_io::JournalEntryKind;
 
-/// The no-follow file kind observed for a journal entry.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum JournalEntryKind {
-    RegularFile,
-    Directory,
-    Symlink,
-    Fifo,
-    Socket,
-    CharacterDevice,
-    BlockDevice,
-    Other,
-}
+use crate::ArchiveMemberName;
 
 /// Failure while acquiring or reading a portable archive source.
 #[derive(Debug)]
 pub enum ArchiveError {
     /// The requested journal root is not a usable absolute directory.
     InvalidJournal { root: PathBuf, reason: &'static str },
+    /// The current backend cannot retain a handle for this journal root.
+    UnsupportedJournal { root: PathBuf, reason: &'static str },
     /// A stable unsafe object was found while initially inventorying a root.
     UnsafeJournalEntry {
         member: ArchiveMemberName,
@@ -48,6 +39,13 @@ impl fmt::Display for ArchiveError {
                 write!(
                     formatter,
                     "invalid journal root {}: {reason}",
+                    root.display()
+                )
+            }
+            Self::UnsupportedJournal { root, reason } => {
+                write!(
+                    formatter,
+                    "unsupported journal root {}: {reason}",
                     root.display()
                 )
             }
@@ -83,6 +81,7 @@ impl Error for ArchiveError {
         match self {
             Self::SourceIo { source, .. } => Some(source),
             Self::InvalidJournal { .. }
+            | Self::UnsupportedJournal { .. }
             | Self::UnsafeJournalEntry { .. }
             | Self::SourceChanged { .. } => None,
         }

@@ -11,13 +11,14 @@ publish = false
 
 [dependencies]
 nix = { workspace = true, features = ["dir", "user"] }
+solstone-core-journal-io = { workspace = true }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true
 
 [features]
-test-hooks = []
+test-hooks = ["solstone-core-journal-io/test-hooks"]
 
 [[test]]
 name = "archive_fault_boundaries"

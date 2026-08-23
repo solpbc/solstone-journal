@@ -3,16 +3,15 @@
 
 use std::path::PathBuf;
 
-use nix::errno::Errno;
-
 use crate::encode::{
     TestFault, TestSourceAction, encode_injected_operation_fired, install_encode_control,
     reset_encode_control,
 };
-use crate::source::{DescendantBarrier, InjectedFault, trace_descendants, trace_scenario};
+use crate::source::{DescendantBarrier, trace_descendants};
 
 pub use crate::encode::{TestBoundary, TestFaultKind, TestSinkOperation};
-pub use crate::source::{AcquisitionPrimitive, DescendantPrimitive};
+pub use crate::source::DescendantPrimitive;
+pub use solstone_core_journal_io::{AcquisitionPrimitive, run_with_acquisition_fault};
 
 /// Truncation to install before a source-member read during a controlled encode.
 #[doc(hidden)]
@@ -21,24 +20,6 @@ pub struct EncodeTruncateBeforeRead {
     pub copied: u64,
     pub path: PathBuf,
     pub length: u64,
-}
-
-/// Run `op` with one injected acquisition fault. Returns the op result and
-/// whether that fault was consumed.
-#[doc(hidden)]
-pub fn run_with_acquisition_fault<T>(
-    primitive: AcquisitionPrimitive,
-    ordinal: usize,
-    raw_errno: i32,
-    op: impl FnOnce() -> T,
-) -> (T, bool) {
-    let fault = InjectedFault {
-        primitive,
-        ordinal,
-        error: Errno::from_raw(raw_errno),
-    };
-    let (result, outcome) = trace_scenario(None, Some(fault), op);
-    (result, outcome.fault_consumed)
 }
 
 /// Run `op` with a descendant barrier whose callback is supplied by the caller.
