@@ -7,11 +7,12 @@ license.workspace = true
 publish = false
 
 [dependencies]
-nix = { workspace = true, features = ["user"] }
+iana-time-zone.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 solstone-core-journal.workspace = true
+whoami.workspace = true
 
 [lints]
 workspace = true

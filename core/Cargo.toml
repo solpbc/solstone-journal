@@ -316,6 +316,32 @@ minisign = "0.9.1"
 # PORTING.md native-dependency proof does not apply. Package MSRV 1.63 is below
 # the workspace rust-version 1.95. MIT.
 crossterm = { version = "=0.29.0", default-features = false, features = ["events", "windows"] }
+# Portable OS identity for journal-config default materialization. Release-rail lenses:
+# `whoami` 2.1.2 is Apache-2.0 OR BSL-1.0 OR MIT. default-features are disabled
+# because they pull `wasi-wasite` + `wasm-web`, whose deps are wasm32-target-gated
+# and never resolve for any deny.toml graph target, but they do widen the unfiltered
+# `cargo metadata` closure. `std` is the only enabled feature; `realname()` and
+# `username()` exist under it. Package MSRV 1.75 is below workspace rust-version
+# 1.95 / check-rust-msrv 1.95.0. `build = false`; no cc/cmake/native build.rs, so
+# musl x86_64/aarch64 stay eligible and the PORTING.md native-dependency proof
+# does not apply. Linux/macOS pull workspace `libc` (already in graph); macOS
+# additionally pulls objc2-system-configuration 0.3.2 and objc2-core-foundation
+# 0.3.2 (MSRV 1.71, build = false, SystemConfiguration.framework via rustc).
+# Windows adds no extra crates; rustc `#[link]`s secur32/advapi32/kernel32.
+# cargo-deny bans/licenses/sources are reviewed by the gate. MIT and Apache-2.0
+# already sit on the license allow list, so the BSL-1.0 alternative does not
+# require a deny.toml edit.
+whoami = { version = "=2.1.2", default-features = false, features = ["std"] }
+# IANA timezone for journal-config default materialization. Release-rail lenses:
+# `iana-time-zone` 0.1.65 is MIT OR Apache-2.0 and is already in the lock via
+# health-web and reprocess-cli. `build = false`; package MSRV 1.62.0 is below
+# workspace rust-version 1.95 / check-rust-msrv 1.95.0. No cc/cmake/native
+# build.rs, so musl x86_64/aarch64 stay eligible and the PORTING.md
+# native-dependency proof does not apply. Linux reads /etc/localtime in-process.
+# macOS uses already-locked core-foundation-sys. Windows uses already-locked
+# windows-core (resolved 0.62.2, MSRV 1.82, build = false). cargo-deny
+# bans/licenses/sources are reviewed by the gate.
+iana-time-zone = "0.1.65"
 unicode-general-category = "1.1.0"
 unicode-xid = "0.2.6"
 unicode_names2 = "1.3.0"

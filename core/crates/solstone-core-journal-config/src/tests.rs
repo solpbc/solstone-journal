@@ -2,7 +2,6 @@
 // Copyright (c) 2026 sol pbc
 
 use std::cell::RefCell;
-use std::error::Error;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -14,7 +13,7 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::defaults::{
-    LocaltimeSource, PasswdRecord, PasswdSource, install_localtime_source, install_passwd_source,
+    IdentityError, IdentitySource, IdentitySourceGuard, fallback_identity, install_identity_source,
 };
 use crate::read::{ReadSource, install_read_source};
 use crate::test_support::TempDir;
@@ -23,8 +22,16 @@ use crate::{
     plain_defaults, read_journal_config,
 };
 
-type PasswdResult = Result<Option<PasswdRecord>, Box<dyn Error + Send + Sync>>;
-type LocaltimeResult = Result<PathBuf, Box<dyn Error + Send + Sync>>;
+const REAL: &str = "Ada Lovelace";
+const USER: &str = "ada";
+const TZ: &str = "America/Denver";
+const REAL_ONLY: &str = "Grace Hopper";
+const COMMA: &str = "Lovelace, Ada";
+const PADDED: &str = "\u{001c}  Ada Lovelace  \u{001f}";
+const CONTROL: &str = "Ada\u{0001}Lovelace";
+const NUL: &str = "Ada\0Lovelace";
+
+type ScriptedResult = Result<String, IdentityError>;
 
 struct ScriptedReadSource {
     result: RefCell<Option<io::Result<Vec<u8>>>>,
@@ -50,57 +57,65 @@ impl ReadSource for ScriptedReadSource {
     }
 }
 
-struct ScriptedPasswdSource {
-    result: RefCell<Option<PasswdResult>>,
+struct ScriptedIdentitySource {
+    real_name: RefCell<Option<ScriptedResult>>,
+    user_name: RefCell<Option<ScriptedResult>>,
+    timezone: RefCell<Option<ScriptedResult>>,
 }
 
-impl ScriptedPasswdSource {
-    fn new(result: PasswdResult) -> Self {
+impl ScriptedIdentitySource {
+    fn new(real_name: ScriptedResult, user_name: ScriptedResult, timezone: ScriptedResult) -> Self {
         Self {
-            result: RefCell::new(Some(result)),
+            real_name: RefCell::new(Some(real_name)),
+            user_name: RefCell::new(Some(user_name)),
+            timezone: RefCell::new(Some(timezone)),
         }
     }
 }
 
-impl PasswdSource for ScriptedPasswdSource {
-    fn current_user(&self) -> PasswdResult {
-        self.result
+impl IdentitySource for ScriptedIdentitySource {
+    fn real_name(&self) -> ScriptedResult {
+        self.real_name
             .borrow_mut()
             .take()
-            .expect("passwd seam must be called once")
+            .expect("real_name seam must be called once")
     }
-}
 
-struct ScriptedLocaltimeSource {
-    result: RefCell<Option<LocaltimeResult>>,
-}
-
-impl ScriptedLocaltimeSource {
-    fn new(result: LocaltimeResult) -> Self {
-        Self {
-            result: RefCell::new(Some(result)),
-        }
-    }
-}
-
-impl LocaltimeSource for ScriptedLocaltimeSource {
-    fn resolved_localtime(&self) -> LocaltimeResult {
-        self.result
+    fn user_name(&self) -> ScriptedResult {
+        self.user_name
             .borrow_mut()
             .take()
-            .expect("localtime seam must be called once")
+            .expect("user_name seam must be called once")
+    }
+
+    fn timezone(&self) -> ScriptedResult {
+        self.timezone
+            .borrow_mut()
+            .take()
+            .expect("timezone seam must be called once")
     }
 }
 
-fn boxed_error(kind: io::ErrorKind) -> Box<dyn Error + Send + Sync> {
-    Box::new(io::Error::new(kind, "injected source failure"))
+fn injected_error() -> IdentityError {
+    IdentityError::from("injected source failure")
 }
 
-fn passwd(gecos: &str, login: &str) -> PasswdRecord {
-    PasswdRecord {
-        gecos: gecos.to_owned(),
-        login: login.to_owned(),
-    }
+fn ok(value: &str) -> ScriptedResult {
+    Ok(value.to_owned())
+}
+
+fn err() -> ScriptedResult {
+    Err(injected_error())
+}
+
+fn install(
+    real_name: ScriptedResult,
+    user_name: ScriptedResult,
+    timezone: ScriptedResult,
+) -> IdentitySourceGuard {
+    install_identity_source(Rc::new(ScriptedIdentitySource::new(
+        real_name, user_name, timezone,
+    )))
 }
 
 fn reference_defaults() -> Map<String, Value> {
@@ -136,6 +151,28 @@ fn identity(config: &Map<String, Value>) -> &Map<String, Value> {
         .expect("identity object")
 }
 
+fn assert_identity(config: &Map<String, Value>, name: &str, preferred: &str, timezone: &str) {
+    let identity = identity(config);
+    assert_eq!(identity["name"], json!(name));
+    assert_eq!(identity["preferred"], json!(preferred));
+    assert_eq!(identity["timezone"], json!(timezone));
+}
+
+fn assert_fallback(
+    real_name: ScriptedResult,
+    user_name: ScriptedResult,
+    timezone: ScriptedResult,
+    name: &str,
+    preferred: &str,
+    zone: &str,
+) {
+    let got = fallback_identity(real_name, user_name, timezone);
+    assert_eq!(
+        got,
+        (name.to_owned(), preferred.to_owned(), zone.to_owned())
+    );
+}
+
 #[test]
 fn plain_defaults_match_the_python_reference_with_top_level_order() {
     let reference = reference_defaults();
@@ -150,17 +187,9 @@ fn plain_defaults_match_the_python_reference_with_top_level_order() {
 
 #[test]
 fn materialized_defaults_only_change_identity_resolution_fields() {
-    let passwd_guard = install_passwd_source(Rc::new(ScriptedPasswdSource::new(Ok(Some(passwd(
-        "Ada Lovelace,,,",
-        "ada",
-    ))))));
-    let localtime_guard = install_localtime_source(Rc::new(ScriptedLocaltimeSource::new(Ok(
-        PathBuf::from("/usr/share/zoneinfo/America/Denver"),
-    ))));
+    let _guard = install(ok(REAL), ok(USER), ok(TZ));
     let plain = plain_defaults();
     let materialized = materialized_defaults();
-    drop(localtime_guard);
-    drop(passwd_guard);
 
     assert_eq!(plain.len(), 9);
     assert_eq!(materialized.len(), 9);
@@ -187,13 +216,8 @@ fn materialized_defaults_only_change_identity_resolution_fields() {
 #[test]
 fn materialized_defaults_preserve_reference_contract_fields() {
     let reference = reference_defaults();
-    let passwd_guard = install_passwd_source(Rc::new(ScriptedPasswdSource::new(Ok(None))));
-    let localtime_guard = install_localtime_source(Rc::new(ScriptedLocaltimeSource::new(Err(
-        boxed_error(io::ErrorKind::NotFound),
-    ))));
+    let _guard = install(err(), err(), err());
     let materialized = materialized_defaults();
-    drop(localtime_guard);
-    drop(passwd_guard);
 
     assert_eq!(
         materialized["retention"]["journal_logs"]["days"],
@@ -220,21 +244,11 @@ fn materialized_defaults_preserve_reference_contract_fields() {
 #[test]
 fn materialization_uses_os_identity_and_timezone_but_missing_read_does_not() {
     let temporary = TempDir::new();
-    let passwd_guard = install_passwd_source(Rc::new(ScriptedPasswdSource::new(Ok(Some(passwd(
-        "Ada Lovelace,,,",
-        "ada",
-    ))))));
-    let localtime_guard = install_localtime_source(Rc::new(ScriptedLocaltimeSource::new(Ok(
-        PathBuf::from("/usr/share/zoneinfo/America/Denver"),
-    ))));
+    let _guard = install(ok(REAL), ok(USER), ok(TZ));
     let materialized = materialized_defaults();
     let reader = read_journal_config(temporary.path()).unwrap();
-    drop(localtime_guard);
-    drop(passwd_guard);
 
-    assert_eq!(identity(&materialized)["name"], json!("Ada Lovelace"));
-    assert_eq!(identity(&materialized)["preferred"], json!("ada"));
-    assert_eq!(identity(&materialized)["timezone"], json!("America/Denver"));
+    assert_identity(&materialized, REAL, USER, TZ);
     assert!(!reader.present);
     assert_eq!(reader.config, None);
     assert_eq!(identity(&plain_defaults())["name"], json!(""));
@@ -243,50 +257,99 @@ fn materialization_uses_os_identity_and_timezone_but_missing_read_does_not() {
 }
 
 #[test]
+fn fallback_identity_fills_both_name_fields_from_username() {
+    assert_fallback(err(), ok(USER), ok(TZ), USER, USER, TZ);
+    assert_fallback(ok(""), ok(USER), ok(TZ), USER, USER, TZ);
+    assert_fallback(ok(CONTROL), ok(USER), ok(TZ), USER, USER, TZ);
+    assert_fallback(ok(NUL), ok(USER), ok(TZ), USER, USER, TZ);
+}
+
+#[test]
+fn materialized_defaults_fill_both_name_fields_from_username_on_real_name_error() {
+    let _guard = install(err(), ok(USER), ok(TZ));
+    assert_identity(&materialized_defaults(), USER, USER, TZ);
+}
+
+#[test]
+fn materialized_defaults_fill_both_name_fields_from_username_on_real_name_empty() {
+    let _guard = install(ok(""), ok(USER), ok(TZ));
+    assert_identity(&materialized_defaults(), USER, USER, TZ);
+}
+
+#[test]
+fn materialized_defaults_fill_both_name_fields_from_username_on_real_name_rejected() {
+    let _guard = install(ok(CONTROL), ok(USER), ok(TZ));
+    assert_identity(&materialized_defaults(), USER, USER, TZ);
+    drop(_guard);
+    let _guard = install(ok(NUL), ok(USER), ok(TZ));
+    assert_identity(&materialized_defaults(), USER, USER, TZ);
+}
+
+#[test]
+fn fallback_identity_keeps_distinct_real_name_when_username_fails() {
+    assert_fallback(ok(REAL_ONLY), err(), ok(TZ), REAL_ONLY, "", TZ);
+    assert_fallback(ok(REAL_ONLY), ok(CONTROL), ok(TZ), REAL_ONLY, "", TZ);
+}
+
+#[test]
+fn materialized_defaults_keep_distinct_real_name_when_username_fails() {
+    let _guard = install(ok(REAL_ONLY), err(), ok(TZ));
+    assert_identity(&materialized_defaults(), REAL_ONLY, "", TZ);
+    drop(_guard);
+    let _guard = install(ok(REAL_ONLY), ok(CONTROL), ok(TZ));
+    assert_identity(&materialized_defaults(), REAL_ONLY, "", TZ);
+}
+
+#[test]
 fn materialization_handles_independent_os_source_failures() {
-    let passwd_guard = install_passwd_source(Rc::new(ScriptedPasswdSource::new(Err(boxed_error(
-        io::ErrorKind::PermissionDenied,
-    )))));
-    let localtime_guard = install_localtime_source(Rc::new(ScriptedLocaltimeSource::new(Ok(
-        PathBuf::from("/usr/share/zoneinfo/America/Denver"),
-    ))));
-    let passwd_failure = materialized_defaults();
-    drop(localtime_guard);
-    drop(passwd_guard);
+    assert_fallback(err(), err(), ok(TZ), "", "", TZ);
+    let _guard = install(err(), err(), ok(TZ));
+    assert_identity(&materialized_defaults(), "", "", TZ);
+    drop(_guard);
 
-    assert_eq!(identity(&passwd_failure)["name"], json!(""));
-    assert_eq!(identity(&passwd_failure)["preferred"], json!(""));
-    assert_eq!(
-        identity(&passwd_failure)["timezone"],
-        json!("America/Denver")
-    );
+    assert_fallback(ok(REAL), ok(USER), err(), REAL, USER, "");
+    let _guard = install(ok(REAL), ok(USER), err());
+    assert_identity(&materialized_defaults(), REAL, USER, "");
+}
 
-    let passwd_guard = install_passwd_source(Rc::new(ScriptedPasswdSource::new(Ok(Some(passwd(
-        "Ada Lovelace",
-        "ada",
-    ))))));
-    let localtime_guard = install_localtime_source(Rc::new(ScriptedLocaltimeSource::new(Err(
-        boxed_error(io::ErrorKind::NotFound),
-    ))));
-    let timezone_failure = materialized_defaults();
-    drop(localtime_guard);
-    drop(passwd_guard);
-
-    assert_eq!(identity(&timezone_failure)["name"], json!("Ada Lovelace"));
-    assert_eq!(identity(&timezone_failure)["preferred"], json!("ada"));
-    assert_eq!(identity(&timezone_failure)["timezone"], json!(""));
+#[test]
+fn fallback_identity_normalizes_and_rejects_control_empty_and_keeps_comma() {
+    assert_fallback(ok(PADDED), ok(USER), ok(TZ), REAL, USER, TZ);
+    assert_fallback(ok("   "), ok(USER), ok(TZ), USER, USER, TZ);
+    assert_fallback(ok(CONTROL), ok(USER), ok(TZ), USER, USER, TZ);
+    assert_fallback(ok(NUL), ok(USER), ok(TZ), USER, USER, TZ);
+    assert_fallback(ok(COMMA), ok(USER), ok(TZ), COMMA, USER, TZ);
 }
 
 #[test]
 fn defaults_do_not_add_setup() {
-    let passwd_guard = install_passwd_source(Rc::new(ScriptedPasswdSource::new(Ok(None))));
-    let localtime_guard = install_localtime_source(Rc::new(ScriptedLocaltimeSource::new(Err(
-        boxed_error(io::ErrorKind::NotFound),
-    ))));
+    let _guard = install(err(), err(), err());
     assert!(!plain_defaults().contains_key("setup"));
     assert!(!materialized_defaults().contains_key("setup"));
-    drop(localtime_guard);
-    drop(passwd_guard);
+}
+
+#[ignore = "live OS identity oracle; run on Windows/MSVC and macOS"]
+#[test]
+fn materialized_defaults_match_live_os_identity_oracle() {
+    let real_name = whoami::realname().map_err(IdentityError::from);
+    let user_name = whoami::username().map_err(IdentityError::from);
+    let timezone = iana_time_zone::get_timezone().map_err(IdentityError::from);
+    let (name, preferred, zone) = fallback_identity(real_name, user_name, timezone);
+    let materialized = materialized_defaults();
+    assert_identity(&materialized, &name, &preferred, &zone);
+
+    let mut plain = plain_defaults();
+    let mut materialized_rest = materialized.clone();
+    for config in [&mut plain, &mut materialized_rest] {
+        let identity = config
+            .get_mut("identity")
+            .and_then(Value::as_object_mut)
+            .expect("identity object");
+        identity.remove("name");
+        identity.remove("preferred");
+        identity.remove("timezone");
+    }
+    assert_eq!(plain, materialized_rest);
 }
 
 #[test]
@@ -415,18 +478,12 @@ fn each_entry_point_invokes_the_read_seam_once() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     drop(_guard);
 
-    let passwd_guard = install_passwd_source(Rc::new(ScriptedPasswdSource::new(Ok(None))));
-    let localtime_guard = install_localtime_source(Rc::new(ScriptedLocaltimeSource::new(Err(
-        boxed_error(io::ErrorKind::NotFound),
-    ))));
+    let _identity = install(err(), err(), err());
     let source = Rc::new(ScriptedReadSource::new(Ok(b"{}".to_vec())));
     let calls = Arc::clone(&source.calls);
     let _guard = install_read_source(source);
     load_mutation_base(temporary.path()).unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    drop(_guard);
-    drop(localtime_guard);
-    drop(passwd_guard);
 }
 
 #[test]
