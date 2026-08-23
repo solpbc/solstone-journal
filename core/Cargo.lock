@@ -3941,6 +3941,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-segment",
+ "solstone-core-system-health",
  "tempfile",
  "tokio",
 ]

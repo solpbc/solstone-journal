@@ -187,6 +187,9 @@ pub enum ImportError {
         path: PathBuf,
         message: String,
     },
+    AudioProcessingWait {
+        detail: String,
+    },
 }
 
 impl fmt::Display for ImportError {
@@ -310,6 +313,9 @@ impl fmt::Display for ImportError {
                     "no audio segments created from {}",
                     path.display()
                 )
+            }
+            Self::AudioProcessingWait { detail } => {
+                write!(formatter, "audio processing wait failed: {detail}")
             }
         }
     }

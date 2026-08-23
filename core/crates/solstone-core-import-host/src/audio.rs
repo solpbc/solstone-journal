@@ -4,8 +4,10 @@
 //! Native generic audio import.
 
 use std::fs;
+use std::future::Future;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::time::Duration;
 
 use chrono::{NaiveDateTime, Timelike};
@@ -19,6 +21,7 @@ use solstone_core_processing_record::{
     vocab,
 };
 use solstone_core_segment::{ImportSource, Kind, StreamHints};
+use solstone_core_system_health::sanitize_os_bytes_for_terminal_bounded;
 use tokio::time::{Instant, timeout};
 
 use solstone_core_import::ImportError;
@@ -91,11 +94,20 @@ impl AudioSliceError {
     }
 }
 
+/// Owned processing-wait callback. Returns a `'static` future so it can be joined.
+pub type ProcessingWaitFn =
+    fn(
+        AudioImportRequest,
+        PathBuf,
+        AudioImportRecord,
+    ) -> Pin<Box<dyn Future<Output = Result<ProcessingWaitOutcome, ImportError>> + Send>>;
+
 /// Named, generic import side effects. Tests inject closures without media fixtures.
 pub struct AudioImportSeams<P, S, E> {
     pub duration_probe: P,
     pub slice: S,
     pub emit_observing: E,
+    pub wait: ProcessingWaitFn,
 }
 
 /// A chunk that could not be remuxed while other chunks were created.
@@ -239,6 +251,7 @@ pub async fn import_audio(request: AudioImportRequest) -> Result<AudioImportOutc
             emit_observing: move |segment: &ObservingSegment| {
                 emit_observe_observing(&EventEmitter::new(journal.as_path(), None), segment);
             },
+            wait: native_processing_wait,
         },
     )
     .await
@@ -449,7 +462,7 @@ where
         return Err(error);
     }
 
-    let mut record = AudioImportRecord {
+    let record = AudioImportRecord {
         schema: AUDIO_RECORD_SCHEMA.to_owned(),
         source_media: request.source_media.clone(),
         day: request.day.clone(),
@@ -472,7 +485,7 @@ where
     }
 
     let processing = if request.wait_for_processing {
-        wait_for_processing(&request, &record_path, &mut record).await?
+        join_owned_wait(seams.wait, request.clone(), record_path.clone(), record).await?
     } else {
         ProcessingWaitOutcome::default()
     };
@@ -673,6 +686,45 @@ fn native_remux_slice(
     output_context
         .write_trailer()
         .map_err(|error| AudioSliceError::Remux { error })
+}
+
+/// Join an owned processing-wait future so a panic becomes `AudioProcessingWait`.
+pub async fn join_owned_wait(
+    wait: ProcessingWaitFn,
+    request: AudioImportRequest,
+    record_path: PathBuf,
+    record: AudioImportRecord,
+) -> Result<ProcessingWaitOutcome, ImportError> {
+    match tokio::spawn(wait(request, record_path, record)).await {
+        Ok(Ok(outcome)) => Ok(outcome),
+        Ok(Err(error)) => Err(error),
+        Err(join_error) => Err(ImportError::AudioProcessingWait {
+            detail: join_error_detail(join_error),
+        }),
+    }
+}
+
+fn join_error_detail(error: tokio::task::JoinError) -> String {
+    if error.is_cancelled() {
+        return sanitize_os_bytes_for_terminal_bounded(b"audio processing wait was cancelled");
+    }
+    let payload = error.into_panic();
+    if let Some(message) = payload.downcast_ref::<String>() {
+        return sanitize_os_bytes_for_terminal_bounded(message.as_bytes());
+    }
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        return sanitize_os_bytes_for_terminal_bounded(message.as_bytes());
+    }
+    sanitize_os_bytes_for_terminal_bounded(b"task panicked")
+}
+
+/// Production processing wait. Boxes today's `wait_for_processing` body.
+pub fn native_processing_wait(
+    request: AudioImportRequest,
+    record_path: PathBuf,
+    mut record: AudioImportRecord,
+) -> Pin<Box<dyn Future<Output = Result<ProcessingWaitOutcome, ImportError>> + Send>> {
+    Box::pin(async move { wait_for_processing(&request, &record_path, &mut record).await })
 }
 
 async fn wait_for_processing(

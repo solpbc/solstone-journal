@@ -223,6 +223,15 @@ fn rendered(run: CliRun) -> CliOutcome {
     CliOutcome::Rendered(run)
 }
 
+/// Current-thread runtime for generic audio import, including the processing wait.
+pub fn audio_import_runtime() -> Result<tokio::runtime::Runtime, String> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()
+        .map_err(|error| error.to_string())
+}
+
 fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &str) -> CliRun {
     if options.dry_run {
         return failure(
@@ -235,10 +244,7 @@ fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &st
         Ok(value) => value,
         Err(_) => return failure("", "timestamp must be YYYYMMDD_HHMMSS format\n", 1),
     };
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()
-    {
+    let runtime = match audio_import_runtime() {
         Ok(runtime) => runtime,
         Err(error) => return failure("", &format!("audio import runtime failed: {error}\n"), 1),
     };
@@ -260,10 +266,7 @@ fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &st
         stall_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(250),
     };
-    match runtime.block_on(import_audio(request)) {
-        Ok(outcome) => success(format!("Generic audio import complete: {outcome:?}\n")),
-        Err(error) => failure("", &format!("{error}\n"), 1),
-    }
+    audio_import_cli_run(runtime.block_on(import_audio(request)))
 }
 
 fn run_text(
@@ -982,6 +985,28 @@ fn assign_flag(options: &mut Options, argument: &str) -> bool {
         _ => return false,
     }
     true
+}
+
+/// Map one audio-import outcome onto the importer CLI contract.
+pub fn audio_import_cli_run(
+    result: Result<crate::audio::AudioImportOutcome, solstone_core_import::ImportError>,
+) -> CliRun {
+    match result {
+        Ok(outcome) => {
+            let processing = &outcome.created().processing;
+            if !processing.failed_segments.is_empty() || !processing.stalled_segments.is_empty() {
+                let mut keys = processing.failed_segments.clone();
+                keys.extend(processing.stalled_segments.iter().cloned());
+                return failure(
+                    "",
+                    &format!("audio import processing failed: {}\n", keys.join(", ")),
+                    1,
+                );
+            }
+            success(format!("Generic audio import complete: {outcome:?}\n"))
+        }
+        Err(error) => failure("", &format!("{error}\n"), 1),
+    }
 }
 
 fn argparse_error(arguments: String) -> CliRun {

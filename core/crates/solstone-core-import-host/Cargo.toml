@@ -29,7 +29,8 @@ solstone-core-import.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-segment.workspace = true
-tokio = { workspace = true, features = ["macros", "rt", "time"] }
+solstone-core-system-health.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "time", "net"] }
 
 [dev-dependencies]
 tempfile = "3.24.0"

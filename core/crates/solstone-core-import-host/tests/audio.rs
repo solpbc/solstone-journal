@@ -16,7 +16,7 @@ use solstone_core_import::{ImportError, ObservingSegment};
 use solstone_core_import_host::audio::{
     AudioImportOutcome, AudioImportRequest, AudioImportSeams, AudioProbeError,
     AudioProcessingState, AudioSliceError, AudioWaitRecord, import_audio_with_seams,
-    read_audio_import_record,
+    native_processing_wait, read_audio_import_record,
 };
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -81,6 +81,7 @@ async fn fake_import_with_calls(
             emit_observing: move |segment: &ObservingSegment| {
                 emitted.borrow_mut().push(segment.clone());
             },
+            wait: native_processing_wait,
         },
     )
     .await
@@ -243,6 +244,7 @@ async fn ac3_duration_probe_failure_does_not_allocate_or_slice() {
                 Ok(())
             },
             emit_observing: |_: &ObservingSegment| {},
+            wait: native_processing_wait,
         },
     )
     .await;
@@ -258,6 +260,7 @@ async fn ac3_duration_probe_failure_does_not_allocate_or_slice() {
             duration_probe: |_: &Path| Ok(f64::NAN),
             slice: |_: &Path, _: &Path, _: f64, _: f64| Ok(()),
             emit_observing: |_: &ObservingSegment| {},
+            wait: native_processing_wait,
         },
     )
     .await;
@@ -309,6 +312,7 @@ async fn ac4_middle_slice_failure_is_partial_and_total_loss_aborts() {
                 })
             },
             emit_observing: |_: &ObservingSegment| {},
+            wait: native_processing_wait,
         },
     )
     .await;
@@ -353,6 +357,7 @@ async fn ac4_middle_slice_failure_is_partial_and_total_loss_aborts() {
                 }
             },
             emit_observing: |_: &ObservingSegment| {},
+            wait: native_processing_wait,
         },
     )
     .await;
@@ -665,6 +670,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
                 Ok(())
             },
             emit_observing: |_: &ObservingSegment| {},
+            wait: native_processing_wait,
         },
     )
     .await
@@ -721,6 +727,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
                 Ok(())
             },
             emit_observing: |_: &ObservingSegment| {},
+            wait: native_processing_wait,
         },
     );
     let (during, ()) = tokio::join!(during_import, send_during_event);
@@ -779,6 +786,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
                 Ok(())
             },
             emit_observing: |_: &ObservingSegment| {},
+            wait: native_processing_wait,
         },
     );
     let (after, ()) = tokio::join!(after_import, send_last_event);
@@ -823,6 +831,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
                 Ok(())
             },
             emit_observing: |_: &ObservingSegment| {},
+            wait: native_processing_wait,
         },
     )
     .await
@@ -889,6 +898,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
                 Ok(())
             },
             emit_observing: |_: &ObservingSegment| {},
+            wait: native_processing_wait,
         },
     );
     let (event_outcome, ()) = tokio::join!(import, wait_for_client);
