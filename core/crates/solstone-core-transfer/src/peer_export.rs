@@ -1011,7 +1011,7 @@ mod tests {
     }
 
     #[test]
-    fn named_default_identity_failure_surfaces_through_area_result_without_posts() {
+    fn named_default_identity_failure_surfaces_through_area_result() {
         let journal = tempfile::tempdir().unwrap();
         let direct = journal.path().join("chronicle/20260101/080000_60");
         fs::create_dir_all(&direct).unwrap();
@@ -1039,7 +1039,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn named_default_identity_failure_escapes_control_characters_in_the_area_error() {
+    fn named_default_identity_failure_escapes_control_characters_via_listed_days() {
         let parent = tempfile::tempdir().unwrap();
         let journal = parent.path().join("journal\nroot");
         let named = journal.join("chronicle/20260101/_default/090000_60");

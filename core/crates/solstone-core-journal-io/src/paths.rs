@@ -154,7 +154,9 @@ impl Segment {
     }
 }
 
-/// Require every selected segment to have a UTF-8 [`RecordIdentity`].
+/// Produce a representable [`RecordIdentity`] for every selected segment.
+///
+/// Refuses on non-UTF-8 names and on the named-`_default` ambiguity.
 pub fn utf8_identities<'a, I>(segments: I) -> Result<Vec<RecordIdentity<'a>>, SegmentIdentityError>
 where
     I: IntoIterator<Item = &'a Segment>,

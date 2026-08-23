@@ -249,7 +249,10 @@ impl Error for ReadError {
     }
 }
 
-/// A discovered segment cannot be named in a UTF-8 `(stream, key)` record.
+/// A discovered segment cannot be named as a `(stream, key)` record.
+///
+/// Covers genuine non-UTF-8 names and a UTF-8 name that collides with Direct's
+/// reserved `_default` spelling.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SegmentIdentityError {
     /// Stream directory or segment basename is not UTF-8.
