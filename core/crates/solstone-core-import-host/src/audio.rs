@@ -689,7 +689,7 @@ fn native_remux_slice(
 }
 
 /// Join an owned processing-wait future so a panic becomes `AudioProcessingWait`.
-pub async fn join_owned_wait(
+async fn join_owned_wait(
     wait: ProcessingWaitFn,
     request: AudioImportRequest,
     record_path: PathBuf,

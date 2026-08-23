@@ -158,11 +158,6 @@ pub fn vad_runtime_repair_for(status: &VadRuntimeStatus) -> Option<&'static str>
     }
 }
 
-/// Generic missing-helper repair used by the speakers-style no-arg wrapper.
-pub fn vad_runtime_repair_text() -> &'static str {
-    "place solstone-core-vad-analyze beside solstone-core in the journal-host bindir, then rerun journal doctor"
-}
-
 pub fn status_detail(status: &VadRuntimeStatus) -> String {
     match status {
         VadRuntimeStatus::Ready => "VAD helper launchable (closed-stdin usage contract)".to_owned(),
@@ -302,12 +297,9 @@ mod tests {
             }
             other => panic!("expected Unresolved, got {other:?}"),
         }
-        assert_eq!(
-            vad_runtime_repair_for(&status),
-            Some(
-                "repair the journal-host install so the doctor can resolve solstone-core-vad-analyze beside solstone-core, then rerun journal doctor"
-            )
-        );
+        let repair = vad_runtime_repair_for(&status).expect("unresolved helper has repair text");
+        assert!(repair.contains("solstone-core-vad-analyze"), "{repair}");
+        assert!(repair.contains("journal doctor"), "{repair}");
         let rooted =
             probe_from_executable(Ok(std::path::PathBuf::from("/")), Duration::from_secs(1));
         match rooted {

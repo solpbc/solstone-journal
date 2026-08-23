@@ -548,7 +548,19 @@ mod tests {
 
     #[test]
     fn empty_stderr_retains_helper_exit_code() {
-        assert_retains_exit(parse_vad_error(Some(3), b""), 3, "");
+        let error = parse_vad_error(Some(3), b"");
+        assert_retains_exit(error, 3, "");
+        let rendered = parse_vad_error(Some(3), b"").to_string();
+        assert!(rendered.contains("exit 3"), "{rendered}");
+        assert!(
+            rendered.contains("VAD error response was empty"),
+            "{rendered}"
+        );
+        assert!(
+            !rendered.ends_with(": "),
+            "empty stderr must not leave a dangling colon: {rendered}"
+        );
+        assert_eq!(rendered.lines().count(), 1, "{rendered}");
     }
 
     #[test]

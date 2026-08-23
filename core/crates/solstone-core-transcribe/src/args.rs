@@ -190,22 +190,12 @@ pub fn speakers_analyze_repair_text() -> &'static str {
     "reinstall the journal host stack and restart the journal"
 }
 
-/// Probe the VAD helper using transcription's own binary resolver.
-pub fn check_vad_runtime() -> crate::VadRuntimeStatus {
-    crate::vad_runtime::probe_from_executable(env::current_exe(), crate::VAD_RUNTIME_PROBE_TIMEOUT)
-}
-
 /// Probe an explicit VAD helper path with an explicit deadline.
 pub fn check_vad_runtime_with(
     binary: impl AsRef<Path>,
     timeout: Duration,
 ) -> crate::VadRuntimeStatus {
     crate::vad_runtime::probe_vad_runtime(binary.as_ref(), timeout)
-}
-
-/// Generic missing-helper repair text for the VAD runtime check.
-pub fn vad_runtime_repair_text() -> &'static str {
-    crate::vad_runtime::vad_runtime_repair_text()
 }
 
 /// Per-variant VAD runtime repair text.
