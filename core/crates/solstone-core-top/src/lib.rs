@@ -28,8 +28,8 @@ pub use reduce::{
     TopMalformedKind, TopRoute, apply_receive_event, cleanup_processes, reduce_envelope,
 };
 pub use render::{
-    AnsiTopStyle, FrameSample, PlainTopStyle, TopStyle, TrustedToken, format_log_age,
-    format_runtime, format_uptime, render_frame, transform_trusted_render,
+    AnsiTopStyle, FrameSample, PlainTopStyle, TopRenderOp, TopStyle, TrustedToken, format_log_age,
+    format_runtime, format_uptime, frame_ops, render_frame, transform_trusted_render,
 };
 pub use restart::{
     RestartAttempt, RestartEnqueueResult, RestartFailure, RestartIdError, RestartIdSource,

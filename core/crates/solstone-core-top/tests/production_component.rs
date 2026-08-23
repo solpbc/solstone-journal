@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc;
 use std::time::Duration;
 
+use crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use serde_json::Map;
 use solstone_core_callosum::{CallosumEnvelope, CallosumReceiveEvent, CallosumSocketServer};
 use solstone_core_top::{
@@ -55,18 +58,58 @@ async fn production_receive_is_driven_while_the_sync_consumer_polls() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+fn key(code: KeyCode, kind: KeyEventKind, modifiers: KeyModifiers) -> Event {
+    Event::Key(KeyEvent::new_with_kind(code, modifiers, kind))
+}
+
+fn feed(events: impl Into<VecDeque<Event>>) -> ProductionTerminal {
+    ProductionTerminal::from_events(events.into())
+}
+
 #[test]
-fn terminal_input_decodes_complete_escape_sequences_from_the_key_channel() {
-    let (sender, keys) = mpsc::channel();
-    let mut terminal = ProductionTerminal::from_key_source(keys);
-    sender.send(b'\x1b').unwrap();
-    sender.send(b'[').unwrap();
-    sender.send(b'A').unwrap();
+fn terminal_input_maps_crossterm_events_from_the_scripted_source() {
+    let mut terminal = feed([
+        key(KeyCode::Up, KeyEventKind::Press, KeyModifiers::NONE),
+        key(KeyCode::Up, KeyEventKind::Repeat, KeyModifiers::NONE),
+        key(KeyCode::Down, KeyEventKind::Press, KeyModifiers::NONE),
+        key(KeyCode::Char('q'), KeyEventKind::Press, KeyModifiers::NONE),
+        key(KeyCode::Char('q'), KeyEventKind::Repeat, KeyModifiers::NONE),
+        key(KeyCode::Char('r'), KeyEventKind::Press, KeyModifiers::NONE),
+        key(KeyCode::Char('r'), KeyEventKind::Repeat, KeyModifiers::NONE),
+        key(
+            KeyCode::Char('c'),
+            KeyEventKind::Press,
+            KeyModifiers::CONTROL,
+        ),
+        key(
+            KeyCode::Char('d'),
+            KeyEventKind::Press,
+            KeyModifiers::CONTROL,
+        ),
+        Event::Resize(120, 40),
+        Event::FocusGained,
+        Event::FocusLost,
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        }),
+        key(KeyCode::Up, KeyEventKind::Release, KeyModifiers::NONE),
+    ]);
     assert_eq!(terminal.input(0.0).unwrap(), TopInput::Up);
-    sender.send(b'\x1b').unwrap();
-    sender.send(b'[').unwrap();
-    sender.send(b'B').unwrap();
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::Up);
     assert_eq!(terminal.input(0.0).unwrap(), TopInput::Down);
-    sender.send(b'\x1b').unwrap();
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::Quit);
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::Restart);
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::Interrupt);
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::EndOfFile);
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
+    assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
     assert_eq!(terminal.input(0.0).unwrap(), TopInput::None);
 }

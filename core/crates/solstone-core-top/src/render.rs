@@ -121,7 +121,8 @@ pub enum TrustedToken {
 }
 
 impl TrustedToken {
-    fn spelling(self) -> &'static str {
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
         match self {
             Self::Home => "<HOME>",
             Self::Clear => "<CLEAR>",
@@ -170,6 +171,38 @@ const TRUSTED_TOKENS: [TrustedToken; 12] = [
     TrustedToken::Yellow,
     TrustedToken::Normal,
 ];
+
+/// One renderer-owned style command or one sanitized payload run.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TopRenderOp {
+    Style(TrustedToken),
+    Print(String),
+}
+
+/// Split an already-rendered frame into trusted style ops and payload prints.
+#[must_use]
+pub fn frame_ops(frame: &str) -> Vec<TopRenderOp> {
+    let mut ops = Vec::new();
+    let mut remaining = frame;
+    let mut print = String::new();
+    while !remaining.is_empty() {
+        if let Some((token, length, _)) = trusted_prefix(remaining) {
+            if !print.is_empty() {
+                ops.push(TopRenderOp::Print(std::mem::take(&mut print)));
+            }
+            ops.push(TopRenderOp::Style(token));
+            remaining = &remaining[length..];
+            continue;
+        }
+        let scalar = remaining.chars().next().expect("nonempty input has scalar");
+        print.push(scalar);
+        remaining = &remaining[scalar.len_utf8()..];
+    }
+    if !print.is_empty() {
+        ops.push(TopRenderOp::Print(print));
+    }
+    ops
+}
 
 /// Render a bounded frame from state without ambient time, terminal, or I/O.
 #[must_use]
@@ -1255,6 +1288,49 @@ mod tests {
         .expect("renderer must not truncate inside a UTF-8 scalar");
         assert!(rendered.len() <= MAX_FRAME_BYTES);
         assert!(std::str::from_utf8(rendered.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn frame_ops_preserves_control_chars_and_private_markers_inside_print() {
+        let input = "plain\x1btext\x07more\u{e000}\u{e001}\u{e002}\u{e003}tail";
+        assert_eq!(frame_ops(input), vec![TopRenderOp::Print(input.to_owned())]);
+    }
+
+    #[test]
+    fn frame_ops_greedily_classifies_trusted_spellings_regardless_of_context() {
+        // frame_ops is a left-to-right tokenizer over the 12 trusted spellings.
+        // It does not know payload from structure: any occurrence of `<BOLD>` or
+        // `\x1b[1m` becomes Style. Safety of production frames depends on the
+        // upstream invariant — proven by
+        // payload_atoms_are_indivisible_and_private_markers_are_escaped and
+        // ansi_frame_cap_never_splits_controls_or_payload_atoms — that
+        // render_frame never leaves a raw trusted spelling inside payload text.
+        assert_eq!(
+            frame_ops("hello<BOLD>world\x1b[31mend"),
+            vec![
+                TopRenderOp::Print("hello".to_owned()),
+                TopRenderOp::Style(TrustedToken::Bold),
+                TopRenderOp::Print("world".to_owned()),
+                TopRenderOp::Style(TrustedToken::Red),
+                TopRenderOp::Print("end".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn frame_ops_keeps_large_unicode_scalars_intact_across_tokens() {
+        let payload = format!("{}😀αβγ", "界".repeat(4096));
+        let frame = format!("<BOLD>{payload}<NORMAL>");
+        let ops = std::panic::catch_unwind(|| frame_ops(&frame))
+            .expect("tokenizer must not panic on mixed multi-byte input");
+        assert_eq!(
+            ops,
+            vec![
+                TopRenderOp::Style(TrustedToken::Bold),
+                TopRenderOp::Print(payload),
+                TopRenderOp::Style(TrustedToken::Normal),
+            ]
+        );
     }
 
     #[test]

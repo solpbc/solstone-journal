@@ -308,6 +308,14 @@ rsa = "0.9.10"
 # always passes Some(password) into rust-minisign, so that prompt path is
 # unreachable.
 minisign = "0.9.1"
+# Native `journal top` terminal adapter. Exact pin so the lock cannot drift onto a
+# newer command/event surface. `events` is poll/read; `windows` is cfg(windows)
+# graph resolution only — solstone-core-top adds no Windows backend. Default
+# features (bracketed-paste, derive-more) stay off. Crossterm 0.29.0 has
+# `build = false`; its events+windows graph is pure Rust (no cc/cmake), so the
+# PORTING.md native-dependency proof does not apply. Package MSRV 1.63 is below
+# the workspace rust-version 1.95. MIT.
+crossterm = { version = "=0.29.0", default-features = false, features = ["events", "windows"] }
 unicode-general-category = "1.1.0"
 unicode-xid = "0.2.6"
 unicode_names2 = "1.3.0"

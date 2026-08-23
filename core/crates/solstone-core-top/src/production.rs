@@ -5,14 +5,21 @@
 //! fully injected; this is the only module that touches clocks, terminal I/O,
 //! the filesystem, or a live Callosum socket.
 
-use std::io::{IsTerminal, Read, Write};
+use std::collections::VecDeque;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
-use nix::sys::termios::{self, SetArg, Termios};
+use crossterm::cursor::{Hide, MoveTo, Show};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor};
+use crossterm::terminal::{
+    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+    enable_raw_mode, size,
+};
+use crossterm::{execute, queue};
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{inspect_brain_state, present_brain_inspection, read_journal_config};
 use solstone_core_callosum::{CallosumReceiveEvent, CallosumSocketConnection};
@@ -21,8 +28,8 @@ use solstone_core_system_health::sanitize_os_bytes_for_terminal;
 
 use crate::{
     RestartEnqueueResult, RestartIdSource, SessionRestartIds, TopBrainSource, TopClock, TopInput,
-    TopReceiveTransport, TopRestartTransport, TopState, TopTerminal, platform_observer,
-    run_top_with,
+    TopReceiveTransport, TopRenderOp, TopRestartTransport, TopState, TopTerminal, TrustedToken,
+    frame_ops, platform_observer, run_top_with,
 };
 
 pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
@@ -288,15 +295,17 @@ impl TopRestartTransport for ProductionRestart {
 }
 
 pub trait TerminalSyscalls {
-    type Saved: Clone;
-
     fn stdin_is_tty(&mut self) -> bool;
     fn stdout_is_tty(&mut self) -> bool;
-    fn capture_stdin(&mut self) -> Result<Self::Saved, String>;
-    fn raw_mode(&mut self, saved: &Self::Saved) -> Self::Saved;
-    fn apply_stdin(&mut self, settings: &Self::Saved) -> Result<(), String>;
+    fn enable_raw_mode(&mut self) -> Result<(), String>;
+    fn disable_raw_mode(&mut self) -> Result<(), String>;
+    fn enter_alt_screen(&mut self) -> Result<(), String>;
+    fn leave_alt_screen(&mut self) -> Result<(), String>;
+    fn hide_cursor(&mut self) -> Result<(), String>;
+    fn show_cursor(&mut self) -> Result<(), String>;
+    fn reset_style(&mut self) -> Result<(), String>;
     fn stdout_width(&mut self) -> Result<usize, String>;
-    fn write_stdout(&mut self, bytes: &str) -> Result<(), String>;
+    fn write_ops(&mut self, ops: &[TopRenderOp]) -> Result<(), String>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -305,8 +314,6 @@ pub enum TerminalOwnerError {
     StdinNotTty,
     #[error("stdout is not a terminal")]
     StdoutNotTty,
-    #[error("terminal capture failed: {0}")]
-    Capture(String),
     #[error("terminal apply failed: {0}")]
     Apply(String),
     #[error("terminal width failed: {0}")]
@@ -315,12 +322,13 @@ pub enum TerminalOwnerError {
     Screen(String),
 }
 
-/// Owns native terminal mutation after capturing stdin attributes. Cleanup is
-/// idempotent and is also attempted by Drop during unwinding.
+/// Owns native terminal mutation after acquiring raw mode, the alternate screen,
+/// and a hidden cursor. Cleanup is idempotent and is also attempted by Drop.
 pub struct TerminalOwner<S: TerminalSyscalls> {
     syscalls: S,
-    saved: Option<S::Saved>,
-    screen_entered: bool,
+    raw_mode: bool,
+    alt_screen: bool,
+    cursor_hidden: bool,
     cleanup_diagnostics: Vec<String>,
 }
 
@@ -329,8 +337,9 @@ impl<S: TerminalSyscalls> TerminalOwner<S> {
     pub fn new(syscalls: S) -> Self {
         Self {
             syscalls,
-            saved: None,
-            screen_entered: false,
+            raw_mode: false,
+            alt_screen: false,
+            cursor_hidden: false,
             cleanup_diagnostics: Vec::new(),
         }
     }
@@ -342,24 +351,24 @@ impl<S: TerminalSyscalls> TerminalOwner<S> {
         if !self.syscalls.stdout_is_tty() {
             return Err(TerminalOwnerError::StdoutNotTty);
         }
-        let saved = self
-            .syscalls
-            .capture_stdin()
-            .map_err(TerminalOwnerError::Capture)?;
-        self.saved = Some(saved.clone());
-        let raw = self.syscalls.raw_mode(&saved);
-        if let Err(error) = self.syscalls.apply_stdin(&raw) {
+        if let Err(error) = self.syscalls.enable_raw_mode() {
             let cleanup = self.restore_once().err();
             return Err(TerminalOwnerError::Apply(with_cleanup(error, cleanup)));
         }
+        self.raw_mode = true;
+        if let Err(error) = self.syscalls.enter_alt_screen() {
+            let cleanup = self.restore_once().err();
+            return Err(TerminalOwnerError::Screen(with_cleanup(error, cleanup)));
+        }
+        self.alt_screen = true;
+        if let Err(error) = self.syscalls.hide_cursor() {
+            let cleanup = self.restore_once().err();
+            return Err(TerminalOwnerError::Screen(with_cleanup(error, cleanup)));
+        }
+        self.cursor_hidden = true;
         if let Err(error) = self.syscalls.stdout_width() {
             let cleanup = self.restore_once().err();
             return Err(TerminalOwnerError::Width(with_cleanup(error, cleanup)));
-        }
-        self.screen_entered = true;
-        if let Err(error) = self.syscalls.write_stdout("\x1b[?1049h\x1b[?25l") {
-            let cleanup = self.restore_once().err();
-            return Err(TerminalOwnerError::Screen(with_cleanup(error, cleanup)));
         }
         Ok(())
     }
@@ -369,20 +378,32 @@ impl<S: TerminalSyscalls> TerminalOwner<S> {
     }
 
     pub fn write_frame(&mut self, frame: &str) -> Result<(), String> {
-        self.syscalls.write_stdout(frame)
+        self.syscalls.write_ops(&frame_ops(frame))
     }
 
     pub fn restore_once(&mut self) -> Result<(), String> {
         let mut diagnostics = Vec::new();
-        if let Some(saved) = self.saved.take()
-            && let Err(error) = self.syscalls.apply_stdin(&saved)
+        if (self.alt_screen || self.cursor_hidden)
+            && let Err(error) = self.syscalls.reset_style()
         {
-            diagnostics.push(format!("restore stdin termios: {error}"));
+            diagnostics.push(format!("restore style: {error}"));
         }
-        if self.screen_entered {
-            self.screen_entered = false;
-            if let Err(error) = self.syscalls.write_stdout("\x1b[?25h\x1b[?1049l") {
+        if self.cursor_hidden {
+            self.cursor_hidden = false;
+            if let Err(error) = self.syscalls.show_cursor() {
+                diagnostics.push(format!("restore cursor: {error}"));
+            }
+        }
+        if self.alt_screen {
+            self.alt_screen = false;
+            if let Err(error) = self.syscalls.leave_alt_screen() {
                 diagnostics.push(format!("restore screen: {error}"));
+            }
+        }
+        if self.raw_mode {
+            self.raw_mode = false;
+            if let Err(error) = self.syscalls.disable_raw_mode() {
+                diagnostics.push(format!("restore raw mode: {error}"));
             }
         }
         self.cleanup_diagnostics.extend(diagnostics.clone());
@@ -416,9 +437,42 @@ fn with_cleanup(primary: String, cleanup: Option<String>) -> String {
 
 pub(crate) struct SystemTerminalSyscalls;
 
-impl TerminalSyscalls for SystemTerminalSyscalls {
-    type Saved = Termios;
+fn execute_cmd(command: impl crossterm::Command) -> Result<(), String> {
+    let mut out = std::io::stdout().lock();
+    execute!(out, command).map_err(|error| error.to_string())
+}
 
+fn queue_op(out: &mut impl Write, op: &TopRenderOp) -> std::io::Result<()> {
+    match op {
+        TopRenderOp::Style(TrustedToken::Home) => queue!(out, MoveTo(0, 0)),
+        TopRenderOp::Style(TrustedToken::Clear) => queue!(out, Clear(ClearType::All)),
+        TopRenderOp::Style(TrustedToken::Bold) => queue!(out, SetAttribute(Attribute::Bold)),
+        TopRenderOp::Style(TrustedToken::Dim) => queue!(out, SetAttribute(Attribute::Dim)),
+        TopRenderOp::Style(TrustedToken::Red) => {
+            queue!(out, SetForegroundColor(Color::DarkRed))
+        }
+        TopRenderOp::Style(TrustedToken::Green) => {
+            queue!(out, SetForegroundColor(Color::DarkGreen))
+        }
+        TopRenderOp::Style(TrustedToken::Yellow) => {
+            queue!(out, SetForegroundColor(Color::DarkYellow))
+        }
+        TopRenderOp::Style(TrustedToken::Cyan) => {
+            queue!(out, SetForegroundColor(Color::DarkCyan))
+        }
+        TopRenderOp::Style(TrustedToken::Magenta) => {
+            queue!(out, SetForegroundColor(Color::DarkMagenta))
+        }
+        TopRenderOp::Style(TrustedToken::Select) => queue!(out, SetAttribute(Attribute::Reverse)),
+        TopRenderOp::Style(TrustedToken::EndSelect) => {
+            queue!(out, SetAttribute(Attribute::NoReverse))
+        }
+        TopRenderOp::Style(TrustedToken::Normal) => queue!(out, SetAttribute(Attribute::Reset)),
+        TopRenderOp::Print(text) => queue!(out, Print(text.as_str())),
+    }
+}
+
+impl TerminalSyscalls for SystemTerminalSyscalls {
     fn stdin_is_tty(&mut self) -> bool {
         std::io::stdin().is_terminal()
     }
@@ -427,91 +481,107 @@ impl TerminalSyscalls for SystemTerminalSyscalls {
         std::io::stdout().is_terminal()
     }
 
-    fn capture_stdin(&mut self) -> Result<Self::Saved, String> {
-        termios::tcgetattr(std::io::stdin()).map_err(|error| error.to_string())
+    fn enable_raw_mode(&mut self) -> Result<(), String> {
+        enable_raw_mode().map_err(|error| error.to_string())
     }
 
-    fn raw_mode(&mut self, saved: &Self::Saved) -> Self::Saved {
-        let mut raw = saved.clone();
-        termios::cfmakeraw(&mut raw);
-        raw
+    fn disable_raw_mode(&mut self) -> Result<(), String> {
+        disable_raw_mode().map_err(|error| error.to_string())
     }
 
-    fn apply_stdin(&mut self, settings: &Self::Saved) -> Result<(), String> {
-        termios::tcsetattr(std::io::stdin(), SetArg::TCSANOW, settings)
-            .map_err(|error| error.to_string())
+    fn enter_alt_screen(&mut self) -> Result<(), String> {
+        execute_cmd(EnterAlternateScreen)
+    }
+
+    fn leave_alt_screen(&mut self) -> Result<(), String> {
+        execute_cmd(LeaveAlternateScreen)
+    }
+
+    fn hide_cursor(&mut self) -> Result<(), String> {
+        execute_cmd(Hide)
+    }
+
+    fn show_cursor(&mut self) -> Result<(), String> {
+        execute_cmd(Show)
+    }
+
+    fn reset_style(&mut self) -> Result<(), String> {
+        execute_cmd(ResetColor)
     }
 
     fn stdout_width(&mut self) -> Result<usize, String> {
-        let width = rustix::termios::tcgetwinsize(std::io::stdout())
-            .map_err(|error| error.to_string())?
-            .ws_col;
-        let width = usize::from(width);
+        let (columns, _) = size().map_err(|error| error.to_string())?;
+        let width = usize::from(columns);
         (width > 0)
             .then_some(width)
             .ok_or_else(|| "terminal width unavailable".to_owned())
     }
 
-    fn write_stdout(&mut self, bytes: &str) -> Result<(), String> {
-        let mut output = std::io::stdout().lock();
-        output
-            .write_all(bytes.as_bytes())
-            .and_then(|_| output.flush())
-            .map_err(|error| error.to_string())
+    fn write_ops(&mut self, ops: &[TopRenderOp]) -> Result<(), String> {
+        let mut out = std::io::stdout().lock();
+        for op in ops {
+            queue_op(&mut out, op).map_err(|error| error.to_string())?;
+        }
+        out.flush().map_err(|error| error.to_string())
     }
+}
+
+enum InputSource {
+    Live,
+    Scripted(VecDeque<Event>),
 }
 
 pub struct ProductionTerminal {
     owner: TerminalOwner<SystemTerminalSyscalls>,
-    keys: Receiver<u8>,
+    events: InputSource,
 }
 impl ProductionTerminal {
-    pub fn from_key_source(keys: Receiver<u8>) -> Self {
+    pub fn from_events(events: VecDeque<Event>) -> Self {
         Self {
             owner: TerminalOwner::new(SystemTerminalSyscalls),
-            keys,
+            events: InputSource::Scripted(events),
         }
     }
 
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        let (sender, keys) = mpsc::channel();
-        std::thread::spawn(move || {
-            let mut input = std::io::stdin();
-            let mut byte = [0_u8; 1];
-            while input.read_exact(&mut byte).is_ok() {
-                if sender.send(byte[0]).is_err() {
-                    break;
-                }
-            }
-        });
-        Self::from_key_source(keys)
-    }
-
-    fn decode_escape(&self) -> Result<TopInput, String> {
-        let wait = Duration::from_millis(10);
-        let first = match self.keys.recv_timeout(wait) {
-            Ok(byte) => byte,
-            Err(mpsc::RecvTimeoutError::Timeout) => return Ok(TopInput::None),
-            Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(TopInput::EndOfFile),
-        };
-        let second = match self.keys.recv_timeout(wait) {
-            Ok(byte) => Some(byte),
-            Err(mpsc::RecvTimeoutError::Timeout) => None,
-            Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(TopInput::EndOfFile),
-        };
-        Ok(match second {
-            Some(second) => decode_escape_bytes(&[first, second]),
-            None => decode_escape_bytes(&[first]),
-        })
+        Self {
+            owner: TerminalOwner::new(SystemTerminalSyscalls),
+            events: InputSource::Live,
+        }
     }
 }
 
-fn decode_escape_bytes(payload: &[u8]) -> TopInput {
-    match payload {
-        [b'[', b'A', ..] => TopInput::Up,
-        [b'[', b'B', ..] => TopInput::Down,
-        _ => TopInput::None,
+pub(crate) fn map_event(event: Event) -> TopInput {
+    match event {
+        Event::Key(key) => match (key.code, key.kind) {
+            (KeyCode::Up, KeyEventKind::Press | KeyEventKind::Repeat) => TopInput::Up,
+            (KeyCode::Down, KeyEventKind::Press | KeyEventKind::Repeat) => TopInput::Down,
+            (KeyCode::Char('q'), KeyEventKind::Press)
+                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                TopInput::Quit
+            }
+            (KeyCode::Char('r'), KeyEventKind::Press)
+                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                TopInput::Restart
+            }
+            (KeyCode::Char('c' | 'C'), KeyEventKind::Press)
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                TopInput::Interrupt
+            }
+            (KeyCode::Char('d' | 'D'), KeyEventKind::Press)
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                TopInput::EndOfFile
+            }
+            _ => TopInput::None,
+        },
+        Event::Resize(_, _) | Event::FocusGained | Event::FocusLost | Event::Mouse(_) => {
+            TopInput::None
+        }
     }
 }
 
@@ -529,18 +599,18 @@ impl TopTerminal for ProductionTerminal {
         self.owner.write_frame(frame)
     }
     fn input(&mut self, timeout_seconds: f64) -> Result<TopInput, String> {
-        match self
-            .keys
-            .recv_timeout(Duration::from_secs_f64(timeout_seconds))
-        {
-            Ok(b'q') => Ok(TopInput::Quit),
-            Ok(3) => Ok(TopInput::Interrupt),
-            Ok(4) => Ok(TopInput::EndOfFile),
-            Ok(b'r') => Ok(TopInput::Restart),
-            Ok(b'\x1b') => self.decode_escape(),
-            Ok(_) => Ok(TopInput::None),
-            Err(mpsc::RecvTimeoutError::Timeout) => Ok(TopInput::None),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Ok(TopInput::EndOfFile),
+        match &mut self.events {
+            InputSource::Scripted(events) => {
+                Ok(events.pop_front().map_or(TopInput::None, map_event))
+            }
+            InputSource::Live => match event::poll(Duration::from_secs_f64(timeout_seconds)) {
+                Ok(false) => Ok(TopInput::None),
+                Ok(true) => match event::read() {
+                    Ok(event) => Ok(map_event(event)),
+                    Err(_) => Ok(TopInput::EndOfFile),
+                },
+                Err(_) => Ok(TopInput::EndOfFile),
+            },
         }
     }
 }
@@ -573,13 +643,76 @@ mod tests {
         receive.stop().unwrap();
     }
 
+    fn assert_fragments_in_order(output: &str, fragments: &[&str]) {
+        let mut cursor = 0usize;
+        for fragment in fragments {
+            let rest = &output[cursor..];
+            let at = rest
+                .find(fragment)
+                .unwrap_or_else(|| panic!("missing {fragment:?} after {cursor} in {output:?}"));
+            cursor += at + fragment.len();
+        }
+    }
+
     #[test]
-    fn decode_escape_bytes_accepts_only_complete_up_and_down_sequences() {
-        assert_eq!(decode_escape_bytes(b"[A"), TopInput::Up);
-        assert_eq!(decode_escape_bytes(b"[B"), TopInput::Down);
-        assert_eq!(decode_escape_bytes(b"[C"), TopInput::None);
-        assert_eq!(decode_escape_bytes(b"["), TopInput::None);
-        assert_eq!(decode_escape_bytes(b""), TopInput::None);
-        assert_eq!(decode_escape_bytes(b"\x1b"), TopInput::None);
+    fn queue_op_emits_crossterm_sequences_in_token_order_with_dark_256_color_sgr() {
+        crossterm::style::Colored::set_ansi_color_disabled(false);
+        let ops = [
+            TopRenderOp::Style(TrustedToken::Clear),
+            TopRenderOp::Style(TrustedToken::Home),
+            TopRenderOp::Style(TrustedToken::Bold),
+            TopRenderOp::Style(TrustedToken::Dim),
+            TopRenderOp::Style(TrustedToken::Select),
+            TopRenderOp::Style(TrustedToken::EndSelect),
+            TopRenderOp::Style(TrustedToken::Normal),
+            TopRenderOp::Style(TrustedToken::Red),
+            TopRenderOp::Style(TrustedToken::Green),
+            TopRenderOp::Style(TrustedToken::Yellow),
+            TopRenderOp::Style(TrustedToken::Cyan),
+            TopRenderOp::Style(TrustedToken::Magenta),
+            TopRenderOp::Print("payload-text".to_owned()),
+            TopRenderOp::Style(TrustedToken::Normal),
+        ];
+        let mut bytes = Vec::new();
+        for op in &ops {
+            queue_op(&mut bytes, op).unwrap();
+        }
+        let output = String::from_utf8(bytes).unwrap();
+        assert_fragments_in_order(
+            &output,
+            &[
+                "\x1b[2J",
+                "\x1b[1;1H",
+                "\x1b[1m",
+                "\x1b[2m",
+                "\x1b[7m",
+                "\x1b[27m",
+                "\x1b[0m",
+                "\x1b[38;5;1m",
+                "\x1b[38;5;2m",
+                "\x1b[38;5;3m",
+                "\x1b[38;5;6m",
+                "\x1b[38;5;5m",
+                "payload-text",
+                "\x1b[0m",
+            ],
+        );
+        for forbidden in [
+            "\x1b[31m",
+            "\x1b[32m",
+            "\x1b[33m",
+            "\x1b[36m",
+            "\x1b[35m",
+            "\x1b[38;5;9m",
+            "\x1b[38;5;10m",
+            "\x1b[38;5;11m",
+            "\x1b[38;5;14m",
+            "\x1b[38;5;13m",
+        ] {
+            assert!(
+                !output.contains(forbidden),
+                "bright or 3/4-bit color {forbidden:?} in {output:?}"
+            );
+        }
     }
 }

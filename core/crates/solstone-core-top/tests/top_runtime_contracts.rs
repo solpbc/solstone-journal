@@ -11,6 +11,8 @@ mod process_identity;
 mod production_component;
 #[path = "production_reach.rs"]
 mod production_reach;
+#[path = "production_render_ops.rs"]
+mod production_render_ops;
 #[path = "restart_protocol.rs"]
 mod restart_protocol;
 #[path = "terminal_owner.rs"]

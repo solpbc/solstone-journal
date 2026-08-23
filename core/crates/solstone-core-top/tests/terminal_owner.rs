@@ -4,7 +4,7 @@
 use solstone_core_top::{
     ProcessObserver, ProcessSample, RestartEnqueueResult, RestartIdSource, SessionRestartIds,
     TerminalOwner, TerminalOwnerError, TerminalSyscalls, TopBrainSource, TopClock, TopInput,
-    TopReceiveTransport, TopRestartTransport, TopState, TopTerminal,
+    TopReceiveTransport, TopRenderOp, TopRestartTransport, TopState, TopTerminal,
     run_top_with_outer_panic_cleanup,
 };
 
@@ -13,9 +13,15 @@ struct RecordingSyscalls {
     calls: Vec<&'static str>,
     stdin_tty: bool,
     stdout_tty: bool,
-    fail_apply_raw: bool,
+    fail_enable_raw: bool,
+    fail_enter_alt: bool,
+    fail_hide_cursor: bool,
     fail_width: bool,
-    fail_screen_entry: bool,
+    fail_reset_style: bool,
+    fail_show_cursor: bool,
+    fail_leave_alt: bool,
+    fail_disable_raw: bool,
+    fail_write_ops: bool,
 }
 
 impl RecordingSyscalls {
@@ -29,8 +35,6 @@ impl RecordingSyscalls {
 }
 
 impl TerminalSyscalls for RecordingSyscalls {
-    type Saved = u8;
-
     fn stdin_is_tty(&mut self) -> bool {
         self.calls.push("stdin-tty");
         self.stdin_tty
@@ -41,21 +45,53 @@ impl TerminalSyscalls for RecordingSyscalls {
         self.stdout_tty
     }
 
-    fn capture_stdin(&mut self) -> Result<Self::Saved, String> {
-        self.calls.push("capture");
-        Ok(1)
-    }
-
-    fn raw_mode(&mut self, _: &Self::Saved) -> Self::Saved {
-        2
-    }
-
-    fn apply_stdin(&mut self, settings: &Self::Saved) -> Result<(), String> {
-        self.calls
-            .push(if *settings == 1 { "restore" } else { "apply" });
-        (*settings != 2 || !self.fail_apply_raw)
+    fn enable_raw_mode(&mut self) -> Result<(), String> {
+        self.calls.push("enable-raw");
+        (!self.fail_enable_raw)
             .then_some(())
-            .ok_or_else(|| "apply".to_owned())
+            .ok_or_else(|| "raw".to_owned())
+    }
+
+    fn disable_raw_mode(&mut self) -> Result<(), String> {
+        self.calls.push("disable-raw");
+        (!self.fail_disable_raw)
+            .then_some(())
+            .ok_or_else(|| "disable-raw".to_owned())
+    }
+
+    fn enter_alt_screen(&mut self) -> Result<(), String> {
+        self.calls.push("enter-alt");
+        (!self.fail_enter_alt)
+            .then_some(())
+            .ok_or_else(|| "alt".to_owned())
+    }
+
+    fn leave_alt_screen(&mut self) -> Result<(), String> {
+        self.calls.push("leave-alt");
+        (!self.fail_leave_alt)
+            .then_some(())
+            .ok_or_else(|| "leave-alt".to_owned())
+    }
+
+    fn hide_cursor(&mut self) -> Result<(), String> {
+        self.calls.push("hide-cursor");
+        (!self.fail_hide_cursor)
+            .then_some(())
+            .ok_or_else(|| "hide".to_owned())
+    }
+
+    fn show_cursor(&mut self) -> Result<(), String> {
+        self.calls.push("show-cursor");
+        (!self.fail_show_cursor)
+            .then_some(())
+            .ok_or_else(|| "show".to_owned())
+    }
+
+    fn reset_style(&mut self) -> Result<(), String> {
+        self.calls.push("reset-style");
+        (!self.fail_reset_style)
+            .then_some(())
+            .ok_or_else(|| "reset".to_owned())
     }
 
     fn stdout_width(&mut self) -> Result<usize, String> {
@@ -65,16 +101,11 @@ impl TerminalSyscalls for RecordingSyscalls {
             .ok_or_else(|| "width".to_owned())
     }
 
-    fn write_stdout(&mut self, bytes: &str) -> Result<(), String> {
-        let entering = bytes == "\x1b[?1049h\x1b[?25l";
-        self.calls.push(if entering {
-            "enter-screen"
-        } else {
-            "leave-screen"
-        });
-        (!entering || !self.fail_screen_entry)
+    fn write_ops(&mut self, _: &[TopRenderOp]) -> Result<(), String> {
+        self.calls.push("write-ops");
+        (!self.fail_write_ops)
             .then_some(())
-            .ok_or_else(|| "screen".to_owned())
+            .ok_or_else(|| "write".to_owned())
     }
 }
 
@@ -89,20 +120,60 @@ fn terminal_owner_orders_descriptor_operations_and_restores_once() {
         [
             "stdin-tty",
             "stdout-tty",
-            "capture",
-            "apply",
+            "enable-raw",
+            "enter-alt",
+            "hide-cursor",
             "width",
-            "enter-screen",
-            "restore",
-            "leave-screen",
+            "reset-style",
+            "show-cursor",
+            "leave-alt",
+            "disable-raw",
         ]
     );
 }
 
 #[test]
-fn terminal_owner_conservatively_restores_after_screen_write_failure() {
+fn terminal_owner_classifies_no_tty_before_any_mutation() {
+    let mut stdin = TerminalOwner::new(RecordingSyscalls::default());
+    assert_eq!(stdin.enter(), Err(TerminalOwnerError::StdinNotTty));
+    assert_eq!(stdin.syscalls().calls, ["stdin-tty"]);
+
+    let mut stdout = TerminalOwner::new(RecordingSyscalls {
+        stdin_tty: true,
+        ..RecordingSyscalls::default()
+    });
+    assert_eq!(stdout.enter(), Err(TerminalOwnerError::StdoutNotTty));
+    assert_eq!(stdout.syscalls().calls, ["stdin-tty", "stdout-tty"]);
+}
+
+#[test]
+fn terminal_owner_cleans_up_exactly_acquired_raw_mode_on_alt_screen_failure() {
     let mut owner = TerminalOwner::new(RecordingSyscalls {
-        fail_screen_entry: true,
+        fail_enter_alt: true,
+        ..RecordingSyscalls::ready()
+    });
+    let error = owner.enter().unwrap_err();
+    assert!(matches!(error, TerminalOwnerError::Screen(_)), "{error:?}");
+    assert!(
+        !error.to_string().contains("cleanup:"),
+        "unused teardown must not invent cleanup diagnostics: {error}"
+    );
+    assert_eq!(
+        owner.syscalls().calls,
+        [
+            "stdin-tty",
+            "stdout-tty",
+            "enable-raw",
+            "enter-alt",
+            "disable-raw",
+        ]
+    );
+}
+
+#[test]
+fn terminal_owner_cleans_up_raw_and_alt_on_cursor_hide_failure() {
+    let mut owner = TerminalOwner::new(RecordingSyscalls {
+        fail_hide_cursor: true,
         ..RecordingSyscalls::ready()
     });
     assert!(matches!(owner.enter(), Err(TerminalOwnerError::Screen(_))));
@@ -111,42 +182,144 @@ fn terminal_owner_conservatively_restores_after_screen_write_failure() {
         [
             "stdin-tty",
             "stdout-tty",
-            "capture",
-            "apply",
-            "width",
-            "enter-screen",
-            "restore",
-            "leave-screen",
+            "enable-raw",
+            "enter-alt",
+            "hide-cursor",
+            "reset-style",
+            "leave-alt",
+            "disable-raw",
         ]
     );
 }
 
 #[test]
-fn terminal_owner_classifies_no_tty_and_partial_apply() {
-    let mut stdin = TerminalOwner::new(RecordingSyscalls::default());
-    assert_eq!(stdin.enter(), Err(TerminalOwnerError::StdinNotTty));
-
-    let mut stdout = TerminalOwner::new(RecordingSyscalls {
-        stdin_tty: true,
-        ..RecordingSyscalls::default()
-    });
-    assert_eq!(stdout.enter(), Err(TerminalOwnerError::StdoutNotTty));
-
-    let mut partial = TerminalOwner::new(RecordingSyscalls {
+fn terminal_owner_cleans_up_full_acquisition_on_width_failure() {
+    let mut owner = TerminalOwner::new(RecordingSyscalls {
         fail_width: true,
         ..RecordingSyscalls::ready()
     });
-    assert!(matches!(partial.enter(), Err(TerminalOwnerError::Width(_))));
-    assert!(partial.cleanup_diagnostics().is_empty());
+    assert!(matches!(owner.enter(), Err(TerminalOwnerError::Width(_))));
+    assert!(owner.cleanup_diagnostics().is_empty());
     assert_eq!(
-        partial.syscalls().calls,
+        owner.syscalls().calls,
         [
             "stdin-tty",
             "stdout-tty",
-            "capture",
-            "apply",
+            "enable-raw",
+            "enter-alt",
+            "hide-cursor",
             "width",
-            "restore"
+            "reset-style",
+            "show-cursor",
+            "leave-alt",
+            "disable-raw",
+        ]
+    );
+}
+
+#[test]
+fn terminal_owner_preserves_primary_error_when_cleanup_also_fails() {
+    let mut owner = TerminalOwner::new(RecordingSyscalls {
+        fail_width: true,
+        fail_reset_style: true,
+        fail_disable_raw: true,
+        ..RecordingSyscalls::ready()
+    });
+    let error = owner.enter().unwrap_err();
+    assert!(matches!(error, TerminalOwnerError::Width(_)), "{error:?}");
+    let message = error.to_string();
+    assert!(
+        message.starts_with("terminal width failed: width"),
+        "{message}"
+    );
+    assert!(
+        message.contains("cleanup: restore style: reset"),
+        "{message}"
+    );
+    assert!(
+        message.contains("restore raw mode: disable-raw"),
+        "{message}"
+    );
+    assert_eq!(
+        owner.syscalls().calls,
+        [
+            "stdin-tty",
+            "stdout-tty",
+            "enable-raw",
+            "enter-alt",
+            "hide-cursor",
+            "width",
+            "reset-style",
+            "show-cursor",
+            "leave-alt",
+            "disable-raw",
+        ]
+    );
+}
+
+#[test]
+fn terminal_owner_raw_mode_failure_does_not_mutate_further() {
+    let mut owner = TerminalOwner::new(RecordingSyscalls {
+        fail_enable_raw: true,
+        ..RecordingSyscalls::ready()
+    });
+    let error = owner.enter().unwrap_err();
+    assert!(matches!(error, TerminalOwnerError::Apply(_)), "{error:?}");
+    assert_eq!(
+        owner.syscalls().calls,
+        ["stdin-tty", "stdout-tty", "enable-raw"]
+    );
+}
+
+#[test]
+fn terminal_owner_write_ops_failure_is_primary_and_restore_still_runs() {
+    let mut owner = TerminalOwner::new(RecordingSyscalls {
+        fail_write_ops: true,
+        ..RecordingSyscalls::ready()
+    });
+    owner.enter().unwrap();
+    assert_eq!(owner.write_frame("payload"), Err("write".to_owned()));
+    owner.restore_once().unwrap();
+    assert_eq!(
+        owner.syscalls().calls,
+        [
+            "stdin-tty",
+            "stdout-tty",
+            "enable-raw",
+            "enter-alt",
+            "hide-cursor",
+            "width",
+            "write-ops",
+            "reset-style",
+            "show-cursor",
+            "leave-alt",
+            "disable-raw",
+        ]
+    );
+}
+
+#[test]
+fn terminal_owner_teardown_continues_after_a_single_step_failure() {
+    let mut owner = TerminalOwner::new(RecordingSyscalls {
+        fail_show_cursor: true,
+        ..RecordingSyscalls::ready()
+    });
+    owner.enter().unwrap();
+    let error = owner.restore_once().unwrap_err();
+    assert_eq!(error, "restore cursor: show");
+    assert_eq!(
+        owner.syscalls().calls,
+        [
+            "stdin-tty",
+            "stdout-tty",
+            "enable-raw",
+            "enter-alt",
+            "hide-cursor",
+            "width",
+            "reset-style",
+            "show-cursor",
+            "leave-alt",
+            "disable-raw",
         ]
     );
 }
