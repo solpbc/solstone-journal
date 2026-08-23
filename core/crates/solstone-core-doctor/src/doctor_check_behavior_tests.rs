@@ -1764,7 +1764,11 @@ fn reach_clause_replaces_last_contact_and_matches_across_checks() {
     assert!(!stale_stall.detail.contains("last contact"));
     assert!(!asleep_stall.detail.contains("last contact"));
     assert!(running_stall.detail.contains("still running"));
-    assert!(running_stall.detail.contains("not adding"));
+    assert!(
+        running_stall
+            .detail
+            .contains("isn't adding to your journal")
+    );
     assert!(running_capture.detail.contains("still running"));
     assert!(stale_stall.detail.contains("still running"));
     assert!(stale_capture.detail.contains("still running"));
