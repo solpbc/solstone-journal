@@ -30,18 +30,29 @@ use crate::marks::OffloadMarkIndex;
 use crate::measurement::measure_raw_media_usage;
 use crate::pruning_audit::write_prune_audit;
 
+pub const OFFLOAD_STALL_BACKUP_NOT_READY: &str = "backup_not_ready";
+pub const OFFLOAD_STALL_BACKUP_FAILING: &str = "backup_failing";
+pub const OFFLOAD_STALL_VERIFICATION_MISSING: &str = "verification_missing";
+pub const OFFLOAD_STALL_VERIFICATION_OVERDUE: &str = "verification_overdue";
+pub const OFFLOAD_STALL_VERIFICATION_FAILED: &str = "verification_failed";
+pub const OFFLOAD_STALL_LOCKED: &str = "locked";
+pub const OFFLOAD_STALL_ARCHIVE_FAILED: &str = "archive_failed";
+pub const OFFLOAD_STALL_CONFIRM_FAILED: &str = "confirm_failed";
+pub const OFFLOAD_STALL_CONFIRM_TOOL_FAILED: &str = "confirm_tool_failed";
+pub const OFFLOAD_STALL_SEGMENT_IDENTITY: &str = "segment_identity";
+pub const OFFLOAD_STALL_UNEXPECTED_ERROR: &str = "unexpected_error";
 pub const OFFLOAD_STALL_REASONS: [&str; 11] = [
-    "backup_not_ready",
-    "backup_failing",
-    "verification_missing",
-    "verification_overdue",
-    "verification_failed",
-    "locked",
-    "archive_failed",
-    "confirm_failed",
-    "confirm_tool_failed",
-    "segment_identity",
-    "unexpected_error",
+    OFFLOAD_STALL_BACKUP_NOT_READY,
+    OFFLOAD_STALL_BACKUP_FAILING,
+    OFFLOAD_STALL_VERIFICATION_MISSING,
+    OFFLOAD_STALL_VERIFICATION_OVERDUE,
+    OFFLOAD_STALL_VERIFICATION_FAILED,
+    OFFLOAD_STALL_LOCKED,
+    OFFLOAD_STALL_ARCHIVE_FAILED,
+    OFFLOAD_STALL_CONFIRM_FAILED,
+    OFFLOAD_STALL_CONFIRM_TOOL_FAILED,
+    OFFLOAD_STALL_SEGMENT_IDENTITY,
+    OFFLOAD_STALL_UNEXPECTED_ERROR,
 ];
 pub const OFFLOAD_OK_BUDGET_ALREADY_SATISFIED: &str = "budget_already_satisfied";
 pub const OFFLOAD_OK_BUDGET_SATISFIED: &str = "budget_satisfied";
@@ -81,7 +92,10 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
         if result.status == "stalled" {
             format!(
                 "backup offload: stalled reason={}{} dry_run=true",
-                result.reason.as_deref().unwrap_or("unexpected_error"),
+                result
+                    .reason
+                    .as_deref()
+                    .unwrap_or(OFFLOAD_STALL_UNEXPECTED_ERROR),
                 result
                     .reason_detail
                     .as_deref()
@@ -111,7 +125,10 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
     } else {
         format!(
             "backup offload: stalled reason={}{} files_marked={} bytes_marked={} bytes_released=0 ran_out_of_markable_media={}",
-            result.reason.as_deref().unwrap_or("unexpected_error"),
+            result
+                .reason
+                .as_deref()
+                .unwrap_or(OFFLOAD_STALL_UNEXPECTED_ERROR),
             result
                 .reason_detail
                 .as_deref()
@@ -183,18 +200,18 @@ fn local_day(now_unix: i64) -> Option<String> {
 }
 fn precondition(config: &serde_json::Map<String, Value>, now: i64) -> Option<&'static str> {
     if config.get("enabled") != Some(&Value::Bool(true)) {
-        return Some("backup_not_ready");
+        return Some(OFFLOAD_STALL_BACKUP_NOT_READY);
     }
     let backup = config.get("last_backup")?.as_object()?;
     if backup.get("status") != Some(&Value::String("ok".into())) {
-        return Some("backup_failing");
+        return Some(OFFLOAD_STALL_BACKUP_FAILING);
     }
     if backup
         .get("snapshot_id")
         .and_then(Value::as_str)
         .is_none_or(str::is_empty)
     {
-        return Some("backup_not_ready");
+        return Some(OFFLOAD_STALL_BACKUP_NOT_READY);
     }
     let verification = config.get("last_verification")?.as_object()?;
     if verification.get("status") == Some(&Value::String("error".into()))
@@ -203,11 +220,11 @@ fn precondition(config: &serde_json::Map<String, Value>, now: i64) -> Option<&'s
             .and_then(Value::as_str)
             .is_some_and(|reason| VERIFICATION_INTEGRITY_REASONS.contains(&reason))
     {
-        return Some("verification_failed");
+        return Some(OFFLOAD_STALL_VERIFICATION_FAILED);
     }
     let last_ok = verification.get("last_ok_time").and_then(Value::as_i64)?;
     if now - last_ok > VERIFICATION_MAX_AGE_SECONDS {
-        return Some("verification_overdue");
+        return Some(OFFLOAD_STALL_VERIFICATION_OVERDUE);
     }
     None
 }
@@ -216,7 +233,7 @@ fn precondition(config: &serde_json::Map<String, Value>, now: i64) -> Option<&'s
 pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool) -> OffloadResult {
     let config = match get_backup_config(journal) {
         Ok(config) => config,
-        Err(_) => return stall("unexpected_error", dry_run, vec![], 0, 0, 0, 0),
+        Err(_) => return stall(OFFLOAD_STALL_UNEXPECTED_ERROR, dry_run, vec![], 0, 0, 0, 0),
     };
     finish_offload(
         journal,
@@ -276,7 +293,7 @@ fn run_offload_body(
     }
     let mark_index = match load_marks(journal) {
         Ok(register) => OffloadMarkIndex::from_register(&register),
-        Err(_) => return stall("unexpected_error", dry_run, vec![], 0, 0, 0, 0),
+        Err(_) => return stall(OFFLOAD_STALL_UNEXPECTED_ERROR, dry_run, vec![], 0, 0, 0, 0),
     };
     let files_already_marked = mark_index
         .entries
@@ -317,7 +334,7 @@ fn run_offload_body(
     }
     if let Err(error) = check_record_identities(&listed) {
         return stall(
-            "segment_identity",
+            OFFLOAD_STALL_SEGMENT_IDENTITY,
             dry_run,
             vec![],
             0,
@@ -333,7 +350,7 @@ fn run_offload_body(
                 Ok(identity) => identity,
                 Err(error) => {
                     return stall(
-                        "segment_identity",
+                        OFFLOAD_STALL_SEGMENT_IDENTITY,
                         dry_run,
                         details,
                         files_marked,
@@ -367,7 +384,7 @@ fn run_offload_body(
             }
             let Some(files) = prepare(&paths) else {
                 return stall(
-                    "unexpected_error",
+                    OFFLOAD_STALL_UNEXPECTED_ERROR,
                     dry_run,
                     details,
                     files_marked,
@@ -429,10 +446,10 @@ fn run_offload_body(
             let archive = run_archive_backup(journal, services, &paths);
             let Some(snapshot) = archive.snapshot_id else {
                 return stall(
-                    if archive.error_reason.as_deref() == Some("locked") {
-                        "locked"
+                    if archive.error_reason.as_deref() == Some(OFFLOAD_STALL_LOCKED) {
+                        OFFLOAD_STALL_LOCKED
                     } else {
-                        "archive_failed"
+                        OFFLOAD_STALL_ARCHIVE_FAILED
                     },
                     false,
                     details,
@@ -449,17 +466,19 @@ fn run_offload_body(
                 .collect::<BTreeMap<_, _>>();
             let check = check_archive_snapshot_files(journal, services, &snapshot, &expected);
             let confirmation_reason = match check.status.as_str() {
-                "skipped" => Some("backup_not_ready"),
-                "error" if check.error_reason.as_deref() == Some("locked") => Some("locked"),
-                "error" => Some("confirm_tool_failed"),
+                "skipped" => Some(OFFLOAD_STALL_BACKUP_NOT_READY),
+                "error" if check.error_reason.as_deref() == Some(OFFLOAD_STALL_LOCKED) => {
+                    Some(OFFLOAD_STALL_LOCKED)
+                }
+                "error" => Some(OFFLOAD_STALL_CONFIRM_TOOL_FAILED),
                 "ok" => match check.verdicts.as_ref() {
-                    None => Some("confirm_tool_failed"),
+                    None => Some(OFFLOAD_STALL_CONFIRM_TOOL_FAILED),
                     Some(verdicts) if verdicts.iter().any(|verdict| !verdict.confirmed) => {
-                        Some("confirm_failed")
+                        Some(OFFLOAD_STALL_CONFIRM_FAILED)
                     }
                     Some(_) => None,
                 },
-                _ => Some("confirm_tool_failed"),
+                _ => Some(OFFLOAD_STALL_CONFIRM_TOOL_FAILED),
             };
             if let Some(reason) = confirmation_reason {
                 return stall(
@@ -484,7 +503,7 @@ fn run_offload_body(
             .is_err()
             {
                 return stall(
-                    "unexpected_error",
+                    OFFLOAD_STALL_UNEXPECTED_ERROR,
                     false,
                     details,
                     files_marked,
@@ -496,7 +515,7 @@ fn run_offload_body(
             let Some(marked_at) = DateTime::<Utc>::from_timestamp(services.clock.now_unix(), 0)
             else {
                 return stall(
-                    "unexpected_error",
+                    OFFLOAD_STALL_UNEXPECTED_ERROR,
                     false,
                     details,
                     files_marked,
@@ -520,7 +539,7 @@ fn run_offload_body(
             .is_err()
             {
                 return stall(
-                    "unexpected_error",
+                    OFFLOAD_STALL_UNEXPECTED_ERROR,
                     false,
                     details,
                     files_marked,
@@ -539,7 +558,7 @@ fn run_offload_body(
             let record = serde_json::json!({"kind":"raw_media_offload","day":day,"stream":identity.stream,"segment":identity.key,"bytes_marked":bytes});
             let Some(audit_day) = local_day(services.clock.now_unix()) else {
                 return stall(
-                    "unexpected_error",
+                    OFFLOAD_STALL_UNEXPECTED_ERROR,
                     false,
                     details,
                     files_marked,
@@ -974,8 +993,40 @@ mod tests {
         get_backup_config(journal).unwrap()["last_offload"].clone()
     }
 
+    fn raw_config_bytes(journal: &Path) -> Vec<u8> {
+        fs::read(journal.join("config/journal.json")).unwrap()
+    }
+
     fn raw_config(journal: &Path) -> Value {
-        serde_json::from_slice(&fs::read(journal.join("config/journal.json")).unwrap()).unwrap()
+        serde_json::from_slice(&raw_config_bytes(journal)).unwrap()
+    }
+
+    fn raw_last_ok_time(journal: &Path) -> Value {
+        raw_config(journal)["backup"]["last_offload"]["last_ok_time"].clone()
+    }
+
+    fn marks_path(journal: &Path) -> PathBuf {
+        journal.join("health/retention-marks.json")
+    }
+
+    fn assert_dry_run_wrote_nothing(journal: &Path, before: &[u8]) {
+        assert_eq!(raw_config_bytes(journal), before);
+        assert!(!marks_path(journal).exists());
+    }
+
+    fn run_offload_dry(journal: &Path) -> OffloadResult {
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            calls: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock { now: 100 };
+        let maintenance = Maintenance;
+        run_offload(
+            journal,
+            &services(&runner, &http, &clock, &maintenance),
+            true,
+        )
     }
 
     fn seed_last_ok(journal: &Path, last_ok: i64) {
@@ -1001,21 +1052,6 @@ mod tests {
         write_eligible_sidecar(&first);
         write_eligible_sidecar(&second);
         (first, second)
-    }
-
-    fn one_archive(first: &Path) -> Script {
-        let nodes = json!([
-            {"message_type":"snapshot","id":"snapshot"},
-            {"message_type":"node","path":first.display().to_string(),"size":3}
-        ]);
-        Script {
-            outputs: RefCell::new(VecDeque::from([
-                output(String::new()),
-                output("[{\"message_type\":\"summary\",\"snapshot_id\":\"snapshot\"}]".into()),
-                output(nodes.to_string()),
-            ])),
-            calls: RefCell::new(vec![]),
-        }
     }
 
     #[cfg(unix)]
@@ -1129,7 +1165,7 @@ mod tests {
         let (first, second) = eligible_pair(journal.path());
         configure_offload(journal.path(), 100, Some(1));
         seed_last_ok(journal.path(), 50);
-        let prior = last_offload(journal.path())["last_ok_time"].clone();
+        let prior = raw_last_ok_time(journal.path());
         assert_eq!(prior, 50);
         let first_nodes = json!([
             {"message_type":"snapshot","id":"snapshot"},
@@ -1155,16 +1191,20 @@ mod tests {
             false,
         );
         assert_eq!(result.status, "stalled");
-        assert_eq!(result.reason.as_deref(), Some("confirm_tool_failed"));
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(OFFLOAD_STALL_CONFIRM_TOOL_FAILED)
+        );
         assert_eq!(result.files_marked, 1);
         assert_eq!(result.bytes_marked, 3);
         assert_eq!(load_marks(journal.path()).unwrap().marks.len(), 1);
         let last = last_offload(journal.path());
         assert_eq!(last["status"], "stalled");
-        assert_eq!(last["reason"], "confirm_tool_failed");
+        assert_eq!(last["reason"], OFFLOAD_STALL_CONFIRM_TOOL_FAILED);
         assert_eq!(last["files_marked"], 1);
         assert_eq!(last["bytes_marked"], 3);
         assert_eq!(last["last_ok_time"], prior);
+        assert_eq!(raw_last_ok_time(journal.path()), prior);
         let _ = second;
     }
 
@@ -1185,7 +1225,7 @@ mod tests {
         let journal = tempfile::tempdir().unwrap();
         configure_offload(journal.path(), 100, Some(1));
         seed_last_ok(journal.path(), 50);
-        let prior = last_offload(journal.path())["last_ok_time"].clone();
+        let prior = raw_last_ok_time(journal.path());
         record_verification_result(
             journal.path(),
             "ok",
@@ -1207,37 +1247,100 @@ mod tests {
             false,
         );
         assert_eq!(result.status, "stalled");
-        assert_eq!(result.reason.as_deref(), Some("verification_overdue"));
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(OFFLOAD_STALL_VERIFICATION_OVERDUE)
+        );
         let last = last_offload(journal.path());
         assert_eq!(last["status"], "stalled");
-        assert_eq!(last["reason"], "verification_overdue");
+        assert_eq!(last["reason"], OFFLOAD_STALL_VERIFICATION_OVERDUE);
         assert_eq!(last["last_ok_time"], prior);
+        assert_eq!(raw_last_ok_time(journal.path()), prior);
     }
 
     #[test]
     fn dry_run_does_not_write_last_offload_for_reachable_outcomes() {
-        let journal = tempfile::tempdir().unwrap();
-        let (first, _) = eligible_pair(journal.path());
-        configure_offload(journal.path(), 100, Some(7));
-        let runner = one_archive(&first);
-        let http = Http;
-        let clock = TestClock { now: 100 };
-        let maintenance = Maintenance;
-        let result = run_offload(
-            journal.path(),
-            &services(&runner, &http, &clock, &maintenance),
-            true,
-        );
-        assert_eq!(result.status, "ok");
-        assert_eq!(result.reason.as_deref(), Some(OFFLOAD_OK_BUDGET_SATISFIED));
-        assert_eq!(result.files_marked, 0);
-        assert_eq!(result.details.len(), 1);
-        assert_eq!(last_offload(journal.path())["status"], Value::Null);
-        assert!(
-            raw_config(journal.path())["backup"]
-                .get("last_offload")
-                .is_none_or(|value| value.get("status").is_none_or(Value::is_null))
-        );
+        {
+            let journal = tempfile::tempdir().unwrap();
+            configure_offload(journal.path(), 100, Some(1));
+            set_offload(
+                journal.path(),
+                &serde_json::json!({"enabled":false,"budget_bytes":1,"floor_bytes":1})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            let before = raw_config_bytes(journal.path());
+            let result = run_offload_dry(journal.path());
+            assert_eq!(result.status, "skipped");
+            assert_eq!(result.reason, None);
+            assert_dry_run_wrote_nothing(journal.path(), &before);
+        }
+        {
+            let journal = tempfile::tempdir().unwrap();
+            configure_offload(journal.path(), 100, Some(1));
+            record_verification_result(
+                journal.path(),
+                "ok",
+                json!(100 - VERIFICATION_MAX_AGE_SECONDS - 1),
+                Value::Null,
+                json!("1/52"),
+            )
+            .unwrap();
+            let before = raw_config_bytes(journal.path());
+            let result = run_offload_dry(journal.path());
+            assert_eq!(result.status, "stalled");
+            assert_eq!(
+                result.reason.as_deref(),
+                Some(OFFLOAD_STALL_VERIFICATION_OVERDUE)
+            );
+            assert_dry_run_wrote_nothing(journal.path(), &before);
+        }
+        {
+            let journal = tempfile::tempdir().unwrap();
+            eligible_pair(journal.path());
+            configure_offload(journal.path(), 100, Some(999_999));
+            let before = raw_config_bytes(journal.path());
+            let result = run_offload_dry(journal.path());
+            assert_eq!(result.status, "ok");
+            assert_eq!(
+                result.reason.as_deref(),
+                Some(OFFLOAD_OK_BUDGET_ALREADY_SATISFIED)
+            );
+            assert_eq!(result.files_marked, 0);
+            assert!(!result.ran_out_of_markable_media);
+            assert_dry_run_wrote_nothing(journal.path(), &before);
+        }
+        {
+            let journal = tempfile::tempdir().unwrap();
+            eligible_pair(journal.path());
+            configure_offload(journal.path(), 100, Some(7));
+            let before = raw_config_bytes(journal.path());
+            let result = run_offload_dry(journal.path());
+            assert_eq!(result.status, "ok");
+            assert_eq!(result.reason.as_deref(), Some(OFFLOAD_OK_BUDGET_SATISFIED));
+            assert_eq!(result.files_marked, 0);
+            assert_eq!(result.details.len(), 1);
+            assert!(!result.ran_out_of_markable_media);
+            assert_dry_run_wrote_nothing(journal.path(), &before);
+        }
+        {
+            let journal = tempfile::tempdir().unwrap();
+            eligible_pair(journal.path());
+            configure_offload(journal.path(), 100, Some(1));
+            let before = raw_config_bytes(journal.path());
+            let result = run_offload_dry(journal.path());
+            assert_eq!(result.status, "ok");
+            assert_eq!(
+                result.reason.as_deref(),
+                Some(OFFLOAD_OK_MARKABLE_MEDIA_EXHAUSTED)
+            );
+            assert_eq!(result.files_marked, 0);
+            assert_eq!(result.details.len(), 2);
+            assert!(result.ran_out_of_markable_media);
+            assert_dry_run_wrote_nothing(journal.path(), &before);
+        }
     }
 
     #[cfg(unix)]
@@ -1260,16 +1363,13 @@ mod tests {
             false,
         );
         assert_eq!(result.status, "stalled");
-        assert_eq!(result.reason.as_deref(), Some("unexpected_error"));
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(OFFLOAD_STALL_UNEXPECTED_ERROR)
+        );
         drop(_restore);
         let backup = &raw_config(journal.path())["backup"];
-        assert!(
-            backup.get("last_offload").is_none_or(|value| {
-                value.get("status").is_none_or(Value::is_null)
-                    && value.get("time").is_none_or(Value::is_null)
-            }),
-            "{backup:?}"
-        );
+        assert!(backup.get("last_offload").is_none(), "{backup:?}");
     }
 
     #[cfg(unix)]
@@ -1298,6 +1398,7 @@ mod tests {
         let clock = TestClock { now: 100 };
         let maintenance = Maintenance;
         let config_dir = journal.path().join("config");
+        let before = raw_config_bytes(journal.path());
         let _restore = RestoreMode::chmod(&config_dir, 0o555);
         let result = run_offload(
             journal.path(),
@@ -1316,10 +1417,10 @@ mod tests {
             "{}",
             format_offload_result(&result)
         );
-        assert!(journal.path().join("health/retention-marks.json").exists());
+        assert!(marks_path(journal.path()).exists());
         assert_eq!(load_marks(journal.path()).unwrap().marks.len(), 2);
         drop(_restore);
-        assert_eq!(last_offload(journal.path())["status"], Value::Null);
+        assert_eq!(raw_config_bytes(journal.path()), before);
     }
 
     #[test]

@@ -1781,9 +1781,11 @@ async fn mismatched_nonces_are_refused_without_consuming_the_handoff() {
         String::from_utf8(bytes).unwrap()
     };
     assert_ne!(mutated, nonce);
-    assert!(mutated
-        .bytes()
-        .all(|byte| solstone_core_handoff_nonce::NONCE_ALPHABET.contains(&byte)));
+    assert!(
+        mutated
+            .bytes()
+            .all(|byte| solstone_core_handoff_nonce::NONCE_ALPHABET.contains(&byte))
+    );
 
     let mut out_of_alphabet = nonce.clone().into_bytes();
     out_of_alphabet[0] = b'0';

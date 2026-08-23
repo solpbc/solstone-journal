@@ -2029,3 +2029,97 @@ fn every_new_verb_and_unknown_verb_returns_json_with_its_identifier() {
             .contains("unknown verb")
     );
 }
+
+#[test]
+fn rfc3339_flag_refusals_leave_the_register_unchanged() {
+    fn refuse(name: &str, verb: &str, extra: &[&str], needle: &str, expected_verb: Option<&str>) {
+        let bed = Bed::new(name);
+        reconcile(
+            bed.journal(),
+            RemovalClass::PolicyRawRelease,
+            &[(target(), proposal(vec!["audio.flac".to_owned()]))],
+            mark_at("first"),
+        )
+        .unwrap();
+        let journal = bed.journal().to_str().unwrap().to_owned();
+        let mut args = vec!["--journal", journal.as_str()];
+        args.extend_from_slice(extra);
+        let before = register_json(&bed);
+        let output = bed.run(verb, &args);
+        let body = receipt(&output);
+        assert_eq!(output.status.code(), Some(2), "{name}: {body}");
+        assert_eq!(body["ok"], false, "{name}");
+        assert!(
+            body["error"].as_str().unwrap().contains(needle),
+            "{name}: {}",
+            body["error"]
+        );
+        if let Some(expected_verb) = expected_verb {
+            assert_eq!(body["verb"], expected_verb, "{name}");
+        }
+        assert_eq!(register_json(&bed), before, "{name}");
+    }
+
+    refuse(
+        "mark-now-missing",
+        "mark",
+        &["--today", "2026-08-06"],
+        "--now is required",
+        Some("mark"),
+    );
+    refuse(
+        "mark-now-bad",
+        "mark",
+        &["--today", "2026-08-06", "--now", "not-an-instant"],
+        "--now must be an RFC 3339 instant, not `not-an-instant`",
+        Some("mark"),
+    );
+    refuse(
+        "mark-offload-now-missing",
+        "mark-offload",
+        &[
+            "--day",
+            "20260701",
+            "--dir",
+            "070000_17",
+            "--file",
+            "audio.flac",
+            "--reason",
+            "archive://audio",
+        ],
+        "--now is required",
+        Some("mark-offload"),
+    );
+    refuse(
+        "mark-offload-now-bad",
+        "mark-offload",
+        &[
+            "--day",
+            "20260701",
+            "--dir",
+            "070000_17",
+            "--file",
+            "audio.flac",
+            "--reason",
+            "archive://audio",
+            "--now",
+            "not-an-instant",
+        ],
+        "--now must be an RFC 3339 instant, not `not-an-instant`",
+        Some("mark-offload"),
+    );
+    refuse(
+        "recover-at-missing",
+        "recover",
+        &["--did", "owner"],
+        "--at is required",
+        None,
+    );
+    refuse(
+        "recover-at-bad",
+        "recover",
+        &["--at", "not-an-instant", "--did", "owner"],
+        "--at must be an RFC 3339 instant, not `not-an-instant`",
+        None,
+    );
+}
