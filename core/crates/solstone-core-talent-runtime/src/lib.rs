@@ -1154,7 +1154,7 @@ mod tests {
     #[test]
     fn criterion_1_and_2_and_4_generate_refusal_preserves_structured_facts() {
         let live_detail = "the configured provider could not produce a usable response";
-        let cases: [(&str, Option<&str>, bool, bool, bool, bool, &str); 3] = [
+        let cases = [
             (
                 "known",
                 Some("provider_response_invalid"),

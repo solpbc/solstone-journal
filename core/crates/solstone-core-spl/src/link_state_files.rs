@@ -200,6 +200,8 @@ mod tests {
 
     use super::{LinkServiceTokenRead, LinkStateRead, load_link_service_token, load_link_state};
 
+    type TreeSnapshot = Vec<(PathBuf, Option<Vec<u8>>)>;
+
     struct TempJournal {
         path: PathBuf,
     }
@@ -245,11 +247,11 @@ mod tests {
         }
     }
 
-    fn snapshot_tree(root: &Path) -> Result<Vec<(PathBuf, Option<Vec<u8>>)>, Box<dyn Error>> {
+    fn snapshot_tree(root: &Path) -> Result<TreeSnapshot, Box<dyn Error>> {
         fn collect(
             root: &Path,
             path: &Path,
-            entries: &mut Vec<(PathBuf, Option<Vec<u8>>)>,
+            entries: &mut TreeSnapshot,
         ) -> Result<(), Box<dyn Error>> {
             for entry in fs::read_dir(path)? {
                 let entry = entry?;

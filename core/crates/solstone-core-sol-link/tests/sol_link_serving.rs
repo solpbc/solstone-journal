@@ -541,7 +541,7 @@ fn request_is_complete(raw: &[u8]) -> bool {
         return false;
     };
     content_length_from_headers(&text[..header_end])
-        .map_or(true, |length| raw.len() >= header_end + 4 + length)
+        .is_none_or(|length| raw.len() >= header_end + 4 + length)
 }
 
 fn spawn_mock_relay(enroll_status: Option<u16>, dial_status: u16) -> (String, Arc<AtomicUsize>) {

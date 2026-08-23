@@ -893,9 +893,9 @@ mod tests {
         let suffix = "x".repeat(3_396);
         let production_chars = production.chars().count() + suffix.chars().count();
         assert!(
-            (production_chars + 2) / 3 < 12_032,
+            production_chars.div_ceil(3) < 12_032,
             "capped estimate {} was not under budget",
-            (production_chars + 2) / 3
+            production_chars.div_ceil(3)
         );
         let lines = focused_entity_lines(&production);
         assert!(
@@ -934,9 +934,9 @@ mod tests {
             .join("\n");
         let uncapped_chars = uncapped.chars().count() + suffix.chars().count();
         assert!(
-            (uncapped_chars + 2) / 3 >= 12_032,
+            uncapped_chars.div_ceil(3) >= 12_032,
             "uncapped estimate {} should exceed budget; production had {} entity lines",
-            (uncapped_chars + 2) / 3,
+            uncapped_chars.div_ceil(3),
             lines.len()
         );
     }
