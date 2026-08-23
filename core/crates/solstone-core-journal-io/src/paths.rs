@@ -276,6 +276,52 @@ pub fn ensure_directory(path: &Path) -> Result<(), PathError> {
     fs::create_dir_all(path).map_err(|source| path_io(path, source))
 }
 
+/// Create a single directory component beneath an already-bound parent.
+///
+/// `EEXIST` succeeds when the name is already a real directory. A symlink or
+/// other kind at that name is an error. This never opens a parent via `AT_FDCWD`.
+#[cfg(unix)]
+pub fn create_directory_bound(
+    parent: &impl std::os::fd::AsFd,
+    name: &OsStr,
+    mode: u32,
+) -> Result<(), PathError> {
+    use nix::errno::Errno;
+    use nix::fcntl::AtFlags;
+    use nix::sys::stat::{Mode, SFlag, fstatat, mkdirat};
+
+    let path = Path::new(name);
+    if mode > 0o777 {
+        return Err(path_io(
+            path,
+            io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
+        ));
+    }
+    match mkdirat(
+        parent,
+        name,
+        Mode::from_bits_truncate(mode as nix::libc::mode_t),
+    ) {
+        Ok(()) => Ok(()),
+        Err(Errno::EEXIST) => {
+            let status = fstatat(parent, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+                .map_err(|source| path_io(path, io::Error::from_raw_os_error(source as i32)))?;
+            if SFlag::from_bits_truncate(status.st_mode) & SFlag::S_IFMT == SFlag::S_IFDIR {
+                Ok(())
+            } else {
+                Err(path_io(
+                    path,
+                    io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        "bound directory name exists and is not a directory",
+                    ),
+                ))
+            }
+        }
+        Err(source) => Err(path_io(path, io::Error::from_raw_os_error(source as i32))),
+    }
+}
+
 /// Create a directory tree and set the final directory's Unix permission mode.
 ///
 /// Existing contents are preserved. On Unix, the final directory is always
@@ -516,7 +562,8 @@ fn normalize_lexical(path: PathBuf) -> PathBuf {
     normalized
 }
 
-fn is_day_key(value: &str) -> bool {
+/// True when `value` is a canonical chronicle day: exactly eight ASCII digits.
+pub fn is_day_key(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
@@ -619,6 +666,34 @@ mod tests {
             contained_path(&journal, "chronicle/").unwrap(),
             journal.join("chronicle")
         );
+    }
+
+    #[test]
+    fn is_day_key_is_eight_ascii_digits() {
+        assert!(is_day_key("20260823"));
+        assert!(!is_day_key("2026823"));
+        assert!(!is_day_key("2026082a"));
+        assert!(!is_day_key("2026-08-23"));
+    }
+
+    #[test]
+    fn create_directory_bound_creates_or_accepts_an_existing_directory() {
+        use nix::fcntl::{AT_FDCWD, OFlag, openat};
+        use nix::sys::stat::Mode;
+
+        let temporary = TempDir::new();
+        let parent_fd = openat(
+            AT_FDCWD,
+            temporary.path(),
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+            Mode::empty(),
+        )
+        .unwrap();
+        create_directory_bound(&parent_fd, std::ffi::OsStr::new("nested"), 0o700).unwrap();
+        assert!(temporary.path().join("nested").is_dir());
+        create_directory_bound(&parent_fd, std::ffi::OsStr::new("nested"), 0o700).unwrap();
+        fs::write(temporary.path().join("file"), b"x").unwrap();
+        assert!(create_directory_bound(&parent_fd, std::ffi::OsStr::new("file"), 0o700).is_err());
     }
 
     #[test]

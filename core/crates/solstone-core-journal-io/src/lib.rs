@@ -32,9 +32,13 @@ pub use atomic::{
     atomic_replace, atomic_replace_detailed, install_file, write_bytes_exclusive, write_json,
     write_jsonl, write_reader_exclusive, write_text,
 };
+#[cfg(unix)]
+pub use atomic::{BoundAtomicOutcome, atomic_replace_bound, write_bytes_exclusive_bound};
 pub use deconflict::{
     SegmentDeconflictError, find_available_segment, find_available_segment_with_occupied,
 };
+#[cfg(unix)]
+pub use entry::sync_dir_bound;
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
     AppendError, AtomicWriteError, ExistingParentLockError, LeaseError, LockError, LockTimeout,
@@ -48,6 +52,8 @@ pub use lease::{
     acquire_file_lease,
 };
 pub use locking::lock_is_held;
+#[cfg(unix)]
+pub use locking::{BoundParentLock, acquire_existing_parent_lock_bound};
 pub use locking::{
     DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, ExistingParentLock, FileLock, LockOptions,
     acquire_existing_parent_lock, hold_lock,
@@ -56,13 +62,17 @@ pub use name_admission::{
     ConflictEntry, ConflictKind, NameAdmissionError, NameAdmissionReason, NoFollowEntryKind,
     StreamName, check_portable_component,
 };
+#[cfg(unix)]
+pub use paths::create_directory_bound;
 pub use paths::{
     DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, RecordIdentity, Segment, StreamLocation,
     check_record_identities, check_unique_record_keys, contained_path, create_directory_with_mode,
-    day_dirs, day_path, ensure_directory, iter_segments, list_dir_entries,
+    day_dirs, day_path, ensure_directory, is_day_key, iter_segments, list_dir_entries,
     list_dir_entries_bounded, path_lexists, realpath_non_strict, resolve_configured_journal,
     resolve_journal_path, segment_path, utf8_identities,
 };
+#[cfg(unix)]
+pub use readers::read_bytes_bound;
 pub use readers::{
     JsonlReadReport, JsonlRecord, MalformedPolicy, read_bytes, read_json, read_jsonl,
     read_jsonl_with_report, read_text,

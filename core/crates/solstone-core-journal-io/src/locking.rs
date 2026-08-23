@@ -75,6 +75,15 @@ impl ExistingParentLock {
     }
 }
 
+/// An exclusive persistent lock entry beneath a caller-supplied parent directory.
+///
+/// Dropping this guard releases its advisory lock but does not remove the entry.
+/// There is no `path()`: the parent is a retained descriptor, not a pathname.
+#[derive(Debug)]
+pub struct BoundParentLock {
+    _guard: Flock<File>,
+}
+
 /// Acquire a caller-selected persistent lock entry under an existing parent.
 ///
 /// This refuses to follow a symlink at the final parent component or lock entry
@@ -96,38 +105,76 @@ pub fn acquire_existing_parent_lock(
     let inspected_parent = inspect_parent(parent)?;
     run_race_hook(AFTER_PARENT_INSPECTION);
     let parent_fd = open_bound_parent(parent, inspected_parent)?;
-    let deadline = Instant::now() + timeout;
+    let guard = acquire_lock_in_parent(&parent_fd, &name, &path, timeout, poll_interval)?;
+    Ok(ExistingParentLock {
+        _guard: guard,
+        path,
+    })
+}
 
+/// Acquire a persistent lock entry beneath an already-bound parent directory.
+///
+/// The parent is the caller-supplied directory descriptor. This never opens a
+/// parent via `AT_FDCWD`. Cooperating callers never replace or unlink the
+/// persistent entry. The returned guard has no pathname.
+pub fn acquire_existing_parent_lock_bound(
+    parent: &impl AsFd,
+    name: &OsStr,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<BoundParentLock, ExistingParentLockError> {
+    let name =
+        NormalLockName::parse(name).ok_or_else(|| ExistingParentLockError::InvalidLockPath {
+            name: name.to_os_string(),
+        })?;
+    let path = PathBuf::from(name.as_os_str());
+    let status = fstat(parent)
+        .map_err(|source| existing_io("stat bound persistent lock parent", &path, source))?;
+    if !is_kind(&status, SFlag::S_IFDIR) {
+        return Err(ExistingParentLockError::UnsafeParent {
+            parent: path,
+            kind: file_kind(&status),
+        });
+    }
+    let guard = acquire_lock_in_parent(parent, &name, &path, timeout, poll_interval)?;
+    Ok(BoundParentLock { _guard: guard })
+}
+
+fn acquire_lock_in_parent(
+    parent_fd: &impl AsFd,
+    name: &NormalLockName,
+    path: &Path,
+    timeout: Duration,
+    poll_interval: Duration,
+) -> Result<Flock<File>, ExistingParentLockError> {
+    let deadline = Instant::now() + timeout;
     loop {
-        let existing = inspect_lock_entry(&parent_fd, &name, &path)?;
+        let existing = inspect_lock_entry(parent_fd, name, path)?;
         let file = match existing {
-            Some(_) => match openat(
-                &parent_fd,
-                name.as_os_str(),
-                ENTRY_OPEN_FLAGS,
-                Mode::empty(),
-            ) {
+            Some(_) => match openat(parent_fd, name.as_os_str(), ENTRY_OPEN_FLAGS, Mode::empty()) {
                 Ok(fd) => File::from(fd),
                 Err(Errno::ENOENT) => {
-                    return Err(ExistingParentLockError::NamespaceChanged { path });
+                    return Err(ExistingParentLockError::NamespaceChanged {
+                        path: path.to_path_buf(),
+                    });
                 }
                 Err(source) => {
-                    return Err(existing_io("open persistent lock entry", &path, source));
+                    return Err(existing_io("open persistent lock entry", path, source));
                 }
             },
             None => match openat(
-                &parent_fd,
+                parent_fd,
                 name.as_os_str(),
                 ENTRY_CREATE_FLAGS,
                 Mode::from_bits_truncate(nix::libc::mode_t::from(0o600u16)),
             ) {
                 Ok(fd) => File::from(fd),
                 Err(Errno::EEXIST) => {
-                    wait_or_expire(deadline, poll_interval, &path, timeout)?;
+                    wait_or_expire(deadline, poll_interval, path, timeout)?;
                     continue;
                 }
                 Err(source) => {
-                    return Err(existing_io("create persistent lock entry", &path, source));
+                    return Err(existing_io("create persistent lock entry", path, source));
                 }
             },
         };
@@ -135,23 +182,20 @@ pub fn acquire_existing_parent_lock(
         match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
             Ok(guard) => {
                 run_race_hook(AFTER_LOCK_FLOCK);
-                verify_final_lock_entry(&parent_fd, &name, &guard, existing, &path)?;
+                verify_final_lock_entry(parent_fd, name, &guard, existing, path)?;
                 if Instant::now() >= deadline {
                     drop(guard);
-                    return Err(timeout_error(&path, timeout));
+                    return Err(timeout_error(path, timeout));
                 }
-                return Ok(ExistingParentLock {
-                    _guard: guard,
-                    path,
-                });
+                return Ok(guard);
             }
             Err((file, error)) if is_contention(error) => {
                 drop(file);
-                wait_or_expire(deadline, poll_interval, &path, timeout)?;
+                wait_or_expire(deadline, poll_interval, path, timeout)?;
             }
             Err((file, source)) => {
                 drop(file);
-                return Err(existing_io("lock persistent entry", &path, source));
+                return Err(existing_io("lock persistent entry", path, source));
             }
         }
     }
@@ -1013,5 +1057,48 @@ mod tests {
             },
             snapshot(&sidecar).identity
         );
+    }
+
+    #[test]
+    fn acquire_existing_parent_lock_bound_holds_without_a_path() {
+        let temporary = TempDir::new();
+        let parent = temporary.path().join("locks");
+        fs::create_dir(&parent).unwrap();
+        let parent_fd = nix::fcntl::openat(
+            nix::fcntl::AT_FDCWD,
+            &parent,
+            super::PARENT_OPEN_FLAGS,
+            nix::sys::stat::Mode::empty(),
+        )
+        .unwrap();
+        let first = acquire_existing_parent_lock_bound(
+            &parent_fd,
+            OsStr::new("state.lock"),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        )
+        .unwrap();
+        let entry = parent.join("state.lock");
+        assert!(entry.exists());
+        assert_eq!(snapshot(&entry).mode, 0o600);
+        let contended = acquire_existing_parent_lock_bound(
+            &parent_fd,
+            OsStr::new("state.lock"),
+            Duration::from_millis(50),
+            Duration::from_millis(10),
+        );
+        assert!(matches!(
+            contended,
+            Err(ExistingParentLockError::Timeout(_))
+        ));
+        drop(first);
+        let _second = acquire_existing_parent_lock_bound(
+            &parent_fd,
+            OsStr::new("state.lock"),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+        )
+        .unwrap();
+        assert_eq!(snapshot(&entry).mode, 0o600);
     }
 }

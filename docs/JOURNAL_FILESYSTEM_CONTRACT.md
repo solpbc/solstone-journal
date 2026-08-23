@@ -89,6 +89,17 @@ object rather than reopen by path; surface the same four refusals; forbid
 filesystem trait, no `Box<dyn>`, no path-only fake backend. Windows policy,
 Win32, and `windows-sys` are out of scope; the current Lane 1 exclusion stands.
 
+## Bound publication
+
+`atomic_replace_bound`, `write_bytes_exclusive_bound`, `acquire_existing_parent_lock_bound`,
+`create_directory_bound`, `read_bytes_bound`, and `sync_dir_bound` operate on a caller-supplied
+directory descriptor (`AsFd`) and a single normal name. They never open a parent via `AT_FDCWD`
+and never treat a stored pathname as source authority. `BoundAtomicOutcome` is `Published` or
+`PublishedDurabilityUncertain` only; pathname-identity outcomes stay on `atomic_replace_detailed`.
+`acquire_existing_parent_lock_bound` returns `BoundParentLock`, which has no `path()`.
+Descendant walks remain the caller's (archive inventory, convergence store).
+`is_day_key` is the single 8-digit day-key predicate.
+
 ## Lock sidecar naming
 
 `derive_sidecar_path` in `solstone-core-journal-io` appends `.lock` to

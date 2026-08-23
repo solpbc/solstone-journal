@@ -5,6 +5,10 @@
 
 use std::fs;
 use std::io;
+#[cfg(unix)]
+use std::io::Read;
+#[cfg(unix)]
+use std::os::fd::AsFd;
 use std::path::Path;
 
 use serde::de::DeserializeOwned;
@@ -135,6 +139,68 @@ pub fn read_text(path: impl AsRef<Path>, default: String) -> Result<String, Read
     }
 }
 
+/// Read a regular file beneath an already-bound parent.
+///
+/// `Ok(None)` means the name does not exist. This never opens a parent via
+/// `AT_FDCWD` and does not treat a missing file as a caller-supplied default.
+#[cfg(unix)]
+pub fn read_bytes_bound(
+    directory: &impl AsFd,
+    name: &std::ffi::OsStr,
+) -> Result<Option<Vec<u8>>, ReadError> {
+    use nix::errno::Errno;
+    use nix::fcntl::{AtFlags, OFlag, openat};
+    use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
+
+    let path = Path::new(name);
+    match fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Err(Errno::ENOENT) => return Ok(None),
+        Err(source) => {
+            return Err(io_error(path, io::Error::from_raw_os_error(source as i32)));
+        }
+        Ok(status)
+            if SFlag::from_bits_truncate(status.st_mode) & SFlag::S_IFMT != SFlag::S_IFREG =>
+        {
+            return Err(io_error(
+                path,
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "bound name is not a regular file",
+                ),
+            ));
+        }
+        Ok(_) => {}
+    }
+    let fd = match openat(
+        directory,
+        name,
+        OFlag::O_RDONLY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd,
+        Err(Errno::ENOENT) => return Ok(None),
+        Err(source) => {
+            return Err(io_error(path, io::Error::from_raw_os_error(source as i32)));
+        }
+    };
+    let opened =
+        fstat(&fd).map_err(|source| io_error(path, io::Error::from_raw_os_error(source as i32)))?;
+    if SFlag::from_bits_truncate(opened.st_mode) & SFlag::S_IFMT != SFlag::S_IFREG {
+        return Err(io_error(
+            path,
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "bound name is not a regular file",
+            ),
+        ));
+    }
+    let mut file = std::fs::File::from(fd);
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|source| io_error(path, source))?;
+    Ok(Some(bytes))
+}
+
 /// Read raw bytes, treating a missing path as `default`.
 pub fn read_bytes(path: impl AsRef<Path>, default: Vec<u8>) -> Result<Vec<u8>, ReadError> {
     let path = path.as_ref();
@@ -260,6 +326,30 @@ mod tests {
         assert_eq!(
             read_bytes(temporary.path().join("missing.bin"), vec![9]).unwrap(),
             vec![9]
+        );
+    }
+
+    #[test]
+    fn read_bytes_bound_returns_none_when_missing() {
+        use nix::fcntl::{AT_FDCWD, OFlag, openat};
+        use nix::sys::stat::Mode;
+
+        let temporary = TempDir::new();
+        fs::write(temporary.path().join("data.bin"), [0, 255, 1]).unwrap();
+        let directory = openat(
+            AT_FDCWD,
+            temporary.path(),
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+            Mode::empty(),
+        )
+        .unwrap();
+        assert_eq!(
+            read_bytes_bound(&directory, std::ffi::OsStr::new("data.bin")).unwrap(),
+            Some(vec![0, 255, 1])
+        );
+        assert_eq!(
+            read_bytes_bound(&directory, std::ffi::OsStr::new("missing.bin")).unwrap(),
+            None
         );
     }
 

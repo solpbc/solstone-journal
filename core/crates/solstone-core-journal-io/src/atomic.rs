@@ -18,7 +18,7 @@ use serde::Serialize;
 use nix::errno::Errno;
 use nix::fcntl::{AT_FDCWD, AtFlags, OFlag, openat, renameat};
 use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
-use nix::unistd::{UnlinkatFlags, unlinkat};
+use nix::unistd::{UnlinkatFlags, fsync, linkat, unlinkat};
 
 use crate::errors::AtomicWriteError;
 
@@ -38,6 +38,18 @@ pub enum DetailedAtomicOutcome {
         observation: io::Error,
         sync_error: Option<io::Error>,
     },
+}
+
+/// Successful publication states returned by [`atomic_replace_bound`].
+///
+/// Pathname-identity outcomes stay on [`DetailedAtomicOutcome`]. A bound
+/// caller cannot observe a parent pathname.
+#[derive(Debug)]
+pub enum BoundAtomicOutcome {
+    /// Rename landed in the bound directory and the directory was synced.
+    Published,
+    /// Rename landed; syncing the bound directory failed.
+    PublishedDurabilityUncertain { source: io::Error },
 }
 
 /// A failure before publication. The prior destination is preserved.
@@ -158,28 +170,6 @@ pub fn atomic_replace_detailed(
             io::Error::other("parent pathname changed"),
         ));
     }
-    inspect_destination(&directory, name, path)?;
-
-    let stage = allocate_bound_stage(&directory, name, path)?;
-    let stage_name = stage.0;
-    let mut stage_file = stage.1;
-    let operation = (|| -> io::Result<()> {
-        stage_file.write_all(contents)?;
-        stage_file.set_permissions(fs::Permissions::from_mode(mode))?;
-        sync_file(&stage_file)?;
-        Ok(())
-    })();
-    drop(stage_file);
-    if let Err(source) = operation {
-        return Err(cleanup_stage_error(
-            &directory,
-            path,
-            stage_name,
-            "prepare stage",
-            source,
-        ));
-    }
-
     let before_rename = match stat_parent(parent) {
         Ok(status) if same_identity(inspected, status) => Ok(()),
         Ok(_) => Err(io::Error::other(
@@ -188,27 +178,25 @@ pub fn atomic_replace_detailed(
         Err(source) => Err(source),
     };
     if let Err(source) = before_rename {
-        return Err(cleanup_stage_error(
-            &directory,
+        return Err(detailed_error(
             path,
-            stage_name,
             "reverify parent before publication",
             source,
         ));
     }
 
-    renameat(&directory, stage_name.as_os_str(), &directory, name).map_err(|source| {
-        cleanup_stage_error(
-            &directory,
-            path,
-            stage_name.clone(),
-            "publish stage",
-            errno_io(source),
-        )
-    })?;
+    let sync_error =
+        publish_into_bound_directory(&directory, name, contents, mode).map_err(|error| {
+            DetailedAtomicError {
+                path: path.to_path_buf(),
+                operation: error.operation,
+                source: error.source,
+                orphan_stage: error.orphan_stage,
+                cleanup_error: error.cleanup_error,
+            }
+        })?;
 
     let final_observation = stat_parent(parent);
-    let sync_error = directory.sync_all().err();
     match final_observation {
         Ok(status) if same_identity(inspected, status) => match sync_error {
             None => Ok(DetailedAtomicOutcome::Published),
@@ -236,6 +224,162 @@ pub fn atomic_replace_detailed(
             "detailed publication requires Unix",
         ),
     ))
+}
+
+/// Atomically replace a regular destination beneath an already-bound parent.
+///
+/// The parent is the caller-supplied directory descriptor. This never opens a
+/// parent via `AT_FDCWD` and never treats a stored pathname as source authority.
+#[cfg(unix)]
+pub fn atomic_replace_bound(
+    directory: &impl AsFd,
+    name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+) -> Result<BoundAtomicOutcome, DetailedAtomicError> {
+    let path = Path::new(name);
+    if mode > 0o777 {
+        return Err(detailed_error(
+            path,
+            "validate mode",
+            io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
+        ));
+    }
+    let name = normal_name(Some(name)).ok_or_else(|| {
+        detailed_error(
+            path,
+            "validate destination",
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination has no normal name",
+            ),
+        )
+    })?;
+    match publish_into_bound_directory(directory, name, contents, mode)? {
+        None => Ok(BoundAtomicOutcome::Published),
+        Some(source) => Ok(BoundAtomicOutcome::PublishedDurabilityUncertain { source }),
+    }
+}
+
+/// Publish `contents` only when `name` does not yet exist in `directory`.
+///
+/// Contents are written and synced to an exclusive stage inode first, then
+/// published with `linkat(2)`. The destination name is never visible with
+/// partial content.
+#[cfg(unix)]
+pub fn write_bytes_exclusive_bound(
+    directory: &impl AsFd,
+    name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+) -> Result<(), AtomicWriteError> {
+    let path = Path::new(name);
+    if mode > 0o777 {
+        return Err(io_error(
+            path,
+            io::Error::new(io::ErrorKind::InvalidInput, "mode exceeds 0o777"),
+        ));
+    }
+    let name = normal_name(Some(name)).ok_or_else(|| {
+        io_error(
+            path,
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination has no normal name",
+            ),
+        )
+    })?;
+    match fstatat(directory, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(_) => {
+            return Err(io_error(
+                path,
+                io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists"),
+            ));
+        }
+        Err(Errno::ENOENT) => {}
+        Err(source) => return Err(io_error(path, errno_io(source))),
+    }
+    let (stage_name, mut stage_file) = allocate_bound_stage(directory, name, path)
+        .map_err(|error| io_error(path, error.source))?;
+    let prepared = (|| -> io::Result<()> {
+        stage_file.write_all(contents)?;
+        stage_file.set_permissions(fs::Permissions::from_mode(mode))?;
+        sync_file(&stage_file)?;
+        Ok(())
+    })();
+    drop(stage_file);
+    if let Err(source) = prepared {
+        let _ = unlinkat(
+            directory,
+            stage_name.as_os_str(),
+            UnlinkatFlags::NoRemoveDir,
+        );
+        return Err(io_error(path, source));
+    }
+    if let Err(source) = linkat(
+        directory,
+        stage_name.as_os_str(),
+        directory,
+        name,
+        AtFlags::empty(),
+    ) {
+        let _ = unlinkat(
+            directory,
+            stage_name.as_os_str(),
+            UnlinkatFlags::NoRemoveDir,
+        );
+        return Err(io_error(path, errno_io(source)));
+    }
+    let _ = unlinkat(
+        directory,
+        stage_name.as_os_str(),
+        UnlinkatFlags::NoRemoveDir,
+    );
+    fsync(directory).map_err(|source| io_error(path, errno_io(source)))?;
+    Ok(())
+}
+
+/// Stage → fsync → rename → parent-sync on an already-bound directory.
+///
+/// Pathname identity observations stay in [`atomic_replace_detailed`].
+#[cfg(unix)]
+fn publish_into_bound_directory(
+    directory: &impl AsFd,
+    name: &OsStr,
+    contents: &[u8],
+    mode: u32,
+) -> Result<Option<io::Error>, DetailedAtomicError> {
+    let path = Path::new(name);
+    inspect_destination(directory, name, path)?;
+    let (stage_name, mut stage_file) = allocate_bound_stage(directory, name, path)?;
+    let operation = (|| -> io::Result<()> {
+        stage_file.write_all(contents)?;
+        stage_file.set_permissions(fs::Permissions::from_mode(mode))?;
+        sync_file(&stage_file)?;
+        Ok(())
+    })();
+    drop(stage_file);
+    if let Err(source) = operation {
+        return Err(cleanup_stage_error(
+            directory,
+            path,
+            stage_name,
+            "prepare stage",
+            source,
+        ));
+    }
+    renameat(directory, stage_name.as_os_str(), directory, name).map_err(|source| {
+        cleanup_stage_error(
+            directory,
+            path,
+            stage_name.clone(),
+            "publish stage",
+            errno_io(source),
+        )
+    })?;
+    Ok(fsync(directory)
+        .err()
+        .map(|error| io::Error::from_raw_os_error(error as i32)))
 }
 
 /// Atomically replace `path` with durably prepared `contents`.
@@ -988,5 +1132,76 @@ mod tests {
             let cand_lead = candidate.as_encoded_bytes()[0].to_ascii_lowercase();
             assert_ne!(cand_lead, dest_lead);
         }
+    }
+
+    fn open_directory(path: &Path) -> std::os::fd::OwnedFd {
+        nix::fcntl::openat(
+            nix::fcntl::AT_FDCWD,
+            path,
+            nix::fcntl::OFlag::O_RDONLY
+                | nix::fcntl::OFlag::O_DIRECTORY
+                | nix::fcntl::OFlag::O_CLOEXEC
+                | nix::fcntl::OFlag::O_NOFOLLOW,
+            nix::sys::stat::Mode::empty(),
+        )
+        .expect("open bound test directory")
+    }
+
+    #[test]
+    fn atomic_replace_bound_publishes_with_exact_mode() {
+        let temporary = TempDir::new();
+        let target = temporary.path().join("unit.service");
+        fs::write(&target, b"old").unwrap();
+        let directory = open_directory(temporary.path());
+        let result =
+            atomic_replace_bound(&directory, OsStr::new("unit.service"), b"new", 0o640).unwrap();
+        assert!(matches!(result, BoundAtomicOutcome::Published));
+        assert_eq!(fs::read(&target).unwrap(), b"new");
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+    }
+
+    #[test]
+    fn atomic_replace_bound_survives_parent_pathname_rename() {
+        let temporary = TempDir::new();
+        let parent = temporary.path().join("parent");
+        fs::create_dir(&parent).unwrap();
+        fs::write(parent.join("unit.service"), b"old").unwrap();
+        let directory = open_directory(&parent);
+        let moved = temporary.path().join("parent-moved");
+        fs::rename(&parent, &moved).unwrap();
+        fs::create_dir(&parent).unwrap();
+        fs::write(parent.join("unit.service"), b"replacement").unwrap();
+
+        let result =
+            atomic_replace_bound(&directory, OsStr::new("unit.service"), b"new", 0o644).unwrap();
+        assert!(matches!(result, BoundAtomicOutcome::Published));
+        assert_eq!(fs::read(moved.join("unit.service")).unwrap(), b"new");
+        assert_eq!(
+            fs::read(parent.join("unit.service")).unwrap(),
+            b"replacement"
+        );
+    }
+
+    #[test]
+    fn write_bytes_exclusive_bound_publishes_only_a_complete_inode() {
+        let temporary = TempDir::new();
+        let directory = open_directory(temporary.path());
+        write_bytes_exclusive_bound(&directory, OsStr::new("record.bin"), b"payload", 0o600)
+            .unwrap();
+        assert_eq!(
+            fs::read(temporary.path().join("record.bin")).unwrap(),
+            b"payload"
+        );
+        assert!(
+            write_bytes_exclusive_bound(&directory, OsStr::new("record.bin"), b"other", 0o600)
+                .is_err()
+        );
+        assert_eq!(
+            fs::read(temporary.path().join("record.bin")).unwrap(),
+            b"payload"
+        );
     }
 }

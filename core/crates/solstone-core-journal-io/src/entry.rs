@@ -23,6 +23,8 @@
 
 use std::fs;
 use std::io;
+#[cfg(unix)]
+use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 
 use crate::errors::PathError;
@@ -146,6 +148,14 @@ pub fn sync_dir(root: &Path, dir_rel: &str) -> Result<(), PathError> {
     directory
         .sync_all()
         .map_err(|source| PathError::Io { path, source })
+}
+
+/// Flush an already-bound directory's own entries to disk.
+///
+/// Returns its error. This never opens a directory via `AT_FDCWD`.
+#[cfg(unix)]
+pub fn sync_dir_bound(directory: &impl AsFd) -> Result<(), io::Error> {
+    nix::unistd::fsync(directory).map_err(|error| io::Error::from_raw_os_error(error as i32))
 }
 
 #[cfg(test)]
@@ -328,6 +338,22 @@ mod tests {
     fn syncs_an_existing_directory() {
         let temporary = journal();
         sync_dir(temporary.path(), "chronicle/20260805/field.audio").unwrap();
+    }
+
+    #[test]
+    fn sync_dir_bound_syncs_an_open_directory() {
+        use nix::fcntl::{AT_FDCWD, OFlag, openat};
+        use nix::sys::stat::Mode;
+
+        let temporary = journal();
+        let directory = openat(
+            AT_FDCWD,
+            &temporary.path().join("chronicle/20260805/field.audio"),
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+            Mode::empty(),
+        )
+        .unwrap();
+        sync_dir_bound(&directory).unwrap();
     }
 
     /// A missing directory is an error, not a silent success.
