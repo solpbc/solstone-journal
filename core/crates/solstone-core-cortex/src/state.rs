@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Instant;
 
 use serde_json::{Map, Value};
+use solstone_core_system::process::LaunchAuthority;
 
 use crate::storage::{CortexStore, synthesized_error};
 
@@ -34,7 +35,7 @@ pub(crate) struct ResolvedTalent {
 #[derive(Clone, Debug)]
 pub struct RunningUse {
     pub(crate) active: PathBuf,
-    pub pgid: i32,
+    pub authority: Arc<Mutex<LaunchAuthority>>,
     pub(crate) started: Instant,
     pub(crate) stderr: Arc<Mutex<Vec<String>>>,
 }
@@ -148,14 +149,19 @@ impl CortexState {
         let _ = self.cancel.send((use_id.to_owned(), reason.to_owned()));
     }
 
-    pub fn spawn_started(&self, work: &Work, pgid: i32, stderr: Arc<Mutex<Vec<String>>>) {
+    pub fn spawn_started(
+        &self,
+        work: &Work,
+        authority: Arc<Mutex<LaunchAuthority>>,
+        stderr: Arc<Mutex<Vec<String>>>,
+    ) {
         let mut inner = self.inner.lock().expect("cortex state lock poisoned");
         inner.finalizers.insert(work.use_id.clone());
         inner.running.insert(
             work.use_id.clone(),
             RunningUse {
                 active: work.active.clone(),
-                pgid,
+                authority,
                 started: Instant::now(),
                 stderr,
             },

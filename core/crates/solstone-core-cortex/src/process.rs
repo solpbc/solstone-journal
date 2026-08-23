@@ -4,7 +4,7 @@
 use std::io::Write;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -13,6 +13,7 @@ use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
 use serde_json::{Map, Value};
 use solstone_core_generate_wire::{record_usage, usage_for_log};
+use solstone_core_system::process::{self, Disposition, LaunchAuthority, LaunchError};
 
 use crate::state::{CortexState, ResolvedTalent, Work};
 use crate::storage::now_ms;
@@ -85,6 +86,10 @@ pub fn spawn_one(
     }
     // Cortex owns this request/response lifecycle and spawns the native worker
     // directly; the journal boundary also dispatches the service verb natively.
+    let timeout = timeout_for(
+        &work.request,
+        resolved.as_ref().and_then(|facts| facts.timeout_seconds),
+    );
     let mut command = build_talent_worker_command(
         &executable_dir,
         state.journal(),
@@ -93,26 +98,57 @@ pub fn spawn_one(
     )?;
     let request_line = serde_json::to_vec(&Value::Object(work.request.clone()))
         .map_err(|error| error.to_string())?;
-    let mut child = command.spawn().map_err(|error| error.to_string())?;
-    let pgid = i32::try_from(child.id()).map_err(|_| "child pid does not fit i32")?;
-    let Some(mut stdin) = child.stdin.take() else {
-        terminate_and_reap(&mut child, pgid);
+    let authority = process::launch(
+        Disposition::IndependentBoundedHelper {
+            timeout: Duration::from_secs(timeout),
+        },
+        || command.spawn(),
+        Box::new(|child, _timeout| {
+            let pgid = i32::try_from(child.id()).map_err(|_| {
+                LaunchError::Terminate(std::io::Error::other("child pid does not fit i32"))
+            })?;
+            stop_group(pgid);
+            Ok(())
+        }),
+    )
+    .map_err(|error| error.to_string())?;
+    let authority: Arc<Mutex<LaunchAuthority>> = Arc::new(Mutex::new(authority));
+    let Some(mut stdin) = authority
+        .lock()
+        .expect("cortex authority lock poisoned")
+        .take_stdin()
+    else {
+        let _ = authority
+            .lock()
+            .expect("cortex authority lock poisoned")
+            .terminate(Duration::from_secs(10));
         return Err("child stdin unavailable".into());
     };
     if let Err(error) = stdin
         .write_all(&request_line)
         .and_then(|_| stdin.write_all(b"\n"))
     {
-        terminate_and_reap(&mut child, pgid);
+        let _ = authority
+            .lock()
+            .expect("cortex authority lock poisoned")
+            .terminate(Duration::from_secs(10));
         return Err(error.to_string());
     }
     drop(stdin);
     let stderr = Arc::new(Mutex::new(Vec::new()));
-    state.spawn_started(&work, pgid, Arc::clone(&stderr));
-    let Some(stdout) = child.stdout.take() else {
+    state.spawn_started(&work, Arc::clone(&authority), Arc::clone(&stderr));
+    let Some(stdout) = authority
+        .lock()
+        .expect("cortex authority lock poisoned")
+        .take_stdout()
+    else {
         return Err("child stdout unavailable".into());
     };
-    let Some(stderr_pipe) = child.stderr.take() else {
+    let Some(stderr_pipe) = authority
+        .lock()
+        .expect("cortex authority lock poisoned")
+        .take_stderr()
+    else {
         return Err("child stderr unavailable".into());
     };
     let (stdout_done, done_rx) = mpsc::channel();
@@ -144,25 +180,36 @@ pub fn spawn_one(
     });
     let reaper_state = state.clone();
     let reaper_use_id = work.use_id.clone();
+    let authority_for_reaper = Arc::clone(&authority);
     thread::spawn(move || {
-        let code = child
-            .wait()
-            .ok()
-            .and_then(|status| status.code())
-            .unwrap_or(-1);
+        // Poll rather than LaunchAuthority::wait(): a blocking wait would hold
+        // the shared mutex for the whole talent run, and the timeout / cancel /
+        // immediate-stop threads need that same lock to terminate().
+        let raw_code = loop {
+            let polled = authority_for_reaper
+                .lock()
+                .expect("cortex authority lock poisoned")
+                .poll();
+            match polled {
+                Ok(Some(code)) => break code,
+                Ok(None) => thread::sleep(Duration::from_millis(20)),
+                Err(_) => break -1,
+            }
+        };
+        let code = if raw_code >= 0 { raw_code } else { -1 };
         let _ = done_rx.recv_timeout(Duration::from_millis(100));
         reaper_state.finish(&reaper_use_id, code);
     });
-    let timeout = timeout_for(
-        &work.request,
-        resolved.as_ref().and_then(|facts| facts.timeout_seconds),
-    );
     let timeout_state = state;
     let timeout_id = work.use_id;
     thread::spawn(move || {
         thread::sleep(Duration::from_secs(timeout));
         if let Some(running) = timeout_state.timeout(&timeout_id, timeout) {
-            stop_group(running.pgid);
+            let _ = running
+                .authority
+                .lock()
+                .expect("cortex authority lock poisoned")
+                .terminate(Duration::from_secs(10));
         }
     });
     Ok(())
@@ -379,15 +426,14 @@ fn group_has_live_processes(pgid: i32) -> bool {
     killpg(Pid::from_raw(pgid), None).is_ok()
 }
 
-fn terminate_and_reap(child: &mut Child, pgid: i32) {
-    stop_group(pgid);
-    let _ = child.wait();
-}
-
 pub(crate) fn cancel_worker(state: CortexState, receiver: mpsc::Receiver<(String, String)>) {
     while let Ok((use_id, reason)) = receiver.recv() {
         if let Some(running) = state.cancel_running(&use_id, &reason) {
-            stop_group(running.pgid);
+            let _ = running
+                .authority
+                .lock()
+                .expect("cortex authority lock poisoned")
+                .terminate(Duration::from_secs(10));
         }
     }
 }

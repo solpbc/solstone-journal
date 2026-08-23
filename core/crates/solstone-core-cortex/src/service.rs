@@ -12,7 +12,7 @@ use solstone_core_callosum::CallosumSocketConnection;
 use thiserror::Error;
 use tokio::time::{Duration, MissedTickBehavior};
 
-use crate::process::{cancel_worker, spawn_worker, stop_group};
+use crate::process::{cancel_worker, spawn_worker};
 use crate::renewal::{Now, RenewalHandle, RenewalService, RenewalWorkerStart};
 use crate::state::{CortexState, Outbound};
 use crate::storage::CortexStore;
@@ -214,7 +214,13 @@ where
                 state.stop_accepting();
                 match mode {
                     ShutdownMode::Immediate => {
-                        for running in state.stop_immediately() { stop_group(running.pgid); }
+                        for running in state.stop_immediately() {
+                            let _ = running
+                                .authority
+                                .lock()
+                                .expect("cortex authority lock poisoned")
+                                .terminate(Duration::from_secs(10));
+                        }
                         break;
                     }
                     ShutdownMode::Drain => draining = true,
@@ -298,7 +304,10 @@ async fn shutdown_signal() -> ShutdownMode {
 #[cfg(test)]
 mod tests {
     use chrono::DateTime;
+    use std::process::Command;
     use std::sync::{Arc, Mutex, mpsc};
+
+    use solstone_core_system::process::{self, Disposition, LaunchAuthority, LaunchError};
 
     use super::*;
 
@@ -330,6 +339,18 @@ mod tests {
         }
     }
 
+    fn fixture_authority() -> Arc<Mutex<LaunchAuthority>> {
+        let authority = process::launch(
+            Disposition::IndependentBoundedHelper {
+                timeout: Duration::from_secs(30),
+            },
+            || Command::new("/bin/sleep").arg("30").spawn(),
+            Box::new(|child, _timeout| child.kill().map_err(LaunchError::Terminate)),
+        )
+        .expect("fixture launch");
+        Arc::new(Mutex::new(authority))
+    }
+
     fn running_state() -> (tempfile::TempDir, CortexState) {
         let directory = tempfile::tempdir().unwrap();
         let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
@@ -343,7 +364,7 @@ mod tests {
         );
         let work = spawn_rx.recv().unwrap();
         state.spawn_begin("one");
-        state.spawn_started(&work, 0, Arc::new(Mutex::new(Vec::new())));
+        state.spawn_started(&work, fixture_authority(), Arc::new(Mutex::new(Vec::new())));
         (directory, state)
     }
 
@@ -426,7 +447,6 @@ mod tests {
         let (_directory, state) = running_state();
         let running = state.stop_immediately();
         assert_eq!(running.len(), 1);
-        assert_eq!(running[0].pgid, 0);
         assert_eq!(state.running().len(), 1);
     }
 

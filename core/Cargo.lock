@@ -3549,6 +3549,7 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-journal-cli",
  "solstone-core-spp-ratls",
+ "solstone-core-system",
  "solstone-core-talent-cli",
  "tempfile",
  "thiserror 2.0.20",

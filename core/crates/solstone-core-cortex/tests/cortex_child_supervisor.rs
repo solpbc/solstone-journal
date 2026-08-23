@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus};
+use std::process::{Command, ExitStatus};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -17,10 +17,23 @@ use serde_json::{Map, Value};
 use solstone_core_cortex::test_hooks::{
     CortexState, CortexStore, Work, new_state, spawn_one, stop_group_with_grace,
 };
+use solstone_core_system::process::{self, Disposition, LaunchAuthority, LaunchError};
 use tempfile::tempdir;
 
+// Inverts LaunchAuthority's signal-aware i32 (non-negative = exit, negative = -signal)
+// back into the raw Unix wait-status encoding ExitStatus::from_raw expects.
+fn exit_status_from_code(code: i32) -> ExitStatus {
+    if (0..=255).contains(&code) {
+        ExitStatus::from_raw(code << 8)
+    } else if code < 0 {
+        ExitStatus::from_raw(-code)
+    } else {
+        ExitStatus::from_raw(code)
+    }
+}
+
 struct ChildGuard {
-    child: Option<Child>,
+    authority: Arc<Mutex<LaunchAuthority>>,
     pgid: i32,
     armed: bool,
 }
@@ -28,28 +41,45 @@ struct ChildGuard {
 impl ChildGuard {
     fn spawn(mut command: Command) -> Self {
         command.process_group(0);
-        let child = command.spawn().expect("fixture child");
-        let pgid = i32::try_from(child.id()).expect("pid");
+        let authority = process::launch(
+            Disposition::IndependentBoundedHelper {
+                timeout: Duration::from_secs(30),
+            },
+            || command.spawn(),
+            Box::new(|child, _timeout| {
+                let pgid = i32::try_from(child.id()).map_err(|_| {
+                    LaunchError::Terminate(std::io::Error::other("child pid does not fit i32"))
+                })?;
+                stop_group_with_grace(pgid, Duration::from_millis(200));
+                Ok(())
+            }),
+        )
+        .expect("fixture child");
+        let pgid = i32::try_from(authority.pid()).expect("pid");
         Self {
-            child: Some(child),
+            authority: Arc::new(Mutex::new(authority)),
             pgid,
             armed: true,
         }
     }
 
     fn try_wait(&mut self) -> Option<ExitStatus> {
-        self.child
-            .as_mut()
-            .expect("child")
-            .try_wait()
-            .expect("try_wait")
+        match self
+            .authority
+            .lock()
+            .expect("cortex authority lock poisoned")
+            .poll()
+        {
+            Ok(Some(code)) => Some(exit_status_from_code(code)),
+            Ok(None) => None,
+            Err(_) => Some(exit_status_from_code(-1)),
+        }
     }
 
     fn wait_bounded(&mut self, timeout: Duration) -> ExitStatus {
         let started = Instant::now();
         loop {
             if let Some(status) = self.try_wait() {
-                self.child.take();
                 return status;
             }
             assert!(started.elapsed() < timeout, "fixture child did not exit");
@@ -58,11 +88,21 @@ impl ChildGuard {
     }
 
     fn reap_in_background(&mut self) -> mpsc::Receiver<ExitStatus> {
-        let mut child = self.child.take().expect("child");
+        let authority = Arc::clone(&self.authority);
         let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
-            let status = child.wait().expect("wait");
-            let _ = sender.send(status);
+            let code = loop {
+                let polled = authority
+                    .lock()
+                    .expect("cortex authority lock poisoned")
+                    .poll();
+                match polled {
+                    Ok(Some(code)) => break code,
+                    Ok(None) => thread::sleep(Duration::from_millis(10)),
+                    Err(_) => break -1,
+                }
+            };
+            let _ = sender.send(exit_status_from_code(code));
         });
         receiver
     }
@@ -76,10 +116,11 @@ impl ChildGuard {
             return;
         }
         self.armed = false;
-        stop_group_with_grace(self.pgid, Duration::from_millis(200));
-        if let Some(mut child) = self.child.take() {
-            let _ = child.wait();
-        }
+        let _ = self
+            .authority
+            .lock()
+            .expect("cortex authority lock poisoned")
+            .terminate(Duration::from_millis(200));
     }
 }
 
@@ -96,7 +137,11 @@ struct RunningUsesGuard {
 impl Drop for RunningUsesGuard {
     fn drop(&mut self) {
         for running in self.state.running() {
-            stop_group_with_grace(running.pgid, Duration::from_millis(200));
+            let _ = running
+                .authority
+                .lock()
+                .expect("cortex authority lock poisoned")
+                .terminate(Duration::from_millis(200));
         }
     }
 }
@@ -410,7 +455,11 @@ fn drain_keeps_running_use_alive_until_its_own_exit() {
     let mut child = ChildGuard::spawn(command);
     let _ = poll_file(&ready, Duration::from_secs(2));
     state.spawn_begin("one");
-    state.spawn_started(&work, child.pgid, Arc::new(Mutex::new(Vec::new())));
+    state.spawn_started(
+        &work,
+        Arc::clone(&child.authority),
+        Arc::new(Mutex::new(Vec::new())),
+    );
     state.stop_accepting();
     assert!(child.try_wait().is_none());
     let status = child.wait_bounded(Duration::from_secs(2));
@@ -435,9 +484,17 @@ fn immediate_stop_signals_the_running_group() {
     let mut child = ChildGuard::spawn(command);
     let _ = poll_file(&ready, Duration::from_secs(2));
     state.spawn_begin("one");
-    state.spawn_started(&work, child.pgid, Arc::new(Mutex::new(Vec::new())));
+    state.spawn_started(
+        &work,
+        Arc::clone(&child.authority),
+        Arc::new(Mutex::new(Vec::new())),
+    );
     for running in state.stop_immediately() {
-        stop_group_with_grace(running.pgid, Duration::from_millis(200));
+        let _ = running
+            .authority
+            .lock()
+            .expect("cortex authority lock poisoned")
+            .terminate(Duration::from_millis(200));
     }
     let status = child.wait_bounded(Duration::from_secs(2));
     child.disarm();
