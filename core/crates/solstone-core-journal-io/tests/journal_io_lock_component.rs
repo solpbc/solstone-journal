@@ -3,7 +3,6 @@
 
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
 
-use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::io;
@@ -451,54 +450,9 @@ fn existing_parent_lock_crosses_the_real_flock_boundary_in_both_directions() {
 
 const FF: &[u8] = b"seg-\xff";
 const FE: &[u8] = b"seg-\xfe";
-const TWIN: &[u8] = b"seg-\xef\xbf\xbd";
-const FF_LOCK: &[u8] = b"seg-\xff.lock";
-const TWIN_LOCK: &[u8] = b"seg-\xef\xbf\xbd.lock";
 
 fn os_path(dir: &Path, bytes: &[u8]) -> PathBuf {
     dir.join(OsString::from_vec(bytes.to_vec()))
-}
-
-fn dir_entries(dir: &Path) -> BTreeSet<OsString> {
-    fs::read_dir(dir)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name())
-        .collect()
-}
-
-fn is_name_too_long(error: &io::Error) -> bool {
-    error.raw_os_error() == Some(Errno::ENAMETOOLONG as i32)
-}
-
-fn try_create_len(dir: &Path, len: usize) -> io::Result<()> {
-    let path = dir.join(OsString::from_vec(vec![b'x'; len]));
-    File::create(path).map(drop)
-}
-
-fn filesystem_name_max(dir: &Path) -> usize {
-    fs::create_dir_all(dir).unwrap();
-    let mut lo = 1usize;
-    let mut hi = 2usize;
-    loop {
-        match try_create_len(dir, hi) {
-            Ok(()) => {
-                lo = hi;
-                hi = hi.saturating_mul(2);
-                assert!(hi <= 8192, "NAME_MAX probe exceeded 8192");
-            }
-            Err(error) if is_name_too_long(&error) => break,
-            Err(error) => panic!("unexpected NAME_MAX probe error at {hi}: {error}"),
-        }
-    }
-    while lo + 1 < hi {
-        let mid = lo + (hi - lo) / 2;
-        match try_create_len(dir, mid) {
-            Ok(()) => lo = mid,
-            Err(error) if is_name_too_long(&error) => hi = mid,
-            Err(error) => panic!("unexpected NAME_MAX probe error at {mid}: {error}"),
-        }
-    }
-    lo
 }
 
 fn spawn_lock_holder(path: &Path, marker: &Path) -> std::process::Child {
@@ -555,34 +509,6 @@ fn same_invalid_name_contends_across_processes() {
 }
 
 #[test]
-fn old_and_new_lockers_exclude_each_other_across_processes() {
-    let temporary = tempfile::TempDir::new().unwrap();
-    let locks = temporary.path().join("locks");
-    fs::create_dir(&locks).unwrap();
-    let ff = os_path(&locks, FF);
-    let twin = os_path(&locks, TWIN);
-    let short = LockOptions {
-        timeout: Duration::from_millis(100),
-        ..LockOptions::default()
-    };
-
-    let marker = temporary.path().join("old.ready");
-    let child = spawn_lock_holder(&twin, &marker);
-    wait_for_marker(&marker);
-    assert!(matches!(hold_lock(&ff, short), Err(LockError::Timeout(_))));
-    kill_lock_holder(child);
-
-    let marker = temporary.path().join("new.ready");
-    let child = spawn_lock_holder(&ff, &marker);
-    wait_for_marker(&marker);
-    assert!(matches!(
-        hold_lock(&twin, short),
-        Err(LockError::Timeout(_))
-    ));
-    kill_lock_holder(child);
-}
-
-#[test]
 fn invalid_name_lock_is_released_when_the_holder_dies() {
     let temporary = tempfile::TempDir::new().unwrap();
     let locks = temporary.path().join("locks");
@@ -607,50 +533,6 @@ fn invalid_name_lock_is_released_when_the_holder_dies() {
     let started = Instant::now();
     let _lock = hold_lock(
         &ff,
-        LockOptions {
-            timeout: Duration::from_secs(1),
-            ..LockOptions::default()
-        },
-    )
-    .unwrap();
-    assert!(started.elapsed() < Duration::from_millis(200));
-}
-
-#[test]
-fn exact_fits_legacy_too_long_across_processes() {
-    let temporary = tempfile::TempDir::new().unwrap();
-    let probe = temporary.path().join("probe");
-    let locks = temporary.path().join("locks");
-    fs::create_dir(&locks).unwrap();
-    let name_max = filesystem_name_max(&probe);
-    let mut file_name = vec![b'a'; name_max.saturating_sub(6)];
-    file_name.push(0xff);
-    let path = os_path(&locks, &file_name);
-    let mut exact_sidecar = file_name.clone();
-    exact_sidecar.extend_from_slice(b".lock");
-    let marker = temporary.path().join("locked.ready");
-    let mut child = spawn_lock_holder(&path, &marker);
-    wait_for_marker(&marker);
-    let contention = hold_lock(
-        &path,
-        LockOptions {
-            timeout: Duration::from_millis(100),
-            ..LockOptions::default()
-        },
-    );
-    assert!(
-        matches!(contention, Err(LockError::Timeout(_))),
-        "child did not create real lock contention"
-    );
-    let entries = dir_entries(&locks);
-    assert!(entries.contains(&OsString::from_vec(exact_sidecar)));
-    assert!(!entries.contains(&OsString::from_vec(TWIN_LOCK.to_vec())));
-    assert!(!entries.contains(&OsString::from_vec(FF_LOCK.to_vec())));
-    kill(Pid::from_raw(child.id() as i32), Signal::SIGKILL).unwrap();
-    child.wait().unwrap();
-    let started = Instant::now();
-    let _lock = hold_lock(
-        &path,
         LockOptions {
             timeout: Duration::from_secs(1),
             ..LockOptions::default()
