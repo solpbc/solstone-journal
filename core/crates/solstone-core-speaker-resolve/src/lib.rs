@@ -5,6 +5,7 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+pub mod admission;
 pub mod artifact_wipe;
 pub mod backfill;
 pub mod backfill_operations;
