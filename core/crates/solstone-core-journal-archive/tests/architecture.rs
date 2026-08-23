@@ -279,11 +279,14 @@ fn public_descendant_operations_accept_only_inventory_handles() {
 #[test]
 fn manifest_declares_only_runtime_dependencies() {
     assert_eq!(
-        dependency_lines(MANIFEST),
+        section_lines(MANIFEST, "[dependencies]"),
+        vec!["zip = { version = \"=2.4.2\", default-features = false, features = [\"deflate\"] }",],
+    );
+    assert_eq!(
+        section_lines(MANIFEST, "[target.'cfg(unix)'.dependencies]"),
         vec![
             "nix = { workspace = true, features = [\"dir\", \"user\"] }",
             "solstone-core-journal-io = { workspace = true }",
-            "zip = { version = \"=2.4.2\", default-features = false, features = [\"deflate\"] }",
         ],
     );
 }
@@ -373,21 +376,21 @@ fn public_signatures(source: &str) -> Vec<&str> {
         .collect()
 }
 
-fn dependency_lines(manifest: &str) -> Vec<&str> {
-    let mut in_dependencies = false;
-    let mut dependencies = Vec::new();
+fn section_lines<'a>(manifest: &'a str, header: &str) -> Vec<&'a str> {
+    let mut in_section = false;
+    let mut lines = Vec::new();
     for line in manifest.lines() {
         let trimmed = line.trim();
-        if trimmed == "[dependencies]" {
-            in_dependencies = true;
+        if trimmed == header {
+            in_section = true;
             continue;
         }
-        if in_dependencies && trimmed.starts_with('[') {
+        if in_section && trimmed.starts_with('[') {
             break;
         }
-        if in_dependencies && !trimmed.is_empty() && !trimmed.starts_with('#') {
-            dependencies.push(trimmed);
+        if in_section && !trimmed.is_empty() && !trimmed.starts_with('#') {
+            lines.push(trimmed);
         }
     }
-    dependencies
+    lines
 }

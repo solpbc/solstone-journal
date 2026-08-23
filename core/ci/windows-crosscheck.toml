@@ -9,13 +9,13 @@ library_packages = 126
 package = "solstone-core-journal-io"
 class = "sibling-owned-platform-backend"
 reason = "Lane 2 owns the atomic-write, locking, and lease backend; Lane 1 may not weaken those durability and containment guarantees."
-expected_stderr = ["could not compile `solstone-core-journal-io`", "std::os::fd"]
+exclusive_diagnostic = "solstone-core-journal-io requires a Unix target: atomic write, locking, and lease durability guarantees have no portable backend"
 
 [[exclusions]]
 package = "solstone-core-journal-archive"
 class = "sibling-owned-platform-backend"
 reason = "Lane 2 owns archive traversal and metadata preservation; Lane 1 may not replace the Unix implementation with a no-op."
-expected_stderr = ["could not compile `solstone-core-journal-io`", "std::os::fd"]
+exclusive_diagnostic = "solstone-core-journal-archive requires a Unix target: archive traversal and publication have no portable backend"
 
 [[exclusions]]
 package = "solstone-core-journal-convergence"

@@ -10,17 +10,21 @@ publish = false
 chrono = { workspace = true }
 getrandom = { workspace = true }
 log = { workspace = true }
-nix = { workspace = true, features = ["fs"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 solstone-core-journal = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs"] }
 
 [features]
 test-hooks = []
 
 [dev-dependencies]
-nix = { workspace = true, features = ["signal"] }
 tempfile = "3.24.0"
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["signal"] }
 
 [lints]
 workspace = true

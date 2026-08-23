@@ -2,9 +2,9 @@
 
 This is the shared vocabulary for a journal root, its identity, entry kinds, and
 refusals. It is not a generic VFS. It is not Windows support. The only backend
-today is Unix; `core/ci/windows-crosscheck.toml` excludes
-`solstone-core-journal-io` (`std::os::fd`) and `solstone-core-journal-archive`
-(`std::os::unix`) as sibling-owned platform backends.
+today is Unix: both crates target-gate `nix` (archive also target-gates
+`solstone-core-journal-io`) and each refuses non-Unix with its own `compile_error!`.
+`core/ci/windows-crosscheck.toml` excludes both as sibling-owned platform backends.
 
 ## Root, identity, kind, refusal
 

@@ -1,0 +1,181 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! journal-io and journal-archive refuse non-Unix at compile time.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use toml_edit::{DocumentMut, Item, Table};
+
+fn repository_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("core crate has repository parent")
+        .to_path_buf()
+}
+
+fn read_repo_file(relative: &str) -> String {
+    let path = repository_root().join(relative);
+    fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
+}
+
+fn parse_manifest(relative: &str) -> DocumentMut {
+    read_repo_file(relative)
+        .parse()
+        .unwrap_or_else(|error| panic!("parse {relative}: {error}"))
+}
+
+fn table<'a>(doc: &'a DocumentMut, key: &str) -> Option<&'a Table> {
+    doc.get(key).and_then(Item::as_table)
+}
+
+fn target_unix<'a>(doc: &'a DocumentMut, kind: &str) -> Option<&'a Table> {
+    doc.get("target")
+        .and_then(|item| item.get("cfg(unix)"))
+        .and_then(|item| item.get(kind))
+        .and_then(Item::as_table)
+}
+
+fn has_key(table: Option<&Table>, key: &str) -> bool {
+    table.is_some_and(|table| table.contains_key(key))
+}
+
+fn features(table: &Table, crate_name: &str) -> Vec<String> {
+    table
+        .get(crate_name)
+        .and_then(Item::as_value)
+        .and_then(|value| value.as_inline_table())
+        .and_then(|table| table.get("features"))
+        .and_then(|value| value.as_array())
+        .map(|array| {
+            array
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn compile_error_literal(lib: &str) -> String {
+    const CFG: &str = "#[cfg(not(unix))]";
+    const MACRO: &str = "compile_error!(";
+    let cfg_at = lib
+        .find(CFG)
+        .expect("lib.rs must declare #[cfg(not(unix))]");
+    let after_cfg = &lib[cfg_at + CFG.len()..];
+    let macro_rel = after_cfg
+        .find(MACRO)
+        .expect("lib.rs must declare compile_error! after #[cfg(not(unix))]");
+    let between = after_cfg[..macro_rel].trim();
+    assert!(
+        between.is_empty(),
+        "compile_error! must follow #[cfg(not(unix))] immediately, found {between:?}"
+    );
+    let rest = &after_cfg[macro_rel + MACRO.len()..];
+    let quote = rest
+        .find('"')
+        .expect("compile_error! must contain a string literal");
+    let body = &rest[quote + 1..];
+    let end = body
+        .find('"')
+        .expect("compile_error! string literal must close");
+    body[..end].to_owned()
+}
+
+#[test]
+fn journal_io_nix_edges_are_unix_target_gated() {
+    let doc = parse_manifest("core/crates/solstone-core-journal-io/Cargo.toml");
+    assert!(!has_key(table(&doc, "dependencies"), "nix"));
+    assert!(!has_key(table(&doc, "dev-dependencies"), "nix"));
+    let unix_deps = target_unix(&doc, "dependencies").expect("unix dependencies");
+    assert_eq!(features(unix_deps, "nix"), ["fs"]);
+    let unix_dev = target_unix(&doc, "dev-dependencies").expect("unix dev-dependencies");
+    assert_eq!(features(unix_dev, "nix"), ["signal"]);
+}
+
+#[test]
+fn journal_archive_unix_edges_are_target_gated() {
+    let doc = parse_manifest("core/crates/solstone-core-journal-archive/Cargo.toml");
+    let deps = table(&doc, "dependencies").expect("dependencies");
+    assert!(!deps.contains_key("nix"));
+    assert!(!deps.contains_key("solstone-core-journal-io"));
+    assert!(deps.contains_key("zip"));
+    let unix_deps = target_unix(&doc, "dependencies").expect("unix dependencies");
+    assert_eq!(features(unix_deps, "nix"), ["dir", "user"]);
+    assert!(unix_deps.contains_key("solstone-core-journal-io"));
+    let dev = table(&doc, "dev-dependencies").expect("dev-dependencies");
+    assert!(!dev.contains_key("nix"));
+    assert!(dev.contains_key("zip"));
+    let unix_dev = target_unix(&doc, "dev-dependencies").expect("unix dev-dependencies");
+    assert_eq!(features(unix_dev, "nix"), ["fs"]);
+}
+
+#[test]
+fn journal_io_lib_declares_not_unix_compile_error() {
+    let lib = read_repo_file("core/crates/solstone-core-journal-io/src/lib.rs");
+    assert_eq!(
+        compile_error_literal(&lib),
+        "solstone-core-journal-io requires a Unix target: atomic write, locking, and lease durability guarantees have no portable backend"
+    );
+}
+
+#[test]
+fn journal_archive_lib_declares_not_unix_compile_error() {
+    let lib = read_repo_file("core/crates/solstone-core-journal-archive/src/lib.rs");
+    assert_eq!(
+        compile_error_literal(&lib),
+        "solstone-core-journal-archive requires a Unix target: archive traversal and publication have no portable backend"
+    );
+}
+
+#[test]
+fn windows_crosscheck_exclusive_diagnostics_match_compile_error_literals() {
+    let io_literal = compile_error_literal(&read_repo_file(
+        "core/crates/solstone-core-journal-io/src/lib.rs",
+    ));
+    let archive_literal = compile_error_literal(&read_repo_file(
+        "core/crates/solstone-core-journal-archive/src/lib.rs",
+    ));
+    let doc: DocumentMut = read_repo_file("core/ci/windows-crosscheck.toml")
+        .parse()
+        .expect("parse windows-crosscheck.toml");
+    let exclusions = doc["exclusions"]
+        .as_array_of_tables()
+        .expect("exclusions array of tables");
+    let mut saw_io = false;
+    let mut saw_archive = false;
+    for exclusion in exclusions {
+        let Some(package) = exclusion.get("package").and_then(Item::as_str) else {
+            continue;
+        };
+        match package {
+            "solstone-core-journal-io" => {
+                saw_io = true;
+                assert!(
+                    exclusion.get("expected_stderr").is_none(),
+                    "journal-io exclusion still names expected_stderr"
+                );
+                assert_eq!(
+                    exclusion.get("exclusive_diagnostic").and_then(Item::as_str),
+                    Some(io_literal.as_str())
+                );
+            }
+            "solstone-core-journal-archive" => {
+                saw_archive = true;
+                assert!(
+                    exclusion.get("expected_stderr").is_none(),
+                    "journal-archive exclusion still names expected_stderr"
+                );
+                assert_eq!(
+                    exclusion.get("exclusive_diagnostic").and_then(Item::as_str),
+                    Some(archive_literal.as_str())
+                );
+            }
+            _ => {}
+        }
+    }
+    assert!(saw_io, "missing journal-io exclusion");
+    assert!(saw_archive, "missing journal-archive exclusion");
+}

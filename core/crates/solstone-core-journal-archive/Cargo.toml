@@ -10,9 +10,11 @@ license.workspace = true
 publish = false
 
 [dependencies]
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["dir", "user"] }
 solstone-core-journal-io = { workspace = true }
-zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true
@@ -26,5 +28,7 @@ path = "tests/archive_fault_boundaries.rs"
 required-features = ["test-hooks"]
 
 [dev-dependencies]
-nix = { workspace = true, features = ["fs"] }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["fs"] }

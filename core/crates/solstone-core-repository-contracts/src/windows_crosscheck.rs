@@ -27,7 +27,10 @@ struct Exclusion {
     version: Option<String>,
     class: String,
     reason: String,
+    #[serde(default)]
     expected_stderr: Vec<String>,
+    #[serde(default)]
+    exclusive_diagnostic: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -202,12 +205,17 @@ fn resolve_exclusions<'a>(
     let mut resolved = Vec::new();
     let mut ids = BTreeSet::new();
     for exclusion in exclusions {
+        let exclusive = exclusion
+            .exclusive_diagnostic
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty());
         if exclusion.class.trim().is_empty()
             || exclusion.reason.trim().is_empty()
-            || exclusion.expected_stderr.is_empty()
+            || exclusive.is_some() == !exclusion.expected_stderr.is_empty()
         {
             return Err(format!(
-                "exclusion {} must name a class, reason, and expected stderr",
+                "exclusion {} must name a class, reason, and exactly one of expected stderr or exclusive diagnostic",
                 exclusion.package
             ));
         }
@@ -258,6 +266,14 @@ fn probe_exclusion(
         || package.name.clone(),
         |version| format!("{}@{version}", package.name),
     );
+    if let Some(marker) = exclusion
+        .exclusive_diagnostic
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        return probe_exclusive_diagnostic(repo, target, exclusion, &spec, marker);
+    }
     let output = cargo_check(repo, target, &spec, Sweep::Library)?;
     let text = output_text(&output);
     if output.status.success() {
@@ -277,6 +293,35 @@ fn probe_exclusion(
             exclusion.package, missing, text
         ));
     }
+    println!(
+        "EXCLUDED root {} [{}]: {}",
+        exclusion.package, exclusion.class, exclusion.reason
+    );
+    Ok(())
+}
+
+fn probe_exclusive_diagnostic(
+    repo: &Path,
+    target: &str,
+    exclusion: &Exclusion,
+    spec: &str,
+    marker: &str,
+) -> Result<(), String> {
+    let output = cargo_check_with(repo, target, spec, Sweep::Library, true)?;
+    if output.status.success() {
+        return Err(format!(
+            "stale Windows exclusion {} ({}) now passes; remove or narrow it: {}",
+            exclusion.package, exclusion.class, exclusion.reason
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    validate_exclusive_diagnostic(&stdout, marker, &exclusion.package).map_err(|error| {
+        format!(
+            "Windows exclusion {} failed differently: {error}\n{}",
+            exclusion.package,
+            output_text(&output)
+        )
+    })?;
     println!(
         "EXCLUDED root {} [{}]: {}",
         exclusion.package, exclusion.class, exclusion.reason
@@ -354,6 +399,16 @@ fn sweep(
 }
 
 fn cargo_check(repo: &Path, target: &str, package: &str, sweep: Sweep) -> Result<Output, String> {
+    cargo_check_with(repo, target, package, sweep, false)
+}
+
+fn cargo_check_with(
+    repo: &Path,
+    target: &str,
+    package: &str,
+    sweep: Sweep,
+    message_format_json: bool,
+) -> Result<Output, String> {
     let mut command = Command::new("cargo");
     command.args([
         "check",
@@ -374,11 +429,100 @@ fn cargo_check(repo: &Path, target: &str, package: &str, sweep: Sweep) -> Result
             command.arg("--tests");
         }
     }
+    if message_format_json {
+        command.arg("--message-format=json");
+    }
     command
         .current_dir(repo)
         .env("CARGO_BUILD_JOBS", "1")
         .output()
         .map_err(|error| format!("start Windows cargo check for {package}: {error}"))
+}
+
+#[derive(Debug, Deserialize)]
+struct CompilerMessage {
+    reason: String,
+    package_id: Option<String>,
+    message: Option<DiagnosticMessage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiagnosticMessage {
+    level: Option<String>,
+    message: Option<String>,
+    code: Option<DiagnosticCode>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiagnosticCode {
+    code: String,
+}
+
+fn crate_directory_from_package_id(package_id: &str) -> &str {
+    let without_version = package_id
+        .split_once('#')
+        .map_or(package_id, |(path, _)| path);
+    without_version
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(without_version)
+}
+
+fn validate_exclusive_diagnostic(
+    json_lines: &str,
+    marker: &str,
+    package: &str,
+) -> Result<(), String> {
+    let mut errors = Vec::new();
+    for line in json_lines.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<CompilerMessage>(trimmed) else {
+            continue;
+        };
+        if value.reason != "compiler-message" {
+            continue;
+        }
+        let Some(message) = value.message else {
+            continue;
+        };
+        if message.level.as_deref() == Some("failure-note") {
+            continue;
+        }
+        if message.level.as_deref() != Some("error") {
+            continue;
+        }
+        errors.push((value.package_id, message));
+    }
+    if errors.len() != 1 {
+        return Err(format!(
+            "exclusive diagnostic expected exactly one compiler error, found {}",
+            errors.len()
+        ));
+    }
+    let (package_id, message) = errors.remove(0);
+    let text = message.message.as_deref().unwrap_or("");
+    if text != marker {
+        return Err(format!(
+            "exclusive diagnostic text mismatch: expected {marker:?}, found {text:?}"
+        ));
+    }
+    if let Some(code) = message.code {
+        return Err(format!(
+            "exclusive diagnostic must have a null error code, found {}",
+            code.code
+        ));
+    }
+    let package_id = package_id.unwrap_or_default();
+    let crate_dir = crate_directory_from_package_id(&package_id);
+    if crate_dir != package {
+        return Err(format!(
+            "exclusive diagnostic came from {crate_dir}, not the excluded package {package}"
+        ));
+    }
+    Ok(())
 }
 
 fn dependency_packages(
@@ -452,7 +596,11 @@ fn output_text(output: &Output) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{PackageKey, parse_package_tree};
+    use super::{PackageKey, parse_package_tree, validate_exclusive_diagnostic};
+
+    const MARKER: &str = "solstone-core-journal-io requires a Unix target: atomic write, locking, and lease durability guarantees have no portable backend";
+    const PACKAGE: &str = "solstone-core-journal-io";
+    const PACKAGE_ID: &str = "path+file:///repo/core/crates/solstone-core-journal-io#2.0.0";
 
     #[test]
     fn package_tree_parser_deduplicates_exact_name_and_version_pairs() {
@@ -471,6 +619,116 @@ mod tests {
                     version: "1.2.3".to_owned(),
                 },
             ]
+        );
+    }
+
+    fn compiler_message(level: &str, package_id: &str, text: &str, code: Option<&str>) -> String {
+        let mut message = serde_json::json!({
+            "level": level,
+            "message": text,
+            "code": serde_json::Value::Null,
+            "spans": [],
+        });
+        if let Some(code) = code {
+            message["code"] = serde_json::json!({ "code": code, "explanation": null });
+        }
+        serde_json::json!({
+            "reason": "compiler-message",
+            "package_id": package_id,
+            "message": message,
+        })
+        .to_string()
+    }
+
+    fn matching_error() -> String {
+        compiler_message("error", PACKAGE_ID, MARKER, None)
+    }
+
+    #[test]
+    fn exclusive_diagnostic_accepts_single_matching_compile_error() {
+        assert_eq!(
+            validate_exclusive_diagnostic(&matching_error(), MARKER, PACKAGE),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn exclusive_diagnostic_ignores_failure_notes_in_error_count() {
+        let json = [
+            matching_error(),
+            compiler_message(
+                "failure-note",
+                PACKAGE_ID,
+                "Some errors have detailed explanations: E0432, E0433.",
+                None,
+            ),
+            compiler_message(
+                "failure-note",
+                PACKAGE_ID,
+                "For more information about an error, try `rustc --explain E0432`.",
+                None,
+            ),
+        ]
+        .join("\n");
+        assert_eq!(
+            validate_exclusive_diagnostic(&json, MARKER, PACKAGE),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn exclusive_diagnostic_rejects_second_primary_error() {
+        let json = [
+            matching_error(),
+            compiler_message(
+                "error",
+                PACKAGE_ID,
+                "unresolved import `std::os::fd`",
+                Some("E0432"),
+            ),
+        ]
+        .join("\n");
+        let error = validate_exclusive_diagnostic(&json, MARKER, PACKAGE).expect_err("two errors");
+        assert!(
+            error.contains("exactly one compiler error, found 2"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn exclusive_diagnostic_rejects_dependency_package_id() {
+        let json = compiler_message(
+            "error",
+            "path+file:///repo/core/crates/solstone-core-journal-config#1.0.0",
+            MARKER,
+            None,
+        );
+        let error =
+            validate_exclusive_diagnostic(&json, MARKER, PACKAGE).expect_err("dependency error");
+        assert!(
+            error.contains("solstone-core-journal-config") && error.contains(PACKAGE),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn exclusive_diagnostic_rejects_message_text_mismatch() {
+        let json = compiler_message("error", PACKAGE_ID, "unresolved import `std::os::fd`", None);
+        let error =
+            validate_exclusive_diagnostic(&json, MARKER, PACKAGE).expect_err("text mismatch");
+        assert!(
+            error.contains("text mismatch") && error.contains("unresolved import `std::os::fd`"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn exclusive_diagnostic_rejects_non_null_error_code() {
+        let json = compiler_message("error", PACKAGE_ID, MARKER, Some("E0432"));
+        let error = validate_exclusive_diagnostic(&json, MARKER, PACKAGE).expect_err("coded error");
+        assert!(
+            error.contains("null error code") && error.contains("E0432"),
+            "{error}"
         );
     }
 }
