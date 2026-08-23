@@ -414,7 +414,7 @@ First-run journal establishment. **Creates the identity root** that `S:device-li
 | | | |
 |---|---|---|
 | **Bundled** | the three speaker/VAD graphs — `wespeaker-resnet34-256` · `pyannote-segmentation-3.0` · `silero_vad_v6` | every install needs all three, they are digest-pinned in the consuming crate (`solstone-core-transcribe/src/model_assets.rs`), and transcription is not an opt-in feature. Placed at `lib/solstone_journal_models/assets/`, which that crate's resolver already searches **before** any `site-packages` candidate |
-| **Fetched** | the large per-platform optional runtimes — `llama-server`, the Core ML transcription models, ced, rerank, rf-detr, the Vulkan probe's targets | gated on host capability or on an owner choosing a provider; **not** every install needs them, and the mirror, catalog and deletion-guard machinery in `P-system-models` exists for exactly this class |
+| **Fetched** | the large per-platform optional runtimes — `llama-server`, the Core ML transcription models, ced, rerank, rf-detr, the Vulkan probe's targets | gated on host capability or on an owner choosing a provider; **not** every install needs them, and the mirror, catalog and deletion-guard machinery in `P-system-models` exists for exactly this class; ced is an optional POSIX fetch for sound-tagging; rerank is a dormant retained-catalog pin, not fetched on POSIX, and consumed by no product path |
 
 ⛔ **The fetched class does not grow by default.** Moving a required artifact out of the tree to save download size is a change to this contract, not a packaging optimization: it converts a working install into a first-run network dependency, and it is the strand's owner who decides it.
 

@@ -213,9 +213,9 @@ required notice and license terms.
 
 ## runtime-downloaded provider artifacts (rerank cross-encoder)
 
-sol pbc redistributes these artifacts from `updates.solstone.app` on demand
-into the journal provider cache for local rerank scoring. They are not bundled
-in this repository.
+sol pbc retains these artifacts in the download catalog as a dormant pin. They
+are not fetched on POSIX and are not consumed by any product path. They are not
+bundled in this repository.
 
 ### rerank cross-encoder ONNX model
 
