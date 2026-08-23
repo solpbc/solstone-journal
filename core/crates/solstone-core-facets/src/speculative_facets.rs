@@ -24,6 +24,9 @@ pub struct SpeculativeFacetSample {
     pub day: String,
     pub stream: String,
     pub segment: String,
+    /// Present when stream or basename cannot be named in UTF-8.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unrepresentable: bool,
 }
 
 /// A recurring speculative facet proposal and its bounded evidence samples.
@@ -64,7 +67,7 @@ pub fn aggregate_speculative_facets(
     let mut groups = BTreeMap::<String, SpeculativeFacetCandidate>::new();
     for day in scan_days {
         for segment in iter_segments(journal_root, PathOrDay::Day(&day))? {
-            let sense_path = segment.path.join("talents").join("sense.json");
+            let sense_path = segment.path().join("talents").join("sense.json");
             let Ok(bytes) = fs::read(sense_path) else {
                 continue;
             };
@@ -91,11 +94,20 @@ pub fn aggregate_speculative_facets(
                     });
             group.count += 1;
             if group.samples.len() < SAMPLE_LIMIT {
-                group.samples.push(SpeculativeFacetSample {
-                    day: day.clone(),
-                    stream: segment.stream,
-                    segment: segment.key,
-                });
+                match segment.record_identity() {
+                    Some(identity) => group.samples.push(SpeculativeFacetSample {
+                        day: day.clone(),
+                        stream: identity.stream.to_owned(),
+                        segment: identity.key.to_owned(),
+                        unrepresentable: false,
+                    }),
+                    None => group.samples.push(SpeculativeFacetSample {
+                        day: day.clone(),
+                        stream: String::new(),
+                        segment: segment.key().to_owned(),
+                        unrepresentable: true,
+                    }),
+                }
             }
         }
     }

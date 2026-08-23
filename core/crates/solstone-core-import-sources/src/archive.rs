@@ -26,9 +26,9 @@ use solstone_core_facets::{
 };
 use solstone_core_import::ImportPreview;
 use solstone_core_journal_io::{
-    AtomicWriteOptions, DEFAULT_STREAM, LockError, LockOptions, PathOrDay, StagedDirOptions,
-    append_jsonl, atomic_replace, contained_path, hold_lock, iter_segments, publish_staged_dir,
-    write_bytes_exclusive,
+    AtomicWriteOptions, LockError, LockOptions, PathOrDay, RecordIdentity, Segment,
+    StagedDirOptions, StreamLocation, append_jsonl, atomic_replace, contained_path, hold_lock,
+    iter_segments, publish_staged_dir, write_bytes_exclusive,
 };
 use solstone_core_transfer_manifest::{
     ExpectedMember, MANIFEST_NAME, TransferManifest, expected_members, parse_manifest,
@@ -1359,10 +1359,26 @@ fn stage_segments(
                 detail: error.to_string(),
             }
         })?;
+        solstone_core_journal_io::utf8_identities(&segments).map_err(|error| {
+            ImportSourcesError::SegmentMerge {
+                path: day.clone(),
+                detail: error.to_string(),
+            }
+        })?;
         for segment in segments {
-            let destination = segment_destination(target, &day_name, &segment.stream, &segment.key);
+            let identity =
+                segment
+                    .record_identity()
+                    .ok_or_else(|| ImportSourcesError::SegmentMerge {
+                        path: segment.path().to_path_buf(),
+                        detail: "segment path is not UTF-8 representable".to_owned(),
+                    })?;
+            // Disposition (c): destination follows StreamLocation + exact UTF-8
+            // basename so Named("_default") stays under `_default/` and same-key
+            // siblings (`093000_300_a` / `_b`) land at distinct paths.
+            let destination = segment_destination_for(target, &day_name, &segment, identity);
             if destination.exists() {
-                let kind = if tree_digest(&segment.path)? == tree_digest(&destination)? {
+                let kind = if tree_digest(segment.path())? == tree_digest(&destination)? {
                     SegmentDispositionKind::IdenticalExisting
                 } else {
                     state.has_conflict = true;
@@ -1371,19 +1387,19 @@ fn stage_segments(
                 state.summary.segments_skipped += 1;
                 state.segment_dispositions.push(SegmentDisposition {
                     day: day_name.clone(),
-                    stream: segment.stream,
-                    key: segment.key,
+                    stream: identity.stream.to_owned(),
+                    key: identity.key.to_owned(),
                     disposition: kind,
                 });
                 continue;
             }
-            let relative = segment_relative(&day_name, &segment.stream, &segment.key);
+            let relative = segment_relative_for(&day_name, &segment, identity);
             state.decision(
                 "prepared",
                 "segments",
-                json!({"day": day_name, "stream": segment.stream, "key": segment.key}),
+                json!({"day": day_name, "stream": identity.stream, "key": identity.key}),
             )?;
-            stage_tree(state, &segment.path, &relative, |error| {
+            stage_tree(state, segment.path(), &relative, |error| {
                 ImportSourcesError::SegmentMerge {
                     path: destination.clone(),
                     detail: error.to_string(),
@@ -1395,8 +1411,8 @@ fn stage_segments(
             state.chronicle_units.push(PublishUnit::Tree { relative });
             state.segment_dispositions.push(SegmentDisposition {
                 day: day_name.clone(),
-                stream: segment.stream,
-                key: segment.key,
+                stream: identity.stream.to_owned(),
+                key: identity.key.to_owned(),
                 disposition: SegmentDispositionKind::Copied,
             });
         }
@@ -2369,12 +2385,22 @@ fn join_contained(root: &Path, relative: &str) -> Result<PathBuf, ImportSourcesE
     })
 }
 
-fn segment_relative(day: &str, stream: &str, key: &str) -> String {
-    if stream == DEFAULT_STREAM {
-        format!("chronicle/{day}/{key}")
-    } else {
-        format!("chronicle/{day}/{stream}/{key}")
+fn segment_relative_for(day: &str, segment: &Segment, identity: RecordIdentity<'_>) -> String {
+    match segment.stream() {
+        StreamLocation::Direct => format!("chronicle/{day}/{}", identity.name),
+        StreamLocation::Named(_) => {
+            format!("chronicle/{day}/{}/{}", identity.stream, identity.name)
+        }
     }
+}
+
+fn segment_destination_for(
+    target: &Path,
+    day: &str,
+    segment: &Segment,
+    identity: RecordIdentity<'_>,
+) -> PathBuf {
+    target.join(segment_relative_for(day, segment, identity))
 }
 
 #[cfg(test)]
@@ -2502,14 +2528,6 @@ fn dedupe_lines(target: &str, source: &str) -> String {
         String::new()
     } else {
         format!("{}\n", lines.join("\n"))
-    }
-}
-fn segment_destination(target: &Path, day: &str, stream: &str, key: &str) -> PathBuf {
-    let day = target.join("chronicle").join(day);
-    if stream == DEFAULT_STREAM {
-        day.join(key)
-    } else {
-        day.join(stream).join(key)
     }
 }
 fn file_name(path: &Path) -> Result<String, ImportSourcesError> {
@@ -2784,6 +2802,54 @@ mod tests {
             other => panic!("unexpected errors: {other:?}"),
         }
         assert!(collect_tree(&target).is_empty());
+    }
+
+    #[test]
+    fn merge_copies_same_key_siblings_to_distinct_destinations() {
+        let tree = PlanTree::new();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260101/other/093000_300_a/value", b"a"),
+                ("chronicle/20260101/other/093000_300_b/value", b"b"),
+            ],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let result = merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        assert_eq!(result.merge_summary.segments_copied, 2);
+        assert_eq!(
+            fs::read(target.join("chronicle/20260101/other/093000_300_a/value")).unwrap(),
+            b"a"
+        );
+        assert_eq!(
+            fs::read(target.join("chronicle/20260101/other/093000_300_b/value")).unwrap(),
+            b"b"
+        );
+    }
+
+    #[test]
+    fn merge_keeps_named_default_apart_from_direct_layout() {
+        let tree = PlanTree::new();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260101/080000_300/value", b"direct"),
+                ("chronicle/20260101/_default/080000_300/value", b"named"),
+            ],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let result = merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        assert_eq!(result.merge_summary.segments_copied, 2);
+        assert_eq!(
+            fs::read(target.join("chronicle/20260101/080000_300/value")).unwrap(),
+            b"direct"
+        );
+        assert_eq!(
+            fs::read(target.join("chronicle/20260101/_default/080000_300/value")).unwrap(),
+            b"named"
+        );
     }
 
     #[test]

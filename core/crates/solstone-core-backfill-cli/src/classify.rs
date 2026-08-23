@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Local, Utc};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
-    DirEntry, DirEntryKind, PathOrDay, day_dirs, iter_segments, list_dir_entries,
+    DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, Segment, StreamLocation, day_dirs,
+    iter_segments, list_dir_entries,
 };
 use solstone_core_processing_record::analysis_row_key;
 use solstone_core_processing_record::media::expected_handler;
@@ -175,13 +176,13 @@ pub(crate) fn plan(
             }
         };
         for segment in segments {
-            let entries = match list_dir_entries(&segment.path) {
+            let entries = match list_dir_entries(segment.path()) {
                 Ok(entries) => entries,
                 Err(error) => {
                     let _ = writeln!(
                         stderr,
                         "Could not list segment directory {}: {error}",
-                        segment.path.display()
+                        segment.path().display()
                     );
                     continue;
                 }
@@ -190,8 +191,8 @@ pub(crate) fn plan(
                 match classify(
                     &day,
                     &current_day,
-                    &segment.path,
-                    &segment.stream,
+                    segment.path(),
+                    stream_spelling(&segment),
                     entry,
                     &entries,
                     instant,
@@ -257,7 +258,7 @@ pub(crate) fn classify(
         return Err(Outcome::SkipIneligible);
     };
     let stream = stream_for(segment_path, segment_stream);
-    if stream.starts_with("import.") || day == current_day {
+    if stream.is_empty() || stream.starts_with("import.") || day == current_day {
         return Err(Outcome::SkipIneligible);
     }
     if candidate.kind != DirEntryKind::File {
@@ -322,8 +323,16 @@ fn stream_for(segment_path: &Path, fallback: &str) -> String {
     {
         return stream.to_owned();
     }
-    // Segment.stream is the journal-I/O authority for direct `_default` and nested streams.
+    // Direct layout spells `_default`; a named stream uses its UTF-8 directory.
     fallback.to_owned()
+}
+
+fn stream_spelling(segment: &Segment) -> &str {
+    match segment.stream() {
+        StreamLocation::Direct => DEFAULT_STREAM,
+        // Empty fallback is refused in `classify` (`stream.is_empty()`).
+        StreamLocation::Named(name) => name.to_str().unwrap_or(""),
+    }
 }
 
 fn matching_sibling<'a>(

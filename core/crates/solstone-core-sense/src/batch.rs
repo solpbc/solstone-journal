@@ -12,7 +12,10 @@ use std::sync::{Arc, mpsc};
 
 use serde_json::{Map, Value};
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketConnection};
-use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, iter_segments};
+use solstone_core_journal_io::{
+    DEFAULT_STREAM, PathOrDay, Segment, SegmentIdentityError, check_record_identities,
+    iter_segments,
+};
 use solstone_core_processing_record::{
     MediaKind, media_kind, read_processing_record_header, should_reenter_analysis_output,
 };
@@ -81,6 +84,28 @@ pub enum BatchError {
     Runtime,
     #[error("{failed} failed of {ran} ran")]
     Failed { failed: usize, ran: usize },
+    #[error("sense batch refused: {reason}")]
+    Unrepresentable { reason: String },
+}
+
+impl From<SegmentIdentityError> for BatchError {
+    fn from(error: SegmentIdentityError) -> Self {
+        Self::Unrepresentable {
+            reason: error.to_string(),
+        }
+    }
+}
+
+fn selected_segments<'a>(
+    segments: &'a [Segment],
+    segment_filter: Option<&str>,
+    stream_filter: Option<&str>,
+) -> Vec<&'a Segment> {
+    segments
+        .iter()
+        .filter(|segment| stream_filter.is_none_or(|value| segment.stream().matches(value)))
+        .filter(|segment| segment_filter.is_none_or(|value| segment.key() == value))
+        .collect()
 }
 
 /// Run one finite historical-day batch.
@@ -99,6 +124,13 @@ pub fn run_batch_with_environment(
         println!("Day directory not found: {}", day_dir.display());
         return Ok(());
     }
+
+    let listed = iter_segments(journal, PathOrDay::Directory(&day_dir))?;
+    check_record_identities(selected_segments(
+        &listed,
+        request.segment.as_deref(),
+        request.stream.as_deref(),
+    ))?;
 
     if let Some(reprocess) = request.reprocess {
         let deleted = delete_outputs(
@@ -191,19 +223,24 @@ pub fn scan_unprocessed(
 ) -> Result<Vec<BatchWork>, BatchError> {
     let mut work = Vec::new();
     for segment in iter_segments(journal, PathOrDay::Directory(day_dir))? {
-        if stream_filter.is_some_and(|value| value != segment.stream) {
+        if stream_filter.is_some_and(|value| !segment.stream().matches(value)) {
             continue;
         }
-        if segment_filter.is_some_and(|value| value != segment.key) {
+        if segment_filter.is_some_and(|value| value != segment.key()) {
             continue;
         }
-        let entries = fs::read_dir(&segment.path).map_err(|source| BatchError::Scan {
-            path: segment.path.clone(),
+        let Some(identity) = segment.record_identity() else {
+            return Err(BatchError::from(SegmentIdentityError::NotUtf8 {
+                path: segment.path().to_path_buf(),
+            }));
+        };
+        let entries = fs::read_dir(segment.path()).map_err(|source| BatchError::Scan {
+            path: segment.path().to_path_buf(),
             source,
         })?;
         for entry in entries {
             let entry = entry.map_err(|source| BatchError::Scan {
-                path: segment.path.clone(),
+                path: segment.path().to_path_buf(),
                 source,
             })?;
             let path = entry.path();
@@ -233,14 +270,14 @@ pub fn scan_unprocessed(
             {
                 continue;
             }
-            if handler == "depict" && segment.stream.starts_with("import.") {
+            if handler == "depict" && identity.stream.starts_with("import.") {
                 continue;
             }
             work.push(BatchWork {
                 path,
                 handler,
-                stream: segment.stream.clone(),
-                segment: segment.key.clone(),
+                stream: identity.stream.to_owned(),
+                segment: identity.key.to_owned(),
             });
         }
     }
@@ -260,20 +297,22 @@ pub fn delete_outputs(
     if !day_dir.exists() {
         return Ok(Vec::new());
     }
+    let listed = iter_segments(journal, PathOrDay::Directory(day_dir))?;
+    check_record_identities(selected_segments(&listed, segment_filter, stream_filter))?;
     let mut deleted = Vec::new();
-    for segment in iter_segments(journal, PathOrDay::Directory(day_dir))? {
-        if stream_filter.is_some_and(|value| value != segment.stream) {
+    for segment in listed {
+        if stream_filter.is_some_and(|value| !segment.stream().matches(value)) {
             continue;
         }
-        if segment_filter.is_some_and(|value| value != segment.key) {
+        if segment_filter.is_some_and(|value| value != segment.key()) {
             continue;
         }
-        for entry in fs::read_dir(&segment.path).map_err(|source| BatchError::Scan {
-            path: segment.path.clone(),
+        for entry in fs::read_dir(segment.path()).map_err(|source| BatchError::Scan {
+            path: segment.path().to_path_buf(),
             source,
         })? {
             let entry = entry.map_err(|source| BatchError::Scan {
-                path: segment.path.clone(),
+                path: segment.path().to_path_buf(),
                 source,
             })?;
             let path = entry.path();
@@ -291,7 +330,7 @@ pub fn delete_outputs(
             let selected = match reprocess {
                 // This branch deliberately does not lowercase the output stem or
                 // source extension. It proves source correspondence by exact name.
-                ReprocessKind::All => has_exact_media_source(&segment.path, &path),
+                ReprocessKind::All => has_exact_media_source(segment.path(), &path),
                 // These branches deliberately lowercase only the JSONL stem.
                 ReprocessKind::Screen => screen_output_name(&path),
                 ReprocessKind::Audio => audio_output_name(&path),

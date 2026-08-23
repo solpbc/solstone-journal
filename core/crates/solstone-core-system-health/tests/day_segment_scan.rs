@@ -8,7 +8,6 @@ use std::time::{Duration as StdDuration, SystemTime};
 
 use chrono::{DateTime, Duration, Utc};
 use serde_json::json;
-use solstone_core_journal_io::Segment;
 use solstone_core_processing_record::vocab;
 use solstone_core_system_health::{
     BODY_CARD_STREAMS, DataState, DataStateMap, FilesystemSegmentSource, HealthError,
@@ -174,18 +173,14 @@ fn raw_name_parse_drops_decorated_directory_but_keeps_canonical_sibling() {
     );
 }
 
-struct FixedSource(Vec<Segment>);
-
-impl SegmentSource for FixedSource {
-    fn segments(&self, _journal: &Path, _day: &str) -> Result<Vec<Segment>, HealthError> {
-        Ok(self.0.clone())
-    }
-}
-
 struct FailingSource;
 
 impl SegmentSource for FailingSource {
-    fn segments(&self, _journal: &Path, _day: &str) -> Result<Vec<Segment>, HealthError> {
+    fn segments(
+        &self,
+        _journal: &Path,
+        _day: &str,
+    ) -> Result<Vec<solstone_core_journal_io::Segment>, HealthError> {
         Err(HealthError::Source(
             "injected enumeration failure".to_owned(),
         ))
@@ -200,20 +195,8 @@ fn equal_start_sort_is_stream_deterministic_and_enumeration_errors_propagate() {
     let alpha = segment(root, Some("alpha"), "120000_300");
     write(&zeta, "audio.jsonl", "{}\n{\"start\":0}\n");
     write(&alpha, "audio.jsonl", "{}\n{\"start\":0}\n");
-    let source = FixedSource(vec![
-        Segment {
-            stream: "zeta".into(),
-            key: "120000_300".into(),
-            path: zeta,
-        },
-        Segment {
-            stream: "alpha".into(),
-            key: "120000_300".into(),
-            path: alpha,
-        },
-    ]);
 
-    let (_, _, segments) = scan_day(&source, root, DAY, now()).unwrap();
+    let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, DAY, now()).unwrap();
     assert_eq!(
         segments
             .iter()

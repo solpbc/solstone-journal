@@ -596,7 +596,7 @@ pub(crate) fn merge_segment_labels(
         for segment in iter_segments(journal, PathOrDay::Directory(&day))
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?
         {
-            let path = segment.path.join("talents/speaker_labels.json");
+            let path = segment.path().join("talents/speaker_labels.json");
             if path_lexists(&path).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
                 stats.files_scanned += 1;
                 let raw = read_bytes(&path, Vec::new())
@@ -653,7 +653,7 @@ pub(crate) fn merge_segment_labels(
                     stats.labels_rewritten += 1;
                 }
             }
-            let path = segment.path.join("talents/speaker_corrections.json");
+            let path = segment.path().join("talents/speaker_corrections.json");
             if !path_lexists(&path).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
                 continue;
             }

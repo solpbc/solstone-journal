@@ -155,6 +155,7 @@ fn candidate(name: &str, name_key: &str, count: usize) -> SpeculativeFacetCandid
             day: "20260810".to_owned(),
             stream: "archon".to_owned(),
             segment: "090000_300".to_owned(),
+            unrepresentable: false,
         }],
     }
 }

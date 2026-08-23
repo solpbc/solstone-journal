@@ -8,7 +8,7 @@ use std::io;
 use std::path::Path;
 
 use crate::errors::PathError;
-use crate::paths::contained_path;
+use crate::paths::{contained_path, realpath_non_strict};
 
 /// Recursively remove `rel` below `root`, treating an absent target as removed.
 ///
@@ -21,6 +21,35 @@ pub fn remove_dir_all(root: &Path, rel: &str) -> Result<(), PathError> {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(source) => Err(PathError::Io { path, source }),
+    }
+}
+
+/// Recursively remove an already-resolved path contained in `root`.
+///
+/// `path` is the discovered directory, not a UTF-8 relative string. An absent
+/// target is treated as removed, matching [`remove_dir_all`].
+pub fn remove_contained_tree(root: &Path, path: &Path) -> Result<(), PathError> {
+    let root_resolved = realpath_non_strict(root)?;
+    let path_resolved = realpath_non_strict(path)?;
+    if path_resolved == root_resolved {
+        return Err(PathError::InvalidRelativePath {
+            rel: path_resolved.to_string_lossy().into_owned(),
+            message: "cannot remove the journal root",
+        });
+    }
+    if !path_resolved.starts_with(&root_resolved) {
+        return Err(PathError::Escape(crate::errors::PathEscapeError {
+            path: path_resolved,
+            rel: path.to_string_lossy().into_owned(),
+        }));
+    }
+    match fs::remove_dir_all(&path_resolved) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(PathError::Io {
+            path: path_resolved,
+            source,
+        }),
     }
 }
 
@@ -97,5 +126,36 @@ mod tests {
         let error = remove_dir_all(temporary.path(), "file").unwrap_err();
 
         assert!(matches!(error, PathError::Io { path, .. } if path == target));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_contained_tree_deletes_a_non_utf8_directory() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let temporary = TempDir::new();
+        let root = temporary.path().join("journal");
+        let target = root.join(OsStr::from_bytes(b"seg\xff"));
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("keep.txt"), b"gone").unwrap();
+
+        remove_contained_tree(&root, &target).unwrap();
+
+        assert!(!target.exists());
+        assert!(root.is_dir());
+    }
+
+    #[test]
+    fn remove_contained_tree_refuses_the_journal_root() {
+        let temporary = TempDir::new();
+        let root = temporary.path().join("journal");
+        fs::create_dir(&root).unwrap();
+
+        assert!(matches!(
+            remove_contained_tree(&root, &root),
+            Err(PathError::InvalidRelativePath { .. })
+        ));
+        assert!(root.is_dir());
     }
 }

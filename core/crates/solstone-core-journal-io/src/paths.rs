@@ -4,6 +4,7 @@
 //! Journal-relative and chronicle path helpers.
 
 use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 #[cfg(unix)]
@@ -12,7 +13,7 @@ use std::path::{Component, Path, PathBuf};
 
 use chrono::Local;
 
-use crate::errors::{PathError, PathEscapeError};
+use crate::errors::{PathError, PathEscapeError, SegmentIdentityError};
 
 const CHRONICLE_DIR: &str = "chronicle";
 /// Default stream directory below a chronicle day.
@@ -27,15 +28,155 @@ pub enum PathOrDay<'a> {
     Directory(&'a Path),
 }
 
+/// Layout of one discovered chronicle segment.
+///
+/// `Direct` is a child of the day directory. `Named` is a child of an exact
+/// stream-directory basename, including a directory literally named `_default`.
+/// The `_default` filter spelling selects `Direct` only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamLocation {
+    /// Segment directory sits directly under the chronicle day.
+    Direct,
+    /// Exact native basename of the stream directory.
+    Named(OsString),
+}
+
+impl StreamLocation {
+    /// True when the segment is a direct day child.
+    #[must_use]
+    pub fn is_direct(&self) -> bool {
+        matches!(self, Self::Direct)
+    }
+
+    /// Exact stream-directory name, or `None` for the direct layout.
+    #[must_use]
+    pub fn directory(&self) -> Option<&OsStr> {
+        match self {
+            Self::Direct => None,
+            Self::Named(name) => Some(name),
+        }
+    }
+
+    /// Match a UTF-8 filter. `"_default"` selects [`Direct`] only.
+    #[must_use]
+    pub fn matches(&self, filter: &str) -> bool {
+        if filter == DEFAULT_STREAM {
+            self.is_direct()
+        } else {
+            self.directory().and_then(OsStr::to_str) == Some(filter)
+        }
+    }
+}
+
+/// UTF-8 view of a segment for durable or wire records that already emit
+/// `(stream, key)` with `_default` as the direct-layout spelling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordIdentity<'a> {
+    /// `_default` for [`StreamLocation::Direct`], otherwise the UTF-8 stream directory.
+    pub stream: &'a str,
+    /// Parsed `HHMMSS_LEN` key (time metadata / existing record spelling).
+    pub key: &'a str,
+    /// Exact UTF-8 segment-directory basename.
+    pub name: &'a str,
+}
+
 /// One discovered chronicle segment.
+///
+/// Fields are private so path, stream location, exact basename, and parsed key
+/// stay correlated. The parsed key is time metadata, not the directory name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Segment {
-    /// Stream owning the segment (`_default` for direct day children).
-    pub stream: String,
-    /// Extracted `HHMMSS_LEN` segment key.
-    pub key: String,
-    /// Full path to the segment directory.
-    pub path: PathBuf,
+    stream: StreamLocation,
+    name: OsString,
+    key: String,
+    path: PathBuf,
+}
+
+impl Segment {
+    /// Stream layout of this segment.
+    #[must_use]
+    pub fn stream(&self) -> &StreamLocation {
+        &self.stream
+    }
+
+    /// Exact native segment-directory basename.
+    #[must_use]
+    pub fn name(&self) -> &OsStr {
+        &self.name
+    }
+
+    /// Parsed `HHMMSS_LEN` time metadata.
+    #[must_use]
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    /// Discovered filesystem path. Every path decision goes through this.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Fallible UTF-8 identity for records that spell `_default` and `key`.
+    ///
+    /// Returns `None` when the stream directory or basename is not UTF-8.
+    #[must_use]
+    pub fn record_identity(&self) -> Option<RecordIdentity<'_>> {
+        let stream = match &self.stream {
+            StreamLocation::Direct => DEFAULT_STREAM,
+            StreamLocation::Named(name) => name.to_str()?,
+        };
+        Some(RecordIdentity {
+            stream,
+            key: &self.key,
+            name: self.name.to_str()?,
+        })
+    }
+}
+
+/// Require every selected segment to have a UTF-8 [`RecordIdentity`].
+pub fn utf8_identities<'a, I>(segments: I) -> Result<Vec<RecordIdentity<'a>>, SegmentIdentityError>
+where
+    I: IntoIterator<Item = &'a Segment>,
+{
+    segments
+        .into_iter()
+        .map(|segment| {
+            segment
+                .record_identity()
+                .ok_or_else(|| SegmentIdentityError::NotUtf8 {
+                    path: segment.path().to_path_buf(),
+                })
+        })
+        .collect()
+}
+
+/// Require `(stream, key)` pairs in `identities` to be unique.
+pub fn check_unique_record_keys(
+    identities: &[RecordIdentity<'_>],
+) -> Result<(), SegmentIdentityError> {
+    let mut seen = HashMap::<(&str, &str), ()>::new();
+    for identity in identities {
+        if seen.insert((identity.stream, identity.key), ()).is_some() {
+            return Err(SegmentIdentityError::DuplicateKey {
+                stream: identity.stream.to_owned(),
+                key: identity.key.to_owned(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// UTF-8 representability plus `(stream, key)` uniqueness.
+pub fn check_record_identities<'a, I>(
+    segments: I,
+) -> Result<Vec<RecordIdentity<'a>>, SegmentIdentityError>
+where
+    I: IntoIterator<Item = &'a Segment>,
+{
+    let identities = utf8_identities(segments)?;
+    check_unique_record_keys(&identities)?;
+    Ok(identities)
 }
 
 /// Kind of one entry returned by [`list_dir_entries`].
@@ -282,29 +423,31 @@ pub fn iter_segments(journal: &Path, day: PathOrDay<'_>) -> Result<Vec<Segment>,
         if !entry.path().is_dir() {
             continue;
         }
-        let entry_name = entry.file_name().to_string_lossy().into_owned();
-        if let Some(key) = segment_key(&entry_name) {
+        let entry_name = entry.file_name();
+        if let Some(key) = segment_key_os(&entry_name).map(str::to_owned) {
             segments.push(Segment {
-                stream: DEFAULT_STREAM.to_owned(),
-                key: key.to_owned(),
+                stream: StreamLocation::Direct,
+                name: entry_name,
+                key,
                 path: entry.path(),
             });
             continue;
         }
-        if entry_name == "health" {
+        if entry_name == OsStr::new("health") {
             continue;
         }
         for segment_entry in
             fs::read_dir(entry.path()).map_err(|source| path_io(&entry.path(), source))?
         {
             let segment_entry = segment_entry.map_err(|source| path_io(&entry.path(), source))?;
-            let name = segment_entry.file_name().to_string_lossy().into_owned();
+            let name = segment_entry.file_name();
             if segment_entry.path().is_dir()
-                && let Some(key) = segment_key(&name)
+                && let Some(key) = segment_key_os(&name).map(str::to_owned)
             {
                 segments.push(Segment {
-                    stream: entry_name.clone(),
-                    key: key.to_owned(),
+                    stream: StreamLocation::Named(entry_name.clone()),
+                    name,
+                    key,
                     path: segment_entry.path(),
                 });
             }
@@ -364,8 +507,19 @@ fn is_day_key(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn segment_key(value: &str) -> Option<&str> {
-    let bytes = value.as_bytes();
+fn segment_key_os(name: &OsStr) -> Option<&str> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        segment_key_from_bytes(name.as_bytes())
+    }
+    #[cfg(not(unix))]
+    {
+        segment_key_from_bytes(name.to_str()?.as_bytes())
+    }
+}
+
+fn segment_key_from_bytes(bytes: &[u8]) -> Option<&str> {
     let mut index = 0;
     while index + 8 <= bytes.len() {
         let word_before = index == 0 || !is_word_byte(bytes[index - 1]);
@@ -388,7 +542,7 @@ fn segment_key(value: &str) -> Option<&str> {
         if end > index + 7
             && (end == bytes.len() || bytes[end] == b'_' || !is_word_byte(bytes[end]))
         {
-            return value.get(index..end);
+            return std::str::from_utf8(&bytes[index..end]).ok();
         }
         index += 1;
     }
@@ -583,21 +737,117 @@ mod tests {
             iter_segments(&journal, PathOrDay::Day("20260102")).unwrap(),
             vec![
                 Segment {
-                    stream: DEFAULT_STREAM.to_owned(),
+                    stream: StreamLocation::Direct,
+                    name: "080000_300".into(),
                     key: "080000_300".to_owned(),
                     path: day.join("080000_300")
                 },
                 Segment {
-                    stream: "other".to_owned(),
+                    stream: StreamLocation::Named("other".into()),
+                    name: "093000_300_summary".into(),
                     key: "093000_300".to_owned(),
                     path: day.join("other/093000_300_summary")
                 },
                 Segment {
-                    stream: "other".to_owned(),
+                    stream: StreamLocation::Named("other".into()),
+                    name: "123456_300".into(),
                     key: "123456_300".to_owned(),
                     path: segment
                 },
             ]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn enumerates_distinct_non_utf8_stream_directories() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        let day = journal.join("chronicle/20260101");
+        fs::create_dir_all(day.join(OsStr::from_bytes(b"s\xff")).join("080000_300")).unwrap();
+        fs::create_dir_all(day.join(OsStr::from_bytes(b"s\xfe")).join("090000_300")).unwrap();
+
+        let segments = iter_segments(&journal, PathOrDay::Day("20260101")).unwrap();
+        assert_eq!(segments.len(), 2);
+        assert_ne!(
+            segments[0].stream().directory(),
+            segments[1].stream().directory()
+        );
+        assert!(segments.iter().all(|segment| !segment.stream().is_direct()));
+        assert!(
+            segments
+                .iter()
+                .all(|segment| segment.record_identity().is_none())
+        );
+        assert!(
+            utf8_identities(&segments).is_err(),
+            "{:?}",
+            utf8_identities(&segments)
+        );
+        for segment in &segments {
+            assert_eq!(
+                segment.path(),
+                day.join(segment.stream().directory().unwrap())
+                    .join(segment.name())
+            );
+        }
+    }
+
+    #[test]
+    fn named_default_directory_is_distinct_from_direct_layout() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        let day = journal.join("chronicle/20260101");
+        fs::create_dir_all(day.join("080000_300")).unwrap();
+        fs::create_dir_all(day.join("_default/090000_300")).unwrap();
+
+        let segments = iter_segments(&journal, PathOrDay::Day("20260101")).unwrap();
+        assert_eq!(segments.len(), 2);
+        let direct = segments
+            .iter()
+            .find(|segment| segment.name() == OsStr::new("080000_300"))
+            .unwrap();
+        let named = segments
+            .iter()
+            .find(|segment| segment.name() == OsStr::new("090000_300"))
+            .unwrap();
+        assert!(direct.stream().is_direct());
+        assert_eq!(named.stream().directory(), Some(OsStr::new(DEFAULT_STREAM)));
+        assert!(direct.stream().matches(DEFAULT_STREAM));
+        assert!(!named.stream().matches(DEFAULT_STREAM));
+        assert_ne!(direct.path(), named.path());
+        let identities = utf8_identities(&segments).unwrap();
+        check_unique_record_keys(&identities).unwrap();
+
+        fs::create_dir_all(day.join("_default/080000_300")).unwrap();
+        let collided = iter_segments(&journal, PathOrDay::Day("20260101")).unwrap();
+        let collided_identities = utf8_identities(&collided).unwrap();
+        assert!(check_unique_record_keys(&collided_identities).is_err());
+    }
+
+    #[test]
+    fn same_key_siblings_keep_distinct_basenames() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        let stream = journal.join("chronicle/20260101/other");
+        fs::create_dir_all(stream.join("093000_300_a")).unwrap();
+        fs::create_dir_all(stream.join("093000_300_b")).unwrap();
+
+        let segments = iter_segments(&journal, PathOrDay::Day("20260101")).unwrap();
+        assert_eq!(segments.len(), 2);
+        assert!(segments.iter().all(|segment| segment.key() == "093000_300"));
+        let names: Vec<_> = segments
+            .iter()
+            .map(|segment| segment.name().to_os_string())
+            .collect();
+        assert!(names.contains(&OsString::from("093000_300_a")));
+        assert!(names.contains(&OsString::from("093000_300_b")));
+        let identities = utf8_identities(&segments).unwrap();
+        let identity_names: Vec<_> = identities.iter().map(|identity| identity.name).collect();
+        assert!(identity_names.contains(&"093000_300_a"));
+        assert!(identity_names.contains(&"093000_300_b"));
+        assert!(check_unique_record_keys(&identities).is_err());
     }
 }

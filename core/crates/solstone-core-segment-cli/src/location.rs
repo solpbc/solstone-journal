@@ -9,11 +9,12 @@
 //! omitted disk component cannot be derived from an interpolated path, so this
 //! explicit branch owns disk, parent, and index relations together. Keeping it
 //! here prevents a reader from fixing one projection while leaving another
-//! pointed at a non-existent `_default` directory.
+//! pointed at a non-existent `_default` directory. A directory literally named
+//! `_default` is a named stream and is never selected by that spelling.
 
 use std::path::{Path, PathBuf};
 
-use solstone_core_segment::{DEFAULT_STREAM, RelocationEnd, SegmentDir, SegmentError};
+use solstone_core_segment::{DEFAULT_STREAM, RelocationEnd, Segment, SegmentDir, SegmentError};
 
 #[derive(Clone, Debug)]
 pub(crate) struct SegmentLocation {
@@ -52,6 +53,37 @@ impl SegmentLocation {
             stream: stream.to_owned(),
             segment: segment.to_owned(),
             path: handle.path().to_path_buf(),
+            disk_rel,
+            parent_rel,
+            index_rel,
+        })
+    }
+
+    pub(crate) fn from_discovered(day: &str, segment: &Segment) -> Result<Self, SegmentError> {
+        let identity = segment.record_identity().ok_or(SegmentError::StreamInput(
+            "segment path is not UTF-8 representable",
+        ))?;
+        let (disk_rel, parent_rel) = if segment.stream().is_direct() {
+            (
+                format!("chronicle/{day}/{}", identity.name),
+                format!("chronicle/{day}"),
+            )
+        } else {
+            (
+                format!("chronicle/{day}/{}/{}", identity.stream, identity.name),
+                format!("chronicle/{day}/{}", identity.stream),
+            )
+        };
+        let index_rel = if segment.stream().is_direct() {
+            format!("{day}/{}", identity.key)
+        } else {
+            format!("{day}/{}/{}", identity.stream, identity.key)
+        };
+        Ok(Self {
+            day: day.to_owned(),
+            stream: identity.stream.to_owned(),
+            segment: identity.key.to_owned(),
+            path: segment.path().to_path_buf(),
             disk_rel,
             parent_rel,
             index_rel,

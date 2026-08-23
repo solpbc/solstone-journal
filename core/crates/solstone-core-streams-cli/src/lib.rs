@@ -402,9 +402,9 @@ fn marker_candidates(
     for (day, _) in list_days(journal)? {
         for segment in list_segments(journal, &day)? {
             markers.push(MarkerCandidate {
-                path: segment.path.join("stream.json"),
+                path: segment.path().join("stream.json"),
                 day: day.clone(),
-                segment: segment.key,
+                segment: segment.key().to_owned(),
             });
         }
     }

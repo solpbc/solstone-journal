@@ -249,6 +249,33 @@ impl Error for ReadError {
     }
 }
 
+/// A discovered segment cannot be named in a UTF-8 `(stream, key)` record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SegmentIdentityError {
+    /// Stream directory or segment basename is not UTF-8.
+    NotUtf8 { path: PathBuf },
+    /// Two selected segments share the same UTF-8 stream spelling and parsed key.
+    DuplicateKey { stream: String, key: String },
+}
+
+impl fmt::Display for SegmentIdentityError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotUtf8 { path } => write!(
+                formatter,
+                "segment path is not UTF-8 representable: {}",
+                path.display()
+            ),
+            Self::DuplicateKey { stream, key } => write!(
+                formatter,
+                "multiple segments share stream {stream:?} key {key:?}"
+            ),
+        }
+    }
+}
+
+impl Error for SegmentIdentityError {}
+
 /// Journal path validation or filesystem failure.
 #[derive(Debug)]
 pub enum PathError {

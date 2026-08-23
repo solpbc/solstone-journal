@@ -5,6 +5,38 @@ use super::observer_render_support::{seed_observer_owning_stream, segment_dir, w
 use serde_json::json;
 use solstone_core_observer::store::prune::{format_result, run_prune};
 
+#[cfg(unix)]
+#[test]
+fn prune_refuses_non_utf8_segment_identity() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let root = tempfile::tempdir().expect("journal");
+    seed_observer_owning_stream(root.path(), "abcdefgh", STREAM);
+    write_segment(
+        root.path(),
+        DAY,
+        STREAM,
+        "090000_300",
+        1,
+        None,
+        b"same bytes",
+    );
+    std::fs::create_dir_all(
+        root.path()
+            .join("chronicle")
+            .join(DAY)
+            .join(STREAM)
+            .join(OsStr::from_bytes(b"090000_301\xff")),
+    )
+    .unwrap();
+    let days = vec![DAY.to_owned()];
+    let result = run_prune(root.path(), &days, Some(STREAM), false, 1_000);
+    assert_eq!(result.refusals.len(), 1);
+    assert_eq!(result.refusals[0].gate, "segment-identity");
+    assert!(result.groups.is_empty());
+}
+
 const DAY: &str = "20260101";
 const STREAM: &str = "workstation";
 

@@ -501,9 +501,12 @@ fn all_segments(root: &Path, day: &str) -> Vec<Segment> {
         .unwrap_or_default()
         .into_iter()
         .map(|segment| Segment {
-            path: segment.path,
-            stream_dir: segment.stream,
-            key: segment.key,
+            path: segment.path().to_path_buf(),
+            stream_dir: segment
+                .record_identity()
+                .map(|identity| identity.stream.to_owned())
+                .unwrap_or_default(),
+            key: segment.key().to_owned(),
         })
         .collect::<Vec<_>>();
     segments.sort_by(|left, right| {

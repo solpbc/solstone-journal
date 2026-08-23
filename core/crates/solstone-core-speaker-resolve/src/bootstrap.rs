@@ -90,6 +90,10 @@ pub enum BootstrapError {
         path: PathBuf,
         source: std::io::Error,
     },
+    #[error("segment path is not UTF-8 representable: {}", path.display())]
+    NotUtf8 { path: PathBuf },
+    #[error("multiple segments share day {day:?} key {key:?}")]
+    DuplicateDayKey { day: String, key: String },
 }
 
 /// Outcome of the validation portion of a requested name merge.
@@ -542,12 +546,27 @@ pub(crate) fn scan_segments(journal_root: &Path) -> Result<Vec<ScannedSegment>, 
     let mut days = day_dirs(journal_root)?.into_iter().collect::<Vec<_>>();
     days.sort_by(|left, right| left.0.cmp(&right.0));
     let mut scanned = Vec::new();
+    let mut seen = HashMap::<(String, String), ()>::new();
     for (day, path) in days {
         for segment in iter_segments(journal_root, PathOrDay::Directory(&path))? {
-            let (speakers, _) = load_segment_speakers_with_gaps(&segment.path);
-            let mut sources = fs::read_dir(&segment.path)
+            let identity = segment
+                .record_identity()
+                .ok_or_else(|| BootstrapError::NotUtf8 {
+                    path: segment.path().to_path_buf(),
+                })?;
+            if seen
+                .insert((day.clone(), identity.key.to_owned()), ())
+                .is_some()
+            {
+                return Err(BootstrapError::DuplicateDayKey {
+                    day: day.clone(),
+                    key: identity.key.to_owned(),
+                });
+            }
+            let (speakers, _) = load_segment_speakers_with_gaps(segment.path());
+            let mut sources = fs::read_dir(segment.path())
                 .map_err(|source| BootstrapError::Scan {
-                    path: segment.path.clone(),
+                    path: segment.path().to_path_buf(),
                     source,
                 })?
                 .filter_map(Result::ok)
@@ -561,9 +580,9 @@ pub(crate) fn scan_segments(journal_root: &Path) -> Result<Vec<ScannedSegment>, 
             sources.sort();
             scanned.push(ScannedSegment {
                 day: day.clone(),
-                stream: segment.stream,
-                key: segment.key,
-                path: segment.path,
+                stream: identity.stream.to_owned(),
+                key: identity.key.to_owned(),
+                path: segment.path().to_path_buf(),
                 speakers,
                 sources,
             });
@@ -650,4 +669,43 @@ pub(crate) fn dot(left: &[f32], right: &[f32]) -> f32 {
         .zip(right)
         .map(|(left, right)| left * right)
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_segments_refuses_duplicate_day_keys() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260101/080000_300")).unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260101/_default/080000_300")).unwrap();
+        let error = scan_segments(root.path()).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                BootstrapError::DuplicateDayKey { ref day, ref key }
+                    if day == "20260101" && key == "080000_300"
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_segments_refuses_non_utf8_names() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(
+            root.path()
+                .join("chronicle/20260101")
+                .join(OsStr::from_bytes(b"s\xff"))
+                .join("080000_300"),
+        )
+        .unwrap();
+        let error = scan_segments(root.path()).unwrap_err();
+        assert!(matches!(error, BootstrapError::NotUtf8 { .. }), "{error:?}");
+    }
 }

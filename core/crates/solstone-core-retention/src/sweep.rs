@@ -36,7 +36,7 @@
 //! It releases proven raw originals. It never removes a segment — that verb exists,
 //! and it answers to the owner, not to a timer. Nothing here can reach it.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use solstone_core_journal_io::paths::{PathOrDay, day_dirs, iter_segments};
@@ -99,12 +99,17 @@ pub struct Plan {
     pub unreadable_days: Vec<String>,
     /// The chronicle root is missing or is not a directory.
     pub chronicle_unavailable: bool,
+    /// Segment directories whose names are not UTF-8, so they cannot fill [`Target`].
+    pub unrepresentable_segments: Vec<PathBuf>,
 }
 
 impl Plan {
     /// Segments examined, whatever the outcome.
     pub fn examined(&self) -> usize {
-        self.candidates.len().saturating_add(self.skipped.len())
+        self.candidates
+            .len()
+            .saturating_add(self.skipped.len())
+            .saturating_add(self.unrepresentable_segments.len())
     }
 
     /// Bytes the plan would reclaim.
@@ -158,25 +163,23 @@ pub fn plan(
             continue;
         };
         for segment in segments {
-            // ⛔ The directory NAME, never `segment.key`. The key is the
+            // ⛔ The directory NAME, never `segment.key()`. The key is the
             // `HHMMSS_LEN` scanned out of the name and the two differ whenever a
             // name carries a suffix; a path built from the key addresses a
             // different directory, or none.
-            let Some(dir) = segment
-                .path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(str::to_owned)
-            else {
+            let Some(identity) = segment.record_identity() else {
+                built
+                    .unrepresentable_segments
+                    .push(segment.path().to_path_buf());
                 continue;
             };
             let target = Target {
                 day: day.clone(),
-                stream: segment.stream.clone(),
-                dir,
+                stream: identity.stream.to_owned(),
+                dir: identity.name.to_owned(),
             };
 
-            let found = scan_segment(&segment.path, registry, classifier);
+            let found = scan_segment(segment.path(), registry, classifier);
             if found.is_empty() {
                 built.skipped.push(Skipped {
                     target,

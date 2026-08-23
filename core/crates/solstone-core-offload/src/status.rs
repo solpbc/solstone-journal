@@ -57,6 +57,7 @@ fn build_offload_status_with(
         .collect::<BTreeMap<_, _>>();
     let mut backup_only = BTreeMap::<String, (u64, u64, u64, bool, u64, Vec<String>)>::new();
     let mut pending = BTreeMap::<String, (u64, u64, u64)>::new();
+    let mut ambiguous = BTreeMap::<String, Vec<String>>::new();
     for day in &ledger.days {
         let mut backup = (0, 0, 0);
         let mut pending_counts = (0, 0, 0);
@@ -64,21 +65,34 @@ fn build_offload_status_with(
             if !segment.currently_offloaded {
                 continue;
             }
-            let directory = iter_segments(journal, PathOrDay::Day(&segment.day))
-                .map_err(|error| error.to_string())?
-                .into_iter()
-                .find(|found| found.stream == segment.stream && found.key == segment.segment)
-                .map(|found| found.path)
-                .unwrap_or(
-                    segment_path(
-                        journal,
-                        &segment.day,
-                        &segment.segment,
-                        &segment.stream,
-                        false,
-                    )
-                    .map_err(|error| error.to_string())?,
-                );
+            let listed = iter_segments(journal, PathOrDay::Day(&segment.day))
+                .map_err(|error| error.to_string())?;
+            let matches: Vec<_> = listed
+                .iter()
+                .filter(|found| {
+                    found.record_identity().is_some_and(|identity| {
+                        identity.stream == segment.stream && identity.key == segment.segment
+                    })
+                })
+                .collect();
+            if matches.len() > 1 {
+                ambiguous
+                    .entry(day.day.clone())
+                    .or_default()
+                    .push(format!("{}/{}", segment.stream, segment.segment));
+                continue;
+            }
+            let directory = match matches.as_slice() {
+                [found] => found.path().to_path_buf(),
+                _ => segment_path(
+                    journal,
+                    &segment.day,
+                    &segment.segment,
+                    &segment.stream,
+                    false,
+                )
+                .map_err(|error| error.to_string())?,
+            };
             let (mut has_backup, mut has_pending) = (false, false);
             for file in &segment.files {
                 if directory.join(&file.name).is_file() {
@@ -117,7 +131,7 @@ fn build_offload_status_with(
     let backup_bytes: u64 = backup_only.values().map(|value| value.0).sum();
     let backup_files: u64 = backup_only.values().map(|value| value.1).sum();
     let backup_segments: u64 = backup_only.values().map(|value| value.2).sum();
-    let payload_days = days.into_iter().map(|day| { let raw = raw_by_day.remove(&day).unwrap_or((0, 0)); let backup = backup_only.remove(&day).unwrap_or((0, 0, 0, false, 0, vec![])); let pending = pending.remove(&day).unwrap_or((0, 0, 0)); json!({"day":day,"raw_media_bytes":raw.0.saturating_sub(pending.0),"raw_media_files":raw.1.saturating_sub(pending.1),"backup_only_bytes":backup.0,"backup_only_files":backup.1,"backup_only_segments":backup.2,"degraded":backup.3,"skipped_records":backup.4,"unreadable_ledgers":backup.5,"pending_release_bytes":pending.0,"pending_release_files":pending.1,"pending_release_segments":pending.2}) }).collect::<Vec<_>>();
+    let payload_days = days.into_iter().map(|day| { let raw = raw_by_day.remove(&day).unwrap_or((0, 0)); let backup = backup_only.remove(&day).unwrap_or((0, 0, 0, false, 0, vec![])); let pending = pending.remove(&day).unwrap_or((0, 0, 0)); let ambiguous_matches = ambiguous.remove(&day).unwrap_or_default(); json!({"day":day,"raw_media_bytes":raw.0.saturating_sub(pending.0),"raw_media_files":raw.1.saturating_sub(pending.1),"backup_only_bytes":backup.0,"backup_only_files":backup.1,"backup_only_segments":backup.2,"degraded":backup.3,"skipped_records":backup.4,"unreadable_ledgers":backup.5,"pending_release_bytes":pending.0,"pending_release_files":pending.1,"pending_release_segments":pending.2,"ambiguous_ledger_matches":ambiguous_matches}) }).collect::<Vec<_>>();
     Ok(OffloadStatus {
         value: json!({
             "offload":config.get("offload").cloned().unwrap_or(Value::Null),
@@ -129,6 +143,7 @@ fn build_offload_status_with(
             "raw_media":{"total_bytes":measurement.usage.total_bytes.saturating_sub(pending_bytes),"total_files":measurement.usage.total_files.saturating_sub(pending_files)},
             "backup_only":{"total_bytes":backup_bytes,"total_files":backup_files,"total_segments":backup_segments,"total_days":ledger.days.iter().filter(|day|day.offloaded_segments>0).count(),"degraded":ledger.degraded(),"skipped_records":ledger.skipped_records,"unreadable_ledgers":ledger.unreadable_ledgers},
             "pending_release":{"total_bytes":pending_bytes,"total_files":pending_files,"total_segments":payload_days.iter().map(|value|value["pending_release_segments"].as_u64().unwrap_or(0)).sum::<u64>(),"total_days":payload_days.iter().filter(|value|value["pending_release_segments"].as_u64().unwrap_or(0)>0).count()},
+            "has_ambiguous_ledger_matches": payload_days.iter().any(|value| value["ambiguous_ledger_matches"].as_array().is_some_and(|items| !items.is_empty())),
             "days":payload_days
         }),
     })
@@ -190,5 +205,40 @@ mod tests {
         assert_ne!(numbers[0], numbers[1]);
         assert_ne!(numbers[1], numbers[2]);
         assert_ne!(numbers[2], numbers[3]);
+    }
+
+    #[test]
+    fn status_surfaces_ambiguous_ledger_matches_apart_from_not_offloaded() {
+        let journal = tempfile::tempdir().unwrap();
+        let direct = journal.path().join("chronicle/20260101/010000_001");
+        let named = journal
+            .path()
+            .join("chronicle/20260101/_default/010000_001");
+        fs::create_dir_all(&direct).unwrap();
+        fs::create_dir_all(&named).unwrap();
+        append_offload_event(
+            journal.path(),
+            "20260101",
+            "_default",
+            "010000_001",
+            "snapshot-a",
+            &[OffloadFile {
+                name: "pending.webm".into(),
+                bytes: 3,
+                sha256: "a".repeat(64),
+            }],
+            1,
+        )
+        .unwrap();
+        let value = build_offload_status(journal.path()).unwrap().value;
+        assert_eq!(value["has_ambiguous_ledger_matches"], true);
+        let days = value["days"].as_array().unwrap();
+        let day = days.iter().find(|row| row["day"] == "20260101").unwrap();
+        assert_eq!(
+            day["ambiguous_ledger_matches"],
+            serde_json::json!(["_default/010000_001"])
+        );
+        assert_eq!(day["backup_only_segments"].as_u64().unwrap(), 0);
+        assert_eq!(day["pending_release_segments"].as_u64().unwrap(), 0);
     }
 }

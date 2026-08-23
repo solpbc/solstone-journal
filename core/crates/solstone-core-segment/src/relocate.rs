@@ -392,7 +392,7 @@ pub fn migrate_agent_layout(
         let mut segments = iter_segments(journal, PathOrDay::Directory(&day_dir))
             .map_err(|error| RelocationError(error.to_string()))?
             .into_iter()
-            .map(|segment| segment.path)
+            .map(|segment| segment.path().to_path_buf())
             .collect::<Vec<_>>();
         segments.sort();
         for segment in segments {
@@ -594,10 +594,10 @@ fn split_day_segments(
     for segment in iter_segments(journal, PathOrDay::Directory(day_dir))
         .map_err(|error| RelocationError(error.to_string()))?
     {
-        if segment.path.parent() == Some(day_dir) {
-            direct.push(segment.path);
+        if segment.path().parent() == Some(day_dir) {
+            direct.push(segment.path().to_path_buf());
         } else {
-            nested.push(segment.path);
+            nested.push(segment.path().to_path_buf());
         }
     }
     direct.sort();

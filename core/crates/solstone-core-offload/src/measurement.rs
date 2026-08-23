@@ -54,7 +54,7 @@ pub fn measure_raw_media_usage(journal: &Path) -> RawMediaUsage {
             let mut bytes = 0;
             let mut files = 0;
             for segment in iter_segments(journal, PathOrDay::Day(&day)).unwrap_or_default() {
-                for file in raw_files(&segment.path) {
+                for file in raw_files(segment.path()) {
                     if let Ok(metadata) = file.metadata() {
                         bytes += metadata.len();
                         files += 1

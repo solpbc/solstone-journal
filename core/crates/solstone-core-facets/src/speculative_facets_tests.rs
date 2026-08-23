@@ -170,18 +170,55 @@ fn aggregation_keeps_the_first_three_samples_in_segment_order() {
                 day: "20260810".to_owned(),
                 stream: "archon".to_owned(),
                 segment: "090000_300".to_owned(),
+                unrepresentable: false,
             },
             SpeculativeFacetSample {
                 day: "20260810".to_owned(),
                 stream: "archon".to_owned(),
                 segment: "093000_300".to_owned(),
+                unrepresentable: false,
             },
             SpeculativeFacetSample {
                 day: "20260810".to_owned(),
                 stream: "archon".to_owned(),
                 segment: "100000_300".to_owned(),
+                unrepresentable: false,
             },
         ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_sample_is_kept_and_marked_unrepresentable() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let temporary = TempDir::new();
+    let talents = temporary
+        .path()
+        .join("chronicle/20260810")
+        .join(OsStr::from_bytes(b"s\xff"))
+        .join("090000_300")
+        .join("talents");
+    fs::create_dir_all(&talents).unwrap();
+    fs::write(
+        talents.join("sense.json"),
+        br#"{"speculative_facet":"Home Reno"}"#,
+    )
+    .unwrap();
+
+    let candidates = aggregate_speculative_facets(temporary.path(), day(2026, 8, 10), 1).unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].count, 1);
+    assert_eq!(
+        candidates[0].samples,
+        vec![SpeculativeFacetSample {
+            day: "20260810".to_owned(),
+            stream: String::new(),
+            segment: "090000_300".to_owned(),
+            unrepresentable: true,
+        }]
     );
 }
 

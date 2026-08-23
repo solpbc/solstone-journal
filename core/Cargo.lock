@@ -4459,6 +4459,7 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-indexer-store",
  "solstone-core-segment",
+ "solstone-core-system-health",
  "tempfile",
 ]
 

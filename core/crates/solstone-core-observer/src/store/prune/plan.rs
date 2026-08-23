@@ -28,16 +28,19 @@ pub fn same_start_sets(
         };
         for segment in segments {
             if let Some(filter) = stream
-                && segment.stream != filter
+                && !segment.stream().matches(filter)
             {
                 continue;
             }
-            let Some(start) = segment.key.split_once('_').map(|(start, _)| start) else {
+            let Some(identity) = segment.record_identity() else {
+                continue;
+            };
+            let Some(start) = identity.key.split_once('_').map(|(start, _)| start) else {
                 continue;
             };
             let analysis =
-                analyze_segment(journal, day, &segment.stream, &segment.key, &segment.path);
-            sets.entry((day.clone(), segment.stream.clone(), start.to_owned()))
+                analyze_segment(journal, day, identity.stream, identity.name, segment.path());
+            sets.entry((day.clone(), identity.stream.to_owned(), start.to_owned()))
                 .or_default()
                 .push(analysis);
         }
@@ -102,6 +105,10 @@ fn mismatch_comparison_canonical(duplicate_groups: &[Vec<SegmentAnalysis>]) -> S
 /// held canonical within each duplicate cluster, and record every refusal.
 pub fn plan(journal: &Path, days: &[String], stream: Option<&str>) -> PruneResult {
     let mut result = PruneResult::new(false);
+    if let Err(refusal) = super::identity_preflight(journal, days, stream) {
+        result.refusals.push(refusal);
+        return result;
+    }
     for analyses in same_start_sets(journal, days, stream) {
         let (duplicate_groups, singleton_mismatches) = duplicate_groups(&analyses);
         let identity_errors: Vec<&SegmentAnalysis> = analyses

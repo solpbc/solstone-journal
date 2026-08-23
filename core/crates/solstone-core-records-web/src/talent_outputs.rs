@@ -24,13 +24,19 @@ pub fn list(journal_root: &Path, day: &str, segment: Option<&str>) -> Result<Val
     .map_err(|error| error.to_string())?
     .into_iter()
     .map(|segment| {
-        json!({
-            "stream": segment.stream,
-            "segment": segment.key,
-            "outputs": records(&segment.path.join("talents")),
-        })
+        let identity = segment.record_identity().ok_or_else(|| {
+            format!(
+                "segment path is not UTF-8 representable: {}",
+                segment.path().display()
+            )
+        })?;
+        Ok(json!({
+            "stream": identity.stream,
+            "segment": identity.key,
+            "outputs": records(&segment.path().join("talents")),
+        }))
     })
-    .collect::<Vec<_>>();
+    .collect::<Result<Vec<_>, String>>()?;
     Ok(json!({
         "day": day,
         "daily": records(&day_dir.join("talents")),

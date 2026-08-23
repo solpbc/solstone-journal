@@ -7,8 +7,8 @@ use chrono::{Duration, NaiveDate, NaiveTime};
 use serde_json::{Value, json};
 use solstone_core_format::segment::segment_parse;
 use solstone_core_segment::{
-    DirEntryKind, list_days, list_dir_entries, list_segments, list_segments_in, read_stream_record,
-    read_text,
+    DEFAULT_STREAM, DirEntryKind, Segment, StreamLocation, list_days, list_dir_entries,
+    list_segments, list_segments_in, read_stream_record, read_text,
 };
 
 use crate::index::{SegmentIndexStatus, read_segment_index};
@@ -175,7 +175,7 @@ pub(crate) fn successors(
     let mut result = Vec::new();
     for (scan_day, _) in list_days(journal).unwrap_or_default() {
         for candidate in list_segments(journal, &scan_day).unwrap_or_default() {
-            let Ok(Some(marker)) = read_marker(&candidate.path) else {
+            let Ok(Some(marker)) = read_marker(candidate.path()) else {
                 continue;
             };
             if marker_stream(&marker) != Some(stream)
@@ -184,9 +184,7 @@ pub(crate) fn successors(
             {
                 continue;
             }
-            if let Ok(location) =
-                SegmentLocation::resolve(journal, &scan_day, &candidate.stream, &candidate.key)
-            {
+            if let Ok(location) = SegmentLocation::from_discovered(&scan_day, &candidate) {
                 result.push(location);
             }
         }
@@ -199,20 +197,14 @@ fn next_segment(journal: &Path, day: &str, stream: &str, segment: &str) -> Optio
     let days = std::iter::once(day.to_owned()).chain(next_day(day));
     for scan_day in days {
         for candidate in list_segments(journal, &scan_day).unwrap_or_default() {
-            let Ok(Some(marker)) = read_marker(&candidate.path) else {
+            let Ok(Some(marker)) = read_marker(candidate.path()) else {
                 continue;
             };
             if marker_stream(&marker) == Some(stream)
                 && marker.get("prev_day").and_then(Value::as_str) == Some(day)
                 && marker.get("prev_segment").and_then(Value::as_str) == Some(segment)
             {
-                return SegmentLocation::resolve(
-                    journal,
-                    &scan_day,
-                    &candidate.stream,
-                    &candidate.key,
-                )
-                .ok();
+                return SegmentLocation::from_discovered(&scan_day, &candidate).ok();
             }
         }
     }
@@ -245,14 +237,14 @@ fn chain_location(
         .ok()?
         .into_iter()
         .find_map(|candidate| {
-            if candidate.key != segment {
+            if candidate.key() != segment {
                 return None;
             }
-            let Ok(Some(marker)) = read_marker(&candidate.path) else {
+            let Ok(Some(marker)) = read_marker(candidate.path()) else {
                 return None;
             };
             (marker_stream(&marker) == Some(stream))
-                .then(|| SegmentLocation::resolve(journal, day, &candidate.stream, segment).ok())
+                .then(|| SegmentLocation::from_discovered(day, &candidate).ok())
                 .flatten()
         })
 }
@@ -436,6 +428,28 @@ pub(crate) fn render_checks(checks: &[Check]) -> String {
     output
 }
 
+fn record_stream(segment: &Segment) -> Option<&str> {
+    segment.record_identity().map(|identity| identity.stream)
+}
+
+fn display_stream(segment: &Segment) -> String {
+    match segment.stream() {
+        StreamLocation::Direct => DEFAULT_STREAM.to_owned(),
+        StreamLocation::Named(name) => {
+            // Diagnostic table only; never fed back into a path or key.
+            #[cfg(unix)]
+            {
+                use std::os::unix::ffi::OsStrExt;
+                solstone_core_system_health::sanitize_os_bytes_for_terminal(name.as_bytes())
+            }
+            #[cfg(not(unix))]
+            {
+                solstone_core_system_health::sanitize_for_terminal(&name.to_string_lossy())
+            }
+        }
+    }
+}
+
 pub(crate) fn list_output(
     journal: &Path,
     day: &str,
@@ -443,26 +457,44 @@ pub(crate) fn list_output(
     json_output: bool,
 ) -> String {
     let mut segments = list_segments(journal, day).unwrap_or_default();
-    segments.retain(|segment| stream_filter.is_none_or(|stream| stream == segment.stream));
+    segments.retain(|segment| stream_filter.is_none_or(|stream| segment.stream().matches(stream)));
     // The reference leaves equal segment keys in filesystem order.  Make that
     // unspecified cross-stream case deterministic with the stream tie-breaker.
     segments.sort_by(|left, right| {
-        left.key
-            .cmp(&right.key)
-            .then(left.stream.cmp(&right.stream))
+        left.key()
+            .cmp(right.key())
+            .then_with(|| record_stream(left).cmp(&record_stream(right)))
     });
     if segments.is_empty() {
         return format!("No segments found for {day}\n");
     }
-    let rows = segments.into_iter().map(|segment| {
-        let (start, end) = times(&segment.key);
-        let stats = stats(&segment.path);
-        json!({"stream": segment.stream, "segment": segment.key, "start": start, "end": end,
-            "duration": segment_duration(&segment.key), "files": stats.files, "talents": stats.talents, "size": stats.size})
-    }).collect::<Vec<_>>();
     if json_output {
+        let mut rows = Vec::new();
+        for segment in &segments {
+            let Some(identity) = segment.record_identity() else {
+                return format!(
+                    "segment list refused: non-UTF-8 name at {}\n",
+                    segment.path().display()
+                );
+            };
+            let (start, end) = times(identity.key);
+            let stats = stats(segment.path());
+            rows.push(json!({"stream": identity.stream, "segment": identity.key, "start": start, "end": end,
+                "duration": segment_duration(identity.key), "files": stats.files, "talents": stats.talents, "size": stats.size}));
+        }
         return serde_json::to_string_pretty(&rows).expect("rows serialize") + "\n";
     }
+    let rows = segments.iter().map(|segment| {
+        let identity = segment.record_identity();
+        let stream = identity
+            .map(|identity| identity.stream.to_owned())
+            .unwrap_or_else(|| display_stream(segment));
+        let key = segment.key();
+        let (start, end) = times(key);
+        let stats = stats(segment.path());
+        json!({"stream": stream, "segment": key, "start": start, "end": end,
+            "duration": segment_duration(key), "files": stats.files, "talents": stats.talents, "size": stats.size})
+    }).collect::<Vec<_>>();
     let mut output = format!(
         "{:<20} {:<14} {:<15} {:>5} {:>5} {:>7} {:>8}\n{}\n",
         "STREAM",
@@ -585,9 +617,7 @@ pub(crate) fn day_segments(journal: &Path, day: &str) -> Vec<SegmentLocation> {
     let mut segments = list_segments_in(journal, &day_path)
         .unwrap_or_default()
         .into_iter()
-        .filter_map(|segment| {
-            SegmentLocation::resolve(journal, day, &segment.stream, &segment.key).ok()
-        })
+        .filter_map(|segment| SegmentLocation::from_discovered(day, &segment).ok())
         .collect::<Vec<_>>();
     segments.sort_by(|left, right| {
         left.segment

@@ -58,8 +58,10 @@ pub fn scan_day<S: SegmentSource>(
     let mut segments = Vec::new();
 
     for segment in source.segments(journal, day)? {
-        let Some(raw_name) = segment.path.file_name().and_then(|name| name.to_str()) else {
-            continue;
+        let Some(raw_name) = segment.name().to_str() else {
+            return Err(HealthError::UnrepresentableSegment {
+                path: segment.path().to_path_buf(),
+            });
         };
         let Some((times, end_seconds)) = segment_start_and_end_seconds(raw_name) else {
             continue;
@@ -77,15 +79,15 @@ pub fn scan_day<S: SegmentSource>(
         } else {
             natural_end
         };
-        // The card check uses the path parent, which differs from Segment.stream
-        // for direct day children; do not replace this with segment.stream.
+        // The card check uses the path parent, which differs from Direct layout
+        // (`_default` has no directory). Do not substitute a stream spelling here.
         let parent_name = segment
-            .path
+            .path()
             .parent()
             .and_then(Path::file_name)
             .and_then(|name| name.to_str())
             .unwrap_or_default();
-        let data_state = detect_data_state(&segment.path, parent_name, now)?;
+        let data_state = detect_data_state(segment.path(), parent_name, now)?;
         let types = ["audio", "screen", "markdown", "browser"]
             .into_iter()
             .filter(|modality| data_state.0.contains_key(*modality))
@@ -103,9 +105,14 @@ pub fn scan_day<S: SegmentSource>(
         }
         segments.push(DaySegment {
             // The raw directory basename controls parse eligibility and is the
-            // value the Python day scan reports, rather than Segment.key.
+            // value the Python day scan reports, rather than Segment.key().
             key: raw_name.to_owned(),
-            stream: segment.stream,
+            stream: segment
+                .record_identity()
+                .map(|identity| identity.stream.to_owned())
+                .ok_or_else(|| HealthError::UnrepresentableSegment {
+                    path: segment.path().to_path_buf(),
+                })?,
             start,
             end,
             types,

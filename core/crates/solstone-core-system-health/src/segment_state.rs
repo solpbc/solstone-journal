@@ -26,8 +26,7 @@ pub fn find_segment_dir(
         .ok()?
         .into_iter()
         .find_map(|entry| {
-            (entry.path.file_name().and_then(|name| name.to_str()) == Some(segment))
-                .then_some(entry.path)
+            (entry.name().to_str() == Some(segment)).then(|| entry.path().to_path_buf())
         })
 }
 

@@ -105,9 +105,13 @@ pub fn stream_segments(journal: &Path, stream: &str) -> BTreeMap<SegmentKey, Pat
             continue;
         };
         for segment in entries {
-            if segment.stream == stream {
-                segments.insert((day.clone(), segment.key.clone()), segment.path.clone());
+            if !segment.stream().matches(stream) {
+                continue;
             }
+            segments.insert(
+                (day.clone(), segment.key().to_owned()),
+                segment.path().to_path_buf(),
+            );
         }
     }
     segments

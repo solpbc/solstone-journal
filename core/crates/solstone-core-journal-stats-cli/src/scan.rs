@@ -182,9 +182,9 @@ fn count_screens(day_dir: &Path) -> Result<ScreenCounts, JournalStatsError> {
 }
 
 fn pending_segments(journal_root: &Path, day: &str) -> Result<u64, JournalStatsError> {
-    let mut pending = BTreeSet::new();
+    let mut pending = BTreeSet::<PathBuf>::new();
     for segment in iter_segments(journal_root, PathOrDay::Day(day))? {
-        for entry in read_dir(&segment.path)? {
+        for entry in read_dir(segment.path())? {
             if !entry
                 .file_type()
                 .map_err(|source| JournalStatsError::io(entry.path(), source))?
@@ -202,7 +202,7 @@ fn pending_segments(journal_root: &Path, day: &str) -> Result<u64, JournalStatsE
                 Some(MediaKind::Audio | MediaKind::Video)
             );
             if is_media && !entry.path().with_extension("jsonl").exists() {
-                pending.insert(segment.key.clone());
+                pending.insert(segment.path().to_path_buf());
             }
         }
     }

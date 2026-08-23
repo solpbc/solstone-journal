@@ -506,6 +506,11 @@ fn plan_json(plan: &Plan) -> serde_json::Value {
             })
             .collect::<Vec<serde_json::Value>>(),
         "unreadable_days": plan.unreadable_days,
+        "unrepresentable_segments": plan
+            .unrepresentable_segments
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>(),
         "chronicle_unavailable": plan.chronicle_unavailable,
         "segments": plan
             .candidates

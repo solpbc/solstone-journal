@@ -3,7 +3,7 @@
 
 //! Restore offloaded raw media without removing files that predated an attempt.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -15,6 +15,7 @@ use solstone_core_backup::{
     record_restore_result,
 };
 use solstone_core_backup_runtime::{BackupServices, reason_for_returncode, run_restic};
+use solstone_core_journal_io::check_record_identities;
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments, segment_path};
 use solstone_core_retention::{Target, resolve_offload};
 
@@ -26,7 +27,7 @@ use crate::measurement::device_free_bytes;
 pub const RESTORE_RESERVE_BYTES: u64 = 1_000_000_000;
 pub const OFFLOAD_RESTORE_TIMEOUT_SECONDS: u64 = 6 * 60 * 60;
 pub const OFFLOAD_RESTORE_STATUSES: [&str; 5] = ["ok", "no_op", "refused", "degraded", "error"];
-pub const OFFLOAD_RESTORE_REASONS: [&str; 14] = [
+pub const OFFLOAD_RESTORE_REASONS: [&str; 15] = [
     "auth_failed",
     "backup_not_ready",
     "failed",
@@ -38,6 +39,7 @@ pub const OFFLOAD_RESTORE_REASONS: [&str; 14] = [
     "repo_missing",
     "restic_unavailable",
     "rclone_unavailable",
+    "segment_identity",
     "segment_missing",
     "timeout",
     "verification_failed",
@@ -107,24 +109,27 @@ fn rollback(directory: &Path, absent: &[OffloadFile]) {
     }
 }
 fn directory(journal: &Path, summary: &SegmentOffloadSummary) -> PathBuf {
-    iter_segments(journal, PathOrDay::Day(&summary.day))
-        .ok()
-        .and_then(|segments| {
-            segments
-                .into_iter()
-                .find(|segment| segment.stream == summary.stream && segment.key == summary.segment)
-                .map(|segment| segment.path)
+    let listed = iter_segments(journal, PathOrDay::Day(&summary.day)).unwrap_or_default();
+    let matches: Vec<_> = listed
+        .iter()
+        .filter(|segment| {
+            segment.record_identity().is_some_and(|identity| {
+                identity.stream == summary.stream && identity.key == summary.segment
+            })
         })
-        .unwrap_or_else(|| {
-            segment_path(
-                journal,
-                &summary.day,
-                &summary.segment,
-                &summary.stream,
-                false,
-            )
-            .unwrap_or_else(|_| PathBuf::new())
-        })
+        .collect();
+    match matches.as_slice() {
+        [segment] => segment.path().to_path_buf(),
+        [] => segment_path(
+            journal,
+            &summary.day,
+            &summary.segment,
+            &summary.stream,
+            false,
+        )
+        .unwrap_or_else(|_| PathBuf::new()),
+        _ => PathBuf::new(),
+    }
 }
 fn restore_segment(
     journal: &Path,
@@ -266,6 +271,14 @@ fn run(
         .collect::<Vec<_>>();
     if selected.is_empty() {
         return base("no_op", Some("nothing_to_restore"), scope, day);
+    }
+    let mut listed = Vec::new();
+    let days: BTreeSet<String> = selected.iter().map(|segment| segment.day.clone()).collect();
+    for restore_day in &days {
+        listed.extend(iter_segments(journal, PathOrDay::Day(restore_day)).unwrap_or_default());
+    }
+    if check_record_identities(&listed).is_err() {
+        return base("refused", Some("segment_identity"), scope, day);
     }
     let expected = selected
         .iter()

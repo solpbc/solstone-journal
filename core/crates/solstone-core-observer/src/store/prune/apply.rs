@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use solstone_core_indexer_store::db::prune_by_paths;
-use solstone_core_journal_io::remove_dir_all;
+use solstone_core_journal_io::remove_contained_tree;
 use solstone_core_segment::touch_stream_health_marker;
 
 use super::super::history::load_history;
@@ -27,6 +27,12 @@ pub fn execute_plan(
     groups: Vec<PruneGroup>,
     now_ms: i64,
 ) {
+    let days: Vec<String> = groups.iter().map(|group| group.day.clone()).collect();
+    let stream = groups.first().map(|group| group.stream.as_str());
+    if let Err(refusal) = super::identity_preflight(journal, &days, stream) {
+        result.refusals.push(refusal);
+        return;
+    }
     let mut affected_streams: BTreeSet<String> = BTreeSet::new();
     let mut affected_days: BTreeSet<String> = BTreeSet::new();
     let mut deleted_markers_by_stream: BTreeMap<String, BTreeMap<(String, String), StreamMarker>> =
@@ -87,7 +93,7 @@ pub fn execute_plan(
                 result.refusals.push(refusal);
                 break;
             }
-            let Ok(rel) = analysis.path.strip_prefix(journal) else {
+            if analysis.path.strip_prefix(journal).is_err() {
                 result.refusals.push(Refusal::new(
                     analysis.label(),
                     "delete",
@@ -95,8 +101,8 @@ pub fn execute_plan(
                     "segment path is not inside the journal; fix the filesystem error and rerun prune",
                 ));
                 break;
-            };
-            if let Err(error) = remove_dir_all(journal, &rel.to_string_lossy()) {
+            }
+            if let Err(error) = remove_contained_tree(journal, &analysis.path) {
                 result.refusals.push(Refusal::new(
                     analysis.label(),
                     "delete",

@@ -59,8 +59,8 @@ pub fn rename_agents_to_talents(
             add_pair(
                 &mut planned,
                 &mut skipped,
-                segment.path.join("agents"),
-                segment.path.join("talents"),
+                segment.path().join("agents"),
+                segment.path().join("talents"),
             );
         }
     }

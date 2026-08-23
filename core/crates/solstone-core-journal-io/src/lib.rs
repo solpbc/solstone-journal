@@ -35,7 +35,7 @@ pub use deconflict::{
 pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
     AppendError, AtomicWriteError, ExistingParentLockError, LeaseError, LockError, LockTimeout,
-    MalformedDataError, PathError, PathEscapeError, ReadError, SnapshotError,
+    MalformedDataError, PathError, PathEscapeError, ReadError, SegmentIdentityError, SnapshotError,
 };
 pub use lease::{
     DEFAULT_LEASE_ATTEMPTS, DEFAULT_LEASE_MODE, DEFAULT_LEASE_RETRY_MAX, FileLease, LeaseOptions,
@@ -47,16 +47,17 @@ pub use locking::{
     acquire_existing_parent_lock, hold_lock,
 };
 pub use paths::{
-    DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, Segment, contained_path,
-    create_directory_with_mode, day_dirs, day_path, ensure_directory, iter_segments,
-    list_dir_entries, list_dir_entries_bounded, path_lexists, realpath_non_strict,
-    resolve_configured_journal, resolve_journal_path, segment_path,
+    DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, RecordIdentity, Segment, StreamLocation,
+    check_record_identities, check_unique_record_keys, contained_path, create_directory_with_mode,
+    day_dirs, day_path, ensure_directory, iter_segments, list_dir_entries,
+    list_dir_entries_bounded, path_lexists, realpath_non_strict, resolve_configured_journal,
+    resolve_journal_path, segment_path, utf8_identities,
 };
 pub use readers::{
     JsonlReadReport, JsonlRecord, MalformedPolicy, read_bytes, read_json, read_jsonl,
     read_jsonl_with_report, read_text,
 };
-pub use removal::remove_dir_all;
+pub use removal::{remove_contained_tree, remove_dir_all};
 pub use snapshot::{
     JournalSnapshot, SnapshotDirectory, SnapshotFile, capture_snapshot, restore_snapshot,
 };

@@ -19,4 +19,6 @@ pub enum HealthError {
     Directory { path: PathBuf, message: String },
     #[error("cannot read file metadata {path}: {message}")]
     Metadata { path: PathBuf, message: String },
+    #[error("segment path is not UTF-8 representable: {}", path.display())]
+    UnrepresentableSegment { path: PathBuf },
 }

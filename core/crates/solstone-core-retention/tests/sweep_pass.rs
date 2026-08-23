@@ -186,6 +186,37 @@ fn the_default_policy_proposes_nothing_at_all() {
     teardown(&bed);
 }
 
+#[cfg(unix)]
+#[test]
+fn unrepresentable_segments_are_named_in_the_plan() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let bed = Bed::new("unrepresentable");
+    bed.proven_segment(
+        "20250101",
+        Some("field.audio"),
+        "070000_17",
+        "2025-01-01T00:00:00Z",
+    );
+    fs::create_dir_all(
+        bed.root
+            .join("chronicle/20250101")
+            .join(OsStr::from_bytes(b"080000_17\xff")),
+    )
+    .expect("non-utf8 segment");
+
+    let built = bed.plan(&captured_after(1), "2026-08-05", "2026-08-05T00:00:00Z");
+    assert_eq!(built.unrepresentable_segments.len(), 1);
+    assert!(
+        built.unrepresentable_segments[0]
+            .file_name()
+            .is_some_and(|name| name.as_bytes() == b"080000_17\xff")
+    );
+    assert!(built.examined() >= 2);
+    teardown(&bed);
+}
+
 /// The whole composition: an old, fully-proven segment is a candidate, and
 /// executing the plan releases exactly its raw while the derived output stays.
 #[test]

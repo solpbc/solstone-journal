@@ -55,6 +55,9 @@ pub enum TransferError {
     /// Manifest JSON or shape is invalid.
     #[error("invalid transfer manifest: {0}")]
     Manifest(String),
+    /// A selected segment cannot be named on the peer-export route.
+    #[error("peer export refused: {reason}")]
+    Unrepresentable { reason: String },
     /// A peer export manifest query was rejected by the remote journal.
     #[error("{0}")]
     ManifestQuery(String),

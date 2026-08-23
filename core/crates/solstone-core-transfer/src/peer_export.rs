@@ -154,8 +154,23 @@ fn export_segments(
         }
     };
     for day in days {
-        for segment in iter_segments(journal, PathOrDay::Day(day))? {
-            let files = segment_files(&segment.path)?;
+        let listed = iter_segments(journal, PathOrDay::Day(day))?;
+        solstone_core_journal_io::check_record_identities(&listed).map_err(|error| {
+            TransferError::Unrepresentable {
+                reason: error.to_string(),
+            }
+        })?;
+        for segment in listed {
+            let identity =
+                segment
+                    .record_identity()
+                    .ok_or_else(|| TransferError::Unrepresentable {
+                        reason: format!(
+                            "segment path is not UTF-8 representable: {}",
+                            segment.path().display()
+                        ),
+                    })?;
+            let files = segment_files(segment.path())?;
             if files.is_empty() {
                 result.skipped += 1;
                 continue;
@@ -164,19 +179,23 @@ fn export_segments(
                 files: files
                     .iter()
                     .map(|file| {
+                        let name = file.file_name().and_then(|name| name.to_str()).ok_or(
+                            TransferError::Unrepresentable {
+                                reason: format!(
+                                    "non-UTF-8 file name under {}",
+                                    segment.path().display()
+                                ),
+                            },
+                        )?;
                         Ok(ManifestFile {
-                            name: file
-                                .file_name()
-                                .and_then(|name| name.to_str())
-                                .unwrap_or_default()
-                                .to_string(),
+                            name: name.to_owned(),
                             sha256: hash_file(file)?.0,
                             size: fs::metadata(file)?.len(),
                         })
                     })
                     .collect::<Result<Vec<_>, TransferError>>()?,
             };
-            let route = format!("{}/{}", segment.stream, segment.key);
+            let route = format!("{}/{}", identity.stream, identity.key);
             let remote = manifest
                 .get(day)
                 .and_then(Value::as_object)
@@ -190,8 +209,22 @@ fn export_segments(
                 result.sent += 1;
                 continue;
             }
+            let file_names = files
+                .iter()
+                .map(|file| {
+                    file.file_name()
+                        .and_then(|name| name.to_str())
+                        .map(str::to_owned)
+                        .ok_or_else(|| TransferError::Unrepresentable {
+                            reason: format!(
+                                "non-UTF-8 file name under {}",
+                                segment.path().display()
+                            ),
+                        })
+                })
+                .collect::<Result<Vec<_>, TransferError>>()?;
             let metadata = python_compatible_wire_json(
-                &json!({"segments": [{"day": day, "stream": segment.stream, "segment_key": segment.key, "files": files.iter().filter_map(|file| file.file_name()).map(|name| name.to_string_lossy().into_owned()).collect::<Vec<_>>() }]}),
+                &json!({"segments": [{"day": day, "stream": identity.stream, "segment_key": identity.key, "files": file_names }]}),
             );
             let multipart_files = read_multipart_files(&files, "files_0")?;
             let (body, boundary) = multipart_body(&metadata, &multipart_files);

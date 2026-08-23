@@ -143,7 +143,7 @@ fn segment_ranges(journal: &std::path::Path, day: &str) -> Vec<(NaiveDateTime, N
     let mut ranges = iter_segments(journal, PathOrDay::Day(day))
         .unwrap_or_default()
         .into_iter()
-        .filter_map(|segment| parse_segment(&segment.key, anchor))
+        .filter_map(|segment| parse_segment(segment.key(), anchor))
         .collect::<Vec<_>>();
     ranges.sort_by_key(|(start, _)| *start);
     ranges

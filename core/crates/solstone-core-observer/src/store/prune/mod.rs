@@ -19,7 +19,8 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use chrono::{Duration, NaiveDate};
-use solstone_core_segment::list_days;
+use solstone_core_journal_io::{SegmentIdentityError, check_record_identities};
+use solstone_core_segment::{list_days, list_segments};
 
 pub use attribution::observer_prefix_for_stream;
 pub use history::{
@@ -72,6 +73,46 @@ fn validate_day(day: &str) -> Result<NaiveDate, String> {
     NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|_| format!("invalid day: {day}"))
 }
 
+fn selected_listed_segments(
+    journal: &Path,
+    days: &[String],
+    stream: Option<&str>,
+) -> Vec<solstone_core_journal_io::Segment> {
+    let mut listed = Vec::new();
+    for day in days {
+        let Ok(segments) = list_segments(journal, day) else {
+            continue;
+        };
+        for segment in segments {
+            if let Some(filter) = stream
+                && !segment.stream().matches(filter)
+            {
+                continue;
+            }
+            listed.push(segment);
+        }
+    }
+    listed
+}
+
+fn identity_preflight(
+    journal: &Path,
+    days: &[String],
+    stream: Option<&str>,
+) -> Result<(), Refusal> {
+    check_record_identities(&selected_listed_segments(journal, days, stream)).map_err(
+        |error: SegmentIdentityError| {
+            Refusal::new(
+                "prune",
+                "segment-identity",
+                None::<String>,
+                error.to_string(),
+            )
+        },
+    )?;
+    Ok(())
+}
+
 fn selected_streams(journal: &Path, days: &[String], stream: Option<&str>) -> BTreeSet<String> {
     let mut streams = BTreeSet::new();
     for day in days {
@@ -79,8 +120,13 @@ fn selected_streams(journal: &Path, days: &[String], stream: Option<&str>) -> BT
             continue;
         };
         for segment in segments {
-            if stream.is_none() || stream == Some(segment.stream.as_str()) {
-                streams.insert(segment.stream.clone());
+            if let Some(filter) = stream
+                && !segment.stream().matches(filter)
+            {
+                continue;
+            }
+            if let Some(identity) = segment.record_identity() {
+                streams.insert(identity.stream.to_owned());
             }
         }
     }

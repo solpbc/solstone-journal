@@ -182,6 +182,7 @@
             "unreadable_ledgers": []
           },
           "days": [],
+          "has_ambiguous_ledger_matches": false,
           "device": {
             "free_bytes": 250000000000,
             "total_bytes": 1000000000000
@@ -683,6 +684,7 @@
             "unreadable_ledgers": []
           },
           "days": [],
+          "has_ambiguous_ledger_matches": false,
           "device": {
             "free_bytes": 250000000000,
             "total_bytes": 1000000000000
@@ -988,6 +990,7 @@
             "unreadable_ledgers": []
           },
           "days": [],
+          "has_ambiguous_ledger_matches": false,
           "device": {
             "free_bytes": 250000000000,
             "total_bytes": 1000000000000
@@ -1293,6 +1296,7 @@
             "unreadable_ledgers": []
           },
           "days": [],
+          "has_ambiguous_ledger_matches": false,
           "device": {
             "free_bytes": 250000000000,
             "total_bytes": 1000000000000

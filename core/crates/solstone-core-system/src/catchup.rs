@@ -412,16 +412,21 @@ pub fn read_raw_input_fingerprint(journal: &Path, day: &str) -> Result<String, C
     let day_dir = journal.join("chronicle").join(day);
     let mut entries = Vec::new();
     for segment in iter_segments(journal, PathOrDay::Day(day))? {
-        for entry in read_dir(&segment.path)? {
+        for entry in read_dir(segment.path())? {
             let entry = entry.map_err(|source| CatchupError::Io {
-                path: segment.path.clone(),
+                path: segment.path().to_path_buf(),
                 source,
             })?;
             let path = entry.path();
             if !path.is_file() {
                 continue;
             }
-            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                return Err(CatchupError::State(format!(
+                    "non-UTF-8 input name under {}",
+                    segment.path().display()
+                )));
+            };
             let marker = if is_raw_hashed(&name) {
                 sha256_file(&path)?
             } else if is_sized_media(&path) {
@@ -434,7 +439,13 @@ pub fn read_raw_input_fingerprint(journal: &Path, day: &str) -> Result<String, C
                 .map_err(|_| {
                     CatchupError::State(format!("segment path escaped day: {}", path.display()))
                 })?
-                .to_string_lossy()
+                .to_str()
+                .ok_or_else(|| {
+                    CatchupError::State(format!(
+                        "non-UTF-8 relative path under {}",
+                        day_dir.display()
+                    ))
+                })?
                 .replace('\\', "/");
             entries.push((relative, marker));
         }

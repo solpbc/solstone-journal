@@ -30,23 +30,25 @@ pub(crate) struct LocationScan {
 /// location data. Directories count (`talents/` makes a segment mixed).
 pub(crate) fn segment_is_mixed(entries: &[DirEntry]) -> bool {
     entries.iter().any(|entry| {
-        let name = entry.name.to_string_lossy();
-        name != LOCATION_FILE && name != ITEM_FILE && !is_reserved_name(&name)
+        let Some(name) = entry.name.to_str() else {
+            return true;
+        };
+        name != LOCATION_FILE && name != ITEM_FILE && !is_reserved_name(name)
     })
 }
 
 fn holds_location_file(entries: &[DirEntry]) -> bool {
-    entries.iter().any(|entry| {
-        entry.kind == DirEntryKind::File && entry.name.to_string_lossy() == LOCATION_FILE
-    })
+    entries
+        .iter()
+        .any(|entry| entry.kind == DirEntryKind::File && entry.name.to_str() == Some(LOCATION_FILE))
 }
 
 fn holds_tombstone(entries: &[DirEntry]) -> bool {
     entries.iter().any(|entry| {
         entry
             .name
-            .to_string_lossy()
-            .eq_ignore_ascii_case("tombstone.json")
+            .to_str()
+            .is_some_and(|name| name.eq_ignore_ascii_case("tombstone.json"))
     })
 }
 
@@ -96,17 +98,15 @@ pub(crate) fn select_location_targets(journal: &Path) -> LocationScan {
             }
         };
         for segment in segments {
-            let Some(dir) = segment
-                .path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-            else {
+            let Some(identity) = segment.record_identity() else {
+                complete = false;
                 continue;
             };
+            let dir = identity.name.to_owned();
             if dir.starts_with('.') {
                 continue;
             }
-            let Ok(entries) = list_dir_entries(&segment.path) else {
+            let Ok(entries) = list_dir_entries(segment.path()) else {
                 continue;
             };
             if holds_tombstone(&entries) || !holds_location_file(&entries) {
@@ -115,11 +115,11 @@ pub(crate) fn select_location_targets(journal: &Path) -> LocationScan {
             selected.push(Selected {
                 target: Target {
                     day: day.clone(),
-                    stream: segment.stream,
+                    stream: identity.stream.to_owned(),
                     dir,
                 },
                 mixed: segment_is_mixed(&entries),
-                did: segment_did(&segment.path),
+                did: segment_did(segment.path()),
             });
         }
     }
@@ -139,7 +139,7 @@ pub(crate) fn days_holding_tombstones(journal: &Path) -> Vec<String> {
             continue;
         };
         let holds = segments.iter().any(|segment| {
-            list_dir_entries(&segment.path)
+            list_dir_entries(segment.path())
                 .ok()
                 .is_some_and(|entries| holds_tombstone(&entries))
         });

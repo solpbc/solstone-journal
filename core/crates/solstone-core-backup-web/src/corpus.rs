@@ -181,7 +181,7 @@ async fn offload_status_uses_injected_geometry_and_has_exact_shape() {
     )
     .await;
     assert_eq!(status, 200);
-    assert_eq!(body.as_object().expect("object").len(), 12);
+    assert_eq!(body.as_object().expect("object").len(), 13);
     assert_eq!(
         body["device"],
         json!({"free_bytes":crate::test_support::DEVICE_FREE_BYTES,"total_bytes":crate::test_support::DEVICE_TOTAL_BYTES})

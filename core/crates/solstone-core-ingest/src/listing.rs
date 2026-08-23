@@ -80,10 +80,10 @@ pub(crate) fn native_events(
     let mut events = Vec::new();
     for segment in segments
         .into_iter()
-        .filter(|segment| segment.stream == stream)
+        .filter(|segment| segment.stream().matches(stream))
     {
         let report =
-            read_device_ingest_events(&segment.path).map_err(|_| ListingError::JournalRead)?;
+            read_device_ingest_events(segment.path()).map_err(|_| ListingError::JournalRead)?;
         events.extend(report.records.into_iter().filter(|event| event.did == did));
     }
     Ok(events)

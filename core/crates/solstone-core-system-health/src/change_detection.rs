@@ -71,23 +71,21 @@ pub fn resolve_predecessor(
     segment: &str,
 ) -> Option<Value> {
     let stream = stream.unwrap_or(DEFAULT_STREAM);
-    let segments = iter_segments(journal, PathOrDay::Day(day))
-        .ok()?
-        .into_iter()
-        .filter_map(|entry| {
-            (entry.stream == stream)
-                .then(|| {
-                    let name = entry.path.file_name()?.to_str()?.to_owned();
-                    Some((name, entry.path))
-                })
-                .flatten()
-        })
-        .collect::<Vec<_>>();
-    let index = segments.iter().position(|(name, _)| name == segment)?;
+    let mut comparable = Vec::new();
+    for entry in iter_segments(journal, PathOrDay::Day(day)).ok()? {
+        if !entry.stream().matches(stream) {
+            continue;
+        }
+        let Some(name) = entry.name().to_str().map(str::to_owned) else {
+            return Some(json!({"day": day, "stream": stream, "unresolvable": true}));
+        };
+        comparable.push((name, entry.path().to_path_buf()));
+    }
+    let index = comparable.iter().position(|(name, _)| name == segment)?;
     if index == 0 {
         return None;
     }
-    let predecessor = &segments[index - 1].0;
+    let predecessor = &comparable[index - 1].0;
     let (_, previous_end) = segment_start_and_end_seconds(predecessor)?;
     let (current_start, _) = segment_start_and_end_seconds(segment)?;
     let current = i64::from(current_start.hour) * 3600
@@ -104,14 +102,17 @@ pub(crate) fn read_predecessor_state(
     predecessor: Option<&Value>,
 ) -> Option<Value> {
     let predecessor = predecessor?.as_object()?;
+    if predecessor.get("unresolvable").and_then(Value::as_bool) == Some(true) {
+        return None;
+    }
     let stream = predecessor.get("stream")?.as_str()?;
     let segment = predecessor.get("segment")?.as_str()?;
     let path = iter_segments(journal, PathOrDay::Day(day))
         .ok()?
         .into_iter()
         .find_map(|entry| {
-            let name = entry.path.file_name()?.to_str()?;
-            (entry.stream == stream && name == segment).then_some(entry.path)
+            let name = entry.name().to_str()?;
+            (entry.stream().matches(stream) && name == segment).then(|| entry.path().to_path_buf())
         })?
         .join("talents/change.json");
     let sensors = serde_json::from_slice::<Value>(&fs::read(path).ok()?)
@@ -594,6 +595,26 @@ mod tests {
             resolve_predecessor(root.path(), "20260101", Some("other"), "091000_60"),
             None
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_sibling_makes_predecessor_unresolvable() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let root = tempfile::tempdir().unwrap();
+        segment(root.path(), None, "090000_60");
+        segment(root.path(), None, "091100_60");
+        fs::create_dir_all(
+            root.path()
+                .join("chronicle/20260101")
+                .join(OsStr::from_bytes(b"090530_60\xff")),
+        )
+        .unwrap();
+        let result = resolve_predecessor(root.path(), "20260101", None, "091100_60").unwrap();
+        assert_eq!(result["unresolvable"], true);
+        assert!(result.get("segment").is_none());
     }
 
     #[test]

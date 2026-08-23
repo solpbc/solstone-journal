@@ -14,6 +14,7 @@ use solstone_core_backup::{get_backup_config, record_offload_result};
 use solstone_core_backup_runtime::{
     BackupServices, check_archive_snapshot_files, run_archive_backup,
 };
+use solstone_core_journal_io::check_record_identities;
 use solstone_core_journal_io::paths::{PathOrDay, day_dirs, iter_segments};
 use solstone_core_retention::{
     RawRelease, Target,
@@ -29,7 +30,7 @@ use crate::marks::OffloadMarkIndex;
 use crate::measurement::measure_raw_media_usage;
 use crate::pruning_audit::write_prune_audit;
 
-pub const OFFLOAD_STALL_REASONS: [&str; 10] = [
+pub const OFFLOAD_STALL_REASONS: [&str; 11] = [
     "backup_not_ready",
     "backup_failing",
     "verification_missing",
@@ -39,6 +40,7 @@ pub const OFFLOAD_STALL_REASONS: [&str; 10] = [
     "archive_failed",
     "confirm_failed",
     "confirm_tool_failed",
+    "segment_identity",
     "unexpected_error",
 ];
 pub const VERIFICATION_INTEGRITY_REASONS: [&str; 3] =
@@ -124,7 +126,7 @@ fn prepare(paths: &[PathBuf]) -> Option<Vec<OffloadFile>> {
             let bytes = path.metadata().ok()?.len();
             let digest = Sha256::digest(fs::read(path).ok()?);
             Some(OffloadFile {
-                name: path.file_name()?.to_string_lossy().into_owned(),
+                name: path.file_name()?.to_str()?.to_owned(),
                 bytes,
                 sha256: format!("{digest:x}"),
             })
@@ -228,24 +230,42 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
         .into_keys()
         .collect::<Vec<_>>();
     days.sort();
+    let mut listed = Vec::new();
+    for day in &days {
+        listed.extend(iter_segments(journal, PathOrDay::Day(day)).unwrap_or_default());
+    }
+    if check_record_identities(&listed).is_err() {
+        return stall(
+            "segment_identity",
+            dry_run,
+            vec![],
+            0,
+            0,
+            files_already_marked,
+            bytes_already_marked,
+        );
+    }
     for day in days {
         for segment in iter_segments(journal, PathOrDay::Day(&day)).unwrap_or_default() {
+            let Some(identity) = segment.record_identity() else {
+                continue;
+            };
             let registry = ClosedHandlerSet;
             let classifier = JournalMedia;
-            let found = scan_segment(&segment.path, &registry, &classifier);
+            let found = scan_segment(segment.path(), &registry, &classifier);
             let RawRelease::Releasable(proven) = resolve_segment_gate(
                 &registry,
                 &classifier,
                 &day,
-                &segment.stream,
-                &segment.key,
+                identity.stream,
+                identity.key,
                 &found,
             ) else {
                 continue;
             };
             let mut paths = proven
                 .iter()
-                .map(|file| segment.path.join(file.name()))
+                .map(|file| segment.path().join(file.name()))
                 .collect::<Vec<_>>();
             paths.sort_by(|left, right| left.file_name().cmp(&right.file_name()));
             if paths.is_empty() {
@@ -268,7 +288,7 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
                 .map(|file| file.name.clone())
                 .collect::<Vec<_>>();
             if mark_index
-                .matches(&day, &segment.stream, &segment.key, &names)
+                .matches(&day, identity.stream, identity.key, &names)
                 .is_some()
             {
                 continue;
@@ -301,8 +321,8 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
             }
             let detail = OffloadSegmentDetail {
                 day: day.clone(),
-                stream: segment.stream.clone(),
-                segment: segment.key.clone(),
+                stream: identity.stream.to_owned(),
+                segment: identity.key.to_owned(),
                 files: files.len() as u64,
                 bytes,
             };
@@ -359,8 +379,8 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
             if append_offload_event(
                 journal,
                 &day,
-                &segment.stream,
-                &segment.key,
+                identity.stream,
+                identity.key,
                 &snapshot,
                 &files,
                 services.clock.now_unix() as u64,
@@ -381,8 +401,8 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
                 journal,
                 &Target {
                     day: day.clone(),
-                    stream: segment.stream.clone(),
-                    dir: segment.key.clone(),
+                    stream: identity.stream.to_owned(),
+                    dir: identity.key.to_owned(),
                 },
                 names,
                 bytes,
@@ -408,7 +428,7 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
                     files.len()
                 ),
             )]);
-            let record = serde_json::json!({"kind":"raw_media_offload","day":day,"stream":segment.stream,"segment":segment.key,"bytes_marked":bytes});
+            let record = serde_json::json!({"kind":"raw_media_offload","day":day,"stream":identity.stream,"segment":identity.key,"bytes_marked":bytes});
             let Some(audit_day) = local_day(services.clock.now_unix()) else {
                 return stall(
                     "unexpected_error",

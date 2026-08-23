@@ -41,18 +41,18 @@ pub fn compute_storage_summary(journal_root: &Path) -> StorageSummary {
         };
         for segment in segments {
             summary.total_segments = summary.total_segments.saturating_add(1);
-            let raw_bytes = immediate_raw_bytes(&segment.path);
+            let raw_bytes = immediate_raw_bytes(segment.path());
             summary.raw_media_bytes = summary.raw_media_bytes.saturating_add(raw_bytes);
             if raw_bytes > 0 {
                 summary.segments_with_raw = summary.segments_with_raw.saturating_add(1);
-            } else if segment.path.join("audio.jsonl").is_file()
-                || segment.path.join("screen.jsonl").is_file()
+            } else if segment.path().join("audio.jsonl").is_file()
+                || segment.path().join("screen.jsonl").is_file()
             {
                 summary.segments_purged = summary.segments_purged.saturating_add(1);
             }
             summary.derived_bytes = summary
                 .derived_bytes
-                .saturating_add(derived_bytes(&segment.path));
+                .saturating_add(derived_bytes(segment.path()));
         }
     }
     summary
