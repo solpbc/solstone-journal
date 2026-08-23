@@ -449,7 +449,8 @@ pub fn resolve_provider_update(
     // independent of whether it is the currently active lane -- this is
     // `spp.confidential_provenance()`/`confidential_provenance_block()`'s
     // exact check (`solstone/think/providers/local_endpoint.py:75-82`), not
-    // `_confidential_lane_active_for_config`'s active-lane check below.
+    // `is_confidential_active`'s active-lane check in `update_providers`,
+    // which can still reject after this resolver approves.
     let confidential_provisioned = config
         .get("services")
         .and_then(Value::as_object)
