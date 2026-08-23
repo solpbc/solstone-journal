@@ -64,6 +64,7 @@ pub(crate) fn context() -> StagedContext {
             service_status_command_override: None,
             parakeet_server_probe_override: None,
             speakers_analyze_resolvers: None,
+            vad_runtime_probe: None,
             free_space_bytes_override: None,
         },
         _root: TempRoot(root),

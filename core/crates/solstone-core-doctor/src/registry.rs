@@ -100,6 +100,9 @@ fn cpp_stt(c: &CheckContext) -> RunnerResult {
 fn speakers(c: &CheckContext) -> RunnerResult {
     checks::speakers_analyze_installation::run(c, CHECK_SPEAKERS)
 }
+fn vad_runtime(c: &CheckContext) -> RunnerResult {
+    checks::vad_runtime_ready::run(c, CHECK_VAD_RUNTIME)
+}
 fn skills(c: &CheckContext) -> RunnerResult {
     checks::skill_state::run(c, CHECK_SKILLS)
 }
@@ -200,6 +203,11 @@ const CHECK_CPP_STT: Check = Check {
 };
 const CHECK_SPEAKERS: Check = Check {
     name: "speakers_analyze_installation",
+    severity: Severity::Blocker,
+    platforms: BOTH,
+};
+const CHECK_VAD_RUNTIME: Check = Check {
+    name: "vad_runtime_ready",
     severity: Severity::Blocker,
     platforms: BOTH,
 };
@@ -305,6 +313,11 @@ pub static JOURNAL: &[RegistryEntry] = &[
         deferred: None,
     },
     RegistryEntry {
+        check: CHECK_VAD_RUNTIME,
+        runner: vad_runtime,
+        deferred: None,
+    },
+    RegistryEntry {
         check: CHECK_SKILLS,
         runner: skills,
         deferred: None,
@@ -339,6 +352,11 @@ pub static READINESS: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_SPEAKERS,
         runner: speakers,
+        deferred: None,
+    },
+    RegistryEntry {
+        check: CHECK_VAD_RUNTIME,
+        runner: vad_runtime,
         deferred: None,
     },
 ];

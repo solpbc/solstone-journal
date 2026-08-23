@@ -94,7 +94,8 @@ pub(crate) fn tag_audio(audio: &[f32], journal_path: &Path) -> Option<Value> {
     solstone_core_sound_tags::tag_audio(audio, journal_path)
 }
 
-fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
+/// Resolve the VAD helper using `SOLSTONE_VAD_BINARY` or the current executable's sibling.
+pub fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
     let candidate = vad_binary_candidate_from(env::current_exe(), |name| env::var(name).ok())?;
     if candidate.is_file() {
         Ok(candidate)
@@ -105,7 +106,12 @@ fn resolve_vad_binary() -> Result<PathBuf, TranscribeError> {
     }
 }
 
-fn vad_binary_candidate_from<F>(
+/// Resolve the VAD helper from an executable path and environment lookup.
+///
+/// `lookup_env` is the single `SOLSTONE_VAD_BINARY` branch shared by transcription
+/// and doctor. Pass `install_bin_dir.join("solstone-core")` as the executable to
+/// use the journal-host bindir as the sibling directory.
+pub(crate) fn vad_binary_candidate_from<F>(
     current_executable: Result<PathBuf, io::Error>,
     lookup_env: F,
 ) -> Result<PathBuf, TranscribeError>

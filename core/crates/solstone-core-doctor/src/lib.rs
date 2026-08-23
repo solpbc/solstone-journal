@@ -121,12 +121,13 @@ mod tests {
             service_status_command_override: None,
             parakeet_server_probe_override: None,
             speakers_analyze_resolvers: None,
+            vad_runtime_probe: None,
             free_space_bytes_override: None,
         }
     }
     #[test]
     fn registry_ground_truth() {
-        assert_eq!(registry::union_names().len(), 21);
+        assert_eq!(registry::union_names().len(), 22);
         assert_eq!(
             registry::union_names()
                 .iter()
@@ -134,7 +135,7 @@ mod tests {
                     .or_else(|| registry::lookup(Battery::JournalReadiness, name))
                     .is_some())
                 .count(),
-            21
+            22
         );
         assert_eq!(
             registry::union_names()
@@ -503,8 +504,8 @@ mod tests {
         assert_ne!(b.detail, "no local journal");
     }
     #[test]
-    fn ac12_union_is_native_only_21_names() {
-        assert_eq!(registry::union_names().len(), 21);
+    fn ac12_union_is_native_only_22_names() {
+        assert_eq!(registry::union_names().len(), 22);
     }
     #[test]
     fn ac13_battery_is_read_only_for_missing_paths() {

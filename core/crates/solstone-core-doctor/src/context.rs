@@ -15,6 +15,14 @@ pub type SpeakersBinaryResolver = fn() -> Result<PathBuf, String>;
 /// Test seam for native speakers-analyze model resolution.
 pub type SpeakersModelResolver =
     fn(&str) -> Result<PathBuf, solstone_core_transcribe::TranscribeError>;
+/// Test seam for the VAD helper launch probe (binary path and deadline).
+#[derive(Debug, Clone)]
+pub struct VadRuntimeProbeSeam {
+    pub binary: PathBuf,
+    pub timeout: Duration,
+}
+/// Test seam that returns a VAD helper path and probe deadline.
+pub type VadRuntimeProbeResolver = fn() -> VadRuntimeProbeSeam;
 
 #[derive(Debug, Clone)]
 pub struct CheckContext {
@@ -39,6 +47,8 @@ pub struct CheckContext {
     pub service_status_command_override: Option<(PathBuf, Vec<String>)>,
     pub parakeet_server_probe_override: Option<ParakeetServerProbe>,
     pub speakers_analyze_resolvers: Option<(SpeakersBinaryResolver, SpeakersModelResolver)>,
+    /// Test seam for the VAD helper binary and probe deadline.
+    pub vad_runtime_probe: Option<VadRuntimeProbeResolver>,
     /// Test seam for available bytes on the installation filesystem.
     pub free_space_bytes_override: Option<u64>,
 }
@@ -97,6 +107,7 @@ impl CheckContext {
             service_status_command_override: None,
             parakeet_server_probe_override: None,
             speakers_analyze_resolvers: None,
+            vad_runtime_probe: None,
             free_space_bytes_override: None,
         })
     }

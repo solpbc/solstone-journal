@@ -81,7 +81,8 @@ until it can be determined.
 
 `journal setup` step 1 runs `journal doctor --readiness`: `local_bin_solstone_reachable`,
 `disk_space`, `journal_dir_writable`, `default_stt_ready`,
-`parakeet_cpp_stt_ready`, and `speakers_analyze_installation`.
+`parakeet_cpp_stt_ready`, `speakers_analyze_installation`, and
+`vad_runtime_ready`.
 It does not run runtime service, sync, config-dir, or launchd checks. A blocker
 failure still stops setup early. An execution error in any readiness check also
 stops setup early, even when that check is advisory.

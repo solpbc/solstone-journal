@@ -15,6 +15,7 @@ mod config;
 mod event;
 mod model_assets;
 mod speakers_installation;
+mod vad_runtime;
 // The standalone CLI is introduced in a later step; retain the completed
 // stage pieces without treating that staged integration as a lint failure.
 #[allow(dead_code)]
@@ -33,8 +34,9 @@ mod transcript;
 
 pub use args::{
     CliError, ParsedArgs, check_speakers_analyze_installation,
-    check_speakers_analyze_installation_with, parse_arguments, require_solstone,
-    speakers_analyze_repair_text,
+    check_speakers_analyze_installation_with, check_vad_runtime, check_vad_runtime_with,
+    parse_arguments, require_solstone, speakers_analyze_repair_text, vad_runtime_repair_for,
+    vad_runtime_repair_text,
 };
 pub use model_assets::{
     ModelAssetError, PYANNOTE_SEGMENTATION_SHA256, SILERO_VAD_V6_SHA256, WESPEAKER_RESNET34_SHA256,
@@ -42,6 +44,9 @@ pub use model_assets::{
 };
 pub use speakers::SpeakerAnalyzeError;
 pub use speakers_installation::{SpeakersAnalyzeGeneration, enter_speakers_analyze_generation};
+pub use vad_runtime::{
+    VAD_RUNTIME_PROBE_TIMEOUT, VadRuntimeStatus, probe_from_executable, status_detail,
+};
 
 use std::path::{Path, PathBuf};
 

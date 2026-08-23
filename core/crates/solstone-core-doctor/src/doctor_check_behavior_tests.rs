@@ -70,6 +70,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "default_stt_ready",
     "parakeet_cpp_stt_ready",
     "speakers_analyze_installation",
+    "vad_runtime_ready",
     "skill_state",
 ];
 
@@ -115,6 +116,7 @@ fn fixture() -> CheckContext {
         service_status_command_override: None,
         parakeet_server_probe_override: Some(|_, _| Err("fixture unreachable".into())),
         speakers_analyze_resolvers: None,
+        vad_runtime_probe: None,
         free_space_bytes_override: None,
     }
 }
@@ -298,6 +300,24 @@ fn stage_parakeet_ready(context: &mut CheckContext, backend: &str) {
     executable(&artifacts.binary_vulkan, "#!/bin/sh\necho v\n");
     fs::write(&artifacts.model, "model").unwrap();
     context.parakeet_server_probe_override = Some(parakeet_ready_probe);
+}
+
+#[cfg(unix)]
+fn stage_vad_runtime(context: &mut CheckContext, ready: bool) {
+    let stub = context.install_bin_dir.join("vad-coverage-stub");
+    fs::create_dir_all(stub.parent().unwrap()).unwrap();
+    if ready {
+        executable(
+            &stub,
+            "#!/bin/sh\nprintf '%s\\n' '{\"schema\":\"solstone-vad-error-v1\",\"reason\":\"malformed-request\",\"detail\":\"empty\"}'\nexit 64\n",
+        );
+    } else {
+        executable(
+            &stub,
+            "#!/bin/sh\necho 'error while loading shared libraries: libonnxruntime.so.1: cannot open shared object file' >&2\nexit 127\n",
+        );
+    }
+    inject_vad_probe(context, stub, Duration::from_secs(2));
 }
 
 #[cfg(unix)]
@@ -485,6 +505,10 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             #[cfg(unix)]
             stage_speakers_analyze(&mut context, ok);
         }
+        "vad_runtime_ready" => {
+            #[cfg(unix)]
+            stage_vad_runtime(&mut context, ok);
+        }
         "skill_state" => {
             #[cfg(unix)]
             stage_router_skills(&mut context, !ok);
@@ -512,6 +536,7 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                     | "default_stt_ready"
                     | "parakeet_cpp_stt_ready"
                     | "speakers_analyze_installation"
+                    | "vad_runtime_ready"
                     | "skill_state"
             ))
             .all(|e| e.deferred.is_none())
@@ -532,6 +557,7 @@ fn check_severity_table_matches_reference() {
         ("default_stt_ready", Severity::Advisory),
         ("parakeet_cpp_stt_ready", Severity::Advisory),
         ("speakers_analyze_installation", Severity::Blocker),
+        ("vad_runtime_ready", Severity::Blocker),
         ("skill_state", Severity::Advisory),
     ] {
         assert_eq!(
@@ -563,6 +589,7 @@ fn fixture_covers_ok_and_non_ok_paths() {
             "speakers_analyze_installation",
             SecondBranch::DifferentStatus,
         ),
+        ("vad_runtime_ready", SecondBranch::DifferentStatus),
         ("skill_state", SecondBranch::DifferentStatus),
     ];
     let coverage_names = coverage
@@ -1285,6 +1312,55 @@ fn speakers_installation_uses_injected_resolvers() {
     );
 }
 
+thread_local! {
+    static VAD_SEAM: std::cell::RefCell<Option<crate::context::VadRuntimeProbeSeam>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn vad_injected_resolver() -> crate::context::VadRuntimeProbeSeam {
+    VAD_SEAM.with(|slot| slot.borrow().clone().expect("injected VAD runtime seam"))
+}
+
+fn inject_vad_probe(context: &mut CheckContext, binary: PathBuf, timeout: Duration) {
+    VAD_SEAM.with(|slot| {
+        *slot.borrow_mut() = Some(crate::context::VadRuntimeProbeSeam { binary, timeout });
+    });
+    context.vad_runtime_probe = Some(vad_injected_resolver);
+}
+
+#[test]
+#[cfg(unix)]
+fn vad_runtime_ready_reports_loader_failure_as_blocker() {
+    let mut context = fixture();
+    let stub = context.install_bin_dir.join("vad-loader-stub");
+    fs::create_dir_all(stub.parent().unwrap()).unwrap();
+    executable(
+        &stub,
+        "#!/bin/sh\necho 'error while loading shared libraries: libonnxruntime.so.1: cannot open shared object file' >&2\nexit 127\n",
+    );
+    inject_vad_probe(&mut context, stub, Duration::from_secs(2));
+    let row = result("vad_runtime_ready", &context);
+    assert_eq!(row.status, Status::Fail);
+    assert_eq!(row.severity, Severity::Blocker);
+    assert!(row.detail.contains("libonnxruntime.so.1"), "{}", row.detail);
+}
+
+#[test]
+#[cfg(unix)]
+fn vad_runtime_ready_accepts_closed_stdin_usage_contract() {
+    let mut context = fixture();
+    let stub = context.install_bin_dir.join("vad-healthy-stub");
+    fs::create_dir_all(stub.parent().unwrap()).unwrap();
+    executable(
+        &stub,
+        "#!/bin/sh\nprintf '%s\\n' '{\"schema\":\"solstone-vad-error-v1\",\"reason\":\"malformed-request\",\"detail\":\"empty\"}'\nexit 64\n",
+    );
+    inject_vad_probe(&mut context, stub, Duration::from_secs(2));
+    let row = result("vad_runtime_ready", &context);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(row.severity, Severity::Blocker);
+}
+
 #[test]
 fn stall_warn_omits_duplicate_and_queue_clauses() {
     let context = fixture();
@@ -1319,6 +1395,7 @@ fn owner_boundary_guard_is_nonvacuous() {
         ("default_stt_ready", "solstone_core_system"),
         ("parakeet_cpp_stt_ready", "solstone_core_system"),
         ("speakers_analyze_installation", "solstone_core_transcribe"),
+        ("vad_runtime_ready", "solstone_core_transcribe"),
         ("skill_state", "solstone_core_skill_state"),
     ];
     let accepts = |module: &str, source: &str| {

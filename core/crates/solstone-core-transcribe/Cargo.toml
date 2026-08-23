@@ -25,6 +25,7 @@ serde_json = { workspace = true }
 sha2.workspace = true
 solstone-core-observe-audio = { workspace = true }
 solstone-core-system = { workspace = true }
+solstone-core-system-health = { workspace = true }
 solstone-core-speaker-id = { workspace = true }
 solstone-core-processing-record = { workspace = true }
 solstone-core-callosum = { workspace = true }

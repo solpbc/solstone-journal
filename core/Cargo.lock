@@ -5074,6 +5074,7 @@ dependencies = [
  "solstone-core-spp-attest",
  "solstone-core-spp-ratls",
  "solstone-core-system",
+ "solstone-core-system-health",
  "tempfile",
  "ureq",
 ]

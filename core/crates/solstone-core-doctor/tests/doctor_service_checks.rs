@@ -71,6 +71,7 @@ fn context() -> (CheckContext, TestRoot) {
             service_status_command_override: None,
             parakeet_server_probe_override: None,
             speakers_analyze_resolvers: None,
+            vad_runtime_probe: None,
             free_space_bytes_override: None,
         },
         TestRoot(root),
@@ -295,6 +296,7 @@ fn poison_battery_context(root: &Path) -> CheckContext {
         service_status_command_override: None,
         parakeet_server_probe_override: Some(parakeet_unreachable_probe),
         speakers_analyze_resolvers: Some((speakers_binary_missing, speakers_model_ready)),
+        vad_runtime_probe: None,
         free_space_bytes_override: None,
     }
 }
@@ -357,6 +359,7 @@ fn run_poison_battery_child(root: &Path) {
             ("default_stt_ready", Status::Warn),
             ("parakeet_cpp_stt_ready", Status::Skip),
             ("speakers_analyze_installation", Status::Fail),
+            ("vad_runtime_ready", Status::Fail),
             ("skill_state", Status::Skip),
         ])
     );
@@ -369,6 +372,7 @@ fn run_poison_battery_child(root: &Path) {
             ("default_stt_ready", Status::Warn),
             ("parakeet_cpp_stt_ready", Status::Skip),
             ("speakers_analyze_installation", Status::Fail),
+            ("vad_runtime_ready", Status::Fail),
         ])
     );
 }

@@ -24,6 +24,7 @@ pub mod skill_state;
 pub mod speakers_analyze_installation;
 pub mod supervisor_conflict;
 pub mod task_pace;
+pub mod vad_runtime_ready;
 
 #[cfg(test)]
 pub(crate) mod test_support;
