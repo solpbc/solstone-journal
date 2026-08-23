@@ -112,7 +112,7 @@ pub fn stream_segments(journal: &Path, stream: &str) -> BTreeMap<SegmentKey, Pat
                 continue;
             }
             let path = segment.path().to_path_buf();
-            let Some(identity) = segment.record_identity() else {
+            let Ok(identity) = segment.record_identity() else {
                 continue;
             };
             segments.insert((day.clone(), identity.name.to_owned()), path.clone());

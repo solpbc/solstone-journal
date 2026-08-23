@@ -33,16 +33,13 @@ pub fn same_start_sets(
                 continue;
             }
             let identity = match segment.record_identity() {
-                Some(identity) => identity,
-                None => {
+                Ok(identity) => identity,
+                Err(error) => {
                     return Err(Refusal::new(
                         "prune",
                         "segment-identity",
                         None::<String>,
-                        format!(
-                            "segment path is not UTF-8 representable: {}",
-                            segment.path().display()
-                        ),
+                        error.to_string(),
                     ));
                 }
             };

@@ -13,7 +13,7 @@ use solstone_core_entity::{
     JournalEntity, VoiceprintItem, load_all_journal_entities, load_entity_voiceprints_file,
     read_journal_principal, record_entity_resolution_from_name_evidence, save_voiceprints_batch,
 };
-use solstone_core_journal_io::{PathOrDay, day_dirs, iter_segments};
+use solstone_core_journal_io::{PathOrDay, SegmentIdentityError, day_dirs, iter_segments};
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
 
@@ -92,8 +92,15 @@ pub enum BootstrapError {
     },
     #[error("segment path is not UTF-8 representable: {}", path.display())]
     NotUtf8 { path: PathBuf },
+    #[error(
+        "named stream directory \"_default\" cannot be spelled as a record identity: {}",
+        path.display()
+    )]
+    AmbiguousNamedDefault { path: PathBuf },
     #[error("multiple segments share day {day:?} key {key:?}")]
     DuplicateDayKey { day: String, key: String },
+    #[error(transparent)]
+    Identity(SegmentIdentityError),
 }
 
 /// Outcome of the validation portion of a requested name merge.
@@ -549,11 +556,16 @@ pub(crate) fn scan_segments(journal_root: &Path) -> Result<Vec<ScannedSegment>, 
     let mut seen = HashMap::<(String, String), ()>::new();
     for (day, path) in days {
         for segment in iter_segments(journal_root, PathOrDay::Directory(&path))? {
-            let identity = segment
-                .record_identity()
-                .ok_or_else(|| BootstrapError::NotUtf8 {
-                    path: segment.path().to_path_buf(),
-                })?;
+            let identity = match segment.record_identity() {
+                Ok(identity) => identity,
+                Err(SegmentIdentityError::NotUtf8 { path }) => {
+                    return Err(BootstrapError::NotUtf8 { path });
+                }
+                Err(SegmentIdentityError::AmbiguousNamedDefault { path }) => {
+                    return Err(BootstrapError::AmbiguousNamedDefault { path });
+                }
+                Err(error) => return Err(BootstrapError::Identity(error)),
+            };
             if seen
                 .insert((day.clone(), identity.key.to_owned()), ())
                 .is_some()
@@ -678,8 +690,8 @@ mod tests {
     #[test]
     fn scan_segments_refuses_duplicate_day_keys() {
         let root = tempfile::tempdir().unwrap();
-        fs::create_dir_all(root.path().join("chronicle/20260101/080000_300")).unwrap();
-        fs::create_dir_all(root.path().join("chronicle/20260101/_default/080000_300")).unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260101/alpha/080000_300")).unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260101/beta/080000_300")).unwrap();
         let error = scan_segments(root.path()).unwrap_err();
         assert!(
             matches!(

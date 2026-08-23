@@ -10,6 +10,8 @@ mod peer;
 mod peer_export;
 mod rescan;
 mod send;
+/// Test-only hooks for external integration tests. Not part of the public API contract.
+pub mod test_hooks;
 
 use thiserror::Error;
 

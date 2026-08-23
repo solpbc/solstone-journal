@@ -98,7 +98,7 @@ pub(crate) fn select_location_targets(journal: &Path) -> LocationScan {
             }
         };
         for segment in segments {
-            let Some(identity) = segment.record_identity() else {
+            let Ok(identity) = segment.record_identity() else {
                 complete = false;
                 continue;
             };

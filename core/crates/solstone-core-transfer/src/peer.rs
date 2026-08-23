@@ -73,6 +73,20 @@ pub(crate) struct PeerLoopbackClient {
 }
 
 impl PeerLoopbackClient {
+    pub(crate) fn for_test(base_url: impl Into<String>) -> Self {
+        let base_url = base_url.into();
+        let host = base_url
+            .trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .trim_end_matches('/')
+            .to_owned();
+        Self {
+            agent: loopback_agent(),
+            base_url,
+            host,
+        }
+    }
+
     pub(crate) fn get(&self, path: &str) -> Result<PeerHttpResponse, TransferError> {
         let response = self
             .agent

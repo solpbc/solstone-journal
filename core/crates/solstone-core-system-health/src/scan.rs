@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::Value;
 use solstone_core_format::segment::segment_start_and_end_seconds;
+use solstone_core_journal_io::SegmentIdentityError;
 use solstone_core_processing_record::{MediaKind, media_kind, vocab};
 
 use crate::{
@@ -107,12 +108,16 @@ pub fn scan_day<S: SegmentSource>(
             // The raw directory basename controls parse eligibility and is the
             // value the Python day scan reports, rather than Segment.key().
             key: raw_name.to_owned(),
-            stream: segment
-                .record_identity()
-                .map(|identity| identity.stream.to_owned())
-                .ok_or_else(|| HealthError::UnrepresentableSegment {
-                    path: segment.path().to_path_buf(),
-                })?,
+            stream: match segment.record_identity() {
+                Ok(identity) => identity.stream.to_owned(),
+                Err(SegmentIdentityError::NotUtf8 { path }) => {
+                    return Err(HealthError::UnrepresentableSegment { path });
+                }
+                Err(SegmentIdentityError::AmbiguousNamedDefault { path }) => {
+                    return Err(HealthError::AmbiguousNamedDefault { path });
+                }
+                Err(error) => return Err(HealthError::Identity(error)),
+            },
             start,
             end,
             types,

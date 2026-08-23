@@ -60,9 +60,9 @@ impl SegmentLocation {
     }
 
     pub(crate) fn from_discovered(day: &str, segment: &Segment) -> Result<Self, SegmentError> {
-        let identity = segment.record_identity().ok_or(SegmentError::StreamInput(
-            "segment path is not UTF-8 representable",
-        ))?;
+        let identity = segment
+            .record_identity()
+            .map_err(SegmentError::RecordIdentity)?;
         let (disk_rel, parent_rel) = if segment.stream().is_direct() {
             (
                 format!("chronicle/{day}/{}", identity.name),

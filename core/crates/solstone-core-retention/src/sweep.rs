@@ -99,7 +99,7 @@ pub struct Plan {
     pub unreadable_days: Vec<String>,
     /// The chronicle root is missing or is not a directory.
     pub chronicle_unavailable: bool,
-    /// Segment directories whose names are not UTF-8, so they cannot fill [`Target`].
+    /// Segment directories that cannot be resolved to a UTF-8 record identity.
     pub unrepresentable_segments: Vec<PathBuf>,
 }
 
@@ -167,7 +167,7 @@ pub fn plan(
             // `HHMMSS_LEN` scanned out of the name and the two differ whenever a
             // name carries a suffix; a path built from the key addresses a
             // different directory, or none.
-            let Some(identity) = segment.record_identity() else {
+            let Ok(identity) = segment.record_identity() else {
                 built
                     .unrepresentable_segments
                     .push(segment.path().to_path_buf());

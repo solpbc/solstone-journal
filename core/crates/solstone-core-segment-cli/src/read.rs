@@ -7,8 +7,8 @@ use chrono::{Duration, NaiveDate, NaiveTime};
 use serde_json::{Value, json};
 use solstone_core_format::segment::segment_parse;
 use solstone_core_segment::{
-    DEFAULT_STREAM, DirEntryKind, Segment, StreamLocation, list_days, list_dir_entries,
-    list_segments, list_segments_in, read_stream_record, read_text,
+    DEFAULT_STREAM, DirEntryKind, Segment, SegmentIdentityError, StreamLocation, list_days,
+    list_dir_entries, list_segments, list_segments_in, read_stream_record, read_text,
 };
 
 use crate::index::{SegmentIndexStatus, read_segment_index};
@@ -167,12 +167,8 @@ fn next_day(day: &str) -> Option<String> {
 }
 
 fn require_discovered(day: &str, segment: &Segment) -> Result<SegmentLocation, String> {
-    SegmentLocation::from_discovered(day, segment).map_err(|_| {
-        format!(
-            "segment list refused: non-UTF-8 name at {}\n",
-            segment.path().display()
-        )
-    })
+    SegmentLocation::from_discovered(day, segment)
+        .map_err(|error| format!("segment list refused: {error}\n"))
 }
 
 pub(crate) fn successors(
@@ -441,7 +437,10 @@ pub(crate) fn render_checks(checks: &[Check]) -> String {
 }
 
 fn record_stream(segment: &Segment) -> Option<&str> {
-    segment.record_identity().map(|identity| identity.stream)
+    segment
+        .record_identity()
+        .ok()
+        .map(|identity| identity.stream)
 }
 
 fn display_stream(segment: &Segment) -> String {
@@ -467,7 +466,7 @@ pub(crate) fn list_output(
     day: &str,
     stream_filter: Option<&str>,
     json_output: bool,
-) -> String {
+) -> Result<String, String> {
     let mut segments = list_segments(journal, day).unwrap_or_default();
     segments.retain(|segment| stream_filter.is_none_or(|stream| segment.stream().matches(stream)));
     // The reference leaves equal segment keys in filesystem order.  Make that
@@ -478,35 +477,34 @@ pub(crate) fn list_output(
             .then_with(|| record_stream(left).cmp(&record_stream(right)))
     });
     if segments.is_empty() {
-        return format!("No segments found for {day}\n");
+        return Ok(format!("No segments found for {day}\n"));
     }
     if json_output {
         let mut rows = Vec::new();
         for segment in &segments {
-            let Some(identity) = segment.record_identity() else {
-                return format!(
-                    "segment list refused: non-UTF-8 name at {}\n",
-                    segment.path().display()
-                );
-            };
+            let identity = segment
+                .record_identity()
+                .map_err(|error| format!("segment list refused: {error}\n"))?;
             let (start, end) = times(identity.key);
             let stats = stats(segment.path());
             rows.push(json!({"stream": identity.stream, "segment": identity.key, "start": start, "end": end,
                 "duration": segment_duration(identity.key), "files": stats.files, "talents": stats.talents, "size": stats.size}));
         }
-        return serde_json::to_string_pretty(&rows).expect("rows serialize") + "\n";
+        return Ok(serde_json::to_string_pretty(&rows).expect("rows serialize") + "\n");
     }
-    let rows = segments.iter().map(|segment| {
-        let identity = segment.record_identity();
-        let stream = identity
-            .map(|identity| identity.stream.to_owned())
-            .unwrap_or_else(|| display_stream(segment));
+    let mut rows = Vec::new();
+    for segment in &segments {
+        let stream = match segment.record_identity() {
+            Ok(identity) => identity.stream.to_owned(),
+            Err(SegmentIdentityError::NotUtf8 { .. }) => display_stream(segment),
+            Err(error) => return Err(format!("segment list refused: {error}\n")),
+        };
         let key = segment.key();
         let (start, end) = times(key);
         let stats = stats(segment.path());
-        json!({"stream": stream, "segment": key, "start": start, "end": end,
-            "duration": segment_duration(key), "files": stats.files, "talents": stats.talents, "size": stats.size})
-    }).collect::<Vec<_>>();
+        rows.push(json!({"stream": stream, "segment": key, "start": start, "end": end,
+            "duration": segment_duration(key), "files": stats.files, "talents": stats.talents, "size": stats.size}));
+    }
     let mut output = format!(
         "{:<20} {:<14} {:<15} {:>5} {:>5} {:>7} {:>8}\n{}\n",
         "STREAM",
@@ -536,7 +534,7 @@ pub(crate) fn list_output(
             format_size(row["size"].as_u64().unwrap_or(0))
         ));
     }
-    output
+    Ok(output)
 }
 
 pub(crate) fn inspect_output(

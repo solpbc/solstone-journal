@@ -9,6 +9,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[[test]]
+name = "peer_export_transport"
+path = "tests/peer_export_transport.rs"
+
 [dependencies]
 chrono.workspace = true
 serde.workspace = true

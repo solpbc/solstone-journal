@@ -21,4 +21,11 @@ pub enum HealthError {
     Metadata { path: PathBuf, message: String },
     #[error("segment path is not UTF-8 representable: {}", path.display())]
     UnrepresentableSegment { path: PathBuf },
+    #[error(
+        "named stream directory \"_default\" cannot be spelled as a record identity: {}",
+        path.display()
+    )]
+    AmbiguousNamedDefault { path: PathBuf },
+    #[error(transparent)]
+    Identity(solstone_core_journal_io::SegmentIdentityError),
 }

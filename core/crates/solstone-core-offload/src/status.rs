@@ -70,7 +70,7 @@ fn build_offload_status_with(
             let matches: Vec<_> = listed
                 .iter()
                 .filter(|found| {
-                    found.record_identity().is_some_and(|identity| {
+                    found.record_identity().ok().is_some_and(|identity| {
                         identity.stream == segment.stream && identity.key == segment.segment
                     })
                 })
@@ -210,16 +210,14 @@ mod tests {
     #[test]
     fn status_surfaces_ambiguous_ledger_matches_apart_from_not_offloaded() {
         let journal = tempfile::tempdir().unwrap();
-        let direct = journal.path().join("chronicle/20260101/010000_001");
-        let named = journal
-            .path()
-            .join("chronicle/20260101/_default/010000_001");
-        fs::create_dir_all(&direct).unwrap();
-        fs::create_dir_all(&named).unwrap();
+        let first = journal.path().join("chronicle/20260101/other/010000_001_a");
+        let second = journal.path().join("chronicle/20260101/other/010000_001_b");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
         append_offload_event(
             journal.path(),
             "20260101",
-            "_default",
+            "other",
             "010000_001",
             "snapshot-a",
             &[OffloadFile {
@@ -236,7 +234,7 @@ mod tests {
         let day = days.iter().find(|row| row["day"] == "20260101").unwrap();
         assert_eq!(
             day["ambiguous_ledger_matches"],
-            serde_json::json!(["_default/010000_001"])
+            serde_json::json!(["other/010000_001"])
         );
         assert_eq!(day["backup_only_segments"].as_u64().unwrap(), 0);
         assert_eq!(day["pending_release_segments"].as_u64().unwrap(), 0);

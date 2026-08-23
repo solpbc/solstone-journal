@@ -129,15 +129,12 @@ fn selected_streams(
             {
                 continue;
             }
-            let identity = segment.record_identity().ok_or_else(|| {
+            let identity = segment.record_identity().map_err(|error| {
                 Refusal::new(
                     "prune",
                     "segment-identity",
                     None::<String>,
-                    format!(
-                        "segment path is not UTF-8 representable: {}",
-                        segment.path().display()
-                    ),
+                    error.to_string(),
                 )
             })?;
             streams.insert(identity.stream.to_owned());

@@ -94,7 +94,7 @@ pub fn aggregate_speculative_facets(
                     });
             group.count += 1;
             match segment.record_identity() {
-                Some(identity) => {
+                Ok(identity) => {
                     let representable = group
                         .samples
                         .iter()
@@ -109,7 +109,7 @@ pub fn aggregate_speculative_facets(
                         });
                     }
                 }
-                None => {
+                Err(_) => {
                     if !group.samples.iter().any(|sample| sample.unrepresentable) {
                         group.samples.push(SpeculativeFacetSample {
                             day: day.clone(),

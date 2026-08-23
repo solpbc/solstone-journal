@@ -98,11 +98,7 @@ pub fn peer_export(
                 "config" => export_config(journal, loopback, &key_prefix, request.dry_run),
                 _ => unreachable!(),
             };
-            results.push(result.unwrap_or_else(|_| PeerExportAreaResult {
-                area: area.to_string(),
-                error: Some(format!("Exception during {area} export")),
-                ..PeerExportAreaResult::new(area)
-            }));
+            results.push(area_result(area, result));
         }
         let any_failed = results
             .iter()
@@ -112,6 +108,38 @@ pub fn peer_export(
             any_failed,
         })
     })
+}
+
+pub(crate) fn area_result(
+    area: &str,
+    result: Result<PeerExportAreaResult, TransferError>,
+) -> PeerExportAreaResult {
+    match result {
+        Ok(result) => result,
+        Err(error) => PeerExportAreaResult {
+            area: area.to_string(),
+            error: Some(sanitize_diagnostic(&error.to_string())),
+            ..PeerExportAreaResult::new(area)
+        },
+    }
+}
+
+fn sanitize_diagnostic(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    for character in input.chars() {
+        match character {
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            '\u{1b}' => output.push_str("\\x1b"),
+            character if character.is_control() => {
+                use std::fmt::Write;
+                let _ = write!(output, "\\u{{{:x}}}", character as u32);
+            }
+            character => output.push(character),
+        }
+    }
+    output
 }
 
 fn parse_only(raw: Option<&str>) -> Result<BTreeSet<&'static str>, TransferError> {
@@ -138,7 +166,7 @@ fn parse_only(raw: Option<&str>) -> Result<BTreeSet<&'static str>, TransferError
         .collect())
 }
 
-fn export_segments(
+pub(crate) fn export_segments(
     journal: &Path,
     loopback: &PeerLoopbackClient,
     key_prefix: &str,
@@ -159,11 +187,8 @@ fn export_segments(
             let identity =
                 segment
                     .record_identity()
-                    .ok_or_else(|| TransferError::Unrepresentable {
-                        reason: format!(
-                            "segment path is not UTF-8 representable: {}",
-                            segment.path().display()
-                        ),
+                    .map_err(|error| TransferError::Unrepresentable {
+                        reason: error.to_string(),
                     })?;
             let files = segment_files(segment.path())?;
             if files.is_empty() {
@@ -977,6 +1002,65 @@ mod tests {
             }
             other => panic!("expected Unrepresentable, got {other:?}"),
         }
+    }
+
+    fn named_default_area_result(journal: &std::path::Path) -> PeerExportAreaResult {
+        let error = listed_segments_by_day(journal, &["20260101".to_owned()])
+            .expect_err("named _default must refuse the days list");
+        area_result("segments", Err(error))
+    }
+
+    #[test]
+    fn named_default_identity_failure_surfaces_through_area_result_without_posts() {
+        let journal = tempfile::tempdir().unwrap();
+        let direct = journal.path().join("chronicle/20260101/080000_60");
+        fs::create_dir_all(&direct).unwrap();
+        fs::write(direct.join("audio.jsonl"), "{}\n").unwrap();
+        let named = journal.path().join("chronicle/20260101/_default/090000_60");
+        fs::create_dir_all(&named).unwrap();
+        fs::write(named.join("audio.jsonl"), "{}\n").unwrap();
+
+        let result = named_default_area_result(journal.path());
+        let error = result.error.expect("area error");
+        assert!(
+            error.contains(
+                "named stream directory \"_default\" cannot be spelled as a record identity"
+            ),
+            "{error}"
+        );
+        assert!(!error.contains("not UTF-8 representable"), "{error}");
+        assert!(
+            !error.contains("Exception during segments export"),
+            "{error}"
+        );
+        assert_eq!(result.sent, 0);
+        assert_eq!(result.failed, 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn named_default_identity_failure_escapes_control_characters_in_the_area_error() {
+        let parent = tempfile::tempdir().unwrap();
+        let journal = parent.path().join("journal\nroot");
+        let named = journal.join("chronicle/20260101/_default/090000_60");
+        fs::create_dir_all(&named).unwrap();
+        fs::write(named.join("audio.jsonl"), "{}\n").unwrap();
+
+        let result = named_default_area_result(&journal);
+        let error = result.error.expect("area error");
+        assert!(
+            !error.contains('\n'),
+            "raw newline leaked into transfer diagnostic: {error:?}"
+        );
+        assert!(error.contains("\\n"), "{error}");
+        assert!(
+            error.contains(
+                "named stream directory \"_default\" cannot be spelled as a record identity"
+            ),
+            "{error}"
+        );
+        assert_eq!(result.sent, 0);
+        assert_eq!(result.failed, 0);
     }
 
     #[test]

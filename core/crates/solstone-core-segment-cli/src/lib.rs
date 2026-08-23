@@ -115,7 +115,10 @@ where
             exit_code: 1,
         },
         Command::List { day, stream, json } => {
-            success(list_output(journal_path, &day, stream.as_deref(), json))
+            match list_output(journal_path, &day, stream.as_deref(), json) {
+                Ok(stdout) => success(stdout),
+                Err(stderr) => failure("", &stderr, 1),
+            }
         }
         Command::Inspect { path, json } => inspect(journal_path, &path, json),
         Command::Verify { path, day, json } => {
@@ -1059,6 +1062,82 @@ mod tests {
             !run.stdout.contains("checks passed"),
             "truncated verify reported success over a subset: {}",
             run.stdout
+        );
+    }
+
+    #[test]
+    fn list_and_verify_refuse_named_default_with_dedicated_cause() {
+        let root = TempDir::new().unwrap();
+        segment(
+            root.path(),
+            "20260304",
+            "_default",
+            "080000_60",
+            Some(json!({"stream": "workstation", "seq": 1})),
+        );
+        let named = root.path().join("chronicle/20260304/_default/090000_60");
+        fs::create_dir_all(named.join("talents")).unwrap();
+        fs::write(named.join("audio.jsonl"), "{}\n").unwrap();
+
+        let json_list = bypass(&["list", "20260304", "--json"], root.path());
+        assert_eq!(json_list.exit_code, 1, "{}", json_list.stdout);
+        assert!(
+            json_list.stderr.contains(
+                "named stream directory \"_default\" cannot be spelled as a record identity"
+            ),
+            "stderr={}",
+            json_list.stderr
+        );
+        assert!(
+            !json_list.stderr.contains("not UTF-8 representable"),
+            "stderr={}",
+            json_list.stderr
+        );
+        assert!(json_list.stdout.is_empty(), "{}", json_list.stdout);
+
+        let human_list = bypass(&["list", "20260304"], root.path());
+        assert_eq!(human_list.exit_code, 1, "{}", human_list.stdout);
+        assert!(
+            human_list.stderr.contains(
+                "named stream directory \"_default\" cannot be spelled as a record identity"
+            ),
+            "stderr={}",
+            human_list.stderr
+        );
+        assert!(
+            !human_list.stdout.contains("_default             090000_60"),
+            "collapsed named default into the human table: {}",
+            human_list.stdout
+        );
+
+        let filtered = bypass(
+            &["list", "20260304", "--stream", "_default", "--json"],
+            root.path(),
+        );
+        assert_eq!(filtered.exit_code, 0, "{}", filtered.stderr);
+        let rows: Value = serde_json::from_str(&filtered.stdout).unwrap();
+        assert_eq!(rows.as_array().map(Vec::len), Some(1));
+        assert_eq!(rows[0]["stream"], "_default");
+        assert_eq!(rows[0]["segment"], "080000_60");
+
+        let verified = bypass(&["verify", "--day", "20260304"], root.path());
+        assert_eq!(verified.exit_code, 1, "{}", verified.stdout);
+        assert!(
+            verified.stderr.contains(
+                "named stream directory \"_default\" cannot be spelled as a record identity"
+            ),
+            "stderr={}",
+            verified.stderr
+        );
+        assert!(
+            !verified.stderr.contains("not UTF-8 representable"),
+            "stderr={}",
+            verified.stderr
+        );
+        assert!(
+            !verified.stdout.contains("checks passed"),
+            "truncated verify reported success over a subset: {}",
+            verified.stdout
         );
     }
 

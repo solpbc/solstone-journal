@@ -3752,6 +3752,19 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-transfer::peer_export_transport"
+package = "solstone-core-transfer"
+target = "peer_export_transport"
+set = "component"
+areas = ["transfer"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-generate-wire::confidential_transport"
 package = "solstone-core-generate-wire"
 target = "confidential_transport"

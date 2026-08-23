@@ -32,7 +32,9 @@ pub enum PathOrDay<'a> {
 ///
 /// `Direct` is a child of the day directory. `Named` is a child of an exact
 /// stream-directory basename, including a directory literally named `_default`.
-/// The `_default` filter spelling selects `Direct` only.
+/// The `_default` filter spelling selects `Direct` only. A `Named` directory
+/// whose UTF-8 name is `_default` has no [`RecordIdentity`]: that spelling is
+/// reserved for [`Direct`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamLocation {
     /// Segment directory sits directly under the chronicle day.
@@ -119,17 +121,35 @@ impl Segment {
 
     /// Fallible UTF-8 identity for records that spell `_default` and `key`.
     ///
-    /// Returns `None` when the stream directory or basename is not UTF-8.
-    #[must_use]
-    pub fn record_identity(&self) -> Option<RecordIdentity<'_>> {
+    /// `Direct` spells `stream` as [`DEFAULT_STREAM`]. A `Named` directory
+    /// whose UTF-8 name is `_default` is [`SegmentIdentityError::AmbiguousNamedDefault`].
+    /// Non-UTF-8 stream directories or basenames are [`SegmentIdentityError::NotUtf8`].
+    pub fn record_identity(&self) -> Result<RecordIdentity<'_>, SegmentIdentityError> {
         let stream = match &self.stream {
             StreamLocation::Direct => DEFAULT_STREAM,
-            StreamLocation::Named(name) => name.to_str()?,
+            StreamLocation::Named(name) => {
+                let Some(name) = name.to_str() else {
+                    return Err(SegmentIdentityError::NotUtf8 {
+                        path: self.path.clone(),
+                    });
+                };
+                if name == DEFAULT_STREAM {
+                    return Err(SegmentIdentityError::AmbiguousNamedDefault {
+                        path: self.path.clone(),
+                    });
+                }
+                name
+            }
         };
-        Some(RecordIdentity {
+        let Some(name) = self.name.to_str() else {
+            return Err(SegmentIdentityError::NotUtf8 {
+                path: self.path.clone(),
+            });
+        };
+        Ok(RecordIdentity {
             stream,
             key: &self.key,
-            name: self.name.to_str()?,
+            name,
         })
     }
 }
@@ -139,16 +159,7 @@ pub fn utf8_identities<'a, I>(segments: I) -> Result<Vec<RecordIdentity<'a>>, Se
 where
     I: IntoIterator<Item = &'a Segment>,
 {
-    segments
-        .into_iter()
-        .map(|segment| {
-            segment
-                .record_identity()
-                .ok_or_else(|| SegmentIdentityError::NotUtf8 {
-                    path: segment.path().to_path_buf(),
-                })
-        })
-        .collect()
+    segments.into_iter().map(Segment::record_identity).collect()
 }
 
 /// Require `(stream, key)` pairs in `identities` to be unique.
@@ -779,7 +790,7 @@ mod tests {
         assert!(
             segments
                 .iter()
-                .all(|segment| segment.record_identity().is_none())
+                .all(|segment| segment.record_identity().is_err())
         );
         assert!(
             utf8_identities(&segments).is_err(),
@@ -818,13 +829,50 @@ mod tests {
         assert!(direct.stream().matches(DEFAULT_STREAM));
         assert!(!named.stream().matches(DEFAULT_STREAM));
         assert_ne!(direct.path(), named.path());
-        let identities = utf8_identities(&segments).unwrap();
-        check_unique_record_keys(&identities).unwrap();
+        let identity = direct.record_identity().unwrap();
+        assert_eq!(identity.stream, DEFAULT_STREAM);
+        assert_eq!(identity.key, "080000_300");
+        assert_eq!(
+            named.record_identity(),
+            Err(SegmentIdentityError::AmbiguousNamedDefault {
+                path: named.path().to_path_buf(),
+            })
+        );
+        assert!(
+            utf8_identities(&segments).is_err(),
+            "{:?}",
+            utf8_identities(&segments)
+        );
 
-        fs::create_dir_all(day.join("_default/080000_300")).unwrap();
-        let collided = iter_segments(&journal, PathOrDay::Day("20260101")).unwrap();
-        let collided_identities = utf8_identities(&collided).unwrap();
-        assert!(check_unique_record_keys(&collided_identities).is_err());
+        let lone = journal.join("chronicle/20260102");
+        fs::create_dir_all(lone.join("_default/090000_300")).unwrap();
+        let lone_segments = iter_segments(&journal, PathOrDay::Day("20260102")).unwrap();
+        assert_eq!(lone_segments.len(), 1);
+        assert_eq!(
+            lone_segments[0].record_identity(),
+            Err(SegmentIdentityError::AmbiguousNamedDefault {
+                path: lone_segments[0].path().to_path_buf(),
+            })
+        );
+        assert!(utf8_identities(&lone_segments).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_named_default_shaped_bytes_are_not_utf8() {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+        let path = PathBuf::from("chronicle/20260101").join(OsStr::from_bytes(b"_default\xff"));
+        let segment = Segment {
+            stream: StreamLocation::Named(OsString::from_vec(b"_default\xff".to_vec())),
+            name: "090000_300".into(),
+            key: "090000_300".to_owned(),
+            path: path.clone(),
+        };
+        assert_eq!(
+            segment.record_identity(),
+            Err(SegmentIdentityError::NotUtf8 { path })
+        );
     }
 
     #[test]

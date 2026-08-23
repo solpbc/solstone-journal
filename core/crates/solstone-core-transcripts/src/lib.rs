@@ -504,6 +504,11 @@ impl Segment {
     fn record_stream(&self) -> Option<&str> {
         match &self.stream {
             StreamLocation::Direct => Some(solstone_core_journal_io::DEFAULT_STREAM),
+            StreamLocation::Named(name)
+                if name.to_str() == Some(solstone_core_journal_io::DEFAULT_STREAM) =>
+            {
+                None
+            }
             StreamLocation::Named(name) => name.to_str(),
         }
     }
@@ -642,6 +647,91 @@ mod tests {
             Some("field")
         );
         assert_eq!(found[1].key, "100000_60");
+    }
+
+    #[test]
+    fn named_default_keeps_exact_path_rel_and_still_reads_content() {
+        let root = TempDir::new().unwrap();
+        let day = root.path().join("chronicle").join(DAY);
+        let direct = day.join("080000_60");
+        let named = day.join("_default").join("090000_60");
+        fs::create_dir_all(&direct).unwrap();
+        fs::create_dir_all(&named).unwrap();
+        fs::write(
+            direct.join("audio.jsonl"),
+            r#"{"start":"00:00:00","text":"direct-payload"}"#,
+        )
+        .unwrap();
+        fs::write(
+            named.join("audio.jsonl"),
+            r#"{"start":"00:00:00","text":"named-payload"}"#,
+        )
+        .unwrap();
+
+        let found = all_segments(root.path(), DAY);
+        assert_eq!(found.len(), 2);
+        let direct_segment = found
+            .iter()
+            .find(|segment| segment.stream.is_direct())
+            .unwrap();
+        let named_segment = found
+            .iter()
+            .find(|segment| {
+                segment.stream.directory().and_then(|name| name.to_str()) == Some("_default")
+            })
+            .unwrap();
+
+        assert_eq!(
+            direct_segment.record_stream(),
+            Some(solstone_core_journal_io::DEFAULT_STREAM)
+        );
+        assert_eq!(named_segment.record_stream(), None);
+
+        let file = "audio.jsonl";
+        let direct_rel = match direct_segment.record_stream() {
+            Some(stream) => format!("{DAY}/{stream}/{}/{file}", direct_segment.key),
+            None => format!("{}/{file}", direct_segment.path.display()),
+        };
+        let named_rel = match named_segment.record_stream() {
+            Some(stream) => format!("{DAY}/{stream}/{}/{file}", named_segment.key),
+            None => format!("{}/{file}", named_segment.path.display()),
+        };
+        assert_eq!(direct_rel, format!("{DAY}/_default/080000_60/{file}"));
+        assert_ne!(named_rel, format!("{DAY}/_default/090000_60/{file}"));
+        assert_eq!(
+            named_rel,
+            format!("{}/{file}", named_segment.path.display())
+        );
+
+        let direct_content = raw_content(
+            &direct.join(file),
+            direct_segment,
+            DAY,
+            RawPerceptFamily::Audio,
+        )
+        .unwrap();
+        let named_content = raw_content(
+            &named.join(file),
+            named_segment,
+            DAY,
+            RawPerceptFamily::Audio,
+        )
+        .unwrap();
+        assert!(
+            direct_content.contains("direct-payload"),
+            "{direct_content}"
+        );
+        assert!(named_content.contains("named-payload"), "{named_content}");
+        assert_ne!(direct_content, named_content);
+
+        let (markdown, counts) = cluster(
+            root.path(),
+            DAY,
+            &sources(true, false, TalentSource::Disabled),
+        );
+        assert_eq!(counts.transcripts, 2);
+        assert!(markdown.contains("direct-payload"), "{markdown}");
+        assert!(markdown.contains("named-payload"), "{markdown}");
     }
 
     #[cfg(unix)]

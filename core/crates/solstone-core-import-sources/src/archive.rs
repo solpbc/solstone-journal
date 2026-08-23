@@ -1374,9 +1374,9 @@ fn stage_segments(
             let identity =
                 segment
                     .record_identity()
-                    .ok_or_else(|| ImportSourcesError::SegmentMerge {
+                    .map_err(|error| ImportSourcesError::SegmentMerge {
                         path: segment.path().to_path_buf(),
-                        detail: "segment path is not UTF-8 representable".to_owned(),
+                        detail: error.to_string(),
                     })?;
             // Disposition (c): destination follows StreamLocation + exact UTF-8
             // basename so Named("_default") stays under `_default/` and same-key
@@ -2880,15 +2880,20 @@ mod tests {
         );
         let target = tree.path.join("target");
         fs::create_dir(&target).unwrap();
-        let result = merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
-        assert_eq!(result.merge_summary.segments_copied, 2);
-        assert_eq!(
-            fs::read(target.join("chronicle/20260101/080000_300/value")).unwrap(),
-            b"direct"
+        let error =
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains(
+                "named stream directory \"_default\" cannot be spelled as a record identity"
+            ),
+            "{message}"
         );
-        assert_eq!(
-            fs::read(target.join("chronicle/20260101/_default/080000_300/value")).unwrap(),
-            b"named"
+        assert!(!target.join("chronicle/20260101/080000_300/value").exists());
+        assert!(
+            !target
+                .join("chronicle/20260101/_default/080000_300/value")
+                .exists()
         );
     }
 

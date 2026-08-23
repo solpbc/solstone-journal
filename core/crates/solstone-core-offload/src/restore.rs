@@ -123,7 +123,7 @@ fn directory(journal: &Path, summary: &SegmentOffloadSummary) -> PathBuf {
     let matches: Vec<_> = listed
         .iter()
         .filter(|segment| {
-            segment.record_identity().is_some_and(|identity| {
+            segment.record_identity().ok().is_some_and(|identity| {
                 identity.stream == summary.stream && identity.key == summary.segment
             })
         })

@@ -51,7 +51,20 @@ pub fn run(
         return 1;
     }
 
-    let mut report = classify::plan(journal, options.day.as_deref(), instant, stderr);
+    if let Err(errors) = classify::refuse_ambiguous_named_default(journal, options.day.as_deref()) {
+        for error in errors {
+            let _ = writeln!(stderr, "{error}");
+        }
+        return 1;
+    }
+
+    let mut report = match classify::plan(journal, options.day.as_deref(), instant, stderr) {
+        Ok(report) => report,
+        Err(error) => {
+            let _ = writeln!(stderr, "{error}");
+            return 1;
+        }
+    };
     if options.commit {
         commit_eligible(&mut report, writer, stderr);
     }

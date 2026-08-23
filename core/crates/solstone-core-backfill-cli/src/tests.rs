@@ -626,7 +626,8 @@ fn writer_failure_and_re_read_guard_are_independent() {
     );
 
     let mut sink = Cursor::new(Vec::new());
-    let mut report = plan(fixture.journal(), Some(&fixture.day), instant(), &mut sink);
+    let mut report =
+        plan(fixture.journal(), Some(&fixture.day), instant(), &mut sink).expect("fixture plan");
     assert_eq!(report.counts.write_failed, 0);
     fs::write(&fixture.screen, b"mutated after planning\n").expect("mutate real file");
     commit_eligible(&mut report, &AtomicWriter, &mut sink);
@@ -710,4 +711,139 @@ fn regular_file_in_stream_position_is_reported_without_aborting_other_days() {
         "Could not list stream directory {}: not a directory",
         path.display()
     )));
+}
+
+struct CountingWriter {
+    inner: AtomicWriter,
+    calls: std::sync::atomic::AtomicU64,
+}
+
+impl Writer for CountingWriter {
+    fn replace(&self, path: &Path, contents: &[u8]) -> Result<(), String> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.inner.replace(path, contents)
+    }
+}
+
+fn eligible_sidecar(journal: &Path, stream: Option<&str>, key: &str, stem: &str) -> PathBuf {
+    let path = segment(journal, "20990101", stream, key);
+    write_sidecar(
+        &path,
+        stem,
+        "mp4",
+        json!({"raw": format!("{stem}.mp4")}),
+        10,
+    )
+}
+
+#[test]
+fn named_default_blocks_commit_for_the_whole_plan() {
+    let temp = tempfile::tempdir().expect("temporary journal");
+    let journal = temp.path();
+    let direct = eligible_sidecar(journal, None, "080000_300", "direct_screen");
+    let named_segment = segment(journal, "20990101", Some("_default"), "090000_300");
+    let named = write_sidecar(
+        &named_segment,
+        "named_screen",
+        "mp4",
+        json!({"raw": "named_screen.mp4"}),
+        10,
+    );
+    let before_direct = fs::read(&direct).expect("direct sidecar");
+    let before_named = fs::read(&named).expect("named sidecar");
+    let writer = CountingWriter {
+        inner: AtomicWriter,
+        calls: std::sync::atomic::AtomicU64::new(0),
+    };
+    let mut stdout = Cursor::new(Vec::new());
+    let mut stderr = Cursor::new(Vec::new());
+    let exit = run(
+        &args(&["--commit", "--day", "20990101"]),
+        journal,
+        instant(),
+        &writer,
+        &mut stdout,
+        &mut stderr,
+    );
+    let stdout = String::from_utf8(stdout.into_inner()).expect("stdout utf8");
+    let stderr = String::from_utf8(stderr.into_inner()).expect("stderr utf8");
+    assert_eq!(exit, 1, "stdout={stdout} stderr={stderr}");
+    assert!(
+        stderr
+            .contains("named stream directory \"_default\" cannot be spelled as a record identity"),
+        "{stderr}"
+    );
+    assert!(!stdout.contains("COMMITTED"), "{stdout}");
+    assert!(!stdout.contains("DRY RUN"), "{stdout}");
+    assert_eq!(writer.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(fs::read(&direct).expect("direct unchanged"), before_direct);
+    assert_eq!(fs::read(&named).expect("named unchanged"), before_named);
+}
+
+#[test]
+fn stream_json_does_not_launder_named_default_into_eligibility() {
+    let temp = tempfile::tempdir().expect("temporary journal");
+    let journal = temp.path();
+    eligible_sidecar(journal, None, "080000_300", "direct_screen");
+    let named_segment = segment(journal, "20990101", Some("_default"), "090000_300");
+    write_sidecar(
+        &named_segment,
+        "named_screen",
+        "mp4",
+        json!({"raw": "named_screen.mp4"}),
+        10,
+    );
+    fs::write(named_segment.join("stream.json"), b"{\"stream\":\"work\"}").expect("stream marker");
+    let writer = CountingWriter {
+        inner: AtomicWriter,
+        calls: std::sync::atomic::AtomicU64::new(0),
+    };
+    let mut stdout = Cursor::new(Vec::new());
+    let mut stderr = Cursor::new(Vec::new());
+    let exit = run(
+        &args(&["--commit", "--day", "20990101"]),
+        journal,
+        instant(),
+        &writer,
+        &mut stdout,
+        &mut stderr,
+    );
+    let stderr = String::from_utf8(stderr.into_inner()).expect("stderr utf8");
+    assert_eq!(exit, 1, "{stderr}");
+    assert!(
+        stderr
+            .contains("named stream directory \"_default\" cannot be spelled as a record identity"),
+        "{stderr}"
+    );
+    assert_eq!(writer.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[test]
+fn direct_only_commit_still_stamps() {
+    let temp = tempfile::tempdir().expect("temporary journal");
+    let journal = temp.path();
+    let direct = eligible_sidecar(journal, None, "080000_300", "direct_screen");
+    let before = fs::read(&direct).expect("direct sidecar");
+    let writer = CountingWriter {
+        inner: AtomicWriter,
+        calls: std::sync::atomic::AtomicU64::new(0),
+    };
+    let mut stdout = Cursor::new(Vec::new());
+    let mut stderr = Cursor::new(Vec::new());
+    let exit = run(
+        &args(&["--commit", "--day", "20990101"]),
+        journal,
+        instant(),
+        &writer,
+        &mut stdout,
+        &mut stderr,
+    );
+    let stdout = String::from_utf8(stdout.into_inner()).expect("stdout utf8");
+    let stderr = String::from_utf8(stderr.into_inner()).expect("stderr utf8");
+    assert_eq!(exit, 0, "stdout={stdout} stderr={stderr}");
+    assert!(stdout.contains("COMMITTED"), "{stdout}");
+    assert_eq!(stderr, "");
+    assert_eq!(writer.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let after = fs::read(&direct).expect("stamped sidecar");
+    assert_ne!(after, before);
 }

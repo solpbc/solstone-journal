@@ -229,11 +229,7 @@ pub fn scan_unprocessed(
         if segment_filter.is_some_and(|value| value != segment.key()) {
             continue;
         }
-        let Some(identity) = segment.record_identity() else {
-            return Err(BatchError::from(SegmentIdentityError::NotUtf8 {
-                path: segment.path().to_path_buf(),
-            }));
-        };
+        let identity = segment.record_identity()?;
         let entries = fs::read_dir(segment.path()).map_err(|source| BatchError::Scan {
             path: segment.path().to_path_buf(),
             source,

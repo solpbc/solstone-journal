@@ -254,6 +254,8 @@ impl Error for ReadError {
 pub enum SegmentIdentityError {
     /// Stream directory or segment basename is not UTF-8.
     NotUtf8 { path: PathBuf },
+    /// A directory literally named `_default` cannot share Direct's record spelling.
+    AmbiguousNamedDefault { path: PathBuf },
     /// Two selected segments share the same UTF-8 stream spelling and parsed key.
     DuplicateKey { stream: String, key: String },
 }
@@ -264,6 +266,11 @@ impl fmt::Display for SegmentIdentityError {
             Self::NotUtf8 { path } => write!(
                 formatter,
                 "segment path is not UTF-8 representable: {}",
+                path.display()
+            ),
+            Self::AmbiguousNamedDefault { path } => write!(
+                formatter,
+                "named stream directory \"_default\" cannot be spelled as a record identity: {}",
                 path.display()
             ),
             Self::DuplicateKey { stream, key } => write!(

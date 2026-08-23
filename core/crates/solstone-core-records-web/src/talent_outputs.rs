@@ -24,12 +24,9 @@ pub fn list(journal_root: &Path, day: &str, segment: Option<&str>) -> Result<Val
     .map_err(|error| error.to_string())?
     .into_iter()
     .map(|segment| {
-        let identity = segment.record_identity().ok_or_else(|| {
-            format!(
-                "segment path is not UTF-8 representable: {}",
-                segment.path().display()
-            )
-        })?;
+        let identity = segment
+            .record_identity()
+            .map_err(|error| error.to_string())?;
         Ok(json!({
             "stream": identity.stream,
             "segment": identity.key,

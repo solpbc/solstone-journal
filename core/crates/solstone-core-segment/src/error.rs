@@ -6,7 +6,9 @@ use std::fmt;
 use std::io;
 use std::path::PathBuf;
 
-use solstone_core_journal_io::{AppendError, AtomicWriteError, LockError, PathError, ReadError};
+use solstone_core_journal_io::{
+    AppendError, AtomicWriteError, LockError, PathError, ReadError, SegmentIdentityError,
+};
 
 use crate::ContentNameError;
 
@@ -43,6 +45,7 @@ pub enum SegmentError {
         source: ReadError,
     },
     StreamInput(&'static str),
+    RecordIdentity(SegmentIdentityError),
     InvalidDeviceDid(&'static str),
     InvalidDeviceJid(&'static str),
     StreamBindingConflict {
@@ -92,6 +95,7 @@ impl fmt::Display for SegmentError {
                 )
             }
             Self::StreamInput(message) => formatter.write_str(message),
+            Self::RecordIdentity(error) => error.fmt(formatter),
             Self::InvalidDeviceDid(reason) => write!(formatter, "invalid device did: {reason}"),
             Self::InvalidDeviceJid(reason) => write!(formatter, "invalid device jid: {reason}"),
             Self::StreamBindingConflict { name } => {
@@ -116,6 +120,7 @@ impl Error for SegmentError {
             Self::Io { source, .. } => Some(source),
             Self::MalformedStreamRecord { source, .. } => Some(source),
             Self::Serialization { source, .. } => Some(source),
+            Self::RecordIdentity(error) => Some(error),
             Self::MalformedManifest { .. }
             | Self::UnsupportedManifestSchema { .. }
             | Self::IdentityRefusal { .. }

@@ -271,20 +271,20 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
     }
     for day in days {
         for segment in iter_segments(journal, PathOrDay::Day(&day)).unwrap_or_default() {
-            let Some(identity) = segment.record_identity() else {
-                return stall(
-                    "segment_identity",
-                    dry_run,
-                    details,
-                    files_marked,
-                    bytes_marked,
-                    files_already_marked,
-                    bytes_already_marked,
-                )
-                .with_reason_detail(format!(
-                    "segment path is not UTF-8 representable: {}",
-                    segment.path().display()
-                ));
+            let identity = match segment.record_identity() {
+                Ok(identity) => identity,
+                Err(error) => {
+                    return stall(
+                        "segment_identity",
+                        dry_run,
+                        details,
+                        files_marked,
+                        bytes_marked,
+                        files_already_marked,
+                        bytes_already_marked,
+                    )
+                    .with_reason_detail(error.to_string());
+                }
             };
             let registry = ClosedHandlerSet;
             let classifier = JournalMedia;

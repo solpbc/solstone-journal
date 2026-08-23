@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Local, Utc};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{
-    DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, Segment, StreamLocation, day_dirs,
-    iter_segments, list_dir_entries,
+    DirEntry, DirEntryKind, PathOrDay, SegmentIdentityError, day_dirs, iter_segments,
+    list_dir_entries,
 };
 use solstone_core_processing_record::analysis_row_key;
 use solstone_core_processing_record::media::expected_handler;
@@ -149,12 +149,37 @@ pub(crate) fn is_day_key(value: &str) -> bool {
     value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
+pub(crate) fn refuse_ambiguous_named_default(
+    journal: &Path,
+    requested_day: Option<&str>,
+) -> Result<(), Vec<SegmentIdentityError>> {
+    let days = match day_dirs(journal) {
+        Ok(days) => days,
+        Err(_) => return Ok(()),
+    };
+    let selected = select_days(days, requested_day, &mut std::io::sink());
+    let mut found = Vec::new();
+    for (_day, day_path) in selected {
+        let Ok(segments) = iter_segments(journal, PathOrDay::Directory(&day_path)) else {
+            continue;
+        };
+        for segment in segments {
+            if let Err(error @ SegmentIdentityError::AmbiguousNamedDefault { .. }) =
+                segment.record_identity()
+            {
+                found.push(error);
+            }
+        }
+    }
+    if found.is_empty() { Ok(()) } else { Err(found) }
+}
+
 pub(crate) fn plan(
     journal: &Path,
     requested_day: Option<&str>,
     instant: DateTime<Utc>,
     stderr: &mut dyn Write,
-) -> Report {
+) -> Result<Report, SegmentIdentityError> {
     let days = match day_dirs(journal) {
         Ok(days) => days,
         Err(error) => {
@@ -176,14 +201,18 @@ pub(crate) fn plan(
             }
         };
         for segment in segments {
-            let Some(spelling) = stream_spelling(&segment) else {
-                let _ = writeln!(
-                    stderr,
-                    "segment stream is not UTF-8 representable: {}",
-                    segment.path().display()
-                );
-                report.counts.add(Outcome::SkipUnreadable);
-                continue;
+            let spelling = match segment.record_identity() {
+                Ok(identity) => identity.stream,
+                Err(SegmentIdentityError::NotUtf8 { .. }) => {
+                    let _ = writeln!(
+                        stderr,
+                        "segment stream is not UTF-8 representable: {}",
+                        segment.path().display()
+                    );
+                    report.counts.add(Outcome::SkipUnreadable);
+                    continue;
+                }
+                Err(error) => return Err(error),
             };
             let entries = match list_dir_entries(segment.path()) {
                 Ok(entries) => entries,
@@ -215,7 +244,7 @@ pub(crate) fn plan(
             }
         }
     }
-    report
+    Ok(report)
 }
 
 fn report_non_directory_day_entries(day_path: &Path, stderr: &mut dyn Write) {
@@ -334,13 +363,6 @@ fn stream_for(segment_path: &Path, fallback: &str) -> String {
     }
     // Direct layout spells `_default`; a named stream uses its UTF-8 directory.
     fallback.to_owned()
-}
-
-fn stream_spelling(segment: &Segment) -> Option<&str> {
-    match segment.stream() {
-        StreamLocation::Direct => Some(DEFAULT_STREAM),
-        StreamLocation::Named(name) => name.to_str(),
-    }
 }
 
 fn matching_sibling<'a>(
