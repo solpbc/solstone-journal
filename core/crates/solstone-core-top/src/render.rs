@@ -9,6 +9,7 @@ use crate::{BrainHealthState, TopState};
 pub const LOG_FIXED_WIDTH: usize = 63;
 pub const MAX_FRAME_WIDTH: usize = 512;
 pub const MAX_FRAME_BYTES: usize = MAX_FRAME_WIDTH * 16 + 32_768;
+pub const MAX_FRAME_OPS: usize = MAX_FRAME_BYTES;
 
 /// Clock values for pure, deterministic frame rendering.
 #[derive(Clone, Copy, Debug, Default)]
@@ -179,31 +180,6 @@ pub enum TopRenderOp {
     Print(String),
 }
 
-/// Split an already-rendered frame into trusted style ops and payload prints.
-#[must_use]
-pub fn frame_ops(frame: &str) -> Vec<TopRenderOp> {
-    let mut ops = Vec::new();
-    let mut remaining = frame;
-    let mut print = String::new();
-    while !remaining.is_empty() {
-        if let Some((token, length, _)) = trusted_prefix(remaining) {
-            if !print.is_empty() {
-                ops.push(TopRenderOp::Print(std::mem::take(&mut print)));
-            }
-            ops.push(TopRenderOp::Style(token));
-            remaining = &remaining[length..];
-            continue;
-        }
-        let scalar = remaining.chars().next().expect("nonempty input has scalar");
-        print.push(scalar);
-        remaining = &remaining[scalar.len_utf8()..];
-    }
-    if !print.is_empty() {
-        ops.push(TopRenderOp::Print(print));
-    }
-    ops
-}
-
 /// Render a bounded frame from state without ambient time, terminal, or I/O.
 #[must_use]
 pub fn render_frame(
@@ -213,6 +189,34 @@ pub fn render_frame(
     style: &dyn TopStyle,
 ) -> String {
     let width = width.min(MAX_FRAME_WIDTH);
+    let output = build_frame_text(state, frame, width, style);
+    let rendered = transform_trusted_render(&output, width);
+    if rendered.len() <= MAX_FRAME_BYTES {
+        rendered
+    } else {
+        transform_trusted_render_capped(&output, width, MAX_FRAME_BYTES, style.normal())
+    }
+}
+
+/// Typed live-path frame: style tokens stay structure, payload stays Print.
+#[must_use]
+pub fn render_ops(state: &TopState, frame: FrameSample, width: usize) -> Vec<TopRenderOp> {
+    let width = width.min(MAX_FRAME_WIDTH);
+    let output = build_frame_text(state, frame, width, &AnsiTopStyle);
+    let ops = transform_trusted_render_to_ops(&output, width);
+    if ops.len() <= MAX_FRAME_OPS {
+        ops
+    } else {
+        transform_trusted_render_to_ops_capped(&output, width, MAX_FRAME_OPS)
+    }
+}
+
+fn build_frame_text(
+    state: &TopState,
+    frame: FrameSample,
+    width: usize,
+    style: &dyn TopStyle,
+) -> String {
     let mut output = String::with_capacity((width.saturating_mul(12)).min(MAX_FRAME_BYTES));
     output.push_str(style.home());
     output.push_str(style.clear());
@@ -266,12 +270,7 @@ pub fn render_frame(
     crashed_section(&mut output, state, style);
     rule(&mut output, width);
     footer(&mut output, state, style);
-    let rendered = transform_trusted_render(&output, width);
-    if rendered.len() <= MAX_FRAME_BYTES {
-        rendered
-    } else {
-        transform_trusted_render_capped(&output, width, MAX_FRAME_BYTES, style.normal())
-    }
+    output
 }
 
 fn tasks_section(
@@ -422,6 +421,128 @@ pub fn transform_trusted_render(input: &str, width: usize) -> String {
         }
     }
     output
+}
+
+fn transform_trusted_render_to_ops(input: &str, width: usize) -> Vec<TopRenderOp> {
+    let mut ops = Vec::new();
+    for line in input.split_inclusive('\n') {
+        let (body, newline) = line
+            .strip_suffix('\n')
+            .map_or((line, false), |body| (body, true));
+        transform_line_to_ops(body, width, &mut ops);
+        if newline {
+            push_print(&mut ops, "\n");
+        }
+    }
+    ops
+}
+
+fn transform_trusted_render_to_ops_capped(
+    input: &str,
+    width: usize,
+    op_cap: usize,
+) -> Vec<TopRenderOp> {
+    let content_cap = op_cap.saturating_sub(1);
+    let mut ops = Vec::new();
+    for line in input.split_inclusive('\n') {
+        let (body, newline) = line
+            .strip_suffix('\n')
+            .map_or((line, false), |body| (body, true));
+        let mut line_ops = Vec::new();
+        transform_line_to_ops(body, width, &mut line_ops);
+        if newline {
+            push_print(&mut line_ops, "\n");
+        }
+        if ops.len().saturating_add(line_ops.len()) > content_cap {
+            break;
+        }
+        ops.extend(line_ops);
+    }
+    ops.push(TopRenderOp::Style(TrustedToken::Normal));
+    ops
+}
+
+fn push_print(ops: &mut Vec<TopRenderOp>, text: &str) {
+    if let Some(TopRenderOp::Print(existing)) = ops.last_mut() {
+        existing.push_str(text);
+    } else {
+        ops.push(TopRenderOp::Print(text.to_owned()));
+    }
+}
+
+fn push_style(ops: &mut Vec<TopRenderOp>, token: TrustedToken) {
+    ops.push(TopRenderOp::Style(token));
+}
+
+fn transform_line_to_ops(line: &str, width: usize, ops: &mut Vec<TopRenderOp>) {
+    let mut remaining = line;
+    let mut used = 0usize;
+    let mut styles = 0u16;
+    while !remaining.is_empty() {
+        if let Some((token, length, _)) = trusted_prefix(remaining) {
+            push_style(ops, token);
+            remaining = &remaining[length..];
+            match token {
+                TrustedToken::Normal => styles = 0,
+                TrustedToken::EndSelect => styles &= !1,
+                TrustedToken::Select => styles |= 1,
+                TrustedToken::Bold => styles |= 2,
+                TrustedToken::Dim => styles |= 4,
+                TrustedToken::Cyan => styles |= 8,
+                TrustedToken::Green => styles |= 16,
+                TrustedToken::Magenta => styles |= 32,
+                TrustedToken::Red => styles |= 64,
+                TrustedToken::Yellow => styles |= 128,
+                TrustedToken::Home | TrustedToken::Clear => {}
+            }
+            continue;
+        }
+        if let Some(payload) = remaining.strip_prefix('\u{e000}')
+            && let Some(end) = payload.find('\u{e001}')
+        {
+            let encoded = &payload[..end];
+            let atom = sanitize_for_terminal(encoded);
+            let atom_width = atom.chars().count();
+            if used.saturating_add(atom_width) > width {
+                if styles != 0 {
+                    push_style(ops, TrustedToken::Normal);
+                }
+                return;
+            }
+            push_print(ops, &atom);
+            used += atom_width;
+            remaining = &payload[end + '\u{e001}'.len_utf8()..];
+            continue;
+        }
+        if let Some(payload) = remaining.strip_prefix('\u{e002}')
+            && let Some(end) = payload.find('\u{e003}')
+        {
+            let atom = &payload[..end];
+            let atom_width = atom.chars().count();
+            if used.saturating_add(atom_width) > width {
+                if styles != 0 {
+                    push_style(ops, TrustedToken::Normal);
+                }
+                return;
+            }
+            push_print(ops, atom);
+            used += atom_width;
+            remaining = &payload[end + '\u{e003}'.len_utf8()..];
+            continue;
+        }
+        let scalar = remaining.chars().next().expect("nonempty input has scalar");
+        remaining = &remaining[scalar.len_utf8()..];
+        let atom = sanitize_for_terminal(&scalar.to_string());
+        let atom_width = atom.chars().count();
+        if used.saturating_add(atom_width) > width {
+            if styles != 0 {
+                push_style(ops, TrustedToken::Normal);
+            }
+            return;
+        }
+        push_print(ops, &atom);
+        used += atom_width;
+    }
 }
 
 fn transform_trusted_render_capped(
@@ -1290,39 +1411,113 @@ mod tests {
         assert!(std::str::from_utf8(rendered.as_bytes()).is_ok());
     }
 
-    #[test]
-    fn frame_ops_preserves_control_chars_and_private_markers_inside_print() {
-        let input = "plain\x1btext\x07more\u{e000}\u{e001}\u{e002}\u{e003}tail";
-        assert_eq!(frame_ops(input), vec![TopRenderOp::Print(input.to_owned())]);
+    fn style_sequence(ops: &[TopRenderOp]) -> Vec<TrustedToken> {
+        ops.iter()
+            .filter_map(|op| match op {
+                TopRenderOp::Style(token) => Some(*token),
+                TopRenderOp::Print(_) => None,
+            })
+            .collect()
+    }
+
+    fn print_text(ops: &[TopRenderOp]) -> String {
+        ops.iter()
+            .filter_map(|op| match op {
+                TopRenderOp::Print(text) => Some(text.as_str()),
+                TopRenderOp::Style(_) => None,
+            })
+            .collect()
+    }
+
+    fn service_named(name: &str) -> TopState {
+        let mut state = TopState::default();
+        state.services.push(serde_json::json!({
+            "name": name, "pid": 1, "uptime_seconds": 0
+        }));
+        state
     }
 
     #[test]
-    fn frame_ops_greedily_classifies_trusted_spellings_regardless_of_context() {
-        // frame_ops is a left-to-right tokenizer over the 12 trusted spellings.
-        // It does not know payload from structure: any occurrence of `<BOLD>` or
-        // `\x1b[1m` becomes Style. Safety of production frames depends on the
-        // upstream invariant — proven by
-        // payload_atoms_are_indivisible_and_private_markers_are_escaped and
-        // ansi_frame_cap_never_splits_controls_or_payload_atoms — that
-        // render_frame never leaves a raw trusted spelling inside payload text.
+    fn render_ops_is_independent_of_construction_style() {
+        let sample = FrameSample::default();
+        let width = 80;
+        for state in [TopState::default(), service_named("supervisor"), {
+            let mut state = service_named("supervisor");
+            state.crashed.push(serde_json::json!({
+                "name": "crash", "restart_attempts": 1
+            }));
+            state
+        }] {
+            let ansi = transform_trusted_render_to_ops(
+                &build_frame_text(&state, sample, width, &AnsiTopStyle),
+                width,
+            );
+            let plain = transform_trusted_render_to_ops(
+                &build_frame_text(&state, sample, width, &PlainTopStyle),
+                width,
+            );
+            assert_eq!(ansi, plain);
+        }
+    }
+
+    #[test]
+    fn render_ops_never_reclassifies_payload_trusted_spellings_as_style() {
+        let sample = FrameSample::default();
+        let width = 80;
+        let control = render_ops(&service_named("svc"), sample, width);
+        let control_styles = style_sequence(&control);
+        for (name, expected_print) in [("<RED>", "<RED>"), ("\x1b[31m", "\\x1b[31m")] {
+            let ops = render_ops(&service_named(name), sample, width);
+            assert_eq!(style_sequence(&ops), control_styles, "{name:?}");
+            let text = print_text(&ops);
+            assert!(
+                text.contains(expected_print),
+                "{name:?} missing {expected_print:?} in {text:?}"
+            );
+        }
+    }
+
+    fn crashed_named(name: &str) -> TopState {
+        let mut state = TopState::default();
+        state
+            .crashed
+            .push(serde_json::json!({"name": name, "restart_attempts": 1}));
+        state
+    }
+
+    #[test]
+    fn render_ops_preserves_control_chars_and_private_markers_inside_print() {
+        let sample = FrameSample::default();
+        let width = 120;
+        let hostile = "plain\x1btext\x07more\u{e000}\u{e001}\u{e002}\u{e003}tail";
+        let ops = render_ops(&crashed_named(hostile), sample, width);
         assert_eq!(
-            frame_ops("hello<BOLD>world\x1b[31mend"),
-            vec![
-                TopRenderOp::Print("hello".to_owned()),
-                TopRenderOp::Style(TrustedToken::Bold),
-                TopRenderOp::Print("world".to_owned()),
-                TopRenderOp::Style(TrustedToken::Red),
-                TopRenderOp::Print("end".to_owned()),
-            ]
+            style_sequence(&ops),
+            style_sequence(&render_ops(&crashed_named("svc"), sample, width))
         );
+        let text = print_text(&ops);
+        assert!(text.contains("plain"), "{text:?}");
+        assert!(text.contains("\\x1b"), "{text:?}");
+        assert!(text.contains("\\u{7}"), "{text:?}");
+        assert!(text.contains("more"), "{text:?}");
+        assert!(text.contains("\\u{e000}"), "{text:?}");
+        assert!(text.contains("\\u{e001}"), "{text:?}");
+        assert!(text.contains("\\u{e002}"), "{text:?}");
+        assert!(text.contains("\\u{e003}"), "{text:?}");
+        assert!(text.contains("tail"), "{text:?}");
+        assert!(!text.contains(['\u{e000}', '\u{e001}', '\u{e002}', '\u{e003}']));
+        assert!(!text.contains('\x1b'));
+        assert!(!text.contains('\x07'));
     }
 
     #[test]
-    fn frame_ops_keeps_large_unicode_scalars_intact_across_tokens() {
+    fn render_ops_keeps_large_unicode_scalars_intact_across_tokens() {
         let payload = format!("{}😀αβγ", "界".repeat(4096));
-        let frame = format!("<BOLD>{payload}<NORMAL>");
-        let ops = std::panic::catch_unwind(|| frame_ops(&frame))
-            .expect("tokenizer must not panic on mixed multi-byte input");
+        let input = format!("<BOLD>{payload}<NORMAL>");
+        let ops = std::panic::catch_unwind(|| {
+            transform_trusted_render_to_ops(&input, payload.chars().count() + 32)
+        })
+        .expect("tokenizer must not panic on mixed multi-byte input");
         assert_eq!(
             ops,
             vec![
@@ -1331,6 +1526,59 @@ mod tests {
                 TopRenderOp::Style(TrustedToken::Normal),
             ]
         );
+    }
+
+    #[test]
+    fn transform_trusted_render_to_ops_capped_reserves_a_trailing_reset() {
+        let style = AnsiTopStyle;
+        let input = format!(
+            "{}{}{}{}{}\n{}tail{}\n",
+            style.home(),
+            style.clear(),
+            style.bold(),
+            payload_atom_sentinel("\\x1b"),
+            style.red(),
+            style.dim(),
+            style.normal(),
+        );
+        let uncapped = transform_trusted_render_to_ops(&input, 512);
+        for op_cap in 1..=uncapped.len().saturating_add(4) {
+            let ops = transform_trusted_render_to_ops_capped(&input, 512, op_cap);
+            assert!(ops.len() <= op_cap, "cap {op_cap}: {}", ops.len());
+            assert_eq!(
+                ops.last(),
+                Some(&TopRenderOp::Style(TrustedToken::Normal)),
+                "cap {op_cap}: {ops:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn render_ops_stays_within_max_frame_ops_for_hostile_maximal_state() {
+        let state = TopState {
+            crashed: (0..256)
+                .map(|index| {
+                    serde_json::json!({
+                        "name": format!("{index}-{}\u{e000}\u{1b}<RED>", "界".repeat(1024)),
+                        "restart_attempts": index,
+                    })
+                })
+                .collect(),
+            ..TopState::default()
+        };
+        let ops = render_ops(&state, FrameSample::default(), MAX_FRAME_WIDTH);
+        assert!(ops.len() <= MAX_FRAME_OPS, "{}", ops.len());
+        assert_eq!(ops.last(), Some(&TopRenderOp::Style(TrustedToken::Normal)));
+    }
+
+    #[test]
+    fn render_ops_empty_state_is_bounded_and_nonempty() {
+        let ops = render_ops(&TopState::default(), FrameSample::default(), 80);
+        assert!(!ops.is_empty());
+        assert!(ops.len() <= MAX_FRAME_OPS, "{}", ops.len());
+        assert_eq!(ops.first(), Some(&TopRenderOp::Style(TrustedToken::Home)));
+        assert_eq!(ops.get(1), Some(&TopRenderOp::Style(TrustedToken::Clear)));
+        assert_eq!(ops.last(), Some(&TopRenderOp::Style(TrustedToken::Normal)));
     }
 
     #[test]

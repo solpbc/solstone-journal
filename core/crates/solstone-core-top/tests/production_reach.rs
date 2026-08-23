@@ -9,8 +9,8 @@ use serde_json::json;
 use solstone_core_callosum::{CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent};
 use solstone_core_top::{
     ProcessObserver, ProcessSample, RestartEnqueueResult, RestartIdSource, SessionRestartIds,
-    TopBrainSource, TopClock, TopInput, TopReceiveTransport, TopRestartTransport, TopState,
-    TopTerminal, run_top_with_outer_panic_cleanup,
+    TopBrainSource, TopClock, TopInput, TopReceiveTransport, TopRenderOp, TopRestartTransport,
+    TopState, TopTerminal, run_top_with_outer_panic_cleanup,
 };
 
 const EXPECTED_TRACE: &[&str] = &[
@@ -117,7 +117,7 @@ impl TopTerminal for Terminal {
         Ok(120)
     }
 
-    fn render(&mut self, _: &str) -> Result<(), String> {
+    fn render(&mut self, _: &[TopRenderOp]) -> Result<(), String> {
         self.trace.record("terminal", "terminal.render");
         Ok(())
     }

@@ -7,7 +7,7 @@ use serde_json::json;
 use solstone_core_callosum::{CallosumConnectionPhase, CallosumEnvelope, CallosumReceiveEvent};
 use solstone_core_top::{
     BrainHealthState, ProcessObserver, ProcessSample, RestartEnqueueResult, RestartIdSource,
-    SessionRestartIds, TopBrainSource, TopClock, TopInput, TopReceiveTransport,
+    SessionRestartIds, TopBrainSource, TopClock, TopInput, TopReceiveTransport, TopRenderOp,
     TopRestartTransport, TopState, TopTerminal, run_top_with,
 };
 
@@ -46,8 +46,15 @@ impl TopTerminal for Terminal {
     fn width(&mut self) -> Result<usize, String> {
         Ok(120)
     }
-    fn render(&mut self, frame: &str) -> Result<(), String> {
-        self.frames.push(frame.to_owned());
+    fn render(&mut self, ops: &[TopRenderOp]) -> Result<(), String> {
+        self.frames.push(
+            ops.iter()
+                .map(|op| match op {
+                    TopRenderOp::Style(token) => token.spelling().to_owned(),
+                    TopRenderOp::Print(text) => text.clone(),
+                })
+                .collect(),
+        );
         Ok(())
     }
     fn input(&mut self, _: f64) -> Result<TopInput, String> {
@@ -193,6 +200,6 @@ fn brain_failures_are_nonfatal_and_later_success_recovers_only_brain() {
         terminal
             .frames
             .iter()
-            .all(|frame| frame.starts_with("\x1b[H\x1b[2J"))
+            .all(|frame| frame.starts_with("<HOME><CLEAR>"))
     );
 }

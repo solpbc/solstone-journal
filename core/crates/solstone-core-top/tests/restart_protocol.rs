@@ -8,8 +8,8 @@ use solstone_core_callosum::{CallosumConnectionPhase, CallosumEnvelope, Callosum
 use solstone_core_top::{
     RestartEnqueueResult, RestartIdError, RestartIdSource, RestartPhase, RestartRequestError,
     RestartRequestOutcome, SessionRestartIds, TopBrainSource, TopClock, TopInput,
-    TopReceiveTransport, TopRestartTransport, TopState, TopTerminal, acknowledge_restart,
-    advance_restart_attempts, request_restart, run_top_with,
+    TopReceiveTransport, TopRenderOp, TopRestartTransport, TopState, TopTerminal,
+    acknowledge_restart, advance_restart_attempts, request_restart, run_top_with,
 };
 
 struct Transport {
@@ -306,7 +306,7 @@ impl TopTerminal for BoundaryTerminal {
         Ok(120)
     }
 
-    fn render(&mut self, _: &str) -> Result<(), String> {
+    fn render(&mut self, _: &[TopRenderOp]) -> Result<(), String> {
         Ok(())
     }
 

@@ -18,6 +18,7 @@ struct RecordingSyscalls {
     fail_hide_cursor: bool,
     fail_width: bool,
     fail_reset_style: bool,
+    fail_reset_attributes: bool,
     fail_show_cursor: bool,
     fail_leave_alt: bool,
     fail_disable_raw: bool,
@@ -94,6 +95,13 @@ impl TerminalSyscalls for RecordingSyscalls {
             .ok_or_else(|| "reset".to_owned())
     }
 
+    fn reset_attributes(&mut self) -> Result<(), String> {
+        self.calls.push("reset-attributes");
+        (!self.fail_reset_attributes)
+            .then_some(())
+            .ok_or_else(|| "attributes".to_owned())
+    }
+
     fn stdout_width(&mut self) -> Result<usize, String> {
         self.calls.push("width");
         (!self.fail_width)
@@ -124,6 +132,7 @@ fn terminal_owner_orders_descriptor_operations_and_restores_once() {
             "enter-alt",
             "hide-cursor",
             "width",
+            "reset-attributes",
             "reset-style",
             "show-cursor",
             "leave-alt",
@@ -165,6 +174,9 @@ fn terminal_owner_cleans_up_exactly_acquired_raw_mode_on_alt_screen_failure() {
             "stdout-tty",
             "enable-raw",
             "enter-alt",
+            "reset-attributes",
+            "reset-style",
+            "leave-alt",
             "disable-raw",
         ]
     );
@@ -185,7 +197,9 @@ fn terminal_owner_cleans_up_raw_and_alt_on_cursor_hide_failure() {
             "enable-raw",
             "enter-alt",
             "hide-cursor",
+            "reset-attributes",
             "reset-style",
+            "show-cursor",
             "leave-alt",
             "disable-raw",
         ]
@@ -209,6 +223,7 @@ fn terminal_owner_cleans_up_full_acquisition_on_width_failure() {
             "enter-alt",
             "hide-cursor",
             "width",
+            "reset-attributes",
             "reset-style",
             "show-cursor",
             "leave-alt",
@@ -249,6 +264,7 @@ fn terminal_owner_preserves_primary_error_when_cleanup_also_fails() {
             "enter-alt",
             "hide-cursor",
             "width",
+            "reset-attributes",
             "reset-style",
             "show-cursor",
             "leave-alt",
@@ -258,7 +274,7 @@ fn terminal_owner_preserves_primary_error_when_cleanup_also_fails() {
 }
 
 #[test]
-fn terminal_owner_raw_mode_failure_does_not_mutate_further() {
+fn terminal_owner_raw_mode_failure_inverts_the_attempted_raw_mode() {
     let mut owner = TerminalOwner::new(RecordingSyscalls {
         fail_enable_raw: true,
         ..RecordingSyscalls::ready()
@@ -267,7 +283,7 @@ fn terminal_owner_raw_mode_failure_does_not_mutate_further() {
     assert!(matches!(error, TerminalOwnerError::Apply(_)), "{error:?}");
     assert_eq!(
         owner.syscalls().calls,
-        ["stdin-tty", "stdout-tty", "enable-raw"]
+        ["stdin-tty", "stdout-tty", "enable-raw", "disable-raw"]
     );
 }
 
@@ -278,7 +294,10 @@ fn terminal_owner_write_ops_failure_is_primary_and_restore_still_runs() {
         ..RecordingSyscalls::ready()
     });
     owner.enter().unwrap();
-    assert_eq!(owner.write_frame("payload"), Err("write".to_owned()));
+    assert_eq!(
+        owner.write_ops(&[TopRenderOp::Print("payload".to_owned())]),
+        Err("write".to_owned())
+    );
     owner.restore_once().unwrap();
     assert_eq!(
         owner.syscalls().calls,
@@ -290,6 +309,7 @@ fn terminal_owner_write_ops_failure_is_primary_and_restore_still_runs() {
             "hide-cursor",
             "width",
             "write-ops",
+            "reset-attributes",
             "reset-style",
             "show-cursor",
             "leave-alt",
@@ -316,6 +336,34 @@ fn terminal_owner_teardown_continues_after_a_single_step_failure() {
             "enter-alt",
             "hide-cursor",
             "width",
+            "reset-attributes",
+            "reset-style",
+            "show-cursor",
+            "leave-alt",
+            "disable-raw",
+        ]
+    );
+}
+
+#[test]
+fn terminal_owner_teardown_continues_after_attribute_reset_failure() {
+    let mut owner = TerminalOwner::new(RecordingSyscalls {
+        fail_reset_attributes: true,
+        ..RecordingSyscalls::ready()
+    });
+    owner.enter().unwrap();
+    let error = owner.restore_once().unwrap_err();
+    assert_eq!(error, "restore attributes: attributes");
+    assert_eq!(
+        owner.syscalls().calls,
+        [
+            "stdin-tty",
+            "stdout-tty",
+            "enable-raw",
+            "enter-alt",
+            "hide-cursor",
+            "width",
+            "reset-attributes",
             "reset-style",
             "show-cursor",
             "leave-alt",
@@ -340,7 +388,7 @@ impl TopTerminal for PanicTerminal {
     fn width(&mut self) -> Result<usize, String> {
         panic!("post-entry panic")
     }
-    fn render(&mut self, _: &str) -> Result<(), String> {
+    fn render(&mut self, _: &[TopRenderOp]) -> Result<(), String> {
         Ok(())
     }
     fn input(&mut self, _: f64) -> Result<TopInput, String> {

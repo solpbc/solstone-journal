@@ -29,7 +29,7 @@ use solstone_core_system_health::sanitize_os_bytes_for_terminal;
 use crate::{
     RestartEnqueueResult, RestartIdSource, SessionRestartIds, TopBrainSource, TopClock, TopInput,
     TopReceiveTransport, TopRenderOp, TopRestartTransport, TopState, TopTerminal, TrustedToken,
-    frame_ops, platform_observer, run_top_with,
+    platform_observer, run_top_with,
 };
 
 pub(super) fn run(verbose: bool, debug: bool) -> Result<(), String> {
@@ -304,6 +304,7 @@ pub trait TerminalSyscalls {
     fn hide_cursor(&mut self) -> Result<(), String>;
     fn show_cursor(&mut self) -> Result<(), String>;
     fn reset_style(&mut self) -> Result<(), String>;
+    fn reset_attributes(&mut self) -> Result<(), String>;
     fn stdout_width(&mut self) -> Result<usize, String>;
     fn write_ops(&mut self, ops: &[TopRenderOp]) -> Result<(), String>;
 }
@@ -351,21 +352,21 @@ impl<S: TerminalSyscalls> TerminalOwner<S> {
         if !self.syscalls.stdout_is_tty() {
             return Err(TerminalOwnerError::StdoutNotTty);
         }
+        self.raw_mode = true;
         if let Err(error) = self.syscalls.enable_raw_mode() {
             let cleanup = self.restore_once().err();
             return Err(TerminalOwnerError::Apply(with_cleanup(error, cleanup)));
         }
-        self.raw_mode = true;
+        self.alt_screen = true;
         if let Err(error) = self.syscalls.enter_alt_screen() {
             let cleanup = self.restore_once().err();
             return Err(TerminalOwnerError::Screen(with_cleanup(error, cleanup)));
         }
-        self.alt_screen = true;
+        self.cursor_hidden = true;
         if let Err(error) = self.syscalls.hide_cursor() {
             let cleanup = self.restore_once().err();
             return Err(TerminalOwnerError::Screen(with_cleanup(error, cleanup)));
         }
-        self.cursor_hidden = true;
         if let Err(error) = self.syscalls.stdout_width() {
             let cleanup = self.restore_once().err();
             return Err(TerminalOwnerError::Width(with_cleanup(error, cleanup)));
@@ -377,16 +378,19 @@ impl<S: TerminalSyscalls> TerminalOwner<S> {
         self.syscalls.stdout_width()
     }
 
-    pub fn write_frame(&mut self, frame: &str) -> Result<(), String> {
-        self.syscalls.write_ops(&frame_ops(frame))
+    pub fn write_ops(&mut self, ops: &[TopRenderOp]) -> Result<(), String> {
+        self.syscalls.write_ops(ops)
     }
 
     pub fn restore_once(&mut self) -> Result<(), String> {
         let mut diagnostics = Vec::new();
-        if (self.alt_screen || self.cursor_hidden)
-            && let Err(error) = self.syscalls.reset_style()
-        {
-            diagnostics.push(format!("restore style: {error}"));
+        if self.alt_screen || self.cursor_hidden {
+            if let Err(error) = self.syscalls.reset_attributes() {
+                diagnostics.push(format!("restore attributes: {error}"));
+            }
+            if let Err(error) = self.syscalls.reset_style() {
+                diagnostics.push(format!("restore style: {error}"));
+            }
         }
         if self.cursor_hidden {
             self.cursor_hidden = false;
@@ -472,6 +476,13 @@ fn queue_op(out: &mut impl Write, op: &TopRenderOp) -> std::io::Result<()> {
     }
 }
 
+fn write_ops_to(out: &mut impl Write, ops: &[TopRenderOp]) -> Result<(), String> {
+    for op in ops {
+        queue_op(out, op).map_err(|error| error.to_string())?;
+    }
+    out.flush().map_err(|error| error.to_string())
+}
+
 impl TerminalSyscalls for SystemTerminalSyscalls {
     fn stdin_is_tty(&mut self) -> bool {
         std::io::stdin().is_terminal()
@@ -505,6 +516,10 @@ impl TerminalSyscalls for SystemTerminalSyscalls {
         execute_cmd(Show)
     }
 
+    fn reset_attributes(&mut self) -> Result<(), String> {
+        execute_cmd(SetAttribute(Attribute::Reset))
+    }
+
     fn reset_style(&mut self) -> Result<(), String> {
         execute_cmd(ResetColor)
     }
@@ -519,15 +534,27 @@ impl TerminalSyscalls for SystemTerminalSyscalls {
 
     fn write_ops(&mut self, ops: &[TopRenderOp]) -> Result<(), String> {
         let mut out = std::io::stdout().lock();
-        for op in ops {
-            queue_op(&mut out, op).map_err(|error| error.to_string())?;
-        }
-        out.flush().map_err(|error| error.to_string())
+        write_ops_to(&mut out, ops)
+    }
+}
+
+trait TerminalEventSource {
+    fn poll(&mut self, timeout: Duration) -> Result<bool, String>;
+    fn read(&mut self) -> Result<Event, String>;
+}
+
+struct CrosstermEventSource;
+impl TerminalEventSource for CrosstermEventSource {
+    fn poll(&mut self, timeout: Duration) -> Result<bool, String> {
+        event::poll(timeout).map_err(|error| error.to_string())
+    }
+    fn read(&mut self) -> Result<Event, String> {
+        event::read().map_err(|error| error.to_string())
     }
 }
 
 enum InputSource {
-    Live,
+    Live(Box<dyn TerminalEventSource>),
     Scripted(VecDeque<Event>),
 }
 
@@ -547,7 +574,7 @@ impl ProductionTerminal {
     pub fn new() -> Self {
         Self {
             owner: TerminalOwner::new(SystemTerminalSyscalls),
-            events: InputSource::Live,
+            events: InputSource::Live(Box::new(CrosstermEventSource)),
         }
     }
 }
@@ -595,22 +622,21 @@ impl TopTerminal for ProductionTerminal {
     fn width(&mut self) -> Result<usize, String> {
         self.owner.width()
     }
-    fn render(&mut self, frame: &str) -> Result<(), String> {
-        self.owner.write_frame(frame)
+    fn render(&mut self, ops: &[TopRenderOp]) -> Result<(), String> {
+        self.owner.write_ops(ops)
     }
     fn input(&mut self, timeout_seconds: f64) -> Result<TopInput, String> {
         match &mut self.events {
             InputSource::Scripted(events) => {
                 Ok(events.pop_front().map_or(TopInput::None, map_event))
             }
-            InputSource::Live => match event::poll(Duration::from_secs_f64(timeout_seconds)) {
-                Ok(false) => Ok(TopInput::None),
-                Ok(true) => match event::read() {
-                    Ok(event) => Ok(map_event(event)),
-                    Err(_) => Ok(TopInput::EndOfFile),
-                },
-                Err(_) => Ok(TopInput::EndOfFile),
-            },
+            InputSource::Live(source) => {
+                if source.poll(Duration::from_secs_f64(timeout_seconds))? {
+                    Ok(map_event(source.read()?))
+                } else {
+                    Ok(TopInput::None)
+                }
+            }
         }
     }
 }
@@ -714,5 +740,149 @@ mod tests {
                 "bright or 3/4-bit color {forbidden:?} in {output:?}"
             );
         }
+    }
+
+    struct FakeEventSource {
+        poll_result: Result<bool, String>,
+        read_result: Result<Event, String>,
+        read_calls: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+    impl TerminalEventSource for FakeEventSource {
+        fn poll(&mut self, _: Duration) -> Result<bool, String> {
+            self.poll_result.clone()
+        }
+        fn read(&mut self) -> Result<Event, String> {
+            self.read_calls.set(self.read_calls.get() + 1);
+            self.read_result.clone()
+        }
+    }
+
+    fn live_terminal(source: FakeEventSource) -> ProductionTerminal {
+        ProductionTerminal {
+            owner: TerminalOwner::new(SystemTerminalSyscalls),
+            events: InputSource::Live(Box::new(source)),
+        }
+    }
+
+    fn quit_event() -> Event {
+        Event::Key(crossterm::event::KeyEvent::new_with_kind(
+            KeyCode::Char('q'),
+            KeyModifiers::NONE,
+            KeyEventKind::Press,
+        ))
+    }
+
+    #[test]
+    fn live_input_timeout_skips_read() {
+        let read_calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let mut terminal = live_terminal(FakeEventSource {
+            poll_result: Ok(false),
+            read_result: Ok(quit_event()),
+            read_calls: std::rc::Rc::clone(&read_calls),
+        });
+        assert_eq!(terminal.input(0.1), Ok(TopInput::None));
+        assert_eq!(read_calls.get(), 0);
+    }
+
+    #[test]
+    fn live_input_reads_once_when_event_is_queued() {
+        let read_calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let mut terminal = live_terminal(FakeEventSource {
+            poll_result: Ok(true),
+            read_result: Ok(quit_event()),
+            read_calls: std::rc::Rc::clone(&read_calls),
+        });
+        assert_eq!(terminal.input(0.1), Ok(TopInput::Quit));
+        assert_eq!(read_calls.get(), 1);
+    }
+
+    #[test]
+    fn live_input_poll_failure_is_primary_and_skips_read() {
+        let read_calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let mut terminal = live_terminal(FakeEventSource {
+            poll_result: Err("poll-sentinel".to_owned()),
+            read_result: Ok(quit_event()),
+            read_calls: std::rc::Rc::clone(&read_calls),
+        });
+        assert_eq!(terminal.input(0.1), Err("poll-sentinel".to_owned()));
+        assert_eq!(read_calls.get(), 0);
+    }
+
+    #[test]
+    fn live_input_read_failure_is_primary() {
+        let read_calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let mut terminal = live_terminal(FakeEventSource {
+            poll_result: Ok(true),
+            read_result: Err("read-sentinel".to_owned()),
+            read_calls: std::rc::Rc::clone(&read_calls),
+        });
+        assert_eq!(terminal.input(0.1), Err("read-sentinel".to_owned()));
+        assert_eq!(read_calls.get(), 1);
+    }
+
+    struct RecordingWriter {
+        writes: usize,
+        flushes: usize,
+        fail_write_after: Option<usize>,
+        fail_flush: bool,
+        recorded: Vec<u8>,
+    }
+
+    impl Write for RecordingWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.fail_write_after == Some(self.writes) {
+                return Err(std::io::Error::other("write"));
+            }
+            self.writes += 1;
+            self.recorded.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.flushes += 1;
+            if self.fail_flush {
+                Err(std::io::Error::other("flush"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn write_ops_to_surfaces_partial_write_failure_without_flush() {
+        let ops = [
+            TopRenderOp::Print("one".to_owned()),
+            TopRenderOp::Print("two".to_owned()),
+        ];
+        let mut writer = RecordingWriter {
+            writes: 0,
+            flushes: 0,
+            fail_write_after: Some(1),
+            fail_flush: false,
+            recorded: Vec::new(),
+        };
+        assert!(write_ops_to(&mut writer, &ops).is_err());
+        assert_eq!(writer.flushes, 0);
+        assert!(writer.writes >= 1);
+    }
+
+    #[test]
+    fn write_ops_to_surfaces_flush_failure_after_every_op() {
+        let ops = [
+            TopRenderOp::Print("one".to_owned()),
+            TopRenderOp::Print("two".to_owned()),
+        ];
+        let mut writer = RecordingWriter {
+            writes: 0,
+            flushes: 0,
+            fail_write_after: None,
+            fail_flush: true,
+            recorded: Vec::new(),
+        };
+        assert!(write_ops_to(&mut writer, &ops).is_err());
+        assert_eq!(writer.flushes, 1);
+        let output = String::from_utf8(writer.recorded).unwrap();
+        assert!(output.contains("one"), "{output:?}");
+        assert!(output.contains("two"), "{output:?}");
     }
 }

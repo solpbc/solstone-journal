@@ -29,7 +29,7 @@ pub use reduce::{
 };
 pub use render::{
     AnsiTopStyle, FrameSample, PlainTopStyle, TopRenderOp, TopStyle, TrustedToken, format_log_age,
-    format_runtime, format_uptime, frame_ops, render_frame, transform_trusted_render,
+    format_runtime, format_uptime, render_frame, render_ops, transform_trusted_render,
 };
 pub use restart::{
     RestartAttempt, RestartEnqueueResult, RestartFailure, RestartIdError, RestartIdSource,

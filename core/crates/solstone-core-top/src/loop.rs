@@ -5,9 +5,9 @@ use solstone_core_callosum::CallosumReceiveEvent;
 use solstone_core_system_health::sanitize_for_terminal;
 
 use crate::{
-    AnsiTopStyle, BrainHealthState, FrameSample, ProcessObserver, ReductionSample,
+    BrainHealthState, FrameSample, ProcessObserver, ReductionSample, TopRenderOp,
     TopRestartTransport, TopState, advance_restart_attempts, apply_receive_event,
-    cleanup_processes, render_frame, request_restart,
+    cleanup_processes, render_ops, request_restart,
 };
 
 /// Input accepted by the native top loop.
@@ -50,7 +50,7 @@ pub trait TopTerminal {
     fn enter(&mut self) -> Result<(), String>;
     fn restore(&mut self) -> Result<(), String>;
     fn width(&mut self) -> Result<usize, String>;
-    fn render(&mut self, frame: &str) -> Result<(), String>;
+    fn render(&mut self, ops: &[TopRenderOp]) -> Result<(), String>;
     fn input(&mut self, timeout_seconds: f64) -> Result<TopInput, String>;
 }
 pub trait TopReceiveTransport {
@@ -109,16 +109,16 @@ pub fn run_top_with(
                 }
             }
             let _ = advance_restart_attempts(state, frame_monotonic);
-            let frame = render_frame(
+            let width = terminal.width().map_err(TopLoopError::Terminal)?;
+            let ops = render_ops(
                 state,
                 FrameSample {
                     wall_seconds: frame_wall,
                     monotonic_seconds: frame_monotonic,
                 },
-                terminal.width().map_err(TopLoopError::Terminal)?,
-                &AnsiTopStyle,
+                width,
             );
-            terminal.render(&frame).map_err(TopLoopError::Terminal)?;
+            terminal.render(&ops).map_err(TopLoopError::Terminal)?;
             match terminal.input(0.2).map_err(TopLoopError::Terminal)? {
                 TopInput::Quit | TopInput::Interrupt | TopInput::EndOfFile => break,
                 TopInput::Up => state.selected = state.selected.saturating_sub(1),
@@ -241,7 +241,7 @@ mod tests {
         fn width(&mut self) -> Result<usize, String> {
             Ok(80)
         }
-        fn render(&mut self, _: &str) -> Result<(), String> {
+        fn render(&mut self, _: &[TopRenderOp]) -> Result<(), String> {
             Ok(())
         }
         fn input(&mut self, _: f64) -> Result<TopInput, String> {
@@ -355,7 +355,9 @@ mod tests {
         enter: bool,
         fail_render_at: Option<usize>,
         render_calls: usize,
-        fail_input: bool,
+        fail_width_at: Option<usize>,
+        width_calls: usize,
+        fail_input: Option<&'static str>,
         fail_restore: bool,
         input_none: bool,
         inputs: VecDeque<TopInput>,
@@ -378,9 +380,14 @@ mod tests {
             }
         }
         fn width(&mut self) -> Result<usize, String> {
-            Ok(80)
+            self.width_calls += 1;
+            if self.fail_width_at == Some(self.width_calls) {
+                Err("width".into())
+            } else {
+                Ok(80)
+            }
         }
-        fn render(&mut self, _: &str) -> Result<(), String> {
+        fn render(&mut self, _: &[TopRenderOp]) -> Result<(), String> {
             self.render_calls += 1;
             if self.fail_render_at == Some(self.render_calls) {
                 Err("render".into())
@@ -389,8 +396,8 @@ mod tests {
             }
         }
         fn input(&mut self, _: f64) -> Result<TopInput, String> {
-            if self.fail_input {
-                Err("input".into())
+            if let Some(message) = self.fail_input {
+                Err(message.into())
             } else if let Some(input) = self.inputs.pop_front() {
                 Ok(input)
             } else if self.input_none {
@@ -476,9 +483,13 @@ mod tests {
             "context-error",
             "initial-render-error",
             "input-error",
+            "input-poll-error",
+            "input-read-error",
             "event-error",
             "cleanup-error",
             "later-render-error",
+            "initial-width-error",
+            "later-width-error",
             "sleep-error",
             "stop-error",
         ] {
@@ -511,14 +522,26 @@ mod tests {
                     "later-render-error" => Some(2),
                     _ => None,
                 },
-                fail_input: name == "input-error",
+                fail_width_at: match name {
+                    "initial-width-error" => Some(1),
+                    "later-width-error" => Some(2),
+                    _ => None,
+                },
+                fail_input: match name {
+                    "input-error" => Some("input"),
+                    "input-poll-error" => Some("poll-sentinel"),
+                    "input-read-error" => Some("read-sentinel"),
+                    _ => None,
+                },
                 fail_restore: name == "cleanup-error",
                 input_none: name == "sleep-error",
                 inputs: match name {
                     "normal-periodic" => {
                         VecDeque::from([TopInput::None, TopInput::None, TopInput::Quit])
                     }
-                    "later-render-error" => VecDeque::from([TopInput::None, TopInput::Quit]),
+                    "later-render-error" | "later-width-error" => {
+                        VecDeque::from([TopInput::None, TopInput::Quit])
+                    }
                     "key-up" => VecDeque::from([TopInput::Up, TopInput::Quit]),
                     "key-down" => VecDeque::from([TopInput::Down, TopInput::Quit]),
                     "key-restart" => VecDeque::from([TopInput::Restart, TopInput::Quit]),
@@ -590,6 +613,22 @@ mod tests {
                 assert!(result.is_err(), "{name}");
             }
             match name {
+                "input-poll-error" => assert!(
+                    result
+                        .as_ref()
+                        .unwrap_err()
+                        .to_string()
+                        .contains("poll-sentinel"),
+                    "{name}: {result:?}"
+                ),
+                "input-read-error" => assert!(
+                    result
+                        .as_ref()
+                        .unwrap_err()
+                        .to_string()
+                        .contains("read-sentinel"),
+                    "{name}: {result:?}"
+                ),
                 "key-up" => assert_eq!(state.selected, 0, "{name}"),
                 "key-down" => assert_eq!(state.selected, 1, "{name}"),
                 "key-restart" => {
@@ -655,7 +694,7 @@ mod tests {
             fn width(&mut self) -> Result<usize, String> {
                 Ok(self.widths.pop_front().unwrap_or(120))
             }
-            fn render(&mut self, _: &str) -> Result<(), String> {
+            fn render(&mut self, _: &[TopRenderOp]) -> Result<(), String> {
                 self.renders += 1;
                 Ok(())
             }
