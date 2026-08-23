@@ -707,6 +707,29 @@ mod tests {
     }
 
     #[test]
+    fn missing_receipt_changes_reason_at_the_active_reach_boundary() {
+        let left = inspect_loaded(
+            Ok(loaded(vec![rec("never", Some(NOW - 29_999), None, false)])),
+            NOW,
+        );
+        assert_eq!(left.unassessed[0].reach, Reach::Active);
+        assert_eq!(
+            left.unassessed[0].reason,
+            UnassessedReason::AwaitingFirstDelivery
+        );
+
+        let right = inspect_loaded(
+            Ok(loaded(vec![rec("never", Some(NOW - 30_000), None, false)])),
+            NOW,
+        );
+        assert_eq!(right.unassessed[0].reach, Reach::Stale);
+        assert_eq!(
+            right.unassessed[0].reason,
+            UnassessedReason::RegistrationResidue
+        );
+    }
+
+    #[test]
     fn inspect_loaded_maps_error_to_registry_unknown() {
         let inspection = inspect_loaded(Err(ReloadError::Directory("injected".into())), NOW);
         assert_eq!(inspection.registry, RegistryState::RegistryUnknown);

@@ -10,7 +10,7 @@ use crate::{
     vocabulary::{CheckResult, Platform, Severity, Status},
 };
 use chrono::TimeZone;
-use solstone_core_observer::{RegistryState, UnassessedReason, inspect_loaded};
+use solstone_core_observer::{Reach, RegistryState, UnassessedReason, inspect_loaded};
 use std::{
     collections::BTreeMap,
     fs,
@@ -832,7 +832,7 @@ fn no_assessed_skips_both_checks() {
 fn unassessed_residue_does_not_drag() {
     let c = fixture();
     let now = c.now.timestamp_millis();
-    observer(&c, "residue", now - 1);
+    observer(&c, "residue", now - 200_000);
     write_device(&c, "ijklmnop", "peer", now - 1, Some(now - 1_000));
     let capture = result("capture_health", &c);
     let stall = result("observer_delivery_stall", &c);
@@ -847,8 +847,9 @@ fn unassessed_residue_does_not_drag() {
     assert_eq!(facts.unassessed[0].name, "residue");
     assert_eq!(
         facts.unassessed[0].reason,
-        UnassessedReason::AwaitingFirstDelivery
+        UnassessedReason::RegistrationResidue
     );
+    assert_eq!(facts.unassessed[0].reach, Reach::Offline);
 }
 
 #[test]
@@ -1649,7 +1650,7 @@ fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
             .is_some()
     );
     let mut text = Vec::new();
-    output::emit_text_to(&mut text, std::slice::from_ref(&stall), false);
+    output::emit_text_to(&mut text, std::slice::from_ref(&stall), false).unwrap();
     let text = String::from_utf8(text).unwrap();
     assert!(!text.contains("unseen-residue"), "{text}");
     for token in [

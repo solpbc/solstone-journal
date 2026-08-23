@@ -12,31 +12,36 @@ pub fn emit_json(results: &[CheckResult]) {
 }
 pub fn emit_text(results: &[CheckResult], verbose: bool) {
     let mut stdout = std::io::stdout().lock();
-    emit_text_to(&mut stdout, results, verbose);
+    emit_text_to(&mut stdout, results, verbose).expect("write doctor text output");
 }
 
-pub fn emit_text_to(writer: &mut impl Write, results: &[CheckResult], verbose: bool) {
+pub fn emit_text_to(
+    writer: &mut impl Write,
+    results: &[CheckResult],
+    verbose: bool,
+) -> std::io::Result<()> {
     for result in results
         .iter()
         .filter(|r| verbose || matches!(r.status, Status::Fail | Status::Warn))
     {
-        let _ = writeln!(
+        writeln!(
             writer,
             "  {} {} — {}",
             status_label(result),
             result.name,
             result.detail
-        );
+        )?;
         if let Some(fix) = &result.fix {
-            let _ = writeln!(writer, "    → {fix}");
+            writeln!(writer, "    → {fix}")?;
         }
     }
     let s = summary_counts(results);
-    let _ = writeln!(
+    writeln!(
         writer,
         "doctor: {} checks, {} failed, {} warnings, {} skipped, {} errors",
         s["total"], s["failed"], s["warnings"], s["skipped"], s["errors"]
-    );
+    )?;
+    Ok(())
 }
 pub fn summary_status(results: &[CheckResult]) -> &'static str {
     if results_failed(results) {
@@ -105,7 +110,7 @@ mod tests {
         let warn = make_result(check, Status::Warn, "detail here", Some("do this"));
         let skip = make_result(check, Status::Skip, "skipped", None::<String>);
         let mut buf = Vec::new();
-        emit_text_to(&mut buf, &[warn.clone(), skip], false);
+        emit_text_to(&mut buf, &[warn.clone(), skip], false).unwrap();
         let expected = format!(
             "  {} {} — {}\n    → {}\ndoctor: {} checks, {} failed, {} warnings, {} skipped, {} errors\n",
             status_label(&warn),
@@ -119,5 +124,27 @@ mod tests {
             0,
         );
         assert_eq!(String::from_utf8(buf).unwrap(), expected);
+    }
+
+    #[test]
+    fn emit_text_to_propagates_writer_failure() {
+        struct FailingWriter;
+        impl Write for FailingWriter {
+            fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("injected"))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let check = Check {
+            name: "observer_delivery_stall",
+            severity: Severity::Advisory,
+            platforms: &[Platform::Linux],
+        };
+        let result = make_result(check, Status::Warn, "detail", None::<String>);
+        assert!(emit_text_to(&mut FailingWriter, &[result], false).is_err());
     }
 }
