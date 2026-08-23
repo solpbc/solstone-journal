@@ -146,6 +146,7 @@ when the journal has recorded an active observer ingest rejection, but never
 blocks. Remediation is to update or restart the observer, then confirm a valid
 upload clears the active rejection.
 `journal doctor` reports `capture_health` and `observer_delivery_stall` from whether sol on each device is still adding to the journal, not from whether a process recently checked in.
+Their JSON and JSONL payloads also include registry completeness and any parsed devices that are not yet part of that delivery assessment; owner-facing text is unchanged.
 
 | Signal | Healthy when | Stale when |
 |--------|--------------|------------|

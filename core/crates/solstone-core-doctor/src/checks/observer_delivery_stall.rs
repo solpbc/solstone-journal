@@ -5,8 +5,7 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, CheckResult, RunnerResult, Status, make_result, truncate},
 };
-use solstone_core_observer::store::reload::ReloadError;
-use solstone_core_observer::{DeliveryAssessment, OwnerState};
+use solstone_core_observer::{DeliveryAssessment, DeliveryInspection, OwnerState, RegistryState};
 
 const MINUTE_MS: i64 = 60_000;
 
@@ -17,50 +16,49 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     ))
 }
 
-pub(crate) fn result_from_assessment(
-    assessed: Result<Vec<DeliveryAssessment>, ReloadError>,
-    check: Check,
-) -> CheckResult {
-    let assessed = match assessed {
-        Ok(assessed) => assessed,
-        Err(_) => {
-            return make_result(
-                check,
-                Status::Skip,
-                "device list unavailable",
-                None::<String>,
-            );
-        }
-    };
-    if assessed.is_empty() {
-        return make_result(
+pub(crate) fn result_from_assessment(inspection: DeliveryInspection, check: Check) -> CheckResult {
+    let facts = common::delivery_facts(&inspection);
+    let mut result = if inspection.registry == RegistryState::RegistryUnknown {
+        make_result(
+            check,
+            Status::Skip,
+            "device list unavailable",
+            None::<String>,
+        )
+    } else if inspection.assessed.is_empty() {
+        make_result(
             check,
             Status::Skip,
             "the solstone app hasn't added anything to your journal yet",
             None::<String>,
-        );
-    }
-    let stalled: Vec<&DeliveryAssessment> = assessed
-        .iter()
-        .filter(|row| matches!(row.state, OwnerState::Stale | OwnerState::Offline))
-        .collect();
-    if stalled.is_empty() {
-        return make_result(
-            check,
-            Status::Ok,
-            "the solstone app on every device that has added to your journal is current",
-            None::<String>,
-        );
-    }
-    let clauses: Vec<String> = stalled.iter().map(|row| stall_clause(row)).collect();
-    make_result(
-        check,
-        Status::Warn,
-        truncate(&common::join_capped(&clauses, " | "), 400),
-        Some(
-            "restart the solstone app on that device, then confirm something new is in your journal",
-        ),
-    )
+        )
+    } else {
+        let stalled: Vec<&DeliveryAssessment> = inspection
+            .assessed
+            .iter()
+            .filter(|row| matches!(row.state, OwnerState::Stale | OwnerState::Offline))
+            .collect();
+        if stalled.is_empty() {
+            make_result(
+                check,
+                Status::Ok,
+                "the solstone app on every device that has added to your journal is current",
+                None::<String>,
+            )
+        } else {
+            let clauses: Vec<String> = stalled.iter().map(|row| stall_clause(row)).collect();
+            make_result(
+                check,
+                Status::Warn,
+                truncate(&common::join_capped(&clauses, " | "), 400),
+                Some(
+                    "restart the solstone app on that device, then confirm something new is in your journal",
+                ),
+            )
+        }
+    };
+    result.observer_delivery = Some(facts);
+    result
 }
 
 fn stall_clause(row: &DeliveryAssessment) -> String {

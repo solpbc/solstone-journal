@@ -5,8 +5,7 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, CheckResult, RunnerResult, Status, make_result, truncate},
 };
-use solstone_core_observer::store::reload::ReloadError;
-use solstone_core_observer::{DeliveryAssessment, OwnerState};
+use solstone_core_observer::{DeliveryAssessment, DeliveryInspection, OwnerState, RegistryState};
 
 const HOUR_MS: i64 = 3_600_000;
 
@@ -17,49 +16,50 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     ))
 }
 
-pub(crate) fn result_from_assessment(
-    assessed: Result<Vec<DeliveryAssessment>, ReloadError>,
-    check: Check,
-) -> CheckResult {
-    let assessed = match assessed {
-        Ok(assessed) => assessed,
-        Err(_) => {
-            return make_result(
-                check,
-                Status::Skip,
-                "rollup=unknown; device list unavailable",
-                None::<String>,
-            );
-        }
-    };
-    if assessed.is_empty() {
-        return make_result(
+pub(crate) fn result_from_assessment(inspection: DeliveryInspection, check: Check) -> CheckResult {
+    let facts = common::delivery_facts(&inspection);
+    let mut result = if inspection.registry == RegistryState::RegistryUnknown {
+        make_result(
+            check,
+            Status::Skip,
+            "rollup=unknown; device list unavailable",
+            None::<String>,
+        )
+    } else if inspection.assessed.is_empty() {
+        make_result(
             check,
             Status::Skip,
             "rollup=no_senders; the solstone app hasn't added anything to your journal yet",
             None::<String>,
-        );
-    }
-    if assessed.iter().all(|row| row.state == OwnerState::Active) {
-        return make_result(
+        )
+    } else if inspection
+        .assessed
+        .iter()
+        .all(|row| row.state == OwnerState::Active)
+    {
+        make_result(
             check,
             Status::Ok,
             "rollup=active; the solstone app on every device that has added to your journal is current",
             None::<String>,
-        );
-    }
-    let clauses: Vec<String> = assessed
-        .iter()
-        .filter(|row| row.state != OwnerState::Active)
-        .map(capture_clause)
-        .collect();
-    let detail = format!("rollup=attention; {}", common::join_capped(&clauses, ", "));
-    make_result(
-        check,
-        Status::Warn,
-        truncate(&detail, 400),
-        Some("open /app/health to inspect each device"),
-    )
+        )
+    } else {
+        let clauses: Vec<String> = inspection
+            .assessed
+            .iter()
+            .filter(|row| row.state != OwnerState::Active)
+            .map(capture_clause)
+            .collect();
+        let detail = format!("rollup=attention; {}", common::join_capped(&clauses, ", "));
+        make_result(
+            check,
+            Status::Warn,
+            truncate(&detail, 400),
+            Some("open /app/health to inspect each device"),
+        )
+    };
+    result.observer_delivery = Some(facts);
+    result
 }
 
 fn capture_clause(row: &DeliveryAssessment) -> String {

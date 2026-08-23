@@ -304,11 +304,48 @@ mod tests {
         assert!(!root.join("awareness").exists());
     }
 
+    #[tokio::test]
+    async fn pulse_handler_returns_capture_health_for_a_seeded_observer() {
+        let root = TempDir::new().expect("temporary journal");
+        let now = chrono::Utc
+            .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+            .unwrap();
+        let last_seen = now.timestamp_millis() - 1_000;
+        fs::create_dir_all(root.path().join("apps/observer/observers")).expect("observers dir");
+        fs::write(
+            root.path().join("apps/observer/observers/12345678.json"),
+            format!(
+                r#"{{"key":"12345678-more","name":"desk","enabled":true,"last_seen":{last_seen},"last_segment_received_at":{last_seen}}}"#
+            ),
+        )
+        .expect("observer record");
+        let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now));
+        let response = get(router, "/app/home/api/pulse").await;
+        assert_eq!(response.0, StatusCode::OK);
+        let body: Value = serde_json::from_slice(&response.3).expect("JSON");
+        assert_eq!(
+            body["capture_health"],
+            json!({
+                "status": "active",
+                "observers": [{
+                    "name": "desk",
+                    "last_seen": last_seen,
+                    "status": "active",
+                    "device_binding_kind": null,
+                    "reach": "active"
+                }],
+                "unassessed": [],
+                "registry": "registry_complete"
+            })
+        );
+    }
+
     fn pulse_keys() -> BTreeSet<String> {
         [
             "today",
             "now",
             "health_glance",
+            "capture_health",
             "attention",
             "pipeline_status",
             "segment_count",

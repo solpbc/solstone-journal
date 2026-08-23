@@ -3,8 +3,11 @@
 use crate::context::CheckContext;
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_observer::store::record::ObserverRecord;
-use solstone_core_observer::store::reload::{ReloadError, load_observers};
-use solstone_core_observer::{DeliveryAssessment, inspect_delivery};
+use solstone_core_observer::store::reload::load_observers;
+use solstone_core_observer::store::reload::load_observers_with_inventory;
+use solstone_core_observer::{
+    AssessedObserverFact, DeliveryInspection, ObserverDeliveryFacts, inspect_loaded,
+};
 pub fn config_backend(context: &CheckContext) -> Result<Option<String>, String> {
     let read = read_journal_config(&context.journal_path).map_err(|error| error.to_string())?;
     Ok(read.config.and_then(|config| {
@@ -23,11 +26,27 @@ pub fn observers(context: &CheckContext) -> Result<Vec<ObserverRecord>, String> 
     load_observers(&context.journal_path).map_err(|error| error.to_string())
 }
 
-pub(crate) fn inspect_context(
-    context: &CheckContext,
-) -> Result<Vec<DeliveryAssessment>, ReloadError> {
-    load_observers(&context.journal_path)
-        .map(|records| inspect_delivery(&records, context.now.timestamp_millis()))
+pub(crate) fn inspect_context(context: &CheckContext) -> DeliveryInspection {
+    inspect_loaded(
+        load_observers_with_inventory(&context.journal_path),
+        context.now.timestamp_millis(),
+    )
+}
+
+pub(crate) fn delivery_facts(inspection: &DeliveryInspection) -> ObserverDeliveryFacts {
+    ObserverDeliveryFacts {
+        registry: inspection.registry,
+        assessed: inspection
+            .assessed
+            .iter()
+            .map(|row| AssessedObserverFact {
+                name: row.name.clone(),
+                state: row.state,
+                reach: row.reach,
+            })
+            .collect(),
+        unassessed: inspection.unassessed.clone(),
+    }
 }
 pub fn enabled(records: Vec<ObserverRecord>) -> Vec<ObserverRecord> {
     records

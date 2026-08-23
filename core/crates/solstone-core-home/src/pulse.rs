@@ -229,6 +229,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     fields.insert("today".to_owned(), today.into());
     fields.insert("now".to_owned(), Value::Null);
     fields.insert("health_glance".to_owned(), health_glance);
+    fields.insert("capture_health".to_owned(), capture_health);
     fields.insert("attention".to_owned(), attention);
     fields.insert("pipeline_status".to_owned(), pipeline_status);
     fields.insert("segment_count".to_owned(), segment_count.into());
@@ -299,7 +300,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     fields.insert("narrative_summary".to_owned(), narrative_summary.into());
     fields.insert("today_summary".to_owned(), today_parts.join(", ").into());
     fields.insert("needs_summary".to_owned(), needs_summary.into());
-    debug_assert_eq!(fields.len(), 36);
+    debug_assert_eq!(fields.len(), 37);
     PulseContext {
         fields,
         now: context.now_utc,
@@ -479,7 +480,7 @@ mod tests {
                 .unwrap(),
         );
         let payload = pulse_payload(&context);
-        assert_eq!(payload.as_object().unwrap().len(), 35);
+        assert_eq!(payload.as_object().unwrap().len(), 36);
         assert_eq!(
             payload
                 .as_object()
@@ -491,6 +492,7 @@ mod tests {
                 "today",
                 "now",
                 "health_glance",
+                "capture_health",
                 "attention",
                 "pipeline_status",
                 "segment_count",

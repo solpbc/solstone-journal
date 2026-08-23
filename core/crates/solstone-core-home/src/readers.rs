@@ -20,9 +20,10 @@ use solstone_core_facets::{
 use solstone_core_indexer_query::{NetworkRequest, load_entity_network};
 use solstone_core_journal_stats_cli::estimate_duration_minutes;
 use solstone_core_observer::store::load_observers;
-use solstone_core_observer::store::record::ObserverRecord;
-use solstone_core_observer::store::reload::ReloadError;
-use solstone_core_observer::{DeliveryAssessment, inspect_delivery, rollup_owner_states};
+use solstone_core_observer::store::load_observers_with_inventory;
+use solstone_core_observer::{
+    DeliveryAssessment, DeliveryInspection, RegistryState, inspect_loaded, rollup_owner_states,
+};
 use solstone_core_system_health::{FilesystemHealthLogSource, TerminalEvent, read_terminal_states};
 
 use crate::HomeContext;
@@ -855,26 +856,38 @@ pub fn summarize_pipeline_day(context: &HomeContext, day: &str) -> Value {
 
 /// Resolve the current capture-health rollup from native observer records.
 pub fn get_capture_health(context: &HomeContext) -> Value {
-    capture_health_from_load(load_observers(context.journal_root()), context.now_ms())
+    capture_health_json(&inspect_loaded(
+        load_observers_with_inventory(context.journal_root()),
+        context.now_ms(),
+    ))
 }
 
-pub(crate) fn capture_health_from_load(
-    loaded: Result<Vec<ObserverRecord>, ReloadError>,
-    now_ms: i64,
-) -> Value {
-    match loaded {
-        Err(_) => json!({"status":"unknown","observers":[]}),
-        Ok(records) => capture_health_from_records(&records, now_ms),
+pub(crate) fn capture_health_json(inspection: &DeliveryInspection) -> Value {
+    let unassessed =
+        serde_json::to_value(&inspection.unassessed).expect("unassessed observers serialize");
+    if inspection.registry == RegistryState::RegistryUnknown {
+        return json!({
+            "status": "unknown",
+            "observers": [],
+            "unassessed": [],
+            "registry": "registry_unknown",
+        });
     }
-}
-
-pub(crate) fn capture_health_from_records(records: &[ObserverRecord], now_ms: i64) -> Value {
-    let assessed = inspect_delivery(records, now_ms);
-    let Some(status) = rollup_owner_states(&assessed) else {
-        return json!({"status":"no_observers","observers":[]});
+    let Some(status) = rollup_owner_states(&inspection.assessed) else {
+        return json!({
+            "status": "no_observers",
+            "observers": [],
+            "unassessed": unassessed,
+            "registry": inspection.registry.as_str(),
+        });
     };
-    let observers: Vec<Value> = assessed.iter().map(home_observer_row).collect();
-    json!({"status": status.as_str(), "observers": observers})
+    let observers: Vec<Value> = inspection.assessed.iter().map(home_observer_row).collect();
+    json!({
+        "status": status.as_str(),
+        "observers": observers,
+        "unassessed": unassessed,
+        "registry": inspection.registry.as_str(),
+    })
 }
 
 fn home_observer_row(row: &DeliveryAssessment) -> Value {
@@ -1021,6 +1034,7 @@ fn brain_action(state: &str, reason: Option<&str>) -> Value {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use solstone_core_observer::store::record::ObserverRecord;
     use tempfile::TempDir;
 
     fn context(root: &std::path::Path) -> HomeContext {
@@ -1473,6 +1487,16 @@ mod tests {
         );
     }
 
+    fn health(records: &[ObserverRecord], now: i64) -> Value {
+        capture_health_json(&inspect_loaded(
+            Ok(solstone_core_observer::store::ObserverLoad {
+                records: records.to_vec(),
+                regular_json_entries: records.len(),
+            }),
+            now,
+        ))
+    }
+
     fn rec(
         name: &str,
         last_seen: Option<i64>,
@@ -1501,9 +1525,7 @@ mod tests {
         let now = 1_000_000_000;
         let hour = 3_600_000;
         let seen = Some(now - 1_000);
-        let status = |records: &[ObserverRecord]| {
-            capture_health_from_records(records, now)["status"].clone()
-        };
+        let status = |records: &[ObserverRecord]| health(records, now)["status"].clone();
         assert_eq!(
             status(&[rec("a", seen, Some(now - 89 * hour), false)]),
             "offline"
@@ -1544,7 +1566,32 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(status(&fleet), "offline");
-        assert_eq!(status(&[rec("never", seen, None, false)]), "no_observers");
+        let never = health(&[rec("never", seen, None, false)], now);
+        assert_eq!(never["status"], "no_observers");
+        assert_eq!(never["observers"], json!([]));
+        assert_eq!(never["registry"], "registry_complete");
+        assert_eq!(
+            never["unassessed"],
+            json!([{
+                "name": "never",
+                "reason": "awaiting_first_delivery",
+                "reach": "active"
+            }])
+        );
+        assert_eq!(
+            never["unassessed"],
+            serde_json::to_value(
+                &inspect_loaded(
+                    Ok(solstone_core_observer::store::ObserverLoad {
+                        records: vec![rec("never", seen, None, false)],
+                        regular_json_entries: 1,
+                    }),
+                    now,
+                )
+                .unassessed
+            )
+            .unwrap()
+        );
         assert_eq!(
             status(&[
                 rec("residue", seen, None, false),
@@ -1552,12 +1599,22 @@ mod tests {
             ]),
             "active"
         );
+        let residue = health(
+            &[
+                rec("residue", seen, None, false),
+                rec("peer", seen, Some(now - 120_000), false),
+            ],
+            now,
+        );
+        assert_eq!(residue["observers"].as_array().unwrap().len(), 1);
+        assert_eq!(residue["observers"][0]["name"], "peer");
+        assert_eq!(residue["unassessed"][0]["name"], "residue");
         assert_eq!(status(&[rec("rej", seen, None, true)]), "degraded");
         assert_eq!(
             status(&[rec("rej", seen, Some(now - 120_000), true)]),
             "degraded"
         );
-        let mixed = capture_health_from_records(
+        let mixed = health(
             &[
                 rec("night", Some(now - 8 * hour), Some(now - 8 * hour), false),
                 rec("stop", Some(now - 25 * hour), Some(now - 25 * hour), false),
@@ -1567,17 +1624,25 @@ mod tests {
         assert_eq!(mixed["status"], "stale");
         assert_eq!(mixed["observers"].as_array().unwrap().len(), 2);
         assert_eq!(mixed["observers"][0]["reach"], "offline");
-        assert_eq!(
-            capture_health_from_load(Err(ReloadError::Directory("x".into())), now)["status"],
-            "unknown"
-        );
+        assert!(mixed["unassessed"].as_array().unwrap().is_empty());
+        let unknown = capture_health_json(&inspect_loaded(
+            Err(solstone_core_observer::store::reload::ReloadError::Directory("x".into())),
+            now,
+        ));
+        assert_eq!(unknown["status"], "unknown");
+        assert_eq!(unknown["observers"], json!([]));
+        assert_eq!(unknown["unassessed"], json!([]));
+        assert_eq!(unknown["registry"], "registry_unknown");
     }
 
     #[test]
     fn observer_reader_uses_milliseconds_and_the_29000_ms_active_window() {
         let root = TempDir::new().unwrap();
         let home_context = context(root.path());
-        assert_eq!(get_capture_health(&home_context)["status"], "no_observers");
+        let empty = get_capture_health(&home_context);
+        assert_eq!(empty["status"], "no_observers");
+        assert_eq!(empty["registry"], "registry_empty");
+        assert_eq!(empty["unassessed"], json!([]));
         let now = home_context.now_ms();
         write(
             root.path(),
@@ -1591,6 +1656,8 @@ mod tests {
         let health = get_capture_health(&home_context);
         assert_eq!(health["status"], "active");
         assert_eq!(health["observers"][0]["reach"], "active");
+        assert_eq!(health["registry"], "registry_complete");
+        assert_eq!(health["unassessed"], json!([]));
         assert_eq!(last_observe_relative_seconds(&home_context), Some(29));
         let seconds_root = TempDir::new().unwrap();
         let seconds_context = context(seconds_root.path());
@@ -1618,8 +1685,76 @@ mod tests {
             "apps/observer/observers/87654321.json",
             r#"{"key":"876543219","last_seen":"not-milliseconds","enabled":true}"#,
         );
-        assert_eq!(get_capture_health(&context)["status"], "no_observers");
+        let health = get_capture_health(&context);
+        assert_eq!(health["status"], "no_observers");
+        assert_eq!(health["registry"], "partial_registry");
+        assert_eq!(
+            health["unassessed"],
+            json!([{
+                "name": "unknown",
+                "reason": "registration_residue",
+                "reach": "offline"
+            }])
+        );
+        assert!(
+            !health["unassessed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["name"] == "12345678")
+        );
         assert_eq!(last_observe_relative_seconds(&context), None);
+    }
+
+    #[test]
+    fn observer_journal_spot_check_assessed_and_awaiting_first_delivery() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/convey_home_observer_journal");
+        let now = Utc
+            .timestamp_millis_opt(1_786_749_913_793)
+            .single()
+            .unwrap();
+        let context = HomeContext::new(&fixture, now);
+        let assessed = get_capture_health(&context);
+        assert_eq!(assessed["registry"], "registry_complete");
+        assert_eq!(assessed["status"], "active");
+        assert_eq!(assessed["observers"].as_array().unwrap().len(), 1);
+        assert_eq!(assessed["unassessed"], json!([]));
+
+        let source =
+            fs::read_to_string(fixture.join("apps/observer/observers/12345678.json")).unwrap();
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "apps/observer/observers/12345678.json",
+            &source,
+        );
+        let copied = get_capture_health(&HomeContext::new(root.path(), now));
+        assert_eq!(copied["registry"], "registry_complete");
+        assert_eq!(copied["observers"].as_array().unwrap().len(), 1);
+
+        let mut value: Value = serde_json::from_str(&source).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("last_segment_received_at");
+        write(
+            root.path(),
+            "apps/observer/observers/12345678.json",
+            &value.to_string(),
+        );
+        let awaiting = get_capture_health(&HomeContext::new(root.path(), now));
+        assert_eq!(awaiting["status"], "no_observers");
+        assert_eq!(awaiting["registry"], "registry_complete");
+        assert_eq!(awaiting["observers"], json!([]));
+        assert_eq!(
+            awaiting["unassessed"],
+            json!([{
+                "name": "desk",
+                "reason": "awaiting_first_delivery",
+                "reach": "active"
+            }])
+        );
     }
 
     #[test]

@@ -67,11 +67,14 @@ pub fn emit_jsonl_to(
             Status::Fail => "failed",
             Status::Skip => "skipped",
         };
-        let _ = writeln!(
-            writer,
-            "{}",
-            json!({"event":"check.completed","ts":now(),"name":r.name,"severity":r.severity,"status":status,"detail":r.detail,"fix":r.fix.clone().unwrap_or_default(),"execution_error":r.execution_error})
-        );
+        let mut event = json!({"event":"check.completed","ts":now(),"name":r.name,"severity":r.severity,"status":status,"detail":r.detail,"fix":r.fix.clone().unwrap_or_default(),"execution_error":r.execution_error});
+        if let Some(facts) = &r.observer_delivery {
+            event.as_object_mut().expect("object").insert(
+                "observer_delivery".to_owned(),
+                serde_json::to_value(facts).expect("observer delivery facts serialize"),
+            );
+        }
+        let _ = writeln!(writer, "{event}");
     }
     let _ = writeln!(
         writer,

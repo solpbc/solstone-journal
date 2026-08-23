@@ -4,11 +4,13 @@
 use crate::{
     args::DoctorArgs,
     context::CheckContext,
+    output,
     registry::{self, Battery},
     run,
     vocabulary::{CheckResult, Platform, Severity, Status},
 };
 use chrono::TimeZone;
+use solstone_core_observer::{RegistryState, UnassessedReason, inspect_loaded};
 use std::{
     collections::BTreeMap,
     fs,
@@ -798,12 +800,24 @@ fn fleet_long_stop_stall_is_warn() {
 fn no_assessed_skips_both_checks() {
     let c = fixture();
     observer(&c, "phone", c.now.timestamp_millis() - 1);
-    assert_eq!(status("capture_health", &c), Status::Skip);
-    assert_eq!(status("observer_delivery_stall", &c), Status::Skip);
-    assert!(
-        result("capture_health", &c)
-            .detail
-            .contains("rollup=no_senders")
+    let capture = result("capture_health", &c);
+    let stall = result("observer_delivery_stall", &c);
+    assert_eq!(capture.status, Status::Skip);
+    assert_eq!(stall.status, Status::Skip);
+    assert!(capture.detail.contains("rollup=no_senders"));
+    assert_eq!(
+        stall.detail,
+        "the solstone app hasn't added anything to your journal yet"
+    );
+    assert_eq!(capture.observer_delivery, stall.observer_delivery);
+    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(facts.registry, RegistryState::RegistryComplete);
+    assert!(facts.assessed.is_empty());
+    assert_eq!(facts.unassessed.len(), 1);
+    assert_eq!(facts.unassessed[0].name, "phone");
+    assert_eq!(
+        facts.unassessed[0].reason,
+        UnassessedReason::AwaitingFirstDelivery
     );
 }
 
@@ -838,9 +852,16 @@ fn rejection_without_last_sent_warns_capture() {
             "health":{"ingest_rejection":{"active_count":1}}
         }),
     );
-    assert_eq!(status("capture_health", &alone), Status::Warn);
-    assert_ne!(status("observer_delivery_stall", &alone), Status::Skip);
-    assert_eq!(status("observer_delivery_stall", &alone), Status::Ok);
+    let capture = result("capture_health", &alone);
+    let stall = result("observer_delivery_stall", &alone);
+    assert_eq!(capture.status, Status::Warn);
+    assert_ne!(stall.status, Status::Skip);
+    assert_eq!(stall.status, Status::Ok);
+    assert_eq!(capture.observer_delivery, stall.observer_delivery);
+    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(facts.assessed.len(), 1);
+    assert_eq!(facts.assessed[0].name, "rej");
+    assert!(facts.unassessed.is_empty());
 
     let with_peer = fixture();
     let now = with_peer.now.timestamp_millis();
@@ -877,11 +898,16 @@ fn rejection_with_recent_delivery_warns_capture() {
 #[test]
 fn unreadable_skip_is_not_never_sent() {
     let check = |name| registry::lookup(Battery::Journal, name).unwrap().check;
-    let err = Err(solstone_core_observer::store::reload::ReloadError::Directory("injected".into()));
-    let capture =
-        crate::checks::capture_health::result_from_assessment(err, check("capture_health"));
-    let stall = crate::checks::observer_delivery_stall::result_from_assessment(
+    let inspection = inspect_loaded(
         Err(solstone_core_observer::store::reload::ReloadError::Directory("injected".into())),
+        0,
+    );
+    let capture = crate::checks::capture_health::result_from_assessment(
+        inspection.clone(),
+        check("capture_health"),
+    );
+    let stall = crate::checks::observer_delivery_stall::result_from_assessment(
+        inspection,
         check("observer_delivery_stall"),
     );
     assert_eq!(capture.status, Status::Skip);
@@ -891,6 +917,11 @@ fn unreadable_skip_is_not_never_sent() {
         stall.detail,
         "the solstone app hasn't added anything to your journal yet"
     );
+    assert_eq!(capture.observer_delivery, stall.observer_delivery);
+    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(facts.registry, RegistryState::RegistryUnknown);
+    assert!(facts.assessed.is_empty());
+    assert!(facts.unassessed.is_empty());
 }
 
 #[test]
@@ -1383,6 +1414,73 @@ fn stall_warn_omits_duplicate_and_queue_clauses() {
     assert_eq!(row.status, Status::Warn);
     assert!(!row.detail.contains("duplicate"));
     assert!(!row.detail.contains("pending queue"));
+}
+
+#[test]
+fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
+    let context = fixture();
+    let now = context.now.timestamp_millis();
+    let long = "device-with-a-very-long-name-that-forces-the-detail-clause-to-grow-";
+    for (index, prefix) in ["abcdefgh", "ijklmnop", "qrstuvwx", "yzabcdef"]
+        .into_iter()
+        .enumerate()
+    {
+        write_device(
+            &context,
+            prefix,
+            &format!("{long}{index:04}"),
+            now - 200_000,
+            Some(now - 41 * 3_600_000),
+        );
+    }
+    write_observer(
+        &context,
+        "residu01",
+        serde_json::json!({
+            "key": "residu01-key",
+            "name": "unseen-residue",
+            "enabled": true,
+            "created_at": 1,
+            "last_seen": now - 1,
+        }),
+    );
+    let capture = result("capture_health", &context);
+    let stall = result("observer_delivery_stall", &context);
+    assert_eq!(capture.status, Status::Warn);
+    assert_eq!(stall.status, Status::Warn);
+    assert!(stall.detail.contains("+1 more") || stall.detail.ends_with("..."));
+    assert!(capture.detail.len() <= 400);
+    assert_eq!(capture.observer_delivery, stall.observer_delivery);
+    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(facts.assessed.len(), 4);
+    assert_eq!(facts.unassessed.len(), 1);
+    assert_eq!(facts.unassessed[0].name, "unseen-residue");
+    assert!(!stall.detail.contains("unseen-residue"));
+    for row in &facts.assessed {
+        assert!(
+            serde_json::to_value(facts)
+                .unwrap()
+                .to_string()
+                .contains(&row.name)
+        );
+    }
+    let mut bytes = Vec::new();
+    output::emit_jsonl_to(
+        &mut bytes,
+        std::slice::from_ref(&stall),
+        "2026-01-01T00:00:00Z",
+        1,
+        5015,
+    );
+    let jsonl = String::from_utf8(bytes).unwrap();
+    assert!(jsonl.contains("unseen-residue"));
+    for row in &facts.assessed {
+        assert!(jsonl.contains(&row.name));
+    }
+    assert!(jsonl.contains("observer_delivery"));
+    let serialized = serde_json::to_value(&stall).unwrap();
+    assert!(serialized.get("observer_delivery").is_some());
+    assert!(!stall.detail.contains("awaiting_first_delivery"));
 }
 
 #[test]

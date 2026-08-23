@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use serde::Serialize;
+use solstone_core_observer::ObserverDeliveryFacts;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -54,6 +55,8 @@ pub struct CheckResult {
     #[serde(skip_serializing)]
     pub platform: Option<String>,
     pub execution_error: Option<ExecutionError>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observer_delivery: Option<ObserverDeliveryFacts>,
 }
 pub fn make_result(
     check: Check,
@@ -69,6 +72,7 @@ pub fn make_result(
         fix: fix.map(Into::into),
         platform: None,
         execution_error: None,
+        observer_delivery: None,
     }
 }
 pub fn truncate(text: &str, limit: usize) -> String {
@@ -105,6 +109,7 @@ pub fn run_check(
                     kind: error.kind,
                     message,
                 }),
+                observer_delivery: None,
             }
         }
     }
