@@ -333,11 +333,21 @@ fn main() -> ExitCode {
         }
         Ok(Command::Supervisor(options)) => supervisor::run(options),
         Ok(Command::SupervisorUsage) => render_usage_error(SUPERVISOR_USAGE, "journal supervisor"),
+        Ok(Command::SupervisorInvalid(error)) => {
+            eprint!("{SUPERVISOR_USAGE}");
+            eprintln!("journal supervisor: error: {}", error.0);
+            ExitCode::from(2)
+        }
         Ok(Command::SupervisorHelp) => {
             print!("{SUPERVISOR_HELP}");
             ExitCode::SUCCESS
         }
         Ok(Command::StartUsage) => render_usage_error(START_USAGE, "journal start"),
+        Ok(Command::StartInvalid(error)) => {
+            eprint!("{START_USAGE}");
+            eprintln!("journal start: error: {}", error.0);
+            ExitCode::from(2)
+        }
         Ok(Command::StartHelp) => {
             print!("{START_HELP}");
             ExitCode::SUCCESS

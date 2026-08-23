@@ -16,6 +16,7 @@
 
 mod commit;
 mod config;
+mod direct_port;
 mod pairing_migration;
 mod thinking_migration;
 
@@ -29,6 +30,7 @@ pub use config::{
     CasConfigMutationError, ConfigMutationError, JournalConfigMutation, JournalConfigTransaction,
     mutate_journal_config, mutate_journal_config_cas,
 };
+pub use direct_port::persist_direct_door_port;
 pub use pairing_migration::{PairingAddressMigrationReport, migrate_pairing_home_address};
 pub use solstone_core_journal_config::ConfigLoadError;
 pub use solstone_core_journal_io::{

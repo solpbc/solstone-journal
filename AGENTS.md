@@ -284,6 +284,7 @@ Each domain has exactly **one** write-owning module (or one tightly-scoped famil
 | Push devices (`config/push_devices.json`) | `solstone/think/push/devices.py` |
 | Local inference operational telemetry (`health/local-inference/YYYYMMDD.jsonl`) | `solstone/think/providers/local_admission.py` |
 | Convergence records (`health/convergence/**`) | `core/crates/solstone-core-journal-convergence/` via the crate’s public API. No other module writes this domain. `solstone-core-journal-convergence-harness` is a read/write test consumer only. |
+| Direct-door operational record (`health/direct-door.json`) | `core/crates/solstone-core-system/` (`direct_door.rs`) via `publish_direct_door` / `withhold_direct_door`. `solstone-core-convey-shell` and `solstone-core/src/supervisor/runtime.rs` are callers only; they must not write this path directly. |
 | Active-brain state (`health/brain.json`, `health/brain-fingerprint.key`, `health/brain-refresh.lease`) | `core/crates/solstone-core-brain/` via `solstone-core brain <verb>`; `solstone/think/providers/brain_state.py` is transport only |
 | Provider install status records and proof cache (`health/providers/{local,parakeet}.json`, `health/providers/{local,parakeet}.proof-cache.json`) | `solstone/think/providers/install_state.py` + `solstone/think/providers/artifact_proof.py` |
 | Provider install leases (`health/providers/{local,parakeet}.lease`) | `solstone/think/providers/install_lease.py` |

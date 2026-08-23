@@ -12,9 +12,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
 use solstone_core_cli::SupervisorOptions;
+use solstone_core_journal_config::read_direct_door_port;
+use solstone_core_journal_config_write::persist_direct_door_port;
 use solstone_core_journal_io::{JsonWriteOptions, write_json};
 use solstone_core_local::plan::Platform;
 use solstone_core_system::cap::{DEFAULT_TASK_MAX_RUNTIME, DefaultCapResolver};
+use solstone_core_system::direct_door::{
+    initialize_direct_door, peek_direct_door_generation, withhold_direct_door,
+};
 use solstone_core_system::lifecycle::{
     ForeignWriter, ShutdownRegime, SupervisorLifecycle, SyncSnapshot,
 };
@@ -154,6 +159,8 @@ pub(crate) struct ManagedAppProcess {
     /// Correlates an accepted app restart with all ensuing app-process events.
     pub restart_id: Arc<Mutex<Option<String>>>,
     pub terminal: Option<TerminalState>,
+    /// Generation claimed from `health/direct-door.json` when this Convey child spawned.
+    pub direct_door_generation: Option<u64>,
 }
 
 impl ManagedAppProcess {
@@ -184,6 +191,7 @@ impl ManagedAppProcess {
             restart_requested: false,
             restart_id: Arc::new(Mutex::new(None)),
             terminal: None,
+            direct_door_generation: None,
         }
     }
 
@@ -286,7 +294,27 @@ fn clear_failed_record(journal: &Path, service: AppService) {
     let _ = std::fs::remove_file(failed_path(journal, service));
 }
 
+fn selected_direct_door_port(journal: &Path, requested: Option<u16>) -> Result<u16, String> {
+    requested
+        .map(Ok)
+        .unwrap_or_else(|| read_direct_door_port(journal).map_err(|error| error.to_string()))
+}
+
 pub(crate) fn apply_app_exit(app: &mut ManagedAppProcess, journal: &Path, exit: AppExit) {
+    if app.service == AppService::Convey
+        && let Some(generation) = app.direct_door_generation.take()
+    {
+        match read_direct_door_port(journal) {
+            Ok(port) => {
+                if let Err(error) = withhold_direct_door(journal, generation, port) {
+                    eprintln!("supervisor: failed to withhold direct-door record: {error}");
+                }
+            }
+            Err(error) => {
+                eprintln!("supervisor: failed to read direct-door port while withholding: {error}");
+            }
+        }
+    }
     if matches!(app.record_exit(exit), RestartDecision::GiveUp) {
         write_failed_record(journal, app);
     }
@@ -525,6 +553,15 @@ pub(crate) fn spawn_app_process(
     journal: &Path,
     sink: Arc<CallosumSocketServer>,
 ) -> Result<(), SpawnError> {
+    if app.service == AppService::Convey {
+        match peek_direct_door_generation(journal) {
+            Ok(generation) => app.direct_door_generation = Some(generation),
+            Err(error) => {
+                eprintln!("supervisor: failed to peek direct-door generation: {error}");
+                app.direct_door_generation = None;
+            }
+        }
+    }
     let process = ManagedProcess::spawn(
         app.argv.clone(),
         SpawnOptions {
@@ -805,6 +842,9 @@ pub(crate) async fn boot_and_tick(
     } else {
         resolve_available_port().map_err(|error| error.to_string())?
     };
+    let direct_port = selected_direct_door_port(&journal, options.direct_port)?;
+    persist_direct_door_port(&journal, direct_port).map_err(|error| error.to_string())?;
+    initialize_direct_door(&journal, direct_port).map_err(|error| error.to_string())?;
     let mut app_processes = app_processes(
         &options,
         &journal,
@@ -900,7 +940,7 @@ async fn wait_for_callosum_connection(
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_journal_binary_from;
+    use super::{resolve_journal_binary_from, selected_direct_door_port};
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -908,6 +948,25 @@ mod tests {
         assert_eq!(
             resolve_journal_binary_from(Path::new("/foo/bar")),
             PathBuf::from("/foo/bar/solstone-core-journal")
+        );
+    }
+
+    #[test]
+    fn restart_without_direct_port_retains_the_persisted_port() {
+        let journal = tempfile::TempDir::new().expect("temporary journal");
+        std::fs::create_dir_all(journal.path().join("config")).expect("config directory");
+        std::fs::write(
+            journal.path().join("config/journal.json"),
+            r#"{"pairing":{"direct_port":9000}}"#,
+        )
+        .expect("config write");
+        assert_eq!(
+            selected_direct_door_port(journal.path(), None).unwrap(),
+            9000
+        );
+        assert_eq!(
+            selected_direct_door_port(journal.path(), Some(9001)).unwrap(),
+            9001
         );
     }
 }

@@ -440,12 +440,20 @@ pub fn run_convey_from_executable_dir(
 
 #[cfg(feature = "host")]
 fn run_convey_bound(journal_root: PathBuf, port: u16) -> Result<(), String> {
+    use solstone_core_journal_config::read_direct_door_port;
     use solstone_core_sol_link::ledger::AuthorizedClientsRead;
+    use solstone_core_system::direct_door::{
+        DirectDoorOutcome, DirectDoorPublishResult, peek_direct_door_generation,
+        publish_direct_door,
+    };
     use tokio::sync::watch;
 
     if port == 0 {
         return Err("convey --port 0 is not supported; choose a concrete loopback port".to_owned());
     }
+    let direct_port = read_direct_door_port(&journal_root).map_err(|error| error.to_string())?;
+    let generation = peek_direct_door_generation(&journal_root)
+        .map_err(|error| format!("convey: failed to read direct-door generation: {error}"))?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -465,7 +473,7 @@ fn run_convey_bound(journal_root: PathBuf, port: u16) -> Result<(), String> {
             ConveyServeOptions {
                 journal_root: journal_root.clone(),
                 loopback_port: port,
-                door_port: 7657,
+                door_port: direct_port,
                 // spl_transport::connection::HANDSHAKE_TIMEOUT is the shipped symmetric 10 s budget.
                 handshake_timeout: Duration::from_secs(10),
                 stream_stall_timeout: Duration::from_secs(60),
@@ -502,6 +510,24 @@ fn run_convey_bound(journal_root: PathBuf, port: u16) -> Result<(), String> {
             eprintln!(
                 "convey: paired-device door withheld: {detail} -- linked devices cannot reach this journal"
             );
+        }
+    }
+    let publish_outcome = match handle.door_outcome() {
+        DoorOutcome::Bound(address) => DirectDoorOutcome::Bound {
+            port: address.port(),
+        },
+        DoorOutcome::BindFailed { port, .. } => DirectDoorOutcome::BindFailed { port: *port },
+        DoorOutcome::Withheld(_) => DirectDoorOutcome::Withheld { port: direct_port },
+    };
+    match publish_direct_door(&journal_root, generation, publish_outcome) {
+        Ok(DirectDoorPublishResult::Published) => {}
+        Ok(DirectDoorPublishResult::RejectedStale) => {
+            return Err("convey: direct-door publish rejected as stale".to_owned());
+        }
+        Err(error) => {
+            return Err(format!(
+                "convey: failed to publish direct-door record: {error}"
+            ));
         }
     }
     write_port_file(&journal_root, handle.loopback_ipv4_addr().port())?;

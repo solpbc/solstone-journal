@@ -23,7 +23,7 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n  solstone-core observer [--json] <list|status|rename|revoke|reconcile|prune|create> ...\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule] [--remote URL]\n",
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal restart-convey [--timeout TIMEOUT] [-v | --verbose] [-d | --debug]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule] [--remote URL]\n",
     "  journal top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
     "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] [-f FACET | --facet FACET] [PATH]\n",
@@ -429,24 +429,27 @@ pub const TRANSCRIBE_USAGE: &str = concat!(
 pub const SUPERVISOR_USAGE: &str = concat!(
     "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
     "                          [--no-convey] [--no-schedule] [--remote REMOTE]\n",
-    "                          [--journal JOURNAL] [-v] [-d]\n",
+    "                          [--journal JOURNAL] [--direct-port DIRECT_PORT]\n",
+    "                          [-v] [-d]\n",
     "                          [port]\n",
 );
 
 pub const START_USAGE: &str = concat!(
     "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
     "                     [--no-convey] [--no-schedule] [--remote REMOTE]\n",
-    "                     [--journal JOURNAL] [-v] [-d]\n",
+    "                     [--journal JOURNAL] [--direct-port DIRECT_PORT]\n",
+    "                     [-v] [-d]\n",
     "                     [port]\n",
 );
 
 pub const SUPERVISOR_HELP: &str = concat!(
     "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
     "                          [--no-convey] [--no-schedule] [--remote REMOTE]\n",
-    "                          [--journal JOURNAL] [-v] [-d]\n",
+    "                          [--journal JOURNAL] [--direct-port DIRECT_PORT]\n",
+    "                          [-v] [-d]\n",
     "                          [port]\n",
     "\n",
-    "Monitor journaling health\n",
+    "Monitor journal system health\n",
     "\n",
     "positional arguments:\n",
     "  port               Convey port (0 = auto-select available port)\n",
@@ -456,13 +459,15 @@ pub const SUPERVISOR_HELP: &str = concat!(
     "  --no-daily         Disable daily processing run at midnight\n",
     "  --no-cortex        Do not start the Cortex server (run it manually for\n",
     "                     debugging)\n",
-    "  --no-spl           Do not start the spl tunnel service\n",
+    "  --no-spl           Do not start the private network relay\n",
     "  --no-convey        Do not start the Convey web application\n",
     "  --no-schedule      Do not initialize or run the schedule engine\n",
     "  --remote REMOTE    Remote mode: URL for segment transfer (not yet\n",
     "                     implemented)\n",
     "  --journal JOURNAL  Use this path as the journal root instead of normal\n",
     "                     journal resolution.\n",
+    "  --direct-port DIRECT_PORT\n",
+    "                     Paired-device door port (default: 7657)\n",
     "  -v, --verbose      Enable verbose output\n",
     "  -d, --debug        Enable debug logging\n",
 );
@@ -470,10 +475,11 @@ pub const SUPERVISOR_HELP: &str = concat!(
 pub const START_HELP: &str = concat!(
     "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
     "                     [--no-convey] [--no-schedule] [--remote REMOTE]\n",
-    "                     [--journal JOURNAL] [-v] [-d]\n",
+    "                     [--journal JOURNAL] [--direct-port DIRECT_PORT]\n",
+    "                     [-v] [-d]\n",
     "                     [port]\n",
     "\n",
-    "Monitor journaling health\n",
+    "Monitor journal system health\n",
     "\n",
     "positional arguments:\n",
     "  port               Convey port (0 = auto-select available port)\n",
@@ -483,13 +489,15 @@ pub const START_HELP: &str = concat!(
     "  --no-daily         Disable daily processing run at midnight\n",
     "  --no-cortex        Do not start the Cortex server (run it manually for\n",
     "                     debugging)\n",
-    "  --no-spl           Do not start the spl tunnel service\n",
+    "  --no-spl           Do not start the private network relay\n",
     "  --no-convey        Do not start the Convey web application\n",
     "  --no-schedule      Do not initialize or run the schedule engine\n",
     "  --remote REMOTE    Remote mode: URL for segment transfer (not yet\n",
     "                     implemented)\n",
     "  --journal JOURNAL  Use this path as the journal root instead of normal\n",
     "                     journal resolution.\n",
+    "  --direct-port DIRECT_PORT\n",
+    "                     Paired-device door port (default: 7657)\n",
     "  -v, --verbose      Enable verbose output\n",
     "  -d, --debug        Enable debug logging\n",
 );
@@ -846,8 +854,10 @@ pub enum Command {
     CortexHelp,
     Supervisor(SupervisorOptions),
     SupervisorUsage,
+    SupervisorInvalid(SupervisorUsageError),
     SupervisorHelp,
     StartUsage,
+    StartInvalid(SupervisorUsageError),
     StartHelp,
     SupervisorLifecycleRedirect(&'static str),
     Health {
@@ -1169,7 +1179,11 @@ pub struct SupervisorOptions {
     pub no_cortex: bool,
     pub no_spl: bool,
     pub remote: Option<OsString>,
+    pub direct_port: Option<u16>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SupervisorUsageError(pub String);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpeakerResolveCommand {
@@ -2543,7 +2557,14 @@ fn parse_supervisor_invocation(rest: &[OsString], usage: Command, help: Command)
     }
     match parse_supervisor(rest) {
         Ok(options) => Command::Supervisor(options),
-        Err(_) => {
+        Err(SupervisorParseError::Invalid(error)) => {
+            if matches!(usage, Command::StartUsage) {
+                Command::StartInvalid(error)
+            } else {
+                Command::SupervisorInvalid(error)
+            }
+        }
+        Err(SupervisorParseError::Usage) => {
             supervisor_lifecycle_redirect(rest).map_or(usage, Command::SupervisorLifecycleRedirect)
         }
     }
@@ -2587,7 +2608,26 @@ fn supervisor_lifecycle_redirect(args: &[OsString]) -> Option<&'static str> {
     })
 }
 
-fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, UsageError> {
+enum SupervisorParseError {
+    Usage,
+    Invalid(SupervisorUsageError),
+}
+
+fn parse_direct_port_value(value: &str) -> Result<u16, SupervisorParseError> {
+    let parsed = value.parse::<i32>().map_err(|_| {
+        SupervisorParseError::Invalid(SupervisorUsageError(format!(
+            "argument --direct-port: invalid int value: '{value}'"
+        )))
+    })?;
+    if !(1..=65535).contains(&parsed) {
+        return Err(SupervisorParseError::Invalid(SupervisorUsageError(
+            "argument --direct-port: must be between 1 and 65535".to_owned(),
+        )));
+    }
+    Ok(parsed as u16)
+}
+
+fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, SupervisorParseError> {
     let mut port = 0;
     let mut port_consumed = false;
     let mut journal_override = None;
@@ -2597,42 +2637,79 @@ fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, UsageError> 
     let mut no_cortex = false;
     let mut no_spl = false;
     let mut remote = None;
+    let mut direct_port = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_os_str() {
             value if value == OsStr::new("--no-daily") => {
                 if no_daily {
-                    return Err(UsageError);
+                    return Err(SupervisorParseError::Usage);
                 }
                 no_daily = true;
                 index += 1;
             }
             value if value == OsStr::new("--no-schedule") => {
                 if no_schedule {
-                    return Err(UsageError);
+                    return Err(SupervisorParseError::Usage);
                 }
                 no_schedule = true;
                 index += 1;
             }
             value if value == OsStr::new("--no-convey") => {
                 if no_convey {
-                    return Err(UsageError);
+                    return Err(SupervisorParseError::Usage);
                 }
                 no_convey = true;
                 index += 1;
             }
             value if value == OsStr::new("--no-cortex") => {
                 if no_cortex {
-                    return Err(UsageError);
+                    return Err(SupervisorParseError::Usage);
                 }
                 no_cortex = true;
                 index += 1;
             }
             value if value == OsStr::new("--no-spl") => {
                 if no_spl {
-                    return Err(UsageError);
+                    return Err(SupervisorParseError::Usage);
                 }
                 no_spl = true;
+                index += 1;
+            }
+            value if value == OsStr::new("--direct-port") => {
+                if direct_port.is_some() {
+                    return Err(SupervisorParseError::Invalid(SupervisorUsageError(
+                        "argument --direct-port: cannot be repeated".to_owned(),
+                    )));
+                }
+                let value = args.get(index + 1).ok_or_else(|| {
+                    SupervisorParseError::Invalid(SupervisorUsageError(
+                        "argument --direct-port: expected one argument".to_owned(),
+                    ))
+                })?;
+                let value = value.to_str().ok_or_else(|| {
+                    SupervisorParseError::Invalid(SupervisorUsageError(
+                        "argument --direct-port: invalid int value".to_owned(),
+                    ))
+                })?;
+                direct_port = Some(parse_direct_port_value(value)?);
+                index += 2;
+            }
+            value
+                if value
+                    .to_str()
+                    .is_some_and(|item| item.starts_with("--direct-port=")) =>
+            {
+                if direct_port.is_some() {
+                    return Err(SupervisorParseError::Invalid(SupervisorUsageError(
+                        "argument --direct-port: cannot be repeated".to_owned(),
+                    )));
+                }
+                let value = value
+                    .to_str()
+                    .and_then(|item| item.strip_prefix("--direct-port="))
+                    .expect("prefix checked");
+                direct_port = Some(parse_direct_port_value(value)?);
                 index += 1;
             }
             value if value == OsStr::new("--journal") || value == OsStr::new("--remote") => {
@@ -2642,11 +2719,11 @@ fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, UsageError> 
                     &mut remote
                 };
                 if destination.is_some() {
-                    return Err(UsageError);
+                    return Err(SupervisorParseError::Usage);
                 }
-                let value = args.get(index + 1).ok_or(UsageError)?;
+                let value = args.get(index + 1).ok_or(SupervisorParseError::Usage)?;
                 if value.to_string_lossy().starts_with("--") {
-                    return Err(UsageError);
+                    return Err(SupervisorParseError::Usage);
                 }
                 *destination = Some(value.clone());
                 index += 2;
@@ -2654,13 +2731,13 @@ fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, UsageError> 
             value if !port_consumed => {
                 port = value
                     .to_str()
-                    .ok_or(UsageError)?
+                    .ok_or(SupervisorParseError::Usage)?
                     .parse()
-                    .map_err(|_| UsageError)?;
+                    .map_err(|_| SupervisorParseError::Usage)?;
                 port_consumed = true;
                 index += 1;
             }
-            _ => return Err(UsageError),
+            _ => return Err(SupervisorParseError::Usage),
         }
     }
     Ok(SupervisorOptions {
@@ -2672,6 +2749,7 @@ fn parse_supervisor(args: &[OsString]) -> Result<SupervisorOptions, UsageError> 
         no_cortex,
         no_spl,
         remote,
+        direct_port,
     })
 }
 
@@ -7665,6 +7743,7 @@ mod tests {
                 no_cortex: false,
                 no_spl: false,
                 remote: None,
+                direct_port: None,
             }))
         );
         assert_eq!(
@@ -7686,6 +7765,7 @@ mod tests {
                 no_cortex: false,
                 no_spl: false,
                 remote: None,
+                direct_port: None,
             }))
         );
         assert_eq!(
@@ -8160,8 +8240,88 @@ mod tests {
                 no_cortex: true,
                 no_spl: true,
                 remote: Some(OsString::from("https://example.test")),
+                direct_port: None,
             }))
         );
+    }
+
+    #[test]
+    fn parses_supervisor_direct_port() {
+        assert_eq!(
+            evaluate_args(&args(&["supervisor"])),
+            Ok(Command::Supervisor(SupervisorOptions {
+                port: 0,
+                journal_override: None,
+                no_daily: false,
+                no_schedule: false,
+                no_convey: false,
+                no_cortex: false,
+                no_spl: false,
+                remote: None,
+                direct_port: None,
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["supervisor", "--direct-port", "9000"])),
+            Ok(Command::Supervisor(SupervisorOptions {
+                port: 0,
+                journal_override: None,
+                no_daily: false,
+                no_schedule: false,
+                no_convey: false,
+                no_cortex: false,
+                no_spl: false,
+                remote: None,
+                direct_port: Some(9000),
+            }))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["supervisor", "--direct-port=9000"])),
+            Ok(Command::Supervisor(SupervisorOptions {
+                port: 0,
+                journal_override: None,
+                no_daily: false,
+                no_schedule: false,
+                no_convey: false,
+                no_cortex: false,
+                no_spl: false,
+                remote: None,
+                direct_port: Some(9000),
+            }))
+        );
+        for (values, needle) in [
+            (
+                &["supervisor", "--direct-port"][..],
+                "expected one argument",
+            ),
+            (
+                &["supervisor", "--direct-port", "not-a-port"][..],
+                "invalid int value",
+            ),
+            (&["supervisor", "--direct-port", "0"][..], "must be between"),
+            (
+                &["supervisor", "--direct-port", "65536"][..],
+                "must be between",
+            ),
+            (
+                &[
+                    "supervisor",
+                    "--direct-port",
+                    "9000",
+                    "--direct-port",
+                    "9001",
+                ][..],
+                "cannot be repeated",
+            ),
+        ] {
+            match evaluate_args(&args(values)) {
+                Ok(Command::SupervisorInvalid(error)) => {
+                    assert!(error.0.contains("--direct-port"), "{values:?}: {}", error.0);
+                    assert!(error.0.contains(needle), "{values:?}: {}", error.0);
+                }
+                other => panic!("{values:?}: {other:?}"),
+            }
+        }
     }
 
     #[test]

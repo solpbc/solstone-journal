@@ -21,7 +21,10 @@ use std::{
 };
 
 use serde_json::{Map, Value};
-use solstone_core_journal_config::{ConfigLoadError, plain_defaults, read_journal_config};
+use solstone_core_journal_config::{
+    ConfigLoadError, DirectDoorPortError, plain_defaults, read_direct_door_port,
+    read_journal_config,
+};
 use tokio::{
     io::AsyncWriteExt,
     sync::{Notify, watch},
@@ -251,7 +254,7 @@ impl ServiceDeps for ProcessServiceDeps {
                 Arc::clone(&self.callosum) as Arc<dyn CallosumEmit>,
                 self.verbosity,
             )) as Arc<dyn CallosumEmit>,
-            Arc::new(LocalLoopbackDialer),
+            Arc::new(local_loopback_dialer(&self.journal_root).map_err(|_| ProcessStartError)?),
         );
         let running_client = client.clone();
         let run_task = tokio::spawn(async move { running_client.run().await });
@@ -286,12 +289,15 @@ impl ServiceDeps for ProcessServiceDeps {
     }
 }
 
-struct LocalLoopbackDialer;
+struct LocalLoopbackDialer {
+    port: u16,
+}
 
 impl LoopbackDialer for LocalLoopbackDialer {
     fn connect(&self) -> LoopbackConnect {
-        Box::pin(async {
-            let stream = tokio::net::TcpStream::connect(("127.0.0.1", 7657)).await?;
+        let port = self.port;
+        Box::pin(async move {
+            let stream = tokio::net::TcpStream::connect(("127.0.0.1", port)).await?;
             Ok(Box::new(stream) as Box<dyn LoopbackStream>)
         })
     }
@@ -300,6 +306,12 @@ impl LoopbackDialer for LocalLoopbackDialer {
 fn read_journal_config_map(journal_root: &Path) -> Result<Map<String, Value>, ConfigLoadError> {
     let read = read_journal_config(journal_root)?;
     Ok(read.config.unwrap_or_else(plain_defaults))
+}
+
+fn local_loopback_dialer(journal_root: &Path) -> Result<LocalLoopbackDialer, DirectDoorPortError> {
+    Ok(LocalLoopbackDialer {
+        port: read_direct_door_port(journal_root)?,
+    })
 }
 
 /// Nonblocking Callosum output task.
@@ -1074,6 +1086,29 @@ mod tests {
             .map_err(|_| "native committed instance ID did not load".to_owned())?;
 
         assert_eq!(actual, expected.instance_id);
+        Ok(())
+    }
+
+    #[test]
+    fn custom_direct_port_constructs_a_dialer_for_that_port() -> Result<(), String> {
+        let journal = TempJournal::new()?;
+        journal.write("config/journal.json", r#"{"pairing":{"direct_port":9000}}"#)?;
+        let dialer =
+            super::local_loopback_dialer(journal.path()).map_err(|error| error.to_string())?;
+        assert_eq!(dialer.port, 9000);
+        Ok(())
+    }
+
+    #[test]
+    fn omitted_direct_port_constructs_a_dialer_for_the_default() -> Result<(), String> {
+        let journal = TempJournal::new()?;
+        journal.write("config/journal.json", "{}")?;
+        let dialer =
+            super::local_loopback_dialer(journal.path()).map_err(|error| error.to_string())?;
+        assert_eq!(
+            dialer.port,
+            solstone_core_journal_config::DEFAULT_DIRECT_DOOR_PORT
+        );
         Ok(())
     }
 
