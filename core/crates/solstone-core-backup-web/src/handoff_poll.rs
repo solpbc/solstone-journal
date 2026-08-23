@@ -330,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn needs_subscription_cannot_carry_broker_token() {
+    fn needs_subscription_requires_full_binding_then_discards_it() {
         assert!(matches!(
             parse_poll_body(&needs_subscription_body(), crate::test_support::PORTAL_BASE),
             Ok(HandoffPollOutcome::NeedsSubscription)

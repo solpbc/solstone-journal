@@ -3444,11 +3444,7 @@ async fn handoff_restore_composition_nonce_one_use_and_command_order() {
     let rendered = done.to_string();
     assert!(!rendered.contains(crate::test_support::RECOVERY_KEY));
     assert!(!rendered.contains("broker-token-secret"));
-    let heads = runner.argv_heads();
-    let snapshots = heads.iter().position(|head| head == "snapshots");
-    let restore = heads.iter().position(|head| head == "restore");
-    assert!(snapshots.is_some() && restore.is_some());
-    assert!(snapshots.unwrap() < restore.unwrap());
+    argv_in_order(&runner.argv_heads(), &["snapshots", "restore", "check"]);
     let (status, body) = post_json(
         &deps,
         "/app/backup/handoff",
