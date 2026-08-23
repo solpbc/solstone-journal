@@ -527,52 +527,19 @@ pub(crate) fn publication_candidate_name(
     name
 }
 
-pub(crate) fn candidate_for_attempt(
-    attempt: usize,
-    forced: &[OsString],
-    build: impl FnOnce() -> OsString,
-) -> OsString {
-    match forced.get(attempt) {
-        Some(name) => name.clone(),
-        None => build(),
-    }
-}
-
 #[cfg(unix)]
 fn allocate_bound_stage(
     directory: &impl AsFd,
     destination: &OsStr,
     path: &Path,
 ) -> Result<(OsString, File), DetailedAtomicError> {
-    allocate_bound_stage_inner(directory, destination, path, &[])
-}
-
-#[cfg(all(unix, test))]
-fn allocate_bound_stage_forced(
-    directory: &impl AsFd,
-    destination: &OsStr,
-    path: &Path,
-    forced: &[OsString],
-) -> Result<(OsString, File), DetailedAtomicError> {
-    allocate_bound_stage_inner(directory, destination, path, forced)
-}
-
-#[cfg(unix)]
-fn allocate_bound_stage_inner(
-    directory: &impl AsFd,
-    destination: &OsStr,
-    path: &Path,
-    forced: &[OsString],
-) -> Result<(OsString, File), DetailedAtomicError> {
-    for attempt in 0..100 {
-        let candidate = candidate_for_attempt(attempt, forced, || {
-            let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            publication_candidate_name(
-                destination,
-                ATOMIC_CANDIDATE_MARKER,
-                &[u128::from(std::process::id()), u128::from(sequence)],
-            )
-        });
+    for _ in 0..100 {
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let candidate = publication_candidate_name(
+            destination,
+            ATOMIC_CANDIDATE_MARKER,
+            &[u128::from(std::process::id()), u128::from(sequence)],
+        );
         match openat(
             directory,
             candidate.as_os_str(),
@@ -635,37 +602,18 @@ fn create_temporary(
     parent: &Path,
     destination: &Path,
 ) -> Result<(PathBuf, File), AtomicWriteError> {
-    create_temporary_inner(parent, destination, &[])
-}
-
-#[cfg(test)]
-fn create_temporary_forced(
-    parent: &Path,
-    destination: &Path,
-    forced: &[OsString],
-) -> Result<(PathBuf, File), AtomicWriteError> {
-    create_temporary_inner(parent, destination, forced)
-}
-
-fn create_temporary_inner(
-    parent: &Path,
-    destination: &Path,
-    forced: &[OsString],
-) -> Result<(PathBuf, File), AtomicWriteError> {
     let destination_name = destination.file_name().unwrap_or(OsStr::new(""));
-    for attempt in 0..100 {
-        let candidate = parent.join(candidate_for_attempt(attempt, forced, || {
-            let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
-            publication_candidate_name(
-                destination_name,
-                ATOMIC_CANDIDATE_MARKER,
-                &[u128::from(std::process::id()), nanos, u128::from(sequence)],
-            )
-        }));
+    for _ in 0..100 {
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let candidate = parent.join(publication_candidate_name(
+            destination_name,
+            ATOMIC_CANDIDATE_MARKER,
+            &[u128::from(std::process::id()), nanos, u128::from(sequence)],
+        ));
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -846,10 +794,8 @@ mod tests {
         assert_eq!(fs::read(&target).unwrap().len(), 1024 * 1024);
     }
 
-    use std::collections::BTreeSet;
     use std::ffi::{OsStr, OsString};
     use std::os::unix::ffi::OsStringExt;
-    use std::path::Path;
 
     fn name_255() -> OsString {
         OsString::from("a".repeat(255))
@@ -857,50 +803,6 @@ mod tests {
 
     fn os_from_bytes(bytes: &[u8]) -> OsString {
         OsString::from_vec(bytes.to_vec())
-    }
-
-    fn dir_names(dir: &Path) -> BTreeSet<OsString> {
-        fs::read_dir(dir)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect()
-    }
-
-    fn parse_candidate_entropy(name: &OsStr, marker: &str) -> Vec<u128> {
-        let text = name.to_str().expect("candidate is ASCII");
-        let rest = text
-            .strip_prefix('.')
-            .or_else(|| text.strip_prefix('_'))
-            .expect("sentinel");
-        let rest = rest
-            .strip_prefix(marker)
-            .and_then(|rest| rest.strip_prefix('_'))
-            .expect("marker");
-        let rest = rest.strip_suffix(CANDIDATE_SUFFIX).expect("suffix");
-        rest.split('_')
-            .map(|part| part.parse().expect("entropy digit"))
-            .collect()
-    }
-
-    fn assert_live_candidate(
-        destination_name: &OsStr,
-        candidate: &OsStr,
-        marker: &str,
-        fields: usize,
-    ) {
-        let entropy = parse_candidate_entropy(candidate, marker);
-        assert_eq!(entropy.len(), fields);
-        assert_eq!(entropy[0], u128::from(std::process::id()));
-        assert_eq!(
-            candidate,
-            publication_candidate_name(destination_name, marker, &entropy)
-        );
-    }
-
-    fn forced_names(destination_name: &OsStr, marker: &str, count: usize) -> Vec<OsString> {
-        (0..count)
-            .map(|index| publication_candidate_name(destination_name, marker, &[index as u128]))
-            .collect()
     }
 
     fn assert_candidate_bounded(destination_name: &OsStr, marker: &str) {
@@ -1086,98 +988,5 @@ mod tests {
             let cand_lead = candidate.as_encoded_bytes()[0].to_ascii_lowercase();
             assert_ne!(cand_lead, dest_lead);
         }
-    }
-
-    #[test]
-    fn create_temporary_succeeds_after_ninety_nine_forced_collisions() {
-        let temporary = TempDir::new();
-        let destination = temporary.path().join("unit.service");
-        let destination_name = destination.file_name().unwrap();
-        let forced = forced_names(destination_name, ATOMIC_CANDIDATE_MARKER, 99);
-        for (index, name) in forced.iter().enumerate() {
-            fs::write(temporary.path().join(name), format!("collider-{index}")).unwrap();
-        }
-        let (path, file) =
-            create_temporary_forced(temporary.path(), &destination, &forced).unwrap();
-        drop(file);
-        assert!(!forced.iter().any(|name| name == path.file_name().unwrap()));
-        assert_live_candidate(
-            destination_name,
-            path.file_name().unwrap(),
-            ATOMIC_CANDIDATE_MARKER,
-            3,
-        );
-    }
-
-    #[test]
-    fn create_temporary_exhausts_after_one_hundred_forced_collisions() {
-        let temporary = TempDir::new();
-        let destination = temporary.path().join("unit.service");
-        let destination_name = destination.file_name().unwrap();
-        let forced = forced_names(destination_name, ATOMIC_CANDIDATE_MARKER, 100);
-        for (index, name) in forced.iter().enumerate() {
-            fs::write(temporary.path().join(name), format!("collider-{index}")).unwrap();
-        }
-        let error = create_temporary_forced(temporary.path(), &destination, &forced).unwrap_err();
-        match error {
-            AtomicWriteError::Io { path, source } => {
-                assert_eq!(path, destination);
-                assert_eq!(source.kind(), io::ErrorKind::AlreadyExists);
-                assert_eq!(
-                    source.to_string(),
-                    "could not allocate unique temporary file"
-                );
-            }
-        }
-        assert!(!destination.exists());
-        for (index, name) in forced.iter().enumerate() {
-            assert_eq!(
-                fs::read(temporary.path().join(name)).unwrap(),
-                format!("collider-{index}").into_bytes()
-            );
-        }
-        assert_eq!(dir_names(temporary.path()), forced.into_iter().collect());
-    }
-
-    #[test]
-    fn allocate_bound_stage_succeeds_after_ninety_nine_forced_collisions() {
-        let temporary = TempDir::new();
-        let destination = OsStr::new("unit.service");
-        let path = temporary.path().join(destination);
-        let forced = forced_names(destination, ATOMIC_CANDIDATE_MARKER, 99);
-        for (index, name) in forced.iter().enumerate() {
-            fs::write(temporary.path().join(name), format!("collider-{index}")).unwrap();
-        }
-        let directory = File::open(temporary.path()).unwrap();
-        let (name, file) =
-            allocate_bound_stage_forced(&directory, destination, &path, &forced).unwrap();
-        drop(file);
-        assert!(!forced.iter().any(|forced_name| forced_name == &name));
-        assert_live_candidate(destination, &name, ATOMIC_CANDIDATE_MARKER, 2);
-    }
-
-    #[test]
-    fn allocate_bound_stage_exhausts_after_one_hundred_forced_collisions() {
-        let temporary = TempDir::new();
-        let destination = OsStr::new("unit.service");
-        let path = temporary.path().join(destination);
-        let forced = forced_names(destination, ATOMIC_CANDIDATE_MARKER, 100);
-        for (index, name) in forced.iter().enumerate() {
-            fs::write(temporary.path().join(name), format!("collider-{index}")).unwrap();
-        }
-        let directory = File::open(temporary.path()).unwrap();
-        let error =
-            allocate_bound_stage_forced(&directory, destination, &path, &forced).unwrap_err();
-        assert_eq!(error.operation, "create stage");
-        assert_eq!(error.source.kind(), io::ErrorKind::AlreadyExists);
-        assert_eq!(error.source.to_string(), "could not allocate stage");
-        assert!(!path.exists());
-        for (index, name) in forced.iter().enumerate() {
-            assert_eq!(
-                fs::read(temporary.path().join(name)).unwrap(),
-                format!("collider-{index}").into_bytes()
-            );
-        }
-        assert_eq!(dir_names(temporary.path()), forced.into_iter().collect());
     }
 }

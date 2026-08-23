@@ -4,7 +4,7 @@
 //! Create-only directory-set publication through a same-parent staging directory.
 
 use std::error::Error;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs::{self, DirBuilder, File};
 use std::io;
@@ -14,9 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::atomic::{
-    STAGED_CANDIDATE_MARKER, candidate_for_attempt, fsync_dir, publication_candidate_name,
-};
+use crate::atomic::{STAGED_CANDIDATE_MARKER, fsync_dir, publication_candidate_name};
 
 static STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -119,39 +117,18 @@ impl StagingDir {
         destination: &Path,
         options: StagedDirOptions,
     ) -> Result<Self, StagedWriteError> {
-        Self::create_inner(parent, destination, options, &[])
-    }
-
-    #[cfg(test)]
-    fn create_forced(
-        parent: &Path,
-        destination: &Path,
-        options: StagedDirOptions,
-        forced: &[OsString],
-    ) -> Result<Self, StagedWriteError> {
-        Self::create_inner(parent, destination, options, forced)
-    }
-
-    fn create_inner(
-        parent: &Path,
-        destination: &Path,
-        options: StagedDirOptions,
-        forced: &[OsString],
-    ) -> Result<Self, StagedWriteError> {
         let destination_name = destination.file_name().unwrap_or(OsStr::new(""));
-        for attempt in 0..100 {
-            let path = parent.join(candidate_for_attempt(attempt, forced, || {
-                let sequence = STAGING_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-                let nanos = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos();
-                publication_candidate_name(
-                    destination_name,
-                    STAGED_CANDIDATE_MARKER,
-                    &[u128::from(std::process::id()), nanos + u128::from(sequence)],
-                )
-            }));
+        for _ in 0..100 {
+            let sequence = STAGING_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let path = parent.join(publication_candidate_name(
+                destination_name,
+                STAGED_CANDIDATE_MARKER,
+                &[u128::from(std::process::id()), nanos + u128::from(sequence)],
+            ));
             let mut builder = DirBuilder::new();
             #[cfg(unix)]
             if let Some(mode) = options.directory_mode {
@@ -236,7 +213,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::atomic::{CANDIDATE_SUFFIX, STAGED_CANDIDATE_MARKER, publication_candidate_name};
+    use crate::atomic::{STAGED_CANDIDATE_MARKER, publication_candidate_name};
     use crate::test_support::TempDir;
 
     fn write_complete_set(staging: &Path) -> io::Result<()> {
@@ -259,40 +236,6 @@ mod tests {
     fn is_staging_candidate(name: &OsStr) -> bool {
         let bytes = name.as_encoded_bytes();
         (bytes.starts_with(b".stage_") || bytes.starts_with(b"_stage_")) && bytes.ends_with(b".tmp")
-    }
-
-    fn parse_candidate_entropy(name: &OsStr, marker: &str) -> Vec<u128> {
-        let text = name.to_str().expect("candidate is ASCII");
-        let rest = text
-            .strip_prefix('.')
-            .or_else(|| text.strip_prefix('_'))
-            .expect("sentinel");
-        let rest = rest
-            .strip_prefix(marker)
-            .and_then(|rest| rest.strip_prefix('_'))
-            .expect("marker");
-        let rest = rest.strip_suffix(CANDIDATE_SUFFIX).expect("suffix");
-        rest.split('_')
-            .map(|part| part.parse().expect("entropy digit"))
-            .collect()
-    }
-
-    fn forced_names(destination_name: &OsStr, count: usize) -> Vec<OsString> {
-        (0..count)
-            .map(|index| {
-                publication_candidate_name(
-                    destination_name,
-                    STAGED_CANDIDATE_MARKER,
-                    &[index as u128],
-                )
-            })
-            .collect()
-    }
-
-    fn write_collider_dir(parent: &Path, name: &OsStr, index: usize) {
-        let path = parent.join(name);
-        fs::create_dir(&path).unwrap();
-        fs::write(path.join("marker"), format!("collider-{index}")).unwrap();
     }
 
     #[test]
@@ -428,71 +371,5 @@ mod tests {
         .unwrap();
         assert_eq!(fs::read(left.join("payload.bin")).unwrap(), b"alpha");
         assert_eq!(fs::read(right.join("payload.bin")).unwrap(), b"beta");
-    }
-
-    #[test]
-    fn staging_dir_create_succeeds_after_ninety_nine_forced_collisions() {
-        let temporary = TempDir::new();
-        let destination = temporary.path().join("bundle");
-        let destination_name = destination.file_name().unwrap();
-        let forced = forced_names(destination_name, 99);
-        for (index, name) in forced.iter().enumerate() {
-            write_collider_dir(temporary.path(), name, index);
-        }
-        let staging = StagingDir::create_forced(
-            temporary.path(),
-            &destination,
-            StagedDirOptions::default(),
-            &forced,
-        )
-        .unwrap();
-        let created = staging.path().file_name().unwrap().to_os_string();
-        assert!(!forced.iter().any(|name| name == &created));
-        let entropy = parse_candidate_entropy(&created, STAGED_CANDIDATE_MARKER);
-        assert_eq!(entropy.len(), 2);
-        assert_eq!(entropy[0], u128::from(std::process::id()));
-        assert_eq!(
-            created,
-            publication_candidate_name(destination_name, STAGED_CANDIDATE_MARKER, &entropy)
-        );
-    }
-
-    #[test]
-    fn staging_dir_create_exhausts_after_one_hundred_forced_collisions() {
-        let temporary = TempDir::new();
-        let destination = temporary.path().join("bundle");
-        let destination_name = destination.file_name().unwrap();
-        let forced = forced_names(destination_name, 100);
-        for (index, name) in forced.iter().enumerate() {
-            write_collider_dir(temporary.path(), name, index);
-        }
-        let error = match StagingDir::create_forced(
-            temporary.path(),
-            &destination,
-            StagedDirOptions::default(),
-            &forced,
-        ) {
-            Err(error) => error,
-            Ok(_) => panic!("expected exhaustion"),
-        };
-        match error {
-            StagedWriteError::Io { path, source } => {
-                assert_eq!(path, destination);
-                assert_eq!(source.kind(), io::ErrorKind::AlreadyExists);
-                assert_eq!(
-                    source.to_string(),
-                    "could not create unique staging directory"
-                );
-            }
-            other => panic!("expected Io exhaustion, got {other:?}"),
-        }
-        assert!(!destination.exists());
-        for (index, name) in forced.iter().enumerate() {
-            assert_eq!(
-                fs::read(temporary.path().join(name).join("marker")).unwrap(),
-                format!("collider-{index}").into_bytes()
-            );
-        }
-        assert_eq!(dir_names(temporary.path()), forced.into_iter().collect());
     }
 }
