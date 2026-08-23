@@ -1528,6 +1528,67 @@ mod tests {
         );
     }
 
+    fn fully_maximal_hostile_combined_state() -> TopState {
+        let hostile = format!("{}\u{e000}\u{1b}<RED>", "界".repeat(1024));
+        let mut state = TopState::default();
+        let statuses = ["started", "stopped", "restarting", "other"];
+        for index in 0..256u32 {
+            let service_name = format!("svc-{index}-{hostile}");
+            let service_ref = format!("svc-ref-{index}");
+            state.services.push(serde_json::json!({
+                "name": service_name,
+                "pid": index + 1,
+                "ref": service_ref,
+                "uptime_seconds": 0
+            }));
+            state
+                .service_status
+                .insert(service_name, (statuses[index as usize % 4].to_owned(), 0.0));
+            state.last_log_lines.insert(
+                service_ref,
+                serde_json::json!([{"seconds": 0}, "stderr", format!("log-{hostile}")]),
+            );
+            let task_name = format!("task-{index}-{hostile}");
+            let task_ref = format!("task-ref-{index}");
+            state.running_tasks.insert(
+                task_name.clone(),
+                serde_json::json!({
+                    "name": task_name,
+                    "pid": 1000 + index,
+                    "ref": task_ref
+                }),
+            );
+            state.last_log_lines.insert(
+                task_ref,
+                serde_json::json!([{"seconds": 0}, "stderr", format!("task-log-{hostile}")]),
+            );
+            state.finished_tasks.insert(
+                format!("ghost-{index}"),
+                serde_json::json!({
+                    "name": format!("ghost-{index}-{hostile}"),
+                    "exit_code": 1
+                }),
+            );
+            state.crashed.push(serde_json::json!({
+                "name": format!("{index}-{hostile}"),
+                "restart_attempts": index,
+            }));
+        }
+        state
+    }
+
+    fn assert_prints_have_no_raw_markers_or_esc(ops: &[TopRenderOp]) {
+        for op in ops {
+            if let TopRenderOp::Print(text) = op {
+                assert!(
+                    !text.contains(['\u{e000}', '\u{e001}', '\u{e002}', '\u{e003}']),
+                    "private marker in print {text:?}"
+                );
+                assert!(!text.contains('\u{1b}'), "raw ESC in print {text:?}");
+            }
+        }
+    }
+
     #[test]
     fn transform_trusted_render_to_ops_capped_reserves_a_trailing_reset() {
         let style = AnsiTopStyle;
@@ -1555,20 +1616,39 @@ mod tests {
 
     #[test]
     fn render_ops_stays_within_max_frame_ops_for_hostile_maximal_state() {
-        let state = TopState {
-            crashed: (0..256)
-                .map(|index| {
-                    serde_json::json!({
-                        "name": format!("{index}-{}\u{e000}\u{1b}<RED>", "界".repeat(1024)),
-                        "restart_attempts": index,
-                    })
-                })
-                .collect(),
-            ..TopState::default()
-        };
-        let ops = render_ops(&state, FrameSample::default(), MAX_FRAME_WIDTH);
+        let ops = render_ops(
+            &fully_maximal_hostile_combined_state(),
+            FrameSample::default(),
+            MAX_FRAME_WIDTH,
+        );
         assert!(ops.len() <= MAX_FRAME_OPS, "{}", ops.len());
         assert_eq!(ops.last(), Some(&TopRenderOp::Style(TrustedToken::Normal)));
+        assert_prints_have_no_raw_markers_or_esc(&ops);
+    }
+
+    #[test]
+    fn render_ops_capped_helper_truncates_real_maximal_frame_content_and_resets() {
+        let sample = FrameSample::default();
+        let state = fully_maximal_hostile_combined_state();
+        let output = build_frame_text(&state, sample, MAX_FRAME_WIDTH, &AnsiTopStyle);
+        let uncapped = transform_trusted_render_to_ops(&output, MAX_FRAME_WIDTH);
+        assert!(
+            uncapped.len() > 256,
+            "maximal combined state should exceed a single-family row count: {}",
+            uncapped.len()
+        );
+        assert!(uncapped.len() <= MAX_FRAME_OPS, "{}", uncapped.len());
+        assert_prints_have_no_raw_markers_or_esc(&uncapped);
+        for cap in [uncapped.len() / 2, uncapped.len() / 8, 1] {
+            let ops = transform_trusted_render_to_ops_capped(&output, MAX_FRAME_WIDTH, cap);
+            assert!(ops.len() <= cap, "cap {cap}: {}", ops.len());
+            assert_eq!(
+                ops.last(),
+                Some(&TopRenderOp::Style(TrustedToken::Normal)),
+                "cap {cap}: {ops:?}"
+            );
+            assert_prints_have_no_raw_markers_or_esc(&ops);
+        }
     }
 
     #[test]

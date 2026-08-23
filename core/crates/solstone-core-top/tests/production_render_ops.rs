@@ -2,8 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 use solstone_core_top::{
-    BrainHealthState, FrameSample, PlainTopStyle, TopRenderOp, TopState, TrustedToken,
-    render_frame, render_ops, transform_trusted_render,
+    BrainHealthState, FrameSample, PlainTopStyle, TopMalformed, TopMalformedKind, TopRenderOp,
+    TopRoute, TopState, TrustedToken, render_frame, render_ops, transform_trusted_render,
 };
 
 #[path = "support/mod.rs"]
@@ -111,41 +111,16 @@ fn render_ops_reconstructs_the_approved_fixture_for_every_retained_case() {
             render_frame(&state, sample, width, &PlainTopStyle),
             "{name}"
         );
+        assert!(ops.len() <= solstone_core_top::MAX_FRAME_OPS, "{name}");
     }
 }
 
-#[test]
-fn observe_and_service_payload_tokens_stay_print_for_spellings_and_ansi() {
-    let sample = FrameSample {
-        wall_seconds: 100.0,
-        monotonic_seconds: 100.0,
-    };
-    let control = render_ops(&observe_and_service_state("payload"), sample, 512);
-    let control_styles = style_sequence(&control);
-    for token in TOKEN_SPELLINGS
-        .iter()
-        .copied()
-        .chain(TOKEN_ANSI.iter().copied())
-    {
-        let payload = format!("x{token}y");
-        let ops = render_ops(&observe_and_service_state(&payload), sample, 512);
-        assert_no_private_markers(&ops);
-        assert_eq!(style_sequence(&ops), control_styles, "{token:?}");
-        let expected = format!("x{}y", expected_print_payload(token));
-        let text = print_text(&ops);
-        assert!(
-            text.matches(&expected).count() >= 2,
-            "service and Observe should both retain {token:?}: {text:?}"
-        );
-    }
-}
-
-fn state_with_every_dynamic_family(
+fn populate_shared_dynamic_families(
+    state: &mut TopState,
     payload: &str,
     service_name: &str,
     crashed_name: &str,
-) -> TopState {
-    let mut state = support::state_for_render_case("empty");
+) {
     state.services.push(serde_json::json!({
         "name": service_name, "pid": 1, "ref": "service", "uptime_seconds": 0
     }));
@@ -178,6 +153,23 @@ fn state_with_every_dynamic_family(
         "stream".into(),
         serde_json::json!(format!("observe-{payload}")),
     );
+    state.recent_segments.push(serde_json::json!([
+        "20260101",
+        format!("recent-{payload}"),
+        60
+    ]));
+    state
+        .crashed
+        .push(serde_json::json!({"name":crashed_name,"restart_attempts":1}));
+}
+
+fn state_with_every_dynamic_family(
+    payload: &str,
+    service_name: &str,
+    crashed_name: &str,
+) -> TopState {
+    let mut state = support::state_for_render_case("empty");
+    populate_shared_dynamic_families(&mut state, payload, service_name, crashed_name);
     state.think_running = true;
     state.think_status = [
         ("mode".into(), serde_json::json!(payload)),
@@ -185,7 +177,10 @@ fn state_with_every_dynamic_family(
         ("segment".into(), serde_json::json!(payload)),
         ("agents_total".into(), serde_json::json!(1)),
         ("agents_completed".into(), serde_json::json!(0)),
-        ("current_agents".into(), serde_json::json!([payload])),
+        (
+            "current_agents".into(),
+            serde_json::json!([format!("think-{payload}")]),
+        ),
     ]
     .into();
     state.brain_health_state = BrainHealthState::Available {
@@ -193,9 +188,49 @@ fn state_with_every_dynamic_family(
     };
     state.brain_health = Some(serde_json::json!({"lines":[format!("brain-{payload}")]}));
     state
-        .crashed
-        .push(serde_json::json!({"name":crashed_name,"restart_attempts":1}));
+}
+
+fn state_with_every_dynamic_family_failed(
+    payload: &str,
+    service_name: &str,
+    crashed_name: &str,
+) -> TopState {
+    let mut state = support::state_for_render_case("empty");
+    populate_shared_dynamic_families(&mut state, payload, service_name, crashed_name);
+    state.think_running = false;
+    state.think_last_completed = [
+        ("success".into(), serde_json::json!(0)),
+        ("failed".into(), serde_json::json!(1)),
+        ("duration_ms".into(), serde_json::json!(1000)),
+        (
+            "failed_names".into(),
+            serde_json::json!([format!("failed-{payload}")]),
+        ),
+    ]
+    .into();
+    state.brain_health_state = BrainHealthState::Unavailable {
+        message: format!("brain-{payload}"),
+        observed_at_monotonic: 100.0,
+    };
     state
+}
+
+fn family_print_markers(payload: &str, running: bool) -> Vec<String> {
+    let escaped = expected_print_payload(payload);
+    let mut markers = vec![
+        format!("log-{escaped}"),
+        format!("task-log-{escaped}"),
+        format!("queue-{escaped}"),
+        format!("observe-{escaped}"),
+        format!("recent-{escaped}"),
+        format!("brain-{escaped}"),
+    ];
+    if running {
+        markers.push(format!("think-{escaped}"));
+    } else {
+        markers.push(format!("failed-{escaped}"));
+    }
+    markers
 }
 
 #[test]
@@ -206,34 +241,114 @@ fn every_dynamic_row_family_keeps_hostile_payload_as_print() {
         wall_seconds: 100.0,
         monotonic_seconds: 100.0,
     };
-    let ops = render_ops(
-        &state_with_every_dynamic_family(hostile, &wide, &wide),
-        sample,
-        512,
-    );
-    let control = render_ops(
-        &state_with_every_dynamic_family("payload", "payload", "payload"),
-        sample,
-        512,
-    );
+    for running in [true, false] {
+        let label = if running { "running" } else { "failed" };
+        let build = if running {
+            state_with_every_dynamic_family
+        } else {
+            state_with_every_dynamic_family_failed
+        };
+        let ops = render_ops(&build(hostile, &wide, &wide), sample, 512);
+        let control = render_ops(&build("payload", "payload", "payload"), sample, 512);
+        assert_no_private_markers(&ops);
+        assert_eq!(style_sequence(&ops), style_sequence(&control), "{label}");
+        let text = print_text(&ops);
+        for escaped in [
+            "\\u{e000}",
+            "\\u{e001}",
+            "\\u{e002}",
+            "\\u{e003}",
+            "\\x1b",
+            "\\u{202e}",
+            "\\u{7}",
+        ] {
+            assert!(
+                text.contains(escaped),
+                "{label} missing {escaped}: {text:?}"
+            );
+        }
+        let mut prefixes = vec![
+            "log-z",
+            "task-log-z",
+            "queue-z",
+            "observe-z",
+            "recent-z",
+            "brain-z",
+        ];
+        prefixes.push(if running { "think-z" } else { "failed-z" });
+        for prefix in prefixes {
+            assert!(text.contains(prefix), "{label} missing {prefix}: {text:?}");
+        }
+        assert!(
+            text.contains("界"),
+            "{label} missing large unicode: {text:?}"
+        );
+    }
+}
+
+#[test]
+fn every_dynamic_row_family_keeps_token_spellings_and_ansi_as_print() {
+    let sample = FrameSample {
+        wall_seconds: 100.0,
+        monotonic_seconds: 100.0,
+    };
+    for running in [true, false] {
+        let label = if running { "running" } else { "failed" };
+        let build = if running {
+            state_with_every_dynamic_family
+        } else {
+            state_with_every_dynamic_family_failed
+        };
+        let control = render_ops(&build("payload", "payload", "payload"), sample, 512);
+        let control_styles = style_sequence(&control);
+        for token in TOKEN_SPELLINGS
+            .iter()
+            .copied()
+            .chain(TOKEN_ANSI.iter().copied())
+        {
+            let payload = format!("x{token}y");
+            let ops = render_ops(&build(&payload, &payload, &payload), sample, 512);
+            assert_no_private_markers(&ops);
+            assert_eq!(style_sequence(&ops), control_styles, "{label} {token:?}");
+            let text = print_text(&ops);
+            for marker in family_print_markers(&payload, running) {
+                assert!(
+                    text.contains(&marker),
+                    "{label} {token:?} missing {marker}: {text:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn malformed_event_diagnostic_stays_inert_print() {
+    // TopMalformed Display formats only TopRoute (a fixed enum) and
+    // TopMalformedKind (&'static str keys). It never carries request-derived
+    // text, so token-spelling injection does not apply to this family.
+    let sample = FrameSample {
+        wall_seconds: 100.0,
+        monotonic_seconds: 100.0,
+    };
+    let control = TopState {
+        malformed_events: 1,
+        ..TopState::default()
+    };
+    let mut state = control.clone();
+    state.last_malformed = Some(TopMalformed {
+        route: TopRoute::ThinkCompleted,
+        kind: TopMalformedKind::WrongType("failed_names[]"),
+    });
+    let ops = render_ops(&state, sample, 512);
+    let control_ops = render_ops(&control, sample, 512);
     assert_no_private_markers(&ops);
-    assert_eq!(style_sequence(&ops), style_sequence(&control));
+    assert_eq!(style_sequence(&ops), style_sequence(&control_ops));
     let text = print_text(&ops);
-    for escaped in [
-        "\\u{e000}",
-        "\\u{e001}",
-        "\\u{e002}",
-        "\\u{e003}",
-        "\\x1b",
-        "\\u{202e}",
-        "\\u{7}",
-    ] {
-        assert!(text.contains(escaped), "missing {escaped}: {text:?}");
-    }
-    for prefix in ["log-z", "task-log-z", "queue-z", "observe-z", "brain-z"] {
-        assert!(text.contains(prefix), "missing {prefix}: {text:?}");
-    }
-    assert!(text.contains("界"), "missing large unicode: {text:?}");
+    assert!(text.contains("malformed events: 1"), "{text:?}");
+    assert!(
+        text.contains("think/completed: WrongType(\"failed_names[]\")"),
+        "{text:?}"
+    );
 }
 
 #[test]
