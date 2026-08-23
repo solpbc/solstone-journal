@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -11,6 +11,8 @@ use std::str::FromStr;
 #[cfg(test)]
 mod test_support;
 
+#[cfg(unix)]
+use std::ffi::OsString;
 #[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
