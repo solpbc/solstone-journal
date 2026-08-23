@@ -57,11 +57,8 @@ pub enum DurableRole {
     ClaimHead,
     Intent,
     Active,
-    #[allow(dead_code)]
     Terminal,
-    #[allow(dead_code)]
     ClearanceMember,
-    #[allow(dead_code)]
     ClearanceBarrier,
     #[allow(dead_code)]
     ConsumptionWitness,
@@ -114,17 +111,13 @@ pub enum Refusal {
     NotVirgin,
     CleanupOnly,
     ConflictingProjection,
-    #[allow(dead_code)]
     ConflictingTerminal,
     WrongGenerationMarker,
     OldAuthorMarker,
     OldProjectionDigest,
     ProjectionByteMismatch,
-    #[allow(dead_code)]
     WrongOutcome,
-    #[allow(dead_code)]
     OppositeTerminal,
-    #[allow(dead_code)]
     GenericRejection,
     #[allow(dead_code)]
     DaySetChanged,
@@ -132,11 +125,9 @@ pub enum Refusal {
     ClaimSwapped,
     #[allow(dead_code)]
     IncompleteEvidence,
-    #[allow(dead_code)]
     StaleEvidence,
     #[allow(dead_code)]
     MixedEvidence,
-    #[allow(dead_code)]
     Superseded,
 }
 

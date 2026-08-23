@@ -23,12 +23,14 @@ mod intent;
 mod layout;
 mod lock;
 mod owner;
+mod permit;
 mod preflight;
 mod projection;
 mod publish;
 mod recover;
 mod schema;
 mod store;
+mod terminal;
 #[cfg(test)]
 mod test_support;
 mod transaction;
@@ -39,8 +41,11 @@ pub use error::{ChangedWhat, ConvergenceError, DurableRole, Refusal};
 pub use init::check_initialized;
 pub use layout::DayKey;
 pub use owner::{ClaimAdmission, OwnerBinding};
+pub use permit::{Permit, TerminalOutcome, TerminalReceipt};
 pub use preflight::{Admitted, CanonicalDaySet, Preflight, preflight};
-pub use recover::{DayStoreRecovery, RecoveryReport, StoreVerdict};
+pub use recover::{
+    AwaitingOwnerDecision, AwaitingStage, DayStoreRecovery, RecoveryReport, StoreVerdict,
+};
 pub use store::{ConvergenceStore, DaySnapshot};
 pub use transaction::HeldDays;
 
@@ -100,12 +105,14 @@ mod architecture {
             include_str!("lib.rs"),
             include_str!("lock.rs"),
             include_str!("owner.rs"),
+            include_str!("permit.rs"),
             include_str!("preflight.rs"),
             include_str!("projection.rs"),
             include_str!("publish.rs"),
             include_str!("recover.rs"),
             include_str!("schema.rs"),
             include_str!("store.rs"),
+            include_str!("terminal.rs"),
             include_str!("transaction.rs"),
             include_str!("walk.rs"),
         ] {
@@ -118,8 +125,8 @@ mod architecture {
     #[test]
     fn no_public_completion_or_migration_type() {
         // Recovery is a public read-only surface required by AC3/AC4/AC6
-        // (`RecoveryReport`). This lode still bars a public *completion*
-        // authority and any *migration* surface.
+        // (`RecoveryReport`, `AwaitingOwnerDecision`). This lode still bars a
+        // public *completion* authority and any *migration* surface.
         let production = production_source(include_str!("lib.rs"));
         let public: String = production
             .lines()

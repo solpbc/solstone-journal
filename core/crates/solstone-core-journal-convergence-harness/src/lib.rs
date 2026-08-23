@@ -14,9 +14,11 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    use std::collections::BTreeMap;
+
     use solstone_core_journal_convergence::{
-        ClaimAdmission, ConvergenceError, DayKey, OwnerBinding, Preflight, Refusal,
-        check_initialized, preflight,
+        ClaimAdmission, ConvergenceError, DayKey, OwnerBinding, Preflight, Refusal, StoreVerdict,
+        TerminalOutcome, check_initialized, preflight,
     };
     use solstone_core_journal_io::JournalRoot;
 
@@ -66,6 +68,33 @@ mod tests {
 
     fn sample_day() -> DayKey {
         DayKey::parse("20260823").unwrap()
+    }
+
+    fn snapshot_tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
+        let mut entries = BTreeMap::new();
+        snapshot_walk(root, root, &mut entries);
+        entries
+    }
+
+    fn snapshot_walk(root: &Path, dir: &Path, entries: &mut BTreeMap<String, Vec<u8>>) {
+        let listing = match fs::read_dir(dir) {
+            Ok(listing) => listing,
+            Err(_) => return,
+        };
+        for entry in listing.flatten() {
+            let path = entry.path();
+            let rel = path
+                .strip_prefix(root)
+                .expect("child of root")
+                .to_string_lossy()
+                .replace('\\', "/");
+            if path.is_dir() {
+                entries.insert(rel, Vec::new());
+                snapshot_walk(root, &path, entries);
+            } else if let Ok(bytes) = fs::read(&path) {
+                entries.insert(rel, bytes);
+            }
+        }
     }
 
     #[test]
@@ -201,5 +230,65 @@ mod tests {
             preflight::<[&str; 0], &str>([]).unwrap(),
             Preflight::Empty
         ));
+    }
+
+    #[test]
+    fn ac9_live_permit_commit() {
+        let (_temporary, admitted) = open_admitted("permit", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let permit = held.continue_with(proof).unwrap();
+        let receipt = permit.commit().unwrap();
+        assert_eq!(receipt.outcome, TerminalOutcome::Committed);
+        assert_eq!(receipt.serial, 1);
+    }
+
+    #[test]
+    fn ac9_awaiting_owner_decision() {
+        let (temporary, admitted) = open_admitted("awaiting", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        drop(held);
+        let before = snapshot_tree(&temporary.journal_path());
+        let report = admitted.inspect().unwrap();
+        assert!(report.awaiting().is_some());
+        assert!(report.terminal_outcome().is_none());
+        assert_eq!(before, snapshot_tree(&temporary.journal_path()));
+    }
+
+    #[test]
+    fn ac9_supersession() {
+        let (_temporary, admitted) = open_admitted("supersede", &["20260823"]);
+        let owner = OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let permit = held.continue_with(proof).unwrap();
+        let _ = permit;
+        let first = held.snapshot(&sample_day()).unwrap();
+        assert_eq!(first.record_revision, 1);
+        held.advance_dirty().unwrap();
+        let second = held.snapshot(&sample_day()).unwrap();
+        assert!(second.record_revision > first.record_revision);
+        assert!(second.dirty_generation > first.dirty_generation);
+        drop(held);
+        let verdict = admitted
+            .inspect_proposed(&sample_day(), first.record_revision)
+            .unwrap();
+        match verdict {
+            StoreVerdict::HeadedDescendant {
+                head_revision,
+                proposed_revision,
+            } => {
+                assert_eq!(proposed_revision, first.record_revision);
+                assert_eq!(head_revision, second.record_revision);
+            }
+            other => panic!("expected headed descendant, got {other:?}"),
+        }
+        let report = admitted.inspect().unwrap();
+        assert!(report.awaiting().is_some());
+        assert!(report.terminal_outcome().is_none());
     }
 }

@@ -17,8 +17,8 @@ pub(crate) const RECORDS: &str = "records";
 pub(crate) const CLAIM: &str = "claim";
 pub(crate) const INTENTS: &str = "intents";
 pub(crate) const ACTIVES: &str = "actives";
-#[allow(dead_code)]
 pub(crate) const TERMINALS: &str = "terminals";
+pub(crate) const CLEARANCE: &str = "clearance";
 pub(crate) const TOPOLOGY_LOCK: &str = "topology.lock";
 pub(crate) const ROOT_WITNESS: &str = "root.wit.json";
 pub(crate) const ALLOCATOR: &str = "allocator.json";
@@ -89,6 +89,18 @@ pub(crate) fn intent_name(serial: u64) -> OsString {
 
 pub(crate) fn active_name(serial: u64) -> OsString {
     OsString::from(format!("{serial}.json"))
+}
+
+pub(crate) fn terminal_name(serial: u64) -> OsString {
+    OsString::from(format!("{serial}.json"))
+}
+
+pub(crate) fn member_name(day: &DayKey) -> OsString {
+    OsString::from(format!("{}.clear.json", day.as_str()))
+}
+
+pub(crate) fn barrier_name(serial: u64) -> OsString {
+    OsString::from(format!("{serial}.barrier.json"))
 }
 
 #[cfg(test)]

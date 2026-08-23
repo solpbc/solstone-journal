@@ -250,6 +250,30 @@ pub(crate) fn all_unclaimed(table: &BTreeMap<String, TableEntry>, days: &[DayKey
     days.iter().all(|day| !table.contains_key(day.as_str()))
 }
 
+pub(crate) fn current_table(
+    store: &ConvergenceStore,
+    dirs: &StoreDirs,
+) -> Result<BTreeMap<String, TableEntry>, ConvergenceError> {
+    Ok(match classify(store, dirs)? {
+        ClaimView::Empty => BTreeMap::new(),
+        ClaimView::Headed(body) | ClaimView::Unheaded(body) => body.table,
+    })
+}
+
+/// Serial mapped for every admitted day, if they share one allocation.
+pub(crate) fn shared_serial(table: &BTreeMap<String, TableEntry>, days: &[DayKey]) -> Option<u64> {
+    let mut serial = None;
+    for day in days {
+        let entry = table.get(day.as_str())?;
+        match serial {
+            None => serial = Some(entry.serial),
+            Some(prior) if prior != entry.serial => return None,
+            Some(_) => {}
+        }
+    }
+    serial
+}
+
 pub(crate) struct IntroduceSpec<'a> {
     pub serial: u64,
     pub owner_digest: &'a str,

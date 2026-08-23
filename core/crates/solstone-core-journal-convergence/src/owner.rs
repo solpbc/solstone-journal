@@ -17,7 +17,8 @@
 //! | [`ClaimAdmission`] | [`ClaimAdmission::issue_from_base`] while that [`crate::HeldDays`] is locked | [`crate::HeldDays::continue_with`] admission only | [`crate::Refusal::StaleLease`] |
 //!
 //! The successor outcome-bound terminal authority and the named refusal
-//! authority have **no** public constructor (they are not in this dispatch).
+//! authority have **no** public constructor (`BaseSuccessorCommit`,
+//! `BaseSuccessorAbort`, `BaseNamedRefusal` are `pub(crate)` `#[cfg(test)]`).
 //!
 //! `issue_from_base` is a placeholder the resolver-authority lode replaces with
 //! owner-registry reauthentication. That lode does not add public field

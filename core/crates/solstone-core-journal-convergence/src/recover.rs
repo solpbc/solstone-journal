@@ -3,12 +3,12 @@
 
 //! Read-only recovery report and the shared discovery contract.
 //!
-//! [`RecoveryReport`] holds only owned plain data. It does not hold a
-//! [`solstone_core_journal_io::JournalRoot`], file descriptor, lock, owner
-//! binding, claim-admission proof, or borrow of [`crate::Admitted`].
-//! [`Admitted::inspect`] releases every lock before returning a report.
-//! This type has no `resume`, `mint`, `proceed`, `commit`, `permit`,
-//! `from_digest`, or `from_bytes` constructor.
+//! [`RecoveryReport`] and [`AwaitingOwnerDecision`] hold only owned plain
+//! data. They do not hold a [`solstone_core_journal_io::JournalRoot`], file
+//! descriptor, lock, owner binding, claim-admission proof, permit, or borrow
+//! of [`crate::Admitted`]. [`Admitted::inspect`] releases every lock before
+//! constructing them. Neither type has `resume`, `mint`, `proceed`,
+//! `commit`, `permit`, `from_digest`, or `from_bytes`.
 
 use std::ffi::OsStr;
 
@@ -17,17 +17,53 @@ use solstone_core_journal_io::read_bytes_bound;
 
 use crate::error::{ConvergenceError, DurableRole, Refusal};
 use crate::init::open_store_dirs;
-use crate::intent::open_intents_dir;
+use crate::intent::{open_intents_dir, read_intent};
 use crate::layout::{DayKey, intent_name};
 use crate::lock::acquire_days_with_timeout;
+use crate::permit::TerminalOutcome;
 use crate::preflight::{Admitted, CanonicalDaySet, canonicalize_discovered};
 use crate::publish::inspect_against_proposed;
 use crate::store::{DaySnapshot, LoadDay, PendingKind};
+
+/// Observational awaiting-owner state. Owned data only; no capability.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AwaitingOwnerDecision {
+    serial: u64,
+    intent_digest: String,
+    days: Vec<DayKey>,
+    stage: AwaitingStage,
+}
+
+/// Stage recorded on [`AwaitingOwnerDecision`]. Informational only.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AwaitingStage {
+    AfterProjection,
+}
+
+impl AwaitingOwnerDecision {
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+
+    pub fn intent_digest(&self) -> &str {
+        &self.intent_digest
+    }
+
+    pub fn days(&self) -> &[DayKey] {
+        &self.days
+    }
+
+    pub fn stage(&self) -> AwaitingStage {
+        self.stage
+    }
+}
 
 /// Read-only per-journal recovery classification. `Clone`, no capabilities.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveryReport {
     days: Vec<DayStoreRecovery>,
+    awaiting: Option<AwaitingOwnerDecision>,
+    terminal_outcome: Option<TerminalOutcome>,
 }
 
 /// One day's store-stage verdict. Owned data only.
@@ -63,6 +99,14 @@ impl RecoveryReport {
 
     pub fn for_day(&self, day: &DayKey) -> Option<&DayStoreRecovery> {
         self.days.iter().find(|entry| &entry.day == day)
+    }
+
+    pub fn awaiting(&self) -> Option<&AwaitingOwnerDecision> {
+        self.awaiting.as_ref()
+    }
+
+    pub fn terminal_outcome(&self) -> Option<TerminalOutcome> {
+        self.terminal_outcome
     }
 }
 
@@ -118,8 +162,13 @@ impl Admitted {
                 verdict,
             });
         }
+        let (awaiting, terminal_outcome) = classify_terminal_polarity(self, &dirs, &locks);
         drop(locks);
-        Ok(RecoveryReport { days })
+        Ok(RecoveryReport {
+            days,
+            awaiting,
+            terminal_outcome,
+        })
     }
 
     /// Classify one admitted day against an intent's proposed revision (AC4).
@@ -168,6 +217,48 @@ impl Admitted {
             },
             Err(error) => return Err(error),
         })
+    }
+}
+
+fn classify_terminal_polarity(
+    admitted: &Admitted,
+    dirs: &crate::init::StoreDirs,
+    locks: &crate::lock::DayLockSet,
+) -> (Option<AwaitingOwnerDecision>, Option<TerminalOutcome>) {
+    let Ok(table) = crate::claim::current_table(&admitted.store, dirs) else {
+        return (None, None);
+    };
+    let Some(serial) = crate::claim::shared_serial(&table, admitted.days()) else {
+        return (None, None);
+    };
+    let Ok(Some(intent)) = read_intent(dirs, serial) else {
+        return (None, None);
+    };
+    if let Ok(Some(terminal)) = crate::terminal::read_terminal(dirs, serial) {
+        return (None, crate::permit::parse_outcome(&terminal.outcome));
+    }
+    let days = admitted.days();
+    match crate::terminal::publish_no_permit_superseded(&admitted.store, locks, dirs, &intent, days)
+    {
+        Ok(Some(receipt)) => (None, Some(receipt.outcome)),
+        Ok(None) => (
+            Some(AwaitingOwnerDecision {
+                serial,
+                intent_digest: intent.intent_digest,
+                days: days.to_vec(),
+                stage: AwaitingStage::AfterProjection,
+            }),
+            None,
+        ),
+        Err(_) => (
+            Some(AwaitingOwnerDecision {
+                serial,
+                intent_digest: intent.intent_digest,
+                days: days.to_vec(),
+                stage: AwaitingStage::AfterProjection,
+            }),
+            None,
+        ),
     }
 }
 

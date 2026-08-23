@@ -871,6 +871,22 @@ impl sealed::PublicationKind for PreparedCompletionAuthority {
 }
 
 #[cfg(test)]
+pub(crate) struct PreparedLaterDirtyAuthority;
+
+#[cfg(test)]
+impl sealed::PublicationKind for PreparedLaterDirtyAuthority {
+    fn next_record(&self, current: Option<&DayRecord>) -> Result<DayRecord, ConvergenceError> {
+        let current = current.ok_or(ConvergenceError::Unknown {
+            role: DurableRole::Record,
+        })?;
+        let mut next = current.clone();
+        next.record_revision += 1;
+        next.dirty_generation += 1;
+        Ok(next)
+    }
+}
+
+#[cfg(test)]
 pub(crate) struct MigrationAuthority {
     pub inventory_first_serial: u64,
 }

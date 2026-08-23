@@ -24,6 +24,9 @@ pub(crate) const ROLE_VIRGIN: &str = "solstone.convergence.virgin.v1";
 pub(crate) const ROLE_STREAM_UPDATED: &str = "solstone.convergence.stream-updated.v1";
 pub(crate) const ROLE_INTENT: &str = "solstone.convergence.intent.v1";
 pub(crate) const ROLE_ACTIVE: &str = "solstone.convergence.active.v1";
+pub(crate) const ROLE_TERMINAL: &str = "solstone.convergence.terminal.v1";
+pub(crate) const ROLE_CLEARANCE_MEMBER: &str = "solstone.convergence.clearance-member.v1";
+pub(crate) const ROLE_CLEARANCE_BARRIER: &str = "solstone.convergence.clearance-barrier.v1";
 pub(crate) const OPERATION_ADVANCE_DIRTY: &str = "advance_dirty";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -252,6 +255,62 @@ pub(crate) struct StreamUpdated {
     pub day: String,
     pub dirty_generation: u64,
     pub author_serial: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ResolvedDay {
+    pub record_revision: u64,
+    pub head_digest: String,
+    pub witness_digest: String,
+    pub record_digest: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Terminal {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub serial: u64,
+    pub owner_binding_digest: String,
+    pub intent_digest: String,
+    pub day_set: Vec<String>,
+    pub adoption_ids: BTreeMap<String, String>,
+    pub outcome: String,
+    pub predecessors: BTreeMap<String, Predecessor>,
+    pub resolved: BTreeMap<String, ResolvedDay>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClearanceMember {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub adoption_id: String,
+    pub day: String,
+    pub serial: u64,
+    pub outcome: String,
+    pub terminal_digest: String,
+    pub resolved: ResolvedDay,
+    pub predecessor_consumption: Predecessor,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClearanceBarrier {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub serial: u64,
+    pub terminal_digest: String,
+    pub day_set: Vec<String>,
+    pub member_digests: BTreeMap<String, String>,
+    pub resolved: BTreeMap<String, ResolvedDay>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

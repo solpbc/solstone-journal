@@ -19,6 +19,7 @@ use crate::intent::{
 use crate::layout::DayKey;
 use crate::lock::{DayLockSet, acquire_days_with_timeout, hold_topology_with_timeout};
 use crate::owner::{ClaimAdmission, OwnerBinding};
+use crate::permit::Permit;
 use crate::preflight::Admitted;
 use crate::projection::{project_day, refuse_mutated_projection};
 use crate::publish::{PublishOutcome, inspect_against_proposed, publish_record};
@@ -29,15 +30,15 @@ use crate::store::{DaySnapshot, LoadDay};
 
 /// Opaque held-day-set. Not `Clone`. Drop releases day flocks.
 pub struct HeldDays<'a> {
-    admitted: &'a Admitted,
-    locks: DayLockSet,
+    pub(crate) admitted: &'a Admitted,
+    pub(crate) locks: DayLockSet,
     owner: OwnerBinding,
-    days: Vec<DayKey>,
+    pub(crate) days: Vec<DayKey>,
     timeout: Duration,
     proof_consumed: bool,
-    serial: Option<u64>,
+    pub(crate) serial: Option<u64>,
     claim_revision: Option<u64>,
-    intent_digest: Option<String>,
+    pub(crate) intent_digest: Option<String>,
 }
 
 impl std::fmt::Debug for HeldDays<'_> {
@@ -107,12 +108,15 @@ impl ClaimAdmission {
     }
 }
 
-impl HeldDays<'_> {
+impl<'a> HeldDays<'a> {
     pub fn owner(&self) -> &OwnerBinding {
         &self.owner
     }
 
-    pub fn continue_with(&mut self, mut proof: ClaimAdmission) -> Result<(), ConvergenceError> {
+    pub fn continue_with(
+        &mut self,
+        mut proof: ClaimAdmission,
+    ) -> Result<Permit<'_, 'a>, ConvergenceError> {
         proof.consume()?;
         if proof.instance() != self.locks.instance() {
             return Err(ConvergenceError::Refused(Refusal::StaleLease));
@@ -128,11 +132,46 @@ impl HeldDays<'_> {
         self.proceed()
     }
 
-    pub fn proceed(&mut self) -> Result<(), ConvergenceError> {
+    pub fn proceed(&mut self) -> Result<Permit<'_, 'a>, ConvergenceError> {
         if !self.proof_consumed && self.serial.is_none() {
             return Err(ConvergenceError::Refused(Refusal::NoPermit));
         }
-        self.advance(false)
+        self.advance(false)?;
+        self.mint_permit()
+    }
+
+    fn mint_permit(&mut self) -> Result<Permit<'_, 'a>, ConvergenceError> {
+        let store = &self.admitted.store;
+        let dirs = open_store_dirs(store.root())?
+            .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
+        let serial = self
+            .serial
+            .ok_or(ConvergenceError::Refused(Refusal::NoPermit))?;
+        if crate::intent::read_active(&dirs, serial)?.is_none() {
+            return Err(ConvergenceError::Refused(Refusal::NoPermit));
+        }
+        let intent =
+            crate::intent::read_intent(&dirs, serial)?.ok_or(ConvergenceError::Unknown {
+                role: DurableRole::Intent,
+            })?;
+        for day in &self.days {
+            let proposed = *intent
+                .proposed_day_revisions
+                .get(day.as_str())
+                .ok_or(ConvergenceError::Refused(Refusal::ChangedPredecessor))?;
+            match inspect_against_proposed(store, &self.locks, day, proposed)? {
+                LoadDay::Published(snapshot) if snapshot.record_revision == proposed => {}
+                LoadDay::HeadedDescendant { .. } => {
+                    return Err(ConvergenceError::Refused(Refusal::Superseded));
+                }
+                _ => {
+                    return Err(ConvergenceError::Unknown {
+                        role: DurableRole::Record,
+                    });
+                }
+            }
+        }
+        Ok(Permit { held: self })
     }
 
     pub fn snapshot(&self, day: &DayKey) -> Result<DaySnapshot, ConvergenceError> {
