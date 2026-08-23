@@ -503,20 +503,76 @@ fn inspect_destination(
     }
 }
 
+pub(crate) const ATOMIC_CANDIDATE_MARKER: &str = "tmp";
+pub(crate) const STAGED_CANDIDATE_MARKER: &str = "stage";
+pub(crate) const CANDIDATE_SUFFIX: &str = ".tmp";
+
+pub(crate) fn publication_candidate_name(
+    destination_name: &OsStr,
+    marker: &str,
+    entropy: &[u128],
+) -> OsString {
+    let mut name = OsString::new();
+    if destination_name.as_encoded_bytes().first() == Some(&b'.') {
+        name.push("_");
+    } else {
+        name.push(".");
+    }
+    name.push(marker);
+    for value in entropy {
+        name.push("_");
+        name.push(value.to_string());
+    }
+    name.push(CANDIDATE_SUFFIX);
+    name
+}
+
+pub(crate) fn candidate_for_attempt(
+    attempt: usize,
+    forced: &[OsString],
+    build: impl FnOnce() -> OsString,
+) -> OsString {
+    match forced.get(attempt) {
+        Some(name) => name.clone(),
+        None => build(),
+    }
+}
+
 #[cfg(unix)]
 fn allocate_bound_stage(
     directory: &impl AsFd,
     destination: &OsStr,
     path: &Path,
 ) -> Result<(OsString, File), DetailedAtomicError> {
-    let stem = destination.to_string_lossy();
-    for _ in 0..100 {
-        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let candidate = OsString::from(format!(
-            ".tmp_{stem}_{}_{}.tmp",
-            std::process::id(),
-            sequence
-        ));
+    allocate_bound_stage_inner(directory, destination, path, &[])
+}
+
+#[cfg(all(unix, test))]
+fn allocate_bound_stage_forced(
+    directory: &impl AsFd,
+    destination: &OsStr,
+    path: &Path,
+    forced: &[OsString],
+) -> Result<(OsString, File), DetailedAtomicError> {
+    allocate_bound_stage_inner(directory, destination, path, forced)
+}
+
+#[cfg(unix)]
+fn allocate_bound_stage_inner(
+    directory: &impl AsFd,
+    destination: &OsStr,
+    path: &Path,
+    forced: &[OsString],
+) -> Result<(OsString, File), DetailedAtomicError> {
+    for attempt in 0..100 {
+        let candidate = candidate_for_attempt(attempt, forced, || {
+            let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            publication_candidate_name(
+                destination,
+                ATOMIC_CANDIDATE_MARKER,
+                &[u128::from(std::process::id()), u128::from(sequence)],
+            )
+        });
         match openat(
             directory,
             candidate.as_os_str(),
@@ -579,22 +635,37 @@ fn create_temporary(
     parent: &Path,
     destination: &Path,
 ) -> Result<(PathBuf, File), AtomicWriteError> {
-    let stem = destination
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("file");
-    for _ in 0..100 {
-        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let candidate = parent.join(format!(
-            ".tmp_{stem}_{}_{}_{}.tmp",
-            std::process::id(),
-            nanos,
-            sequence
-        ));
+    create_temporary_inner(parent, destination, &[])
+}
+
+#[cfg(test)]
+fn create_temporary_forced(
+    parent: &Path,
+    destination: &Path,
+    forced: &[OsString],
+) -> Result<(PathBuf, File), AtomicWriteError> {
+    create_temporary_inner(parent, destination, forced)
+}
+
+fn create_temporary_inner(
+    parent: &Path,
+    destination: &Path,
+    forced: &[OsString],
+) -> Result<(PathBuf, File), AtomicWriteError> {
+    let destination_name = destination.file_name().unwrap_or(OsStr::new(""));
+    for attempt in 0..100 {
+        let candidate = parent.join(candidate_for_attempt(attempt, forced, || {
+            let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            publication_candidate_name(
+                destination_name,
+                ATOMIC_CANDIDATE_MARKER,
+                &[u128::from(std::process::id()), nanos, u128::from(sequence)],
+            )
+        }));
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -773,5 +844,340 @@ mod tests {
         }));
         assert!(write_bytes_exclusive(&target, b"other", AtomicWriteOptions::default()).is_err());
         assert_eq!(fs::read(&target).unwrap().len(), 1024 * 1024);
+    }
+
+    use std::collections::BTreeSet;
+    use std::ffi::{OsStr, OsString};
+    use std::os::unix::ffi::OsStringExt;
+    use std::path::Path;
+
+    fn name_255() -> OsString {
+        OsString::from("a".repeat(255))
+    }
+
+    fn os_from_bytes(bytes: &[u8]) -> OsString {
+        OsString::from_vec(bytes.to_vec())
+    }
+
+    fn dir_names(dir: &Path) -> BTreeSet<OsString> {
+        fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect()
+    }
+
+    fn parse_candidate_entropy(name: &OsStr, marker: &str) -> Vec<u128> {
+        let text = name.to_str().expect("candidate is ASCII");
+        let rest = text
+            .strip_prefix('.')
+            .or_else(|| text.strip_prefix('_'))
+            .expect("sentinel");
+        let rest = rest
+            .strip_prefix(marker)
+            .and_then(|rest| rest.strip_prefix('_'))
+            .expect("marker");
+        let rest = rest.strip_suffix(CANDIDATE_SUFFIX).expect("suffix");
+        rest.split('_')
+            .map(|part| part.parse().expect("entropy digit"))
+            .collect()
+    }
+
+    fn assert_live_candidate(
+        destination_name: &OsStr,
+        candidate: &OsStr,
+        marker: &str,
+        fields: usize,
+    ) {
+        let entropy = parse_candidate_entropy(candidate, marker);
+        assert_eq!(entropy.len(), fields);
+        assert_eq!(entropy[0], u128::from(std::process::id()));
+        assert_eq!(
+            candidate,
+            publication_candidate_name(destination_name, marker, &entropy)
+        );
+    }
+
+    fn forced_names(destination_name: &OsStr, marker: &str, count: usize) -> Vec<OsString> {
+        (0..count)
+            .map(|index| publication_candidate_name(destination_name, marker, &[index as u128]))
+            .collect()
+    }
+
+    fn assert_candidate_bounded(destination_name: &OsStr, marker: &str) {
+        let candidate = publication_candidate_name(
+            destination_name,
+            marker,
+            &[u128::from(u32::MAX), u128::MAX, u128::from(u64::MAX)],
+        );
+        assert!(
+            candidate.as_encoded_bytes().len() < 100,
+            "candidate {} bytes",
+            candidate.as_encoded_bytes().len()
+        );
+    }
+
+    #[test]
+    fn filesystem_accepts_255_byte_file_names() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join(name_255());
+        fs::write(&path, b"ok").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"ok");
+    }
+
+    #[test]
+    fn write_bytes_exclusive_publishes_255_byte_basename() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join(name_255());
+        assert_candidate_bounded(path.file_name().unwrap(), ATOMIC_CANDIDATE_MARKER);
+        write_bytes_exclusive(&path, b"payload", AtomicWriteOptions::default()).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"payload");
+    }
+
+    #[test]
+    fn detailed_replace_publishes_255_byte_basename() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join(name_255());
+        assert_candidate_bounded(path.file_name().unwrap(), ATOMIC_CANDIDATE_MARKER);
+        let result = atomic_replace_detailed(&path, b"payload", 0o644).unwrap();
+        assert!(matches!(result, DetailedAtomicOutcome::Published));
+        assert_eq!(fs::read(&path).unwrap(), b"payload");
+    }
+
+    #[test]
+    fn write_bytes_exclusive_preserves_distinct_invalid_utf8_basenames() {
+        let temporary = TempDir::new();
+        let left = temporary.path().join(os_from_bytes(b"file-\xff-a"));
+        let right = temporary.path().join(os_from_bytes(b"file-\xfe-a"));
+        write_bytes_exclusive(&left, b"alpha", AtomicWriteOptions::default()).unwrap();
+        write_bytes_exclusive(&right, b"beta", AtomicWriteOptions::default()).unwrap();
+        assert_eq!(fs::read(&left).unwrap(), b"alpha");
+        assert_eq!(fs::read(&right).unwrap(), b"beta");
+    }
+
+    #[test]
+    fn write_reader_exclusive_preserves_distinct_invalid_utf8_basenames() {
+        let temporary = TempDir::new();
+        let left = temporary.path().join(os_from_bytes(b"reader-\xff-a"));
+        let right = temporary.path().join(os_from_bytes(b"reader-\xfe-a"));
+        let copied_left = write_reader_exclusive(
+            &left,
+            &mut io::Cursor::new(b"alpha"),
+            AtomicWriteOptions::default(),
+        )
+        .unwrap();
+        let copied_right = write_reader_exclusive(
+            &right,
+            &mut io::Cursor::new(b"beta"),
+            AtomicWriteOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(copied_left, 5);
+        assert_eq!(copied_right, 4);
+        assert_eq!(fs::read(&left).unwrap(), b"alpha");
+        assert_eq!(fs::read(&right).unwrap(), b"beta");
+    }
+
+    #[test]
+    fn atomic_replace_preserves_distinct_invalid_utf8_basenames() {
+        let temporary = TempDir::new();
+        let left = temporary.path().join(os_from_bytes(b"replace-\xff-a"));
+        let right = temporary.path().join(os_from_bytes(b"replace-\xfe-a"));
+        atomic_replace(&left, b"alpha", AtomicWriteOptions::default()).unwrap();
+        atomic_replace(&right, b"beta", AtomicWriteOptions::default()).unwrap();
+        assert_eq!(fs::read(&left).unwrap(), b"alpha");
+        assert_eq!(fs::read(&right).unwrap(), b"beta");
+    }
+
+    #[test]
+    fn detailed_replace_preserves_distinct_invalid_utf8_basenames() {
+        let temporary = TempDir::new();
+        let left = temporary.path().join(os_from_bytes(b"detailed-\xff-a"));
+        let right = temporary.path().join(os_from_bytes(b"detailed-\xfe-a"));
+        assert!(matches!(
+            atomic_replace_detailed(&left, b"alpha", 0o644).unwrap(),
+            DetailedAtomicOutcome::Published
+        ));
+        assert!(matches!(
+            atomic_replace_detailed(&right, b"beta", 0o644).unwrap(),
+            DetailedAtomicOutcome::Published
+        ));
+        assert_eq!(fs::read(&left).unwrap(), b"alpha");
+        assert_eq!(fs::read(&right).unwrap(), b"beta");
+    }
+
+    #[test]
+    fn publication_candidate_dot_destination_uses_underscore_sentinel() {
+        let name = publication_candidate_name(OsStr::new(".env"), ATOMIC_CANDIDATE_MARKER, &[1, 2]);
+        assert_eq!(name.as_encoded_bytes().first(), Some(&b'_'));
+        assert!(name.as_encoded_bytes().starts_with(b"_tmp_"));
+    }
+
+    #[test]
+    fn publication_candidate_underscore_destination_uses_dot_sentinel() {
+        let name = publication_candidate_name(OsStr::new("_keep"), ATOMIC_CANDIDATE_MARKER, &[1]);
+        assert_eq!(name.as_encoded_bytes().first(), Some(&b'.'));
+        assert!(name.as_encoded_bytes().starts_with(b".tmp_"));
+    }
+
+    #[test]
+    fn publication_candidate_ordinary_ascii_uses_dot_sentinel() {
+        let name =
+            publication_candidate_name(OsStr::new("report.json"), ATOMIC_CANDIDATE_MARKER, &[1, 2]);
+        assert_eq!(name.as_encoded_bytes().first(), Some(&b'.'));
+        assert!(name.as_encoded_bytes().starts_with(b".tmp_"));
+        assert!(name.as_encoded_bytes().ends_with(b".tmp"));
+        let staged =
+            publication_candidate_name(OsStr::new("bundle"), STAGED_CANDIDATE_MARKER, &[1, 2]);
+        assert!(staged.as_encoded_bytes().starts_with(b".stage_"));
+        assert!(staged.as_encoded_bytes().ends_with(b".tmp"));
+        assert!(!staged.as_encoded_bytes().starts_with(b".tmp_"));
+    }
+
+    #[test]
+    fn publication_candidate_interior_dot_does_not_flip_sentinel() {
+        let name = publication_candidate_name(OsStr::new("foo.bar"), ATOMIC_CANDIDATE_MARKER, &[1]);
+        assert_eq!(name.as_encoded_bytes().first(), Some(&b'.'));
+    }
+
+    #[test]
+    fn publication_candidate_invalid_utf8_leading_byte_uses_dot_unless_ascii_dot() {
+        let not_dot = publication_candidate_name(
+            &os_from_bytes(b"\xffhidden"),
+            ATOMIC_CANDIDATE_MARKER,
+            &[1],
+        );
+        assert_eq!(not_dot.as_encoded_bytes().first(), Some(&b'.'));
+        let leading_dot = publication_candidate_name(
+            &os_from_bytes(b".\xffhidden"),
+            ATOMIC_CANDIDATE_MARKER,
+            &[1],
+        );
+        assert_eq!(leading_dot.as_encoded_bytes().first(), Some(&b'_'));
+        assert!(
+            !not_dot.as_encoded_bytes().contains(&0xff)
+                && !leading_dot.as_encoded_bytes().contains(&0xff)
+        );
+        let replacement = [0xef, 0xbf, 0xbd];
+        assert!(
+            !not_dot
+                .as_encoded_bytes()
+                .windows(3)
+                .any(|window| window == replacement)
+        );
+        assert!(
+            !leading_dot
+                .as_encoded_bytes()
+                .windows(3)
+                .any(|window| window == replacement)
+        );
+    }
+
+    #[test]
+    fn publication_candidate_leading_bytes_remain_distinct_after_ascii_case_fold() {
+        // '.' (U+002E) and '_' (U+005F) have no canonical decomposition and no case mapping.
+        for dest in [OsStr::new(".env"), OsStr::new("report.json")] {
+            let candidate = publication_candidate_name(dest, ATOMIC_CANDIDATE_MARKER, &[1, 2]);
+            let dest_lead = dest
+                .as_encoded_bytes()
+                .first()
+                .copied()
+                .unwrap_or(b'x')
+                .to_ascii_lowercase();
+            let cand_lead = candidate.as_encoded_bytes()[0].to_ascii_lowercase();
+            assert_ne!(cand_lead, dest_lead);
+        }
+    }
+
+    #[test]
+    fn create_temporary_succeeds_after_ninety_nine_forced_collisions() {
+        let temporary = TempDir::new();
+        let destination = temporary.path().join("unit.service");
+        let destination_name = destination.file_name().unwrap();
+        let forced = forced_names(destination_name, ATOMIC_CANDIDATE_MARKER, 99);
+        for (index, name) in forced.iter().enumerate() {
+            fs::write(temporary.path().join(name), format!("collider-{index}")).unwrap();
+        }
+        let (path, file) =
+            create_temporary_forced(temporary.path(), &destination, &forced).unwrap();
+        drop(file);
+        assert!(!forced.iter().any(|name| name == path.file_name().unwrap()));
+        assert_live_candidate(
+            destination_name,
+            path.file_name().unwrap(),
+            ATOMIC_CANDIDATE_MARKER,
+            3,
+        );
+    }
+
+    #[test]
+    fn create_temporary_exhausts_after_one_hundred_forced_collisions() {
+        let temporary = TempDir::new();
+        let destination = temporary.path().join("unit.service");
+        let destination_name = destination.file_name().unwrap();
+        let forced = forced_names(destination_name, ATOMIC_CANDIDATE_MARKER, 100);
+        for (index, name) in forced.iter().enumerate() {
+            fs::write(temporary.path().join(name), format!("collider-{index}")).unwrap();
+        }
+        let error = create_temporary_forced(temporary.path(), &destination, &forced).unwrap_err();
+        match error {
+            AtomicWriteError::Io { path, source } => {
+                assert_eq!(path, destination);
+                assert_eq!(source.kind(), io::ErrorKind::AlreadyExists);
+                assert_eq!(
+                    source.to_string(),
+                    "could not allocate unique temporary file"
+                );
+            }
+        }
+        assert!(!destination.exists());
+        for (index, name) in forced.iter().enumerate() {
+            assert_eq!(
+                fs::read(temporary.path().join(name)).unwrap(),
+                format!("collider-{index}").into_bytes()
+            );
+        }
+        assert_eq!(dir_names(temporary.path()), forced.into_iter().collect());
+    }
+
+    #[test]
+    fn allocate_bound_stage_succeeds_after_ninety_nine_forced_collisions() {
+        let temporary = TempDir::new();
+        let destination = OsStr::new("unit.service");
+        let path = temporary.path().join(destination);
+        let forced = forced_names(destination, ATOMIC_CANDIDATE_MARKER, 99);
+        for (index, name) in forced.iter().enumerate() {
+            fs::write(temporary.path().join(name), format!("collider-{index}")).unwrap();
+        }
+        let directory = File::open(temporary.path()).unwrap();
+        let (name, file) =
+            allocate_bound_stage_forced(&directory, destination, &path, &forced).unwrap();
+        drop(file);
+        assert!(!forced.iter().any(|forced_name| forced_name == &name));
+        assert_live_candidate(destination, &name, ATOMIC_CANDIDATE_MARKER, 2);
+    }
+
+    #[test]
+    fn allocate_bound_stage_exhausts_after_one_hundred_forced_collisions() {
+        let temporary = TempDir::new();
+        let destination = OsStr::new("unit.service");
+        let path = temporary.path().join(destination);
+        let forced = forced_names(destination, ATOMIC_CANDIDATE_MARKER, 100);
+        for (index, name) in forced.iter().enumerate() {
+            fs::write(temporary.path().join(name), format!("collider-{index}")).unwrap();
+        }
+        let directory = File::open(temporary.path()).unwrap();
+        let error =
+            allocate_bound_stage_forced(&directory, destination, &path, &forced).unwrap_err();
+        assert_eq!(error.operation, "create stage");
+        assert_eq!(error.source.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(error.source.to_string(), "could not allocate stage");
+        assert!(!path.exists());
+        for (index, name) in forced.iter().enumerate() {
+            assert_eq!(
+                fs::read(temporary.path().join(name)).unwrap(),
+                format!("collider-{index}").into_bytes()
+            );
+        }
+        assert_eq!(dir_names(temporary.path()), forced.into_iter().collect());
     }
 }
