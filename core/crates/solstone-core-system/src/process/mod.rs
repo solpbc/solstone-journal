@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+mod authority;
 mod descendants;
 mod events;
 mod log;
@@ -12,6 +13,7 @@ mod terminate;
 
 use std::process::ExitStatus;
 
+pub use authority::{Disposition, LaunchAuthority, LaunchError, launch, launch_managed};
 pub use descendants::{Descendant, ProcessTreeSnapshot};
 pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
 pub use log::DailyLogWriter;

@@ -19,6 +19,7 @@ const PARTITION: &str = include_str!("../src/partition.rs");
 const QUEUE: &str = include_str!("../src/queue.rs");
 const REQUEST: &str = include_str!("../src/request.rs");
 const PROCESS_MOD: &str = include_str!("../src/process/mod.rs");
+const AUTHORITY: &str = include_str!("../src/process/authority.rs");
 const EVENTS: &str = include_str!("../src/process/events.rs");
 const RESTART: &str = include_str!("../src/process/restart.rs");
 const LOG: &str = include_str!("../src/process/log.rs");
@@ -171,6 +172,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("stt_backend_choice", STT_BACKEND_CHOICE),
     ];
     let process_modules = [
+        ("authority", AUTHORITY),
         ("descendants", DESCENDANTS),
         ("events", EVENTS),
         ("log", LOG),
