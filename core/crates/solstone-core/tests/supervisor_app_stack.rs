@@ -29,6 +29,10 @@ mod await_outcome;
 use await_outcome::{PollState, WaitMetrics, WaitOutcome, WaitPolarity, await_outcome};
 
 const SERVICES: [&str; 4] = ["convey", "sense", "cortex", "spl"];
+// Status is emitted every five seconds and is deliberately suppressed while a
+// process observation is indeterminate. Four intervals keep this a hang
+// ceiling without treating two consecutive transient observations as failure.
+const SUPERVISOR_EVENT_HANG_CEILING: Duration = Duration::from_secs(20);
 // Convey's initial Spawned arrives about 1ms after the Callosum socket becomes
 // connectable; four of five late-connect runs instead latched its ~6s restart.
 // FixtureConveyReadinessProbe::is_ready delegates to ready_sleep_marker_path,
@@ -592,7 +596,7 @@ async fn receive_supervisor_event(
     reader: &mut BufReader<tokio::net::unix::OwnedReadHalf>,
     event: &str,
 ) -> Value {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(SUPERVISOR_EVENT_HANG_CEILING, async {
         loop {
             let mut line = String::new();
             let bytes = reader.read_line(&mut line).await.expect("Callosum frame");
