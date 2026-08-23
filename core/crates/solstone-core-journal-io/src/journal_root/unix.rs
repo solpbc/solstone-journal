@@ -637,7 +637,7 @@ mod tests {
         fn new(name: &str) -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
             let path = std::env::temp_dir().join(format!(
-                "solstone-core-journal-archive-source-{name}-{}",
+                "solstone-core-journal-io-journal-root-{name}-{}",
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir(&path).expect("create temporary directory");

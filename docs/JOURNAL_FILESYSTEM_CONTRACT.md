@@ -31,7 +31,8 @@ requested-root open omits `O_NOFOLLOW` so a symlink root is allowed. Descendant
 opens in archive keep `O_NOFOLLOW` (regular files also `O_NONBLOCK`).
 
 Revalidate the admitted object (`fstat` of the retained descriptor against the
-frozen identity). Do not walk the stored canonical path to reacquire.
+frozen identity, and confirm it is still a directory). Do not walk the stored
+canonical path to reacquire.
 
 ## Exhaustive kind vs three coarse projections
 
@@ -41,7 +42,7 @@ enum, and no migration.
 | `JournalEntryKind` | `DirEntryKind` | `ConflictKind` | `NoFollowEntryKind` |
 |--------------------|----------------|----------------|---------------------|
 | `RegularFile` | `File` | `RegularFile` | `RegularFile` |
-| `Directory` | `Directory` | `Directory` | *(none — `ConflictKind::as_wrong_kind` is `None`)* |
+| `Directory` | `Directory` | `Directory` | *(no variant)* |
 | `Symlink` | `Other` | `Symlink` | `Symlink` |
 | `Fifo` | `Other` | `Other` | `Other` |
 | `Socket` | `Other` | `Other` | `Other` |
@@ -51,7 +52,8 @@ enum, and no migration.
 
 `DirEntryKind` collapses a symlink into `Other` because `list_dir_entries` uses
 `std::fs` `is_file` / `is_dir` on `DirEntry::file_type()` (lstat).
-`NoFollowEntryKind` has no directory arm by design.
+`NoFollowEntryKind` has no directory arm by design;
+`ConflictKind::as_wrong_kind` is `None` for `Directory`.
 
 `JournalEntryKind::from_mode` is the single `SFlag` match. Archive
 `classify` / `classify_mode` call it.

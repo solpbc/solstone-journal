@@ -7,8 +7,9 @@
 //! or generic filesystem traversal API. [`ArchiveSource`] retains a
 //! [`solstone_core_journal_io::JournalRoot`] and exposes only its frozen, verified
 //! archive inventory plus a checked encoder for a caller-owned output file. It
-//! does not acquire a journal root, and owns no output-path selection,
-//! publication, command-line, HTTP, or generic filesystem traversal API.
+//! does not implement root acquisition; [`ArchiveSource::open`] delegates to
+//! [`solstone_core_journal_io::JournalRoot::open`]. It owns no output-path
+//! selection, publication, command-line, HTTP, or generic filesystem traversal API.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
