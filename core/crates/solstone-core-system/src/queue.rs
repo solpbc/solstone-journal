@@ -14,9 +14,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use crate::cap::CapResolver;
 use crate::partition::Partition;
 use crate::process::{
-    CAP_TERMINATION_TIMEOUT, Disposition, LaunchAuthority, LaunchError, ManagedProcess,
-    ProcessEventSink, SpawnError, SpawnOptions, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError,
-    TerminationOutcome, exit_status_for_code, launch_managed,
+    CAP_TERMINATION_TIMEOUT, Disposition, ExecutionState, InspectResult, LaunchAuthority,
+    LaunchError, ManagedProcess, ProcessEventSink, ProcessInstanceSource, SpawnError, SpawnOptions,
+    SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
+    exit_status_for_code, launch_managed,
 };
 use crate::request::{ActiveTaskSnapshot, ExecutionRequest};
 
@@ -50,56 +51,18 @@ impl ProcessStateProbe for SystemProcessStateProbe {
     }
 }
 
-#[cfg(target_os = "linux")]
 fn system_process_state(pid: u32) -> ProcessState {
-    let path = format!("/proc/{pid}/stat");
-    let Ok(stat) = std::fs::read_to_string(path) else {
-        return ProcessState::Unknown;
-    };
-    let Some(end_comm) = stat.rfind(')') else {
-        return ProcessState::Unknown;
-    };
-    let state = stat[end_comm + 1..].split_whitespace().next();
-    match state.and_then(|value| value.chars().next()) {
-        Some('T' | 't') => ProcessState::Stopped,
-        Some(_) => ProcessState::Other,
-        None => ProcessState::Unknown,
+    match SystemProcessInstanceSource.inspect(pid) {
+        InspectResult::Present {
+            execution: ExecutionState::Stopped,
+            ..
+        } => ProcessState::Stopped,
+        InspectResult::Present {
+            execution: ExecutionState::Running,
+            ..
+        } => ProcessState::Other,
+        InspectResult::Absent | InspectResult::Unverifiable => ProcessState::Unknown,
     }
-}
-
-#[cfg(target_os = "macos")]
-fn system_process_state(pid: u32) -> ProcessState {
-    let output = std::process::Command::new("/bin/ps")
-        .args(["-o", "state=", "-p", &pid.to_string()])
-        .env("LC_ALL", "C")
-        .output();
-    let Ok(output) = output else {
-        return ProcessState::Unknown;
-    };
-    if !output.status.success() {
-        return ProcessState::Unknown;
-    }
-    match String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .chars()
-        .next()
-    {
-        Some('T' | 't') => ProcessState::Stopped,
-        Some(_) => ProcessState::Other,
-        None => ProcessState::Unknown,
-    }
-}
-
-/// iOS has neither Linux procfs nor a supported process-listing shellout.
-/// Stopped-process detection is therefore explicitly unavailable on this target.
-#[cfg(target_os = "ios")]
-fn system_process_state(_pid: u32) -> ProcessState {
-    ProcessState::Unknown
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
-fn system_process_state(_pid: u32) -> ProcessState {
-    ProcessState::Unknown
 }
 
 /// Queue lifecycle events for a caller-owned transport adapter.

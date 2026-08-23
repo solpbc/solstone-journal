@@ -26,6 +26,7 @@ const LOG: &str = include_str!("../src/process/log.rs");
 const SPAWN: &str = include_str!("../src/process/spawn.rs");
 const TERMINATE: &str = include_str!("../src/process/terminate.rs");
 const DESCENDANTS: &str = include_str!("../src/process/descendants.rs");
+const INSTANCE: &str = include_str!("../src/process/instance.rs");
 const OBSERVATION: &str = include_str!("../src/process/observation.rs");
 const PDEATHSIG: &str = include_str!("../src/process/pdeathsig.rs");
 const LIFECYCLE: &str = include_str!("../src/lifecycle/mod.rs");
@@ -175,6 +176,7 @@ fn ac21_only_operational_log_module_names_write_primitives() {
         ("authority", AUTHORITY),
         ("descendants", DESCENDANTS),
         ("events", EVENTS),
+        ("instance", INSTANCE),
         ("log", LOG),
         ("observation", OBSERVATION),
         ("pdeathsig", PDEATHSIG),
@@ -347,11 +349,9 @@ fn ac27_spawn_plan_and_spawn_parakeet_apply_parent_death_kill() {
 
 #[test]
 fn ac25_ios_process_state_probe_is_explicit_and_returns_unknown() {
-    assert!(QUEUE.contains("#[cfg(target_os = \"ios\")]"));
-    assert!(QUEUE.contains("iOS has neither Linux procfs"));
-    assert!(QUEUE.contains(
-        "fn system_process_state(_pid: u32) -> ProcessState {\n    ProcessState::Unknown"
-    ));
+    assert!(INSTANCE.contains("#[cfg(target_os = \"ios\")]"));
+    assert!(INSTANCE.contains("iOS has neither Linux procfs"));
+    assert!(INSTANCE.contains("InspectResult::Unverifiable"));
 }
 
 #[test]
@@ -359,7 +359,7 @@ fn ac26_lifecycle_sweep_and_identity_have_explicit_platform_support() {
     assert!(LIFECYCLE_SWEEP.contains("#[cfg(target_os = \"linux\")]"));
     assert!(LIFECYCLE_SWEEP.contains("#[cfg(target_os = \"macos\")]"));
     assert!(LIFECYCLE_SWEEP.contains("OrphanSweepOutcome::UnsupportedPlatform"));
-    assert!(LIFECYCLE_STATE.contains("#[cfg(target_os = \"linux\")]"));
-    assert!(LIFECYCLE_STATE.contains("#[cfg(target_os = \"macos\")]"));
+    assert!(INSTANCE.contains("#[cfg(target_os = \"linux\")]"));
+    assert!(INSTANCE.contains("#[cfg(target_os = \"macos\")]"));
     assert!(LIFECYCLE_STATE.contains("iOS still has no supported process-start-time source"));
 }

@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::HashMap;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::{
     collections::{BTreeMap, BTreeSet},
     io,
+};
+
+use super::{
+    CensusRow, InspectResult, InstanceCensus, ProcessBirth, ProcessInstanceSource,
+    SystemProcessInstanceSource,
 };
 
 /// A descendant PID together with the process group observed before signaling.
@@ -20,97 +26,47 @@ pub struct ProcessTreeSnapshot {
     pub parent_pid: i32,
     pub parent_pgid: Option<i32>,
     pub descendants: Vec<Descendant>,
+    pub descendant_births: HashMap<i32, ProcessBirth>,
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-#[derive(Debug, Clone, Copy)]
-struct ProcessRow {
-    pid: i32,
-    ppid: i32,
-    pgid: i32,
-}
-
-#[cfg(target_os = "linux")]
 pub fn snapshot(pid: i32) -> io::Result<ProcessTreeSnapshot> {
-    let mut rows = Vec::new();
-    for entry in std::fs::read_dir("/proc")? {
-        let entry = entry?;
-        let name = entry.file_name();
-        let Some(pid_text) = name.to_str() else {
-            continue;
-        };
-        let Ok(row_pid) = pid_text.parse::<i32>() else {
-            continue;
-        };
-        let stat = match std::fs::read_to_string(format!("/proc/{row_pid}/stat")) {
-            Ok(stat) => stat,
-            Err(_) => continue,
-        };
-        if let Some(row) = parse_linux_stat(&stat) {
-            rows.push(row);
-        }
+    match SystemProcessInstanceSource.census() {
+        InstanceCensus::Complete(rows) => tree_from_census(pid, &rows),
+        InstanceCensus::Incomplete(_) => Err(io::Error::other("process census incomplete")),
     }
-    tree_from_rows(pid, &rows)
-}
-
-#[cfg(target_os = "linux")]
-fn parse_linux_stat(stat: &str) -> Option<ProcessRow> {
-    let close = stat.rfind(')')?;
-    let prefix = stat.get(..close)?.trim();
-    let pid = prefix.split_whitespace().next()?.parse().ok()?;
-    let fields: Vec<&str> = stat.get(close + 1..)?.split_whitespace().collect();
-    // Field 3 is state, field 4 ppid, field 5 pgrp.
-    let ppid = fields.get(1)?.parse().ok()?;
-    let pgid = fields.get(2)?.parse().ok()?;
-    Some(ProcessRow { pid, ppid, pgid })
-}
-
-#[cfg(target_os = "macos")]
-pub fn snapshot(pid: i32) -> io::Result<ProcessTreeSnapshot> {
-    let output = std::process::Command::new("/bin/ps")
-        .args(["-axo", "pid=,ppid=,pgid="])
-        .env("LC_ALL", "C")
-        .output()?;
-    if !output.status.success() {
-        return Err(io::Error::other("ps process listing failed"));
-    }
-    let rows = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| {
-            let fields: Vec<&str> = line.split_whitespace().collect();
-            Some(ProcessRow {
-                pid: fields.first()?.parse().ok()?,
-                ppid: fields.get(1)?.parse().ok()?,
-                pgid: fields.get(2)?.parse().ok()?,
-            })
-        })
-        .collect::<Vec<_>>();
-    tree_from_rows(pid, &rows)
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn tree_from_rows(parent_pid: i32, rows: &[ProcessRow]) -> io::Result<ProcessTreeSnapshot> {
+fn tree_from_census(parent_pid: i32, rows: &[CensusRow]) -> io::Result<ProcessTreeSnapshot> {
     let by_parent = rows
         .iter()
-        .fold(BTreeMap::<i32, Vec<ProcessRow>>::new(), |mut map, row| {
-            map.entry(row.ppid).or_default().push(*row);
+        .fold(BTreeMap::<i32, Vec<&CensusRow>>::new(), |mut map, row| {
+            if let Ok(ppid) = i32::try_from(row.ppid) {
+                map.entry(ppid).or_default().push(row);
+            }
             map
         });
-    let parent_pgid = rows
+    let parent = rows
         .iter()
-        .find(|row| row.pid == parent_pid)
-        .map(|row| row.pgid)
+        .find(|row| i32::try_from(row.instance.pid).ok() == Some(parent_pid))
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "managed parent not found"))?;
+    let parent_pgid = parent.pgid;
     let mut pending = vec![parent_pid];
     let mut descendants = BTreeSet::new();
+    let mut descendant_births = HashMap::new();
     while let Some(current) = pending.pop() {
         if let Some(children) = by_parent.get(&current) {
             for child in children {
+                let Ok(child_pid) = i32::try_from(child.instance.pid) else {
+                    continue;
+                };
                 if descendants.insert(Descendant {
-                    pid: child.pid,
+                    pid: child_pid,
                     pgid: Some(child.pgid),
                 }) {
-                    pending.push(child.pid);
+                    descendant_births.insert(child_pid, child.instance.birth);
+                    pending.push(child_pid);
                 }
             }
         }
@@ -119,21 +75,14 @@ fn tree_from_rows(parent_pid: i32, rows: &[ProcessRow]) -> io::Result<ProcessTre
         parent_pid,
         parent_pgid: Some(parent_pgid),
         descendants: descendants.into_iter().collect(),
+        descendant_births,
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn own_pgid() -> Option<i32> {
-    let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
-    parse_linux_stat(&stat).map(|row| row.pgid)
-}
-
-#[cfg(target_os = "macos")]
-pub fn own_pgid() -> Option<i32> {
-    let output = std::process::Command::new("/bin/ps")
-        .args(["-o", "pgid=", "-p", &std::process::id().to_string()])
-        .env("LC_ALL", "C")
-        .output()
-        .ok()?;
-    String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+    match SystemProcessInstanceSource.inspect(std::process::id()) {
+        InspectResult::Present { pgid, .. } => pgid,
+        InspectResult::Absent | InspectResult::Unverifiable => None,
+    }
 }

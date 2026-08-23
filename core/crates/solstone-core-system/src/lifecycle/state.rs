@@ -8,11 +8,6 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-#[cfg(any(target_os = "macos", test))]
-use chrono::{DateTime, Local, LocalResult, NaiveDateTime, TimeZone};
-#[cfg(target_os = "linux")]
-use nix::unistd::{SysconfVar, sysconf};
-
 use super::LifecycleError;
 use super::readiness::ReadinessMarker;
 
@@ -229,80 +224,16 @@ fn read_f64(path: &Path) -> Result<f64, LifecycleError> {
         .ok_or(LifecycleError::Identity("start time"))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) fn process_start_time_epoch_seconds(pid: u32) -> Result<f64, LifecycleError> {
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat"))?;
-    let start_ticks = parse_start_ticks(&stat)?;
-    let btime = parse_boot_time(&fs::read_to_string("/proc/stat")?)?;
-    let ticks = sysconf(SysconfVar::CLK_TCK)?
-        .filter(|value| *value > 0)
-        .ok_or(LifecycleError::Identity("clock tick rate"))?;
-    Ok(btime as f64 + start_ticks as f64 / ticks as f64)
-}
+    use crate::process::{InspectResult, ProcessInstanceSource, SystemProcessInstanceSource};
 
-#[cfg(target_os = "macos")]
-pub(crate) fn process_start_time_epoch_seconds(pid: u32) -> Result<f64, LifecycleError> {
-    let output = std::process::Command::new("/bin/ps")
-        .args(["-p", &pid.to_string(), "-o", "lstart="])
-        .env("LC_ALL", "C")
-        .output()?;
-    if !output.status.success() {
-        return Err(LifecycleError::Identity("ps process start time"));
-    }
-    parse_macos_lstart(&String::from_utf8_lossy(&output.stdout))
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn parse_macos_lstart(lstart: &str) -> Result<f64, LifecycleError> {
-    let fields: Vec<_> = lstart.split_whitespace().collect();
-    let [weekday, month, day, time, year] = fields.as_slice() else {
-        return Err(LifecycleError::Identity("ps process start time"));
-    };
-    let day: u8 = day
-        .parse()
-        .map_err(|_| LifecycleError::Identity("ps process start time"))?;
-    let normalized = format!("{weekday} {month} {day:02} {time} {year}");
-    let naive = NaiveDateTime::parse_from_str(&normalized, "%a %b %d %H:%M:%S %Y")
-        .map_err(|_| LifecycleError::Identity("ps process start time"))?;
-    epoch_seconds_from_local_result(Local.from_local_datetime(&naive))
-}
-
-/// Resolve DST fall-back ambiguity to the earliest instant so identity writes
-/// and later identity checks make the same PID-reuse-safe comparison. A
-/// nonexistent spring-forward local time cannot name a real process, so it
-/// still fails closed.
-#[cfg(any(target_os = "macos", test))]
-fn epoch_seconds_from_local_result<Tz: TimeZone>(
-    result: LocalResult<DateTime<Tz>>,
-) -> Result<f64, LifecycleError> {
-    match result {
-        LocalResult::Single(started) | LocalResult::Ambiguous(started, _) => {
-            Ok(started.timestamp() as f64)
+    match SystemProcessInstanceSource.inspect(pid) {
+        InspectResult::Present { instance, .. } => Ok(instance.birth.epoch_seconds()),
+        InspectResult::Absent | InspectResult::Unverifiable => {
+            Err(LifecycleError::Identity("process start time"))
         }
-        LocalResult::None => Err(LifecycleError::Identity("ps process start time")),
     }
-}
-
-#[cfg(target_os = "linux")]
-fn parse_start_ticks(stat: &str) -> Result<u64, LifecycleError> {
-    let close = stat
-        .rfind(')')
-        .ok_or(LifecycleError::Identity("proc stat comm"))?;
-    stat[close + 1..]
-        .split_whitespace()
-        .nth(19)
-        .ok_or(LifecycleError::Identity("proc stat start time"))?
-        .parse()
-        .map_err(|_| LifecycleError::Identity("proc stat start time"))
-}
-
-#[cfg(target_os = "linux")]
-fn parse_boot_time(stat: &str) -> Result<u64, LifecycleError> {
-    stat.lines()
-        .find_map(|line| line.strip_prefix("btime "))
-        .ok_or(LifecycleError::Identity("proc boot time"))?
-        .parse()
-        .map_err(|_| LifecycleError::Identity("proc boot time"))
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -318,9 +249,8 @@ pub fn write_supervisor_identity(journal: &Path, pid: u32) -> Result<(), Lifecyc
     )
 }
 
-// macOS uses `ps -p <pid> -o lstart=` because vendored nix has no safe
-// `proc_pidinfo` or sysctl binding and this crate cannot add unsafe code or a
-// dependency. iOS still has no supported process-start-time source.
+// Process start-time identity is owned by process::instance.
+// iOS still has no supported process-start-time source.
 
 #[cfg(test)]
 pub(crate) fn test_supervisor_journal(
@@ -351,52 +281,4 @@ pub(crate) fn test_supervisor_journal(
 #[cfg(test)]
 pub(crate) fn remove_test_supervisor_journal(root: PathBuf) {
     fs::remove_dir_all(root).expect("cleanup");
-}
-
-#[cfg(test)]
-mod tests {
-    use chrono::{Local, LocalResult, TimeZone, Utc};
-
-    use super::{epoch_seconds_from_local_result, parse_macos_lstart};
-
-    #[test]
-    fn macos_lstart_parser_accepts_c_locale_timestamp() {
-        let expected = Local
-            .with_ymd_and_hms(2026, 8, 10, 12, 34, 56)
-            .single()
-            .expect("unambiguous summer time")
-            .timestamp() as f64;
-        assert_eq!(
-            parse_macos_lstart("Mon Aug 10 12:34:56 2026").expect("parse lstart"),
-            expected
-        );
-    }
-
-    #[test]
-    fn macos_lstart_parser_rejects_malformed_timestamp() {
-        assert!(parse_macos_lstart("not an lstart timestamp").is_err());
-    }
-
-    #[test]
-    fn macos_lstart_parser_resolves_ambiguous_local_time_deterministically() {
-        let earliest = Utc
-            .with_ymd_and_hms(2026, 11, 1, 7, 30, 0)
-            .single()
-            .expect("utc time");
-        let latest = Utc
-            .with_ymd_and_hms(2026, 11, 1, 8, 30, 0)
-            .single()
-            .expect("utc time");
-        assert_eq!(
-            epoch_seconds_from_local_result(LocalResult::Ambiguous(earliest, latest))
-                .expect("resolve ambiguity"),
-            earliest.timestamp() as f64
-        );
-    }
-
-    #[test]
-    fn macos_lstart_parser_rejects_nonexistent_local_time() {
-        let nonexistent: LocalResult<chrono::DateTime<Utc>> = LocalResult::None;
-        assert!(epoch_seconds_from_local_result(nonexistent).is_err());
-    }
 }

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::process::Child;
 use std::time::Duration;
@@ -14,6 +14,8 @@ use thiserror::Error;
 use super::descendants::Descendant;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::{
+    InspectResult, InstanceVerdict, ProcessBirth, ProcessInstance, ProcessInstanceSource,
+    SystemProcessInstanceSource,
     descendants::{ProcessTreeSnapshot, own_pgid, snapshot},
     signal_aware_exit_code,
 };
@@ -78,8 +80,10 @@ fn terminate_unix(
         parent_pid,
         parent_pgid: Some(parent_pid),
         descendants: Vec::new(),
+        descendant_births: HashMap::new(),
     });
     let guard = SignalGuard::current();
+    let source = SystemProcessInstanceSource;
 
     // Four target classes: parent PID, parent PGID, descendant PIDs, descendant PGIDs.
     signal_tree(&tree, SignalKind::Terminate, &guard);
@@ -88,7 +92,7 @@ fn terminate_unix(
     let Some(parent_exit) = parent_exit else {
         signal_tree(&tree, SignalKind::Kill, &guard);
         let _ = wait_for_child(child, Instant::now() + KILL_REAP_GRACE)?;
-        let _ = wait_for_descendants(&tree.descendants, Instant::now() + KILL_REAP_GRACE);
+        let _ = wait_for_descendants(&tree.descendants, Instant::now() + KILL_REAP_GRACE, &source);
         // Preserve Python: a missed graceful parent deadline remains distinct.
         return Err(TerminationError::ParentGraceTimeout);
     };
@@ -101,23 +105,35 @@ fn terminate_unix(
         });
     }
 
-    let survivors = wait_for_descendants(&tree.descendants, deadline);
+    let survivors = wait_for_descendants(&tree.descendants, deadline, &source);
     if survivors.is_empty() {
         return Ok(TerminationOutcome::Graceful {
             exit_code: parent_exit_code,
         });
     }
 
-    signal_descendants(&survivors, SignalKind::Kill, &guard);
-    let survivors = wait_for_descendants(&survivors, Instant::now() + KILL_REAP_GRACE);
-    if survivors.is_empty() {
+    let (confirmed, unproven) =
+        select_descendant_kill_targets(&survivors, &tree.descendant_births, &source);
+    if !confirmed.is_empty() {
+        signal_descendants(&confirmed, SignalKind::Kill, &guard);
+    }
+    let leftover = wait_for_descendants(&confirmed, Instant::now() + KILL_REAP_GRACE, &source);
+    if !unproven.is_empty() {
+        let mut reported = unproven;
+        reported.extend(leftover);
+        return Err(TerminationError::ProcessTreeNotReaped {
+            reason: "cleanup_unproven",
+            survivors: reported,
+        });
+    }
+    if leftover.is_empty() {
         Ok(TerminationOutcome::EscalatedAndReaped {
             exit_code: parent_exit_code,
         })
     } else {
         Err(TerminationError::ProcessTreeNotReaped {
             reason: "survived_sigkill",
-            survivors,
+            survivors: leftover,
         })
     }
 }
@@ -146,43 +162,61 @@ fn wait_for_child(child: &mut Child, deadline: Instant) -> io::Result<Option<Exi
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn wait_for_descendants(descendants: &[Descendant], deadline: Instant) -> Vec<Descendant> {
-    let mut survivors = live_descendants(descendants);
+fn wait_for_descendants(
+    descendants: &[Descendant],
+    deadline: Instant,
+    source: &dyn ProcessInstanceSource,
+) -> Vec<Descendant> {
+    let mut survivors = live_descendants(descendants, source);
     while !survivors.is_empty() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
-        survivors = live_descendants(descendants);
+        survivors = live_descendants(descendants, source);
     }
     survivors
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn live_descendants(descendants: &[Descendant]) -> Vec<Descendant> {
+fn live_descendants(
+    descendants: &[Descendant],
+    source: &dyn ProcessInstanceSource,
+) -> Vec<Descendant> {
     descendants
         .iter()
         .copied()
-        .filter(|descendant| process_alive(descendant.pid))
+        .filter(|descendant| descendant_present(descendant.pid, source))
         .collect()
 }
 
-#[cfg(target_os = "linux")]
-pub(crate) fn process_alive(pid: i32) -> bool {
-    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
-        return false;
-    };
-    let Some(close) = stat.rfind(')') else {
-        return true;
-    };
-    stat.get(close + 1..)
-        .and_then(|tail| tail.split_whitespace().next())
-        != Some("Z")
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn descendant_present(pid: i32, source: &dyn ProcessInstanceSource) -> bool {
+    u32::try_from(pid).is_ok_and(|pid| !matches!(source.inspect(pid), InspectResult::Absent))
 }
 
-#[cfg(target_os = "macos")]
-pub(crate) fn process_alive(pid: i32) -> bool {
-    std::process::Command::new("/bin/ps")
-        .args(["-p", &pid.to_string(), "-o", "pid="])
-        .output()
-        .is_ok_and(|output| output.status.success() && !output.stdout.is_empty())
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn select_descendant_kill_targets(
+    survivors: &[Descendant],
+    births: &HashMap<i32, ProcessBirth>,
+    source: &dyn ProcessInstanceSource,
+) -> (Vec<Descendant>, Vec<Descendant>) {
+    let mut confirmed = Vec::new();
+    let mut unproven = Vec::new();
+    for survivor in survivors {
+        let Some(pid) = u32::try_from(survivor.pid).ok() else {
+            unproven.push(*survivor);
+            continue;
+        };
+        let Some(birth) = births.get(&survivor.pid).copied() else {
+            unproven.push(*survivor);
+            continue;
+        };
+        match source.observe(&ProcessInstance { pid, birth }) {
+            InstanceVerdict::SameLive { .. } => confirmed.push(*survivor),
+            InstanceVerdict::NotSameOrExited | InstanceVerdict::Unverifiable => {
+                unproven.push(*survivor);
+            }
+        }
+    }
+    (confirmed, unproven)
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -277,7 +311,11 @@ pub(crate) fn signal_pid(pid: i32, signal: nix::sys::signal::Signal) -> nix::Res
 
 #[cfg(test)]
 mod tests {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use super::super::{ExecutionState, InstanceCensus};
     use super::*;
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use std::collections::HashMap;
 
     #[test]
     fn ac15_signal_guard_never_targets_the_caller_or_its_process_group() {
@@ -293,5 +331,93 @@ mod tests {
             assert!(!guard.permits_pgid(own_pgid));
         }
         assert!(guard.permits_pgid(guard.own_pid.saturating_add(10_000)));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    struct FakeSource {
+        result: InspectResult,
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    impl ProcessInstanceSource for FakeSource {
+        fn inspect(&self, _pid: u32) -> InspectResult {
+            self.result
+        }
+
+        fn census(&self) -> InstanceCensus {
+            InstanceCensus::Incomplete(Vec::new())
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn case9_error(
+        confirmed: Vec<Descendant>,
+        unproven: Vec<Descendant>,
+    ) -> Result<TerminationOutcome, TerminationError> {
+        assert!(
+            confirmed.is_empty(),
+            "mismatch/unverifiable pids must not be selected for KILL"
+        );
+        Err(TerminationError::ProcessTreeNotReaped {
+            reason: "cleanup_unproven",
+            survivors: unproven,
+        })
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn case9_kill_gate_mismatch_reports_cleanup_unproven_without_kill_targets() {
+        let snapshotted = ProcessBirth::linux(10, 100, 100);
+        let current = ProcessBirth::linux(99, 100, 100);
+        let survivor = Descendant {
+            pid: 42,
+            pgid: Some(42),
+        };
+        let mut births = HashMap::new();
+        births.insert(42, snapshotted);
+        let source = FakeSource {
+            result: InspectResult::Present {
+                instance: ProcessInstance {
+                    pid: 42,
+                    birth: current,
+                },
+                execution: ExecutionState::Running,
+                ppid: Some(1),
+                pgid: Some(42),
+            },
+        };
+        let (confirmed, unproven) = select_descendant_kill_targets(&[survivor], &births, &source);
+        let error = case9_error(confirmed, unproven).expect_err("cleanup_unproven");
+        match error {
+            TerminationError::ProcessTreeNotReaped { reason, survivors } => {
+                assert_eq!(reason, "cleanup_unproven");
+                assert_eq!(survivors, vec![survivor]);
+            }
+            other => panic!("expected ProcessTreeNotReaped, got {other:?}"),
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn case9_kill_gate_unverifiable_reports_cleanup_unproven_without_kill_targets() {
+        let snapshotted = ProcessBirth::linux(10, 100, 100);
+        let survivor = Descendant {
+            pid: 42,
+            pgid: Some(42),
+        };
+        let mut births = HashMap::new();
+        births.insert(42, snapshotted);
+        let source = FakeSource {
+            result: InspectResult::Unverifiable,
+        };
+        let (confirmed, unproven) = select_descendant_kill_targets(&[survivor], &births, &source);
+        let error = case9_error(confirmed, unproven).expect_err("cleanup_unproven");
+        match error {
+            TerminationError::ProcessTreeNotReaped { reason, survivors } => {
+                assert_eq!(reason, "cleanup_unproven");
+                assert_eq!(survivors, vec![survivor]);
+            }
+            other => panic!("expected ProcessTreeNotReaped, got {other:?}"),
+        }
     }
 }

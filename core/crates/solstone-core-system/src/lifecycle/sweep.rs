@@ -79,9 +79,7 @@ fn sweep_targets(journal: &Path) -> (Vec<u32>, usize) {
         if !sweepable_name(comm.trim_end()) {
             continue;
         }
-        if parent_pid(&format!("{base}/stat")) != Some(1)
-            || uid_for(&format!("{base}/status")) != own_uid
-        {
+        if parent_pid(pid) != Some(1) || uid_for(&format!("{base}/status")) != own_uid {
             continue;
         }
         let Some(candidate) = journal_for(&format!("{base}/environ")) else {
@@ -102,19 +100,13 @@ fn sweep_targets(journal: &Path) -> (Vec<u32>, usize) {
 
 #[cfg(target_os = "macos")]
 fn sweep_targets(_journal: &Path) -> (Vec<u32>, usize) {
-    let output = match std::process::Command::new("/bin/ps")
-        .args(["-axo", "pid=,ppid=,uid=,command="])
-        .env("LC_ALL", "C")
-        .output()
-    {
-        Ok(output) if output.status.success() => output,
-        _ => return (Vec::new(), 0),
+    let Some(rows) = crate::process::macos_sweep_table() else {
+        return (Vec::new(), 0);
     };
     let own_pid = std::process::id();
     let own_uid = nix::unistd::geteuid().as_raw();
-    let targets = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(parse_macos_process_row)
+    let targets = rows
+        .into_iter()
         .filter(|row| {
             row.pid != own_pid
                 && row.ppid == 1
@@ -127,43 +119,19 @@ fn sweep_targets(_journal: &Path) -> (Vec<u32>, usize) {
 }
 
 #[cfg(target_os = "macos")]
-struct MacosProcessRow {
-    pid: u32,
-    ppid: u32,
-    uid: u32,
-    command: String,
-}
-
-#[cfg(target_os = "macos")]
-fn parse_macos_process_row(line: &str) -> Option<MacosProcessRow> {
-    let mut fields = line.split_whitespace();
-    Some(MacosProcessRow {
-        pid: fields.next()?.parse().ok()?,
-        ppid: fields.next()?.parse().ok()?,
-        uid: fields.next()?.parse().ok()?,
-        command: fields.collect::<Vec<_>>().join(" "),
-    })
-}
-
-#[cfg(target_os = "macos")]
 fn command_name(command: &str) -> Option<&str> {
     let executable = command.split_whitespace().next()?;
     Path::new(executable).file_name()?.to_str()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn process_is_live(pid: u32) -> bool {
-    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
-        return false;
-    };
-    stat.rfind(')')
-        .and_then(|end| stat[end + 1..].split_whitespace().next())
-        != Some("Z")
-}
+    use crate::process::{InspectResult, ProcessInstanceSource, SystemProcessInstanceSource};
 
-#[cfg(target_os = "macos")]
-fn process_is_live(pid: u32) -> bool {
-    i32::try_from(pid).is_ok_and(crate::process::process_alive)
+    matches!(
+        SystemProcessInstanceSource.inspect(pid),
+        InspectResult::Present { .. }
+    )
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -178,13 +146,13 @@ fn sweepable_name(name: &str) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn parent_pid(path: &str) -> Option<u32> {
-    let stat = std::fs::read_to_string(path).ok()?;
-    stat[stat.rfind(')')? + 1..]
-        .split_whitespace()
-        .nth(1)?
-        .parse()
-        .ok()
+fn parent_pid(pid: u32) -> Option<u32> {
+    use crate::process::{InspectResult, ProcessInstanceSource, SystemProcessInstanceSource};
+
+    match SystemProcessInstanceSource.inspect(pid) {
+        InspectResult::Present { ppid, .. } => ppid,
+        InspectResult::Absent | InspectResult::Unverifiable => None,
+    }
 }
 
 #[cfg(target_os = "linux")]

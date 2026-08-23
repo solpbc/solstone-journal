@@ -578,10 +578,7 @@ impl LifecycleSeam for ParakeetLifecycleSeam {
             shared.record_launch_result(&fence, outcome);
             #[cfg(target_os = "linux")]
             if let Some(pid) = hold_pid {
-                let pid = i32::try_from(pid).unwrap_or(i32::MAX);
-                while crate::process::process_alive(pid) {
-                    thread::park_timeout(Duration::from_secs(2));
-                }
+                crate::process::hold_while_instance_live(pid);
             }
         });
     }

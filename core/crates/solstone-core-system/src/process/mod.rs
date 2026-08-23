@@ -4,6 +4,7 @@
 mod authority;
 mod descendants;
 mod events;
+mod instance;
 mod log;
 mod observation;
 mod pdeathsig;
@@ -19,6 +20,14 @@ pub use authority::{
 };
 pub use descendants::{Descendant, ProcessTreeSnapshot};
 pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
+#[cfg(target_os = "linux")]
+pub(crate) use instance::hold_while_instance_live;
+pub use instance::{
+    CensusRow, ExecutionState, InspectResult, InstanceCensus, InstanceVerdict, ProcessBirth,
+    ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,
+};
+#[cfg(target_os = "macos")]
+pub(crate) use instance::{MacosSweepRow, macos_sweep_table};
 pub use log::DailyLogWriter;
 pub use observation::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
 pub use pdeathsig::apply_parent_death_kill;
@@ -27,8 +36,6 @@ pub use restart::{
     exit_status_for_code,
 };
 pub use spawn::{ManagedProcess, SpawnError, SpawnOptions};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-pub(crate) use terminate::process_alive;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use terminate::signal_pid;
 pub use terminate::{

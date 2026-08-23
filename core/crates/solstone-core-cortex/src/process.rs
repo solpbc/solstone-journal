@@ -13,7 +13,10 @@ use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
 use serde_json::{Map, Value};
 use solstone_core_generate_wire::{record_usage, usage_for_log};
-use solstone_core_system::process::{self, Disposition, LaunchAuthority, LaunchError};
+use solstone_core_system::process::{
+    self, Disposition, ExecutionState, InstanceCensus, LaunchAuthority, LaunchError,
+    ProcessInstanceSource, SystemProcessInstanceSource,
+};
 
 use crate::state::{CortexState, ResolvedTalent, Work};
 use crate::storage::now_ms;
@@ -401,29 +404,17 @@ pub fn stop_group_with_grace(pgid: i32, grace: Duration) {
     let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
 }
 
-#[cfg(target_os = "linux")]
 fn group_has_live_processes(pgid: i32) -> bool {
-    let Ok(entries) = std::fs::read_dir("/proc") else {
-        return killpg(Pid::from_raw(pgid), None).is_ok();
-    };
-    entries.flatten().any(|entry| {
-        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
-            return false;
-        };
-        let Some((_, fields)) = stat.rsplit_once(") ") else {
-            return false;
-        };
-        let mut fields = fields.split_whitespace();
-        let state = fields.next();
-        let _parent = fields.next();
-        let group = fields.next().and_then(|value| value.parse::<i32>().ok());
-        group == Some(pgid) && state != Some("Z")
-    })
-}
-
-#[cfg(not(target_os = "linux"))]
-fn group_has_live_processes(pgid: i32) -> bool {
-    killpg(Pid::from_raw(pgid), None).is_ok()
+    match SystemProcessInstanceSource.census() {
+        InstanceCensus::Incomplete(_) => true,
+        InstanceCensus::Complete(rows) => rows.iter().any(|row| {
+            row.pgid == pgid
+                && matches!(
+                    row.execution,
+                    ExecutionState::Running | ExecutionState::Stopped
+                )
+        }),
+    }
 }
 
 pub(crate) fn cancel_worker(state: CortexState, receiver: mpsc::Receiver<(String, String)>) {
