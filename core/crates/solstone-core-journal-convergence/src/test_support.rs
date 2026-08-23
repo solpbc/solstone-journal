@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+// Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -52,14 +53,65 @@ impl Drop for TempDir {
 
 thread_local! {
     static FAIL_DIR_SYNC: Cell<bool> = const { Cell::new(false) };
+    static PUBLISH_FAULT: Cell<Option<PublishFault>> = const { Cell::new(None) };
+    static AFTER_WITNESS: RefCell<Option<Box<dyn FnOnce()>>> = const { RefCell::new(None) };
 }
 
-pub(crate) fn fail_next_dir_sync() {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PublishFault {
+    AfterEver,
+    AfterWitness,
+}
+
+/// Clears TLS injects if a test panics between arm and take.
+pub(crate) struct InjectGuard;
+
+impl Drop for InjectGuard {
+    fn drop(&mut self) {
+        FAIL_DIR_SYNC.set(false);
+        PUBLISH_FAULT.set(None);
+        AFTER_WITNESS.with(|slot| slot.borrow_mut().take());
+    }
+}
+
+pub(crate) fn fail_next_dir_sync() -> InjectGuard {
     FAIL_DIR_SYNC.set(true);
+    InjectGuard
+}
+
+pub(crate) fn fail_after_ever() -> InjectGuard {
+    PUBLISH_FAULT.set(Some(PublishFault::AfterEver));
+    InjectGuard
+}
+
+pub(crate) fn fail_after_witness() -> InjectGuard {
+    PUBLISH_FAULT.set(Some(PublishFault::AfterWitness));
+    InjectGuard
+}
+
+pub(crate) fn after_witness(hook: impl FnOnce() + 'static) -> InjectGuard {
+    AFTER_WITNESS.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+    InjectGuard
 }
 
 pub(crate) fn take_fail_dir_sync() -> bool {
     FAIL_DIR_SYNC.replace(false)
+}
+
+pub(crate) fn take_publish_fault(expected: PublishFault) -> bool {
+    match PUBLISH_FAULT.get() {
+        Some(fault) if fault == expected => {
+            PUBLISH_FAULT.set(None);
+            true
+        }
+        _ => false,
+    }
+}
+
+pub(crate) fn run_after_witness_hook() {
+    if let Some(hook) = AFTER_WITNESS.with(|slot| slot.borrow_mut().take()) {
+        hook();
+    }
 }
 
 pub(crate) fn open_root(temporary: &TempDir) -> (PathBuf, JournalRoot) {

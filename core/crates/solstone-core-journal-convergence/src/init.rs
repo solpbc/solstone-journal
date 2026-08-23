@@ -101,11 +101,9 @@ pub fn check_initialized(root: &JournalRoot) -> Result<bool, ConvergenceError> {
 }
 
 /// Write: create never-replaced parents, topology.lock, root witness, allocator.
+/// Completes a witness-without-allocator partial tree (L9).
 pub fn initialize(root: &JournalRoot) -> Result<(), ConvergenceError> {
     root.revalidate().map_err(map_root_error)?;
-    if check_initialized(root)? {
-        return Err(ConvergenceError::Refused(Refusal::AlreadyInitialized));
-    }
     create_directory_bound(root, OsStr::new(HEALTH), 0o700).map_err(map_path)?;
     let health = open_dir(root, HEALTH)?.ok_or(ConvergenceError::Unknown {
         role: DurableRole::Directory,
@@ -127,36 +125,68 @@ pub fn initialize(root: &JournalRoot) -> Result<(), ConvergenceError> {
         role: DurableRole::TopologyLock,
         source: std::io::Error::other(error.to_string()),
     })?;
-    if check_initialized(root)? {
-        drop(topology);
-        return Err(ConvergenceError::Refused(Refusal::AlreadyInitialized));
-    }
-    let witness = RootWitness {
-        schema_version: SCHEMA_VERSION,
-        journal_id: random_hex()?,
-        auxiliary_time: now_rfc3339(),
-    };
-    let root_id = digest_value(&witness)?.as_hex().to_owned();
-    write_json_exclusive(
+    let witness = read_json::<RootWitness>(
         &convergence,
         OsStr::new(ROOT_WITNESS),
-        &witness,
         DurableRole::RootWitness,
     )?;
+    let allocator =
+        read_json::<Allocator>(&convergence, OsStr::new(ALLOCATOR), DurableRole::Allocator)?;
+    match (witness, allocator) {
+        (Some(witness), Some(allocator)) => {
+            let root_id = digest_value(&witness)?.as_hex().to_owned();
+            drop(topology);
+            if witness.journal_id != allocator.journal_id || allocator.root_id != root_id {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::Allocator,
+                });
+            }
+            Err(ConvergenceError::Refused(Refusal::AlreadyInitialized))
+        }
+        (Some(witness), None) => {
+            write_allocator(&convergence, &witness)?;
+            drop(topology);
+            Ok(())
+        }
+        (None, None) => {
+            let witness = RootWitness {
+                schema_version: SCHEMA_VERSION,
+                journal_id: random_hex()?,
+                auxiliary_time: now_rfc3339(),
+            };
+            write_json_exclusive(
+                &convergence,
+                OsStr::new(ROOT_WITNESS),
+                &witness,
+                DurableRole::RootWitness,
+            )?;
+            write_allocator(&convergence, &witness)?;
+            drop(topology);
+            Ok(())
+        }
+        (None, Some(_)) => {
+            drop(topology);
+            Err(ConvergenceError::Unknown {
+                role: DurableRole::RootWitness,
+            })
+        }
+    }
+}
+
+fn write_allocator(convergence: &OwnedFd, witness: &RootWitness) -> Result<(), ConvergenceError> {
     let allocator = Allocator {
         schema_version: SCHEMA_VERSION,
-        journal_id: witness.journal_id,
-        root_id,
+        journal_id: witness.journal_id.clone(),
+        root_id: digest_value(witness)?.as_hex().to_owned(),
         next_serial: 1,
         exhausted: false,
     };
     write_json_exclusive(
-        &convergence,
+        convergence,
         OsStr::new(ALLOCATOR),
         &allocator,
         DurableRole::Allocator,
     )?;
-    drop(topology);
     Ok(())
 }
 
@@ -194,6 +224,7 @@ fn map_path(error: solstone_core_journal_io::PathError) -> ConvergenceError {
 }
 
 #[cfg(test)]
+// Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
@@ -264,18 +295,29 @@ mod tests {
         assert!(ever.iter().all(|name| !name.contains("ever")));
     }
 
+    fn second_store_allocates_promptly(temporary: &TempDir) {
+        let root_b =
+            solstone_core_journal_io::JournalRoot::open(&temporary.journal_path()).unwrap();
+        let store_b = crate::store::ConvergenceStore::open(root_b).unwrap();
+        let day = crate::layout::DayKey::parse("20260824").unwrap();
+        let started = std::time::Instant::now();
+        let locks = store_b.acquire_days(&[day]).unwrap();
+        store_b.allocate(&locks).unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    }
+
     #[test]
     fn initialize_releases_topology_before_return() {
-        let (_temporary, store) = initialized_store();
-        let day = crate::layout::DayKey::parse("20260823").unwrap();
-        store.acquire_days(&[day]).unwrap();
+        let (temporary, _store) = initialized_store();
+        second_store_allocates_promptly(&temporary);
     }
 
     #[test]
     fn initialize_does_not_leave_topology_held() {
-        let (_temporary, store) = initialized_store();
-        let day = crate::layout::DayKey::parse("20260824").unwrap();
-        store.acquire_days(&[day]).unwrap();
+        let (temporary, store) = initialized_store();
+        let day = crate::layout::DayKey::parse("20260823").unwrap();
+        let _locks = store.acquire_days(&[day]).unwrap();
+        second_store_allocates_promptly(&temporary);
     }
 
     #[test]
@@ -286,9 +328,53 @@ mod tests {
         let first = std::thread::spawn(move || initialize(&root_a));
         let second = initialize(&root_b);
         let first = first.join().expect("thread");
-        let ok = first.is_ok() as u8 + second.is_ok() as u8;
-        assert_eq!(ok, 1);
+        match (&first, &second) {
+            (Ok(()), Err(error)) | (Err(error), Ok(())) => {
+                assert!(matches!(
+                    error,
+                    ConvergenceError::Refused(Refusal::AlreadyInitialized)
+                ));
+            }
+            other => panic!("expected one Ok and one AlreadyInitialized, got {other:?}"),
+        }
         assert!(check_initialized(&root_b).unwrap());
+        let parse = |name: &str| {
+            let raw = std::fs::read(journal.join("health/convergence").join(name)).unwrap();
+            serde_json::from_slice::<serde_json::Value>(raw.strip_suffix(b"\n").unwrap_or(&raw))
+                .unwrap()
+        };
+        let witness = parse("root.wit.json");
+        let allocator = parse("allocator.json");
+        assert_eq!(witness["journal_id"], allocator["journal_id"]);
+    }
+
+    #[test]
+    fn initialize_completes_partial_witness_tree() {
+        let temporary = TempDir::new("partial-init");
+        let (journal, root) = open_root(&temporary);
+        initialize(&root).unwrap();
+        let witness_bytes =
+            std::fs::read(journal.join("health/convergence/root.wit.json")).unwrap();
+        std::fs::remove_file(journal.join("health/convergence/allocator.json")).unwrap();
+        assert!(!check_initialized(&root).unwrap());
+        initialize(&root).unwrap();
+        assert!(check_initialized(&root).unwrap());
+        let witness: RootWitness =
+            serde_json::from_slice(witness_bytes.strip_suffix(b"\n").unwrap_or(&witness_bytes))
+                .unwrap();
+        let allocator_bytes =
+            std::fs::read(journal.join("health/convergence/allocator.json")).unwrap();
+        let allocator: Allocator = serde_json::from_slice(
+            allocator_bytes
+                .strip_suffix(b"\n")
+                .unwrap_or(&allocator_bytes),
+        )
+        .unwrap();
+        assert_eq!(allocator.journal_id, witness.journal_id);
+        crate::store::ConvergenceStore::open(
+            solstone_core_journal_io::JournalRoot::open(&journal).unwrap(),
+        )
+        .unwrap();
     }
 
     fn fs_entries(dir: &std::path::Path) -> Vec<String> {

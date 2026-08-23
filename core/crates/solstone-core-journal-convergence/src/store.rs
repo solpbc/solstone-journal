@@ -37,7 +37,6 @@ pub enum LoadDay {
 pub enum PendingKind {
     WitnessAheadOfHead,
     HeadAheadOfRecord,
-    DurabilityUncertain,
 }
 
 /// Journal- and lineage-bound convergence store. Owns a retained [`JournalRoot`].
@@ -148,14 +147,15 @@ pub(crate) fn snapshot_from_record(record: &DayRecord) -> Result<DaySnapshot, Co
 }
 
 #[cfg(test)]
+// Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
+    use crate::initialize;
     use crate::layout::DayKey;
     use crate::test_support::{
         TempDir, dirty, initialized_store, open_root, sample_day, snapshot_tree,
     };
-    use crate::{OrdinaryAuthority, OrdinaryIntent, initialize};
 
     #[test]
     fn load_day_creates_nothing() {
@@ -182,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn genesis_is_adoption_absent_ever_head_record() {
+    fn genesis_is_adoption_present_absent_ever_head_record() {
         let (_temporary, store) = initialized_store();
         let day = sample_day();
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
@@ -280,24 +280,6 @@ mod tests {
         let (temporary, store) = initialized_store();
         std::fs::rename(temporary.journal_path(), temporary.path().join("moved")).unwrap();
         store.revalidate().unwrap();
-    }
-
-    #[test]
-    fn proof_refused_after_relock_same_days() {
-        let (_temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let proof = store.allocate(&locks).unwrap();
-        drop(locks);
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let proposal = store
-            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let error = OrdinaryAuthority::bind(proposal, proof).unwrap_err();
-        assert!(matches!(
-            error,
-            ConvergenceError::Refused(Refusal::StaleLease)
-        ));
     }
 
     #[test]
@@ -432,16 +414,10 @@ mod tests {
         std::fs::create_dir_all(&dest_dir).unwrap();
         std::fs::copy(source, dest_dir.join("record.json")).unwrap();
         store.allocate(&locks).unwrap();
-        let error = store.load_day(&locks, &day_b);
-        assert!(
-            matches!(
-                error,
-                Ok(LoadDay::Genesis)
-                    | Err(ConvergenceError::Unknown { .. })
-                    | Err(ConvergenceError::Refused(Refusal::WrongDay { .. }))
-            ),
-            "{error:?}"
-        );
+        assert!(matches!(
+            store.load_day(&locks, &day_b).unwrap_err(),
+            ConvergenceError::Unknown { .. }
+        ));
     }
 
     #[test]
@@ -517,6 +493,33 @@ mod tests {
 
     #[test]
     fn caller_authored_fields_unrepresentable() {
-        assert_eq!(std::mem::size_of_val(&OrdinaryIntent::AdvanceDirty), 0);
+        let (_temporary, store) = initialized_store();
+        let day = sample_day();
+        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
+        dirty(&store, &locks, &day);
+        match store.load_day(&locks, &day).unwrap() {
+            LoadDay::Published(snapshot) => {
+                assert_eq!(snapshot.journal_id, store.journal_id());
+                assert_eq!(snapshot.root_id, store.root_id());
+                assert_eq!(snapshot.record_revision, 1);
+                assert_eq!(snapshot.dirty_generation, 1);
+                assert_eq!(snapshot.completed_generation, 0);
+                assert_eq!(
+                    snapshot.first_transition_serial,
+                    snapshot.dirty_by_transition_serial
+                );
+                assert_eq!(snapshot.first_transition_serial, 1);
+            }
+            other => panic!("{other:?}"),
+        }
+        let error = crate::schema::parse_json::<crate::schema::DayRecord>(
+            br#"{"schema_version":1,"journal_id":"j","root_id":"r","adoption_id":"a","day":"20260823","record_revision":1,"first_transition_serial":1,"dirty_by_transition_serial":1,"dirty_generation":1,"completed_generation":0,"auxiliary_time":"t","extra":1}"#,
+            crate::DurableRole::Record,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            ConvergenceError::Refused(Refusal::UnknownField { field }) if field == "extra"
+        ));
     }
 }

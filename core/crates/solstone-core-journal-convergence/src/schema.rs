@@ -252,6 +252,7 @@ fn unknown_field_name(message: &str) -> Option<String> {
 }
 
 #[cfg(test)]
+// Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;

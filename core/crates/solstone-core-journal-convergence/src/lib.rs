@@ -34,19 +34,64 @@ pub use publish::{OrdinaryAuthority, OrdinaryIntent, PublishOutcome, ValidatedPr
 pub use store::{ConvergenceStore, DaySnapshot, LoadDay, PendingKind};
 
 #[cfg(test)]
+// Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod architecture {
+    fn production_source(source: &str) -> String {
+        let mut output = String::new();
+        let mut skip_depth: i32 = 0;
+        let mut skip_until_item = false;
+        for line in source.lines() {
+            let trimmed = line.trim_start();
+            if skip_depth > 0 {
+                skip_depth += line.chars().filter(|ch| *ch == '{').count() as i32;
+                skip_depth -= line.chars().filter(|ch| *ch == '}').count() as i32;
+                continue;
+            }
+            if skip_until_item {
+                if trimmed.starts_with("#[") {
+                    continue;
+                }
+                if line.contains('{') {
+                    skip_until_item = false;
+                    skip_depth = line.chars().filter(|ch| *ch == '{').count() as i32
+                        - line.chars().filter(|ch| *ch == '}').count() as i32;
+                    if skip_depth < 0 {
+                        skip_depth = 0;
+                    }
+                    continue;
+                }
+                if trimmed.ends_with(';') {
+                    skip_until_item = false;
+                }
+                continue;
+            }
+            if trimmed.starts_with("#[cfg(test)]") {
+                skip_until_item = true;
+                continue;
+            }
+            output.push_str(line);
+            output.push('\n');
+        }
+        output
+    }
+
     #[test]
     fn canonical_path_not_used_to_open() {
         for source in [
-            include_str!("store.rs"),
-            include_str!("init.rs"),
-            include_str!("lock.rs"),
             include_str!("allocate.rs"),
+            include_str!("digest.rs"),
+            include_str!("error.rs"),
+            include_str!("init.rs"),
+            include_str!("layout.rs"),
+            include_str!("lib.rs"),
+            include_str!("lock.rs"),
             include_str!("publish.rs"),
+            include_str!("schema.rs"),
+            include_str!("store.rs"),
             include_str!("walk.rs"),
         ] {
-            let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+            let production = production_source(source);
             assert!(!production.contains("canonical_path"));
             assert!(!production.contains("JournalRoot::open"));
         }
@@ -54,10 +99,22 @@ mod architecture {
 
     #[test]
     fn no_public_completion_or_recovery_type() {
-        let production = include_str!("lib.rs").split("#[cfg(test)]").next().unwrap();
-        assert!(!production.contains("CompletionAuthority"));
-        assert!(!production.contains("MigrationAuthority"));
-        assert!(!production.contains("PreparedCompletionAuthority"));
-        assert!(!production.contains("pub use") || !production.contains("Recovery"));
+        let production = production_source(include_str!("lib.rs"));
+        let public: String = production
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim_start();
+                trimmed.starts_with("pub use")
+                    || trimmed.starts_with("pub struct")
+                    || trimmed.starts_with("pub enum")
+                    || trimmed.starts_with("pub fn")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            .to_ascii_lowercase();
+        assert!(!public.contains("completion"));
+        assert!(!public.contains("recovery"));
+        assert!(!public.contains("migration"));
+        assert!(!public.contains("preparedcompletion"));
     }
 }

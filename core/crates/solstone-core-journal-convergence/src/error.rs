@@ -58,7 +58,6 @@ pub enum DurableRole {
 #[derive(Debug)]
 pub enum Refusal {
     UnknownField { field: String },
-    CallerAuthored { field: &'static str },
     MissingSerial,
     FutureSerial { observed: u64, next: u64 },
     RevisionRollback { observed: u64, current: u64 },
@@ -68,7 +67,6 @@ pub enum Refusal {
     PersistedZeroSerial,
     CompletedExceedsDirty,
     WrongLineage,
-    WrongJournal,
     WrongDay { expected: String, observed: String },
     Exhausted,
     Uninitialized,

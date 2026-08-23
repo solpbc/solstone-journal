@@ -448,52 +448,197 @@ fn publish_record(
             current: 0,
         }));
     }
-    let record_hex = record_digest(next)?.as_hex().to_owned();
     let outcome = if is_g1 {
-        publish_g1(store, &dirs, day, next, &record_hex, used)?
+        publish_g1(store, days, &dirs, day, next, used)?
     } else {
-        publish_next(store, &dirs, day, next, &record_hex, current.as_ref(), used)?
+        let current = current.as_ref().ok_or(ConvergenceError::Unknown {
+            role: DurableRole::Record,
+        })?;
+        publish_next(store, days, &dirs, day, next, current, used)?
     };
     Ok(outcome)
 }
 
-fn revalidate_gates(
+struct Gate<'a> {
+    ever: bool,
+    head: Option<&'a Head>,
+    record_digest: Option<&'a str>,
+    chain_height: u64,
+    next_witness: Option<u64>,
+}
+
+fn publish_gate(
     store: &ConvergenceStore,
-    days_fd: &StoreDirs,
+    locks: &DayLockSet,
+    dirs: &StoreDirs,
     day: &DayKey,
-    expect_g1_ever: bool,
-    expect_head_revision: Option<u64>,
+    expect: Gate<'_>,
 ) -> Result<(), ConvergenceError> {
     store.revalidate()?;
-    let _ = days_fd;
-    match inspect_day(store, day)? {
-        LoadDay::Genesis if expect_g1_ever => Ok(()),
-        LoadDay::Published(snapshot) => {
-            if expect_head_revision.is_some_and(|expected| snapshot.record_revision != expected) {
+    if !locks.contains(day) {
+        return Err(ConvergenceError::Refused(Refusal::WrongDay {
+            expected: day.as_str().to_owned(),
+            observed: String::new(),
+        }));
+    }
+    locks.matches(store.journal_id(), store.root_id(), store.object_identity())?;
+    let adoption = load_adoption(dirs, day)?.ok_or(ConvergenceError::Unknown {
+        role: DurableRole::Adoption,
+    })?;
+    require_ids(
+        store.journal_id(),
+        store.root_id(),
+        &adoption.journal_id,
+        &adoption.root_id,
+    )?;
+    require_day(day, &adoption.day)?;
+    let ever = read_json::<EverWitness>(&dirs.days, &ever_name(day), DurableRole::EverWitness)?;
+    match (expect.ever, ever.as_ref()) {
+        (true, Some(ever)) => {
+            require_ids(
+                store.journal_id(),
+                store.root_id(),
+                &ever.journal_id,
+                &ever.root_id,
+            )?;
+            require_day(day, &ever.day)?;
+        }
+        (false, None) => {}
+        _ => {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::EverWitness,
+            });
+        }
+    }
+    if expect.chain_height > 0 {
+        let ever = ever.as_ref().ok_or(ConvergenceError::Unknown {
+            role: DurableRole::EverWitness,
+        })?;
+        let _ = witness_chain(dirs, day, ever, expect.chain_height)?;
+    }
+    let head = read_json::<Head>(&dirs.days, &head_name(day), DurableRole::Head)?;
+    match (expect.head, head.as_ref()) {
+        (None, None) => {}
+        (Some(expected), Some(observed)) => {
+            if observed.record_revision != expected.record_revision
+                || observed.witness_digest != expected.witness_digest
+                || observed.record_digest != expected.record_digest
+            {
                 return Err(ConvergenceError::Unknown {
                     role: DurableRole::Head,
                 });
             }
-            Ok(())
+            require_ids(
+                store.journal_id(),
+                store.root_id(),
+                &observed.journal_id,
+                &observed.root_id,
+            )?;
         }
-        LoadDay::Genesis => Err(ConvergenceError::Unknown {
-            role: DurableRole::EverWitness,
-        }),
-        LoadDay::PublicationPending { .. } => Err(ConvergenceError::Unknown {
-            role: DurableRole::Head,
-        }),
+        _ => {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::Head,
+            });
+        }
     }
+    let record = load_record(dirs, day)?;
+    match (expect.record_digest, record.as_ref()) {
+        (None, None) => {}
+        (Some(expected), Some(observed)) => {
+            if record_digest(observed)?.as_hex() != expected {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::Record,
+                });
+            }
+        }
+        _ => {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::Record,
+            });
+        }
+    }
+    if let Some(revision) = expect.next_witness {
+        if probe_extra_revision_witness(dirs, day, revision)?.is_none() {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::RevisionWitness,
+            });
+        }
+    } else if expect.chain_height > 0
+        && probe_extra_revision_witness(dirs, day, expect.chain_height + 1)?.is_some()
+    {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::RevisionWitness,
+        });
+    }
+    Ok(())
+}
+
+fn witness_chain(
+    dirs: &StoreDirs,
+    day: &DayKey,
+    ever: &EverWitness,
+    height: u64,
+) -> Result<RevisionWitness, ConvergenceError> {
+    let mut prior_digest = digest_value(ever)?.as_hex().to_owned();
+    let mut tail = None;
+    for revision in 1..=height {
+        let Some(witness) = read_json::<RevisionWitness>(
+            &dirs.days,
+            &revision_witness_name(day, revision),
+            DurableRole::RevisionWitness,
+        )?
+        else {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::RevisionWitness,
+            });
+        };
+        if witness.prior_witness_digest != prior_digest || witness.record_revision != revision {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::RevisionWitness,
+            });
+        }
+        prior_digest = digest_value(&witness)?.as_hex().to_owned();
+        tail = Some(witness);
+    }
+    tail.ok_or(ConvergenceError::Unknown {
+        role: DurableRole::RevisionWitness,
+    })
+}
+
+#[cfg(test)]
+fn injected_abort(step: crate::test_support::PublishFault) -> Result<(), ConvergenceError> {
+    if crate::test_support::take_publish_fault(step) {
+        return Err(ConvergenceError::PreservedPrior {
+            operation: "injected abort",
+            source: std::io::Error::other("test abort after publication step"),
+        });
+    }
+    Ok(())
 }
 
 fn publish_g1(
     store: &ConvergenceStore,
+    locks: &DayLockSet,
     dirs: &StoreDirs,
     day: &DayKey,
     next: &DayRecord,
-    record_hex: &str,
     mut used: Option<&mut bool>,
 ) -> Result<PublishOutcome, ConvergenceError> {
-    revalidate_gates(store, dirs, day, true, None)?;
+    let record_hex = record_digest(next)?.as_hex().to_owned();
+    let record_hex = record_hex.as_str();
+    publish_gate(
+        store,
+        locks,
+        dirs,
+        day,
+        Gate {
+            ever: false,
+            head: None,
+            record_digest: None,
+            chain_height: 0,
+            next_witness: None,
+        },
+    )?;
     let ever = EverWitness {
         schema_version: SCHEMA_VERSION,
         journal_id: next.journal_id.clone(),
@@ -506,8 +651,22 @@ fn publish_g1(
         record_digest: record_hex.to_owned(),
     };
     write_json_exclusive(&dirs.days, &ever_name(day), &ever, DurableRole::EverWitness)?;
+    #[cfg(test)]
+    injected_abort(crate::test_support::PublishFault::AfterEver)?;
+    publish_gate(
+        store,
+        locks,
+        dirs,
+        day,
+        Gate {
+            ever: true,
+            head: None,
+            record_digest: None,
+            chain_height: 0,
+            next_witness: None,
+        },
+    )?;
     let ever_digest = digest_value(&ever)?;
-    revalidate_after_ever(store, dirs, day)?;
     let witness = revision_witness(next, record_hex, ever_digest.as_hex());
     write_json_exclusive(
         &dirs.days,
@@ -518,8 +677,25 @@ fn publish_g1(
     if let Some(flag) = used.as_mut() {
         **flag = true;
     }
+    #[cfg(test)]
+    {
+        crate::test_support::run_after_witness_hook();
+        injected_abort(crate::test_support::PublishFault::AfterWitness)?;
+    }
     let witness_digest = digest_value(&witness)?;
-    revalidate_after_witness(store, dirs, day, 1)?;
+    publish_gate(
+        store,
+        locks,
+        dirs,
+        day,
+        Gate {
+            ever: true,
+            head: None,
+            record_digest: None,
+            chain_height: 0,
+            next_witness: Some(1),
+        },
+    )?;
     let head = Head {
         schema_version: SCHEMA_VERSION,
         journal_id: next.journal_id.clone(),
@@ -534,22 +710,54 @@ fn publish_g1(
     if let Some(source) = uncertain(head_outcome) {
         return Ok(uncertain_outcome(day, next, record_hex, source));
     }
-    store.revalidate()?;
+    publish_gate(
+        store,
+        locks,
+        dirs,
+        day,
+        Gate {
+            ever: true,
+            head: Some(&head),
+            record_digest: None,
+            chain_height: 1,
+            next_witness: None,
+        },
+    )?;
     write_record_file(dirs, day, next)?;
     Ok(published(day, next, record_hex))
 }
 
 fn publish_next(
     store: &ConvergenceStore,
+    locks: &DayLockSet,
     dirs: &StoreDirs,
     day: &DayKey,
     next: &DayRecord,
-    record_hex: &str,
-    current: Option<&DayRecord>,
+    current: &DayRecord,
     mut used: Option<&mut bool>,
 ) -> Result<PublishOutcome, ConvergenceError> {
-    let height = current.map(|record| record.record_revision).unwrap_or(0);
-    revalidate_gates(store, dirs, day, false, Some(height))?;
+    let record_hex = record_digest(next)?.as_hex().to_owned();
+    let record_hex = record_hex.as_str();
+    let height = current.record_revision;
+    let prior_head = read_json::<Head>(&dirs.days, &head_name(day), DurableRole::Head)?.ok_or(
+        ConvergenceError::Unknown {
+            role: DurableRole::Head,
+        },
+    )?;
+    let prior_digest = record_digest(current)?;
+    publish_gate(
+        store,
+        locks,
+        dirs,
+        day,
+        Gate {
+            ever: true,
+            head: Some(&prior_head),
+            record_digest: Some(prior_digest.as_hex()),
+            chain_height: height,
+            next_witness: None,
+        },
+    )?;
     let prior_witness = read_json::<RevisionWitness>(
         &dirs.days,
         &revision_witness_name(day, height),
@@ -558,8 +766,8 @@ fn publish_next(
     .ok_or(ConvergenceError::Unknown {
         role: DurableRole::RevisionWitness,
     })?;
-    let prior_digest = digest_value(&prior_witness)?;
-    let witness = revision_witness(next, record_hex, prior_digest.as_hex());
+    let prior_witness_digest = digest_value(&prior_witness)?;
+    let witness = revision_witness(next, record_hex, prior_witness_digest.as_hex());
     write_json_exclusive(
         &dirs.days,
         &revision_witness_name(day, next.record_revision),
@@ -569,8 +777,25 @@ fn publish_next(
     if let Some(flag) = used.as_mut() {
         **flag = true;
     }
+    #[cfg(test)]
+    {
+        crate::test_support::run_after_witness_hook();
+        injected_abort(crate::test_support::PublishFault::AfterWitness)?;
+    }
     let witness_digest = digest_value(&witness)?;
-    revalidate_after_witness(store, dirs, day, next.record_revision)?;
+    publish_gate(
+        store,
+        locks,
+        dirs,
+        day,
+        Gate {
+            ever: true,
+            head: Some(&prior_head),
+            record_digest: Some(prior_digest.as_hex()),
+            chain_height: height,
+            next_witness: Some(next.record_revision),
+        },
+    )?;
     let head = Head {
         schema_version: SCHEMA_VERSION,
         journal_id: next.journal_id.clone(),
@@ -585,49 +810,21 @@ fn publish_next(
     if let Some(source) = uncertain(head_outcome) {
         return Ok(uncertain_outcome(day, next, record_hex, source));
     }
-    store.revalidate()?;
+    publish_gate(
+        store,
+        locks,
+        dirs,
+        day,
+        Gate {
+            ever: true,
+            head: Some(&head),
+            record_digest: Some(prior_digest.as_hex()),
+            chain_height: next.record_revision,
+            next_witness: None,
+        },
+    )?;
     write_record_file(dirs, day, next)?;
     Ok(published(day, next, record_hex))
-}
-
-fn revalidate_after_ever(
-    store: &ConvergenceStore,
-    dirs: &StoreDirs,
-    day: &DayKey,
-) -> Result<(), ConvergenceError> {
-    store.revalidate()?;
-    if read_json::<EverWitness>(&dirs.days, &ever_name(day), DurableRole::EverWitness)?.is_none() {
-        return Err(ConvergenceError::Unknown {
-            role: DurableRole::EverWitness,
-        });
-    }
-    if read_json::<Head>(&dirs.days, &head_name(day), DurableRole::Head)?.is_some() {
-        return Err(ConvergenceError::Unknown {
-            role: DurableRole::Head,
-        });
-    }
-    Ok(())
-}
-
-fn revalidate_after_witness(
-    store: &ConvergenceStore,
-    dirs: &StoreDirs,
-    day: &DayKey,
-    revision: u64,
-) -> Result<(), ConvergenceError> {
-    store.revalidate()?;
-    if read_json::<RevisionWitness>(
-        &dirs.days,
-        &revision_witness_name(day, revision),
-        DurableRole::RevisionWitness,
-    )?
-    .is_none()
-    {
-        return Err(ConvergenceError::Unknown {
-            role: DurableRole::RevisionWitness,
-        });
-    }
-    Ok(())
 }
 
 fn revision_witness(next: &DayRecord, record_hex: &str, prior: &str) -> RevisionWitness {
@@ -743,16 +940,28 @@ impl sealed::PublicationKind for PreparedCompletionAuthority {
 }
 
 #[cfg(test)]
-pub(crate) struct MigrationAuthority;
+pub(crate) struct MigrationAuthority {
+    pub inventory_first_serial: u64,
+}
 
 #[cfg(test)]
 impl sealed::PublicationKind for MigrationAuthority {
     fn next_record(&self, current: Option<&DayRecord>) -> Result<DayRecord, ConvergenceError> {
-        PreparedCompletionAuthority.next_record(current)
+        let current = current.ok_or(ConvergenceError::Unknown {
+            role: DurableRole::Record,
+        })?;
+        if current.first_transition_serial != self.inventory_first_serial {
+            return Err(ConvergenceError::Refused(Refusal::WrongLineage));
+        }
+        let mut next = current.clone();
+        next.record_revision += 1;
+        next.completed_generation = next.dirty_generation;
+        Ok(next)
     }
 }
 
 #[cfg(test)]
+// Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
@@ -761,7 +970,8 @@ mod tests {
     use crate::layout::DayKey;
     use crate::store::{LoadDay, PendingKind};
     use crate::test_support::{
-        days_dir, dirty, fail_next_dir_sync, initialized_store, records_dir, sample_day,
+        after_witness, days_dir, dirty, fail_after_ever, fail_after_witness, fail_next_dir_sync,
+        initialized_store, records_dir, sample_day,
     };
     use std::fs;
     use std::path::Path;
@@ -788,15 +998,23 @@ mod tests {
         let (temporary, store) = initialized_store();
         let day = sample_day();
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
+        let proof = store.allocate(&locks).unwrap();
+        let proposal = store
+            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
+            .unwrap();
+        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
+        let _inject = fail_after_ever();
+        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
+        assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         let days = days_dir(&temporary);
-        let ever = days.join("20260823.ever.wit.json");
-        let witness = days.join("20260823.rev.1.wit.json");
-        assert!(ever.exists());
-        assert!(witness.exists());
-        let ever_meta = fs::metadata(&ever).unwrap();
-        let witness_meta = fs::metadata(&witness).unwrap();
-        assert!(ever_meta.modified().unwrap() <= witness_meta.modified().unwrap());
+        assert!(days.join("20260823.ever.wit.json").exists());
+        assert!(!days.join("20260823.rev.1.wit.json").exists());
+        assert!(!days.join("20260823.head.json").exists());
+        assert!(
+            !records_dir(&temporary)
+                .join("20260823/record.json")
+                .exists()
+        );
     }
 
     #[test]
@@ -806,12 +1024,21 @@ mod tests {
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
         dirty(&store, &locks, &day);
         let days = days_dir(&temporary);
-        assert!(days.join("20260823.rev.1.wit.json").exists());
-        assert!(days.join("20260823.head.json").exists());
-        assert!(
-            records_dir(&temporary)
-                .join("20260823/record.json")
-                .exists()
+        let old_head = fs::read(days.join("20260823.head.json")).unwrap();
+        let old_record = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
+        let proof = store.allocate(&locks).unwrap();
+        let proposal = store
+            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
+            .unwrap();
+        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
+        let _inject = fail_after_witness();
+        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
+        assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
+        assert!(days.join("20260823.rev.2.wit.json").exists());
+        assert_eq!(fs::read(days.join("20260823.head.json")).unwrap(), old_head);
+        assert_eq!(
+            fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap(),
+            old_record
         );
     }
 
@@ -998,15 +1225,11 @@ mod tests {
             .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
             .unwrap();
         let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
-        assert!(store.publish(&locks, &day, &mut authority).is_err());
+        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
+        assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         fs::remove_dir(&blocker).unwrap();
         store.publish(&locks, &day, &mut authority).unwrap();
         assert_eq!(published_snapshot(&store, &locks, &day).record_revision, 2);
-    }
-
-    #[test]
-    fn failure_before_witness_preserves_prior() {
-        crash_before_witness_preserves_prior();
     }
 
     #[test]
@@ -1034,11 +1257,6 @@ mod tests {
     }
 
     #[test]
-    fn witness_newer_than_head_is_pending() {
-        crash_after_witness_before_head_is_pending();
-    }
-
-    #[test]
     fn witness_without_head_is_pending() {
         let (temporary, store) = initialized_store();
         let day = sample_day();
@@ -1062,7 +1280,7 @@ mod tests {
         dirty(&store, &locks, &day);
         let record_path = records_dir(&temporary).join("20260823/record.json");
         let before = fs::read(&record_path).unwrap();
-        fail_next_dir_sync();
+        let _inject = fail_next_dir_sync();
         let proof = store.allocate(&locks).unwrap();
         let proposal = store
             .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
@@ -1073,16 +1291,6 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert_eq!(before, fs::read(&record_path).unwrap());
-    }
-
-    #[test]
-    fn witness_head_uncertainty_does_not_change_record() {
-        head_durability_uncertain_does_not_write_record();
-    }
-
-    #[test]
-    fn uncertainty_after_witness_or_head_is_pending() {
-        head_durability_uncertain_does_not_write_record();
     }
 
     #[test]
@@ -1104,11 +1312,6 @@ mod tests {
             } => {}
             other => panic!("{other:?}"),
         }
-    }
-
-    #[test]
-    fn durable_head_then_record_failure_is_pending_mismatch() {
-        crash_after_head_before_record_is_pending_mismatch();
     }
 
     #[test]
@@ -1136,6 +1339,14 @@ mod tests {
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
         dirty(&store, &locks, &day);
         fs::remove_file(days_dir(&temporary).join("20260823.head.json")).unwrap();
+        assert!(matches!(
+            store.load_day(&locks, &day).unwrap_err(),
+            ConvergenceError::Unknown { .. }
+        ));
+        let (temporary, store) = initialized_store();
+        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
+        dirty(&store, &locks, &day);
+        fs::remove_file(days_dir(&temporary).join("20260823.ever.wit.json")).unwrap();
         assert!(matches!(
             store.load_day(&locks, &day).unwrap_err(),
             ConvergenceError::Unknown { .. }
@@ -1192,17 +1403,21 @@ mod tests {
     }
 
     #[test]
-    fn prepared_completion_authority_uses_shared_path() {
-        g5_dirty_then_same_g5_completed();
-    }
-
-    #[test]
     fn migration_authority_uses_shared_path() {
         let (temporary, store) = initialized_store();
         let day = sample_day();
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
         dirty(&store, &locks, &day);
-        publish_kind_for_test(&store, &locks, &day, MigrationAuthority).unwrap();
+        let first = published_snapshot(&store, &locks, &day).first_transition_serial;
+        publish_kind_for_test(
+            &store,
+            &locks,
+            &day,
+            MigrationAuthority {
+                inventory_first_serial: first,
+            },
+        )
+        .unwrap();
         assert!(
             days_dir(&temporary)
                 .join("20260823.rev.2.wit.json")
@@ -1216,6 +1431,19 @@ mod tests {
         );
         let done = published_snapshot(&store, &locks, &day);
         assert_eq!(done.completed_generation, done.dirty_generation);
+        assert_eq!(done.record_revision, 2);
+        assert_eq!(done.first_transition_serial, first);
+        assert!(matches!(
+            publish_kind_for_test(
+                &store,
+                &locks,
+                &day,
+                MigrationAuthority {
+                    inventory_first_serial: first + 1,
+                },
+            ),
+            Err(ConvergenceError::Refused(Refusal::WrongLineage))
+        ));
     }
 
     #[test]
@@ -1224,9 +1452,21 @@ mod tests {
         let day = sample_day();
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
         dirty(&store, &locks, &day);
+        let first = published_snapshot(&store, &locks, &day).first_transition_serial;
         fs::remove_file(days_dir(&temporary).join("20260823.head.json")).unwrap();
         assert!(matches!(
             publish_kind_for_test(&store, &locks, &day, PreparedCompletionAuthority),
+            Err(ConvergenceError::Unknown { .. })
+        ));
+        assert!(matches!(
+            publish_kind_for_test(
+                &store,
+                &locks,
+                &day,
+                MigrationAuthority {
+                    inventory_first_serial: first,
+                },
+            ),
             Err(ConvergenceError::Unknown { .. })
         ));
     }
@@ -1386,12 +1626,38 @@ mod tests {
 
     #[test]
     fn revalidates_before_witness_head_and_record() {
-        let (_temporary, store) = initialized_store();
+        let (temporary, store) = initialized_store();
         let day = sample_day();
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
         dirty(&store, &locks, &day);
-        store.revalidate().unwrap();
-        dirty(&store, &locks, &day);
-        assert_eq!(published_snapshot(&store, &locks, &day).record_revision, 2);
+        let head_path = days_dir(&temporary).join("20260823.head.json");
+        let original_head = fs::read(&head_path).unwrap();
+        let proof = store.allocate(&locks).unwrap();
+        let proposal = store
+            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
+            .unwrap();
+        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
+        let _inject = after_witness(move || {
+            let mut head: Head = read_json_file(&head_path);
+            head.witness_digest = "ff".repeat(32);
+            fs::write(&head_path, serde_json::to_vec(&head).unwrap()).unwrap();
+        });
+        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
+        assert!(matches!(
+            error,
+            ConvergenceError::Unknown {
+                role: DurableRole::Head
+            }
+        ));
+        assert!(
+            days_dir(&temporary)
+                .join("20260823.rev.2.wit.json")
+                .exists()
+        );
+        let restored = fs::read(days_dir(&temporary).join("20260823.head.json")).unwrap();
+        assert_ne!(restored, original_head);
+        let record: DayRecord =
+            read_json_file(&records_dir(&temporary).join("20260823/record.json"));
+        assert_eq!(record.record_revision, 1);
     }
 }

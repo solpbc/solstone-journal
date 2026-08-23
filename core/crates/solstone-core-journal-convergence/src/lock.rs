@@ -156,6 +156,7 @@ pub(crate) fn acquire_days(
 }
 
 #[cfg(test)]
+// Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::thread;
@@ -217,6 +218,14 @@ mod tests {
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
         let proof = store.allocate(&locks).unwrap();
         assert_eq!(proof.instance(), locks.instance());
+    }
+
+    #[test]
+    fn proof_refused_after_relock_same_days() {
+        let (_temporary, store) = initialized_store();
+        let day = DayKey::parse("20260823").unwrap();
+        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
+        let proof = store.allocate(&locks).unwrap();
         drop(locks);
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
         let proposal = store
@@ -227,11 +236,6 @@ mod tests {
             error,
             ConvergenceError::Refused(Refusal::StaleLease)
         ));
-    }
-
-    #[test]
-    fn proof_refused_after_relock_same_days() {
-        proof_bound_to_lock_set_instance();
     }
 
     #[test]

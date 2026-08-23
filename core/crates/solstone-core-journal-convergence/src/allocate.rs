@@ -32,11 +32,11 @@ impl ConvergenceStore {
         }
         if allocator.exhausted || allocator.next_serial == u64::MAX {
             allocator.exhausted = true;
-            let _ = replace_json(
+            replace_json(
                 &dirs.convergence,
                 OsStr::new(crate::layout::ALLOCATOR),
                 &allocator,
-            );
+            )?;
             return Err(ConvergenceError::Refused(Refusal::Exhausted));
         }
         let serial = allocator.next_serial;
@@ -90,6 +90,7 @@ pub(crate) fn load_adoption(
 }
 
 #[cfg(test)]
+// Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
@@ -98,12 +99,18 @@ mod tests {
 
     #[test]
     fn allocate_releases_topology_before_return() {
-        let (_temporary, store) = initialized_store();
+        let (temporary, store) = initialized_store();
         let day = DayKey::parse("20260823").unwrap();
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
         let _proof = store.allocate(&locks).unwrap();
+        let root_b =
+            solstone_core_journal_io::JournalRoot::open(&temporary.journal_path()).unwrap();
+        let store_b = crate::store::ConvergenceStore::open(root_b).unwrap();
         let other = DayKey::parse("20260824").unwrap();
-        store.acquire_days(&[other]).unwrap();
+        let started = std::time::Instant::now();
+        let other_locks = store_b.acquire_days(&[other]).unwrap();
+        store_b.allocate(&other_locks).unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
     }
 
     #[test]
