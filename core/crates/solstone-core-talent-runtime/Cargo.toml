@@ -40,4 +40,6 @@ nix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
 serde_json.workspace = true
+solstone-core-npy.workspace = true
 tempfile = "3.24.0"
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }

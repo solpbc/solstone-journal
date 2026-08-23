@@ -227,16 +227,19 @@ fn ac5_resolve_candidates_contain_only_admitted_person_names() {
         &[1, 2],
         &[embedding(1.0, 0.0), embedding(0.0, 1.0)],
     );
-    fs::write(
-        segment.join("talents/speakers.json"),
-        "[\"Alice\", \"Terminal\"]",
-    )
-    .expect("speakers");
+    let speakers_path = segment.join("talents/speakers.json");
+    fs::write(&speakers_path, "[\"Alice\", \"Terminal\"]").expect("speakers");
+    let speakers_before = fs::read(&speakers_path).expect("read speakers before resolve");
     let outcome =
         resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve");
     let ResolveOutcome::Resolved(output) = outcome else {
         panic!("expected resolved");
     };
+    assert_eq!(
+        fs::read(&speakers_path).expect("read speakers after resolve"),
+        speakers_before,
+        "resolve must not rewrite talents/speakers.json"
+    );
     assert_eq!(output.candidates, ["Alice"]);
     assert!(
         !output

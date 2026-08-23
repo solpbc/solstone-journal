@@ -445,6 +445,11 @@ pub fn apply_result(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::io::{Cursor, Write};
+
+    use solstone_core_npy::write_npy;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipWriter};
 
     use super::*;
 
@@ -634,6 +639,77 @@ mod tests {
         assert_eq!(labels["labels"][0]["method"], "contextual");
     }
 
+    #[test]
+    fn known_speakers_prompt_omits_non_person_candidate_names() {
+        let root = tempfile::tempdir().unwrap();
+        write_layer4_entity(root.path(), "principal", "Principal", Some("Person"), false);
+        write_layer4_entity(root.path(), "alice", "Alice", Some("Person"), false);
+        write_layer4_entity(root.path(), "tool", "Terminal", Some("Tool"), false);
+        std::fs::write(
+            root.path().join("entities/principal/entity.json"),
+            json!({"id":"principal","name":"Principal","type":"Person","is_principal":true})
+                .to_string(),
+        )
+        .unwrap();
+        solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
+            root.path(),
+            "principal",
+            &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
+                centroid: vector(1.0, 0.0),
+                cluster_size: 10,
+                timestamp: "2026-08-08T12:00:00Z".to_owned(),
+                evidence_tier: "high".to_owned(),
+            },
+        )
+        .unwrap();
+        let segment = segment_dir(root.path(), "20260808", "120000_300", "mic", true).unwrap();
+        std::fs::create_dir_all(segment.join("talents")).unwrap();
+        write_statement_embeddings(
+            &segment.join("mic_audio.npz"),
+            &[1, 2],
+            &[vector(1.0, 0.0), vector(0.0, 1.0)],
+        );
+        std::fs::write(
+            segment.join("talents/speakers.json"),
+            r#"["Alice", "Terminal"]"#,
+        )
+        .unwrap();
+        let outcome = solstone_core_speaker_resolve::resolve::resolve(
+            root.path(),
+            "20260808",
+            "mic",
+            "120000_300",
+            true,
+            1,
+        )
+        .expect("resolve");
+        let ResolveOutcome::Resolved(resolved) = outcome else {
+            panic!("expected resolved");
+        };
+        let state = PrePostState::SpeakerAttribution(SpeakerAttributionState { resolved });
+        let mut prepared = PreparedTalent {
+            name: "speaker_attribution".to_owned(),
+            config: Map::from_iter([(
+                "prompt".to_owned(),
+                Value::String("$unmatched_context".to_owned()),
+            )]),
+        };
+        apply_prompt_override(&mut prepared, &state).unwrap();
+        let prompt = prepared.config["prompt"].as_str().expect("prompt text");
+        assert!(
+            prompt.contains("**Known speakers in this segment:**"),
+            "prompt should list known speakers: {prompt}"
+        );
+        assert!(
+            prompt.contains("Alice"),
+            "prompt should include the Person name: {prompt}"
+        );
+        assert!(
+            !prompt.contains("Terminal"),
+            "prompt must not include the Tool name: {prompt}"
+        );
+    }
+
     fn write_layer4_entity(
         root: &Path,
         id: &str,
@@ -776,6 +852,72 @@ mod tests {
         let labels = layer4_labels(root.path(), "Terminal");
         assert!(labels["labels"][0]["speaker"].is_null());
         assert!(!root.path().join("entities/tool/voiceprints.npz").exists());
+    }
+
+    #[test]
+    fn apply_result_does_not_write_a_tool_voiceprint_when_accumulation_runs() {
+        let root = tempfile::tempdir().unwrap();
+        let mut resolved = accumulation_fixture(root.path());
+        write_layer4_entity(root.path(), "tool", "Terminal", Some("Tool"), false);
+        resolved.labels[0].speaker = None;
+        resolved.labels[0].confidence = None;
+        resolved.labels[0].method = None;
+        resolved.unmatched = vec![7];
+        let segment = segment_dir(root.path(), "20260101", "090000_300", "main", false).unwrap();
+        write_statement_embeddings(&segment.join("transcript.npz"), &[7], &[vector(0.0, 1.0)]);
+        apply_result(
+            root.path(),
+            r#"{"attributions":[{"sentence_id":7,"speaker":"Terminal"}]}"#,
+            "20260101",
+            "090000_300",
+            "main",
+            &SpeakerAttributionState { resolved },
+        )
+        .unwrap();
+        let labels: Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                root.path()
+                    .join("chronicle/20260101/main/090000_300/talents/speaker_labels.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(labels["labels"][0]["speaker"].is_null());
+        assert!(
+            !root.path().join("entities/tool/voiceprints.npz").exists(),
+            "Tool must not receive a voiceprint when accumulation actually runs"
+        );
+    }
+
+    fn write_statement_embeddings(path: &Path, ids: &[i32], values: &[Vec<f32>]) {
+        let flat = values.iter().flatten().copied().collect::<Vec<_>>();
+        let f32_bytes = flat
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>();
+        let i32_bytes = ids
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>();
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        writer
+            .start_file("embeddings.npy", options)
+            .expect("member");
+        writer
+            .write_all(&write_npy(
+                "<f4",
+                &format!("({}, 256)", values.len()),
+                &f32_bytes,
+            ))
+            .expect("embeddings");
+        writer
+            .start_file("statement_ids.npy", options)
+            .expect("member");
+        writer
+            .write_all(&write_npy("<i4", &format!("({},)", ids.len()), &i32_bytes))
+            .expect("ids");
+        std::fs::write(path, writer.finish().expect("archive").into_inner()).expect("npz");
     }
 
     fn accumulation_fixture(root: &Path) -> Box<ResolveOutput> {

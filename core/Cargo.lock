@@ -4956,6 +4956,7 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-journal-io",
  "solstone-core-maintenance",
+ "solstone-core-npy",
  "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-system",
@@ -4964,6 +4965,7 @@ dependencies = [
  "solstone-core-talent-config",
  "solstone-core-transcripts",
  "tempfile",
+ "zip",
 ]
 
 [[package]]
