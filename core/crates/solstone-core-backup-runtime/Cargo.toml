@@ -21,7 +21,6 @@ bzip2-rs.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
 md5.workspace = true
-nix = { workspace = true, features = ["fs", "process", "signal"] }
 rustix = { workspace = true, features = ["process"] }
 serde.workspace = true
 serde_json.workspace = true
@@ -35,9 +34,14 @@ solstone-core-body-rebuild.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal-io.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs", "process", "signal"] }
+
 [dev-dependencies]
-nix = { workspace = true, features = ["fs", "signal"] }
 tempfile = "3.24.0"
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["fs", "signal"] }
 
 [[test]]
 name = "backup_runtime_process"

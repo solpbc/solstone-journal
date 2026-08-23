@@ -16,7 +16,6 @@ workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 getrandom.workspace = true
-nix.workspace = true
 quick-xml = "0.41.0"
 serde_json.workspace = true
 sha2.workspace = true
@@ -27,6 +26,9 @@ solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 ureq = { workspace = true, features = ["rustls"] }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
 
 [dev-dependencies]
 rusqlite.workspace = true

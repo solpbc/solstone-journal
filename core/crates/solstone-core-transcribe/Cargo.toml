@@ -20,7 +20,6 @@ required-features = ["test-hooks"]
 [dependencies]
 chrono = { workspace = true }
 getrandom = { workspace = true }
-nix = { workspace = true, features = ["process", "signal"] }
 rustix = { workspace = true, features = ["process"] }
 serde_json = { workspace = true }
 sha2.workspace = true
@@ -37,6 +36,9 @@ solstone-core-assets = { workspace = true }
 solstone-core-spp-ratls = { workspace = true }
 tempfile = "3.24.0"
 ureq = { workspace = true, features = ["multipart"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["process", "signal"] }
 
 [dev-dependencies]
 socket2 = { workspace = true }

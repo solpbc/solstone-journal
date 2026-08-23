@@ -14,7 +14,6 @@ workspace = true
 [dependencies]
 chrono.workspace = true
 hmac.workspace = true
-nix.workspace = true
 getrandom.workspace = true
 ryu.workspace = true
 serde.workspace = true
@@ -22,6 +21,9 @@ serde_json.workspace = true
 sha2.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
 
 [dev-dependencies]
 chrono.workspace = true

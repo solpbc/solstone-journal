@@ -14,7 +14,7 @@ solstone-core-format = { workspace = true }
 spl-core = { workspace = true }
 ureq = { workspace = true }
 
-[dev-dependencies]
+[target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true }
 
 [lints]

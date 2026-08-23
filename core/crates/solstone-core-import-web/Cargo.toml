@@ -38,8 +38,10 @@ tokio-util = { version = "0.7.16", features = ["io"] }
 
 [dev-dependencies]
 jsonschema.workspace = true
-nix = { workspace = true, features = ["process", "signal"] }
 solstone-core-convey-shell.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt"] }
 tower.workspace = true
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["process", "signal"] }

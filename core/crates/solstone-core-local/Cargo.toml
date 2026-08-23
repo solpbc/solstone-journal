@@ -15,7 +15,6 @@ publish = false
 test-hooks = []
 
 [dependencies]
-nix = { workspace = true, features = ["time"] }
 serde.workspace = true
 serde_json.workspace = true
 ureq.workspace = true
@@ -32,6 +31,9 @@ solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 uuid = { version = "1", features = ["v4"] }
 log.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["time"] }
 
 [dev-dependencies]
 socket2 = "0.6.5"

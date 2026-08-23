@@ -22,10 +22,12 @@ solstone-core-brain.workspace = true
 solstone-core-observer.workspace = true
 solstone-core-transcribe.workspace = true
 solstone-core-skill-state.workspace = true
-nix.workspace = true
 plist.workspace = true
 rustix = { workspace = true, features = ["process"] }
 tokio = { workspace = true, features = ["net", "rt", "sync", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
 
 [dev-dependencies]
 solstone-core-assets.workspace = true

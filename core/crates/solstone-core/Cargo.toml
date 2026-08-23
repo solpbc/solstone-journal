@@ -152,14 +152,15 @@ solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-cortex-client.workspace = true
 serde_json.workspace = true
 jsonschema.workspace = true
-nix = { workspace = true, features = ["fs", "process", "signal", "user"] }
 plist.workspace = true
 tokio = { workspace = true, features = ["io-std", "io-util", "net", "rt-multi-thread", "signal", "sync", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs", "process", "signal", "user"] }
 
 [dev-dependencies]
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }
 image.workspace = true
-nix = { workspace = true, features = ["ptrace", "signal"] }
 rcgen.workspace = true
 rustls.workspace = true
 rusqlite.workspace = true
@@ -170,3 +171,6 @@ tempfile = "3.24.0"
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["handshake"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["ptrace", "signal"] }

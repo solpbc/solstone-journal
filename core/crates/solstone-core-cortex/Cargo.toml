@@ -17,7 +17,6 @@ test-hooks = []
 
 [dependencies]
 chrono.workspace = true
-nix = { workspace = true, features = ["process", "signal"] }
 serde_json.workspace = true
 solstone-core-brain.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
@@ -29,6 +28,9 @@ solstone-core-talent-cli.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "signal", "sync", "time"] }
 uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["process", "signal"] }
 
 [dev-dependencies]
 tempfile = "3.24.0"

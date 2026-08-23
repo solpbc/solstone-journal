@@ -36,7 +36,6 @@ flate2.workspace = true
 getrandom.workspace = true
 icalendar = { version = "0.17.13", features = ["chrono-tz"] }
 image.workspace = true
-nix = { workspace = true, features = ["fs"] }
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -54,7 +53,12 @@ tar.workspace = true
 tempfile = "3.24.0"
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs"] }
+
 [dev-dependencies]
-nix = { workspace = true, features = ["process", "signal"] }
 serde_json.workspace = true
 solstone-core-indexer-store.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["process", "signal"] }

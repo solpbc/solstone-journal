@@ -8,7 +8,6 @@ publish = false
 
 [dependencies]
 chrono = { workspace = true }
-nix = { workspace = true, features = ["signal"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 solstone-core-cli-boundary = { workspace = true }
@@ -16,6 +15,9 @@ solstone-core-journal = { workspace = true }
 solstone-core-sol-client = { workspace = true }
 solstone-core-sol-client-cli = { workspace = true }
 solstone-core-skill-state = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["signal"] }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 solstone-core-sol-link = { workspace = true, features = ["client"] }

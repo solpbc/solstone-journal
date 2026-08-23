@@ -22,12 +22,14 @@ solstone-core-setup.workspace = true
 
 [dev-dependencies]
 solstone-core-journal.workspace = true
-nix = { workspace = true, features = ["signal"] }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 solstone-core-cli = { workspace = true }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["signal"] }
 
 [lints]
 workspace = true

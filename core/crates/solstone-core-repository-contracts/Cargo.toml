@@ -7,7 +7,6 @@ license.workspace = true
 publish = false
 
 [dependencies]
-nix = { workspace = true, features = ["process", "resource", "signal"] }
 solstone-core-journal.workspace = true
 quote = "1.0.47"
 serde.workspace = true
@@ -15,6 +14,9 @@ serde_json.workspace = true
 sha2.workspace = true
 syn = { version = "2.0.119", features = ["full", "visit"] }
 toml_edit = { workspace = true, features = ["serde"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["process", "resource", "signal"] }
 
 [lints]
 workspace = true

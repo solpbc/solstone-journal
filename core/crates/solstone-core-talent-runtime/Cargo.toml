@@ -14,7 +14,6 @@ caseless = "0.2.2"
 chrono.workspace = true
 jsonschema.workspace = true
 log.workspace = true
-nix = { workspace = true, features = ["fs"] }
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-generate.workspace = true
@@ -35,6 +34,9 @@ solstone-core-system.workspace = true
 solstone-core-transcripts.workspace = true
 solstone-core-speaker-id.workspace = true
 solstone-core-speaker-resolve.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
 serde_json.workspace = true

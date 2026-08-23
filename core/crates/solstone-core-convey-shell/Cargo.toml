@@ -81,7 +81,6 @@ chrono.workspace = true
 futures-core = "0.3.33"
 log.workspace = true
 ndarray = "=0.17.2"
-nix = { workspace = true, features = ["signal"] }
 percent-encoding = { version = "2.3.2", optional = true }
 serde.workspace = true
 serde_json.workspace = true
@@ -131,6 +130,9 @@ tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync", "time"
 tower.workspace = true
 ureq = { workspace = true, features = ["rustls"] }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["signal"] }
 
 [build-dependencies]
 serde_json.workspace = true

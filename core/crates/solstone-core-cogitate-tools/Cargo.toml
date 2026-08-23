@@ -19,10 +19,12 @@ solstone-core-cogitate = { workspace = true }
 solstone-core-format.workspace = true
 
 [dev-dependencies]
-nix = { workspace = true, features = ["signal"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = "3.24.0"
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["signal"] }
 
 [[test]]
 name = "sol_execution_process"

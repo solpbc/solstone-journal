@@ -14,7 +14,6 @@ workspace = true
 axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 chrono-tz.workspace = true
-nix = { workspace = true, features = ["fs"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -29,6 +28,9 @@ solstone-core-retention.workspace = true
 solstone-core-sense.workspace = true
 solstone-core-segment.workspace = true
 solstone-core-assets.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs"] }
 
 [build-dependencies]
 serde_json.workspace = true

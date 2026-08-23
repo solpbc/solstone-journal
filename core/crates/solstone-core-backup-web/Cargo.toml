@@ -13,7 +13,6 @@ workspace = true
 axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 getrandom.workspace = true
-nix = { workspace = true, features = ["fs"] }
 serde.workspace = true
 serde_json.workspace = true
 solstone-core-artifact-download.workspace = true
@@ -23,6 +22,9 @@ solstone-core-callosum.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-offload.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
 sha2.workspace = true

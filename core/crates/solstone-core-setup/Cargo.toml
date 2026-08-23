@@ -13,7 +13,6 @@ publish = false
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 chrono.workspace = true
-nix.workspace = true
 toml_edit.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
@@ -21,6 +20,9 @@ solstone-core-journal-io.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-system.workspace = true
 solstone-core-check.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
 
 [lints]
 workspace = true
