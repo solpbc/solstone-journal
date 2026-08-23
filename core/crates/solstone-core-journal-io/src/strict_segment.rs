@@ -770,10 +770,10 @@ mod unix_tests {
     }
 
     fn mkfifo(path: &Path) {
-        let status = std::process::Command::new("mkfifo")
-            .arg(path)
-            .status()
-            .expect("mkfifo");
-        assert!(status.success(), "mkfifo {path:?}");
+        nix::unistd::mkfifo(
+            path,
+            nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+        )
+        .expect("mkfifo");
     }
 }
