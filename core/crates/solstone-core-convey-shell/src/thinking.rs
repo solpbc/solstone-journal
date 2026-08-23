@@ -999,137 +999,23 @@ async fn update_providers(
             json_display(lane_value)
         ));
     };
-    if !matches!(lane, "byo" | "confidential" | "local") {
-        return invalid_config(format!(
-            "Invalid lane: {}. Must be one of: byo, confidential, local",
-            json_display(lane_value)
-        ));
-    }
-    let config = match solstone_core_thinking::read_config(&journal.0) {
-        Ok(config) => config,
-        Err(_error) => return thinking_failure(),
-    };
-    let endpoint_configured = config
-        .get("providers")
-        .and_then(Value::as_object)
-        .and_then(|providers| providers.get("local"))
-        .and_then(Value::as_object)
-        .is_some_and(|local| {
-            local
-                .get("endpoint_url")
-                .and_then(Value::as_str)
-                .is_some_and(|value| !value.trim().is_empty())
-                && local
-                    .get("served_model_id")
-                    .and_then(Value::as_str)
-                    .is_some_and(|value| !value.trim().is_empty())
-        });
-    // `services.confidential` existing means confidential is PROVISIONED,
-    // independent of whether it is the currently active lane -- this is
-    // `spp.confidential_provenance()`/`confidential_provenance_block()`'s
-    // exact check (`solstone/think/providers/local_endpoint.py:75-82`), not
-    // `_confidential_lane_active_for_config`'s active-lane check below.
-    let confidential_provisioned = config
-        .get("services")
-        .and_then(Value::as_object)
-        .and_then(|services| services.get("confidential"))
-        .is_some_and(Value::is_object);
-    let provider = match lane {
-        "confidential" if confidential_provisioned => "local".to_owned(),
-        "confidential" => {
-            return invalid_state(
-                "confidential lane activation must use the confidential enable flow.",
-            );
+    let update = match solstone_core_thinking::providers::resolve_provider_update(
+        &journal.0, lane, &request,
+    ) {
+        Ok(update) => update,
+        Err(solstone_core_thinking::providers::ProviderRequestError::InvalidInput(detail)) => {
+            return invalid_config(detail);
         }
-        "local" if confidential_provisioned => {
-            return invalid_state(
-                "Turn off confidential thinking first, then switch to the bundled local model.",
-            );
+        Err(solstone_core_thinking::providers::ProviderRequestError::InvalidState(detail)) => {
+            return invalid_state(detail);
         }
-        "local" if endpoint_configured => {
-            return invalid_state("clear your endpoint URL first to run the bundled local model.");
-        }
-        "local" => "local".to_owned(),
-        "byo" => match request.get("provider").and_then(Value::as_str) {
-            None | Some("") => {
-                return invalid_config(
-                    "No BYO provider selected. Must be one of: anthropic, google, local, openai",
-                );
-            }
-            Some(value @ ("anthropic" | "google" | "local" | "openai"))
-                if value != "local" || endpoint_configured =>
-            {
-                value.to_owned()
-            }
-            Some("local") => {
-                return invalid_state("save your endpoint URL first to use your own endpoint.");
-            }
-            Some(_) => {
-                return invalid_config(
-                    "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai",
-                );
-            }
-        },
-        _ => unreachable!(),
-    };
-    let model = match request.get("model") {
-        None => None,
-        Some(_value)
-            if lane != "byo" || !matches!(provider.as_str(), "anthropic" | "google" | "openai") =>
-        {
-            return invalid_config(
-                "model is only valid with cloud BYO providers: anthropic, google, openai.",
-            );
-        }
-        Some(Value::String(value)) if !value.trim().is_empty() => Some(value.trim().to_owned()),
-        Some(_) => return invalid_config("model must be a non-empty string."),
-    };
-    let targets = match request.get("google_model_resolution_targets") {
-        None => Vec::new(),
-        Some(Value::Array(values)) => {
-            let mut targets = Vec::new();
-            let mut unknown = Vec::new();
-            for value in values {
-                let Some(value) = value.as_str() else {
-                    unknown.push(json_display(value));
-                    continue;
-                };
-                if !matches!(value, "active" | "remembered" | "confidential_prior") {
-                    unknown.push(value.to_owned());
-                } else if !targets.iter().any(|target: &String| target == value) {
-                    targets.push(value.to_owned());
-                }
-            }
-            if !unknown.is_empty() {
-                unknown.sort();
-                return invalid_config(format!(
-                    "Invalid Google model resolution targets: {}. Must be one of: active, confidential_prior, remembered",
-                    unknown.join(", ")
-                ));
-            }
-            targets
-        }
-        Some(_) => {
-            return invalid_config(
-                "google_model_resolution_targets must be a list of: active, confidential_prior, remembered",
-            );
+        Err(solstone_core_thinking::providers::ProviderRequestError::ConfigUnreadable(_)) => {
+            return thinking_failure();
         }
     };
-    if request.contains_key("google_model_resolution_targets")
-        && (lane != "byo" || provider != "google" || model.is_none())
-    {
-        return invalid_config(
-            "google_model_resolution_targets is only valid with Google BYO model saves.",
-        );
-    }
     match solstone_core_thinking::providers::update_providers(
         &journal.0,
-        solstone_core_thinking::providers::ProviderUpdate {
-            lane: lane.to_owned(),
-            provider,
-            model,
-            resolution_targets: targets,
-        },
+        update,
         operations.operation(SERVICE_SPP),
     ) {
         Ok(value) => json_response(value),

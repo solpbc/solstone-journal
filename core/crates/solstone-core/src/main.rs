@@ -39,9 +39,10 @@ use solstone_core_cli::{
     SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP,
     START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions, SenseOptions,
     SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome, SettingsParseError,
-    SpeakerResolveCommand, SplCommand, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE,
-    TRANSFER_USAGE, TranscribeOptions, TransferCommand, TransferSendOptions, USAGE, evaluate_args,
-    render_service_diagnostic, version_line,
+    SpeakerResolveCommand, SplCommand, THINKING_HELP, THINKING_SET_LANE_HELP,
+    THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP,
+    TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand, TranscribeOptions, TransferCommand,
+    TransferSendOptions, USAGE, evaluate_args, render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 mod brain_owner;
@@ -62,6 +63,7 @@ mod service;
 mod service_logs;
 mod settings;
 mod supervisor;
+mod thinking;
 use solstone_core_indexer_query::{
     IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
 };
@@ -232,6 +234,19 @@ fn main() -> ExitCode {
             let run = solstone_core_think_cli::run_cli(arguments, journal);
             (run.stdout, run.stderr, run.exit_code)
         }),
+        Ok(Command::ThinkingHelp) => {
+            print!("{THINKING_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::ThinkingUsage) => render_usage_error(THINKING_USAGE, "journal thinking"),
+        Ok(Command::Thinking(ThinkingCommand::SetLaneHelp)) => {
+            print!("{THINKING_SET_LANE_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Thinking(ThinkingCommand::SetLaneUsage)) => {
+            render_usage_error(THINKING_SET_LANE_USAGE, "journal thinking set-lane")
+        }
+        Ok(Command::Thinking(ThinkingCommand::SetLane(options))) => thinking::run(options),
         Ok(Command::Streams(args)) => run_streams(args),
         Ok(Command::Importer(args)) => run_importer(args),
         Ok(Command::Segment(args)) => run_segment(args),

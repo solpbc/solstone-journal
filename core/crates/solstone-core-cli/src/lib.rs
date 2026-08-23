@@ -31,7 +31,7 @@ pub const USAGE: &str = concat!(
     "  solstone-core settings [-h | --help] [-v | --verbose] [-d | --debug] [convey [status [--json]]]\n",
     "  solstone-core contract <build|check> ...\n",
     "  solstone-core transcribe [-h] [--all] [--redo] [--backend {parakeet,parakeet-cpp,confidential}] [-v] [-d] [audio_path]\n",
-    "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n  solstone-core install-provider <name>\n",
+    "  solstone-core facet-candidates [-h] [-v] [-d]\n  solstone-core install-models [--check | --force] [--variant {auto,cpu,cuda,coreml}]\n  solstone-core install-provider <name>\n  solstone-core thinking set-lane {local,byo,confidential} [--provider PROVIDER] [--model MODEL] [--journal PATH]\n",
     "  solstone-core streams [args...]\n",
     "  solstone-core importer [args...]\n",
     "  solstone-core segment [args...]\n",
@@ -641,6 +641,43 @@ pub const INSTALL_PROVIDER_HELP: &str = concat!(
     "  -h, --help  show this help message and exit\n",
 );
 
+pub const THINKING_USAGE: &str = "usage: journal thinking [-h] {set-lane} ...\n";
+
+pub const THINKING_HELP: &str = concat!(
+    "usage: journal thinking [-h] {set-lane} ...\n",
+    "\n",
+    "Select the journal thinking lane.\n",
+    "\n",
+    "positional arguments:\n",
+    "  {set-lane}\n",
+    "    set-lane             Set the thinking lane (local, byo, or confidential)\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+);
+
+pub const THINKING_SET_LANE_USAGE: &str = concat!(
+    "usage: journal thinking set-lane [-h] {local,byo,confidential} ",
+    "[--provider PROVIDER] [--model MODEL] [--journal PATH]\n",
+);
+
+pub const THINKING_SET_LANE_HELP: &str = concat!(
+    "usage: journal thinking set-lane [-h] {local,byo,confidential} ",
+    "[--provider PROVIDER] [--model MODEL] [--journal PATH]\n",
+    "\n",
+    "Set the thinking lane used by generate and cogitate.\n",
+    "\n",
+    "positional arguments:\n",
+    "  {local,byo,confidential}\n",
+    "                        Thinking lane to activate.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help            show this help message and exit\n",
+    "  --provider PROVIDER   BYO provider: anthropic, google, local, or openai\n",
+    "  --model MODEL         Cloud BYO model name\n",
+    "  --journal PATH        Journal root\n",
+);
+
 /// `journal facet-candidates --help`, verbatim from the reference.
 pub const FACET_CANDIDATES_HELP: &str = concat!(
     "usage: journal facet-candidates [-h] [-v] [-d]\n",
@@ -768,6 +805,9 @@ pub enum Command {
     RetiredMover(&'static str),
     Transcribe(TranscribeOptions),
     Think(Vec<OsString>),
+    Thinking(ThinkingCommand),
+    ThinkingUsage,
+    ThinkingHelp,
     Streams(Vec<OsString>),
     Importer(Vec<OsString>),
     Segment(Vec<OsString>),
@@ -942,6 +982,21 @@ pub struct InstallModelsOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallProviderOptions {
     pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThinkingSetLaneOptions {
+    pub lane: String,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub journal_override: Option<OsString>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThinkingCommand {
+    SetLane(ThinkingSetLaneOptions),
+    SetLaneUsage,
+    SetLaneHelp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1569,6 +1624,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         [command, rest @ ..] if command == OsStr::new("contract") => parse_contract(rest),
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
         [command, rest @ ..] if command == OsStr::new("think") => Ok(Command::Think(rest.to_vec())),
+        [command, rest @ ..] if command == OsStr::new("thinking") => Ok(parse_thinking(rest)),
         [command, rest @ ..] if command == OsStr::new("streams") => {
             Ok(Command::Streams(rest.to_vec()))
         }
@@ -3305,6 +3361,80 @@ fn parse_install_provider(args: &[OsString]) -> Result<InstallProviderOptions, U
     }
     Ok(InstallProviderOptions {
         name: name.to_str().ok_or(UsageError)?.to_owned(),
+    })
+}
+
+fn parse_thinking(args: &[OsString]) -> Command {
+    let Some((first, rest)) = args.split_first() else {
+        return Command::ThinkingUsage;
+    };
+    if first == OsStr::new("--help") || first == OsStr::new("-h") {
+        return Command::ThinkingHelp;
+    }
+    if first == OsStr::new("set-lane") {
+        return Command::Thinking(parse_thinking_set_lane(rest));
+    }
+    Command::ThinkingUsage
+}
+
+fn parse_thinking_set_lane(args: &[OsString]) -> ThinkingCommand {
+    let help =
+        |argument: &OsString| argument == OsStr::new("--help") || argument == OsStr::new("-h");
+    if args.iter().any(help) {
+        return ThinkingCommand::SetLaneHelp;
+    }
+    let Some((lane_token, rest)) = args.split_first() else {
+        return ThinkingCommand::SetLaneUsage;
+    };
+    if lane_token.as_os_str().as_encoded_bytes().starts_with(b"-") {
+        return ThinkingCommand::SetLaneUsage;
+    }
+    let Some(lane) = lane_token.to_str() else {
+        return ThinkingCommand::SetLaneUsage;
+    };
+    let mut provider = None;
+    let mut model = None;
+    let mut journal_override = None;
+    let mut index = 0;
+    while index < rest.len() {
+        let argument = rest[index].as_os_str();
+        if argument == OsStr::new("--provider")
+            || argument == OsStr::new("--model")
+            || argument == OsStr::new("--journal")
+        {
+            let Some(value) = rest.get(index + 1) else {
+                return ThinkingCommand::SetLaneUsage;
+            };
+            if value.to_str().is_some_and(|value| value.starts_with("--")) {
+                return ThinkingCommand::SetLaneUsage;
+            }
+            if argument == OsStr::new("--provider") {
+                let Some(text) = value.to_str() else {
+                    return ThinkingCommand::SetLaneUsage;
+                };
+                if provider.replace(text.to_owned()).is_some() {
+                    return ThinkingCommand::SetLaneUsage;
+                }
+            } else if argument == OsStr::new("--model") {
+                let Some(text) = value.to_str() else {
+                    return ThinkingCommand::SetLaneUsage;
+                };
+                if model.replace(text.to_owned()).is_some() {
+                    return ThinkingCommand::SetLaneUsage;
+                }
+            } else if journal_override.replace(value.clone()).is_some() {
+                return ThinkingCommand::SetLaneUsage;
+            }
+            index += 2;
+        } else {
+            return ThinkingCommand::SetLaneUsage;
+        }
+    }
+    ThinkingCommand::SetLane(ThinkingSetLaneOptions {
+        lane: lane.to_owned(),
+        provider,
+        model,
+        journal_override,
     })
 }
 
@@ -7004,6 +7134,7 @@ mod tests {
             "facet-candidates",
             "install-models",
             "install-provider",
+            "thinking",
             "streams",
             "importer",
             "segment",
@@ -7222,6 +7353,104 @@ mod tests {
                 "{values:?}"
             );
         }
+    }
+
+    #[test]
+    fn parses_thinking_group_help_and_usage() {
+        for values in [&["thinking", "--help"][..], &["thinking", "-h"][..]] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::ThinkingHelp),
+                "{values:?}"
+            );
+        }
+        for values in [&["thinking"][..], &["thinking", "bogus"][..]] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::ThinkingUsage),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parses_thinking_set_lane_help_at_the_leaf() {
+        for values in [
+            &["thinking", "set-lane", "--help"][..],
+            &["thinking", "set-lane", "local", "--help"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::Thinking(ThinkingCommand::SetLaneHelp)),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parses_thinking_set_lane_usage_for_malformed_forms() {
+        for values in [
+            &["thinking", "set-lane"][..],
+            &["thinking", "set-lane", "--journal", "/x"][..],
+            &["thinking", "set-lane", "byo", "--provider"][..],
+            &[
+                "thinking",
+                "set-lane",
+                "byo",
+                "--provider",
+                "openai",
+                "--provider",
+                "google",
+            ][..],
+            &["thinking", "set-lane", "byo", "--wat"][..],
+            &["thinking", "set-lane", "byo", "extra"][..],
+        ] {
+            assert_eq!(
+                evaluate_args(&args(values)),
+                Ok(Command::Thinking(ThinkingCommand::SetLaneUsage)),
+                "{values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parses_thinking_set_lane_without_validating_the_lane() {
+        assert_eq!(
+            evaluate_args(&args(&["thinking", "set-lane", "nope"])),
+            Ok(Command::Thinking(ThinkingCommand::SetLane(
+                ThinkingSetLaneOptions {
+                    lane: "nope".to_owned(),
+                    provider: None,
+                    model: None,
+                    journal_override: None,
+                }
+            )))
+        );
+    }
+
+    #[test]
+    fn parses_thinking_set_lane_provider_model_and_journal() {
+        assert_eq!(
+            evaluate_args(&args(&[
+                "thinking",
+                "set-lane",
+                "byo",
+                "--provider",
+                "openai",
+                "--model",
+                "gpt-5",
+                "--journal",
+                "/j",
+            ])),
+            Ok(Command::Thinking(ThinkingCommand::SetLane(
+                ThinkingSetLaneOptions {
+                    lane: "byo".to_owned(),
+                    provider: Some("openai".to_owned()),
+                    model: Some("gpt-5".to_owned()),
+                    journal_override: Some("/j".into()),
+                }
+            )))
+        );
     }
 
     #[test]

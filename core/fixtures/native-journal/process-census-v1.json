@@ -21,6 +21,7 @@
     { "token": "config", "module": "solstone.think.config_cli", "preset_argv": [], "surface": "service" },
     { "token": "install-models", "module": "solstone.think.install_models", "preset_argv": [], "surface": "service" },
     { "token": "install-provider", "module": "solstone.think.install_provider", "preset_argv": [], "surface": "service" },
+    { "token": "thinking", "module": "solstone.think.thinking_cli", "preset_argv": [], "surface": "service" },
     { "token": "settings", "module": "solstone.think.settings_cli", "preset_argv": [], "surface": "service" },
     { "token": "streams", "module": "solstone.think.streams", "preset_argv": [], "surface": "service" },
     { "token": "segment", "module": "solstone.think.segment", "preset_argv": [], "surface": "service" },

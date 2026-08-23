@@ -174,6 +174,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         preset_argv: &["install-provider"],
     },
     NativeProcessSpec {
+        token: "thinking",
+        binary: "solstone-core",
+        preset_argv: &["thinking"],
+    },
+    NativeProcessSpec {
         token: "grab",
         binary: "solstone-core",
         preset_argv: &["grab"],
@@ -358,6 +363,12 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
     ProcessSpec {
         token: "install-provider",
         module: "solstone.think.install_provider",
+        preset_argv: EMPTY,
+        kind: ProcessKind::Service,
+    },
+    ProcessSpec {
+        token: "thinking",
+        module: "solstone.think.thinking_cli",
         preset_argv: EMPTY,
         kind: ProcessKind::Service,
     },

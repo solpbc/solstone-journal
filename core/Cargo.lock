@@ -3122,6 +3122,7 @@ dependencies = [
  "solstone-core-talent-cli",
  "solstone-core-talent-runtime",
  "solstone-core-think-cli",
+ "solstone-core-thinking",
  "solstone-core-top",
  "solstone-core-transcribe",
  "solstone-core-transfer",

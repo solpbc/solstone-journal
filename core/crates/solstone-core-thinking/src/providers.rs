@@ -410,6 +410,168 @@ pub enum ProviderUpdateError {
     Confidential(String),
 }
 
+#[derive(Debug)]
+pub enum ProviderRequestError {
+    InvalidInput(String),
+    InvalidState(String),
+    ConfigUnreadable(String),
+}
+
+pub fn resolve_provider_update(
+    journal: &Path,
+    lane: &str,
+    request: &Map<String, Value>,
+) -> Result<ProviderUpdate, ProviderRequestError> {
+    if !matches!(lane, "byo" | "confidential" | "local") {
+        return Err(ProviderRequestError::InvalidInput(format!(
+            "Invalid lane: {}. Must be one of: byo, confidential, local",
+            lane
+        )));
+    }
+    let config = read_config(journal)
+        .map_err(|error| ProviderRequestError::ConfigUnreadable(error.to_string()))?;
+    let endpoint_configured = config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("local"))
+        .and_then(Value::as_object)
+        .is_some_and(|local| {
+            local
+                .get("endpoint_url")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty())
+                && local
+                    .get("served_model_id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.trim().is_empty())
+        });
+    // `services.confidential` existing means confidential is PROVISIONED,
+    // independent of whether it is the currently active lane -- this is
+    // `spp.confidential_provenance()`/`confidential_provenance_block()`'s
+    // exact check (`solstone/think/providers/local_endpoint.py:75-82`), not
+    // `_confidential_lane_active_for_config`'s active-lane check below.
+    let confidential_provisioned = config
+        .get("services")
+        .and_then(Value::as_object)
+        .and_then(|services| services.get("confidential"))
+        .is_some_and(Value::is_object);
+    let provider = match lane {
+        "confidential" if confidential_provisioned => "local".to_owned(),
+        "confidential" => {
+            return Err(ProviderRequestError::InvalidState(
+                "confidential lane activation must use the confidential enable flow.".to_owned(),
+            ));
+        }
+        "local" if confidential_provisioned => {
+            return Err(ProviderRequestError::InvalidState(
+                "Turn off confidential thinking first, then switch to the bundled local model."
+                    .to_owned(),
+            ));
+        }
+        "local" if endpoint_configured => {
+            return Err(ProviderRequestError::InvalidState(
+                "clear your endpoint URL first to run the bundled local model.".to_owned(),
+            ));
+        }
+        "local" => "local".to_owned(),
+        "byo" => match request.get("provider").and_then(Value::as_str) {
+            None | Some("") => {
+                return Err(ProviderRequestError::InvalidInput(
+                    "No BYO provider selected. Must be one of: anthropic, google, local, openai"
+                        .to_owned(),
+                ));
+            }
+            Some(value @ ("anthropic" | "google" | "local" | "openai"))
+                if value != "local" || endpoint_configured =>
+            {
+                value.to_owned()
+            }
+            Some("local") => {
+                return Err(ProviderRequestError::InvalidState(
+                    "save your endpoint URL first to use your own endpoint.".to_owned(),
+                ));
+            }
+            Some(_) => {
+                return Err(ProviderRequestError::InvalidInput(
+                    "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai"
+                        .to_owned(),
+                ));
+            }
+        },
+        _ => unreachable!(),
+    };
+    let model = match request.get("model") {
+        None => None,
+        Some(_value)
+            if lane != "byo" || !matches!(provider.as_str(), "anthropic" | "google" | "openai") =>
+        {
+            return Err(ProviderRequestError::InvalidInput(
+                "model is only valid with cloud BYO providers: anthropic, google, openai."
+                    .to_owned(),
+            ));
+        }
+        Some(Value::String(value)) if !value.trim().is_empty() => Some(value.trim().to_owned()),
+        Some(_) => {
+            return Err(ProviderRequestError::InvalidInput(
+                "model must be a non-empty string.".to_owned(),
+            ));
+        }
+    };
+    let targets = match request.get("google_model_resolution_targets") {
+        None => Vec::new(),
+        Some(Value::Array(values)) => {
+            let mut targets = Vec::new();
+            let mut unknown = Vec::new();
+            for value in values {
+                let Some(value) = value.as_str() else {
+                    unknown.push(json_display(value));
+                    continue;
+                };
+                if !matches!(value, "active" | "remembered" | "confidential_prior") {
+                    unknown.push(value.to_owned());
+                } else if !targets.iter().any(|target: &String| target == value) {
+                    targets.push(value.to_owned());
+                }
+            }
+            if !unknown.is_empty() {
+                unknown.sort();
+                return Err(ProviderRequestError::InvalidInput(format!(
+                    "Invalid Google model resolution targets: {}. Must be one of: active, confidential_prior, remembered",
+                    unknown.join(", ")
+                )));
+            }
+            targets
+        }
+        Some(_) => {
+            return Err(ProviderRequestError::InvalidInput(
+                "google_model_resolution_targets must be a list of: active, confidential_prior, remembered"
+                    .to_owned(),
+            ));
+        }
+    };
+    if request.contains_key("google_model_resolution_targets")
+        && (lane != "byo" || provider != "google" || model.is_none())
+    {
+        return Err(ProviderRequestError::InvalidInput(
+            "google_model_resolution_targets is only valid with Google BYO model saves.".to_owned(),
+        ));
+    }
+    Ok(ProviderUpdate {
+        lane: lane.to_owned(),
+        provider,
+        model,
+        resolution_targets: targets,
+    })
+}
+
+fn json_display(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Null => "None".to_owned(),
+        value => value.to_string(),
+    }
+}
+
 pub fn update_providers(
     journal: &Path,
     update: ProviderUpdate,
@@ -765,8 +927,9 @@ mod tests {
     use solstone_core_generate::{encode_one_shot_request, encode_one_shot_response};
 
     use super::{
-        ManagedKeyValidator, OneShotKeyValidator, ProviderUpdate, classify_key_probe,
-        classify_model_probe, save_key, update_providers, validate_keys_with, validation_request,
+        ManagedKeyValidator, OneShotKeyValidator, ProviderRequestError, ProviderUpdate,
+        ProviderUpdateError, classify_key_probe, classify_model_probe, resolve_provider_update,
+        save_key, update_providers, validate_keys_with, validation_request,
     };
     use crate::read_config;
 
@@ -905,6 +1068,292 @@ mod tests {
             config["services"]["confidential"]["prior_active"]["model"],
             "gemini-3.5-flash"
         );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    fn request_map(pairs: &[(&str, Value)]) -> Map<String, Value> {
+        Map::from_iter(
+            pairs
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), value.clone())),
+        )
+    }
+
+    fn assert_invalid_input(result: Result<ProviderUpdate, ProviderRequestError>, expected: &str) {
+        match result {
+            Err(ProviderRequestError::InvalidInput(detail)) => assert_eq!(detail, expected),
+            other => panic!("expected InvalidInput({expected:?}), got {other:?}"),
+        }
+    }
+
+    fn assert_invalid_state(result: Result<ProviderUpdate, ProviderRequestError>, expected: &str) {
+        match result {
+            Err(ProviderRequestError::InvalidState(detail)) => assert_eq!(detail, expected),
+            other => panic!("expected InvalidState({expected:?}), got {other:?}"),
+        }
+    }
+
+    fn spp_active_config() -> Value {
+        json!({
+            "providers": {
+                "active": {"provider": "local", "model": "private"},
+                "local": {
+                    "endpoint_url": "https://private.example/v1",
+                    "served_model_id": "private",
+                    "credential": "secret"
+                }
+            },
+            "services": {
+                "confidential": {
+                    "endpoint_url": "https://private.example",
+                    "served_model_id": "private",
+                    "credential_fingerprint_sha256": "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn resolve_rejects_unknown_lane_with_the_closed_set_message() {
+        let journal = temporary_journal("resolve-unknown-lane", json!({}));
+        assert_invalid_input(
+            resolve_provider_update(&journal, "nope", &Map::new()),
+            "Invalid lane: nope. Must be one of: byo, confidential, local",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_rejects_byo_without_a_provider() {
+        let journal = temporary_journal("resolve-byo-missing", json!({}));
+        assert_invalid_input(
+            resolve_provider_update(&journal, "byo", &Map::new()),
+            "No BYO provider selected. Must be one of: anthropic, google, local, openai",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_rejects_unknown_byo_provider() {
+        let journal = temporary_journal("resolve-byo-unknown", json!({}));
+        assert_invalid_input(
+            resolve_provider_update(
+                &journal,
+                "byo",
+                &request_map(&[("provider", json!("nope"))]),
+            ),
+            "Invalid provider for BYO lane. Must be one of: anthropic, google, local, openai",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_rejects_confidential_when_not_provisioned() {
+        let journal = temporary_journal("resolve-confidential-enable", json!({}));
+        assert_invalid_state(
+            resolve_provider_update(&journal, "confidential", &Map::new()),
+            "confidential lane activation must use the confidential enable flow.",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_rejects_local_when_confidential_is_provisioned() {
+        let journal = temporary_journal(
+            "resolve-local-provisioned",
+            json!({"services": {"confidential": {"endpoint_url": "https://private.example"}}}),
+        );
+        assert_invalid_state(
+            resolve_provider_update(&journal, "local", &Map::new()),
+            "Turn off confidential thinking first, then switch to the bundled local model.",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_rejects_local_when_an_endpoint_is_configured() {
+        let journal = temporary_journal(
+            "resolve-local-endpoint",
+            json!({
+                "providers": {
+                    "local": {
+                        "endpoint_url": "http://127.0.0.1:1/v1",
+                        "served_model_id": "served-model"
+                    }
+                }
+            }),
+        );
+        assert_invalid_state(
+            resolve_provider_update(&journal, "local", &Map::new()),
+            "clear your endpoint URL first to run the bundled local model.",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_rejects_byo_local_without_an_endpoint() {
+        let journal = temporary_journal("resolve-byo-local", json!({}));
+        assert_invalid_state(
+            resolve_provider_update(
+                &journal,
+                "byo",
+                &request_map(&[("provider", json!("local"))]),
+            ),
+            "save your endpoint URL first to use your own endpoint.",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_rejects_model_outside_cloud_byo() {
+        let journal = temporary_journal("resolve-model-local", json!({}));
+        assert_invalid_input(
+            resolve_provider_update(&journal, "local", &request_map(&[("model", json!("m"))])),
+            "model is only valid with cloud BYO providers: anthropic, google, openai.",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_rejects_blank_cloud_model() {
+        let journal = temporary_journal("resolve-blank-model", json!({}));
+        assert_invalid_input(
+            resolve_provider_update(
+                &journal,
+                "byo",
+                &request_map(&[("provider", json!("google")), ("model", json!(""))]),
+            ),
+            "model must be a non-empty string.",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_rejects_unknown_google_alias_targets() {
+        let journal = temporary_journal("resolve-alias-unknown", json!({}));
+        assert_invalid_input(
+            resolve_provider_update(
+                &journal,
+                "byo",
+                &request_map(&[
+                    ("provider", json!("google")),
+                    ("model", json!("m")),
+                    ("google_model_resolution_targets", json!(["nope"])),
+                ]),
+            ),
+            "Invalid Google model resolution targets: nope. Must be one of: active, confidential_prior, remembered",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_rejects_google_alias_targets_on_non_google_saves() {
+        let journal = temporary_journal("resolve-alias-openai", json!({}));
+        assert_invalid_input(
+            resolve_provider_update(
+                &journal,
+                "byo",
+                &request_map(&[
+                    ("provider", json!("openai")),
+                    ("model", json!("m")),
+                    (
+                        "google_model_resolution_targets",
+                        json!(["confidential_prior"]),
+                    ),
+                ]),
+            ),
+            "google_model_resolution_targets is only valid with Google BYO model saves.",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_rejects_non_list_google_alias_targets() {
+        let journal = temporary_journal("resolve-alias-shape", json!({}));
+        assert_invalid_input(
+            resolve_provider_update(
+                &journal,
+                "byo",
+                &request_map(&[
+                    ("provider", json!("google")),
+                    ("model", json!("m")),
+                    ("google_model_resolution_targets", json!("active")),
+                ]),
+            ),
+            "google_model_resolution_targets must be a list of: active, confidential_prior, remembered",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_accepts_bundled_local() {
+        let journal = temporary_journal("resolve-local-ok", json!({}));
+        let update =
+            resolve_provider_update(&journal, "local", &Map::new()).expect("local resolves");
+        assert_eq!(update.lane, "local");
+        assert_eq!(update.provider, "local");
+        assert_eq!(update.model, None);
+        assert!(update.resolution_targets.is_empty());
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_accepts_byo_openai_with_a_model() {
+        let journal = temporary_journal("resolve-byo-ok", json!({}));
+        let update = resolve_provider_update(
+            &journal,
+            "byo",
+            &request_map(&[("provider", json!("openai")), ("model", json!(" gpt-5 "))]),
+        )
+        .expect("byo openai resolves");
+        assert_eq!(update.lane, "byo");
+        assert_eq!(update.provider, "openai");
+        assert_eq!(update.model.as_deref(), Some("gpt-5"));
+        assert!(update.resolution_targets.is_empty());
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_reports_unreadable_config() {
+        let journal = temporary_journal("resolve-corrupt", json!({}));
+        fs::write(
+            journal.join("config/journal.json"),
+            br#"{"setup": {"completed_at": 17672256"#,
+        )
+        .expect("corrupt config writes");
+        match resolve_provider_update(&journal, "local", &Map::new()) {
+            Err(ProviderRequestError::ConfigUnreadable(detail)) => {
+                assert!(
+                    detail.contains("I couldn't read your settings file"),
+                    "{detail}"
+                );
+            }
+            other => panic!("expected ConfigUnreadable, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn resolve_approves_byo_while_spp_is_active_and_update_providers_refuses() {
+        let journal = temporary_journal("resolve-spp-byo", spp_active_config());
+        let update = resolve_provider_update(
+            &journal,
+            "byo",
+            &request_map(&[
+                ("provider", json!("google")),
+                ("model", json!("gemini-3.5-flash")),
+            ]),
+        )
+        .expect("byo resolves while spp is active");
+        assert_eq!(update.lane, "byo");
+        assert_eq!(update.provider, "google");
+        match update_providers(&journal, update, Value::Null) {
+            Err(ProviderUpdateError::Confidential(detail)) => assert_eq!(
+                detail,
+                "Turn off confidential thinking first, then switch your thinking provider."
+            ),
+            other => panic!("expected Confidential, got {other:?}"),
+        }
         let _ = fs::remove_dir_all(journal);
     }
 
