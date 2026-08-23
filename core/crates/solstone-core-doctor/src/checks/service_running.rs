@@ -14,19 +14,22 @@ use std::{
     time::{Duration, Instant},
 };
 
-const UNOWNED_REASON: &str = "host service-manager diagnostic; the inspected journal service is externally managed, not Solstone-owned";
-
+/// Bounded diagnostic child for a service-manager query.
 struct ProcessGroupChild {
     authority: LaunchAuthority,
     group: rustix::process::Pid,
 }
 
+/// The inspected journal service stays externally managed; only this bounded
+/// probe child is claimed.
+fn diagnostic_disposition(timeout: Duration) -> Disposition {
+    Disposition::IndependentBoundedHelper { timeout }
+}
+
 impl ProcessGroupChild {
-    fn spawn(command: &mut Command) -> io::Result<Self> {
+    fn spawn(command: &mut Command, timeout: Duration) -> io::Result<Self> {
         let authority = launch(
-            Disposition::ExplicitlyUnowned {
-                reason: UNOWNED_REASON.to_owned(),
-            },
+            diagnostic_disposition(timeout),
             || {
                 command
                     .process_group(0)
@@ -193,12 +196,26 @@ fn service_is_failed(context: &CheckContext) -> bool {
 }
 
 fn run_with_timeout(command: &mut Command, timeout: Duration) -> Option<Output> {
-    let child = ProcessGroupChild::spawn(command).ok()?;
+    let child = ProcessGroupChild::spawn(command, timeout).ok()?;
     let deadline = Instant::now() + timeout;
     loop {
         if child.exited_without_reaping().ok()? || Instant::now() >= deadline {
             return child.terminate_with_output().ok();
         }
         thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diagnostic_child_disposition_is_independent_bounded_helper() {
+        let timeout = Duration::from_secs(7);
+        assert_eq!(
+            diagnostic_disposition(timeout),
+            Disposition::IndependentBoundedHelper { timeout }
+        );
     }
 }

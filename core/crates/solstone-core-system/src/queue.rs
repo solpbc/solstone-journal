@@ -167,14 +167,18 @@ impl QueueProcess for ManagedQueueProcess {
 }
 
 type QueueProcessHandle = Arc<Mutex<Box<dyn QueueProcess>>>;
-type QueueProcessSpawner =
-    Arc<dyn Fn(Vec<String>, SpawnOptions) -> Result<QueueProcessHandle, SpawnError> + Send + Sync>;
+type QueueProcessSpawner = Arc<
+    dyn Fn(Vec<String>, SpawnOptions, Duration) -> Result<QueueProcessHandle, SpawnError>
+        + Send
+        + Sync,
+>;
 
 fn spawn_managed_queue_process(
     command: Vec<String>,
     options: SpawnOptions,
+    timeout: Duration,
 ) -> Result<QueueProcessHandle, SpawnError> {
-    let authority = match launch_managed(Disposition::IndependentLongLived, || {
+    let authority = match launch_managed(Disposition::IndependentBoundedHelper { timeout }, || {
         ManagedProcess::spawn(command, options)
     }) {
         Ok(authority) => authority,
@@ -185,7 +189,7 @@ fn spawn_managed_queue_process(
             ))));
         }
         Err(error) => {
-            unreachable!("launch_managed(IndependentLongLived) cannot fail with {error}")
+            unreachable!("launch_managed(IndependentBoundedHelper) cannot fail with {error}")
         }
     };
     Ok(Arc::new(Mutex::new(Box::new(ManagedQueueProcess(
@@ -846,6 +850,10 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
             .lock()
             .expect("queue worker spawner lock poisoned"),
     );
+    let timeout = inner
+        .options
+        .cap_resolver
+        .cap_for(&dispatch.submission.partition);
     let process = spawner(
         dispatch.submission.command.clone(),
         SpawnOptions {
@@ -855,6 +863,7 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
             sink: inner.options.process_sink.clone(),
             environment: Default::default(),
         },
+        timeout,
     );
     let Ok(process) = process else {
         record_completion(&inner, &dispatch, -1, "error".to_owned());
@@ -1113,6 +1122,7 @@ mod tests {
     use std::sync::{Barrier, Condvar, mpsc};
 
     use super::*;
+    use crate::cap::{DEFAULT_TASK_MAX_RUNTIME, DefaultCapResolver};
     use crate::request::{BusTaskRequest, TaskArgv};
 
     struct FixedCap(u64);
@@ -1232,7 +1242,7 @@ mod tests {
     fn plan_spawner(plans: VecDeque<SpawnPlan>) -> QueueProcessSpawner {
         let plans = Mutex::new(plans);
         Arc::new(
-            move |_, _| match plans.lock().expect("fake plans").pop_front() {
+            move |_, _, _| match plans.lock().expect("fake plans").pop_front() {
                 Some(SpawnPlan::Failure) => Err(SpawnError::EmptyCommand),
                 Some(SpawnPlan::Process(process)) => Ok(Arc::new(Mutex::new(Box::new(process)))),
                 None => panic!("missing fake process plan"),
@@ -1735,5 +1745,42 @@ mod tests {
         assert_eq!(snapshot.tasks[0].reference, "follower");
         assert!(snapshot.queues.is_empty());
         release.wait();
+    }
+
+    #[test]
+    fn worker_spawner_receives_the_resolver_cap_for_the_dispatched_partition() {
+        let partition = Partition::new("svc");
+        let override_cap = Duration::from_secs(42);
+        assert_ne!(override_cap, DEFAULT_TASK_MAX_RUNTIME);
+        let mut resolver = DefaultCapResolver::default();
+        resolver.set_override(partition.clone(), override_cap);
+        let resolver = Arc::new(resolver);
+        let captured = Arc::new(Mutex::new(None));
+        let recorded = Arc::clone(&captured);
+        let cleanups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let queue = TaskQueue::new(TaskQueueOptions {
+            journal_root: PathBuf::new(),
+            cap_resolver: Arc::clone(&resolver) as Arc<dyn CapResolver + Send + Sync>,
+            process_state_probe: Arc::new(UnreachableProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+        });
+        queue.set_worker_spawner(Arc::new(move |_, _, timeout| {
+            *recorded.lock().expect("captured timeout") = Some(timeout);
+            Ok(Arc::new(Mutex::new(Box::new(FakeProcess::complete(
+                1,
+                Arc::clone(&cleanups),
+            )))))
+        }));
+        queue.submit(request("cap-check"));
+        queue
+            .join_test_workers(1, TEST_TRANSITION_TIMEOUT)
+            .expect("queue worker");
+        assert_eq!(
+            *captured.lock().expect("captured timeout"),
+            Some(resolver.cap_for(&partition))
+        );
     }
 }

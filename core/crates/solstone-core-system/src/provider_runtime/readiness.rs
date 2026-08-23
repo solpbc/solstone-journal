@@ -96,7 +96,7 @@ pub fn check_parakeet_cpp_files(artifacts: &ParakeetCppArtifacts) -> Result<(), 
 /// Run the pinned binary only to surface dynamic-loader failures.
 pub fn probe_parakeet_cpp_binary(binary: &Path, timeout: Duration) -> ParakeetCppReadiness {
     let mut authority = match launch(
-        Disposition::InheritedParentScope,
+        Disposition::IndependentBoundedHelper { timeout },
         || {
             Command::new(binary)
                 .arg("--version")
