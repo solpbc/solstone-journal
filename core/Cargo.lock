@@ -3401,6 +3401,7 @@ dependencies = [
  "serde_json",
  "solstone-core-cogitate",
  "solstone-core-format",
+ "solstone-core-system",
  "tempfile",
 ]
 

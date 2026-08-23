@@ -17,6 +17,7 @@ regex.workspace = true
 rustix = { workspace = true, features = ["process"] }
 solstone-core-cogitate = { workspace = true }
 solstone-core-format.workspace = true
+solstone-core-system.workspace = true
 
 [dev-dependencies]
 serde = { workspace = true }

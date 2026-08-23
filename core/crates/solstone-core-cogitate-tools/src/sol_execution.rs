@@ -5,11 +5,12 @@ use std::env;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use solstone_core_cogitate::{AccessTierError, classify_command};
+use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
 
 use crate::{BudgetExhaustedEvent, SlotLease, SlotReacquireError, SolCallBudget};
 
@@ -126,7 +127,7 @@ fn run_command_with_timeout(
     };
     let mut command = Command::new(executable);
     command.args(&argv[1..]).current_dir(journal_root);
-    let child = ProcessGroupChild::spawn(&mut command);
+    let child = ProcessGroupChild::spawn(&mut command, timeout);
     let mut child = match child {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -176,51 +177,68 @@ fn run_command_with_timeout(
     let stderr = String::from_utf8_lossy(&stderr_reader.join().expect("stderr reader panicked"))
         .into_owned();
     let (status, timed_out) = outcome.map_err(|error| error.to_string())?;
-    let text = format_shell_output(&stdout, &stderr, status.code(), timed_out);
+    // signal_aware_exit_code is non-negative iff ExitStatus::code() was Some.
+    let text = format_shell_output(&stdout, &stderr, (status >= 0).then_some(status), timed_out);
     Ok(SolObservation {
-        is_error: timed_out || !status.success(),
+        is_error: timed_out || status != 0,
         text,
     })
 }
 
 struct ProcessGroupChild {
-    child: Option<Child>,
+    authority: LaunchAuthority,
     group: rustix::process::Pid,
+    timeout: Duration,
 }
 
 impl ProcessGroupChild {
-    fn spawn(command: &mut Command) -> std::io::Result<Self> {
+    fn spawn(command: &mut Command, timeout: Duration) -> std::io::Result<Self> {
         command
             .process_group(0)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = command.spawn()?;
-        let group = match i32::try_from(child.id())
+        let authority = launch(
+            Disposition::IndependentBoundedHelper { timeout },
+            || command.spawn(),
+            Box::new(|child, _timeout| {
+                let Some(group) = i32::try_from(child.id())
+                    .ok()
+                    .and_then(rustix::process::Pid::from_raw)
+                else {
+                    return child.kill().map_err(LaunchError::Terminate);
+                };
+                match rustix::process::kill_process_group(group, rustix::process::Signal::KILL) {
+                    Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
+                    Err(error) => Err(LaunchError::Terminate(std::io::Error::from(error))),
+                }
+            }),
+        )
+        .map_err(|error| match error {
+            LaunchError::Spawn(inner) => inner,
+            other => std::io::Error::other(other),
+        })?;
+        let Some(group) = i32::try_from(authority.pid())
             .ok()
             .and_then(rustix::process::Pid::from_raw)
-        {
-            Some(group) => group,
-            None => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "command child PID does not fit a process-group ID",
-                ));
-            }
+        else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "command child PID does not fit a process-group ID",
+            ));
         };
         Ok(Self {
-            child: Some(child),
+            authority,
             group,
+            timeout,
         })
     }
 
     fn take_stdout(&mut self) -> Option<std::process::ChildStdout> {
-        self.child.as_mut()?.stdout.take()
+        self.authority.take_stdout()
     }
 
     fn take_stderr(&mut self) -> Option<std::process::ChildStderr> {
-        self.child.as_mut()?.stderr.take()
+        self.authority.take_stderr()
     }
 
     fn exited_without_reaping(&self) -> std::io::Result<bool> {
@@ -234,28 +252,9 @@ impl ProcessGroupChild {
         .map_err(std::io::Error::from)
     }
 
-    fn terminate_group(&self) -> std::io::Result<()> {
-        match rustix::process::kill_process_group(self.group, rustix::process::Signal::KILL) {
-            Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
-            Err(error) => Err(std::io::Error::from(error)),
-        }
-    }
-
-    fn finish(mut self) -> std::io::Result<ExitStatus> {
-        let cleanup = self.terminate_group();
-        let status = self.child.take().expect("owned command child").wait();
-        cleanup.and(status)
-    }
-}
-
-impl Drop for ProcessGroupChild {
-    fn drop(&mut self) {
-        if self.child.is_some() {
-            let _ = self.terminate_group();
-        }
-        if let Some(mut child) = self.child.take() {
-            let _ = child.wait();
-        }
+    fn finish(mut self) -> std::io::Result<i32> {
+        let _ = self.authority.terminate(self.timeout);
+        self.authority.wait()
     }
 }
 
