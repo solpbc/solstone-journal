@@ -1167,6 +1167,13 @@ mod tests {
         open_options.open(path).unwrap()
     }
 
+    fn open_sidecar_existing(path: &Path) -> fs::File {
+        let mut open_options = OpenOptions::new();
+        open_options.read(true).write(true).create(false);
+        open_options.custom_flags(nix::libc::O_NOFOLLOW);
+        open_options.open(path).unwrap()
+    }
+
     fn layout() -> (TempDir, PathBuf, PathBuf) {
         let temporary = TempDir::new();
         let probe = temporary.path().join("probe");
@@ -1277,7 +1284,13 @@ mod tests {
 
         let ff = os_path(&locks, FF);
         let _created = hold_lock(&ff, LockOptions::default()).unwrap();
-        assert_ne!(dir_entries(&locks), before);
+        assert_eq!(
+            &dir_entries(&locks) - &before,
+            BTreeSet::from([
+                OsString::from_vec(FF_LOCK.to_vec()),
+                OsString::from_vec(TWIN_LOCK.to_vec()),
+            ])
+        );
     }
 
     #[test]
@@ -1321,9 +1334,14 @@ mod tests {
             other => panic!("expected Io from EISDIR, got {other:?}"),
         }
         assert!(started.elapsed() < Duration::from_millis(50));
+        let legacy_sidecar = os_path(&locks, TWIN_LOCK);
+        assert!(
+            legacy_sidecar.exists(),
+            "bridged hold_lock must create the legacy sidecar while acquire_legacy_shared runs"
+        );
         let started = Instant::now();
-        Flock::lock(
-            open_sidecar_create_write(&os_path(&locks, TWIN_LOCK)),
+        let _old_exclusive = Flock::lock(
+            open_sidecar_existing(&legacy_sidecar),
             FlockArg::LockExclusiveNonblock,
         )
         .unwrap();
@@ -1352,9 +1370,14 @@ mod tests {
             other => panic!("expected Timeout, got {other:?}"),
         }
         assert!(started.elapsed() < Duration::from_millis(300));
+        let legacy_sidecar = os_path(&locks, TWIN_LOCK);
+        assert!(
+            legacy_sidecar.exists(),
+            "bridged hold_lock must create the legacy sidecar while acquire_legacy_shared runs"
+        );
         let started = Instant::now();
-        Flock::lock(
-            open_sidecar_create_write(&os_path(&locks, TWIN_LOCK)),
+        let _old_exclusive = Flock::lock(
+            open_sidecar_existing(&legacy_sidecar),
             FlockArg::LockExclusiveNonblock,
         )
         .unwrap();
@@ -1373,9 +1396,14 @@ mod tests {
             other => panic!("expected Io from flock fault, got {other:?}"),
         }
         assert!(started.elapsed() < Duration::from_millis(50));
+        let legacy_sidecar = os_path(&locks, TWIN_LOCK);
+        assert!(
+            legacy_sidecar.exists(),
+            "bridged hold_lock must create the legacy sidecar while acquire_legacy_shared runs"
+        );
         let started = Instant::now();
-        Flock::lock(
-            open_sidecar_create_write(&os_path(&locks, TWIN_LOCK)),
+        let _old_exclusive = Flock::lock(
+            open_sidecar_existing(&legacy_sidecar),
             FlockArg::LockExclusiveNonblock,
         )
         .unwrap();
