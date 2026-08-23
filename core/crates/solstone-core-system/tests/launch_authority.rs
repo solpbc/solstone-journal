@@ -7,7 +7,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use solstone_core_system::process::{Disposition, LaunchError, launch, launch_with};
+use solstone_core_system::process::{
+    BoxedTerminateFn, Disposition, LaunchError, launch, launch_with,
+};
 
 fn process_is_gone(pid: u32) -> bool {
     let Ok(pid) = i32::try_from(pid) else {
@@ -33,9 +35,7 @@ fn kill_child(child: &mut Child, _: Duration) -> Result<(), LaunchError> {
     child.kill().map_err(LaunchError::Terminate)
 }
 
-fn recording_kill(
-    flag: &Arc<AtomicBool>,
-) -> Box<dyn FnMut(&mut Child, Duration) -> Result<(), LaunchError> + Send> {
+fn recording_kill(flag: &Arc<AtomicBool>) -> BoxedTerminateFn {
     let flag = Arc::clone(flag);
     Box::new(move |child: &mut Child, timeout| {
         flag.store(true, Ordering::SeqCst);
