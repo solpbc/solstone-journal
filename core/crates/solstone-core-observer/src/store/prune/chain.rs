@@ -93,8 +93,11 @@ pub fn nearest_surviving_ancestor(
     (None, None)
 }
 
-/// Every currently-on-disk segment `(day, key)` -> path for one stream,
-/// across every day, sorted by key.
+/// Every currently-on-disk segment `(day, basename)` -> path for one stream.
+///
+/// The parsed key is also recorded when it differs from the basename so marker
+/// `prev_segment` lookups still resolve. Two same-key siblings stay distinct
+/// under their exact names; the key alias is filled only when vacant.
 pub fn stream_segments(journal: &Path, stream: &str) -> BTreeMap<SegmentKey, PathBuf> {
     let mut segments = BTreeMap::new();
     let Ok(days) = list_days(journal) else {
@@ -108,10 +111,16 @@ pub fn stream_segments(journal: &Path, stream: &str) -> BTreeMap<SegmentKey, Pat
             if !segment.stream().matches(stream) {
                 continue;
             }
-            segments.insert(
-                (day.clone(), segment.key().to_owned()),
-                segment.path().to_path_buf(),
-            );
+            let path = segment.path().to_path_buf();
+            let Some(identity) = segment.record_identity() else {
+                continue;
+            };
+            segments.insert((day.clone(), identity.name.to_owned()), path.clone());
+            if identity.name != identity.key {
+                segments
+                    .entry((day.clone(), identity.key.to_owned()))
+                    .or_insert(path);
+            }
         }
     }
     segments

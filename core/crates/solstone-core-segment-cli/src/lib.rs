@@ -391,7 +391,10 @@ fn verify(journal: &Path, path: Option<&str>, day: Option<&str>, json: bool) -> 
     let Some(day) = day else {
         return failure("", "verify requires a segment path or --day\n", 1);
     };
-    let segments = day_segments(journal, day);
+    let segments = match day_segments(journal, day) {
+        Ok(segments) => segments,
+        Err(message) => return failure("", &message, 1),
+    };
     if segments.is_empty() {
         return failure("", &format!("No segments found for {day}\n"), 1);
     }
@@ -1021,6 +1024,42 @@ mod tests {
         let unmarked = bypass(&["inspect", "20260304/work/110000_60"], root.path());
         assert!(unmarked.stdout.contains("Stream:  work"));
         assert!(unmarked.stdout.contains("next: (none)"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn verify_day_refuses_unrepresentable_segment_instead_of_truncating() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let root = TempDir::new().unwrap();
+        segment(
+            root.path(),
+            "20260304",
+            "work",
+            "090000_60",
+            Some(json!({"stream": "work", "seq": 1})),
+        );
+        let unreadable = root
+            .path()
+            .join("chronicle/20260304")
+            .join(OsStr::from_bytes(b"s\xff"))
+            .join("100000_60");
+        fs::create_dir_all(&unreadable).unwrap();
+        fs::write(unreadable.join("audio.jsonl"), "{}\n").unwrap();
+
+        let run = bypass(&["verify", "--day", "20260304"], root.path());
+        assert_eq!(run.exit_code, 1, "{}", run.stdout);
+        assert!(
+            run.stderr.contains("segment list refused"),
+            "stderr={}",
+            run.stderr
+        );
+        assert!(
+            !run.stdout.contains("checks passed"),
+            "truncated verify reported success over a subset: {}",
+            run.stdout
+        );
     }
 
     #[test]

@@ -70,6 +70,9 @@ pub struct RestoreResult {
     pub files_restored: u64,
     pub bytes_expected: u64,
     pub bytes_restored: u64,
+    /// Extra identity detail when `reason` is `segment_identity`. The reason
+    /// token itself stays `segment_identity`.
+    pub reason_detail: Option<String>,
     pub details: Vec<RestoreSegmentResult>,
 }
 fn base(status: &str, reason: Option<&str>, scope: &str, day: Option<&str>) -> RestoreResult {
@@ -84,7 +87,14 @@ fn base(status: &str, reason: Option<&str>, scope: &str, day: Option<&str>) -> R
         files_restored: 0,
         bytes_expected: 0,
         bytes_restored: 0,
+        reason_detail: None,
         details: vec![],
+    }
+}
+impl RestoreResult {
+    fn with_reason_detail(mut self, detail: String) -> Self {
+        self.reason_detail = Some(detail);
+        self
     }
 }
 fn sha(path: &Path) -> Option<String> {
@@ -277,8 +287,9 @@ fn run(
     for restore_day in &days {
         listed.extend(iter_segments(journal, PathOrDay::Day(restore_day)).unwrap_or_default());
     }
-    if check_record_identities(&listed).is_err() {
-        return base("refused", Some("segment_identity"), scope, day);
+    if let Err(error) = check_record_identities(&listed) {
+        return base("refused", Some("segment_identity"), scope, day)
+            .with_reason_detail(error.to_string());
     }
     let expected = selected
         .iter()
@@ -361,6 +372,7 @@ fn run(
             .filter(|detail| detail.status == "ok")
             .map(|detail| detail.bytes_restored)
             .sum(),
+        reason_detail: None,
         details,
     };
     if record_result {

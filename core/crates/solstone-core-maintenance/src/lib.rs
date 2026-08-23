@@ -194,6 +194,7 @@ fn format_backup_resolution_error(
             bytes_already_marked: 0,
             ran_out_of_markable_media: false,
             dry_run: false,
+            reason_detail: None,
             details: vec![],
         }),
         _ => format!("backup: error reason={reason}"),

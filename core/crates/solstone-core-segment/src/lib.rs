@@ -63,8 +63,8 @@ pub use segment_dir::{
 };
 pub use solstone_core_journal_io::{
     DEFAULT_STREAM, DirEntryKind, LockOptions, PathOrDay, RecordIdentity, Segment,
-    SegmentIdentityError, StreamLocation, check_record_identities, check_unique_record_keys,
-    day_path, hold_lock, iter_segments, list_dir_entries, read_text, utf8_identities,
+    SegmentIdentityError, StreamLocation, check_record_identities, day_path, hold_lock,
+    iter_segments, list_dir_entries, read_text,
 };
 pub use stream_record::{
     BoundStream, ResolvedStream, StreamAdvance, StreamHints, StreamRecord,

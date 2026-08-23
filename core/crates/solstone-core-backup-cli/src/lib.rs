@@ -137,6 +137,7 @@ fn format_resolution_error(
                 bytes_already_marked: 0,
                 ran_out_of_markable_media: false,
                 dry_run: false,
+                reason_detail: None,
                 details: vec![],
             }),
             Some("restore") => offload_restore_result(
@@ -151,6 +152,7 @@ fn format_resolution_error(
                     files_restored: 0,
                     bytes_expected: 0,
                     bytes_restored: 0,
+                    reason_detail: None,
                     details: vec![],
                 },
                 false,
@@ -779,9 +781,14 @@ fn offload_restore_result(result: OffloadRestoreResult, json_output: bool) -> Cl
         render_json(Ok::<_, String>(offload_restore_json(&result)))
     } else {
         success(format!(
-            "backup offload restore: status={} reason={} segments_restored={} files_restored={} bytes_restored={}\n",
+            "backup offload restore: status={} reason={}{} segments_restored={} files_restored={} bytes_restored={}\n",
             result.status,
             result.reason.as_deref().unwrap_or("None"),
+            result
+                .reason_detail
+                .as_deref()
+                .map(|detail| format!(" detail={detail}"))
+                .unwrap_or_default(),
             result.segments_restored,
             result.files_restored,
             result.bytes_restored,
@@ -805,6 +812,7 @@ fn offload_restore_json(result: &OffloadRestoreResult) -> Value {
         "files_restored": result.files_restored,
         "bytes_expected": result.bytes_expected,
         "bytes_restored": result.bytes_restored,
+        "reason_detail": result.reason_detail,
         "details": result.details.iter().map(|detail| json!({
             "status": detail.status,
             "reason": detail.reason,
@@ -1175,6 +1183,7 @@ mod tests {
             files_restored: 3,
             bytes_expected: 50,
             bytes_restored: 40,
+            reason_detail: None,
             details: vec![],
         }
     }

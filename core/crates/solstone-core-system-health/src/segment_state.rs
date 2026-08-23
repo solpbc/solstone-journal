@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, iter_segments, segment_path};
+use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, day_path, iter_segments, segment_path};
 
 use crate::{DataStateMap, scan::detect_data_state};
 
@@ -19,6 +19,13 @@ pub fn find_segment_dir(
     stream: Option<&str>,
 ) -> Option<PathBuf> {
     if let Some(stream) = stream.filter(|value| !value.is_empty()) {
+        // `_default` names the direct-under-day layout. Routing it through
+        // `segment_path` would look in `day/_default/<segment>` — the named
+        // layout — and can read a literal `_default/` directory.
+        if stream == DEFAULT_STREAM {
+            let path = day_path(journal, Some(day), false).ok()?.join(segment);
+            return path.is_dir().then_some(path);
+        }
         let path = segment_path(journal, day, segment, stream, false).ok()?;
         return path.is_dir().then_some(path);
     }
@@ -127,5 +134,25 @@ mod tests {
             )]))
         );
         assert_eq!(snapshot(root.path()), before);
+    }
+
+    #[test]
+    fn default_stream_sentinel_addresses_direct_layout_not_named_default() {
+        let root = tempfile::tempdir().unwrap();
+        let day = root.path().join("chronicle/20260101");
+        let direct = day.join("090000_300");
+        let named_default = day.join("_default/090000_300");
+        fs::create_dir_all(&direct).unwrap();
+        fs::create_dir_all(&named_default).unwrap();
+        assert_eq!(
+            find_segment_dir(root.path(), "20260101", "090000_300", Some("_default")),
+            Some(direct.clone())
+        );
+        fs::remove_dir_all(&direct).unwrap();
+        assert_eq!(
+            find_segment_dir(root.path(), "20260101", "090000_300", Some("_default")),
+            None,
+            "named `_default/` must not satisfy the direct-layout sentinel"
+        );
     }
 }

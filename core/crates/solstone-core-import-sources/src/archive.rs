@@ -1348,6 +1348,7 @@ fn stage_segments(
     if !chronicle.is_dir() {
         return Ok(());
     }
+    let mut days = Vec::new();
     for day in sorted_dirs(&chronicle).map_err(|error| ImportSourcesError::SegmentMerge {
         path: chronicle.clone(),
         detail: error.to_string(),
@@ -1359,12 +1360,16 @@ fn stage_segments(
                 detail: error.to_string(),
             }
         })?;
-        solstone_core_journal_io::utf8_identities(&segments).map_err(|error| {
-            ImportSourcesError::SegmentMerge {
-                path: day.clone(),
-                detail: error.to_string(),
-            }
-        })?;
+        days.push((day.clone(), day_name, segments));
+    }
+    solstone_core_journal_io::utf8_identities(
+        days.iter().flat_map(|(_, _, segments)| segments.iter()),
+    )
+    .map_err(|error| ImportSourcesError::SegmentMerge {
+        path: chronicle.clone(),
+        detail: error.to_string(),
+    })?;
+    for (_day, day_name, segments) in days {
         for segment in segments {
             let identity =
                 segment
@@ -2661,6 +2666,41 @@ mod tests {
     }
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    #[cfg(unix)]
+    #[test]
+    fn later_day_identity_failure_does_not_stage_earlier_day() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let tree = PlanTree::new();
+        let source = tree.path.join("source");
+        let target = tree.path.join("target");
+        let run = tree.path.join("run");
+        fs::create_dir_all(source.join("chronicle/20260101/120000_60")).unwrap();
+        fs::write(source.join("chronicle/20260101/120000_60/value"), b"early").unwrap();
+        let late = source
+            .join("chronicle/20260102")
+            .join(OsStr::from_bytes(b"s\xff"))
+            .join("120000_60");
+        fs::create_dir_all(&late).unwrap();
+        fs::write(late.join("value"), b"late").unwrap();
+        fs::create_dir_all(&target).unwrap();
+        let staged = run.join("staged-publish");
+        fs::create_dir_all(&staged).unwrap();
+        let mut state = MergeState::new(
+            run.join("decision-log.jsonl"),
+            run.join("staged-entities"),
+            staged.clone(),
+            run.join("publish-undo"),
+        );
+
+        assert!(stage_segments(&source, &target, &mut state).is_err());
+        assert_eq!(state.writes, 0);
+        assert!(state.chronicle_units.is_empty());
+        assert!(!staged.join("chronicle").exists());
+        assert!(!target.join("chronicle").exists());
+    }
 
     #[test]
     fn plan_dry_run_leaves_chronicle_day_absent_and_writes_nothing() {

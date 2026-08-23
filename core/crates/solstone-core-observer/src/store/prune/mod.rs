@@ -113,7 +113,11 @@ fn identity_preflight(
     Ok(())
 }
 
-fn selected_streams(journal: &Path, days: &[String], stream: Option<&str>) -> BTreeSet<String> {
+fn selected_streams(
+    journal: &Path,
+    days: &[String],
+    stream: Option<&str>,
+) -> Result<BTreeSet<String>, Refusal> {
     let mut streams = BTreeSet::new();
     for day in days {
         let Ok(segments) = solstone_core_segment::list_segments(journal, day) else {
@@ -125,15 +129,24 @@ fn selected_streams(journal: &Path, days: &[String], stream: Option<&str>) -> BT
             {
                 continue;
             }
-            if let Some(identity) = segment.record_identity() {
-                streams.insert(identity.stream.to_owned());
-            }
+            let identity = segment.record_identity().ok_or_else(|| {
+                Refusal::new(
+                    "prune",
+                    "segment-identity",
+                    None::<String>,
+                    format!(
+                        "segment path is not UTF-8 representable: {}",
+                        segment.path().display()
+                    ),
+                )
+            })?;
+            streams.insert(identity.stream.to_owned());
         }
     }
     if let Some(stream) = stream {
         streams.insert(stream.to_owned());
     }
-    streams
+    Ok(streams)
 }
 
 /// Repair dangling `prev_segment` pointers already justified by pruned
@@ -144,9 +157,13 @@ fn repair_crash_leftovers(
     days: &[String],
     stream: Option<&str>,
 ) -> (Vec<Refusal>, u64) {
+    let streams = match selected_streams(journal, days, stream) {
+        Ok(streams) => streams,
+        Err(refusal) => return (vec![refusal], 0),
+    };
     let mut refusals = Vec::new();
     let mut repaired = 0u64;
-    for stream_name in selected_streams(journal, days, stream) {
+    for stream_name in streams {
         let (stream_refusals, count) =
             chain::repair_stream_chain(journal, &stream_name, &Default::default(), false);
         refusals.extend(stream_refusals);
@@ -166,6 +183,14 @@ pub fn run_prune(
     now_ms: i64,
 ) -> PruneResult {
     if execute {
+        if let Err(refusal) = identity_preflight(journal, days, stream) {
+            let mut result = PruneResult {
+                execute: true,
+                ..PruneResult::default()
+            };
+            result.refusals.push(refusal);
+            return result;
+        }
         let (recovery_refusals, repaired) = repair_crash_leftovers(journal, days, stream);
         let mut result = plan::plan(journal, days, stream);
         result.execute = true;

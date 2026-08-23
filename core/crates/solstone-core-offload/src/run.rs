@@ -66,6 +66,9 @@ pub struct OffloadResult {
     pub bytes_already_marked: u64,
     pub ran_out_of_markable_media: bool,
     pub dry_run: bool,
+    /// Extra identity detail when `reason` is `segment_identity`. The reason
+    /// token itself stays `segment_identity`.
+    pub reason_detail: Option<String>,
     pub details: Vec<OffloadSegmentDetail>,
 }
 
@@ -73,8 +76,13 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
     if result.dry_run {
         if result.status == "stalled" {
             return format!(
-                "backup offload: stalled reason={} dry_run=true",
-                result.reason.as_deref().unwrap_or("unexpected_error")
+                "backup offload: stalled reason={}{} dry_run=true",
+                result.reason.as_deref().unwrap_or("unexpected_error"),
+                result
+                    .reason_detail
+                    .as_deref()
+                    .map(|detail| format!(" detail={detail}"))
+                    .unwrap_or_default()
             );
         }
         return format!("backup offload: {} dry_run=true", result.status);
@@ -90,8 +98,13 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
         );
     }
     format!(
-        "backup offload: stalled reason={} files_marked={} bytes_marked={} bytes_released=0 ran_out_of_markable_media={}",
+        "backup offload: stalled reason={}{} files_marked={} bytes_marked={} bytes_released=0 ran_out_of_markable_media={}",
         result.reason.as_deref().unwrap_or("unexpected_error"),
+        result
+            .reason_detail
+            .as_deref()
+            .map(|detail| format!(" detail={detail}"))
+            .unwrap_or_default(),
         result.files_marked,
         result.bytes_marked,
         result.ran_out_of_markable_media
@@ -116,7 +129,15 @@ fn stall(
         bytes_already_marked,
         ran_out_of_markable_media: false,
         dry_run,
+        reason_detail: None,
         details,
+    }
+}
+
+impl OffloadResult {
+    fn with_reason_detail(mut self, detail: String) -> Self {
+        self.reason_detail = Some(detail);
+        self
     }
 }
 fn prepare(paths: &[PathBuf]) -> Option<Vec<OffloadFile>> {
@@ -189,6 +210,7 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
             bytes_already_marked: 0,
             ran_out_of_markable_media: false,
             dry_run,
+            reason_detail: None,
             details: vec![],
         };
     }
@@ -222,6 +244,7 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
             bytes_already_marked,
             ran_out_of_markable_media: false,
             dry_run,
+            reason_detail: None,
             details,
         };
     }
@@ -234,7 +257,7 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
     for day in &days {
         listed.extend(iter_segments(journal, PathOrDay::Day(day)).unwrap_or_default());
     }
-    if check_record_identities(&listed).is_err() {
+    if let Err(error) = check_record_identities(&listed) {
         return stall(
             "segment_identity",
             dry_run,
@@ -243,12 +266,25 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
             0,
             files_already_marked,
             bytes_already_marked,
-        );
+        )
+        .with_reason_detail(error.to_string());
     }
     for day in days {
         for segment in iter_segments(journal, PathOrDay::Day(&day)).unwrap_or_default() {
             let Some(identity) = segment.record_identity() else {
-                continue;
+                return stall(
+                    "segment_identity",
+                    dry_run,
+                    details,
+                    files_marked,
+                    bytes_marked,
+                    files_already_marked,
+                    bytes_already_marked,
+                )
+                .with_reason_detail(format!(
+                    "segment path is not UTF-8 representable: {}",
+                    segment.path().display()
+                ));
             };
             let registry = ClosedHandlerSet;
             let classifier = JournalMedia;
@@ -316,6 +352,7 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
                     bytes_already_marked,
                     ran_out_of_markable_media: false,
                     dry_run,
+                    reason_detail: None,
                     details,
                 };
             }
@@ -455,6 +492,7 @@ pub fn run_offload(journal: &Path, services: &BackupServices<'_>, dry_run: bool)
         bytes_already_marked,
         ran_out_of_markable_media: true,
         dry_run,
+        reason_detail: None,
         details,
     };
     if !dry_run {
@@ -815,6 +853,48 @@ mod tests {
         assert!(!result.ran_out_of_markable_media);
         assert_eq!(result.bytes_already_marked, 6);
         assert_eq!(result.files_marked, 0);
+        assert!(runner.calls.borrow().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn identity_stall_keeps_reason_token_and_carries_detail() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let journal = tempfile::tempdir().unwrap();
+        let raw = journal
+            .path()
+            .join("chronicle/20260101/010000_001/raw.webm");
+        fs::create_dir_all(raw.parent().unwrap()).unwrap();
+        fs::write(&raw, b"raw-bytes").unwrap();
+        write_eligible_sidecar(&raw);
+        let unreadable = journal
+            .path()
+            .join("chronicle/20260101")
+            .join(OsStr::from_bytes(b"s\xff"))
+            .join("020000_002");
+        fs::create_dir_all(&unreadable).unwrap();
+        fs::write(unreadable.join("raw.webm"), b"other").unwrap();
+        configure_offload(journal.path(), 100, Some(1));
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            calls: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock { now: 100 };
+        let maintenance = Maintenance;
+
+        let result = run_offload(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            true,
+        );
+
+        assert_eq!(result.status, "stalled");
+        assert_eq!(result.reason.as_deref(), Some("segment_identity"));
+        let detail = result.reason_detail.expect("identity detail");
+        assert!(detail.contains("not UTF-8 representable"), "{detail}");
         assert!(runner.calls.borrow().is_empty());
     }
 

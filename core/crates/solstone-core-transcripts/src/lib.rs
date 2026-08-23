@@ -13,7 +13,7 @@ use solstone_core_format::content::{
     produce_raw_percept_chunks,
 };
 use solstone_core_format::segment::segment_parse;
-use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
+use solstone_core_journal_io::paths::{PathOrDay, StreamLocation, iter_segments};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TalentSource {
@@ -84,7 +84,7 @@ struct Entry {
 
 struct Segment {
     path: PathBuf,
-    stream_dir: String,
+    stream: StreamLocation,
     key: String,
 }
 
@@ -410,7 +410,11 @@ fn raw_content(
         }
     };
     let name = path.file_name()?.to_str()?;
-    let rel = format!("{day}/{}/{}/{}", segment.stream_dir, segment.key, name);
+    let rel = match segment.record_stream() {
+        Some(stream) => format!("{day}/{stream}/{}/{}", segment.key, name),
+        // Diagnostic chunk header only; path remains the authority.
+        None => format!("{}/{}", segment.path.display(), name),
+    };
     // Unlike solstone/think/cluster.py:173, the formatter skips malformed JSONL lines
     // individually (content/mod.rs:500-513), preserving valid body rows rather than
     // reducing what native reads from the file.
@@ -496,23 +500,34 @@ fn day_dir(root: &Path, day: &str) -> PathBuf {
     root.join("chronicle").join(day)
 }
 
+impl Segment {
+    fn record_stream(&self) -> Option<&str> {
+        match &self.stream {
+            StreamLocation::Direct => Some(solstone_core_journal_io::DEFAULT_STREAM),
+            StreamLocation::Named(name) => name.to_str(),
+        }
+    }
+}
+
 fn all_segments(root: &Path, day: &str) -> Vec<Segment> {
     let mut segments = iter_segments(root, PathOrDay::Day(day))
         .unwrap_or_default()
         .into_iter()
         .map(|segment| Segment {
             path: segment.path().to_path_buf(),
-            stream_dir: segment
-                .record_identity()
-                .map(|identity| identity.stream.to_owned())
-                .unwrap_or_default(),
+            stream: segment.stream().clone(),
             key: segment.key().to_owned(),
         })
         .collect::<Vec<_>>();
     segments.sort_by(|left, right| {
-        left.key
-            .cmp(&right.key)
-            .then(left.stream_dir.cmp(&right.stream_dir))
+        left.key.cmp(&right.key).then_with(|| {
+            match (left.stream.directory(), right.stream.directory()) {
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (Some(left), Some(right)) => left.cmp(right),
+            }
+        })
     });
     segments
 }
@@ -520,7 +535,7 @@ fn all_segments(root: &Path, day: &str) -> Vec<Segment> {
 fn find_segment(root: &Path, day: &str, key: &str, stream: Option<&str>) -> Option<Segment> {
     let stream = stream.filter(|stream| !stream.is_empty());
     all_segments(root, day).into_iter().find(|segment| {
-        segment.key == key && stream.is_none_or(|stream| segment.stream_dir == stream)
+        segment.key == key && stream.is_none_or(|stream| segment.stream.matches(stream))
     })
 }
 
@@ -618,18 +633,52 @@ mod tests {
         fs::create_dir_all(root.path().join("chronicle/20260731/090000_60")).unwrap();
         fs::create_dir_all(root.path().join("chronicle/20260731/field/100000_60")).unwrap();
 
-        let found = all_segments(root.path(), "20260731")
-            .into_iter()
-            .map(|segment| (segment.stream_dir, segment.key))
-            .collect::<Vec<_>>();
-
+        let found = all_segments(root.path(), "20260731");
+        assert_eq!(found.len(), 2);
+        assert!(found[0].stream.is_direct());
+        assert_eq!(found[0].key, "090000_60");
         assert_eq!(
-            found,
-            vec![
-                ("_default".to_owned(), "090000_60".to_owned()),
-                ("field".to_owned(), "100000_60".to_owned()),
-            ]
+            found[1].stream.directory().and_then(|name| name.to_str()),
+            Some("field")
         );
+        assert_eq!(found[1].key, "100000_60");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn two_non_utf8_streams_stay_distinct_through_cluster() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let root = TempDir::new().unwrap();
+        let day = root.path().join("chronicle").join(DAY);
+        let first = day.join(OsStr::from_bytes(b"s\xff")).join("080000_60");
+        let second = day.join(OsStr::from_bytes(b"s\xfe")).join("080000_60");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        fs::write(
+            first.join("audio.jsonl"),
+            r#"{"start":"00:00:00","text":"First stream"}"#,
+        )
+        .unwrap();
+        fs::write(
+            second.join("audio.jsonl"),
+            r#"{"start":"00:00:00","text":"Second stream"}"#,
+        )
+        .unwrap();
+
+        let found = all_segments(root.path(), DAY);
+        assert_eq!(found.len(), 2);
+        assert_ne!(found[0].path, found[1].path);
+        assert_ne!(found[0].stream, found[1].stream);
+        let (markdown, counts) = cluster(
+            root.path(),
+            DAY,
+            &sources(true, false, TalentSource::Disabled),
+        );
+        assert_eq!(counts.transcripts, 2);
+        assert!(markdown.contains("First stream"));
+        assert!(markdown.contains("Second stream"));
     }
 
     #[test]
@@ -914,7 +963,7 @@ mod tests {
         let missing = path.join("missing_audio.jsonl");
         let missing_segment = Segment {
             path: path.clone(),
-            stream_dir: "_default".to_owned(),
+            stream: StreamLocation::Direct,
             key: SEGMENT.to_owned(),
         };
 

@@ -176,6 +176,15 @@ pub(crate) fn plan(
             }
         };
         for segment in segments {
+            let Some(spelling) = stream_spelling(&segment) else {
+                let _ = writeln!(
+                    stderr,
+                    "segment stream is not UTF-8 representable: {}",
+                    segment.path().display()
+                );
+                report.counts.add(Outcome::SkipUnreadable);
+                continue;
+            };
             let entries = match list_dir_entries(segment.path()) {
                 Ok(entries) => entries,
                 Err(error) => {
@@ -192,7 +201,7 @@ pub(crate) fn plan(
                     &day,
                     &current_day,
                     segment.path(),
-                    stream_spelling(&segment),
+                    spelling,
                     entry,
                     &entries,
                     instant,
@@ -327,11 +336,10 @@ fn stream_for(segment_path: &Path, fallback: &str) -> String {
     fallback.to_owned()
 }
 
-fn stream_spelling(segment: &Segment) -> &str {
+fn stream_spelling(segment: &Segment) -> Option<&str> {
     match segment.stream() {
-        StreamLocation::Direct => DEFAULT_STREAM,
-        // Empty fallback is refused in `classify` (`stream.is_empty()`).
-        StreamLocation::Named(name) => name.to_str().unwrap_or(""),
+        StreamLocation::Direct => Some(DEFAULT_STREAM),
+        StreamLocation::Named(name) => name.to_str(),
     }
 }
 

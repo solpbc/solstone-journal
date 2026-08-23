@@ -69,6 +69,63 @@ fn execute_plan_refuses_torn_day_without_mutating() {
     assert!(after.contains("\"type\":\"pruned\"") || after.contains("pruned"));
 }
 
+#[cfg(unix)]
+#[test]
+fn execute_refuses_unrepresentable_stream_before_crash_repair_writes() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let root = tempfile::tempdir().expect("journal");
+    seed_observer_owning_stream(root.path(), PREFIX, STREAM);
+    let survivor = write_segment(
+        root.path(),
+        DAY,
+        STREAM,
+        "090000_301",
+        2,
+        Some("090000_300"),
+        b"bytes",
+    );
+    write_history(
+        root.path(),
+        PREFIX,
+        DAY,
+        &[json!({
+            "type": "pruned",
+            "ts": 1,
+            "segment": "090000_300",
+            "stream": STREAM,
+            "duplicate_of": "",
+        })],
+    );
+    let unreadable = root
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join(OsStr::from_bytes(b"s\xff"))
+        .join("080000_60");
+    fs::create_dir_all(&unreadable).unwrap();
+    let marker_before = fs::read(survivor.join("stream.json")).unwrap();
+
+    let result = run_prune(root.path(), &[DAY.to_owned()], None, true, 1_000);
+
+    assert!(
+        result
+            .refusals
+            .iter()
+            .any(|refusal| refusal.gate == "segment-identity"),
+        "{:?}",
+        result.refusals
+    );
+    assert_eq!(result.crash_repaired, 0);
+    assert!(result.deleted.is_empty());
+    assert_eq!(
+        fs::read(survivor.join("stream.json")).unwrap(),
+        marker_before
+    );
+    assert!(survivor.is_dir());
+}
+
 #[test]
 fn execute_plan_clean_day_still_deletes() {
     let root = tempfile::tempdir().expect("journal");

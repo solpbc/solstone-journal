@@ -93,20 +93,31 @@ pub fn aggregate_speculative_facets(
                         samples: Vec::new(),
                     });
             group.count += 1;
-            if group.samples.len() < SAMPLE_LIMIT {
-                match segment.record_identity() {
-                    Some(identity) => group.samples.push(SpeculativeFacetSample {
-                        day: day.clone(),
-                        stream: identity.stream.to_owned(),
-                        segment: identity.key.to_owned(),
-                        unrepresentable: false,
-                    }),
-                    None => group.samples.push(SpeculativeFacetSample {
-                        day: day.clone(),
-                        stream: String::new(),
-                        segment: segment.key().to_owned(),
-                        unrepresentable: true,
-                    }),
+            match segment.record_identity() {
+                Some(identity) => {
+                    let representable = group
+                        .samples
+                        .iter()
+                        .filter(|sample| !sample.unrepresentable)
+                        .count();
+                    if representable < SAMPLE_LIMIT {
+                        group.samples.push(SpeculativeFacetSample {
+                            day: day.clone(),
+                            stream: identity.stream.to_owned(),
+                            segment: identity.key.to_owned(),
+                            unrepresentable: false,
+                        });
+                    }
+                }
+                None => {
+                    if !group.samples.iter().any(|sample| sample.unrepresentable) {
+                        group.samples.push(SpeculativeFacetSample {
+                            day: day.clone(),
+                            stream: String::new(),
+                            segment: segment.key().to_owned(),
+                            unrepresentable: true,
+                        });
+                    }
                 }
             }
         }

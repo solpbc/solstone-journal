@@ -222,6 +222,48 @@ fn non_utf8_sample_is_kept_and_marked_unrepresentable() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn unrepresentable_sample_is_visible_after_representable_cap() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let temporary = TempDir::new();
+    for segment in ["090000_300", "093000_300", "100000_300"] {
+        write_sense(
+            temporary.path(),
+            "20260810",
+            Some("archon"),
+            segment,
+            br#"{"speculative_facet":"Home Reno"}"#,
+        );
+    }
+    let talents = temporary
+        .path()
+        .join("chronicle/20260810")
+        .join(OsStr::from_bytes(b"s\xff"))
+        .join("110000_300")
+        .join("talents");
+    fs::create_dir_all(&talents).unwrap();
+    fs::write(
+        talents.join("sense.json"),
+        br#"{"speculative_facet":"Home Reno"}"#,
+    )
+    .unwrap();
+
+    let candidates = aggregate_speculative_facets(temporary.path(), day(2026, 8, 10), 1).unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].count, 4);
+    assert!(
+        candidates[0]
+            .samples
+            .iter()
+            .any(|sample| sample.unrepresentable),
+        "unrepresentable evidence vanished behind the sample cap: {:?}",
+        candidates[0].samples
+    );
+}
+
 #[test]
 fn aggregation_groups_whitespace_and_unicode_casefolded_names() {
     let temporary = TempDir::new();

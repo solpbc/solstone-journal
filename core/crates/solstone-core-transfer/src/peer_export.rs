@@ -153,13 +153,8 @@ fn export_segments(
             return Ok(result);
         }
     };
-    for day in days {
-        let listed = iter_segments(journal, PathOrDay::Day(day))?;
-        solstone_core_journal_io::check_record_identities(&listed).map_err(|error| {
-            TransferError::Unrepresentable {
-                reason: error.to_string(),
-            }
-        })?;
+    let by_day = listed_segments_by_day(journal, days)?;
+    for (day, listed) in &by_day {
         for segment in listed {
             let identity =
                 segment
@@ -252,6 +247,26 @@ fn export_segments(
         }
     }
     Ok(result)
+}
+
+fn listed_segments_by_day(
+    journal: &Path,
+    days: &[String],
+) -> Result<Vec<(String, Vec<solstone_core_journal_io::Segment>)>, TransferError> {
+    let mut by_day = Vec::new();
+    for day in days {
+        by_day.push((day.clone(), iter_segments(journal, PathOrDay::Day(day))?));
+    }
+    let listed = by_day
+        .iter()
+        .flat_map(|(_, segments)| segments.iter())
+        .collect::<Vec<_>>();
+    solstone_core_journal_io::check_record_identities(listed).map_err(|error| {
+        TransferError::Unrepresentable {
+            reason: error.to_string(),
+        }
+    })?;
+    Ok(by_day)
 }
 
 fn export_entities(
@@ -932,6 +947,37 @@ fn write_string(value: &str, ensure_ascii: bool, output: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn later_day_identity_failure_refuses_the_whole_days_list() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let journal = tempfile::tempdir().unwrap();
+        let early = journal.path().join("chronicle/20260101/120000_60");
+        fs::create_dir_all(&early).unwrap();
+        fs::write(early.join("audio.jsonl"), "{}\n").unwrap();
+        let late = journal
+            .path()
+            .join("chronicle/20260102")
+            .join(OsStr::from_bytes(b"s\xff"))
+            .join("120000_60");
+        fs::create_dir_all(&late).unwrap();
+        fs::write(late.join("audio.jsonl"), "{}\n").unwrap();
+
+        let error = listed_segments_by_day(
+            journal.path(),
+            &["20260101".to_owned(), "20260102".to_owned()],
+        )
+        .unwrap_err();
+        match error {
+            TransferError::Unrepresentable { reason } => {
+                assert!(reason.contains("not UTF-8 representable"), "{reason}");
+            }
+            other => panic!("expected Unrepresentable, got {other:?}"),
+        }
+    }
 
     #[test]
     fn serializers_match_python_json_shapes() {

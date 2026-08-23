@@ -96,12 +96,16 @@ pub fn list_days(journal: &Path) -> Result<Vec<(String, PathBuf)>, SegmentError>
     Ok(days)
 }
 
-/// Segment `(stream, key)` pairs under one chronicle day.
+/// Discovered segments under one chronicle day.
+///
+/// Each row is the exact on-disk location (`StreamLocation` plus basename),
+/// not a `(stream, key)` pair. Ask `record_identity()` when a UTF-8 spelling
+/// is required.
 pub fn list_segments(journal: &Path, day: &str) -> Result<Vec<Segment>, SegmentError> {
     Ok(iter_segments(journal, PathOrDay::Day(day))?)
 }
 
-/// Segment `(stream, key)` pairs under an already-resolved day directory.
+/// Discovered segments under an already-resolved day directory.
 pub fn list_segments_in(journal: &Path, day_dir: &Path) -> Result<Vec<Segment>, SegmentError> {
     Ok(iter_segments(journal, PathOrDay::Directory(day_dir))?)
 }

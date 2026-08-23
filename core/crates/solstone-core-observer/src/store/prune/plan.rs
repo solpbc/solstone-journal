@@ -20,7 +20,7 @@ pub fn same_start_sets(
     journal: &Path,
     days: &[String],
     stream: Option<&str>,
-) -> Vec<Vec<SegmentAnalysis>> {
+) -> Result<Vec<Vec<SegmentAnalysis>>, Refusal> {
     let mut sets: BTreeMap<(String, String, String), Vec<SegmentAnalysis>> = BTreeMap::new();
     for day in days {
         let Ok(segments) = list_segments(journal, day) else {
@@ -32,8 +32,19 @@ pub fn same_start_sets(
             {
                 continue;
             }
-            let Some(identity) = segment.record_identity() else {
-                continue;
+            let identity = match segment.record_identity() {
+                Some(identity) => identity,
+                None => {
+                    return Err(Refusal::new(
+                        "prune",
+                        "segment-identity",
+                        None::<String>,
+                        format!(
+                            "segment path is not UTF-8 representable: {}",
+                            segment.path().display()
+                        ),
+                    ));
+                }
             };
             let Some(start) = identity.key.split_once('_').map(|(start, _)| start) else {
                 continue;
@@ -45,7 +56,7 @@ pub fn same_start_sets(
                 .push(analysis);
         }
     }
-    sets.into_values().filter(|items| items.len() > 1).collect()
+    Ok(sets.into_values().filter(|items| items.len() > 1).collect())
 }
 
 /// Byte-identical duplicate clusters (>1 member sharing a content identity
@@ -109,7 +120,14 @@ pub fn plan(journal: &Path, days: &[String], stream: Option<&str>) -> PruneResul
         result.refusals.push(refusal);
         return result;
     }
-    for analyses in same_start_sets(journal, days, stream) {
+    let sets = match same_start_sets(journal, days, stream) {
+        Ok(sets) => sets,
+        Err(refusal) => {
+            result.refusals.push(refusal);
+            return result;
+        }
+    };
+    for analyses in sets {
         let (duplicate_groups, singleton_mismatches) = duplicate_groups(&analyses);
         let identity_errors: Vec<&SegmentAnalysis> = analyses
             .iter()

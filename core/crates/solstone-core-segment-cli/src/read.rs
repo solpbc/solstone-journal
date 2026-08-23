@@ -166,12 +166,21 @@ fn next_day(day: &str) -> Option<String> {
         .map(|date| (date + Duration::days(1)).format("%Y%m%d").to_string())
 }
 
+fn require_discovered(day: &str, segment: &Segment) -> Result<SegmentLocation, String> {
+    SegmentLocation::from_discovered(day, segment).map_err(|_| {
+        format!(
+            "segment list refused: non-UTF-8 name at {}\n",
+            segment.path().display()
+        )
+    })
+}
+
 pub(crate) fn successors(
     journal: &Path,
     day: &str,
     stream: &str,
     segment: &str,
-) -> Vec<SegmentLocation> {
+) -> Result<Vec<SegmentLocation>, String> {
     let mut result = Vec::new();
     for (scan_day, _) in list_days(journal).unwrap_or_default() {
         for candidate in list_segments(journal, &scan_day).unwrap_or_default() {
@@ -184,16 +193,19 @@ pub(crate) fn successors(
             {
                 continue;
             }
-            if let Ok(location) = SegmentLocation::from_discovered(&scan_day, &candidate) {
-                result.push(location);
-            }
+            result.push(require_discovered(&scan_day, &candidate)?);
         }
     }
     result.sort_by_key(|location| location.token());
-    result
+    Ok(result)
 }
 
-fn next_segment(journal: &Path, day: &str, stream: &str, segment: &str) -> Option<SegmentLocation> {
+fn next_segment(
+    journal: &Path,
+    day: &str,
+    stream: &str,
+    segment: &str,
+) -> Result<Option<SegmentLocation>, String> {
     let days = std::iter::once(day.to_owned()).chain(next_day(day));
     for scan_day in days {
         for candidate in list_segments(journal, &scan_day).unwrap_or_default() {
@@ -204,11 +216,11 @@ fn next_segment(journal: &Path, day: &str, stream: &str, segment: &str) -> Optio
                 && marker.get("prev_day").and_then(Value::as_str) == Some(day)
                 && marker.get("prev_segment").and_then(Value::as_str) == Some(segment)
             {
-                return SegmentLocation::from_discovered(&scan_day, &candidate).ok();
+                return Ok(Some(require_discovered(&scan_day, &candidate)?));
             }
         }
     }
-    None
+    Ok(None)
 }
 
 fn is_tail(journal: &Path, day: &str, stream: &str, segment: &str) -> bool {
@@ -244,7 +256,7 @@ fn chain_location(
                 return None;
             };
             (marker_stream(&marker) == Some(stream))
-                .then(|| SegmentLocation::from_discovered(day, &candidate).ok())
+                .then(|| require_discovered(day, &candidate).ok())
                 .flatten()
         })
 }
@@ -270,13 +282,13 @@ fn describe_prev(
 }
 
 fn describe_next(journal: &Path, location: &SegmentLocation, stream: &str) -> String {
-    if let Some(next) = next_segment(journal, &location.day, stream, &location.segment) {
-        return format!("{}/{}/{}", next.day, stream, next.segment);
-    }
-    if is_tail(journal, &location.day, stream, &location.segment) {
-        "(tail)".to_owned()
-    } else {
-        "(none)".to_owned()
+    match next_segment(journal, &location.day, stream, &location.segment) {
+        Err(message) => message.trim().to_owned(),
+        Ok(Some(next)) => format!("{}/{}/{}", next.day, stream, next.segment),
+        Ok(None) if is_tail(journal, &location.day, stream, &location.segment) => {
+            "(tail)".to_owned()
+        }
+        Ok(None) => "(none)".to_owned(),
     }
 }
 
@@ -326,17 +338,17 @@ pub(crate) fn checks(journal: &Path, location: &SegmentLocation) -> Vec<Check> {
             _ => (false, "prev_segment set without prev_day".to_owned()),
         },
     };
-    let forward =
-        if let Some(next) = next_segment(journal, &location.day, stream, &location.segment) {
-            (
-                true,
-                format!("next segment {}/{}/{}", next.day, stream, next.segment),
-            )
-        } else if is_tail(journal, &location.day, stream, &location.segment) {
+    let forward = match next_segment(journal, &location.day, stream, &location.segment) {
+        Err(message) => (false, message.trim().to_owned()),
+        Ok(Some(next)) => (
+            true,
+            format!("next segment {}/{}/{}", next.day, stream, next.segment),
+        ),
+        Ok(None) if is_tail(journal, &location.day, stream, &location.segment) => {
             (true, "stream tail".to_owned())
-        } else {
-            (false, "next segment not found, not stream tail".to_owned())
-        };
+        }
+        Ok(None) => (false, "next segment not found, not stream tail".to_owned()),
+    };
     let index = read_segment_index(journal, &location.index_rel);
     let index_check = match &index {
         SegmentIndexStatus::Absent => (true, "journal index not available".to_owned()),
@@ -609,20 +621,19 @@ pub(crate) fn inspect_output(
     output
 }
 
-pub(crate) fn day_segments(journal: &Path, day: &str) -> Vec<SegmentLocation> {
+pub(crate) fn day_segments(journal: &Path, day: &str) -> Result<Vec<SegmentLocation>, String> {
     let day_path = solstone_core_segment::day_path(journal, Some(day), false).ok();
     let Some(day_path) = day_path else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let mut segments = list_segments_in(journal, &day_path)
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|segment| SegmentLocation::from_discovered(day, &segment).ok())
-        .collect::<Vec<_>>();
+    let mut segments = Vec::new();
+    for segment in list_segments_in(journal, &day_path).unwrap_or_default() {
+        segments.push(require_discovered(day, &segment)?);
+    }
     segments.sort_by(|left, right| {
         left.segment
             .cmp(&right.segment)
             .then(left.stream.cmp(&right.stream))
     });
-    segments
+    Ok(segments)
 }

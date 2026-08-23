@@ -160,7 +160,8 @@ pub(crate) fn build_plan(
         .filter(|line| !line.trim().is_empty())
         .count() as u64;
     let index = read_segment_index(journal, &source.index_rel);
-    let successors = successors(journal, &source.day, &marker_stream, &source.segment);
+    let successors = successors(journal, &source.day, &marker_stream, &source.segment)
+        .map_err(MoveRefusal::Message)?;
     Ok(MovePlan {
         source,
         destination,
