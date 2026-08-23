@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
+use solstone_core_journal_io::{
+    NameAdmissionError, StrictCreateError, create_segment_strict, preflight_segment_admission,
+};
 
 use crate::{SOURCE_APPLE_HEALTH, health_card_stream};
 
@@ -127,6 +130,8 @@ pub enum BodySeedError {
         /// Missing required field.
         field: &'static str,
     },
+    /// Chronicle stream/segment admission refused the synthetic day summary.
+    JournalPath(NameAdmissionError),
 }
 
 impl fmt::Display for BodySeedError {
@@ -174,6 +179,9 @@ impl fmt::Display for BodySeedError {
                     "synthetic aggregate row is missing {field} in {bundle}/{shard}"
                 )
             }
+            Self::JournalPath(error) => {
+                write!(formatter, "could not place synthetic day summary: {error}")
+            }
         }
     }
 }
@@ -189,6 +197,7 @@ impl std::error::Error for BodySeedError {
             | Self::InvalidShardName { .. }
             | Self::AggregateAlreadyExists { .. }
             | Self::InvalidAggregateRow { .. } => None,
+            Self::JournalPath(error) => Some(error),
         }
     }
 }
@@ -206,12 +215,19 @@ pub fn seed_body_journal(
     let stream = health_card_stream(SOURCE_APPLE_HEALTH)
         .expect("Apple Health has a day-summary card stream");
     for (day, transcript) in &seed.day_summaries {
-        let summary = root
-            .join("chronicle")
-            .join(day)
-            .join(stream)
-            .join(SYNTHETIC_DAY_SUMMARY_SEGMENT);
-        create_dir(summary.clone())?;
+        let summary = match create_segment_strict(root, day, stream, SYNTHETIC_DAY_SUMMARY_SEGMENT)
+        {
+            Ok(path) => path,
+            Err(StrictCreateError::CreateIo { path, source }) => {
+                return Err(BodySeedError::Io { path, source });
+            }
+            // Preflight already ran; this arm is only reachable if a
+            // non-cooperating actor mutated the journal between prevalidate
+            // and create (TOCTOU). Do not panic.
+            Err(StrictCreateError::Admission(error)) => {
+                return Err(BodySeedError::JournalPath(error));
+            }
+        };
         write_text(summary.join(DAY_SUMMARY_FILE), transcript)?;
     }
     let imports = root.join("imports");
@@ -257,10 +273,14 @@ fn prevalidate_seed(
             });
         }
     }
+    let summary_stream = health_card_stream(SOURCE_APPLE_HEALTH)
+        .expect("Apple Health has a day-summary card stream");
     for day in seed.day_summaries.keys() {
         if !is_day_key(day) {
             return Err(BodySeedError::InvalidDay { value: day.clone() });
         }
+        preflight_segment_admission(root, day, summary_stream, SYNTHETIC_DAY_SUMMARY_SEGMENT)
+            .map_err(BodySeedError::JournalPath)?;
     }
     let mut rows_by_start_date_day = BTreeMap::new();
     for bundle in &seed.bundles {
@@ -746,5 +766,31 @@ mod tests {
             crate::find_day_summary(temporary.path(), "20240103").unwrap(),
             Some("seeded summary".to_owned())
         );
+    }
+
+    #[test]
+    fn prevalidate_rejects_case_variant_stream_before_writes() {
+        let temporary = TempDir::new();
+        let planted = temporary
+            .path()
+            .join("chronicle/20240103")
+            .join("Import.Apple_Health");
+        fs::create_dir_all(&planted).unwrap();
+        let mut fixture = seed(&["20240103"], BodyAggregateSeed::Direct);
+        fixture
+            .day_summaries
+            .insert("20240103".to_owned(), "seeded summary".to_owned());
+        match seed_body_journal(temporary.path(), &fixture) {
+            Err(BodySeedError::JournalPath(_)) => {}
+            other => panic!("{other:?}"),
+        }
+        assert!(!temporary.path().join("imports").exists());
+        assert!(
+            !temporary
+                .path()
+                .join("chronicle/20240103/import.apple_health")
+                .exists()
+        );
+        assert!(planted.is_dir());
     }
 }

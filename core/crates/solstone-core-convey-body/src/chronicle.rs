@@ -6,6 +6,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use solstone_core_journal_io::{ExactLookupError, resolve_stream_exact};
+
 use crate::{SOURCE_APPLE_HEALTH, health_card_stream};
 
 const DAY_SUMMARY_FILE: &str = "day_summary_transcript.md";
@@ -13,6 +15,7 @@ const DAY_SUMMARY_FILE: &str = "day_summary_transcript.md";
 #[derive(Debug)]
 pub enum ChronicleReadError {
     Read { path: PathBuf, source: io::Error },
+    Path(ExactLookupError),
 }
 
 impl fmt::Display for ChronicleReadError {
@@ -23,6 +26,7 @@ impl fmt::Display for ChronicleReadError {
                 "could not read day summary {}: {source}",
                 path.display()
             ),
+            Self::Path(error) => write!(formatter, "could not locate day summary stream: {error}"),
         }
     }
 }
@@ -30,6 +34,7 @@ impl std::error::Error for ChronicleReadError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Read { source, .. } => Some(source),
+            Self::Path(error) => Some(error),
         }
     }
 }
@@ -39,14 +44,11 @@ pub fn find_day_summary(
     day: &str,
 ) -> Result<Option<String>, ChronicleReadError> {
     let stream = health_card_stream(SOURCE_APPLE_HEALTH).expect("Apple Health has a card stream");
-    let root = journal_root
-        .as_ref()
-        .join("chronicle")
-        .join(day)
-        .join(stream);
-    if !root.is_dir() {
-        return Ok(None);
-    }
+    let root = match resolve_stream_exact(journal_root.as_ref(), day, stream) {
+        Ok(None) => return Ok(None),
+        Ok(Some(path)) => path,
+        Err(error) => return Err(ChronicleReadError::Path(error)),
+    };
     let mut segments = fs::read_dir(&root)
         .map_err(|source| ChronicleReadError::Read {
             path: root.clone(),
@@ -150,5 +152,33 @@ mod tests {
         fs::create_dir_all(temporary.path().join("chronicle/20240105")).unwrap();
         assert!(has_chronicle_day(temporary.path(), "20240105"));
         assert!(!has_chronicle_day(temporary.path(), "20240106"));
+    }
+
+    #[test]
+    fn summary_reader_maps_wrong_kind_stream_to_path_error() {
+        let temporary = TempDir::new();
+        let day = temporary.path().join("chronicle/20240107");
+        fs::create_dir_all(&day).unwrap();
+        fs::write(
+            day.join(health_card_stream(SOURCE_APPLE_HEALTH).unwrap()),
+            b"not-a-stream",
+        )
+        .unwrap();
+        match find_day_summary(temporary.path(), "20240107") {
+            Err(ChronicleReadError::Path(
+                solstone_core_journal_io::ExactLookupError::WrongKind { .. },
+            )) => {}
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn summary_reader_absent_stream_is_none() {
+        let temporary = TempDir::new();
+        fs::create_dir_all(temporary.path().join("chronicle/20240108")).unwrap();
+        assert_eq!(
+            find_day_summary(temporary.path(), "20240108").unwrap(),
+            None
+        );
     }
 }

@@ -14,11 +14,13 @@ pub mod entry;
 pub mod errors;
 pub mod lease;
 pub mod locking;
+pub mod name_admission;
 pub mod paths;
 pub mod readers;
 pub mod removal;
 pub mod snapshot;
 pub mod staged;
+pub mod strict_segment;
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -46,6 +48,10 @@ pub use locking::{
     DEFAULT_LOCK_POLL_INTERVAL, DEFAULT_LOCK_TIMEOUT, ExistingParentLock, FileLock, LockOptions,
     acquire_existing_parent_lock, hold_lock,
 };
+pub use name_admission::{
+    ConflictEntry, ConflictKind, NameAdmissionError, NameAdmissionReason, NoFollowEntryKind,
+    StreamName, check_portable_component,
+};
 pub use paths::{
     DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, RecordIdentity, Segment, StreamLocation,
     check_record_identities, check_unique_record_keys, contained_path, create_directory_with_mode,
@@ -62,3 +68,7 @@ pub use snapshot::{
     JournalSnapshot, SnapshotDirectory, SnapshotFile, capture_snapshot, restore_snapshot,
 };
 pub use staged::{StagedDirOptions, StagedWriteError, publish_staged_dir};
+pub use strict_segment::{
+    ExactLookupError, StrictCreateError, create_segment_strict, preflight_segment_admission,
+    resolve_segment_exact, resolve_stream_exact,
+};
