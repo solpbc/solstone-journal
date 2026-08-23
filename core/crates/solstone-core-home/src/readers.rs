@@ -863,8 +863,6 @@ pub fn get_capture_health(context: &HomeContext) -> Value {
 }
 
 pub(crate) fn capture_health_json(inspection: &DeliveryInspection) -> Value {
-    let unassessed =
-        serde_json::to_value(&inspection.unassessed).expect("unassessed observers serialize");
     if inspection.registry == RegistryState::RegistryUnknown {
         return json!({
             "status": "unknown",
@@ -873,6 +871,8 @@ pub(crate) fn capture_health_json(inspection: &DeliveryInspection) -> Value {
             "registry": "registry_unknown",
         });
     }
+    let unassessed =
+        serde_json::to_value(&inspection.unassessed).expect("unassessed observers serialize");
     let Some(status) = rollup_owner_states(&inspection.assessed) else {
         return json!({
             "status": "no_observers",
@@ -1633,6 +1633,40 @@ mod tests {
         assert_eq!(unknown["observers"], json!([]));
         assert_eq!(unknown["unassessed"], json!([]));
         assert_eq!(unknown["registry"], "registry_unknown");
+
+        let invalid = ObserverRecord::from_value(json!({
+            "key": "bad-keyxx",
+            "name": "bad",
+            "enabled": true,
+            "last_seen": now - 1_000,
+            "last_segment_received_at": "not-a-stamp",
+        }))
+        .unwrap();
+        let invalid = health(&[invalid], now);
+        assert_eq!(invalid["status"], "no_observers");
+        assert_eq!(invalid["registry"], "registry_complete");
+        assert_eq!(
+            invalid["unassessed"],
+            json!([{
+                "name": "bad",
+                "reason": "invalid_delivery_evidence",
+                "reach": "active"
+            }])
+        );
+
+        let disabled = ObserverRecord::from_value(json!({
+            "key": "off-keyxx",
+            "name": "off",
+            "enabled": false,
+            "last_seen": now - 1_000,
+            "last_segment_received_at": now - 1_000,
+        }))
+        .unwrap();
+        let disabled = health(&[disabled], now);
+        assert_eq!(disabled["status"], "no_observers");
+        assert_eq!(disabled["observers"], json!([]));
+        assert_eq!(disabled["unassessed"], json!([]));
+        assert_eq!(disabled["registry"], "no_eligible_records");
     }
 
     #[test]

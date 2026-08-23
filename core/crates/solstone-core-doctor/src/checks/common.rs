@@ -3,8 +3,7 @@
 use crate::context::CheckContext;
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_observer::store::record::ObserverRecord;
-use solstone_core_observer::store::reload::load_observers;
-use solstone_core_observer::store::reload::load_observers_with_inventory;
+use solstone_core_observer::store::reload::{load_observers, load_observers_with_inventory};
 use solstone_core_observer::{
     AssessedObserverFact, DeliveryInspection, ObserverDeliveryFacts, inspect_loaded,
 };

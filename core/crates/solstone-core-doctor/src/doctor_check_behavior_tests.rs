@@ -703,6 +703,13 @@ fn no_enabled_observers_skip_observer_trio() {
     ] {
         assert_eq!(status(name, &c), Status::Skip);
     }
+    let capture = result("capture_health", &c);
+    let stall = result("observer_delivery_stall", &c);
+    assert_eq!(capture.observer_delivery, stall.observer_delivery);
+    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(facts.registry, RegistryState::RegistryEmpty);
+    assert!(facts.assessed.is_empty());
+    assert!(facts.unassessed.is_empty());
 }
 
 fn write_device(
@@ -827,8 +834,160 @@ fn unassessed_residue_does_not_drag() {
     let now = c.now.timestamp_millis();
     observer(&c, "residue", now - 1);
     write_device(&c, "ijklmnop", "peer", now - 1, Some(now - 1_000));
-    assert_eq!(status("capture_health", &c), Status::Ok);
-    assert_eq!(status("observer_delivery_stall", &c), Status::Ok);
+    let capture = result("capture_health", &c);
+    let stall = result("observer_delivery_stall", &c);
+    assert_eq!(capture.status, Status::Ok);
+    assert_eq!(stall.status, Status::Ok);
+    assert_eq!(capture.observer_delivery, stall.observer_delivery);
+    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(facts.registry, RegistryState::RegistryComplete);
+    assert_eq!(facts.assessed.len(), 1);
+    assert_eq!(facts.assessed[0].name, "peer");
+    assert_eq!(facts.unassessed.len(), 1);
+    assert_eq!(facts.unassessed[0].name, "residue");
+    assert_eq!(
+        facts.unassessed[0].reason,
+        UnassessedReason::AwaitingFirstDelivery
+    );
+}
+
+#[test]
+fn delivery_facts_distinguish_remaining_tokens() {
+    let now_offset = |context: &CheckContext, delta: i64| context.now.timestamp_millis() - delta;
+
+    let invalid = fixture();
+    write_observer(
+        &invalid,
+        "abcdefgh",
+        serde_json::json!({
+            "key": "abcdefgh-key",
+            "name": "bad",
+            "enabled": true,
+            "created_at": 1,
+            "last_seen": now_offset(&invalid, 1),
+            "last_segment_received_at": "not-a-stamp",
+        }),
+    );
+    let capture = result("capture_health", &invalid);
+    let stall = result("observer_delivery_stall", &invalid);
+    assert_eq!(capture.observer_delivery, stall.observer_delivery);
+    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(facts.registry, RegistryState::RegistryComplete);
+    assert!(facts.assessed.is_empty());
+    assert_eq!(facts.unassessed.len(), 1);
+    assert_eq!(facts.unassessed[0].name, "bad");
+    assert_eq!(
+        facts.unassessed[0].reason,
+        UnassessedReason::InvalidDeliveryEvidence
+    );
+
+    let residue = fixture();
+    write_observer(
+        &residue,
+        "abcdefgh",
+        serde_json::json!({
+            "key": "abcdefgh-key",
+            "name": "old",
+            "enabled": true,
+            "created_at": 1,
+            "last_seen": now_offset(&residue, 200_000),
+        }),
+    );
+    let capture = result("capture_health", &residue);
+    let stall = result("observer_delivery_stall", &residue);
+    assert_eq!(capture.observer_delivery, stall.observer_delivery);
+    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(facts.unassessed.len(), 1);
+    assert_eq!(facts.unassessed[0].name, "old");
+    assert_eq!(
+        facts.unassessed[0].reason,
+        UnassessedReason::RegistrationResidue
+    );
+
+    let partial = fixture();
+    write_device(
+        &partial,
+        "abcdefgh",
+        "peer",
+        now_offset(&partial, 1),
+        Some(now_offset(&partial, 1_000)),
+    );
+    fs::write(
+        partial
+            .journal_path
+            .join("apps/observer/observers/broken.json"),
+        "{",
+    )
+    .unwrap();
+    let capture = result("capture_health", &partial);
+    let stall = result("observer_delivery_stall", &partial);
+    assert_eq!(capture.observer_delivery, stall.observer_delivery);
+    assert_eq!(
+        capture.observer_delivery.as_ref().expect("facts").registry,
+        RegistryState::PartialRegistry
+    );
+
+    let ineligible = fixture();
+    write_observer(
+        &ineligible,
+        "abcdefgh",
+        serde_json::json!({
+            "key": "abcdefgh-key",
+            "name": "off",
+            "enabled": false,
+            "created_at": 1,
+            "last_seen": now_offset(&ineligible, 1),
+            "last_segment_received_at": now_offset(&ineligible, 1),
+        }),
+    );
+    write_observer(
+        &ineligible,
+        "ijklmnop",
+        serde_json::json!({
+            "key": "ijklmnop-key",
+            "name": "gone",
+            "enabled": true,
+            "revoked": true,
+            "created_at": 1,
+            "last_seen": now_offset(&ineligible, 1),
+            "last_segment_received_at": now_offset(&ineligible, 1),
+        }),
+    );
+    let capture = result("capture_health", &ineligible);
+    let stall = result("observer_delivery_stall", &ineligible);
+    assert_eq!(capture.observer_delivery, stall.observer_delivery);
+    let facts = capture.observer_delivery.as_ref().expect("facts");
+    assert_eq!(facts.registry, RegistryState::NoEligibleRecords);
+    assert!(facts.assessed.is_empty());
+    assert!(facts.unassessed.is_empty());
+}
+
+#[test]
+fn delivery_facts_match_across_checks_with_partial_registry() {
+    let c = fixture();
+    let now = c.now.timestamp_millis();
+    observer(&c, "residue", now - 1);
+    write_device(&c, "ijklmnop", "peer", now - 1, Some(now - 1_000));
+    fs::write(
+        c.journal_path.join("apps/observer/observers/broken.json"),
+        "{",
+    )
+    .unwrap();
+    let capture = result("capture_health", &c);
+    let stall = result("observer_delivery_stall", &c);
+    assert_eq!(capture.status, Status::Ok);
+    assert_eq!(stall.status, Status::Ok);
+    let capture_facts = serde_json::to_value(&capture.observer_delivery).unwrap();
+    let stall_facts = serde_json::to_value(&stall.observer_delivery).unwrap();
+    assert_eq!(capture_facts, stall_facts);
+    assert_eq!(capture_facts["registry"], "partial_registry");
+    assert_eq!(capture_facts["assessed"][0]["name"], "peer");
+    assert_eq!(capture_facts["unassessed"][0]["name"], "residue");
+    let inspection = crate::checks::common::inspect_context(&c);
+    assert_eq!(
+        serde_json::to_value(&capture.observer_delivery.as_ref().unwrap().unassessed).unwrap(),
+        serde_json::to_value(&inspection.unassessed).unwrap()
+    );
 }
 
 #[test]
@@ -1420,7 +1579,7 @@ fn stall_warn_omits_duplicate_and_queue_clauses() {
 fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
     let context = fixture();
     let now = context.now.timestamp_millis();
-    let long = "device-with-a-very-long-name-that-forces-the-detail-clause-to-grow-";
+    let long = "x".repeat(66);
     for (index, prefix) in ["abcdefgh", "ijklmnop", "qrstuvwx", "yzabcdef"]
         .into_iter()
         .enumerate()
@@ -1428,7 +1587,7 @@ fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
         write_device(
             &context,
             prefix,
-            &format!("{long}{index:04}"),
+            &format!("{long}{index}"),
             now - 200_000,
             Some(now - 41 * 3_600_000),
         );
@@ -1448,21 +1607,26 @@ fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
     let stall = result("observer_delivery_stall", &context);
     assert_eq!(capture.status, Status::Warn);
     assert_eq!(stall.status, Status::Warn);
-    assert!(stall.detail.contains("+1 more") || stall.detail.ends_with("..."));
-    assert!(capture.detail.len() <= 400);
+    assert!(
+        capture.detail.contains("+1 more"),
+        "join_capped must fire: {}",
+        capture.detail
+    );
+    assert!(
+        stall.detail.ends_with("...") && stall.detail.len() == 400,
+        "truncate must fire: len={} detail={}",
+        stall.detail.len(),
+        stall.detail
+    );
     assert_eq!(capture.observer_delivery, stall.observer_delivery);
     let facts = capture.observer_delivery.as_ref().expect("facts");
     assert_eq!(facts.assessed.len(), 4);
     assert_eq!(facts.unassessed.len(), 1);
     assert_eq!(facts.unassessed[0].name, "unseen-residue");
     assert!(!stall.detail.contains("unseen-residue"));
+    let serialized = serde_json::to_value(facts).unwrap();
     for row in &facts.assessed {
-        assert!(
-            serde_json::to_value(facts)
-                .unwrap()
-                .to_string()
-                .contains(&row.name)
-        );
+        assert!(serialized.to_string().contains(&row.name));
     }
     let mut bytes = Vec::new();
     output::emit_jsonl_to(
@@ -1478,9 +1642,28 @@ fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
         assert!(jsonl.contains(&row.name));
     }
     assert!(jsonl.contains("observer_delivery"));
-    let serialized = serde_json::to_value(&stall).unwrap();
-    assert!(serialized.get("observer_delivery").is_some());
-    assert!(!stall.detail.contains("awaiting_first_delivery"));
+    assert!(
+        serde_json::to_value(&stall)
+            .unwrap()
+            .get("observer_delivery")
+            .is_some()
+    );
+    let mut text = Vec::new();
+    output::emit_text_to(&mut text, std::slice::from_ref(&stall), false);
+    let text = String::from_utf8(text).unwrap();
+    assert!(!text.contains("unseen-residue"), "{text}");
+    for token in [
+        "awaiting_first_delivery",
+        "invalid_delivery_evidence",
+        "registration_residue",
+        "registry_unknown",
+        "partial_registry",
+        "registry_empty",
+        "no_eligible_records",
+        "registry_complete",
+    ] {
+        assert!(!text.contains(token), "{token} leaked into text: {text}");
+    }
 }
 
 #[test]

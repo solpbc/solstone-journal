@@ -735,7 +735,88 @@ mod tests {
             crate::store::load_observers_with_inventory(root.path()),
             NOW,
         );
+        assert!(!crate::store::observers_dir(root.path()).exists());
         assert_eq!(inspection.registry, RegistryState::RegistryEmpty);
+        assert!(inspection.assessed.is_empty());
+        assert!(inspection.unassessed.is_empty());
+    }
+
+    #[test]
+    fn created_empty_observers_directory_is_registry_empty() {
+        let root = tempfile::TempDir::new().unwrap();
+        let directory = crate::store::observers_dir(root.path());
+        std::fs::create_dir_all(&directory).unwrap();
+        assert!(directory.is_dir());
+        let inspection = inspect_loaded(
+            crate::store::load_observers_with_inventory(root.path()),
+            NOW,
+        );
+        assert_eq!(inspection.registry, RegistryState::RegistryEmpty);
+        assert!(inspection.assessed.is_empty());
+        assert!(inspection.unassessed.is_empty());
+    }
+
+    #[test]
+    fn filename_mismatched_sibling_is_partial_registry() {
+        let root = tempfile::TempDir::new().unwrap();
+        let directory = crate::store::observers_dir(root.path());
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("xxxxxxxx.json"),
+            json!({
+                "key": "abcdefgh-more",
+                "name": "hidden",
+                "enabled": true,
+                "last_seen": NOW - 1_000,
+                "last_segment_received_at": NOW - 1_000,
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let inspection = inspect_loaded(
+            crate::store::load_observers_with_inventory(root.path()),
+            NOW,
+        );
+        assert_eq!(inspection.registry, RegistryState::PartialRegistry);
+        assert!(inspection.assessed.is_empty());
+        assert!(inspection.unassessed.is_empty());
+    }
+
+    #[test]
+    fn on_disk_disabled_and_revoked_are_no_eligible_records() {
+        let root = tempfile::TempDir::new().unwrap();
+        let directory = crate::store::observers_dir(root.path());
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("abcdefgh.json"),
+            json!({
+                "key": "abcdefgh-more",
+                "name": "off",
+                "enabled": false,
+                "last_seen": NOW - 1_000,
+                "last_segment_received_at": NOW - 1_000,
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join("ijklmnop.json"),
+            json!({
+                "key": "ijklmnop-more",
+                "name": "gone",
+                "enabled": true,
+                "revoked": true,
+                "last_seen": NOW - 1_000,
+                "last_segment_received_at": NOW - 1_000,
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let inspection = inspect_loaded(
+            crate::store::load_observers_with_inventory(root.path()),
+            NOW,
+        );
+        assert_eq!(inspection.registry, RegistryState::NoEligibleRecords);
         assert!(inspection.assessed.is_empty());
         assert!(inspection.unassessed.is_empty());
     }

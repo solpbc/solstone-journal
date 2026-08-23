@@ -11,25 +11,32 @@ pub fn emit_json(results: &[CheckResult]) {
     );
 }
 pub fn emit_text(results: &[CheckResult], verbose: bool) {
+    let mut stdout = std::io::stdout().lock();
+    emit_text_to(&mut stdout, results, verbose);
+}
+
+pub fn emit_text_to(writer: &mut impl Write, results: &[CheckResult], verbose: bool) {
     for result in results
         .iter()
         .filter(|r| verbose || matches!(r.status, Status::Fail | Status::Warn))
     {
-        println!(
+        let _ = writeln!(
+            writer,
             "  {} {} — {}",
             status_label(result),
             result.name,
             result.detail
         );
         if let Some(fix) = &result.fix {
-            println!("    → {fix}")
+            let _ = writeln!(writer, "    → {fix}");
         }
     }
     let s = summary_counts(results);
-    println!(
+    let _ = writeln!(
+        writer,
         "doctor: {} checks, {} failed, {} warnings, {} skipped, {} errors",
         s["total"], s["failed"], s["warnings"], s["skipped"], s["errors"]
-    )
+    );
 }
 pub fn summary_status(results: &[CheckResult]) -> &'static str {
     if results_failed(results) {
@@ -81,4 +88,36 @@ pub fn emit_jsonl_to(
         "{}",
         json!({"event":"doctor.completed","ts":now(),"started_at":started_at,"status":summary_status(results),"duration_ms":duration_ms,"summary":summary_counts(results)})
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vocabulary::{Check, Platform, Severity, Status, make_result};
+
+    #[test]
+    fn emit_text_to_bytes_match_former_println_lines() {
+        let check = Check {
+            name: "observer_delivery_stall",
+            severity: Severity::Advisory,
+            platforms: &[Platform::Linux],
+        };
+        let warn = make_result(check, Status::Warn, "detail here", Some("do this"));
+        let skip = make_result(check, Status::Skip, "skipped", None::<String>);
+        let mut buf = Vec::new();
+        emit_text_to(&mut buf, &[warn.clone(), skip], false);
+        let expected = format!(
+            "  {} {} — {}\n    → {}\ndoctor: {} checks, {} failed, {} warnings, {} skipped, {} errors\n",
+            status_label(&warn),
+            warn.name,
+            warn.detail,
+            warn.fix.as_deref().unwrap(),
+            2,
+            0,
+            1,
+            1,
+            0,
+        );
+        assert_eq!(String::from_utf8(buf).unwrap(), expected);
+    }
 }

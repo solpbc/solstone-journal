@@ -340,6 +340,62 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn pulse_handler_reports_never_delivered_as_unassessed() {
+        let root = TempDir::new().expect("temporary journal");
+        let now = chrono::Utc
+            .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+            .unwrap();
+        let last_seen = now.timestamp_millis() - 1_000;
+        fs::create_dir_all(root.path().join("apps/observer/observers")).expect("observers dir");
+        fs::write(
+            root.path().join("apps/observer/observers/12345678.json"),
+            format!(
+                r#"{{"key":"12345678-more","name":"desk","enabled":true,"last_seen":{last_seen}}}"#
+            ),
+        )
+        .expect("observer record");
+        let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now));
+        let response = get(router, "/app/home/api/pulse").await;
+        assert_eq!(response.0, StatusCode::OK);
+        let body: Value = serde_json::from_slice(&response.3).expect("JSON");
+        assert_eq!(
+            body["capture_health"],
+            json!({
+                "status": "no_observers",
+                "observers": [],
+                "unassessed": [{
+                    "name": "desk",
+                    "reason": "awaiting_first_delivery",
+                    "reach": "active"
+                }],
+                "registry": "registry_complete"
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn pulse_handler_reports_empty_observers_directory_as_registry_empty() {
+        let root = TempDir::new().expect("temporary journal");
+        let now = chrono::Utc
+            .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+            .unwrap();
+        fs::create_dir_all(root.path().join("apps/observer/observers")).expect("observers dir");
+        let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now));
+        let response = get(router, "/app/home/api/pulse").await;
+        assert_eq!(response.0, StatusCode::OK);
+        let body: Value = serde_json::from_slice(&response.3).expect("JSON");
+        assert_eq!(
+            body["capture_health"],
+            json!({
+                "status": "no_observers",
+                "observers": [],
+                "unassessed": [],
+                "registry": "registry_empty"
+            })
+        );
+    }
+
     fn pulse_keys() -> BTreeSet<String> {
         [
             "today",
