@@ -142,7 +142,7 @@ pub fn finish(
     let Some(current) = guard.as_mut() else {
         return;
     };
-    if current.generation != generation {
+    if current.generation != generation || is_terminal(&current.view.phase) {
         return;
     }
     current.view.phase = phase.into();
@@ -233,19 +233,8 @@ pub fn mark_needs_subscription(slot: &SharedOperationSlot, generation: u64) {
     finish(slot, generation, "needs_subscription", None);
 }
 
-pub fn mark_expired(slot: &SharedOperationSlot) {
-    let mut guard = slot.lock().expect("operation slot lock");
-    let Some(current) = guard.as_mut() else {
-        return;
-    };
-    if is_terminal(&current.view.phase) {
-        return;
-    }
-    current.view.phase = "error".into();
-    current.view.reason_code = Some("expired".into());
-    current.view.portal_url = None;
-    current.nonce = None;
-    current.restore_key = None;
+pub fn mark_expired(slot: &SharedOperationSlot, generation: u64) {
+    finish(slot, generation, "error", Some("expired".into()));
 }
 
 pub fn generation_of(slot: &SharedOperationSlot) -> Option<u64> {

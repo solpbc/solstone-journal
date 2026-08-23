@@ -36,6 +36,7 @@ use solstone_core_offload::{restore_all_offload, restore_offload_day};
 mod assets;
 mod callosum;
 mod config;
+mod handoff_poll;
 mod keys;
 mod measurement;
 mod operation;
@@ -665,15 +666,17 @@ async fn enable_hosted_backup(deps: BackupWebDeps) -> axum::response::Response {
         Ok(value) => value,
         Err(error) => return error,
     };
-    if let Err(error) = operation::begin(
+    let started = match operation::begin(
         &deps.operations,
         "enable_hosted",
         Some(url),
-        Some(nonce),
+        Some(nonce.clone()),
         None,
     ) {
-        return error;
-    }
+        Ok(started) => started,
+        Err(error) => return error,
+    };
+    handoff_poll::spawn(deps.clone(), nonce, started.generation);
     status_response(&deps)
 }
 
@@ -927,15 +930,17 @@ async fn restore_hosted_route(deps: BackupWebDeps, body: Bytes) -> axum::respons
         Ok(value) => value,
         Err(error) => return error,
     };
-    if let Err(error) = operation::begin(
+    let started = match operation::begin(
         &deps.operations,
         "restore_hosted",
         Some(url),
-        Some(nonce),
+        Some(nonce.clone()),
         Some(recovery_key),
     ) {
-        return error;
-    }
+        Ok(started) => started,
+        Err(error) => return error,
+    };
+    handoff_poll::spawn(deps.clone(), nonce, started.generation);
     status_response(&deps)
 }
 
@@ -1026,7 +1031,9 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
     let matched = match operation::match_handoff(&deps.operations, &nonce) {
         Ok(matched) => matched,
         Err(operation::HandoffError::Expired) => {
-            operation::mark_expired(&deps.operations);
+            if let Some(generation) = operation::generation_of(&deps.operations) {
+                operation::mark_expired(&deps.operations, generation);
+            }
             return response::error(
                 axum::http::StatusCode::BAD_REQUEST,
                 "I couldn't take that action in the current state.",
@@ -1055,16 +1062,17 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
             return error;
         }
     };
-    if save_hosted_binding(&deps.journal_root, &binding).is_err() {
-        operation::finish(&deps.operations, generation, "error", Some("failed".into()));
+    if persist_and_consume_hosted(
+        &deps,
+        generation,
+        matched.kind,
+        binding,
+        matched.restore_key,
+    )
+    .is_err()
+    {
         return internal_error();
     }
-    let worker = deps.clone();
-    let kind = matched.kind;
-    let restore_key = matched.restore_key;
-    operation::spawn_worker(deps.operations.clone(), generation, move || {
-        consume_hosted(&worker, kind, binding, restore_key)
-    });
     status_response(&deps)
 }
 
@@ -1082,7 +1090,25 @@ fn hosted_binding_from_payload(
     })
 }
 
-fn consume_hosted(
+pub(crate) fn persist_and_consume_hosted(
+    deps: &BackupWebDeps,
+    generation: u64,
+    kind: String,
+    binding: HostedBinding,
+    restore_key: Option<String>,
+) -> Result<(), ()> {
+    if save_hosted_binding(&deps.journal_root, &binding).is_err() {
+        operation::finish(&deps.operations, generation, "error", Some("failed".into()));
+        return Err(());
+    }
+    let worker = deps.clone();
+    operation::spawn_worker(deps.operations.clone(), generation, move || {
+        consume_hosted(&worker, kind, binding, restore_key)
+    });
+    Ok(())
+}
+
+pub(crate) fn consume_hosted(
     deps: &BackupWebDeps,
     kind: String,
     binding: HostedBinding,
