@@ -59,6 +59,10 @@ impl Drop for PollLease {
 }
 
 pub(crate) fn spawn(deps: BackupWebDeps, nonce: String, generation: u64) {
+    if validation::require_configured_portal_base(&deps.portal_base).is_err() {
+        operation::finish(&deps.operations, generation, "error", Some("failed".into()));
+        return;
+    }
     let Some(lease) = PollLease::try_acquire(&deps.handoff_poll_lease) else {
         operation::finish(&deps.operations, generation, "error", Some("failed".into()));
         return;

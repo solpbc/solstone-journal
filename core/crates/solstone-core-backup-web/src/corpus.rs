@@ -663,14 +663,15 @@ impl ScriptRunner {
 
 impl ToolRunner for ScriptRunner {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
-        self.calls.lock().unwrap().push((
-            PathBuf::from(&request.program),
-            request
-                .argv
-                .iter()
-                .map(|arg| arg.to_string_lossy().into_owned())
-                .collect(),
-        ));
+        let argv: Vec<String> = request
+            .argv
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        self.calls
+            .lock()
+            .unwrap()
+            .push((PathBuf::from(&request.program), argv.clone()));
         if let Some(hold) = &self.hold {
             hold.arrive_and_wait();
         }
@@ -679,11 +680,7 @@ impl ToolRunner for ScriptRunner {
             .lock()
             .unwrap()
             .pop_front()
-            .unwrap_or(ToolOutput {
-                returncode: 0,
-                stdout: vec![],
-                stderr: vec![],
-            }))
+            .unwrap_or_else(|| panic!("ScriptRunner has no remaining output for {argv:?}")))
     }
 }
 
@@ -2137,6 +2134,251 @@ async fn hosted_poll_gets_handoff_backup_nonce_without_instance() {
 }
 
 #[tokio::test]
+async fn hosted_poll_configured_portal_base_preflight_blocks_or_allows_transport() {
+    struct Case {
+        name: &'static str,
+        portal_base: &'static str,
+        poll_broker: &'static str,
+        blocked: bool,
+    }
+    let cases = [
+        Case {
+            name: "http scheme",
+            portal_base: "http://services.solstone.app",
+            poll_broker: crate::test_support::PORTAL_BASE,
+            blocked: true,
+        },
+        Case {
+            name: "missing authority",
+            portal_base: "https://",
+            poll_broker: crate::test_support::PORTAL_BASE,
+            blocked: true,
+        },
+        Case {
+            name: "userinfo",
+            portal_base: "https://user:pass@services.solstone.app",
+            poll_broker: crate::test_support::PORTAL_BASE,
+            blocked: true,
+        },
+        Case {
+            name: "non-root path",
+            portal_base: "https://services.solstone.app/backup",
+            poll_broker: crate::test_support::PORTAL_BASE,
+            blocked: true,
+        },
+        Case {
+            name: "query",
+            portal_base: "https://services.solstone.app?x=1",
+            poll_broker: crate::test_support::PORTAL_BASE,
+            blocked: true,
+        },
+        Case {
+            name: "fragment",
+            portal_base: "https://services.solstone.app#f",
+            poll_broker: crate::test_support::PORTAL_BASE,
+            blocked: true,
+        },
+        Case {
+            name: "repeated trailing slash",
+            portal_base: "https://services.solstone.app//",
+            poll_broker: crate::test_support::PORTAL_BASE,
+            blocked: true,
+        },
+        Case {
+            name: "canonical https",
+            portal_base: crate::test_support::PORTAL_BASE,
+            poll_broker: crate::test_support::PORTAL_BASE,
+            blocked: false,
+        },
+        Case {
+            name: "one trailing slash",
+            portal_base: "https://services.solstone.app/",
+            poll_broker: crate::test_support::PORTAL_BASE,
+            blocked: false,
+        },
+        Case {
+            name: "http base and http broker",
+            portal_base: "http://services.solstone.app",
+            poll_broker: "http://services.solstone.app",
+            blocked: true,
+        },
+    ];
+    fn approved_poll_with_broker(endpoint: &str) -> HttpResponse {
+        let binding = crate::test_support::hosted_binding();
+        HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&json!({
+                "status": "approved",
+                "broker_endpoint": endpoint,
+                "account_id": binding.account_id,
+                "instance_id": binding.instance_id,
+                "bucket": binding.bucket,
+                "prefix": binding.prefix,
+                "broker_token": binding.broker_token
+            }))
+            .unwrap(),
+        }
+    }
+    fn assert_no_sentinels(body: &Value) {
+        let rendered = body.to_string();
+        assert!(!rendered.contains("user:pass"), "{rendered}");
+        assert!(!rendered.contains("broker-token-secret"), "{rendered}");
+        assert!(
+            !rendered.contains(crate::test_support::RECOVERY_KEY),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("ACCESS"), "{rendered}");
+        assert!(!rendered.contains("SECRET"), "{rendered}");
+        assert!(!rendered.contains("SESSION"), "{rendered}");
+        assert!(!rendered.contains("subscribe_url"), "{rendered}");
+    }
+    for case in cases {
+        let root = crate::test_support::root("healthy");
+        if !case.blocked {
+            disable_backup(root.path());
+        }
+        let restic = tempfile::tempdir().unwrap();
+        crate::test_support::write_ready_restic(restic.path());
+        let runner = Arc::new(ScriptRunner::with_outputs(if case.blocked {
+            vec![version_output()]
+        } else {
+            init_outputs()
+        }));
+        let http = Arc::new(
+            HttpScript::with_responses(vec![Ok(credentials_response())])
+                .with_poll_responses(vec![Ok(approved_poll_with_broker(case.poll_broker))]),
+        );
+        let mut deps = engine_deps(
+            root.path().to_path_buf(),
+            runner.clone(),
+            http.clone(),
+            Some(restic.path().to_path_buf()),
+        );
+        deps.portal_base = case.portal_base.into();
+        let (status, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+        assert_eq!(status, 200, "{}", case.name);
+        assert_no_sentinels(&started);
+        if case.blocked {
+            assert_eq!(started["operation"]["phase"], "error", "{}", case.name);
+            assert_eq!(
+                started["operation"]["reason_code"], "failed",
+                "{}",
+                case.name
+            );
+            assert!(
+                !crate::operation::is_busy(&deps.operations),
+                "{}",
+                case.name
+            );
+            assert!(
+                solstone_core_backup::load_hosted_binding(root.path()).is_none(),
+                "{}",
+                case.name
+            );
+            assert_eq!(started["hosted"]["bound"], false, "{}", case.name);
+            assert!(poll_gets(&http).is_empty(), "{}", case.name);
+            assert_eq!(credentials_posts(&http), 0, "{}", case.name);
+            assert_eq!(runner.calls.lock().unwrap().len(), 0, "{}", case.name);
+            let (_, status_body) = get_status_json(&deps).await;
+            assert_eq!(status_body["operation"]["phase"], "error", "{}", case.name);
+            assert_eq!(
+                status_body["operation"]["reason_code"], "failed",
+                "{}",
+                case.name
+            );
+            assert_eq!(status_body["hosted"]["bound"], false, "{}", case.name);
+            assert_no_sentinels(&status_body);
+            continue;
+        }
+        assert_eq!(started["operation"]["phase"], "setting_up", "{}", case.name);
+        assert!(
+            started["operation"]["portal_url"].as_str().is_some(),
+            "{}",
+            case.name
+        );
+        let nonce = portal_nonce(&started);
+        let _ = wait_poll_get(&http).await;
+        let expected_poll = exact_poll_url(&nonce);
+        let gets = poll_gets(&http);
+        assert!(!gets.is_empty(), "{}", case.name);
+        assert!(
+            gets.iter()
+                .all(|request| request.method == "GET" && request.url == expected_poll),
+            "{}",
+            case.name
+        );
+        let done = wait_terminal(&deps).await;
+        assert_eq!(done["operation"]["phase"], "done", "{}", case.name);
+        assert_eq!(done["hosted"]["bound"], true, "{}", case.name);
+        assert_eq!(
+            solstone_core_backup::load_hosted_binding(root.path()),
+            Some(crate::test_support::hosted_binding()),
+            "{}",
+            case.name
+        );
+        assert!(
+            !crate::operation::is_busy(&deps.operations),
+            "{}",
+            case.name
+        );
+        assert_eq!(credentials_posts(&http), 1, "{}", case.name);
+        argv_in_order(&runner.argv_heads(), &["version", "cat", "init", "key"]);
+        assert_no_sentinels(&done);
+    }
+
+    let root = crate::test_support::root("healthy");
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![version_output()]));
+    let http = Arc::new(
+        HttpScript::with_responses(vec![Ok(credentials_response())]).with_poll_responses(vec![Ok(
+            needs_subscription_poll_body(&format!(
+                "{}/services/backup",
+                crate::test_support::PORTAL_BASE
+            )),
+        )]),
+    );
+    let mut deps = engine_deps(
+        root.path().to_path_buf(),
+        runner.clone(),
+        http.clone(),
+        Some(restic.path().to_path_buf()),
+    );
+    deps.portal_base = crate::test_support::PORTAL_BASE.into();
+    let (status, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(status, 200);
+    assert_no_sentinels(&started);
+    let request = wait_poll_get(&http).await;
+    let nonce = request
+        .url
+        .split("nonce=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap()
+        .to_owned();
+    assert_eq!(request.method, "GET");
+    assert_eq!(request.url, exact_poll_url(&nonce));
+    let done = wait_terminal(&deps).await;
+    assert_eq!(done["operation"]["phase"], "needs_subscription");
+    assert_eq!(done["hosted"]["bound"], false);
+    assert!(solstone_core_backup::load_hosted_binding(root.path()).is_none());
+    assert!(!crate::operation::is_busy(&deps.operations));
+    let expected_poll = exact_poll_url(&nonce);
+    let gets = poll_gets(&http);
+    assert!(!gets.is_empty());
+    assert!(
+        gets.iter()
+            .all(|request| request.method == "GET" && request.url == expected_poll)
+    );
+    assert_eq!(credentials_posts(&http), 0);
+    assert_eq!(runner.calls.lock().unwrap().len(), 0);
+    assert_no_sentinels(&done);
+}
+
+#[tokio::test]
 async fn hosted_poll_approved_enables_operated_mode() {
     let root = crate::test_support::root("healthy");
     disable_backup(root.path());
@@ -2189,20 +2431,44 @@ async fn hosted_poll_needs_subscription_is_terminal_without_binding() {
     let root = crate::test_support::root("healthy");
     let restic = tempfile::tempdir().unwrap();
     crate::test_support::write_ready_restic(restic.path());
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![version_output()]));
     let http = Arc::new(HttpScript::default().with_poll_responses(vec![Ok(
         needs_subscription_poll_body("https://services.solstone.app/services/backup"),
     )]));
     let deps = engine_deps(
         root.path().to_path_buf(),
-        Arc::new(ScriptRunner::with_outputs(vec![version_output()])),
-        http,
+        runner.clone(),
+        http.clone(),
         Some(restic.path().to_path_buf()),
     );
-    let _ = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    let (status, _started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    assert_eq!(status, 200);
+    let request = wait_poll_get(&http).await;
+    let nonce = request
+        .url
+        .split("nonce=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap()
+        .to_owned();
     let done = wait_terminal(&deps).await;
     assert_eq!(done["operation"]["phase"], "needs_subscription");
     assert_eq!(done["hosted"]["bound"], false);
     assert!(solstone_core_backup::load_hosted_binding(root.path()).is_none());
+    assert!(!crate::operation::is_busy(&deps.operations));
+    let expected_poll = exact_poll_url(&nonce);
+    assert_eq!(request.method, "GET");
+    assert_eq!(request.url, expected_poll);
+    let gets = poll_gets(&http);
+    assert!(!gets.is_empty());
+    assert!(
+        gets.iter()
+            .all(|request| request.method == "GET" && request.url == expected_poll)
+    );
+    assert_eq!(credentials_posts(&http), 0);
+    assert_eq!(runner.calls.lock().unwrap().len(), 0);
 }
 
 #[tokio::test]
@@ -2274,6 +2540,14 @@ async fn hosted_poll_response_classes_retry_or_fail() {
             init: false,
             phase: "error",
             reason: Some("unreachable"),
+        },
+        Case {
+            name: "http other".into(),
+            poll: vec![Err(HttpError::Other)],
+            credentials: false,
+            init: false,
+            phase: "error",
+            reason: Some("failed"),
         },
         Case {
             name: "http 410".into(),
@@ -2374,21 +2648,23 @@ async fn hosted_poll_response_classes_retry_or_fail() {
         }
         let restic = tempfile::tempdir().unwrap();
         crate::test_support::write_ready_restic(restic.path());
-        let http = HttpScript::with_responses(if case.credentials {
-            vec![Ok(credentials_response())]
-        } else {
-            vec![]
-        })
-        .with_poll_responses(case.poll);
-        let runner = if case.init {
+        let http = Arc::new(
+            HttpScript::with_responses(if case.credentials {
+                vec![Ok(credentials_response())]
+            } else {
+                vec![]
+            })
+            .with_poll_responses(case.poll),
+        );
+        let runner = Arc::new(if case.init {
             ScriptRunner::with_outputs(init_outputs())
         } else {
             ScriptRunner::with_outputs(vec![version_output()])
-        };
+        });
         let deps = engine_deps(
             root.path().to_path_buf(),
-            Arc::new(runner),
-            Arc::new(http),
+            runner.clone(),
+            http.clone(),
             Some(restic.path().to_path_buf()),
         );
         let _ = post_json(&deps, "/app/backup/enable-hosted", None).await;
@@ -2397,6 +2673,20 @@ async fn hosted_poll_response_classes_retry_or_fail() {
         match case.reason {
             Some(reason) => assert_eq!(done["operation"]["reason_code"], reason, "{}", case.name),
             None => assert!(done["operation"]["reason_code"].is_null(), "{}", case.name),
+        }
+        assert!(
+            !crate::operation::is_busy(&deps.operations),
+            "{}",
+            case.name
+        );
+        if case.phase == "error" {
+            assert!(
+                solstone_core_backup::load_hosted_binding(root.path()).is_none(),
+                "{}",
+                case.name
+            );
+            assert_eq!(credentials_posts(&http), 0, "{}", case.name);
+            assert_eq!(runner.calls.lock().unwrap().len(), 0, "{}", case.name);
         }
     }
 }
@@ -2766,6 +3056,86 @@ async fn hosted_poll_broker_unreachable_matches_local_handoff_broker_unreachable
     );
 }
 
+#[tokio::test]
+async fn hosted_poll_broker_error_matches_local_handoff_broker_error_contract() {
+    async fn run(
+        poll_approved: bool,
+        handoff_locally: bool,
+    ) -> (
+        Value,
+        Option<solstone_core_backup::HostedBinding>,
+        usize,
+        usize,
+    ) {
+        let root = crate::test_support::root("healthy");
+        disable_backup(root.path());
+        let restic = tempfile::tempdir().unwrap();
+        crate::test_support::write_ready_restic(restic.path());
+        let runner = Arc::new(ScriptRunner::with_outputs(vec![version_output()]));
+        let mut script = HttpScript::with_responses(vec![Ok(HttpResponse {
+            status: 500,
+            headers: vec![],
+            body: vec![],
+        })]);
+        if poll_approved {
+            script = script.with_poll_responses(vec![Ok(approved_poll_response())]);
+        }
+        let http = Arc::new(script);
+        let deps = engine_deps(
+            root.path().to_path_buf(),
+            runner.clone(),
+            http.clone(),
+            Some(restic.path().to_path_buf()),
+        );
+        let (status, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+        assert_eq!(status, 200);
+        if handoff_locally {
+            let nonce = portal_nonce(&started);
+            let (status, _) = post_json(
+                &deps,
+                "/app/backup/handoff",
+                Some(hosted_handoff_payload(&nonce)),
+            )
+            .await;
+            assert_eq!(status, 200);
+        }
+        let done = wait_terminal(&deps).await;
+        let restic_calls = runner.calls.lock().unwrap().len();
+        (
+            done,
+            solstone_core_backup::load_hosted_binding(root.path()),
+            credentials_posts(&http),
+            restic_calls,
+        )
+    }
+
+    let (poll, poll_binding, poll_creds, poll_restic) = run(true, false).await;
+    let (local, local_binding, local_creds, local_restic) = run(false, true).await;
+    for (label, body, binding, creds, restic) in [
+        ("poll", &poll, poll_binding, poll_creds, poll_restic),
+        ("local", &local, local_binding, local_creds, local_restic),
+    ] {
+        assert_eq!(body["operation"]["phase"], "error", "{label}");
+        assert_eq!(body["operation"]["reason_code"], "broker_error", "{label}");
+        assert_eq!(
+            binding,
+            Some(crate::test_support::hosted_binding()),
+            "{label} persists binding before the broker call"
+        );
+        assert_ne!(body["mode"], "operated", "{label}");
+        assert_eq!(body["enabled"], false, "{label}");
+        assert_eq!(body["hosted"]["bound"], true, "{label}");
+        assert!(!body.to_string().contains("broker-token-secret"), "{label}");
+        assert_eq!(creds, 1, "{label}");
+        assert_eq!(restic, 1, "{label}");
+    }
+    assert_eq!(poll["operation"]["phase"], local["operation"]["phase"]);
+    assert_eq!(
+        poll["operation"]["reason_code"],
+        local["operation"]["reason_code"]
+    );
+}
+
 fn wait_watchdog_expired(slot: &crate::operation::SharedOperationSlot) {
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
@@ -2810,14 +3180,22 @@ async fn hosted_poll_watchdog_expiry_is_proven_by_direct_slot_lock_not_observati
         http.clone(),
         Some(restic.path().to_path_buf()),
     );
-    let (status, _) = post_json(
+    let (status, started) = post_json(
         &deps,
         "/app/backup/restore-hosted",
         Some(json!({"recovery_key": crate::test_support::RECOVERY_KEY})),
     )
     .await;
     assert_eq!(status, 200);
+    let nonce = portal_nonce(&started);
     hold.wait_started();
+    let expected_poll = exact_poll_url(&nonce);
+    let gets = poll_gets(&http);
+    assert!(!gets.is_empty());
+    assert!(
+        gets.iter()
+            .all(|request| request.method == "GET" && request.url == expected_poll)
+    );
     {
         let guard = deps.operations.lock().expect("operation slot lock");
         let slot = guard.as_ref().expect("slot");
@@ -3441,6 +3819,13 @@ async fn handoff_restore_composition_nonce_one_use_and_command_order() {
     let done = wait_terminal(&deps).await;
     assert_eq!(done["operation"]["phase"], "done");
     assert_eq!(done["mode"], "operated");
+    assert_eq!(done["recovery_key_confirmed"], true);
+    assert_eq!(done["destination"]["backend"], "s3");
+    assert_eq!(done["destination"]["credentials_set"], true);
+    assert_eq!(
+        done["destination"]["repository"],
+        "s3:https://s3.example/bucket/owner/prefix"
+    );
     let rendered = done.to_string();
     assert!(!rendered.contains(crate::test_support::RECOVERY_KEY));
     assert!(!rendered.contains("broker-token-secret"));

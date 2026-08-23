@@ -60,7 +60,7 @@ pub(crate) fn hosted_binding(
 
 fn canonical_origin(value: &str) -> Option<String> {
     let (scheme, rest) = value.split_once("://")?;
-    if scheme != "http" && scheme != "https" {
+    if scheme != "https" {
         return None;
     }
     if rest.contains(['@', '?', '#']) {
@@ -87,6 +87,12 @@ fn canonical_origin(value: &str) -> Option<String> {
         return None;
     }
     Some(format!("{scheme}://{rest}"))
+}
+
+pub(crate) fn require_configured_portal_base(portal_base: &str) -> Result<(), HandoffFieldError> {
+    canonical_origin(portal_base)
+        .map(|_| ())
+        .ok_or(HandoffFieldError::InvalidValue)
 }
 
 pub(crate) fn require_portal_origin(
@@ -294,6 +300,9 @@ mod tests {
             "http://services.solstone.app",
             "https://broker.example",
             "HTTPS://services.solstone.app",
+            "https://broker.solstone.app",
+            "https://services.solstone.app.evil.example",
+            "https://services-solstone.app",
         ] {
             assert_eq!(
                 require_portal_origin(candidate, PORTAL),
@@ -339,5 +348,51 @@ mod tests {
             ),
             Err(HandoffFieldError::InvalidValue)
         );
+        assert_eq!(
+            require_https_portal_url("https://broker.solstone.app/services/backup", PORTAL),
+            Err(HandoffFieldError::InvalidValue)
+        );
+    }
+
+    #[test]
+    fn http_origin_does_not_match_http_portal_base() {
+        assert_eq!(
+            require_portal_origin(
+                "http://services.solstone.app",
+                "http://services.solstone.app"
+            ),
+            Err(HandoffFieldError::InvalidValue)
+        );
+    }
+
+    #[test]
+    fn path_is_rejected_as_broker_endpoint_and_accepted_as_subscribe_url() {
+        let url = "https://services.solstone.app/services/backup";
+        assert_eq!(
+            require_portal_origin(url, PORTAL),
+            Err(HandoffFieldError::InvalidValue)
+        );
+        assert!(require_https_portal_url(url, PORTAL).is_ok());
+    }
+
+    #[test]
+    fn configured_portal_base_accepts_https_origin_and_rejects_the_invalid_shapes() {
+        assert!(require_configured_portal_base(PORTAL).is_ok());
+        assert!(require_configured_portal_base("https://services.solstone.app/").is_ok());
+        for base in [
+            "http://services.solstone.app",
+            "https://",
+            "https://user:pass@services.solstone.app",
+            "https://services.solstone.app/backup",
+            "https://services.solstone.app?x=1",
+            "https://services.solstone.app#f",
+            "https://services.solstone.app//",
+        ] {
+            assert_eq!(
+                require_configured_portal_base(base),
+                Err(HandoffFieldError::InvalidValue),
+                "{base}"
+            );
+        }
     }
 }
