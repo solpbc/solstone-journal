@@ -5,44 +5,64 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
+use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
 use std::{
     io,
     os::unix::process::CommandExt,
-    process::{Child, Command, Output, Stdio},
+    process::{Command, Output, Stdio},
     thread,
     time::{Duration, Instant},
 };
 
+const UNOWNED_REASON: &str = "host service-manager diagnostic; the inspected journal service is externally managed, not Solstone-owned";
+
 struct ProcessGroupChild {
-    child: Option<Child>,
+    authority: LaunchAuthority,
     group: rustix::process::Pid,
 }
 
 impl ProcessGroupChild {
     fn spawn(command: &mut Command) -> io::Result<Self> {
-        command.process_group(0);
-        let mut child = command
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-        let group = match i32::try_from(child.id())
+        let authority = launch(
+            Disposition::ExplicitlyUnowned {
+                reason: UNOWNED_REASON.to_owned(),
+            },
+            || {
+                command
+                    .process_group(0)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+            },
+            Box::new(|child, _timeout| {
+                let Some(group) = i32::try_from(child.id())
+                    .ok()
+                    .and_then(rustix::process::Pid::from_raw)
+                else {
+                    return child.kill().map_err(LaunchError::Terminate);
+                };
+                if rustix::process::kill_process_group(group, rustix::process::Signal::KILL)
+                    .is_err()
+                {
+                    return child.kill().map_err(LaunchError::Terminate);
+                }
+                Ok(())
+            }),
+        )
+        .map_err(|error| match error {
+            LaunchError::Spawn(inner) => inner,
+            other => io::Error::other(other),
+        })?;
+        let Some(group) = i32::try_from(authority.pid())
             .ok()
             .and_then(rustix::process::Pid::from_raw)
-        {
-            Some(pid) => pid,
-            None => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "probe child PID does not fit a process-group ID",
-                ));
-            }
+        else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "probe child PID does not fit a process-group ID",
+            ));
         };
-        Ok(Self {
-            child: Some(child),
-            group,
-        })
+        Ok(Self { authority, group })
     }
 
     fn exited_without_reaping(&self) -> io::Result<bool> {
@@ -57,30 +77,8 @@ impl ProcessGroupChild {
     }
 
     fn terminate_with_output(mut self) -> io::Result<Output> {
-        self.terminate_group();
-        self.child
-            .take()
-            .expect("owned probe child")
-            .wait_with_output()
-    }
-
-    fn terminate_group(&mut self) {
-        if rustix::process::kill_process_group(self.group, rustix::process::Signal::KILL).is_err()
-            && let Some(child) = self.child.as_mut()
-        {
-            let _ = child.kill();
-        }
-    }
-}
-
-impl Drop for ProcessGroupChild {
-    fn drop(&mut self) {
-        if self.child.is_some() {
-            self.terminate_group();
-        }
-        if let Some(mut child) = self.child.take() {
-            let _ = child.wait();
-        }
+        let _ = self.authority.terminate(Duration::from_secs(2));
+        self.authority.wait_with_output().map_err(io::Error::other)
     }
 }
 
