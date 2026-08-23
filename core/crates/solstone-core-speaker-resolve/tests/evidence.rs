@@ -5,7 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde_json::json;
+use serde_json::{Value, json};
+use solstone_core_entity::ambiguity_id;
 use solstone_core_speaker_resolve::evidence::{
     compute_segment_candidate_evidence_readonly, extract_meeting_participants_with_gaps,
     extract_screen_participants_with_gaps, load_segment_speakers_with_gaps,
@@ -45,13 +46,65 @@ fn segment(temporary: &TempDir) -> PathBuf {
 }
 
 fn write_entity(root: &Path, id: &str, name: &str) {
+    write_entity_typed(root, id, name, Some("Person"), false);
+}
+
+fn write_entity_typed(root: &Path, id: &str, name: &str, entity_type: Option<&str>, blocked: bool) {
     let path = root.join("entities").join(id).join("entity.json");
     fs::create_dir_all(path.parent().expect("entity parent")).expect("create entity parent");
-    fs::write(
-        path,
-        json!({"id": id, "name": name, "type": "Person"}).to_string(),
-    )
-    .expect("write entity");
+    let mut value = json!({"id": id, "name": name});
+    let object = value.as_object_mut().expect("entity object");
+    if let Some(entity_type) = entity_type {
+        object.insert("type".to_owned(), Value::String(entity_type.to_owned()));
+    }
+    if blocked {
+        object.insert("blocked".to_owned(), Value::Bool(true));
+    }
+    fs::write(path, value.to_string()).expect("write entity");
+}
+
+fn write_resolved_choice(root: &Path, query: &str, entity_id: &str) {
+    let normalized = solstone_core_entity_matching::normalize_resolution_query(query);
+    let row = json!({
+        "schema_version": 1,
+        "ambiguity_id": ambiguity_id(&format!("journal|{normalized}")),
+        "scope": {"kind": "journal"},
+        "normalized_query": normalized,
+        "original_query": query,
+        "latest_query": query,
+        "first_seen": "2026-08-01T00:00:00Z",
+        "last_seen": "2026-08-01T00:00:00Z",
+        "observed_tier": 8,
+        "status": "resolved",
+        "resolved_entity_id": entity_id,
+        "resolved_at": "2026-08-01T00:00:00Z",
+        "ranked_candidates": [{
+            "id": entity_id,
+            "name": query,
+            "tier": 8,
+            "score": 90.0
+        }],
+        "origins": [{"lane": "test"}],
+        "origin_keys": ["test"],
+        "occurrence_count": 1,
+        "audit": {"prior_choices": []}
+    });
+    let path = root.join("entities/ambiguities.jsonl");
+    fs::create_dir_all(path.parent().expect("ambiguities parent")).expect("create entities");
+    fs::write(&path, format!("{row}\n")).expect("write resolved choice");
+}
+
+fn evidence_for_speakers(
+    temporary: &TempDir,
+    speakers: &str,
+) -> (
+    Vec<solstone_core_speaker_resolve::evidence::CandidateEvidence>,
+    Vec<solstone_core_speaker_resolve::evidence::EvidenceGap>,
+) {
+    let segment = segment(temporary);
+    fs::write(segment.join("talents/speakers.json"), speakers).expect("write speakers");
+    compute_segment_candidate_evidence_readonly(temporary.path(), "20260808", "mic", "120000_300")
+        .expect("compute evidence")
 }
 
 #[test]
@@ -234,5 +287,82 @@ fn ac7_missing_segment_short_circuits_without_evidence() {
         )
         .expect("missing segment"),
         (Vec::new(), Vec::new())
+    );
+}
+
+#[test]
+fn non_person_and_unresolved_names_produce_no_candidate_evidence() {
+    let temporary = TempDir::new();
+    write_entity_typed(temporary.path(), "tool", "Terminal", Some("Tool"), false);
+    write_entity_typed(temporary.path(), "project", "Atlas", Some("Project"), false);
+    write_entity_typed(temporary.path(), "company", "Acme", Some("Company"), false);
+    write_entity_typed(temporary.path(), "blocked", "Blocked", Some("Person"), true);
+    write_entity_typed(temporary.path(), "untyped", "Untyped", None, false);
+    write_entity_typed(
+        temporary.path(),
+        "sam-one",
+        "Sam Person",
+        Some("Person"),
+        false,
+    );
+    write_entity_typed(
+        temporary.path(),
+        "sam-two",
+        "Sam Person",
+        Some("Person"),
+        false,
+    );
+    let (evidence, gaps) = evidence_for_speakers(
+        &temporary,
+        r#"["Terminal", "Atlas", "Acme", "Blocked", "Untyped", "Sam Person", "Nobody"]"#,
+    );
+    assert!(evidence.is_empty());
+    assert!(gaps.is_empty());
+}
+
+#[test]
+fn same_name_person_and_tool_emits_the_person_as_sole_candidate() {
+    let temporary = TempDir::new();
+    write_entity_typed(temporary.path(), "alex", "Alex", Some("Person"), false);
+    write_entity_typed(temporary.path(), "tool", "Alex", Some("Tool"), false);
+    let (evidence, gaps) = evidence_for_speakers(&temporary, r#"["Alex"]"#);
+    assert!(gaps.is_empty());
+    assert_eq!(evidence.len(), 1);
+    assert_eq!(evidence[0].entity_id, "alex");
+}
+
+#[test]
+fn saved_choice_naming_a_tool_is_silent() {
+    let temporary = TempDir::new();
+    write_entity_typed(temporary.path(), "tool", "Terminal", Some("Tool"), false);
+    write_resolved_choice(temporary.path(), "Terminal", "tool");
+    let (evidence, gaps) = evidence_for_speakers(&temporary, r#"["Terminal"]"#);
+    assert!(evidence.is_empty());
+    assert!(gaps.is_empty());
+}
+
+#[test]
+fn saved_choice_naming_an_absent_or_blocked_entity_is_stale() {
+    let absent = TempDir::new();
+    write_resolved_choice(absent.path(), "Alice", "missing");
+    let (evidence, gaps) = evidence_for_speakers(&absent, r#"["Alice"]"#);
+    assert!(evidence.is_empty());
+    assert_eq!(
+        gaps.iter()
+            .map(|gap| (gap.source.as_str(), gap.reason.as_str()))
+            .collect::<Vec<_>>(),
+        [("resolution", "stale_resolution")]
+    );
+
+    let blocked = TempDir::new();
+    write_entity_typed(blocked.path(), "alice", "Alice", Some("Person"), true);
+    write_resolved_choice(blocked.path(), "Alice", "alice");
+    let (evidence, gaps) = evidence_for_speakers(&blocked, r#"["Alice"]"#);
+    assert!(evidence.is_empty());
+    assert_eq!(
+        gaps.iter()
+            .map(|gap| (gap.source.as_str(), gap.reason.as_str()))
+            .collect::<Vec<_>>(),
+        [("resolution", "stale_resolution")]
     );
 }

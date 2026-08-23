@@ -19,6 +19,9 @@ use solstone_core_entity::{
 use solstone_core_journal_config::{ConfigLoadError, materialized_defaults, read_journal_config};
 use solstone_core_journal_io::{PathError, segment_path};
 
+use crate::admission::{
+    admissible_person_pool, admissible_resolution_entities, saved_choice_excluded_by_admission,
+};
 use solstone_core_speaker_id::calibration::RESOLUTION_FUZZY_THRESHOLD;
 
 const CHANNEL_ORDER: [&str; 4] = ["screen", "meeting_day", "setting", "speakers"];
@@ -130,18 +133,28 @@ pub fn compute_segment_candidate_evidence_readonly(
             .chain(&meeting_names),
     );
     let entities = load_all_journal_entities(journal_root)?;
-    let resolution_entities = entities
+    let unblocked = entities
         .iter()
         .filter(|entity| !entity.is_blocked())
-        .map(|entity| entity.resolution_entity())
         .collect::<Vec<_>>();
+    let pool = admissible_person_pool(&unblocked);
+    let resolution_entities = admissible_resolution_entities(&pool);
+    let scope = json!({"kind": "journal"});
     let mut name_entity_ids = HashMap::new();
     for name in candidate_names {
+        match saved_choice_excluded_by_admission(journal_root, &scope, &name, &unblocked) {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(_) => {
+                gaps.push(gap("resolution", "stale_resolution"));
+                continue;
+            }
+        }
         match record_entity_resolution_from_name_evidence(
             journal_root,
             &name,
             &resolution_entities,
-            json!({"kind": "journal"}),
+            scope.clone(),
             json!({
                 "lane": "apps.speakers.aggregation",
                 "day": day,
@@ -153,11 +166,10 @@ pub fn compute_segment_candidate_evidence_readonly(
         ) {
             Ok(resolution)
                 if resolution.outcome == EntityResolutionOutcome::Resolved
-                    && resolution.entity_index.is_some() =>
+                    && let Some(index) = resolution.entity_index =>
             {
-                let entity = &resolution_entities[resolution.entity_index.unwrap_or_default()];
-                if let Some(entity_id) = &entity.id {
-                    name_entity_ids.insert(name, entity_id.clone());
+                if let Some(entity) = pool.get(index) {
+                    name_entity_ids.insert(name, entity.id.clone());
                 }
             }
             Ok(_) => {}
