@@ -30,6 +30,7 @@ pub struct ProcessBirth {
 
 #[derive(Debug, Clone, Copy)]
 enum ProcessBirthInner {
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Linux {
         start_ticks: u64,
         btime: u64,
@@ -81,6 +82,7 @@ impl ProcessBirth {
         }
     }
 
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub(crate) fn linux(start_ticks: u64, btime: u64, clk_tck: u64) -> Self {
         Self {
             inner: ProcessBirthInner::Linux {
