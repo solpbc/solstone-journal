@@ -46,9 +46,13 @@ impl Default for LockOptions {
 }
 
 /// An exclusive `flock(2)` guard. Dropping it releases the lock.
+///
+/// When the lossless sidecar name differs from the legacy interoperability
+/// address, this also holds a shared flock on that legacy sidecar.
 #[derive(Debug)]
 pub struct FileLock {
     _guard: Flock<File>,
+    _legacy_shared: Option<Flock<File>>,
     path: PathBuf,
 }
 
@@ -171,7 +175,12 @@ pub fn hold_lock(path: impl AsRef<Path>, options: LockOptions) -> Result<FileLoc
             io::Error::new(io::ErrorKind::InvalidInput, "lock path has no file name"),
         )
     })?;
-    let sidecar = parent.join(format!("{}.lock", file_name.to_string_lossy()));
+    let exact = derive_exact_sidecar_name(parent, file_name);
+    let legacy = derive_legacy_sidecar_name(parent, file_name);
+    if exact.as_os_str() != legacy.as_os_str() {
+        return hold_lock_divergent(path, exact, legacy, options);
+    }
+    let sidecar = exact;
     let mut open_options = OpenOptions::new();
     open_options.write(true).create(true);
     #[cfg(unix)]
@@ -187,6 +196,7 @@ pub fn hold_lock(path: impl AsRef<Path>, options: LockOptions) -> Result<FileLoc
             Ok(guard) => {
                 return Ok(FileLock {
                     _guard: guard,
+                    _legacy_shared: None,
                     path: path.to_path_buf(),
                 });
             }
@@ -208,6 +218,34 @@ pub fn hold_lock(path: impl AsRef<Path>, options: LockOptions) -> Result<FileLoc
     }
 }
 
+fn hold_lock_divergent(
+    path: &Path,
+    exact: PathBuf,
+    legacy: PathBuf,
+    options: LockOptions,
+) -> Result<FileLock, LockError> {
+    let deadline = Instant::now() + options.timeout;
+    match classify_sidecar_plan(exact, legacy, path)? {
+        SidecarPlan::ExactOnly(exact) => {
+            let guard = acquire_exact_exclusive(&exact, path, options, deadline)?;
+            Ok(FileLock {
+                _guard: guard,
+                _legacy_shared: None,
+                path: path.to_path_buf(),
+            })
+        }
+        SidecarPlan::Bridged { legacy, exact } => {
+            let shared = acquire_legacy_shared(&legacy, path, options, deadline)?;
+            let guard = acquire_exact_exclusive(&exact, path, options, deadline)?;
+            Ok(FileLock {
+                _guard: guard,
+                _legacy_shared: Some(shared),
+                path: path.to_path_buf(),
+            })
+        }
+    }
+}
+
 /// Reports whether another process currently holds `path`'s sidecar lock.
 ///
 /// This probe never creates the sidecar; a missing sidecar means no lock is held.
@@ -220,7 +258,12 @@ pub fn lock_is_held(path: impl AsRef<Path>) -> Result<bool, LockError> {
             io::Error::new(io::ErrorKind::InvalidInput, "lock path has no file name"),
         )
     })?;
-    let sidecar = parent.join(format!("{}.lock", file_name.to_string_lossy()));
+    let exact = derive_exact_sidecar_name(parent, file_name);
+    let legacy = derive_legacy_sidecar_name(parent, file_name);
+    if exact.as_os_str() != legacy.as_os_str() {
+        return lock_is_held_divergent(path, exact, legacy);
+    }
+    let sidecar = exact;
     let mut open_options = OpenOptions::new();
     open_options.read(true).create(false);
     #[cfg(unix)]
@@ -231,6 +274,10 @@ pub fn lock_is_held(path: impl AsRef<Path>) -> Result<bool, LockError> {
         Err(source) => return Err(io_error(path, source)),
     };
 
+    // Shared-nonblock reports "not held" against a shared interop flock on the
+    // UTF-8 twin of an invalid-name holder. That is accepted hole (ii); do not
+    // switch this probe to exclusive-nonblock (concurrent probes would see each
+    // other, and `\xff`/`\xfe` would false-positive via the shared legacy inode).
     match Flock::lock(file, FlockArg::LockSharedNonblock) {
         Ok(guard) => {
             drop(guard);
@@ -244,6 +291,237 @@ pub fn lock_is_held(path: impl AsRef<Path>) -> Result<bool, LockError> {
             drop(file);
             Err(io_error(path, io::Error::from_raw_os_error(source as i32)))
         }
+    }
+}
+
+fn lock_is_held_divergent(path: &Path, exact: PathBuf, legacy: PathBuf) -> Result<bool, LockError> {
+    match classify_sidecar_plan(exact, legacy, path)? {
+        SidecarPlan::ExactOnly(exact) => probe_lock_held(&exact, path),
+        SidecarPlan::Bridged { legacy, exact } => match open_sidecar_read(&legacy) {
+            Err(source) if source.kind() == io::ErrorKind::NotFound => {
+                probe_lock_held(&exact, path)
+            }
+            Err(source) => Err(io_error(path, source)),
+            Ok(file) => match Flock::lock(file, FlockArg::LockSharedNonblock) {
+                Ok(guard) => {
+                    let held = probe_lock_held(&exact, path)?;
+                    drop(guard);
+                    Ok(held)
+                }
+                Err((file, Errno::EACCES | Errno::EAGAIN)) => {
+                    drop(file);
+                    Ok(true)
+                }
+                Err((file, source)) => {
+                    drop(file);
+                    Err(io_error(path, io::Error::from_raw_os_error(source as i32)))
+                }
+            },
+        },
+    }
+}
+
+fn derive_exact_sidecar_name(parent: &Path, file_name: &OsStr) -> PathBuf {
+    let mut name = file_name.to_os_string();
+    name.push(".lock");
+    parent.join(name)
+}
+
+/// Bounded interoperability address for old exclusive lockers; never an authority.
+///
+/// This is the only derivation site that uses `to_string_lossy`. Exclusive
+/// acquisition always uses [`derive_exact_sidecar_name`].
+fn derive_legacy_sidecar_name(parent: &Path, file_name: &OsStr) -> PathBuf {
+    parent.join(format!("{}.lock", file_name.to_string_lossy()))
+}
+
+enum SidecarPlan {
+    Bridged { legacy: PathBuf, exact: PathBuf },
+    ExactOnly(PathBuf),
+}
+
+fn check_sidecar_representable(sidecar: &Path, protected: &Path) -> Result<bool, LockError> {
+    match open_sidecar_read(sidecar) {
+        Ok(_) => Ok(true),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(true),
+        Err(source) if is_enametoolong(&source) => Ok(false),
+        Err(source) => Err(io_error(protected, source)),
+    }
+}
+
+fn classify_sidecar_plan(
+    exact: PathBuf,
+    legacy: PathBuf,
+    protected: &Path,
+) -> Result<SidecarPlan, LockError> {
+    if !check_sidecar_representable(&exact, protected)? {
+        return Err(io_error(
+            protected,
+            io::Error::from_raw_os_error(Errno::ENAMETOOLONG as i32),
+        ));
+    }
+    if !check_sidecar_representable(&legacy, protected)? {
+        return Ok(SidecarPlan::ExactOnly(exact));
+    }
+    Ok(SidecarPlan::Bridged { legacy, exact })
+}
+
+fn acquire_legacy_shared(
+    sidecar: &Path,
+    protected: &Path,
+    options: LockOptions,
+    deadline: Instant,
+) -> Result<Flock<File>, LockError> {
+    let open_options = sidecar_create_write_options(options);
+    loop {
+        let file = open_options
+            .open(sidecar)
+            .map_err(|source| io_error(protected, source))?;
+        match Flock::lock(file, FlockArg::LockSharedNonblock) {
+            Ok(guard) => return Ok(guard),
+            Err((file, Errno::EACCES | Errno::EAGAIN)) => {
+                drop(file);
+                if Instant::now() >= deadline {
+                    return Err(LockError::Timeout(LockTimeout {
+                        path: protected.to_path_buf(),
+                        timeout: options.timeout,
+                    }));
+                }
+                thread::sleep(retry_delay(options.poll_interval));
+            }
+            Err((file, error)) => {
+                drop(file);
+                return Err(io_error(
+                    protected,
+                    io::Error::from_raw_os_error(error as i32),
+                ));
+            }
+        }
+    }
+}
+
+fn acquire_exact_exclusive(
+    sidecar: &Path,
+    protected: &Path,
+    options: LockOptions,
+    deadline: Instant,
+) -> Result<Flock<File>, LockError> {
+    let open_options = sidecar_create_write_options(options);
+    loop {
+        let file = open_options
+            .open(sidecar)
+            .map_err(|source| io_error(protected, source))?;
+        if let Some(error) = take_exact_flock_fault() {
+            drop(file);
+            return Err(io_error(
+                protected,
+                io::Error::from_raw_os_error(error as i32),
+            ));
+        }
+        match Flock::lock(file, FlockArg::LockExclusiveNonblock) {
+            Ok(guard) => return Ok(guard),
+            Err((file, Errno::EACCES | Errno::EAGAIN)) => {
+                drop(file);
+                if Instant::now() >= deadline {
+                    return Err(LockError::Timeout(LockTimeout {
+                        path: protected.to_path_buf(),
+                        timeout: options.timeout,
+                    }));
+                }
+                thread::sleep(retry_delay(options.poll_interval));
+            }
+            Err((file, error)) => {
+                drop(file);
+                return Err(io_error(
+                    protected,
+                    io::Error::from_raw_os_error(error as i32),
+                ));
+            }
+        }
+    }
+}
+
+fn sidecar_create_write_options(options: LockOptions) -> OpenOptions {
+    let mut open_options = OpenOptions::new();
+    open_options.write(true).create(true);
+    #[cfg(unix)]
+    open_options
+        .mode(options.mode.unwrap_or(0o666))
+        .custom_flags(nix::libc::O_NOFOLLOW);
+    open_options
+}
+
+fn open_sidecar_read(sidecar: &Path) -> io::Result<File> {
+    let mut open_options = OpenOptions::new();
+    open_options.read(true).create(false);
+    #[cfg(unix)]
+    open_options.custom_flags(nix::libc::O_NOFOLLOW);
+    open_options.open(sidecar)
+}
+
+fn probe_lock_held(sidecar: &Path, protected: &Path) -> Result<bool, LockError> {
+    let file = match open_sidecar_read(sidecar) {
+        Ok(file) => file,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(source) => return Err(io_error(protected, source)),
+    };
+    match Flock::lock(file, FlockArg::LockSharedNonblock) {
+        Ok(guard) => {
+            drop(guard);
+            Ok(false)
+        }
+        Err((file, Errno::EACCES | Errno::EAGAIN)) => {
+            drop(file);
+            Ok(true)
+        }
+        Err((file, source)) => {
+            drop(file);
+            Err(io_error(
+                protected,
+                io::Error::from_raw_os_error(source as i32),
+            ))
+        }
+    }
+}
+
+fn is_enametoolong(error: &io::Error) -> bool {
+    error.raw_os_error() == Some(Errno::ENAMETOOLONG as i32)
+}
+
+#[cfg(test)]
+thread_local! {
+    static EXACT_FLOCK_FAULT: std::cell::Cell<Option<Errno>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn take_exact_flock_fault() -> Option<Errno> {
+    EXACT_FLOCK_FAULT.with(|cell| cell.take())
+}
+
+#[cfg(not(test))]
+fn take_exact_flock_fault() -> Option<Errno> {
+    None
+}
+
+#[cfg(test)]
+struct ExactFlockFault;
+
+#[cfg(test)]
+impl ExactFlockFault {
+    fn install(error: Errno) -> Self {
+        EXACT_FLOCK_FAULT.with(|cell| {
+            assert!(cell.get().is_none());
+            cell.set(Some(error));
+        });
+        Self
+    }
+}
+
+#[cfg(test)]
+impl Drop for ExactFlockFault {
+    fn drop(&mut self) {
+        EXACT_FLOCK_FAULT.with(|cell| cell.set(None));
     }
 }
 
@@ -537,10 +815,15 @@ fn io_error(path: &Path, source: io::Error) -> LockError {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
-    use std::fs;
+    use std::collections::BTreeSet;
+    use std::fs::{self, OpenOptions};
+    use std::io;
     use std::os::unix::ffi::OsStringExt;
-    use std::os::unix::fs::{PermissionsExt, symlink};
-    use std::time::Duration;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink};
+    use std::time::{Duration, Instant};
+
+    use nix::errno::Errno;
+    use nix::fcntl::{Flock, FlockArg};
 
     use super::*;
     use crate::test_support::TempDir;
@@ -807,5 +1090,295 @@ mod tests {
             ExistingParentLockError::Timeout(LockTimeout { timeout, .. })
                 if timeout == Duration::ZERO
         ));
+    }
+
+    const FF: &[u8] = b"seg-\xff";
+    const FE: &[u8] = b"seg-\xfe";
+    const TWIN: &[u8] = b"seg-\xef\xbf\xbd";
+    const FF_LOCK: &[u8] = b"seg-\xff.lock";
+    const FE_LOCK: &[u8] = b"seg-\xfe.lock";
+    const TWIN_LOCK: &[u8] = b"seg-\xef\xbf\xbd.lock";
+
+    fn os_path(dir: &Path, bytes: &[u8]) -> PathBuf {
+        dir.join(OsString::from_vec(bytes.to_vec()))
+    }
+
+    fn dir_entries(dir: &Path) -> BTreeSet<OsString> {
+        fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect()
+    }
+
+    fn is_name_too_long(error: &io::Error) -> bool {
+        error.raw_os_error() == Some(Errno::ENAMETOOLONG as i32)
+    }
+
+    fn try_create_len(dir: &Path, len: usize) -> io::Result<()> {
+        let path = dir.join(OsString::from_vec(vec![b'x'; len]));
+        fs::File::create(path).map(drop)
+    }
+
+    fn filesystem_name_max(dir: &Path) -> usize {
+        fs::create_dir_all(dir).unwrap();
+        let mut lo = 1usize;
+        let mut hi = 2usize;
+        loop {
+            match try_create_len(dir, hi) {
+                Ok(()) => {
+                    lo = hi;
+                    hi = hi.saturating_mul(2);
+                    assert!(hi <= 8192, "NAME_MAX probe exceeded 8192");
+                }
+                Err(error) if is_name_too_long(&error) => break,
+                Err(error) => panic!("unexpected NAME_MAX probe error at {hi}: {error}"),
+            }
+        }
+        while lo + 1 < hi {
+            let mid = lo + (hi - lo) / 2;
+            match try_create_len(dir, mid) {
+                Ok(()) => lo = mid,
+                Err(error) if is_name_too_long(&error) => hi = mid,
+                Err(error) => panic!("unexpected NAME_MAX probe error at {mid}: {error}"),
+            }
+        }
+        lo
+    }
+
+    fn short_lock_options() -> LockOptions {
+        LockOptions {
+            timeout: Duration::from_millis(50),
+            ..LockOptions::default()
+        }
+    }
+
+    fn pinned_lock_options() -> LockOptions {
+        LockOptions {
+            timeout: Duration::from_millis(200),
+            poll_interval: Duration::from_millis(10),
+            mode: None,
+        }
+    }
+
+    fn open_sidecar_create_write(path: &Path) -> fs::File {
+        let mut open_options = OpenOptions::new();
+        open_options.write(true).create(true);
+        open_options.mode(0o666).custom_flags(nix::libc::O_NOFOLLOW);
+        open_options.open(path).unwrap()
+    }
+
+    fn layout() -> (TempDir, PathBuf, PathBuf) {
+        let temporary = TempDir::new();
+        let probe = temporary.path().join("probe");
+        let locks = temporary.path().join("locks");
+        fs::create_dir(&locks).unwrap();
+        (temporary, probe, locks)
+    }
+
+    #[test]
+    fn utf8_name_takes_a_single_exclusive_sidecar() {
+        let (_temporary, _probe, locks) = layout();
+        let path = locks.join("seg-ok");
+        let first = hold_lock(&path, LockOptions::default()).unwrap();
+        assert_eq!(
+            dir_entries(&locks),
+            BTreeSet::from([OsString::from("seg-ok.lock")])
+        );
+        assert!(lock_is_held(&path).unwrap());
+        match hold_lock(&path, short_lock_options()) {
+            Err(LockError::Timeout(_)) => {}
+            other => panic!("expected timeout, got {other:?}"),
+        }
+        drop(first);
+        assert!(!lock_is_held(&path).unwrap());
+        assert_eq!(
+            dir_entries(&locks),
+            BTreeSet::from([OsString::from("seg-ok.lock")])
+        );
+    }
+
+    #[test]
+    fn invalid_utf8_collisions_are_independent_and_same_name_contends() {
+        let (_temporary, _probe, locks) = layout();
+        let ff = os_path(&locks, FF);
+        let fe = os_path(&locks, FE);
+        let ff_lock = hold_lock(&ff, LockOptions::default()).unwrap();
+        let fe_lock = hold_lock(&fe, LockOptions::default()).unwrap();
+        assert_eq!(
+            dir_entries(&locks),
+            BTreeSet::from([
+                OsString::from_vec(FF_LOCK.to_vec()),
+                OsString::from_vec(FE_LOCK.to_vec()),
+                OsString::from_vec(TWIN_LOCK.to_vec()),
+            ])
+        );
+        assert!(lock_is_held(&ff).unwrap());
+        assert!(lock_is_held(&fe).unwrap());
+        // lock_is_held(twin) while a bridged invalid-name holder is live may
+        // report false: the twin is valid UTF-8 (branch 1) and shared-nonblock
+        // succeeds against a shared interop flock. Accepted hole (ii); do not
+        // switch that probe to exclusive-nonblock.
+        match hold_lock(&ff, short_lock_options()) {
+            Err(LockError::Timeout(_)) => {}
+            other => panic!("expected same-name timeout, got {other:?}"),
+        }
+        drop(ff_lock);
+        drop(fe_lock);
+    }
+
+    #[test]
+    fn lossy_twin_is_shared_interop_not_exclusive_authority() {
+        let (_temporary, _probe, locks) = layout();
+        let ff = os_path(&locks, FF);
+        let fe = os_path(&locks, FE);
+        let twin = os_path(&locks, TWIN);
+        let legacy_sidecar = os_path(&locks, TWIN_LOCK);
+
+        let ff_lock = hold_lock(&ff, LockOptions::default()).unwrap();
+        match hold_lock(&twin, short_lock_options()) {
+            Err(LockError::Timeout(_)) => {}
+            other => panic!("expected twin timeout against new holder, got {other:?}"),
+        }
+        let fe_lock = hold_lock(&fe, LockOptions::default()).unwrap();
+        drop(ff_lock);
+        drop(fe_lock);
+        let started = Instant::now();
+        let twin_lock = hold_lock(&twin, LockOptions::default()).unwrap();
+        assert!(started.elapsed() < Duration::from_millis(50));
+        drop(twin_lock);
+
+        let old = Flock::lock(
+            open_sidecar_create_write(&legacy_sidecar),
+            FlockArg::LockExclusiveNonblock,
+        )
+        .unwrap();
+        match hold_lock(&ff, short_lock_options()) {
+            Err(LockError::Timeout(_)) => {}
+            other => panic!("expected timeout against old exclusive, got {other:?}"),
+        }
+        drop(old);
+        let started = Instant::now();
+        let _reacquired = hold_lock(&ff, LockOptions::default()).unwrap();
+        assert!(started.elapsed() < Duration::from_millis(50));
+    }
+
+    #[test]
+    fn unrepresentable_exact_name_returns_io_without_creating_any_sidecar() {
+        let (_temporary, probe, locks) = layout();
+        let name_max = filesystem_name_max(&probe);
+        let file_name = vec![0xff; name_max.saturating_sub(4)];
+        let path = os_path(&locks, &file_name);
+        let before = dir_entries(&locks);
+        match hold_lock(&path, LockOptions::default()) {
+            Err(LockError::Io { .. }) => {}
+            other => panic!("expected Io, got {other:?}"),
+        }
+        assert_eq!(dir_entries(&locks), before);
+
+        let ff = os_path(&locks, FF);
+        let _created = hold_lock(&ff, LockOptions::default()).unwrap();
+        assert_ne!(dir_entries(&locks), before);
+    }
+
+    #[test]
+    fn exact_fits_legacy_too_long_creates_only_the_exact_sidecar() {
+        let (_temporary, probe, locks) = layout();
+        let name_max = filesystem_name_max(&probe);
+        let mut file_name = vec![b'a'; name_max.saturating_sub(6)];
+        file_name.push(0xff);
+        let path = os_path(&locks, &file_name);
+        let mut exact_sidecar = file_name;
+        exact_sidecar.extend_from_slice(b".lock");
+        let before = dir_entries(&locks);
+        let held = hold_lock(&path, LockOptions::default()).unwrap();
+        let after = dir_entries(&locks);
+        assert_eq!(
+            &after - &before,
+            BTreeSet::from([OsString::from_vec(exact_sidecar)])
+        );
+        assert!(lock_is_held(&path).unwrap());
+        drop(held);
+
+        let mid = dir_entries(&locks);
+        let _ff = hold_lock(os_path(&locks, FF), LockOptions::default()).unwrap();
+        assert_eq!(
+            &dir_entries(&locks) - &mid,
+            BTreeSet::from([
+                OsString::from_vec(FF_LOCK.to_vec()),
+                OsString::from_vec(TWIN_LOCK.to_vec()),
+            ])
+        );
+    }
+
+    #[test]
+    fn bridged_exact_open_failure_releases_legacy_shared() {
+        let (_temporary, _probe, locks) = layout();
+        fs::create_dir(os_path(&locks, FF_LOCK)).unwrap();
+        let ff = os_path(&locks, FF);
+        let started = Instant::now();
+        match hold_lock(&ff, pinned_lock_options()) {
+            Err(LockError::Io { .. }) => {}
+            other => panic!("expected Io from EISDIR, got {other:?}"),
+        }
+        assert!(started.elapsed() < Duration::from_millis(50));
+        let started = Instant::now();
+        Flock::lock(
+            open_sidecar_create_write(&os_path(&locks, TWIN_LOCK)),
+            FlockArg::LockExclusiveNonblock,
+        )
+        .unwrap();
+        assert!(started.elapsed() < Duration::from_millis(50));
+    }
+
+    #[test]
+    fn bridged_exact_timeout_releases_legacy_shared_within_one_budget() {
+        let (_temporary, _probe, locks) = layout();
+        // poll_interval 10ms makes retry_delay return exactly 10ms (sleep_min
+        // == sleep_max). A single deadline's worst case is ~210ms (200ms + one
+        // 10ms sleep after last-millisecond contention). A mistaken per-loop
+        // deadline would wait ~400ms. 300ms sits between those.
+        let competitor = Flock::lock(
+            open_sidecar_create_write(&os_path(&locks, FF_LOCK)),
+            FlockArg::LockExclusiveNonblock,
+        )
+        .unwrap();
+        let ff = os_path(&locks, FF);
+        let started = Instant::now();
+        match hold_lock(&ff, pinned_lock_options()) {
+            Err(LockError::Timeout(timeout)) => {
+                assert_eq!(timeout.path, ff);
+                assert_eq!(timeout.timeout, Duration::from_millis(200));
+            }
+            other => panic!("expected Timeout, got {other:?}"),
+        }
+        assert!(started.elapsed() < Duration::from_millis(300));
+        let started = Instant::now();
+        Flock::lock(
+            open_sidecar_create_write(&os_path(&locks, TWIN_LOCK)),
+            FlockArg::LockExclusiveNonblock,
+        )
+        .unwrap();
+        assert!(started.elapsed() < Duration::from_millis(50));
+        drop(competitor);
+    }
+
+    #[test]
+    fn bridged_exact_flock_fault_releases_legacy_shared() {
+        let (_temporary, _probe, locks) = layout();
+        let ff = os_path(&locks, FF);
+        let _fault = ExactFlockFault::install(Errno::EINVAL);
+        let started = Instant::now();
+        match hold_lock(&ff, pinned_lock_options()) {
+            Err(LockError::Io { .. }) => {}
+            other => panic!("expected Io from flock fault, got {other:?}"),
+        }
+        assert!(started.elapsed() < Duration::from_millis(50));
+        let started = Instant::now();
+        Flock::lock(
+            open_sidecar_create_write(&os_path(&locks, TWIN_LOCK)),
+            FlockArg::LockExclusiveNonblock,
+        )
+        .unwrap();
+        assert!(started.elapsed() < Duration::from_millis(50));
     }
 }
