@@ -3207,6 +3207,7 @@ dependencies = [
  "solstone-core-body-rebuild",
  "solstone-core-indexer-store",
  "solstone-core-journal-io",
+ "solstone-core-system",
  "tempfile",
  "thiserror 2.0.20",
  "ureq",

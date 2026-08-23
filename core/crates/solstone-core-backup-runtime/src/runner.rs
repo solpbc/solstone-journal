@@ -10,7 +10,7 @@ use std::io::{self, Read};
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -20,6 +20,7 @@ use nix::sys::signal::{Signal, killpg};
 use nix::sys::wait::waitpid;
 use nix::unistd::{Pid, pipe};
 use serde_json::Value;
+use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
 use thiserror::Error;
 
 #[derive(Clone)]
@@ -102,7 +103,7 @@ trait SessionIo {
     fn observe_exit_without_reap(&mut self) -> io::Result<bool>;
     fn group_cleanup(&mut self) -> io::Result<()>;
     fn close_owned_endpoints(&mut self);
-    fn reap_root(&mut self) -> io::Result<ExitStatus>;
+    fn reap_root(&mut self) -> io::Result<i32>;
     fn collect_readers(&mut self) -> io::Result<(Vec<u8>, Vec<u8>)>;
 }
 
@@ -115,7 +116,7 @@ fn push_step(trace: &mut Option<&mut Vec<Step>>, step: Step) {
 fn complete_session<S: SessionIo>(
     session: &mut S,
     mut trace: Option<&mut Vec<Step>>,
-) -> io::Result<(ExitStatus, Vec<u8>, Vec<u8>)> {
+) -> io::Result<(i32, Vec<u8>, Vec<u8>)> {
     push_step(&mut trace, Step::Observe);
     session.observe_exit_without_reap()?;
     push_step(&mut trace, Step::GroupCleanup);
@@ -157,11 +158,11 @@ type OutputReader = thread::JoinHandle<io::Result<Vec<u8>>>;
 
 struct SpawnedChild {
     // Drop order is declaration order and is load-bearing: GroupGuard
-    // (kill group), parent write ends (EOF), Child, then detached readers.
+    // (kill group), parent write ends (EOF), LaunchAuthority, then detached readers.
     guard: GroupGuard,
     stdout_w: Option<OwnedFd>,
     stderr_w: Option<OwnedFd>,
-    child: Child,
+    authority: LaunchAuthority,
     readers: Option<(OutputReader, OutputReader)>,
 }
 
@@ -179,9 +180,9 @@ impl SessionIo for SpawnedChild {
         drop(self.stderr_w.take());
     }
 
-    fn reap_root(&mut self) -> io::Result<ExitStatus> {
+    fn reap_root(&mut self) -> io::Result<i32> {
         self.guard.reaped = true;
-        self.child.wait()
+        self.authority.wait()
     }
 
     fn collect_readers(&mut self) -> io::Result<(Vec<u8>, Vec<u8>)> {
@@ -241,13 +242,31 @@ impl SystemToolRunner {
             .stdout(Stdio::from(stdout_w.try_clone()?))
             .stderr(Stdio::from(stderr_w.try_clone()?));
         command.process_group(0);
-        let child = command.spawn()?;
-        // spawn takes &mut self; drop the Command so its Stdio write-end
-        // clones close. Otherwise read_to_end never sees EOF.
-        drop(command);
+        let authority = launch(
+            Disposition::IndependentBoundedHelper {
+                timeout: request.timeout.unwrap_or(Duration::MAX),
+            },
+            move || command.spawn(),
+            Box::new(|child, _timeout| {
+                let Ok(raw) = i32::try_from(child.id()) else {
+                    return child.kill().map_err(LaunchError::Terminate);
+                };
+                match killpg(Pid::from_raw(raw), Signal::SIGKILL) {
+                    Ok(()) | Err(Errno::ESRCH) => Ok(()),
+                    Err(err) => Err(LaunchError::Terminate(io::Error::from(err))),
+                }
+            }),
+        )
+        .map_err(|error| match error {
+            LaunchError::Spawn(inner) => inner,
+            other => io::Error::other(other),
+        })?;
+        // Command is moved into the spawn closure and dropped when launch()
+        // finishes spawning, closing its Stdio write-end clones so
+        // read_to_end sees EOF.
         // pids fit in i32 on every target this crate builds; cast so no
         // `?` can return between spawn and an armed GroupGuard.
-        let pgid = Pid::from_raw(child.id() as i32);
+        let pgid = Pid::from_raw(authority.pid() as i32);
         let mut session = SpawnedChild {
             guard: GroupGuard {
                 pgid,
@@ -255,7 +274,7 @@ impl SystemToolRunner {
             },
             stdout_w: Some(stdout_w),
             stderr_w: Some(stderr_w),
-            child,
+            authority,
             readers: None,
         };
         let stdout_reader = thread::spawn(move || {
@@ -286,8 +305,10 @@ impl SystemToolRunner {
         Ok(ToolOutput {
             returncode: if timed_out {
                 124
+            } else if status >= 0 {
+                status
             } else {
-                status.code().unwrap_or(1)
+                1
             },
             stdout,
             stderr,
@@ -618,8 +639,6 @@ mod tests {
 
     #[test]
     fn complete_session_records_observe_cleanup_close_reap_order() {
-        use std::os::unix::process::ExitStatusExt;
-
         struct Fake;
         impl SessionIo for Fake {
             fn observe_exit_without_reap(&mut self) -> io::Result<bool> {
@@ -629,8 +648,8 @@ mod tests {
                 Ok(())
             }
             fn close_owned_endpoints(&mut self) {}
-            fn reap_root(&mut self) -> io::Result<ExitStatus> {
-                Ok(ExitStatus::from_raw(0))
+            fn reap_root(&mut self) -> io::Result<i32> {
+                Ok(0)
             }
             fn collect_readers(&mut self) -> io::Result<(Vec<u8>, Vec<u8>)> {
                 Ok((Vec::new(), Vec::new()))
