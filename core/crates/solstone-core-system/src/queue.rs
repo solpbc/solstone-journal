@@ -14,8 +14,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use crate::cap::CapResolver;
 use crate::partition::Partition;
 use crate::process::{
-    CAP_TERMINATION_TIMEOUT, ManagedProcess, ProcessEventSink, SpawnError, SpawnOptions,
-    TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome, exit_status_for_code,
+    CAP_TERMINATION_TIMEOUT, Disposition, LaunchAuthority, LaunchError, ManagedProcess,
+    ProcessEventSink, SpawnError, SpawnOptions, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError,
+    TerminationOutcome, exit_status_for_code, launch_managed,
 };
 use crate::request::{ActiveTaskSnapshot, ExecutionRequest};
 
@@ -178,7 +179,7 @@ trait QueueProcess: Send {
     fn cleanup(&mut self);
 }
 
-struct ManagedQueueProcess(ManagedProcess);
+struct ManagedQueueProcess(LaunchAuthority);
 
 impl QueueProcess for ManagedQueueProcess {
     fn pid(&self) -> u32 {
@@ -190,7 +191,11 @@ impl QueueProcess for ManagedQueueProcess {
     }
 
     fn terminate(&mut self, timeout: Duration) -> Result<TerminationOutcome, TerminationError> {
-        self.0.terminate(timeout)
+        match self.0.terminate(timeout) {
+            Ok(()) => Ok(TerminationOutcome::Graceful { exit_code: None }),
+            Err(LaunchError::Terminate(error)) => Err(TerminationError::Io(error)),
+            Err(error) => Err(TerminationError::Io(io::Error::other(error))),
+        }
     }
 
     fn cleanup(&mut self) {
@@ -206,8 +211,22 @@ fn spawn_managed_queue_process(
     command: Vec<String>,
     options: SpawnOptions,
 ) -> Result<QueueProcessHandle, SpawnError> {
+    let authority = match launch_managed(Disposition::IndependentLongLived, || {
+        ManagedProcess::spawn(command, options)
+    }) {
+        Ok(authority) => authority,
+        Err(LaunchError::SpawnManaged(error)) => return Err(error),
+        Err(LaunchError::CapabilityUnavailable { needed }) => {
+            return Err(SpawnError::Spawn(io::Error::other(format!(
+                "independent launch requires {needed}"
+            ))));
+        }
+        Err(error) => {
+            unreachable!("launch_managed(IndependentLongLived) cannot fail with {error}")
+        }
+    };
     Ok(Arc::new(Mutex::new(Box::new(ManagedQueueProcess(
-        ManagedProcess::spawn(command, options)?,
+        authority,
     )))))
 }
 
