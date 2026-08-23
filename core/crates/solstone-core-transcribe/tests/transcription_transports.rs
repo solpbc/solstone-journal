@@ -626,6 +626,22 @@ fn text_without_word_timings_is_a_hard_contract_error() {
 }
 
 #[test]
+fn blank_word_timing_is_a_hard_contract_error() {
+    let stub = StubServer::start(vec![Reply::Http {
+        status: 200,
+        body: r#"{"words":[{"word":"","start":0.0,"end":1.0}],"text":"hello"}"#,
+    }]);
+
+    let ParakeetTranscribe::Failed { reason } =
+        parakeet_transcribe(&stub.base_url, b"wav", Duration::from_secs(1))
+    else {
+        panic!("expected hard transcription failure");
+    };
+    stub.finish();
+    assert_eq!(reason, "contract_violation");
+}
+
+#[test]
 fn health_probe_accepts_only_http_200() {
     let stub = StubServer::start(vec![Reply::Http {
         status: 204,

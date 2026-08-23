@@ -62,6 +62,7 @@ pub(crate) enum WordContractError {
     TextWithoutTimings,
     WordNotObject,
     MissingKey(&'static str),
+    BlankWord,
     InvalidNumber,
 }
 
@@ -204,6 +205,7 @@ fn parse_transcription_response(text: &str) -> Result<TranscriptionResponse, Tra
             "contract_violation",
             format!("word timing missing key: {key}"),
         ),
+        WordContractError::BlankWord => failure("contract_violation", "word timing text was blank"),
         WordContractError::InvalidNumber => failure(
             "contract_violation",
             "word timing contains invalid numeric value",
@@ -251,6 +253,9 @@ fn parse_word(value: &Value) -> Result<TranscriptionWord, WordContractError> {
         .trim_matches('"')
         .trim()
         .to_owned();
+    if token.is_empty() {
+        return Err(WordContractError::BlankWord);
+    }
     let start = finite_word_number(object, "start")?;
     let end = finite_word_number(object, "end")?;
     let probability = object
@@ -445,6 +450,14 @@ mod tests {
                 r#"{"words":[{"word":"hello","start":"bad","end":1.0}]}"#,
                 "contract_violation",
             ),
+            (
+                r#"{"words":[{"word":"","start":1.0,"end":2.0}]}"#,
+                "contract_violation",
+            ),
+            (
+                r#"{"words":[{"word":"  ","start":1.0,"end":2.0}]}"#,
+                "contract_violation",
+            ),
         ];
 
         for (index, (payload, expected_reason)) in cases.into_iter().enumerate() {
@@ -456,7 +469,9 @@ mod tests {
                 | (3, WordContractError::TextWithoutTimings)
                 | (4, WordContractError::WordNotObject)
                 | (5, WordContractError::MissingKey("word"))
-                | (6, WordContractError::InvalidNumber) => {}
+                | (6, WordContractError::InvalidNumber)
+                | (7, WordContractError::BlankWord)
+                | (8, WordContractError::BlankWord) => {}
                 (_, marker) => panic!("unexpected contract marker: {marker:?}"),
             }
             assert_failure_reason(
