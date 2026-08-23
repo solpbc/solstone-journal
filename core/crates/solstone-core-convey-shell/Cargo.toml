@@ -66,6 +66,7 @@ host = [
     "dep:solstone-core-spl",
     "dep:solstone-core-thinking",
     "dep:solstone-core-thinking-copy",
+    "dep:solstone-core-handoff-nonce",
     "dep:solstone-core-journal-config-write",
     "dep:solstone-core-identity",
     "solstone-core-sol-link/host",
@@ -122,6 +123,7 @@ solstone-core-sol-link = { workspace = true, optional = true }
 solstone-core-spl = { workspace = true, optional = true }
 solstone-core-thinking = { workspace = true, optional = true }
 solstone-core-thinking-copy = { workspace = true, optional = true }
+solstone-core-handoff-nonce = { workspace = true, optional = true }
 solstone-core-talent-cli.workspace = true
 solstone-core-talent-config.workspace = true
 solstone-core-journal-cli.workspace = true

@@ -19,10 +19,11 @@ use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_handoff_nonce::mint_nonce;
 use solstone_core_sol_link::ca::{jid_from_spki, load_ca};
 use solstone_core_thinking::confidential::{
     HandoffCode, HandoffResult, OperationHandle, OperationRegistry, Phase, ProvisionError,
-    SERVICE_SPP, TokenError, disable_confidential, handoff_result, mint_nonce, outcome_from_token,
+    SERVICE_SPP, TokenError, disable_confidential, handoff_result, outcome_from_token,
     provision_confidential_handoff,
 };
 use solstone_core_thinking::providers::{ManagedKeyValidator, UnavailableValidator};

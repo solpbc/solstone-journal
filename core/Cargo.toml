@@ -90,6 +90,7 @@ members = [
     "crates/solstone-core-describe-categories",
     "crates/solstone-core-distribution",
     "crates/solstone-core-grab",
+    "crates/solstone-core-handoff-nonce",
     "crates/solstone-core-observe-audio",
     "crates/solstone-core-depict",
     "crates/solstone-core-generate",
@@ -236,6 +237,7 @@ solstone-core-transcripts = { path = "crates/solstone-core-transcripts" }
 solstone-core-transcripts-web = { path = "crates/solstone-core-transcripts-web" }
 solstone-core-facets-web = { path = "crates/solstone-core-facets-web" }
 solstone-core-grab = { path = "crates/solstone-core-grab" }
+solstone-core-handoff-nonce = { path = "crates/solstone-core-handoff-nonce" }
 solstone-core-streams-cli = { path = "crates/solstone-core-streams-cli" }
 solstone-core-import = { path = "crates/solstone-core-import" }
 solstone-core-import-host = { path = "crates/solstone-core-import-host" }

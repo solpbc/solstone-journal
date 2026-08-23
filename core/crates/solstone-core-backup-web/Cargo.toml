@@ -20,6 +20,7 @@ solstone-core-backup.workspace = true
 solstone-core-backup-runtime.workspace = true
 solstone-core-callosum.workspace = true
 solstone-core-journal-config.workspace = true
+solstone-core-handoff-nonce.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-offload.workspace = true
 

@@ -9,7 +9,6 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use chrono::Utc;
-use getrandom::fill as fill_random;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_brain::derive_active_brain_lane;
@@ -18,8 +17,6 @@ use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_c
 use crate::MutationError;
 
 pub const SERVICE_SPP: &str = "spp";
-pub const NONCE_ALPHABET: &[u8] = b"23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-pub const NONCE_LENGTH_CHARS: usize = 52;
 const OPERATION_GRACE_SECONDS: u64 = 30;
 const LOCAL_MODEL: &str = "local/qwen3.5-4b";
 const CREDENTIAL_FINGERPRINT_FIELD: &str = "credential_fingerprint_sha256";
@@ -256,15 +253,6 @@ fn payload(entry: &OperationEntry, now: Instant, remap: bool) -> Value {
         "subscribe_url": entry.subscribe_url.clone().map(Value::String).unwrap_or(Value::Null),
         "elapsed_ms": now.duration_since(entry.started).as_millis() as u64,
     })
-}
-
-pub fn mint_nonce() -> Result<String, String> {
-    let mut bytes = [0_u8; NONCE_LENGTH_CHARS];
-    fill_random(&mut bytes).map_err(|_| "system CSPRNG unavailable".to_owned())?;
-    Ok(bytes
-        .into_iter()
-        .map(|byte| NONCE_ALPHABET[(byte as usize) % NONCE_ALPHABET.len()] as char)
-        .collect())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -571,14 +559,5 @@ mod tests {
             outcome_from_token("unknown_service", None),
             Err(TokenError::OutOfDomain)
         );
-    }
-
-    #[test]
-    fn nonce_has_the_exact_external_shape() {
-        let first = mint_nonce().expect("nonce mints");
-        let second = mint_nonce().expect("nonce mints");
-        assert_eq!(first.len(), NONCE_LENGTH_CHARS);
-        assert!(first.bytes().all(|byte| NONCE_ALPHABET.contains(&byte)));
-        assert_ne!(first, second);
     }
 }

@@ -1206,14 +1206,18 @@ fn assert_enable_portal_url(url: &str) {
         .split('&')
         .next()
         .unwrap();
-    for value in [nonce, instance] {
-        assert_eq!(value.len(), 32);
-        assert!(
-            value
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
-        );
-    }
+    assert_eq!(nonce.len(), solstone_core_handoff_nonce::NONCE_LENGTH_CHARS);
+    assert!(
+        nonce
+            .bytes()
+            .all(|byte| { solstone_core_handoff_nonce::NONCE_ALPHABET.contains(&byte) })
+    );
+    assert_eq!(instance.len(), 32);
+    assert!(
+        instance
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    );
 }
 
 #[tokio::test]
@@ -1714,5 +1718,100 @@ async fn second_handoff_with_the_same_nonce_is_rejected() {
     let (second, body) = post_json(&deps, "/app/backup/handoff", Some(payload)).await;
     assert_eq!(second, 400);
     assert_eq!(body["reason_code"], "invalid_operation_for_state");
+    let _ = wait_terminal(&deps).await;
+}
+
+fn hosted_handoff_payload(nonce: &str) -> Value {
+    let binding = crate::test_support::hosted_binding();
+    json!({
+        "nonce": nonce,
+        "broker_endpoint": binding.broker_endpoint,
+        "account_id": binding.account_id,
+        "instance_id": binding.instance_id,
+        "bucket": binding.bucket,
+        "prefix": binding.prefix,
+        "broker_token": binding.broker_token
+    })
+}
+
+fn assert_handoff_refused(status: u16, body: &Value) {
+    assert_eq!(status, 400);
+    assert_eq!(body["reason_code"], "invalid_operation_for_state");
+    assert_eq!(
+        body["error"],
+        "I couldn't take that action in the current state."
+    );
+    assert_eq!(body["detail"], "");
+}
+
+#[tokio::test]
+async fn mismatched_nonces_are_refused_without_consuming_the_handoff() {
+    let root = crate::test_support::root("healthy");
+    disable_backup(root.path());
+    let runner = ScriptRunner::with_outputs(init_outputs());
+    let restic = tempfile::tempdir().unwrap();
+    crate::test_support::write_ready_restic(restic.path());
+    let http = HttpScript::with_responses(vec![Ok(credentials_response())]);
+    let deps = engine_deps(
+        root.path().to_path_buf(),
+        Arc::new(runner),
+        Arc::new(http),
+        Some(restic.path().to_path_buf()),
+    );
+    let (_, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    let url = started["operation"]["portal_url"].as_str().unwrap();
+    let nonce = url
+        .split("nonce=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap()
+        .to_owned();
+
+    let original = nonce.as_bytes()[0];
+    let flipped = solstone_core_handoff_nonce::NONCE_ALPHABET
+        .iter()
+        .copied()
+        .find(|&byte| byte != original)
+        .expect("alphabet has a second character");
+    let mutated = {
+        let mut bytes = nonce.clone().into_bytes();
+        bytes[0] = flipped;
+        String::from_utf8(bytes).unwrap()
+    };
+    assert_ne!(mutated, nonce);
+    assert!(mutated
+        .bytes()
+        .all(|byte| solstone_core_handoff_nonce::NONCE_ALPHABET.contains(&byte)));
+
+    let mut out_of_alphabet = nonce.clone().into_bytes();
+    out_of_alphabet[0] = b'0';
+    let out_of_alphabet = String::from_utf8(out_of_alphabet).unwrap();
+    assert!(!solstone_core_handoff_nonce::NONCE_ALPHABET.contains(&b'0'));
+
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/handoff",
+        Some(hosted_handoff_payload(&mutated)),
+    )
+    .await;
+    assert_handoff_refused(status, &body);
+
+    let (status, body) = post_json(
+        &deps,
+        "/app/backup/handoff",
+        Some(hosted_handoff_payload(&out_of_alphabet)),
+    )
+    .await;
+    assert_handoff_refused(status, &body);
+
+    let (status, _) = post_json(
+        &deps,
+        "/app/backup/handoff",
+        Some(hosted_handoff_payload(&nonce)),
+    )
+    .await;
+    assert_eq!(status, 200);
     let _ = wait_terminal(&deps).await;
 }

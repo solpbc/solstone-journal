@@ -3231,6 +3231,7 @@ dependencies = [
  "solstone-core-backup-runtime",
  "solstone-core-callosum",
  "solstone-core-convey-shell",
+ "solstone-core-handoff-nonce",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-offload",
@@ -3494,6 +3495,7 @@ dependencies = [
  "solstone-core-entity-matching",
  "solstone-core-facets",
  "solstone-core-facets-web",
+ "solstone-core-handoff-nonce",
  "solstone-core-health-web",
  "solstone-core-home-web",
  "solstone-core-identity",
@@ -3817,6 +3819,13 @@ dependencies = [
  "solstone-core-journal-io",
  "tempfile",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "solstone-core-handoff-nonce"
+version = "2.0.0"
+dependencies = [
+ "getrandom 0.3.4",
 ]
 
 [[package]]
@@ -5001,7 +5010,6 @@ name = "solstone-core-thinking"
 version = "2.0.0"
 dependencies = [
  "chrono",
- "getrandom 0.3.4",
  "serde",
  "serde_json",
  "sha2",

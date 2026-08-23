@@ -651,7 +651,7 @@ async fn enable_backup(deps: BackupWebDeps) -> axum::response::Response {
 }
 
 fn mint_portal(deps: &BackupWebDeps) -> Result<(String, String, String), axum::response::Response> {
-    let nonce = operation::mint_hex().map_err(|_| internal_error())?;
+    let nonce = solstone_core_handoff_nonce::mint_nonce().map_err(|_| internal_error())?;
     let instance = operation::mint_hex().map_err(|_| internal_error())?;
     let url = operation::portal_url(&deps.portal_base, &nonce, &instance);
     Ok((nonce, instance, url))

@@ -19,12 +19,13 @@ use axum::extract::Extension;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
+use solstone_core_handoff_nonce::mint_nonce;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 use solstone_core_sol_link::pairing::addresses::is_usable_ipv4;
 use solstone_core_sol_link::service_identity::{ServiceIdentity, load_or_create_service_identity};
 use solstone_core_spl::{EnrollError, disable_spl, enable_spl_with, enroll_home};
 use solstone_core_thinking::confidential::{
-    HandoffResult, OperationHandle, OperationRegistry, Phase, mint_nonce,
+    HandoffResult, OperationHandle, OperationRegistry, Phase,
 };
 
 use crate::JournalRoot;
