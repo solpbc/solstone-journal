@@ -13,7 +13,7 @@ use crate::errors::{PathError, PathEscapeError};
 use crate::name_admission::{
     ConflictKind, NameAdmissionError, NameAdmissionReason, NameReuse, NoFollowEntryKind,
     StreamName, check_lookup_component, check_portable_component, classify_no_follow, escape_name,
-    scan_directory_conflicts,
+    escape_path, scan_directory_conflicts,
 };
 use crate::paths::{day_path, realpath_non_strict};
 
@@ -113,12 +113,12 @@ impl fmt::Display for ExactLookupError {
                     escape_name(candidate)
                 )
             }
-            Self::Io { path, source } => write!(formatter, "{}: {source}", path.display()),
+            Self::Io { path, source } => write!(formatter, "{}: {source}", escape_path(path)),
             Self::Containment(error) => error.fmt(formatter),
             Self::WrongKind { path, kind } => write!(
                 formatter,
                 "{} is not a directory ({kind:?})",
-                path.display()
+                escape_path(path)
             ),
         }
     }

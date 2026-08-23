@@ -298,7 +298,9 @@ impl fmt::Display for NameAdmissionError {
                     escape_name(candidate)
                 )
             }
-            Self::Io { path, source } => write!(formatter, "{}: {source}", path.display()),
+            Self::Io { path, source } => {
+                write!(formatter, "{}: {source}", escape_path(path))
+            }
             Self::Containment(error) => error.fmt(formatter),
         }
     }
@@ -312,6 +314,11 @@ impl Error for NameAdmissionError {
             Self::Invalid { .. } | Self::Collision { .. } => None,
         }
     }
+}
+
+/// Escape a filesystem path for owner-facing text.
+pub(crate) fn escape_path(path: &Path) -> String {
+    escape_name(&path.display().to_string())
 }
 
 /// Escape a user-controlled name for owner-facing text.
@@ -415,6 +422,9 @@ pub(crate) fn decide_reuse(
 /// Scan `parent` for case-insensitive conflicts with `candidate`.
 ///
 /// A missing parent is zero conflicts. Any other listing failure is I/O.
+/// Not atomic with a later create: there is no lock file, and a concurrent
+/// raw-filesystem writer (including `segment_path` / talent-runtime
+/// `DEFAULT_STREAM`) can still plant a colliding name between scan and mutation.
 pub(crate) fn scan_directory_conflicts(
     parent: &Path,
     candidate: &str,
@@ -434,9 +444,9 @@ pub(crate) fn scan_directory_conflicts(
 #[cfg(test)]
 mod tests {
     use super::{
-        ConflictKind, NameAdmissionError, NameAdmissionReason, NameReuse,
-        StreamName, check_lookup_component, check_portable_component, conflicts_for_candidate,
-        decide_reuse, escape_name, scan_directory_conflicts,
+        ConflictKind, NameAdmissionError, NameAdmissionReason, NameReuse, StreamName,
+        check_lookup_component, check_portable_component, conflicts_for_candidate, decide_reuse,
+        escape_name, scan_directory_conflicts,
     };
     use crate::test_support::TempDir;
     use std::ffi::OsString;
