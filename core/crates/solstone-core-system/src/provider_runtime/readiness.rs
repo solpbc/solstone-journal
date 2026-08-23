@@ -16,6 +16,8 @@ use solstone_core_journal_config::parakeet_coreml::{
 };
 use solstone_core_local::install::pins;
 
+use crate::process::{Disposition, LaunchError, launch};
+
 pub const PARAKEET_CPP_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,13 +95,18 @@ pub fn check_parakeet_cpp_files(artifacts: &ParakeetCppArtifacts) -> Result<(), 
 
 /// Run the pinned binary only to surface dynamic-loader failures.
 pub fn probe_parakeet_cpp_binary(binary: &Path, timeout: Duration) -> ParakeetCppReadiness {
-    let mut child = match Command::new(binary)
-        .arg("--version")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
+    let mut authority = match launch(
+        Disposition::InheritedParentScope,
+        || {
+            Command::new(binary)
+                .arg("--version")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        },
+        Box::new(|child, _timeout| child.kill().map_err(LaunchError::Terminate)),
+    ) {
+        Ok(authority) => authority,
         Err(error) => {
             return ParakeetCppReadiness::BinaryUnstartable {
                 detail: error.to_string(),
@@ -108,26 +115,10 @@ pub fn probe_parakeet_cpp_binary(binary: &Path, timeout: Duration) -> ParakeetCp
     };
     let start = std::time::Instant::now();
     loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => return ParakeetCppReadiness::Ready,
-            Ok(Some(status)) => {
-                let output = child.wait_with_output().ok();
-                let detail = output
-                    .as_ref()
-                    .map(|output| String::from_utf8_lossy(&output.stderr).trim().to_owned())
-                    .filter(|detail| !detail.is_empty())
-                    .or_else(|| {
-                        output
-                            .as_ref()
-                            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
-                            .filter(|detail| !detail.is_empty())
-                    })
-                    .unwrap_or_else(|| format!("exited with status {status}"));
-                return classify_parakeet_cpp_probe_failure(detail);
-            }
+        match authority.poll() {
+            Ok(Some(_)) => break,
             Ok(None) if start.elapsed() >= timeout => {
-                let _ = child.kill();
-                let _ = child.wait();
+                let _ = authority.terminate(timeout);
                 return ParakeetCppReadiness::BinaryUnstartable {
                     detail: format!("timed out after {}s", timeout.as_secs()),
                 };
@@ -139,6 +130,25 @@ pub fn probe_parakeet_cpp_binary(binary: &Path, timeout: Duration) -> ParakeetCp
                 };
             }
         }
+    }
+    let output = authority.wait_with_output().ok();
+    match output {
+        Some(output) if output.status.success() => ParakeetCppReadiness::Ready,
+        Some(output) => {
+            let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            let detail = if !detail.is_empty() {
+                detail
+            } else {
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+                if !stdout.is_empty() {
+                    stdout
+                } else {
+                    format!("exited with status {}", output.status)
+                }
+            };
+            classify_parakeet_cpp_probe_failure(detail)
+        }
+        None => classify_parakeet_cpp_probe_failure("exited without collected output".to_owned()),
     }
 }
 

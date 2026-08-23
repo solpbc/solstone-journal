@@ -10,6 +10,7 @@ use std::process::{Command, Stdio};
 
 use serde_json::{Value, json};
 use solstone_core_observe_audio::{AudioReduction, VadResult, reduce_audio, write_f32le_exclusive};
+use solstone_core_system::process::{Disposition, LaunchError, launch};
 
 use crate::{TranscribeError, resolve_model_asset};
 
@@ -149,17 +150,22 @@ fn vad_request(
 }
 
 fn invoke_vad_helper(binary: &Path, request: &[u8]) -> Result<VadResult, TranscribeError> {
-    let mut child = Command::new(binary)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| TranscribeError::VadTemporary {
-            detail: format!("could not launch VAD helper {}: {error}", binary.display()),
-        })?;
-    child
-        .stdin
-        .take()
+    let mut authority = launch(
+        Disposition::InheritedParentScope,
+        || {
+            Command::new(binary)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+        },
+        Box::new(|child, _timeout| child.kill().map_err(LaunchError::Terminate)),
+    )
+    .map_err(|error| TranscribeError::VadTemporary {
+        detail: format!("could not launch VAD helper {}: {error}", binary.display()),
+    })?;
+    authority
+        .take_stdin()
         .ok_or_else(|| TranscribeError::VadTemporary {
             detail: "VAD helper stdin was unavailable".to_owned(),
         })?
@@ -167,7 +173,7 @@ fn invoke_vad_helper(binary: &Path, request: &[u8]) -> Result<VadResult, Transcr
         .map_err(|error| TranscribeError::VadTemporary {
             detail: format!("could not send VAD request: {error}"),
         })?;
-    let output = child
+    let output = authority
         .wait_with_output()
         .map_err(|error| TranscribeError::VadTemporary {
             detail: format!("could not wait for VAD helper: {error}"),
