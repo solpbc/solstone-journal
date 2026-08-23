@@ -1,0 +1,75 @@
+version = 1
+target = "x86_64-pc-windows-msvc"
+
+[baseline]
+workspace_packages = 130
+library_packages = 123
+
+[[exclusions]]
+package = "solstone-core-journal-io"
+class = "sibling-owned-platform-backend"
+reason = "Lane 2 owns the atomic-write, locking, and lease backend; Lane 1 may not weaken those durability and containment guarantees."
+expected_stderr = ["could not compile `solstone-core-journal-io`", "std::os::fd"]
+
+[[exclusions]]
+package = "solstone-core-journal-archive"
+class = "sibling-owned-platform-backend"
+reason = "Lane 2 owns archive traversal and metadata preservation; Lane 1 may not replace the Unix implementation with a no-op."
+expected_stderr = ["could not compile `solstone-core-journal-archive`", "std::os::unix"]
+
+[[exclusions]]
+package = "solstone-core-system"
+class = "sibling-owned-platform-backend"
+reason = "Lane 3 owns process, signal, and system-control behavior; its current probe is blocked earlier by the documented MSVC ring oracle."
+expected_stderr = ["failed to run custom build command for `ring v0.17.14`", "failed to find tool \"lib.exe\""]
+
+[[exclusions]]
+package = "solstone-core-top"
+class = "sibling-owned-platform-backend"
+reason = "Lane 4 owns terminal transport behavior; its current probe is blocked earlier by the documented MSVC ring oracle."
+expected_stderr = ["failed to run custom build command for `ring v0.17.14`", "failed to find tool \"lib.exe\""]
+
+[[exclusions]]
+package = "solstone-core-cogitate-tools"
+class = "preserved-production-guarantee"
+reason = "The current implementation rejects Unix special files and kills whole process groups; a Windows backend is later port work, not a compile-only stub."
+expected_stderr = ["could not compile `solstone-core-cogitate-tools`", "std::os::unix"]
+
+[[exclusions]]
+package = "solstone-core-pdf"
+class = "preserved-production-guarantee"
+reason = "The worker enforces Unix address-space and CPU resource limits; a Windows Job Object equivalent belongs to the later backend lane."
+expected_stderr = ["could not compile `solstone-core-pdf`", "RLIMIT_AS"]
+
+[[exclusions]]
+package = "ring"
+version = "0.17.14"
+class = "native-msvc-build-oracle"
+reason = "A Linux cross-check host has no Visual Studio lib.exe; native Windows CI must compile this assembly/C root."
+expected_stderr = ["failed to run custom build command for `ring v0.17.14`", "failed to find tool \"lib.exe\""]
+
+[[exclusions]]
+package = "libsqlite3-sys"
+version = "0.38.2"
+class = "native-msvc-build-oracle"
+reason = "Bundled SQLite requires the MSVC compiler and librarian; native Windows CI must compile this C root."
+expected_stderr = ["failed to run custom build command for `libsqlite3-sys v0.38.2`", "failed to find tool \"lib.exe\""]
+
+[[exclusions]]
+package = "ffmpeg-sys-next"
+version = "9.0.0"
+class = "native-msvc-build-oracle"
+reason = "The vendored FFmpeg build requires a Windows-native toolchain and sysroot; the Linux cross-check cannot act as that oracle."
+expected_stderr = ["failed to run custom build command for `ffmpeg-sys-next v9.0.0", "Detected cross compilation but sysroot not provided"]
+
+[[exclusions]]
+package = "solstone-core-speakers-analyze"
+class = "unsupported-runtime-bundle"
+reason = "The pinned ONNX Runtime bundle currently ships only for Linux and macOS; Windows packaging is outside prework."
+expected_stderr = ["failed to run custom build command for `solstone-core-speakers-analyze", "unsupported solstone-core-speakers-analyze target OS \"windows\""]
+
+[[exclusions]]
+package = "solstone-core-vad-analyze"
+class = "unsupported-runtime-bundle"
+reason = "The pinned ONNX Runtime bundle currently ships only for Linux and macOS; Windows packaging is outside prework."
+expected_stderr = ["failed to run custom build command for `solstone-core-vad-analyze", "unsupported solstone-core-vad-analyze target OS \"windows\""]

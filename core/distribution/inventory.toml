@@ -321,6 +321,10 @@ bin = "solstone-ci"
 reason = "repository tooling; never ship"
 
 [[deny]]
+bin = "solstone-windows-crosscheck"
+reason = "repository tooling; never ship"
+
+[[deny]]
 bin = "solstone-distribution"
 reason = "this producer; never ship inside the product tree"
 

@@ -341,7 +341,7 @@ whoami = { version = "=2.1.2", default-features = false, features = ["std"] }
 # macOS uses already-locked core-foundation-sys. Windows uses already-locked
 # windows-core (resolved 0.62.2, MSRV 1.82, build = false). cargo-deny
 # bans/licenses/sources are reviewed by the gate.
-iana-time-zone = "0.1.65"
+iana-time-zone = "=0.1.65"
 unicode-general-category = "1.1.0"
 unicode-xid = "0.2.6"
 unicode_names2 = "1.3.0"

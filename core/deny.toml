@@ -55,6 +55,7 @@ targets = [
     "aarch64-unknown-linux-musl",
     "aarch64-apple-darwin",
     "aarch64-apple-ios",
+    "x86_64-pc-windows-msvc",
 ]
 
 [sources]

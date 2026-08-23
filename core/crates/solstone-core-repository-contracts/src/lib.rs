@@ -4,6 +4,7 @@
 pub mod ci;
 #[cfg(test)]
 mod payload_inventory;
+pub mod windows_crosscheck;
 
 #[cfg(test)]
 #[path = "contracts/ci_gate_purity.rs"]

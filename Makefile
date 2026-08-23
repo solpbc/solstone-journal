@@ -16,7 +16,7 @@ export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 PYTEST_BASETEMP_INIT := BASETEMP=$$(mktemp -d /var/tmp/solstone-pytest-XXXXXX); trap 'rm -rf "$$BASETEMP"' EXIT INT TERM;
 PYTEST_BASETEMP_FLAG := --basetemp "$$BASETEMP"
 
-.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-journal-device-sim check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover brand-sync FORCE
+.PHONY: install uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full clean clean-install coverage watch versions update update-prices pre-commit skills check-journal-device-sim check-rust-fmt check-rust-msrv check-rust-clippy check-rust-unit check-rust-test check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory check-native-sol-python-manifest build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-coverage check-native-sol-no-python-spawn check-native-sol-docs-links check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover brand-sync FORCE
 
 # Default target - build the native workspace during the Rust-conversion freeze
 all: build
@@ -48,6 +48,7 @@ FFMPEG_SOURCE_ARCHIVE := $(CURDIR)/target/ffmpeg-source-cache/ffmpeg.tar.gz
 ONNX_RUNTIME_ARCHIVE_DIR := $(CURDIR)/target/speakers-analyze-runtime-cache
 SERVICE_LEGACY_EVIDENCE_ROOT ?= core/fixtures/service_legacy_evidence
 IOS_TARGET := aarch64-apple-ios
+WINDOWS_TARGET := x86_64-pc-windows-msvc
 RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze
 # These four library harnesses are intentionally full-gate suites: each was
 # measured above ten seconds and already has an explicit registry entry. Keep
@@ -115,7 +116,7 @@ ifneq ($(CLANG_BUILTIN_INCLUDE),)
 install .installed build check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-doc check-rust-test check-rust-race check-rust-onnx-test check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries ci-full-prep-cargo: export BINDGEN_EXTRA_CLANG_ARGS := -I$(CLANG_BUILTIN_INCLUDE)
 endif
 REQUIRE_CARGO := command -v cargo >/dev/null 2>&1 || { echo "cargo is required for Rust checks; install cargo and retry" >&2; exit 1; }
-REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for the iOS gate; install rustup and retry" >&2; exit 1; }
+REQUIRE_RUSTUP := command -v rustup >/dev/null 2>&1 || { echo "rustup is required for platform gates; install rustup and retry" >&2; exit 1; }
 # Prep measured, rather than merely anticipated, that a host GNU cargo build of
 # solstone-core-speakers-analyze reaches GLIBC_2.34. These zig-GNU maturin args
 # are therefore the checked-in developer path for the helper's GLIBC_2.27 floor.
@@ -319,7 +320,7 @@ UV_OPTIONAL_GOALS := \
 	preflight install \
 	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
 	check-rust-unit check-rust-doc check-rust-test check-rust-race \
-	check-rust-ios check-rust-macos check-rust-deny check-rust-describe-cli-stubs \
+	check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-describe-cli-stubs \
 	check-rust-vad-analyze-test build-sandbox-processing check-rust-sandbox-processing-build check-rust-onnx-stage check-rust-onnx-ready check-rust-onnx-test \
 	check-rust-pdf-stage check-rust-pdf-ready check-rust-pdf-test $(PDF_RUNTIME_HOST_LINK_DIR) \
 	check-rust-registry-suite check-rust-registry-package check-rust-shipped-binaries \
@@ -898,6 +899,15 @@ check-rust-macos:
 	$(REQUIRE_CARGO); \
 	$(REQUIRE_ONNX_HOST_RUNTIME); \
 	$(VAD_ANALYZE_HOST_ORT_ENV) cargo test --manifest-path core/Cargo.toml --workspace --all-targets --no-run --locked
+
+# Linux cross-check of the Windows Rust cfg seam. Native C/C++ roots and
+# sibling-owned backends are named in a self-expiring exclusion ledger; every
+# remaining library and test package is checked separately for precise residue.
+check-rust-windows:
+	@$(REQUIRE_CARGO)
+	@$(REQUIRE_RUSTUP)
+	@rustup target list --installed 2>/dev/null | grep -qx "$(WINDOWS_TARGET)" || { echo "Rust target $(WINDOWS_TARGET) is required for the Windows gate; run rustup target add $(WINDOWS_TARGET)" >&2; exit 1; }
+	cargo run --manifest-path $(RUST_MANIFEST) -p solstone-core-repository-contracts --bin solstone-windows-crosscheck --locked --offline -- core/ci/windows-crosscheck.toml
 
 check-rust-ios:
 	@$(REQUIRE_CARGO)

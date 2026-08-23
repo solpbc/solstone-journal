@@ -126,6 +126,17 @@ serial_group = "native-runtime"
 default_full = true
 
 [[legs]]
+id = "windows-crosscheck"
+make_target = "check-rust-windows"
+set = "platform"
+areas = ["platform"]
+packages = ["workspace"]
+platforms = ["linux"]
+prerequisites = ["cargo-cache"]
+timeout = "extended"
+default_full = true
+
+[[legs]]
 id = "ios"
 make_target = "check-rust-ios"
 set = "platform"

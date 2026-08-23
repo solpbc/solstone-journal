@@ -303,6 +303,7 @@ fn make_ci_runs_only_library_and_binary_unit_harnesses() {
         "check-rust-shipped-binaries",
         "check-rust-ios",
         "check-rust-macos",
+        "check-rust-windows",
         "check-rust-deny",
     ] {
         assert!(
@@ -629,6 +630,33 @@ fn make_ci_full_keeps_apple_gates_native_to_apple_sdk_hosts() {
         assert!(
             !macos.contains(forbidden),
             "check-rust-macos silently narrowed the workspace with {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn make_ci_full_keeps_the_windows_crosscheck_fail_closed() {
+    let root = repo_root();
+    let makefile = makefile_text(&root);
+    let windows = target_body(&makefile, "check-rust-windows");
+    assert!(
+        ci_registry(&root)
+            .legs
+            .iter()
+            .any(|leg| leg.make_target == "check-rust-windows" && leg.default_full),
+        "the default full registry must retain the Windows cross-check"
+    );
+    for protected in [
+        "$(REQUIRE_RUSTUP)",
+        "$(WINDOWS_TARGET)",
+        "solstone-windows-crosscheck",
+        "--locked",
+        "--offline",
+        "core/ci/windows-crosscheck.toml",
+    ] {
+        assert!(
+            windows.contains(protected),
+            "check-rust-windows lost its fail-closed contract: {protected}"
         );
     }
 }
