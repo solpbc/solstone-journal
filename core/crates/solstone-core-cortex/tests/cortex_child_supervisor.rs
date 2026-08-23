@@ -500,3 +500,45 @@ fn immediate_stop_signals_the_running_group() {
     child.disarm();
     assert!(!status.success());
 }
+
+fn fixture_authority() -> Arc<Mutex<LaunchAuthority>> {
+    let authority = process::launch(
+        Disposition::IndependentBoundedHelper {
+            timeout: Duration::from_secs(30),
+        },
+        || Command::new("/bin/sleep").arg("30").spawn(),
+        Box::new(|child, _timeout| child.kill().map_err(LaunchError::Terminate)),
+    )
+    .expect("fixture launch");
+    Arc::new(Mutex::new(authority))
+}
+
+fn running_state() -> (tempfile::TempDir, CortexState) {
+    let directory = tempdir().unwrap();
+    let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
+    let request: Map<String, Value> =
+        serde_json::from_value(serde_json::json!({"use_id":"one","name":"conversation"})).unwrap();
+    let work = claim_work(&store, &request);
+    let state = new_state(store);
+    state.spawn_begin("one");
+    state.spawn_started(&work, fixture_authority(), Arc::new(Mutex::new(Vec::new())));
+    (directory, state)
+}
+
+#[test]
+fn drain_becomes_idle_after_finish() {
+    let (_directory, state) = running_state();
+    state.stop_accepting();
+    assert!(!state.is_idle());
+    state.finish("one", 0);
+    state.spawn_finished();
+    assert!(state.is_idle());
+}
+
+#[test]
+fn immediate_stop_returns_running_uses_without_signaling() {
+    let (_directory, state) = running_state();
+    let running = state.stop_immediately();
+    assert_eq!(running.len(), 1);
+    assert_eq!(state.running().len(), 1);
+}

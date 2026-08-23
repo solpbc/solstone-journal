@@ -335,7 +335,7 @@ impl HelperSupervisor for LiveHelper {
     fn kill_group(&mut self) -> io::Result<()> {
         self.authority
             .terminate(self.timeout)
-            .map_err(|error| io::Error::other(error))
+            .map_err(io::Error::other)
     }
 
     fn close_owned_pipes(&mut self) {

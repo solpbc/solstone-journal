@@ -3582,6 +3582,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-system::launch_authority"
+package = "solstone-core-system"
+target = "launch_authority"
+set = "component"
+areas = ["system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-system::system_lifecycle"
 package = "solstone-core-system"
 target = "system_lifecycle"

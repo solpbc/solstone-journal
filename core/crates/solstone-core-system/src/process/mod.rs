@@ -13,7 +13,10 @@ mod terminate;
 
 use std::process::ExitStatus;
 
-pub use authority::{Disposition, LaunchAuthority, LaunchError, launch, launch_managed};
+pub use authority::{
+    BoxedTerminateFn, Disposition, LaunchAuthority, LaunchError, launch, launch_managed,
+    launch_managed_with, launch_with,
+};
 pub use descendants::{Descendant, ProcessTreeSnapshot};
 pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
 pub use log::DailyLogWriter;

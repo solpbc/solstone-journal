@@ -304,10 +304,7 @@ async fn shutdown_signal() -> ShutdownMode {
 #[cfg(test)]
 mod tests {
     use chrono::DateTime;
-    use std::process::Command;
     use std::sync::{Arc, Mutex, mpsc};
-
-    use solstone_core_system::process::{self, Disposition, LaunchAuthority, LaunchError};
 
     use super::*;
 
@@ -337,35 +334,6 @@ mod tests {
             lifecycle: Arc::new(move |entry| lifecycle.lock().unwrap().push(entry)),
             worker_start_requests,
         }
-    }
-
-    fn fixture_authority() -> Arc<Mutex<LaunchAuthority>> {
-        let authority = process::launch(
-            Disposition::IndependentBoundedHelper {
-                timeout: Duration::from_secs(30),
-            },
-            || Command::new("/bin/sleep").arg("30").spawn(),
-            Box::new(|child, _timeout| child.kill().map_err(LaunchError::Terminate)),
-        )
-        .expect("fixture launch");
-        Arc::new(Mutex::new(authority))
-    }
-
-    fn running_state() -> (tempfile::TempDir, CortexState) {
-        let directory = tempfile::tempdir().unwrap();
-        let store = CortexStore::new(directory.path().to_path_buf()).unwrap();
-        let (spawn_tx, spawn_rx) = mpsc::channel();
-        let (cancel_tx, _) = mpsc::channel();
-        let (outbound_tx, _) = mpsc::channel();
-        let state = CortexState::new(store, spawn_tx, cancel_tx, outbound_tx);
-        state.request(
-            serde_json::from_value(serde_json::json!({"use_id":"one","name":"conversation"}))
-                .unwrap(),
-        );
-        let work = spawn_rx.recv().unwrap();
-        state.spawn_begin("one");
-        state.spawn_started(&work, fixture_authority(), Arc::new(Mutex::new(Vec::new())));
-        (directory, state)
     }
 
     #[test]
@@ -430,24 +398,6 @@ mod tests {
                 ServiceLifecycle::RenewalWorker,
             ]
         );
-    }
-
-    #[test]
-    fn drain_becomes_idle_after_finish() {
-        let (_directory, state) = running_state();
-        state.stop_accepting();
-        assert!(!state.is_idle());
-        state.finish("one", 0);
-        state.spawn_finished();
-        assert!(state.is_idle());
-    }
-
-    #[test]
-    fn immediate_stop_returns_running_uses_without_signaling() {
-        let (_directory, state) = running_state();
-        let running = state.stop_immediately();
-        assert_eq!(running.len(), 1);
-        assert_eq!(state.running().len(), 1);
     }
 
     #[test]

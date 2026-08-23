@@ -9,14 +9,16 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{Map, Value, json};
 use solstone_core_observe_audio::{AudioError, write_f32le_exclusive};
-use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
+use solstone_core_system::process::{
+    BoxedTerminateFn, Disposition, LaunchAuthority, LaunchError, launch,
+};
 
 use crate::speakers_installation::validate_speakers_analyze_runtime;
 
@@ -391,9 +393,7 @@ fn wait_for_process_group_exit(pgid: rustix::process::Pid, grace: Duration) -> i
     }
 }
 
-fn speakers_terminate_fn(
-    terminate_grace: Duration,
-) -> Box<dyn FnMut(&mut Child, Duration) -> Result<(), LaunchError> + Send> {
+fn speakers_terminate_fn(terminate_grace: Duration) -> BoxedTerminateFn {
     Box::new(move |child, _timeout| {
         let Some(pgid) = i32::try_from(child.id())
             .ok()

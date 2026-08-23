@@ -46,6 +46,13 @@ bench = false
 name = "system_contracts"
 path = "tests/system_contracts.rs"
 
+# Real LaunchAuthority child behavior is a distinct subject from ManagedProcess
+# in system_lifecycle, and cannot live under the routine `--lib` unit harness
+# (hard process boundary). Explicit target because autotests = false.
+[[test]]
+name = "launch_authority"
+path = "tests/launch_authority.rs"
+
 [[test]]
 name = "system_lifecycle"
 path = "tests/system_lifecycle.rs"

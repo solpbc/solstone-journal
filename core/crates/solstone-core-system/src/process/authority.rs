@@ -43,7 +43,7 @@ pub enum LaunchError {
     OutputUnavailable,
 }
 
-type BoxedTerminateFn = Box<dyn FnMut(&mut Child, Duration) -> Result<(), LaunchError> + Send>;
+pub type BoxedTerminateFn = Box<dyn FnMut(&mut Child, Duration) -> Result<(), LaunchError> + Send>;
 
 enum Inner {
     Managed(ManagedProcess),
@@ -189,7 +189,7 @@ impl Drop for LaunchAuthority {
 pub fn launch<F>(
     disposition: Disposition,
     spawn: F,
-    terminate_fn: Box<dyn FnMut(&mut Child, Duration) -> Result<(), LaunchError> + Send>,
+    terminate_fn: BoxedTerminateFn,
 ) -> Result<LaunchAuthority, LaunchError>
 where
     F: FnOnce() -> io::Result<Child>,
@@ -211,7 +211,7 @@ where
     launch_managed_with(disposition, spawn, production_capability_probe)
 }
 
-pub(crate) fn launch_with<F, Cap, Conf>(
+pub fn launch_with<F, Cap, Conf>(
     disposition: Disposition,
     spawn: F,
     mut terminate_fn: BoxedTerminateFn,
@@ -245,7 +245,7 @@ where
     })
 }
 
-pub(crate) fn launch_managed_with<F, Cap>(
+pub fn launch_managed_with<F, Cap>(
     disposition: Disposition,
     spawn: F,
     capability: Cap,
@@ -321,7 +321,6 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;
-    use std::process::{Command, Stdio};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -354,18 +353,6 @@ mod tests {
 
     fn kill_child(child: &mut Child, _: Duration) -> Result<(), LaunchError> {
         child.kill().map_err(LaunchError::Terminate)
-    }
-
-    fn recording_kill(flag: &Arc<AtomicBool>) -> BoxedTerminateFn {
-        let flag = Arc::clone(flag);
-        Box::new(move |child: &mut Child, timeout| {
-            flag.store(true, Ordering::SeqCst);
-            kill_child(child, timeout)
-        })
-    }
-
-    fn spawn_sleep(seconds: &str) -> io::Result<Child> {
-        Command::new("/bin/sleep").arg(seconds).spawn()
     }
 
     fn unwrap_launch_err<T>(result: Result<T, LaunchError>, what: &str) -> LaunchError {
@@ -490,58 +477,6 @@ mod tests {
             );
             assert!(!spawned.load(Ordering::SeqCst));
         }
-    }
-
-    #[test]
-    fn ac3_failed_confirm_reaps_the_spawned_child() {
-        let terminated = Arc::new(AtomicBool::new(false));
-        let result = launch_with(
-            Disposition::IndependentLongLived,
-            || spawn_sleep("5"),
-            recording_kill(&terminated),
-            production_capability_probe,
-            |_| Err(io::Error::other("forced confirm failure")),
-        );
-        let error = unwrap_launch_err(result, "confirm");
-        let LaunchError::ConfirmationFailed { pid, .. } = error else {
-            panic!("expected ConfirmationFailed, got {error:?}");
-        };
-        assert!(terminated.load(Ordering::SeqCst));
-        wait_until_gone(pid);
-    }
-
-    #[test]
-    fn drop_reaps_a_raw_child_through_terminate_fn() {
-        let terminated = Arc::new(AtomicBool::new(false));
-        let authority = launch(
-            Disposition::InheritedParentScope,
-            || spawn_sleep("30"),
-            recording_kill(&terminated),
-        )
-        .expect("launch sleep");
-        let pid = authority.pid();
-        drop(authority);
-        assert!(terminated.load(Ordering::SeqCst));
-        wait_until_gone(pid);
-    }
-
-    #[test]
-    fn inherited_scope_wait_with_output_returns_child_stdout() {
-        let output = launch(
-            Disposition::InheritedParentScope,
-            || {
-                Command::new("/bin/echo")
-                    .arg("ok")
-                    .stdout(Stdio::piped())
-                    .spawn()
-            },
-            Box::new(kill_child),
-        )
-        .expect("launch echo")
-        .wait_with_output()
-        .expect("wait");
-        assert!(output.status.success());
-        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "ok");
     }
 
     #[test]
