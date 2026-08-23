@@ -1085,6 +1085,70 @@ fn selected_unknown_category_emits_an_unenhanced_clean_row() {
 }
 
 #[test]
+fn schema_invalid_classification_is_a_row_failure_independent_of_selection() {
+    let root = temporary_root("schema-invalid");
+    let video = copied_video(&root, "mixed_vp8_screen.webm");
+    let request_log = root.join("requests.jsonl");
+    let output = describe(&root, &video, "category_schema_invalid")
+        .env("SOLSTONE_DESCRIBE_SESSION_STUB_REQUESTS_PATH", &request_log)
+        .output()
+        .expect("describe");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "failed");
+    assert_eq!(
+        rows[0]["_solstone_processing"]["reason_code"],
+        "analysis_failed"
+    );
+    let invalid = rows[1..]
+        .iter()
+        .find(|row| row["frame_id"] == 1)
+        .expect("frame 1 row");
+    assert_eq!(invalid["error"], "Invalid JSON response");
+    assert!(invalid.get("analysis").is_none());
+    assert_eq!(invalid["enhanced"], false);
+    assert!(
+        rows[1..]
+            .iter()
+            .any(|row| row["frame_id"] != 1 && row.get("analysis").is_some())
+    );
+    let selection = selection_requests(&request_log);
+    assert_eq!(selection.len(), 1);
+    let summaries = selection[0]["contents"][0]["text"]
+        .as_str()
+        .map(serde_json::from_str::<Vec<serde_json::Value>>)
+        .expect("selection summaries")
+        .expect("selection summary JSON");
+    assert!(summaries.iter().all(|summary| summary["frame_id"] != 1));
+    assert!(extraction_requests(&request_log).iter().all(|request| {
+        request["id"]
+            .as_str()
+            .is_none_or(|id| !id.starts_with("extract:1:"))
+    }));
+    fs::remove_dir_all(root).expect("remove root");
+}
+
+#[test]
+fn schema_valid_classification_keeps_an_extractable_analyzed_row() {
+    let root = temporary_root("schema-valid");
+    let video = copied_video(&root, "single_frame_vp8_screen.webm");
+    let output = describe(&root, &video, "category_schema_valid")
+        .output()
+        .expect("describe");
+    assert!(output.status.success());
+    let rows = read_jsonl(&video.with_extension("jsonl"));
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
+    assert_eq!(rows[0]["_solstone_processing"]["reason_code"], "ok");
+    assert!(rows[1].get("error").is_none());
+    assert_eq!(rows[1]["analysis"]["primary"], "code");
+    fs::remove_dir_all(root).expect("remove root");
+}
+
+#[test]
 fn detection_runs_for_unselected_media_and_preserves_unfiltered_objects() {
     let root = temporary_root("detect-media");
     let video = copied_video(&root, "mixed_vp8_screen.webm");

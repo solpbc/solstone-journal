@@ -803,6 +803,8 @@ check-rust-describe-cli-stubs:
 			reentry_skips_clean_artifacts_and_redo_starts_a_new_attempt \
 			retry_uses_a_fresh_id_and_attempt_index \
 			retryable_refusals_stop_after_five_attempts \
+			schema_invalid_classification_is_a_row_failure_independent_of_selection \
+			schema_valid_classification_keeps_an_extractable_analyzed_row \
 			segment_meta_is_merged_before_describe_owned_values \
 			selected_unknown_category_emits_an_unenhanced_clean_row \
 			selection_accepts_bare_and_wrapped_responses_and_uses_selection_contract \

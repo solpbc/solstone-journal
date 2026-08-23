@@ -288,7 +288,10 @@ pub fn run_with_factory(
                     .as_ref()
                     .and_then(|value| value.get("error"))
                     .is_some();
-                let error_message = if error || parsed.is_none() {
+                let failed = error
+                    || parsed.is_none()
+                    || schema_validation_failed(generated.schema_validation.as_ref());
+                let error_message = if failed {
                     Some("Invalid JSON response".to_owned())
                 } else {
                     None
@@ -297,7 +300,7 @@ pub fn run_with_factory(
                     frame_id: pending.frame.frame_id,
                     timestamp: pending.frame.timestamp,
                     png: pending.frame.png,
-                    analysis: (!error).then_some(parsed).flatten(),
+                    analysis: (!failed).then_some(parsed).flatten(),
                     error: error_message,
                     requests: vec![request_record(
                         "describe",
@@ -722,6 +725,16 @@ fn finalize_incomplete(mut results: Vec<(Value, usize)>) -> Vec<Value> {
 
 fn has_row_failures(rows: &[Value]) -> bool {
     rows.iter().any(|row| row.get("error").is_some())
+}
+
+fn schema_validation_failed(validation: Option<&Value>) -> bool {
+    validation.is_some_and(|validation| {
+        validation.get("valid") == Some(&Value::Bool(false))
+            || validation
+                .get("errors")
+                .and_then(Value::as_array)
+                .is_some_and(|errors| !errors.is_empty())
+    })
 }
 
 fn emit_value(

@@ -9,7 +9,7 @@ use std::io::{self, BufRead, Write};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde_json::json;
+use serde_json::{Value, json};
 use solstone_core_generate::{
     ContentPart, contract, decode_session_request_line, decode_session_terminal_line,
 };
@@ -192,24 +192,36 @@ fn categorization_response(id: &str, mode: &str) {
         "category_media" => ("media", "none", true),
         "category_secondary_social" => ("code", "social", true),
         "category_unextractable" => ("not-a-real-category", "none", true),
+        "category_schema_valid" | "category_schema_invalid" => ("code", "none", true),
         "extraction_json_retry_then_succeed" => ("messaging", "none", true),
         "extraction_json_unparseable" => ("messaging", "none", true),
         "selection_skips_failed_first" => ("code", "none", true),
         _ => unreachable!("category mode"),
     };
     let text = json!({"visual_description":"stub","primary":primary,"secondary":secondary,"overlap":overlap}).to_string();
-    generated_text(id, &text);
+    let schema_validation = if mode == "category_schema_invalid" && id.starts_with("frame:1:") {
+        json!({"valid": false, "errors": [{"path": "", "constraint": "required", "message": "stub"}]})
+    } else if mode == "category_schema_valid" || mode == "category_schema_invalid" {
+        json!({"valid": true, "errors": []})
+    } else {
+        Value::Null
+    };
+    generated_text_with_finish(id, &text, "stop", schema_validation);
 }
 
 fn extraction_response(id: &str, mode: &str, attempt: u64) {
     match mode {
         "extraction_markdown_success" => generated_text(id, "# extracted markdown"),
         "extraction_markdown_unknown" => {
-            generated_text_with_finish(id, "# extracted markdown", "unknown")
+            generated_text_with_finish(id, "# extracted markdown", "unknown", Value::Null)
         }
-        "extraction_markdown_empty" => generated_text_with_finish(id, "# extracted markdown", ""),
-        "extraction_markdown_length" => generated_text_with_finish(id, "truncated", "length"),
-        "extraction_markdown_blank" => generated_text_with_finish(id, "   \n", "stop"),
+        "extraction_markdown_empty" => {
+            generated_text_with_finish(id, "# extracted markdown", "", Value::Null)
+        }
+        "extraction_markdown_length" => {
+            generated_text_with_finish(id, "truncated", "length", Value::Null)
+        }
+        "extraction_markdown_blank" => generated_text_with_finish(id, "   \n", "stop", Value::Null),
         "extraction_json_retry_then_succeed" if attempt == 0 => generated_text(id, "not json"),
         "extraction_json_retry_then_succeed" => generated_text(id, r#"{"ok":true}"#),
         "extraction_json_unparseable" => generated_text(id, "not json"),
@@ -240,15 +252,15 @@ fn generated_with_finish(id: &str, finish_reason: &str) {
     let text =
         json!({"visual_description":"stub","primary":"code","secondary":"none","overlap":true})
             .to_string();
-    generated_text_with_finish(id, &text, finish_reason);
+    generated_text_with_finish(id, &text, finish_reason, Value::Null);
 }
 fn generated_text(id: &str, text: &str) {
-    generated_text_with_finish(id, text, "stop");
+    generated_text_with_finish(id, text, "stop", Value::Null);
 }
-fn generated_text_with_finish(id: &str, text: &str, finish_reason: &str) {
+fn generated_text_with_finish(id: &str, text: &str, finish_reason: &str, schema_validation: Value) {
     println!(
         "{}",
-        json!({"schema":contract()["schema_identifiers"]["response"],"id":id,"outcome":"generated","text":text,"model":"describe-stub","usage":{},"finish_reason":finish_reason,"thinking":null,"schema_validation":null,"input_budget":null,"request_budget":null,"inference":null})
+        json!({"schema":contract()["schema_identifiers"]["response"],"id":id,"outcome":"generated","text":text,"model":"describe-stub","usage":{},"finish_reason":finish_reason,"thinking":null,"schema_validation":schema_validation,"input_budget":null,"request_budget":null,"inference":null})
     );
     let _ = io::stdout().flush();
 }
