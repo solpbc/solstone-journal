@@ -437,8 +437,16 @@ fn parse_macos_inspect_line(line: &str) -> Option<InspectResult> {
     })
 }
 
+/// One well-formed macOS census line: a live row, or a zombie to omit.
 #[cfg(any(target_os = "macos", test))]
-fn parse_macos_census_line(line: &str) -> Option<CensusRow> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MacosCensusLine {
+    Row(CensusRow),
+    Zombie,
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn parse_macos_census_line(line: &str) -> Option<MacosCensusLine> {
     let mut parts = line.split_whitespace();
     let pid: u32 = parts.next()?.parse().ok()?;
     let ppid: u32 = parts.next()?.parse().ok()?;
@@ -448,9 +456,9 @@ fn parse_macos_census_line(line: &str) -> Option<CensusRow> {
     let epoch_seconds = parse_macos_lstart(&lstart)?;
     let (execution, zombie) = execution_from_state_token(state)?;
     if zombie {
-        return None;
+        return Some(MacosCensusLine::Zombie);
     }
-    Some(CensusRow {
+    Some(MacosCensusLine::Row(CensusRow {
         instance: ProcessInstance {
             pid,
             birth: ProcessBirth::macos(epoch_seconds),
@@ -458,7 +466,7 @@ fn parse_macos_census_line(line: &str) -> Option<CensusRow> {
         ppid,
         pgid,
         execution,
-    })
+    }))
 }
 
 #[cfg(target_os = "macos")]
@@ -482,6 +490,24 @@ fn inspect_macos(pid: u32) -> InspectResult {
     parse_macos_inspect_line(line).unwrap_or(InspectResult::Unverifiable)
 }
 
+/// Build a census from macOS `ps` text. Malformed lines mark Incomplete; zombies are omitted.
+#[cfg(any(target_os = "macos", test))]
+fn census_macos_from_text(text: &str) -> InstanceCensus {
+    let mut rows = Vec::new();
+    let mut complete = true;
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match parse_macos_census_line(line) {
+            Some(MacosCensusLine::Row(row)) => rows.push(row),
+            Some(MacosCensusLine::Zombie) => {}
+            None => complete = false,
+        }
+    }
+    finalize_census(rows, complete)
+}
+
 #[cfg(target_os = "macos")]
 fn census_macos() -> InstanceCensus {
     let output = match std::process::Command::new("/bin/ps")
@@ -495,18 +521,7 @@ fn census_macos() -> InstanceCensus {
     if !output.status.success() {
         return InstanceCensus::Incomplete(Vec::new());
     }
-    let mut rows = Vec::new();
-    let mut complete = true;
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        match parse_macos_census_line(line) {
-            Some(row) => rows.push(row),
-            None => complete = false,
-        }
-    }
-    finalize_census(rows, complete)
+    census_macos_from_text(&String::from_utf8_lossy(&output.stdout))
 }
 
 /// macOS orphan-candidate table. Separate from the birth/liveness sample because
@@ -520,6 +535,19 @@ pub(crate) struct MacosSweepRow {
     pub command: String,
 }
 
+/// Parse a macOS sweep table from `ps` text. Any malformed non-empty line fails the whole table.
+#[cfg(any(target_os = "macos", test))]
+fn macos_sweep_table_from_text(text: &str) -> Option<Vec<MacosSweepRow>> {
+    let mut rows = Vec::new();
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        rows.push(parse_macos_sweep_row(line)?);
+    }
+    Some(rows)
+}
+
 #[cfg(target_os = "macos")]
 pub(crate) fn macos_sweep_table() -> Option<Vec<MacosSweepRow>> {
     let output = std::process::Command::new("/bin/ps")
@@ -530,12 +558,7 @@ pub(crate) fn macos_sweep_table() -> Option<Vec<MacosSweepRow>> {
     if !output.status.success() {
         return None;
     }
-    Some(
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter_map(parse_macos_sweep_row)
-            .collect(),
-    )
+    macos_sweep_table_from_text(&String::from_utf8_lossy(&output.stdout))
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -785,11 +808,79 @@ mod tests {
             other => panic!("expected Present, got {other:?}"),
         }
         assert!(parse_macos_inspect_line("99 S 99 not-an-lstart").is_none());
-        let census = parse_macos_census_line("99 1 99 T Mon Aug 10 12:34:56 2026").unwrap();
-        assert_eq!(census.instance.pid, 99);
-        assert_eq!(census.ppid, 1);
-        assert_eq!(census.pgid, 99);
-        assert_eq!(census.execution, ExecutionState::Stopped);
+    }
+
+    #[test]
+    fn macos_census_line_parses_stopped_row() {
+        match parse_macos_census_line("99 1 99 T Mon Aug 10 12:34:56 2026") {
+            Some(MacosCensusLine::Row(census)) => {
+                assert_eq!(census.instance.pid, 99);
+                assert_eq!(census.ppid, 1);
+                assert_eq!(census.pgid, 99);
+                assert_eq!(census.execution, ExecutionState::Stopped);
+            }
+            other => panic!("expected Row, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn macos_census_line_parses_running_row() {
+        match parse_macos_census_line("42 1 42 S Mon Aug 10 12:34:56 2026") {
+            Some(MacosCensusLine::Row(census)) => {
+                assert_eq!(census.instance.pid, 42);
+                assert_eq!(census.ppid, 1);
+                assert_eq!(census.pgid, 42);
+                assert_eq!(census.execution, ExecutionState::Running);
+            }
+            other => panic!("expected Row, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn macos_census_line_well_formed_zombie_is_skip() {
+        assert_eq!(
+            parse_macos_census_line("7 1 7 Z Mon Aug 10 12:34:56 2026"),
+            Some(MacosCensusLine::Zombie)
+        );
+    }
+
+    #[test]
+    fn macos_census_line_rejects_malformed_rows() {
+        assert!(parse_macos_census_line("x 1 99 T Mon Aug 10 12:34:56 2026").is_none());
+        assert!(parse_macos_census_line("99 x 99 T Mon Aug 10 12:34:56 2026").is_none());
+        assert!(parse_macos_census_line("99 1 x T Mon Aug 10 12:34:56 2026").is_none());
+        assert!(parse_macos_census_line("99 1 99").is_none());
+        assert!(parse_macos_census_line("99 1 99 T not-an-lstart").is_none());
+        assert!(parse_macos_census_line("7 1 7 Z not-an-lstart").is_none());
+    }
+
+    #[test]
+    fn macos_census_from_text_zombie_among_live_rows_is_complete() {
+        let text = "42 1 42 S Mon Aug 10 12:34:56 2026\n\n7 1 7 Z Mon Aug 10 12:34:56 2026\n99 1 99 T Mon Aug 10 12:34:56 2026\n";
+        match census_macos_from_text(text) {
+            InstanceCensus::Complete(rows) => {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0].instance.pid, 42);
+                assert_eq!(rows[0].execution, ExecutionState::Running);
+                assert_eq!(rows[1].instance.pid, 99);
+                assert_eq!(rows[1].execution, ExecutionState::Stopped);
+            }
+            other => panic!("expected Complete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn macos_census_from_text_malformed_row_is_incomplete() {
+        let text =
+            "42 1 42 S Mon Aug 10 12:34:56 2026\nnot-a-row\n99 1 99 T Mon Aug 10 12:34:56 2026\n";
+        match census_macos_from_text(text) {
+            InstanceCensus::Incomplete(rows) => {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0].instance.pid, 42);
+                assert_eq!(rows[1].instance.pid, 99);
+            }
+            other => panic!("expected Incomplete, got {other:?}"),
+        }
     }
 
     #[test]
@@ -811,5 +902,22 @@ mod tests {
         assert_eq!(row.ppid, 1);
         assert_eq!(row.uid, 501);
         assert_eq!(row.command, "/usr/bin/journal:think extra");
+    }
+
+    #[test]
+    fn macos_sweep_table_from_text_returns_all_well_formed_rows() {
+        let text = "10 1 501 /usr/bin/journal:think extra\n\n11 1 501 /usr/bin/other\n";
+        let rows = macos_sweep_table_from_text(text).expect("well-formed table");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].pid, 10);
+        assert_eq!(rows[0].command, "/usr/bin/journal:think extra");
+        assert_eq!(rows[1].pid, 11);
+    }
+
+    #[test]
+    fn macos_sweep_table_from_text_malformed_row_fails_the_table() {
+        let text =
+            "10 1 501 /usr/bin/journal:think extra\nbad 1 501 /bin/x\n11 1 501 /usr/bin/other\n";
+        assert!(macos_sweep_table_from_text(text).is_none());
     }
 }
