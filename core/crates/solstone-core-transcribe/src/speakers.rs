@@ -9,13 +9,14 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{Map, Value, json};
 use solstone_core_observe_audio::{AudioError, write_f32le_exclusive};
+use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
 
 use crate::speakers_installation::validate_speakers_analyze_runtime;
 
@@ -334,102 +335,125 @@ pub(crate) fn invoke_speakers_analyze_helper(
     raw_path: &Path,
     budget: SpeakersAnalyzeBudget,
 ) -> Result<HelperInvocationResult, SpeakerAnalyzeError> {
-    let child = Command::new(binary)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0)
-        .spawn()
-        .map_err(|error| {
-            SpeakerAnalyzeError::new(raw_path, "invoke", error.kind().to_string(), None)
-        })?;
-    invoke_child(child, request, raw_path, budget)
+    let authority = launch(
+        Disposition::IndependentBoundedHelper {
+            timeout: budget.timeout,
+        },
+        || {
+            Command::new(binary)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .process_group(0)
+                .spawn()
+        },
+        speakers_terminate_fn(budget.terminate_grace),
+    )
+    .map_err(|error| SpeakerAnalyzeError::new(raw_path, "invoke", error.to_string(), None))?;
+    invoke_child(authority, request, raw_path, budget)
+}
+
+fn process_group_exited(pgid: rustix::process::Pid) -> io::Result<bool> {
+    loop {
+        match rustix::process::waitid(
+            rustix::process::WaitId::Pid(pgid),
+            rustix::process::WaitIdOptions::EXITED
+                | rustix::process::WaitIdOptions::NOHANG
+                | rustix::process::WaitIdOptions::NOWAIT,
+        ) {
+            Ok(status) => return Ok(status.is_some()),
+            Err(rustix::io::Errno::INTR) => {}
+            Err(error) => return Err(io::Error::from(error)),
+        }
+    }
+}
+
+fn signal_process_group(
+    pgid: rustix::process::Pid,
+    signal: rustix::process::Signal,
+) -> io::Result<()> {
+    match rustix::process::kill_process_group(pgid, signal) {
+        Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
+        Err(error) => Err(io::Error::from(error)),
+    }
+}
+
+fn wait_for_process_group_exit(pgid: rustix::process::Pid, grace: Duration) -> io::Result<bool> {
+    let deadline = Instant::now() + grace;
+    loop {
+        if process_group_exited(pgid)? {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn speakers_terminate_fn(
+    terminate_grace: Duration,
+) -> Box<dyn FnMut(&mut Child, Duration) -> Result<(), LaunchError> + Send> {
+    Box::new(move |child, _timeout| {
+        let Some(pgid) = i32::try_from(child.id())
+            .ok()
+            .and_then(rustix::process::Pid::from_raw)
+        else {
+            return child.kill().map_err(LaunchError::Terminate);
+        };
+        if process_group_exited(pgid).map_err(LaunchError::Terminate)? {
+            return signal_process_group(pgid, rustix::process::Signal::KILL)
+                .map_err(LaunchError::Terminate);
+        }
+        signal_process_group(pgid, rustix::process::Signal::TERM)
+            .map_err(LaunchError::Terminate)?;
+        if !wait_for_process_group_exit(pgid, terminate_grace).map_err(LaunchError::Terminate)? {
+            signal_process_group(pgid, rustix::process::Signal::KILL)
+                .map_err(LaunchError::Terminate)?;
+        }
+        Ok(())
+    })
 }
 
 struct SpeakerChild {
-    child: Child,
+    authority: LaunchAuthority,
     pgid: rustix::process::Pid,
-    reaped: bool,
 }
 
 impl SpeakerChild {
-    fn new(child: Child) -> io::Result<Self> {
-        let pgid = i32::try_from(child.id())
+    fn new(authority: LaunchAuthority) -> io::Result<Self> {
+        let pgid = i32::try_from(authority.pid())
             .ok()
             .and_then(rustix::process::Pid::from_raw)
             .ok_or_else(|| io::Error::other("invalid child pid"))?;
-        Ok(Self {
-            child,
-            pgid,
-            reaped: false,
-        })
+        Ok(Self { authority, pgid })
     }
 
     fn observe_exit(&mut self) -> io::Result<bool> {
-        loop {
-            match rustix::process::waitid(
-                rustix::process::WaitId::Pid(self.pgid),
-                rustix::process::WaitIdOptions::EXITED
-                    | rustix::process::WaitIdOptions::NOHANG
-                    | rustix::process::WaitIdOptions::NOWAIT,
-            ) {
-                Ok(status) => return Ok(status.is_some()),
-                Err(rustix::io::Errno::INTR) => {}
-                Err(error) => return Err(io::Error::from(error)),
-            }
-        }
-    }
-
-    fn signal_group(&self, signal: rustix::process::Signal) -> io::Result<()> {
-        match rustix::process::kill_process_group(self.pgid, signal) {
-            Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
-            Err(error) => Err(io::Error::from(error)),
-        }
-    }
-
-    fn reap_root(&mut self) -> io::Result<ExitStatus> {
-        let status = loop {
-            match self.child.wait() {
-                Ok(status) => break status,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                Err(error) => return Err(error),
-            }
-        };
-        self.reaped = true;
-        Ok(status)
-    }
-}
-
-impl Drop for SpeakerChild {
-    fn drop(&mut self) {
-        if self.reaped {
-            return;
-        }
-        let _ = self.signal_group(rustix::process::Signal::KILL);
-        let _ = self.reap_root();
+        process_group_exited(self.pgid)
     }
 }
 
 fn invoke_child(
-    child: Child,
+    authority: LaunchAuthority,
     request: &[u8],
     raw_path: &Path,
     budget: SpeakersAnalyzeBudget,
 ) -> Result<HelperInvocationResult, SpeakerAnalyzeError> {
-    let mut child = SpeakerChild::new(child)
+    let mut child = SpeakerChild::new(authority)
         .map_err(|error| SpeakerAnalyzeError::new(raw_path, "invoke", error.to_string(), None))?;
-    let stdin =
-        child.child.stdin.take().ok_or_else(|| {
-            SpeakerAnalyzeError::new(raw_path, "invoke", "stdin-unavailable", None)
-        })?;
-    let stdout =
-        child.child.stdout.take().ok_or_else(|| {
-            SpeakerAnalyzeError::new(raw_path, "invoke", "stdout-unavailable", None)
-        })?;
-    let stderr =
-        child.child.stderr.take().ok_or_else(|| {
-            SpeakerAnalyzeError::new(raw_path, "invoke", "stderr-unavailable", None)
-        })?;
+    let stdin = child
+        .authority
+        .take_stdin()
+        .ok_or_else(|| SpeakerAnalyzeError::new(raw_path, "invoke", "stdin-unavailable", None))?;
+    let stdout = child
+        .authority
+        .take_stdout()
+        .ok_or_else(|| SpeakerAnalyzeError::new(raw_path, "invoke", "stdout-unavailable", None))?;
+    let stderr = child
+        .authority
+        .take_stderr()
+        .ok_or_else(|| SpeakerAnalyzeError::new(raw_path, "invoke", "stderr-unavailable", None))?;
     let (stdin_tx, stdin_rx) = mpsc::channel();
     let request = request.to_vec();
     thread::spawn(move || {
@@ -446,10 +470,8 @@ fn invoke_child(
     let deadline = Instant::now() + budget.timeout;
     let status = loop {
         if Instant::now() >= deadline {
-            let exit_code = terminate_and_reap(&mut child, budget)
-                .ok()
-                .flatten()
-                .map(exit_code);
+            let _ = child.authority.terminate(budget.terminate_grace);
+            let exit_code = child.authority.wait().ok();
             return Err(SpeakerAnalyzeError::new(
                 raw_path, "invoke", "timeout", exit_code,
             ));
@@ -463,12 +485,8 @@ fn invoke_child(
         if child.observe_exit().map_err(|error| {
             SpeakerAnalyzeError::new(raw_path, "invoke", error.to_string(), None)
         })? {
-            child
-                .signal_group(rustix::process::Signal::KILL)
-                .map_err(|error| {
-                    SpeakerAnalyzeError::new(raw_path, "invoke", error.to_string(), None)
-                })?;
-            break child.reap_root().map_err(|error| {
+            let _ = child.authority.terminate(budget.terminate_grace);
+            break child.authority.wait().map_err(|error| {
                 SpeakerAnalyzeError::new(raw_path, "invoke", error.to_string(), None)
             })?;
         }
@@ -483,12 +501,12 @@ fn invoke_child(
                 raw_path,
                 "invoke",
                 "stdin-write-failed",
-                Some(exit_code(status)),
+                Some(status),
             ));
         }
     }
     Ok(HelperInvocationResult {
-        returncode: exit_code(status),
+        returncode: status,
         stdout: String::from_utf8_lossy(&stdout).into_owned(),
         stderr: String::from_utf8_lossy(&stderr).into_owned(),
     })
@@ -526,10 +544,8 @@ fn poll_capture(
 ) -> Result<Option<Result<Vec<u8>, CaptureError>>, SpeakerAnalyzeError> {
     match receiver.try_recv() {
         Ok(Err(CaptureError::TooLarge)) => {
-            let exit_code = terminate_and_reap(child, budget)
-                .ok()
-                .flatten()
-                .map(exit_code);
+            let _ = child.authority.terminate(budget.terminate_grace);
+            let exit_code = child.authority.wait().ok();
             Err(SpeakerAnalyzeError::new(
                 raw_path,
                 "invoke",
@@ -538,7 +554,7 @@ fn poll_capture(
             ))
         }
         Ok(Err(CaptureError::Io(error))) => {
-            let _ = terminate_and_reap(child, budget);
+            let _ = child.authority.terminate(budget.terminate_grace);
             Err(SpeakerAnalyzeError::new(
                 raw_path,
                 "invoke",
@@ -578,49 +594,6 @@ fn receive_capture(
             None,
         )),
     }
-}
-
-fn terminate_and_reap(
-    child: &mut SpeakerChild,
-    budget: SpeakersAnalyzeBudget,
-) -> io::Result<Option<ExitStatus>> {
-    if child.observe_exit()? {
-        child.signal_group(rustix::process::Signal::KILL)?;
-        return child.reap_root().map(Some);
-    }
-    child.signal_group(rustix::process::Signal::TERM)?;
-    if let Some(status) = wait_for_exit(child, budget.terminate_grace)? {
-        return Ok(Some(status));
-    }
-    child.signal_group(rustix::process::Signal::KILL)?;
-    wait_for_exit(child, budget.kill_grace)
-}
-
-fn wait_for_exit(child: &mut SpeakerChild, grace: Duration) -> io::Result<Option<ExitStatus>> {
-    let deadline = Instant::now() + grace;
-    loop {
-        if child.observe_exit()? {
-            child.signal_group(rustix::process::Signal::KILL)?;
-            return child.reap_root().map(Some);
-        }
-        if Instant::now() >= deadline {
-            return Ok(None);
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-}
-
-fn exit_code(status: ExitStatus) -> i32 {
-    if let Some(code) = status.code() {
-        return code;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        -status.signal().unwrap_or(0)
-    }
-    #[cfg(not(unix))]
-    -1
 }
 
 fn raise_for_returncode(
