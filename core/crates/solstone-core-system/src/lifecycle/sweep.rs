@@ -6,12 +6,19 @@ use std::time::Duration;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::time::Instant;
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use crate::process::{
+    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
+    SystemProcessInstanceSource,
+};
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OrphanSweepReport {
     pub targeted: usize,
     pub reaped: usize,
     pub survivors: usize,
     pub skipped_unresolvable: usize,
+    pub unproven: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,26 +42,34 @@ pub fn sweep_orphans(journal: &Path, grace: Duration) -> OrphanSweepOutcome {
         skipped_unresolvable,
         ..OrphanSweepReport::default()
     };
-    for pid in &targets {
-        let _ = crate::process::signal_pid(*pid as i32, Signal::SIGTERM);
+    let source = SystemProcessInstanceSource;
+    let term = partition_by_liveness(&targets, &source);
+    report.reaped += term.already_gone;
+    report.unproven += term.unverifiable;
+    for instance in &term.confirmed {
+        let _ = crate::process::signal_pid(instance.pid as i32, Signal::SIGTERM);
     }
     let deadline = Instant::now() + grace;
-    while Instant::now() < deadline && targets.iter().any(|pid| process_is_live(*pid)) {
+    while Instant::now() < deadline
+        && term
+            .confirmed
+            .iter()
+            .any(|instance| process_is_live(instance.pid))
+    {
         std::thread::sleep(Duration::from_millis(10));
     }
-    for pid in targets {
-        if process_is_live(pid) {
-            report.survivors += 1;
-            let _ = crate::process::signal_pid(pid as i32, Signal::SIGKILL);
-        } else {
-            report.reaped += 1;
-        }
+    let kill = partition_by_liveness(&term.confirmed, &source);
+    report.reaped += kill.already_gone;
+    report.unproven += kill.unverifiable;
+    report.survivors += kill.confirmed.len();
+    for instance in &kill.confirmed {
+        let _ = crate::process::signal_pid(instance.pid as i32, Signal::SIGKILL);
     }
     OrphanSweepOutcome::Completed(report)
 }
 
 #[cfg(target_os = "linux")]
-fn sweep_targets(journal: &Path) -> (Vec<u32>, usize) {
+fn sweep_targets(journal: &Path) -> (Vec<ProcessInstance>, usize) {
     let Ok(journal) = journal.canonicalize() else {
         return (Vec::new(), 1);
     };
@@ -79,7 +94,10 @@ fn sweep_targets(journal: &Path) -> (Vec<u32>, usize) {
         if !sweepable_name(comm.trim_end()) {
             continue;
         }
-        if parent_pid(pid) != Some(1) || uid_for(&format!("{base}/status")) != own_uid {
+        let Some(instance) = qualify_orphan_instance(pid) else {
+            continue;
+        };
+        if uid_for(&format!("{base}/status")) != own_uid {
             continue;
         }
         let Some(candidate) = journal_for(&format!("{base}/environ")) else {
@@ -93,18 +111,19 @@ fn sweep_targets(journal: &Path) -> (Vec<u32>, usize) {
         if candidate != journal {
             continue;
         }
-        targets.push(pid);
+        targets.push(instance);
     }
     (targets, skipped_unresolvable)
 }
 
 #[cfg(target_os = "macos")]
-fn sweep_targets(_journal: &Path) -> (Vec<u32>, usize) {
+fn sweep_targets(_journal: &Path) -> (Vec<ProcessInstance>, usize) {
     let Some(rows) = crate::process::macos_sweep_table() else {
         return (Vec::new(), 0);
     };
     let own_pid = std::process::id();
     let own_uid = nix::unistd::geteuid().as_raw();
+    let source = SystemProcessInstanceSource;
     let targets = rows
         .into_iter()
         .filter(|row| {
@@ -113,7 +132,14 @@ fn sweep_targets(_journal: &Path) -> (Vec<u32>, usize) {
                 && row.uid == own_uid
                 && command_name(&row.command).is_some_and(sweepable_name)
         })
-        .map(|row| row.pid)
+        .filter_map(|row| match source.inspect(row.pid) {
+            InspectResult::Present {
+                instance,
+                ppid: Some(1),
+                ..
+            } => Some(instance),
+            _ => None,
+        })
         .collect();
     (targets, 0)
 }
@@ -126,8 +152,6 @@ fn command_name(command: &str) -> Option<&str> {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn process_is_live(pid: u32) -> bool {
-    use crate::process::{InspectResult, ProcessInstanceSource, SystemProcessInstanceSource};
-
     matches!(
         SystemProcessInstanceSource.inspect(pid),
         InspectResult::Present { .. }
@@ -146,12 +170,14 @@ fn sweepable_name(name: &str) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn parent_pid(pid: u32) -> Option<u32> {
-    use crate::process::{InspectResult, ProcessInstanceSource, SystemProcessInstanceSource};
-
+fn qualify_orphan_instance(pid: u32) -> Option<ProcessInstance> {
     match SystemProcessInstanceSource.inspect(pid) {
-        InspectResult::Present { ppid, .. } => ppid,
-        InspectResult::Absent | InspectResult::Unverifiable => None,
+        InspectResult::Present {
+            instance,
+            ppid: Some(1),
+            ..
+        } => Some(instance),
+        _ => None,
     }
 }
 
@@ -177,4 +203,124 @@ fn journal_for(path: &str) -> Option<std::path::PathBuf> {
                 .map(std::ffi::OsStr::from_bytes)
         })
         .map(std::path::PathBuf::from)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+struct Partition {
+    confirmed: Vec<ProcessInstance>,
+    already_gone: usize,
+    unverifiable: usize,
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn partition_by_liveness(
+    targets: &[ProcessInstance],
+    source: &dyn ProcessInstanceSource,
+) -> Partition {
+    let mut confirmed = Vec::new();
+    let mut already_gone = 0;
+    let mut unverifiable = 0;
+    for instance in targets {
+        match source.observe(instance) {
+            InstanceVerdict::SameLive { .. } => confirmed.push(*instance),
+            InstanceVerdict::NotSameOrExited => already_gone += 1,
+            InstanceVerdict::Unverifiable => unverifiable += 1,
+        }
+    }
+    Partition {
+        confirmed,
+        already_gone,
+        unverifiable,
+    }
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use super::{Partition, partition_by_liveness};
+    use crate::process::{
+        ExecutionState, InspectResult, InstanceCensus, ProcessBirth, ProcessInstance,
+        ProcessInstanceSource,
+    };
+
+    struct FakeSource {
+        result: InspectResult,
+    }
+
+    impl ProcessInstanceSource for FakeSource {
+        fn inspect(&self, _pid: u32) -> InspectResult {
+            self.result
+        }
+
+        fn census(&self) -> InstanceCensus {
+            InstanceCensus::Incomplete(Vec::new())
+        }
+    }
+
+    fn live_instance(birth: ProcessBirth) -> ProcessInstance {
+        ProcessInstance { pid: 42, birth }
+    }
+
+    #[test]
+    fn partition_same_birth_live_is_confirmed() {
+        let birth = ProcessBirth::linux(10, 100, 100);
+        let instance = live_instance(birth);
+        let source = FakeSource {
+            result: InspectResult::Present {
+                instance,
+                execution: ExecutionState::Running,
+                ppid: Some(1),
+                pgid: Some(42),
+            },
+        };
+        let Partition {
+            confirmed,
+            already_gone,
+            unverifiable,
+        } = partition_by_liveness(&[instance], &source);
+        assert_eq!(confirmed, vec![instance]);
+        assert_eq!(already_gone, 0);
+        assert_eq!(unverifiable, 0);
+    }
+
+    #[test]
+    fn partition_different_birth_counts_already_gone() {
+        let snapshotted = ProcessBirth::linux(10, 100, 100);
+        let current = ProcessBirth::linux(99, 100, 100);
+        let instance = live_instance(snapshotted);
+        let source = FakeSource {
+            result: InspectResult::Present {
+                instance: ProcessInstance {
+                    pid: 42,
+                    birth: current,
+                },
+                execution: ExecutionState::Running,
+                ppid: Some(1),
+                pgid: Some(42),
+            },
+        };
+        let Partition {
+            confirmed,
+            already_gone,
+            unverifiable,
+        } = partition_by_liveness(&[instance], &source);
+        assert!(confirmed.is_empty());
+        assert_eq!(already_gone, 1);
+        assert_eq!(unverifiable, 0);
+    }
+
+    #[test]
+    fn partition_unverifiable_counts_unproven() {
+        let instance = live_instance(ProcessBirth::linux(10, 100, 100));
+        let source = FakeSource {
+            result: InspectResult::Unverifiable,
+        };
+        let Partition {
+            confirmed,
+            already_gone,
+            unverifiable,
+        } = partition_by_liveness(&[instance], &source);
+        assert!(confirmed.is_empty());
+        assert_eq!(already_gone, 0);
+        assert_eq!(unverifiable, 1);
+    }
 }

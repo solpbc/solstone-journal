@@ -207,11 +207,6 @@ pub(crate) fn is_supervisor_up_with_start_time(
     }) else {
         return false;
     };
-    // Treat EPERM as not up because a caller unable to inspect or signal the
-    // recorded PID cannot use that PID as evidence of a live supervisor here.
-    if nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None).is_err() {
-        return false;
-    }
     let Ok(recorded) =
         std::fs::read_to_string(health.join("supervisor.start_time")).and_then(|text| {
             text.trim()
@@ -266,7 +261,7 @@ pub fn sd_notify_to(address: &str, state_value: &str) {
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests {
-    use super::{is_supervisor_up_with_start_time, state};
+    use super::{LifecycleError, is_supervisor_up_with_start_time, state};
 
     #[test]
     fn ac3_injected_start_time_rejects_reused_pid() {
@@ -275,6 +270,25 @@ mod tests {
 
         assert!(is_supervisor_up_with_start_time(&root, |_| Ok(100.0)));
         assert!(!is_supervisor_up_with_start_time(&root, |_| Ok(101.6)));
+        state::remove_test_supervisor_journal(root);
+    }
+
+    #[test]
+    fn ac3_unavailable_start_time_is_not_up() {
+        // Fail-closed through the injected start-time source. This does not by
+        // itself prove the deleted kill(None) probe is gone: the fixture PID is
+        // this process, so the old probe would have succeeded and still reached
+        // the closure.
+        let root = state::test_supervisor_journal(
+            "supervisor-start-time-err",
+            std::process::id(),
+            100.0,
+            None,
+        );
+
+        assert!(!is_supervisor_up_with_start_time(&root, |_| {
+            Err(LifecycleError::Identity("process start time"))
+        }));
         state::remove_test_supervisor_journal(root);
     }
 
