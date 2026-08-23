@@ -237,10 +237,13 @@ fn stage_brain_checking(context: &CheckContext) -> solstone_core_brain::BrainRef
 fn executable(path: &std::path::Path, body: &str) {
     use std::os::unix::fs::PermissionsExt;
 
-    fs::write(path, body).unwrap();
-    let mut permissions = fs::metadata(path).unwrap().permissions();
+    let name = path.file_name().expect("executable name");
+    let staging = path.with_file_name(format!("{}.staging", name.to_string_lossy()));
+    fs::write(&staging, body).unwrap();
+    let mut permissions = fs::metadata(&staging).unwrap().permissions();
     permissions.set_mode(0o755);
-    fs::set_permissions(path, permissions).unwrap();
+    fs::set_permissions(&staging, permissions).unwrap();
+    fs::rename(&staging, path).unwrap();
 }
 fn parakeet_ready_probe(_: &std::path::Path, _: Duration) -> Result<(), String> {
     Ok(())
