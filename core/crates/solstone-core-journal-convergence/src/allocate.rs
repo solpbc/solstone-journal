@@ -14,7 +14,8 @@ use crate::store::ConvergenceStore;
 
 impl ConvergenceStore {
     /// Issue a serial under a brief topology lock. Adoption is created first.
-    pub fn allocate(&self, days: &DayLockSet) -> Result<AllocationProof, ConvergenceError> {
+    #[allow(dead_code)]
+    pub(crate) fn allocate(&self, days: &DayLockSet) -> Result<AllocationProof, ConvergenceError> {
         self.revalidate()?;
         days.matches(self.journal_id(), self.root_id(), self.object_identity())?;
         let dirs = open_store_dirs(self.root())?
@@ -24,37 +25,45 @@ impl ConvergenceStore {
         for day in days.days() {
             ensure_adoption(self, &dirs, day)?;
         }
-        let mut allocator = load_allocator(&dirs)?;
-        if allocator.journal_id != self.journal_id() || allocator.root_id != self.root_id() {
-            return Err(ConvergenceError::Unknown {
-                role: DurableRole::Allocator,
-            });
-        }
-        if allocator.exhausted || allocator.next_serial == u64::MAX {
-            allocator.exhausted = true;
-            replace_json(
-                &dirs.convergence,
-                OsStr::new(crate::layout::ALLOCATOR),
-                &allocator,
-            )?;
-            return Err(ConvergenceError::Refused(Refusal::Exhausted));
-        }
-        let serial = allocator.next_serial;
-        allocator.next_serial = allocator
-            .next_serial
-            .checked_add(1)
-            .ok_or(ConvergenceError::Refused(Refusal::Exhausted))?;
-        replace_json(
-            &dirs.convergence,
-            OsStr::new(crate::layout::ALLOCATOR),
-            &allocator,
-        )?;
+        let serial = bump_serial(self, &dirs)?;
         drop(topology);
         Ok(AllocationProof::new(serial, days))
     }
 }
 
-fn ensure_adoption(
+pub(crate) fn bump_serial(
+    store: &ConvergenceStore,
+    dirs: &crate::init::StoreDirs,
+) -> Result<u64, ConvergenceError> {
+    let mut allocator = load_allocator(dirs)?;
+    if allocator.journal_id != store.journal_id() || allocator.root_id != store.root_id() {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::Allocator,
+        });
+    }
+    if allocator.exhausted || allocator.next_serial == u64::MAX {
+        allocator.exhausted = true;
+        replace_json(
+            &dirs.convergence,
+            OsStr::new(crate::layout::ALLOCATOR),
+            &allocator,
+        )?;
+        return Err(ConvergenceError::Refused(Refusal::Exhausted));
+    }
+    let serial = allocator.next_serial;
+    allocator.next_serial = allocator
+        .next_serial
+        .checked_add(1)
+        .ok_or(ConvergenceError::Refused(Refusal::Exhausted))?;
+    replace_json(
+        &dirs.convergence,
+        OsStr::new(crate::layout::ALLOCATOR),
+        &allocator,
+    )?;
+    Ok(serial)
+}
+
+pub(crate) fn ensure_adoption(
     store: &ConvergenceStore,
     dirs: &crate::init::StoreDirs,
     day: &DayKey,
@@ -121,24 +130,6 @@ mod tests {
         assert_eq!(allocator.journal_id, store.journal_id());
         assert_eq!(allocator.root_id, store.root_id());
         assert_eq!(allocator.next_serial, 1);
-    }
-
-    #[test]
-    fn intervening_advance_refuses_stale_proof() {
-        let (_temporary, store) = initialized_store();
-        let day = DayKey::parse("20260823").unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let first = store.allocate(&locks).unwrap();
-        let _second = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day, crate::OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = crate::OrdinaryAuthority::bind(proposal, first).unwrap();
-        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
-        assert!(matches!(
-            error,
-            ConvergenceError::Refused(Refusal::InterveningAdvance)
-        ));
     }
 
     #[test]

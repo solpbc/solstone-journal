@@ -11,9 +11,13 @@ pub(crate) const HEALTH: &str = "health";
 pub(crate) const CONVERGENCE: &str = "convergence";
 pub(crate) const DAYS: &str = "days";
 pub(crate) const RECORDS: &str = "records";
+pub(crate) const CLAIM: &str = "claim";
+pub(crate) const INTENTS: &str = "intents";
+pub(crate) const ACTIVES: &str = "actives";
 pub(crate) const TOPOLOGY_LOCK: &str = "topology.lock";
 pub(crate) const ROOT_WITNESS: &str = "root.wit.json";
 pub(crate) const ALLOCATOR: &str = "allocator.json";
+pub(crate) const CLAIM_HEAD: &str = "head.json";
 
 /// Canonical 8-digit chronicle day.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -32,14 +36,15 @@ impl DayKey {
     }
 }
 
-/// Public canonical validation. Refuses empty, duplicates, and unsorted input.
-pub fn validate_day_set(days: &[DayKey]) -> Result<(), ConvergenceError> {
+/// Non-empty unique day set for internal lock acquisition. Does not sort.
+pub(crate) fn require_nonempty_unique(days: &[DayKey]) -> Result<(), ConvergenceError> {
     if days.is_empty() {
         return Err(ConvergenceError::Refused(Refusal::NonCanonicalDays));
     }
-    for window in days.windows(2) {
-        if window[0] >= window[1] {
-            return Err(ConvergenceError::Refused(Refusal::NonCanonicalDays));
+    let mut seen = std::collections::BTreeSet::new();
+    for day in days {
+        if !seen.insert(day) {
+            return Err(ConvergenceError::Refused(Refusal::DuplicateDays));
         }
     }
     Ok(())
@@ -69,6 +74,18 @@ pub(crate) fn record_file_name() -> &'static str {
     "record.json"
 }
 
+pub(crate) fn claim_revision_name(revision: u64) -> OsString {
+    OsString::from(format!("rev.{revision}.json"))
+}
+
+pub(crate) fn intent_name(serial: u64) -> OsString {
+    OsString::from(format!("{serial}.json"))
+}
+
+pub(crate) fn active_name(serial: u64) -> OsString {
+    OsString::from(format!("{serial}.json"))
+}
+
 #[cfg(test)]
 // Tests plant and inspect journal files via std::fs; clippy.toml forbids those in production.
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
@@ -76,20 +93,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn validate_day_set_refuses_empty_unsorted_and_duplicates() {
-        assert!(validate_day_set(&[]).is_err());
+    fn require_nonempty_unique_refuses_empty_and_duplicates() {
+        assert!(require_nonempty_unique(&[]).is_err());
         let a = DayKey::parse("20260823").unwrap();
         let b = DayKey::parse("20260824").unwrap();
-        assert!(validate_day_set(&[b.clone(), a.clone()]).is_err());
-        assert!(validate_day_set(&[a.clone(), a.clone()]).is_err());
-        assert!(validate_day_set(&[a, b]).is_ok());
+        assert!(require_nonempty_unique(&[a.clone(), a.clone()]).is_err());
+        assert!(require_nonempty_unique(&[b.clone(), a.clone()]).is_ok());
+        assert!(require_nonempty_unique(&[a, b]).is_ok());
     }
 
     #[test]
-    fn acquire_days_does_not_normalize() {
-        let later = DayKey::parse("20260824").unwrap();
-        let earlier = DayKey::parse("20260823").unwrap();
-        let error = validate_day_set(&[later, earlier]).unwrap_err();
+    fn day_key_parse_refuses_alias() {
+        let error = DayKey::parse("2026-08-23").unwrap_err();
         assert!(matches!(
             error,
             ConvergenceError::Refused(Refusal::NonCanonicalDays)

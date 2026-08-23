@@ -53,28 +53,98 @@ pub enum DurableRole {
     DayLock,
     TopologyLock,
     Directory,
+    ClaimRevision,
+    ClaimHead,
+    Intent,
+    Active,
+    #[allow(dead_code)]
+    Terminal,
+    #[allow(dead_code)]
+    ClearanceMember,
+    #[allow(dead_code)]
+    ClearanceBarrier,
+    #[allow(dead_code)]
+    ConsumptionWitness,
+    StreamUpdated,
+    #[allow(dead_code)]
+    DailyUpdated,
+    #[allow(dead_code)]
+    ChronicleHealth,
 }
 
 #[derive(Debug)]
 pub enum Refusal {
-    UnknownField { field: String },
+    UnknownField {
+        field: String,
+    },
     MissingSerial,
-    FutureSerial { observed: u64, next: u64 },
-    RevisionRollback { observed: u64, current: u64 },
-    GenerationRollback { observed: u64, current: u64 },
+    FutureSerial {
+        observed: u64,
+        next: u64,
+    },
+    RevisionRollback {
+        observed: u64,
+        current: u64,
+    },
+    GenerationRollback {
+        observed: u64,
+        current: u64,
+    },
     PersistedZeroRevision,
     PersistedZeroDirtyGeneration,
     PersistedZeroSerial,
     CompletedExceedsDirty,
     WrongLineage,
-    WrongDay { expected: String, observed: String },
+    WrongDay {
+        expected: String,
+        observed: String,
+    },
     Exhausted,
     Uninitialized,
     AlreadyInitialized,
     NonCanonicalDays,
+    DuplicateDays,
     StaleLease,
-    InterveningAdvance,
     ReusedAuthority,
+    Busy,
+    NoPermit,
+    IntentMismatch,
+    IntentDigestMismatch,
+    ChangedPredecessor,
+    ChangedProjection,
+    ClaimAncestry,
+    NotVirgin,
+    CleanupOnly,
+    #[allow(dead_code)]
+    ConflictingProjection,
+    #[allow(dead_code)]
+    ConflictingTerminal,
+    #[allow(dead_code)]
+    WrongGenerationMarker,
+    #[allow(dead_code)]
+    OldAuthorMarker,
+    #[allow(dead_code)]
+    OldProjectionDigest,
+    #[allow(dead_code)]
+    ProjectionByteMismatch,
+    #[allow(dead_code)]
+    WrongOutcome,
+    #[allow(dead_code)]
+    OppositeTerminal,
+    #[allow(dead_code)]
+    GenericRejection,
+    #[allow(dead_code)]
+    DaySetChanged,
+    #[allow(dead_code)]
+    ClaimSwapped,
+    #[allow(dead_code)]
+    IncompleteEvidence,
+    #[allow(dead_code)]
+    StaleEvidence,
+    #[allow(dead_code)]
+    MixedEvidence,
+    #[allow(dead_code)]
+    Superseded,
 }
 
 impl std::fmt::Display for ConvergenceError {

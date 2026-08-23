@@ -14,10 +14,11 @@ use sha2::{Digest, Sha256};
 use solstone_core_journal_io::JournalRoot;
 
 use crate::digest::hex_encode;
+use crate::init::{check_initialized, initialize};
 use crate::layout::DayKey;
 use crate::lock::DayLockSet;
+use crate::publish::{OrdinaryAuthority, OrdinaryIntent, PublishOutcome};
 use crate::store::ConvergenceStore;
-use crate::{OrdinaryAuthority, OrdinaryIntent, PublishOutcome, check_initialized, initialize};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -58,9 +59,17 @@ thread_local! {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum PublishFault {
     AfterEver,
     AfterWitness,
+    AfterAdopt,
+    AfterSerial,
+    AfterClaimDir,
+    AfterClaimRevision,
+    AfterClaimHead,
+    AfterIntent,
+    AfterActive,
 }
 
 /// Clears TLS injects if a test panics between arm and take.
@@ -86,6 +95,11 @@ pub(crate) fn fail_after_ever() -> InjectGuard {
 
 pub(crate) fn fail_after_witness() -> InjectGuard {
     PUBLISH_FAULT.set(Some(PublishFault::AfterWitness));
+    InjectGuard
+}
+
+pub(crate) fn fail_after(fault: PublishFault) -> InjectGuard {
+    PUBLISH_FAULT.set(Some(fault));
     InjectGuard
 }
 

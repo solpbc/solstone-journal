@@ -50,6 +50,27 @@ pub(crate) fn digest_value<T: Serialize>(value: &T) -> Result<RecordDigest, Conv
     Ok(digest_bytes(&canonical_json_bytes(value)?))
 }
 
+pub(crate) fn digest_value_excluding<T: Serialize>(
+    value: &T,
+    field: &str,
+) -> Result<RecordDigest, ConvergenceError> {
+    let mut json = serde_json::to_value(value).map_err(|source| ConvergenceError::Io {
+        operation: "serialize canonical json",
+        role: DurableRole::Record,
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
+    })?;
+    if let Some(object) = json.as_object_mut() {
+        object.remove(field);
+    }
+    sort_value(&mut json);
+    let bytes = serde_json::to_vec(&json).map_err(|source| ConvergenceError::Io {
+        operation: "emit canonical json",
+        role: DurableRole::Record,
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
+    })?;
+    Ok(digest_bytes(&bytes))
+}
+
 fn sort_value(value: &mut Value) {
     match value {
         Value::Object(object) => {

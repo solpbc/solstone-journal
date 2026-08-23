@@ -22,6 +22,7 @@ mod sealed {
     use crate::error::ConvergenceError;
     use crate::schema::DayRecord;
 
+    #[allow(dead_code)]
     pub trait PublicationKind {
         fn next_record(&self, current: Option<&DayRecord>) -> Result<DayRecord, ConvergenceError>;
     }
@@ -30,6 +31,7 @@ mod sealed {
 /// Production dirty-advance intent. The only public production intent.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrdinaryIntent {
+    #[allow(dead_code)]
     AdvanceDirty,
 }
 
@@ -47,11 +49,13 @@ pub struct OrdinaryAuthority {
     record: DayRecord,
     day: DayKey,
     instance: String,
+    #[allow(dead_code)]
     serial: u64,
     used: bool,
 }
 
 impl OrdinaryAuthority {
+    #[allow(dead_code)]
     pub fn bind(
         proposal: ValidatedProposal,
         proof: AllocationProof,
@@ -110,6 +114,7 @@ impl sealed::PublicationKind for OrdinaryAuthority {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum PublishOutcome {
     Published {
         day: DayKey,
@@ -130,7 +135,8 @@ pub enum PublishOutcome {
 
 impl ConvergenceStore {
     /// Read current head/record and derive the next dirty record. No on-disk write.
-    pub fn propose(
+    #[allow(dead_code)]
+    pub(crate) fn propose(
         &self,
         days: &DayLockSet,
         day: &DayKey,
@@ -162,7 +168,8 @@ impl ConvergenceStore {
         }
     }
 
-    pub fn publish(
+    #[allow(dead_code)]
+    pub(crate) fn publish(
         &self,
         days: &DayLockSet,
         day: &DayKey,
@@ -182,10 +189,6 @@ impl ConvergenceStore {
         }
         let dirs = open_store_dirs(self.root())?
             .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
-        let allocator = load_allocator(&dirs)?;
-        if authority.serial != allocator.next_serial.saturating_sub(1) {
-            return Err(ConvergenceError::Refused(Refusal::InterveningAdvance));
-        }
         let adoption = load_adoption(&dirs, day)?.ok_or(ConvergenceError::Unknown {
             role: DurableRole::Adoption,
         })?;
@@ -397,7 +400,7 @@ pub(crate) fn inspect_day(
     })
 }
 
-fn publish_record(
+pub(crate) fn publish_record(
     store: &ConvergenceStore,
     days: &DayLockSet,
     day: &DayKey,
@@ -965,9 +968,9 @@ impl sealed::PublicationKind for MigrationAuthority {
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
-    use crate::OrdinaryIntent;
     use crate::error::Refusal;
     use crate::layout::DayKey;
+    use crate::publish::OrdinaryIntent;
     use crate::store::{LoadDay, PendingKind};
     use crate::test_support::{
         after_witness, days_dir, dirty, fail_after_ever, fail_after_witness, fail_next_dir_sync,

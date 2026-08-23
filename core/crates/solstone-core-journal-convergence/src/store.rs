@@ -6,7 +6,7 @@ use solstone_core_journal_io::{JournalRoot, ObjectIdentity};
 use crate::digest::RecordDigest;
 use crate::error::{ConvergenceError, Refusal, map_root_error};
 use crate::init::{check_initialized, load_allocator, load_root_witness, open_store_dirs};
-use crate::layout::{DayKey, validate_day_set};
+use crate::layout::{DayKey, require_nonempty_unique};
 use crate::lock::{DayLockSet, acquire_days};
 use crate::schema::{DayRecord, require_ids, validate_record_numbers};
 
@@ -77,8 +77,9 @@ impl ConvergenceStore {
         self.root.revalidate().map_err(map_root_error)
     }
 
-    pub fn acquire_days(&self, days: &[DayKey]) -> Result<DayLockSet, ConvergenceError> {
-        validate_day_set(days)?;
+    #[allow(dead_code)]
+    pub(crate) fn acquire_days(&self, days: &[DayKey]) -> Result<DayLockSet, ConvergenceError> {
+        require_nonempty_unique(days)?;
         self.revalidate()?;
         let dirs = open_store_dirs(&self.root)?
             .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
@@ -92,7 +93,12 @@ impl ConvergenceStore {
     }
 
     /// Read a day under a live lock set. Performs no on-disk write.
-    pub fn load_day(&self, days: &DayLockSet, day: &DayKey) -> Result<LoadDay, ConvergenceError> {
+    #[allow(dead_code)]
+    pub(crate) fn load_day(
+        &self,
+        days: &DayLockSet,
+        day: &DayKey,
+    ) -> Result<LoadDay, ConvergenceError> {
         self.inspect(days, day)
     }
 
@@ -151,7 +157,7 @@ pub(crate) fn snapshot_from_record(record: &DayRecord) -> Result<DaySnapshot, Co
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
-    use crate::initialize;
+    use crate::init::initialize;
     use crate::layout::DayKey;
     use crate::test_support::{
         TempDir, dirty, initialized_store, open_root, sample_day, snapshot_tree,
@@ -301,11 +307,6 @@ mod tests {
             LoadDay::Published(snapshot) => assert_eq!(snapshot.digest, first.digest),
             other => panic!("{other:?}"),
         }
-    }
-
-    #[test]
-    fn g1_sets_first_equal_current() {
-        g1_is_dirty1_completed0_rev1_first_eq_current();
     }
 
     #[test]

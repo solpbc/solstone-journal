@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::os::fd::AsFd;
 
@@ -14,6 +15,16 @@ use crate::error::{ConvergenceError, DurableRole, Refusal};
 use crate::layout::DayKey;
 
 pub(crate) const SCHEMA_VERSION: u32 = 1;
+pub(crate) const ROLE_CLAIM_GENESIS: &str = "solstone.convergence.claim-genesis.v1";
+pub(crate) const ROLE_CLAIM_HEAD: &str = "solstone.convergence.claim-head.v1";
+pub(crate) const ROLE_CLAIM_REVISION: &str = "solstone.convergence.claim-revision.v1";
+pub(crate) const ROLE_DAY_SET: &str = "solstone.convergence.day-set.v1";
+pub(crate) const ROLE_OWNER_BINDING: &str = "solstone.convergence.owner-binding.v1";
+pub(crate) const ROLE_VIRGIN: &str = "solstone.convergence.virgin.v1";
+pub(crate) const ROLE_STREAM_UPDATED: &str = "solstone.convergence.stream-updated.v1";
+pub(crate) const ROLE_INTENT: &str = "solstone.convergence.intent.v1";
+pub(crate) const ROLE_ACTIVE: &str = "solstone.convergence.active.v1";
+pub(crate) const OPERATION_ADVANCE_DIRTY: &str = "advance_dirty";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -102,6 +113,164 @@ pub(crate) struct DayRecord {
     pub dirty_generation: u64,
     pub completed_generation: u64,
     pub auxiliary_time: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClaimHead {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub revision: u64,
+    pub revision_digest: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub(crate) enum ClaimTransition {
+    Introduce,
+    Release,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TableEntry {
+    pub serial: u64,
+    pub owner_binding_digest: String,
+    pub intent_digest: String,
+    pub introduced_revision: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClaimRevision {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub revision: u64,
+    pub prior_revision: u64,
+    pub prior_revision_digest: String,
+    pub transition: ClaimTransition,
+    pub serial: u64,
+    pub owner_binding_digest: String,
+    pub day_set: Vec<String>,
+    pub day_set_subdigest: String,
+    pub intent_digest: String,
+    pub table: BTreeMap<String, TableEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
+pub(crate) enum Predecessor {
+    Virgin {
+        digest: String,
+    },
+    Member {
+        member_digest: String,
+        barrier_digest: String,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
+pub(crate) enum PresentAbsent {
+    Absent,
+    Present { bytes: String, digest: String },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProjectionBinding {
+    pub prior_stream: PresentAbsent,
+    pub prior_daily: PresentAbsent,
+    pub proposed_stream: PresentAbsent,
+    pub proposed_daily: PresentAbsent,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Intent {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub serial: u64,
+    pub operation: String,
+    pub day_set: Vec<String>,
+    pub day_set_subdigest: String,
+    pub owner_binding_digest: String,
+    pub claim_revision: u64,
+    pub prior_claim_head_revision: u64,
+    pub prior_claim_head_digest: String,
+    pub prior_day_revisions: BTreeMap<String, u64>,
+    pub proposed_day_revisions: BTreeMap<String, u64>,
+    pub proposed_dirty_generations: BTreeMap<String, u64>,
+    pub predecessors: BTreeMap<String, Predecessor>,
+    pub projections: BTreeMap<String, ProjectionBinding>,
+    pub intent_digest: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Active {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub serial: u64,
+    pub owner_binding_digest: String,
+    pub intent_digest: String,
+    pub day_set: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct VirginProof {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub adoption_id: String,
+    pub day: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StreamUpdated {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub adoption_id: String,
+    pub day: String,
+    pub dirty_generation: u64,
+    pub author_serial: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DaySetCanon {
+    pub role: String,
+    pub days: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OwnerBindingCanon {
+    pub role: String,
+    pub journal_id: String,
+    pub root_id: String,
+    pub owner_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClaimGenesis {
+    pub role: String,
+    pub journal_id: String,
+    pub root_id: String,
 }
 
 pub(crate) fn validate_record_numbers(record: &DayRecord) -> Result<(), ConvergenceError> {
@@ -195,6 +364,30 @@ fn encode_disk<T: Serialize>(value: &T) -> Result<(RecordDigest, Vec<u8>), Conve
 
 pub(crate) fn record_digest(record: &DayRecord) -> Result<RecordDigest, ConvergenceError> {
     digest_value(record)
+}
+
+pub(crate) fn intent_digest(intent: &Intent) -> Result<RecordDigest, ConvergenceError> {
+    crate::digest::digest_value_excluding(intent, "intent_digest")
+}
+
+pub(crate) fn day_set_subdigest(
+    days: &[crate::layout::DayKey],
+) -> Result<RecordDigest, ConvergenceError> {
+    digest_value(&DaySetCanon {
+        role: ROLE_DAY_SET.to_owned(),
+        days: days.iter().map(|day| day.as_str().to_owned()).collect(),
+    })
+}
+
+pub(crate) fn genesis_claim_digest(
+    journal_id: &str,
+    root_id: &str,
+) -> Result<RecordDigest, ConvergenceError> {
+    digest_value(&ClaimGenesis {
+        role: ROLE_CLAIM_GENESIS.to_owned(),
+        journal_id: journal_id.to_owned(),
+        root_id: root_id.to_owned(),
+    })
 }
 
 pub(crate) fn require_ids(

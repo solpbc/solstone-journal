@@ -11,28 +11,50 @@ use solstone_core_journal_io::{
 
 use crate::error::{ConvergenceError, DurableRole, Refusal, random_hex};
 use crate::init::StoreDirs;
-use crate::layout::{DayKey, TOPOLOGY_LOCK, day_lock_name, validate_day_set};
+use crate::layout::{DayKey, TOPOLOGY_LOCK, day_lock_name, require_nonempty_unique};
 
-const LOCK_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 const LOCK_POLL: Duration = Duration::from_millis(20);
 
 pub(crate) struct TopologyGuard {
     _lock: BoundParentLock,
 }
 
+#[allow(dead_code)]
 pub(crate) fn hold_topology(dirs: &StoreDirs) -> Result<TopologyGuard, ConvergenceError> {
+    hold_topology_with_timeout(dirs, LOCK_TIMEOUT)
+}
+
+pub(crate) fn hold_topology_with_timeout(
+    dirs: &StoreDirs,
+    timeout: Duration,
+) -> Result<TopologyGuard, ConvergenceError> {
     let guard = acquire_existing_parent_lock_bound(
         &dirs.convergence,
         OsStr::new(TOPOLOGY_LOCK),
-        LOCK_TIMEOUT,
+        timeout,
         LOCK_POLL,
     )
-    .map_err(|error| ConvergenceError::Io {
-        operation: "acquire topology lock",
-        role: DurableRole::TopologyLock,
-        source: std::io::Error::other(error.to_string()),
-    })?;
+    .map_err(|error| map_lock_error("acquire topology lock", DurableRole::TopologyLock, error))?;
     Ok(TopologyGuard { _lock: guard })
+}
+
+fn map_lock_error(
+    operation: &'static str,
+    role: DurableRole,
+    error: solstone_core_journal_io::ExistingParentLockError,
+) -> ConvergenceError {
+    if matches!(
+        error,
+        solstone_core_journal_io::ExistingParentLockError::Timeout(_)
+    ) {
+        return ConvergenceError::Refused(Refusal::Busy);
+    }
+    ConvergenceError::Io {
+        operation,
+        role,
+        source: std::io::Error::other(error.to_string()),
+    }
 }
 
 /// Opaque ordered day-lock-set proof. Not `Clone`. Drop releases flocks.
@@ -126,6 +148,7 @@ impl AllocationProof {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn acquire_days(
     dirs: &StoreDirs,
     days: &[DayKey],
@@ -133,21 +156,37 @@ pub(crate) fn acquire_days(
     root_id: &str,
     object_identity: ObjectIdentity,
 ) -> Result<DayLockSet, ConvergenceError> {
-    validate_day_set(days)?;
-    let mut locks = Vec::with_capacity(days.len());
-    for day in days {
+    acquire_days_with_timeout(
+        dirs,
+        days,
+        journal_id,
+        root_id,
+        object_identity,
+        LOCK_TIMEOUT,
+    )
+}
+
+pub(crate) fn acquire_days_with_timeout(
+    dirs: &StoreDirs,
+    days: &[DayKey],
+    journal_id: &str,
+    root_id: &str,
+    object_identity: ObjectIdentity,
+    timeout: Duration,
+) -> Result<DayLockSet, ConvergenceError> {
+    require_nonempty_unique(days)?;
+    let mut ordered = days.to_vec();
+    ordered.sort();
+    let mut locks = Vec::with_capacity(ordered.len());
+    for day in &ordered {
         let name = day_lock_name(day);
-        let guard = acquire_existing_parent_lock_bound(&dirs.days, &name, LOCK_TIMEOUT, LOCK_POLL)
-            .map_err(|error| ConvergenceError::Io {
-                operation: "acquire day lock",
-                role: DurableRole::DayLock,
-                source: std::io::Error::other(error.to_string()),
-            })?;
+        let guard = acquire_existing_parent_lock_bound(&dirs.days, &name, timeout, LOCK_POLL)
+            .map_err(|error| map_lock_error("acquire day lock", DurableRole::DayLock, error))?;
         locks.push(guard);
     }
     Ok(DayLockSet {
         _locks: locks,
-        days: days.iter().cloned().collect(),
+        days: ordered.into_iter().collect(),
         journal_id: journal_id.to_owned(),
         root_id: root_id.to_owned(),
         object_identity,
@@ -229,9 +268,9 @@ mod tests {
         drop(locks);
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
         let proposal = store
-            .propose(&locks, &day, crate::OrdinaryIntent::AdvanceDirty)
+            .propose(&locks, &day, crate::publish::OrdinaryIntent::AdvanceDirty)
             .unwrap();
-        let error = crate::OrdinaryAuthority::bind(proposal, proof).unwrap_err();
+        let error = crate::publish::OrdinaryAuthority::bind(proposal, proof).unwrap_err();
         assert!(matches!(
             error,
             ConvergenceError::Refused(Refusal::StaleLease)
@@ -262,9 +301,9 @@ mod tests {
         let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
         let proof = store.allocate(&locks).unwrap();
         let proposal = store
-            .propose(&locks, &day, crate::OrdinaryIntent::AdvanceDirty)
+            .propose(&locks, &day, crate::publish::OrdinaryIntent::AdvanceDirty)
             .unwrap();
-        let mut authority = crate::OrdinaryAuthority::bind(proposal, proof).unwrap();
+        let mut authority = crate::publish::OrdinaryAuthority::bind(proposal, proof).unwrap();
         store.publish(&locks, &day, &mut authority).unwrap();
         let error = store.publish(&locks, &day, &mut authority).unwrap_err();
         assert!(matches!(
