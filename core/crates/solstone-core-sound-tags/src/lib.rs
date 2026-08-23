@@ -27,6 +27,10 @@ pub const AGG: &str = "max";
 /// All tagger failures are best-effort and therefore represented as `None`.
 pub fn tag_audio(audio: &[f32], journal_path: &Path) -> Option<Value> {
     let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
+    // The shared verdict hashes the model and load-probes once. This call
+    // then opens a working handle of its own: the verdict is the gate, not a
+    // second path-derivation, and transcribe invokes this once per audio file
+    // (`process_one`), so the extra dlopen/load is not a hot path.
     tag_audio_with_readiness(audio, evaluate_ced_readiness(journal_path, os, arch))
 }
 

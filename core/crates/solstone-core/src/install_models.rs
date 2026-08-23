@@ -1230,6 +1230,7 @@ mod tests {
     #[test]
     fn windows_skips_rfdetr_between_ced_and_parakeet() {
         let journal = tempfile::tempdir().unwrap();
+        let mut rerank_called = false;
         let outcome = run_inner_with_test!(
             host("windows", "x86_64", None),
             || panic!("probe must not run"),
@@ -1238,6 +1239,7 @@ mod tests {
             |_| Ok(()),
             None,
             |_, action| {
+                rerank_called = true;
                 assert_eq!(action, InstallerAction::Install { force: false });
                 Ok(())
             },
@@ -1246,6 +1248,7 @@ mod tests {
             |_, _, _| panic!("windows must skip coreml"),
             |_, _, _| panic!("windows must skip parakeet"),
         );
+        assert!(rerank_called);
         assert_eq!(outcome.exit_code, 0);
         assert_eq!(
             outcome.stdout,
@@ -1268,7 +1271,7 @@ mod tests {
             || Ok(journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _| Ok(()),
+            posix_must_not_rerank,
             |_, os_name, arch, action| {
                 called = true;
                 assert_eq!(
@@ -1310,7 +1313,7 @@ mod tests {
             || Ok(raw_journal.path().to_path_buf()),
             |_| Ok(()),
             None,
-            |_, _| Ok(()),
+            posix_must_not_rerank,
             |_, _, _, _| panic!("raw platform must skip ced"),
             |_, _, _, _| Ok(rfdetr_install::RfdetrInstallRecord::PlatformUnavailable),
             |_, _, _| panic!("coreml installer must not run"),
