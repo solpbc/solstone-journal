@@ -68,6 +68,7 @@ pub struct DayLockSet {
 }
 
 impl DayLockSet {
+    #[allow(dead_code)]
     pub fn days(&self) -> &BTreeSet<DayKey> {
         &self.days
     }
@@ -76,10 +77,12 @@ impl DayLockSet {
         &self.instance
     }
 
+    #[allow(dead_code)]
     pub(crate) fn journal_id(&self) -> &str {
         &self.journal_id
     }
 
+    #[allow(dead_code)]
     pub(crate) fn root_id(&self) -> &str {
         &self.root_id
     }
@@ -103,48 +106,6 @@ impl DayLockSet {
             });
         }
         Ok(())
-    }
-}
-
-/// Single-use allocation proof bound to a lock-set instance and issued serial.
-#[derive(Debug)]
-pub struct AllocationProof {
-    serial: u64,
-    days: BTreeSet<DayKey>,
-    journal_id: String,
-    root_id: String,
-    instance: String,
-}
-
-impl AllocationProof {
-    pub(crate) fn new(serial: u64, days: &DayLockSet) -> Self {
-        Self {
-            serial,
-            days: days.days().clone(),
-            journal_id: days.journal_id().to_owned(),
-            root_id: days.root_id().to_owned(),
-            instance: days.instance().to_owned(),
-        }
-    }
-
-    pub(crate) fn serial(&self) -> u64 {
-        self.serial
-    }
-
-    pub(crate) fn instance(&self) -> &str {
-        &self.instance
-    }
-
-    pub(crate) fn days(&self) -> &BTreeSet<DayKey> {
-        &self.days
-    }
-
-    pub(crate) fn journal_id(&self) -> &str {
-        &self.journal_id
-    }
-
-    pub(crate) fn root_id(&self) -> &str {
-        &self.root_id
     }
 }
 
@@ -252,25 +213,23 @@ mod tests {
 
     #[test]
     fn proof_bound_to_lock_set_instance() {
-        let (_temporary, store) = initialized_store();
-        let day = DayKey::parse("20260823").unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let proof = store.allocate(&locks).unwrap();
-        assert_eq!(proof.instance(), locks.instance());
+        let (_temporary, admitted) = crate::test_support::admit_days("proof-inst", &["20260823"]);
+        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let held = admitted.begin(owner).unwrap();
+        let proof = crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        assert_eq!(proof.instance(), held.lock_set().instance());
     }
 
     #[test]
     fn proof_refused_after_relock_same_days() {
-        let (_temporary, store) = initialized_store();
-        let day = DayKey::parse("20260823").unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let proof = store.allocate(&locks).unwrap();
-        drop(locks);
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let proposal = store
-            .propose(&locks, &day, crate::publish::OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let error = crate::publish::OrdinaryAuthority::bind(proposal, proof).unwrap_err();
+        let (_temporary, admitted) = crate::test_support::admit_days("stale-proof", &["20260823"]);
+        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let held = admitted.begin(owner).unwrap();
+        let proof = crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        drop(held);
+        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let error = held.continue_with(proof).unwrap_err();
         assert!(matches!(
             error,
             ConvergenceError::Refused(Refusal::StaleLease)
@@ -279,11 +238,10 @@ mod tests {
 
     #[test]
     fn allocate_requires_live_day_lock_set() {
-        let (temporary_a, store_a) = initialized_store();
-        let (_temporary_b, store_b) = initialized_store();
-        let day = DayKey::parse("20260823").unwrap();
-        let locks = store_a.acquire_days(&[day]).unwrap();
-        let error = store_b.allocate(&locks).unwrap_err();
+        let (_temporary_a, admitted_a) = crate::test_support::admit_days("live-a", &["20260823"]);
+        let (_temporary_b, admitted_b) = crate::test_support::admit_days("live-b", &["20260823"]);
+        let owner_a = crate::owner::OwnerBinding::issue_from_base(&admitted_a).unwrap();
+        let error = admitted_b.begin(owner_a).unwrap_err();
         assert!(
             matches!(
                 error,
@@ -291,21 +249,17 @@ mod tests {
             ),
             "{error:?}"
         );
-        drop(temporary_a);
     }
 
     #[test]
     fn proof_consumed_by_bind_cannot_bind_twice() {
-        let (_temporary, store) = initialized_store();
-        let day = DayKey::parse("20260823").unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let proof = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day, crate::publish::OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = crate::publish::OrdinaryAuthority::bind(proposal, proof).unwrap();
-        store.publish(&locks, &day, &mut authority).unwrap();
-        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
+        let (_temporary, admitted) =
+            crate::test_support::admit_days("consume-twice", &["20260823"]);
+        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let mut proof = crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        proof.consume().unwrap();
+        let error = held.continue_with(proof).unwrap_err();
         assert!(matches!(
             error,
             ConvergenceError::Refused(Refusal::ReusedAuthority)

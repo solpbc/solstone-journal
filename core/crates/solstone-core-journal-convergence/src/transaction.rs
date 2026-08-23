@@ -13,14 +13,14 @@ use crate::digest::digest_value;
 use crate::error::{ConvergenceError, DurableRole, Refusal, map_root_error};
 use crate::init::open_store_dirs;
 use crate::intent::{
-    build_virgin_intent, day_is_store_genesis, read_intent, verify_intent_matches_claim,
-    write_active, write_intent,
+    build_later_intent, build_virgin_intent, day_is_store_genesis, read_intent,
+    verify_intent_matches_claim, write_active, write_intent,
 };
 use crate::layout::DayKey;
 use crate::lock::{DayLockSet, acquire_days_with_timeout, hold_topology_with_timeout};
 use crate::owner::{ClaimAdmission, OwnerBinding};
 use crate::preflight::Admitted;
-use crate::publish::publish_record;
+use crate::publish::{PublishOutcome, inspect_against_proposed, publish_record};
 use crate::schema::{
     Active, Adoption, DayRecord, Intent, ROLE_ACTIVE, SCHEMA_VERSION, now_rfc3339,
 };
@@ -131,7 +131,7 @@ impl HeldDays<'_> {
         if !self.proof_consumed && self.serial.is_none() {
             return Err(ConvergenceError::Refused(Refusal::NoPermit));
         }
-        self.advance()
+        self.advance(false)
     }
 
     pub fn snapshot(&self, day: &DayKey) -> Result<DaySnapshot, ConvergenceError> {
@@ -143,7 +143,26 @@ impl HeldDays<'_> {
         }
     }
 
-    fn advance(&mut self) -> Result<(), ConvergenceError> {
+    #[allow(dead_code)]
+    pub(crate) fn lock_set(&self) -> &DayLockSet {
+        &self.locks
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn inspect_day(&self, day: &DayKey) -> Result<LoadDay, ConvergenceError> {
+        self.admitted.store.load_day(&self.locks, day)
+    }
+
+    /// Same-owner later-dirty under live day locks (Phase 3, no release revision).
+    pub fn advance_dirty(&mut self) -> Result<(), ConvergenceError> {
+        self.proof_consumed = true;
+        self.serial = None;
+        self.claim_revision = None;
+        self.intent_digest = None;
+        self.advance(true)
+    }
+
+    fn advance(&mut self, successor: bool) -> Result<(), ConvergenceError> {
         let store = &self.admitted.store;
         store.revalidate()?;
         self.locks
@@ -165,7 +184,69 @@ impl HeldDays<'_> {
             return Err(ConvergenceError::Refused(Refusal::Busy));
         }
         let resume = same_owner_claim(&table, &self.days, self.owner.digest_hex());
-        let (serial, intent) = if let Some(entry) = resume {
+        let (serial, intent) = if successor {
+            let Some(entry) = resume else {
+                return Err(ConvergenceError::Refused(Refusal::NoPermit));
+            };
+            let prior_intent =
+                read_intent(&dirs, entry.serial)?.ok_or(ConvergenceError::Unknown {
+                    role: DurableRole::Intent,
+                })?;
+            let mut snapshots = BTreeMap::new();
+            for day in &self.days {
+                match self.admitted.store.load_day(&self.locks, day)? {
+                    LoadDay::Published(snapshot) => {
+                        snapshots.insert(day.as_str().to_owned(), snapshot);
+                    }
+                    _ => {
+                        return Err(ConvergenceError::Unknown {
+                            role: DurableRole::Record,
+                        });
+                    }
+                }
+            }
+            let adoptions = adopt_all(store, &dirs, &self.days)?;
+            let serial = bump_serial(store, &dirs)?;
+            self.serial = Some(serial);
+            let prior_revision = prior.as_ref().map(|body| body.revision).unwrap_or(0);
+            let prior_digest = match prior.as_ref() {
+                Some(body) => digest_value(body)?.as_hex().to_owned(),
+                None => crate::schema::genesis_claim_digest(store.journal_id(), store.root_id())?
+                    .as_hex()
+                    .to_owned(),
+            };
+            let n = prior_revision + 1;
+            let intent = build_later_intent(
+                store,
+                &self.days,
+                serial,
+                self.owner.digest_hex(),
+                n,
+                prior_revision,
+                &prior_digest,
+                &adoptions,
+                &snapshots,
+                &prior_intent,
+            )?;
+            let body = introduce(
+                store,
+                &dirs,
+                prior.as_ref(),
+                IntroduceSpec {
+                    serial,
+                    owner_digest: self.owner.digest_hex(),
+                    days: &self.days,
+                    day_set_subdigest: &intent.day_set_subdigest,
+                    intent_digest: &intent.intent_digest,
+                },
+            )?;
+            self.claim_revision = Some(body.revision);
+            self.intent_digest = Some(intent.intent_digest.clone());
+            write_head(store, &dirs, &body)?;
+            drop(topology);
+            write_intent(&dirs, &intent)?;
+            (serial, intent)
+        } else if let Some(entry) = resume {
             drop(topology);
             self.serial = Some(entry.serial);
             self.claim_revision = Some(entry.introduced_revision);
@@ -179,28 +260,50 @@ impl HeldDays<'_> {
                     .as_hex()
                     .to_owned(),
             };
-            let expected = build_virgin_intent(
-                store,
-                &self.days,
-                entry.serial,
-                self.owner.digest_hex(),
-                entry.introduced_revision,
-                prior_rev,
-                &prior_digest,
-                &adoptions,
-            )?;
             let intent = match read_intent(&dirs, entry.serial)? {
                 Some(existing) => {
+                    let expected = build_virgin_intent(
+                        store,
+                        &self.days,
+                        entry.serial,
+                        self.owner.digest_hex(),
+                        entry.introduced_revision,
+                        prior_rev,
+                        &prior_digest,
+                        &adoptions,
+                    )?;
                     if existing.predecessors != expected.predecessors {
                         return Err(ConvergenceError::Refused(Refusal::ChangedPredecessor));
                     }
-                    if existing.projections != expected.projections {
+                    if existing.projections != expected.projections
+                        && self
+                            .days
+                            .iter()
+                            .all(|day| day_is_store_genesis(&dirs, day).unwrap_or(false))
+                    {
                         return Err(ConvergenceError::Refused(Refusal::ChangedProjection));
                     }
                     verify_intent_matches_claim(&existing, &entry.intent_digest)?;
                     existing
                 }
                 None => {
+                    for day in &self.days {
+                        if !day_is_store_genesis(&dirs, day)? {
+                            return Err(ConvergenceError::Unknown {
+                                role: DurableRole::Intent,
+                            });
+                        }
+                    }
+                    let expected = build_virgin_intent(
+                        store,
+                        &self.days,
+                        entry.serial,
+                        self.owner.digest_hex(),
+                        entry.introduced_revision,
+                        prior_rev,
+                        &prior_digest,
+                        &adoptions,
+                    )?;
                     verify_intent_matches_claim(&expected, &entry.intent_digest)?;
                     write_intent(&dirs, &expected)?;
                     abort_after_intent()?;
@@ -323,43 +426,70 @@ fn publish_from_intent(
         .proposed_day_revisions
         .get(day.as_str())
         .ok_or(ConvergenceError::Refused(Refusal::ChangedPredecessor))?;
-    match store.load_day(locks, day)? {
-        LoadDay::Published(snapshot) if snapshot.record_revision == proposed_rev => return Ok(()),
-        LoadDay::Published(_) => {
-            return Err(ConvergenceError::Refused(Refusal::CleanupOnly));
-        }
-        LoadDay::Genesis => {}
-        LoadDay::PublicationPending { .. } => {
-            return Err(ConvergenceError::Unknown {
-                role: DurableRole::Head,
-            });
-        }
-    }
+    let dirty = *intent
+        .proposed_dirty_generations
+        .get(day.as_str())
+        .ok_or(ConvergenceError::Refused(Refusal::ChangedProjection))?;
     let dirs =
         open_store_dirs(store.root())?.ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
     let adoption =
         crate::allocate::load_adoption(&dirs, day)?.ok_or(ConvergenceError::Unknown {
             role: DurableRole::Adoption,
         })?;
-    let dirty = *intent
-        .proposed_dirty_generations
-        .get(day.as_str())
-        .ok_or(ConvergenceError::Refused(Refusal::ChangedProjection))?;
-    let next = DayRecord {
-        schema_version: SCHEMA_VERSION,
-        journal_id: intent.journal_id.clone(),
-        root_id: intent.root_id.clone(),
-        adoption_id: adoption.adoption_id,
-        day: day.as_str().to_owned(),
-        record_revision: proposed_rev,
-        first_transition_serial: intent.serial,
-        dirty_by_transition_serial: intent.serial,
-        dirty_generation: dirty,
-        completed_generation: 0,
-        auxiliary_time: now_rfc3339(),
+    let next = match inspect_against_proposed(store, locks, day, proposed_rev)? {
+        LoadDay::Published(snapshot) if snapshot.record_revision == proposed_rev => return Ok(()),
+        LoadDay::Published(snapshot) if snapshot.record_revision + 1 == proposed_rev => DayRecord {
+            schema_version: SCHEMA_VERSION,
+            journal_id: intent.journal_id.clone(),
+            root_id: intent.root_id.clone(),
+            adoption_id: snapshot.adoption_id,
+            day: day.as_str().to_owned(),
+            record_revision: proposed_rev,
+            first_transition_serial: snapshot.first_transition_serial,
+            dirty_by_transition_serial: intent.serial,
+            dirty_generation: dirty,
+            completed_generation: snapshot.completed_generation,
+            auxiliary_time: snapshot.auxiliary_time,
+        },
+        LoadDay::Genesis if proposed_rev == 1 => DayRecord {
+            schema_version: SCHEMA_VERSION,
+            journal_id: intent.journal_id.clone(),
+            root_id: intent.root_id.clone(),
+            adoption_id: adoption.adoption_id,
+            day: day.as_str().to_owned(),
+            record_revision: proposed_rev,
+            first_transition_serial: intent.serial,
+            dirty_by_transition_serial: intent.serial,
+            dirty_generation: dirty,
+            completed_generation: 0,
+            auxiliary_time: now_rfc3339(),
+        },
+        LoadDay::PublicationPending { .. } => {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::Head,
+            });
+        }
+        LoadDay::HeadedDescendant { .. } => {
+            return Err(ConvergenceError::Refused(Refusal::Superseded));
+        }
+        _ => {
+            return Err(ConvergenceError::Refused(Refusal::CleanupOnly));
+        }
     };
-    publish_record(store, locks, day, &next, None)?;
-    Ok(())
+    match publish_record(store, locks, day, &next, None)? {
+        PublishOutcome::Published { .. } => Ok(()),
+        PublishOutcome::PublishedDurabilityUncertain { .. } => match store.load_day(locks, day)? {
+            LoadDay::Published(snapshot) if snapshot.record_revision == proposed_rev => Ok(()),
+            LoadDay::PublicationPending {
+                kind: crate::store::PendingKind::HeadAheadOfRecord,
+            } => Err(ConvergenceError::Unknown {
+                role: DurableRole::Head,
+            }),
+            _ => Err(ConvergenceError::Unknown {
+                role: DurableRole::Head,
+            }),
+        },
+    }
 }
 
 #[cfg(test)]
@@ -441,36 +571,20 @@ fn abort_after_active() -> Result<(), ConvergenceError> {
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
+    use crate::digest::digest_value;
     use crate::error::Refusal;
     use crate::init::initialize;
     use crate::layout::DayKey;
     use crate::owner::OwnerBinding;
     use crate::preflight::{Preflight, preflight};
+    use crate::schema::{ClaimHead, ClaimRevision};
     use crate::test_support::{
-        PublishFault, TempDir, fail_after, open_root, sample_day, snapshot_tree,
+        PublishFault, TempDir, admit_days, continue_ok, continue_with_fault, open_root, sample_day,
+        snapshot_tree,
     };
     use solstone_core_journal_io::JournalRoot;
     use std::collections::BTreeSet;
     use std::time::Duration;
-
-    fn admit_days(name: &str, days: &[&str]) -> (crate::test_support::TempDir, Admitted) {
-        let temporary = TempDir::new(name);
-        let (_, root) = open_root(&temporary);
-        let set = match preflight(days.iter().copied()).unwrap() {
-            Preflight::Ready(set) => set,
-            Preflight::Empty => panic!("days"),
-        };
-        let admitted = set.admit(root).unwrap();
-        (temporary, admitted)
-    }
-
-    fn continue_ok(admitted: &Admitted) -> HeldDays<'_> {
-        let owner = OwnerBinding::issue_from_base(admitted).unwrap();
-        let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
-        held.continue_with(proof).unwrap();
-        held
-    }
 
     #[test]
     fn ac10_10_1_virgin_first_use() {
@@ -587,18 +701,6 @@ mod tests {
         );
         assert_eq!(snap_a.dirty_by_transition_serial, 1);
         let _ = set_b;
-    }
-
-    fn continue_with_fault<'a>(
-        admitted: &'a Admitted,
-        fault: PublishFault,
-    ) -> (HeldDays<'a>, ConvergenceError) {
-        let owner = OwnerBinding::issue_from_base(admitted).unwrap();
-        let mut held = admitted.begin(owner).unwrap();
-        let proof = ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
-        let _guard = fail_after(fault);
-        let error = held.continue_with(proof).unwrap_err();
-        (held, error)
     }
 
     fn keys(tree: &std::collections::BTreeMap<String, (u64, String)>) -> BTreeSet<String> {
@@ -731,6 +833,20 @@ mod tests {
         assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         drop(held_a);
         drop(admitted_a);
+        let after_a = snapshot_tree(&temporary.journal_path());
+        let a_slice: BTreeSet<_> = after_a
+            .keys()
+            .filter(|key| key.contains("20260823"))
+            .cloned()
+            .collect();
+        let rev1_path = temporary
+            .journal_path()
+            .join("health/convergence/claim/rev.1.json");
+        let rev1_bytes = std::fs::read(&rev1_path).unwrap();
+        let rev1: ClaimRevision =
+            serde_json::from_slice(rev1_bytes.strip_suffix(b"\n").unwrap_or(&rev1_bytes)).unwrap();
+        assert_eq!(rev1.revision, 1);
+        let rev1_digest = digest_value(&rev1).unwrap();
         let root_b = JournalRoot::open(&temporary.journal_path()).unwrap();
         let set_b = match preflight(["20260824"]).unwrap() {
             Preflight::Ready(set) => set,
@@ -747,6 +863,42 @@ mod tests {
         let tree = snapshot_tree(&temporary.journal_path());
         assert!(tree.contains_key("health/convergence/claim/head.json"));
         assert!(tree.contains_key("health/convergence/claim/rev.2.json"));
+        let a_after: BTreeSet<_> = tree
+            .keys()
+            .filter(|key| key.contains("20260823"))
+            .cloned()
+            .collect();
+        assert_eq!(
+            a_slice, a_after,
+            "B holds no A-day lock and must not touch A's day"
+        );
+        let rev2_bytes = std::fs::read(
+            temporary
+                .journal_path()
+                .join("health/convergence/claim/rev.2.json"),
+        )
+        .unwrap();
+        let rev2: ClaimRevision =
+            serde_json::from_slice(rev2_bytes.strip_suffix(b"\n").unwrap_or(&rev2_bytes)).unwrap();
+        assert_eq!(rev2.prior_revision, 1);
+        assert_eq!(rev2.prior_revision_digest, rev1_digest.as_hex());
+        let head_bytes = std::fs::read(
+            temporary
+                .journal_path()
+                .join("health/convergence/claim/head.json"),
+        )
+        .unwrap();
+        let head: ClaimHead =
+            serde_json::from_slice(head_bytes.strip_suffix(b"\n").unwrap_or(&head_bytes)).unwrap();
+        assert_eq!(head.revision, 2);
+        assert_eq!(head.revision_digest, digest_value(&rev2).unwrap().as_hex());
+        assert_ne!(
+            rev2.prior_revision_digest,
+            crate::schema::genesis_claim_digest(&rev2.journal_id, &rev2.root_id)
+                .unwrap()
+                .as_hex(),
+            "head must have passed through revision 1, not jumped from genesis to 2"
+        );
         let snap = held_b
             .snapshot(&DayKey::parse("20260824").unwrap())
             .unwrap();

@@ -52,7 +52,6 @@ pub struct OwnerBinding {
     journal_id: String,
     root_id: String,
     object_identity: ObjectIdentity,
-    #[allow(dead_code)]
     owner_id: String,
     digest: RecordDigest,
 }
@@ -75,11 +74,27 @@ impl OwnerBinding {
     }
 
     pub fn digest(&self) -> RecordDigest {
-        RecordDigest(self.digest.as_hex().to_owned())
+        RecordDigest(self.digest_hex().to_owned())
     }
 
     pub(crate) fn digest_hex(&self) -> &str {
+        self.assert_preimage();
         self.digest.as_hex()
+    }
+
+    fn assert_preimage(&self) {
+        let computed = digest_value(&OwnerBindingCanon {
+            role: ROLE_OWNER_BINDING.to_owned(),
+            journal_id: self.journal_id.clone(),
+            root_id: self.root_id.clone(),
+            owner_id: self.owner_id.clone(),
+        })
+        .expect("owner binding canon");
+        assert_eq!(
+            computed.as_hex(),
+            self.digest.as_hex(),
+            "owner binding preimage does not match digest"
+        );
     }
 
     pub(crate) fn journal_id(&self) -> &str {

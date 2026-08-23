@@ -14,6 +14,8 @@ pub(crate) const RECORDS: &str = "records";
 pub(crate) const CLAIM: &str = "claim";
 pub(crate) const INTENTS: &str = "intents";
 pub(crate) const ACTIVES: &str = "actives";
+#[allow(dead_code)]
+pub(crate) const TERMINALS: &str = "terminals";
 pub(crate) const TOPOLOGY_LOCK: &str = "topology.lock";
 pub(crate) const ROOT_WITNESS: &str = "root.wit.json";
 pub(crate) const ALLOCATOR: &str = "allocator.json";

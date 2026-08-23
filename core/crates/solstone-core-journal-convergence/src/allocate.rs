@@ -3,33 +3,13 @@
 
 use std::ffi::OsStr;
 
-use crate::error::{ConvergenceError, DurableRole, Refusal, map_root_error, random_hex};
-use crate::init::{load_allocator, open_store_dirs};
+use crate::error::{ConvergenceError, DurableRole, Refusal, random_hex};
+use crate::init::load_allocator;
 use crate::layout::{DayKey, adoption_name};
-use crate::lock::{AllocationProof, DayLockSet, hold_topology};
 use crate::schema::{
     Adoption, SCHEMA_VERSION, now_rfc3339, read_json, replace_json, write_json_exclusive,
 };
 use crate::store::ConvergenceStore;
-
-impl ConvergenceStore {
-    /// Issue a serial under a brief topology lock. Adoption is created first.
-    #[allow(dead_code)]
-    pub(crate) fn allocate(&self, days: &DayLockSet) -> Result<AllocationProof, ConvergenceError> {
-        self.revalidate()?;
-        days.matches(self.journal_id(), self.root_id(), self.object_identity())?;
-        let dirs = open_store_dirs(self.root())?
-            .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
-        let topology = hold_topology(&dirs)?;
-        self.root().revalidate().map_err(map_root_error)?;
-        for day in days.days() {
-            ensure_adoption(self, &dirs, day)?;
-        }
-        let serial = bump_serial(self, &dirs)?;
-        drop(topology);
-        Ok(AllocationProof::new(serial, days))
-    }
-}
 
 pub(crate) fn bump_serial(
     store: &ConvergenceStore,
@@ -103,22 +83,23 @@ pub(crate) fn load_adoption(
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use super::*;
+    use crate::init::open_store_dirs;
     use crate::layout::DayKey;
-    use crate::test_support::initialized_store;
+    use crate::test_support::{admit_days, continue_ok, initialized_store};
 
     #[test]
     fn allocate_releases_topology_before_return() {
-        let (temporary, store) = initialized_store();
-        let day = DayKey::parse("20260823").unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let _proof = store.allocate(&locks).unwrap();
+        let (temporary, admitted) = admit_days("alloc-release", &["20260823"]);
+        let _held = continue_ok(&admitted);
         let root_b =
             solstone_core_journal_io::JournalRoot::open(&temporary.journal_path()).unwrap();
-        let store_b = crate::store::ConvergenceStore::open(root_b).unwrap();
-        let other = DayKey::parse("20260824").unwrap();
+        let set_b = match crate::preflight::preflight(["20260824"]).unwrap() {
+            crate::preflight::Preflight::Ready(set) => set,
+            crate::preflight::Preflight::Empty => panic!("days"),
+        };
+        let admitted_b = set_b.admit(root_b).unwrap();
         let started = std::time::Instant::now();
-        let other_locks = store_b.acquire_days(&[other]).unwrap();
-        store_b.allocate(&other_locks).unwrap();
+        let _held_b = continue_ok(&admitted_b);
         assert!(started.elapsed() < std::time::Duration::from_secs(2));
     }
 
@@ -134,8 +115,8 @@ mod tests {
 
     #[test]
     fn exhaustion_is_refused() {
-        let (_temporary, store) = initialized_store();
-        let dirs = open_store_dirs(store.root()).unwrap().unwrap();
+        let (_temporary, admitted) = admit_days("exhaust", &["20260823"]);
+        let dirs = open_store_dirs(admitted.store().root()).unwrap().unwrap();
         let mut allocator = load_allocator(&dirs).unwrap();
         allocator.next_serial = u64::MAX;
         allocator.exhausted = false;
@@ -145,9 +126,10 @@ mod tests {
             &allocator,
         )
         .unwrap();
-        let day = DayKey::parse("20260823").unwrap();
-        let locks = store.acquire_days(&[day]).unwrap();
-        let error = store.allocate(&locks).unwrap_err();
+        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        let error = held.continue_with(proof).unwrap_err();
         assert!(matches!(
             error,
             ConvergenceError::Refused(Refusal::Exhausted)
@@ -156,36 +138,33 @@ mod tests {
 
     #[test]
     fn unissued_serial_recurs_after_crash_before_allocator_write() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("unissued", &["20260823"]);
         let allocator_path = temporary
             .journal_path()
             .join("health/convergence/allocator.json");
         let genesis = std::fs::read(&allocator_path).unwrap();
-        let day = DayKey::parse("20260823").unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let _first = store.allocate(&locks).unwrap();
+        let dirs = open_store_dirs(admitted.store().root()).unwrap().unwrap();
+        let first = bump_serial(admitted.store(), &dirs).unwrap();
+        assert_eq!(first, 1);
         std::fs::write(&allocator_path, genesis).unwrap();
-        let again = store.allocate(&locks).unwrap();
-        assert_eq!(again.serial(), 1);
+        let again = bump_serial(admitted.store(), &dirs).unwrap();
+        assert_eq!(again, 1);
     }
 
     #[test]
     fn issued_serial_advances_after_allocator_write() {
-        let (_temporary, store) = initialized_store();
-        let day = DayKey::parse("20260823").unwrap();
-        let locks = store.acquire_days(&[day]).unwrap();
-        let first = store.allocate(&locks).unwrap();
-        let second = store.allocate(&locks).unwrap();
-        assert_eq!(first.serial(), 1);
-        assert_eq!(second.serial(), 2);
+        let (_temporary, admitted) = admit_days("issued", &["20260823"]);
+        let dirs = open_store_dirs(admitted.store().root()).unwrap().unwrap();
+        let first = bump_serial(admitted.store(), &dirs).unwrap();
+        let second = bump_serial(admitted.store(), &dirs).unwrap();
+        assert_eq!(first, 1);
+        assert_eq!(second, 2);
     }
 
     #[test]
     fn grafted_lineage_is_unknown() {
-        let (temporary, store) = initialized_store();
-        let day = DayKey::parse("20260823").unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        store.allocate(&locks).unwrap();
+        let (temporary, admitted) = admit_days("graft-adopt", &["20260823"]);
+        let held = continue_ok(&admitted);
         let path = temporary
             .journal_path()
             .join("health/convergence/days/20260823.adopt.json");
@@ -194,7 +173,8 @@ mod tests {
         adoption["journal_id"] = serde_json::Value::String("other".into());
         std::fs::write(&path, serde_json::to_vec(&adoption).unwrap()).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&DayKey::parse("20260823").unwrap())
+                .unwrap_err(),
             ConvergenceError::Unknown { .. }
         ));
     }

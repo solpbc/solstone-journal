@@ -301,8 +301,7 @@ mod tests {
         let store_b = crate::store::ConvergenceStore::open(root_b).unwrap();
         let day = crate::layout::DayKey::parse("20260824").unwrap();
         let started = std::time::Instant::now();
-        let locks = store_b.acquire_days(&[day]).unwrap();
-        store_b.allocate(&locks).unwrap();
+        let _locks = store_b.acquire_days(&[day]).unwrap();
         assert!(started.elapsed() < std::time::Duration::from_secs(2));
     }
 

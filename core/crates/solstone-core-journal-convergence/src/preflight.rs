@@ -36,6 +36,19 @@ where
     Ok(Preflight::Ready(CanonicalDaySet { days: parsed }))
 }
 
+/// Discovery canonicalize: empty is a refusal, not a no-op (AC3).
+#[allow(dead_code)]
+pub(crate) fn canonicalize_discovered<I, S>(days: I) -> Result<CanonicalDaySet, ConvergenceError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    match preflight(days)? {
+        Preflight::Empty => Err(ConvergenceError::Refused(Refusal::NonCanonicalDays)),
+        Preflight::Ready(set) => Ok(set),
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Preflight {
     Empty,

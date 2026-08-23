@@ -25,6 +25,7 @@ mod lock;
 mod owner;
 mod preflight;
 mod publish;
+mod recover;
 mod schema;
 mod store;
 #[cfg(test)]
@@ -38,6 +39,7 @@ pub use init::check_initialized;
 pub use layout::DayKey;
 pub use owner::{ClaimAdmission, OwnerBinding};
 pub use preflight::{Admitted, CanonicalDaySet, Preflight, preflight};
+pub use recover::{DayStoreRecovery, RecoveryReport, StoreVerdict};
 pub use store::{ConvergenceStore, DaySnapshot};
 pub use transaction::HeldDays;
 
@@ -99,6 +101,7 @@ mod architecture {
             include_str!("owner.rs"),
             include_str!("preflight.rs"),
             include_str!("publish.rs"),
+            include_str!("recover.rs"),
             include_str!("schema.rs"),
             include_str!("store.rs"),
             include_str!("transaction.rs"),
@@ -111,7 +114,10 @@ mod architecture {
     }
 
     #[test]
-    fn no_public_completion_or_recovery_type() {
+    fn no_public_completion_or_migration_type() {
+        // Recovery is a public read-only surface required by AC3/AC4/AC6
+        // (`RecoveryReport`). This lode still bars a public *completion*
+        // authority and any *migration* surface.
         let production = production_source(include_str!("lib.rs"));
         let public: String = production
             .lines()
@@ -126,7 +132,6 @@ mod architecture {
             .join("\n")
             .to_ascii_lowercase();
         assert!(!public.contains("completion"));
-        assert!(!public.contains("recovery"));
         assert!(!public.contains("migration"));
         assert!(!public.contains("preparedcompletion"));
     }

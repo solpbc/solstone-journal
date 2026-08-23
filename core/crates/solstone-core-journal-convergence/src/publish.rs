@@ -10,7 +10,7 @@ use crate::digest::{RecordDigest, digest_value};
 use crate::error::{ConvergenceError, DurableRole, Refusal};
 use crate::init::{StoreDirs, load_allocator, open_store_dirs};
 use crate::layout::{DayKey, ever_name, head_name, record_file_name, revision_witness_name};
-use crate::lock::{AllocationProof, DayLockSet};
+use crate::lock::DayLockSet;
 use crate::schema::{
     DayRecord, EverWitness, Head, RevisionWitness, SCHEMA_VERSION, read_json, record_digest,
     replace_json, require_day, require_ids, validate_record_numbers, write_json_exclusive,
@@ -25,91 +25,6 @@ mod sealed {
     #[allow(dead_code)]
     pub trait PublicationKind {
         fn next_record(&self, current: Option<&DayRecord>) -> Result<DayRecord, ConvergenceError>;
-    }
-}
-
-/// Production dirty-advance intent. The only public production intent.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OrdinaryIntent {
-    #[allow(dead_code)]
-    AdvanceDirty,
-}
-
-/// Handle returned by [`ConvergenceStore::propose`]. Performs no on-disk write
-/// at construction; `propose` itself reads current head/record.
-pub struct ValidatedProposal {
-    day: DayKey,
-    instance: String,
-    prior: Option<DayRecord>,
-}
-
-/// Owner-supplied publication authority. `used` is set once the revision witness is durable.
-#[derive(Debug)]
-pub struct OrdinaryAuthority {
-    record: DayRecord,
-    day: DayKey,
-    instance: String,
-    #[allow(dead_code)]
-    serial: u64,
-    used: bool,
-}
-
-impl OrdinaryAuthority {
-    #[allow(dead_code)]
-    pub fn bind(
-        proposal: ValidatedProposal,
-        proof: AllocationProof,
-    ) -> Result<Self, ConvergenceError> {
-        if proposal.instance != proof.instance() {
-            return Err(ConvergenceError::Refused(Refusal::StaleLease));
-        }
-        if !proof.days().contains(&proposal.day) {
-            return Err(ConvergenceError::Refused(Refusal::WrongDay {
-                expected: proposal.day.as_str().to_owned(),
-                observed: String::new(),
-            }));
-        }
-        let record = match proposal.prior {
-            None => DayRecord {
-                schema_version: SCHEMA_VERSION,
-                journal_id: proof.journal_id().to_owned(),
-                root_id: proof.root_id().to_owned(),
-                adoption_id: String::new(),
-                day: proposal.day.as_str().to_owned(),
-                record_revision: 1,
-                first_transition_serial: proof.serial(),
-                dirty_by_transition_serial: proof.serial(),
-                dirty_generation: 1,
-                completed_generation: 0,
-                auxiliary_time: crate::schema::now_rfc3339(),
-            },
-            Some(prior) => DayRecord {
-                schema_version: SCHEMA_VERSION,
-                journal_id: prior.journal_id,
-                root_id: prior.root_id,
-                adoption_id: prior.adoption_id,
-                day: prior.day,
-                record_revision: prior.record_revision + 1,
-                first_transition_serial: prior.first_transition_serial,
-                dirty_by_transition_serial: proof.serial(),
-                dirty_generation: prior.dirty_generation + 1,
-                completed_generation: prior.completed_generation,
-                auxiliary_time: prior.auxiliary_time,
-            },
-        };
-        Ok(Self {
-            record,
-            day: proposal.day,
-            instance: proof.instance().to_owned(),
-            serial: proof.serial(),
-            used: false,
-        })
-    }
-}
-
-impl sealed::PublicationKind for OrdinaryAuthority {
-    fn next_record(&self, _current: Option<&DayRecord>) -> Result<DayRecord, ConvergenceError> {
-        Ok(self.record.clone())
     }
 }
 
@@ -131,73 +46,6 @@ pub enum PublishOutcome {
         digest: RecordDigest,
         source: std::io::Error,
     },
-}
-
-impl ConvergenceStore {
-    /// Read current head/record and derive the next dirty record. No on-disk write.
-    #[allow(dead_code)]
-    pub(crate) fn propose(
-        &self,
-        days: &DayLockSet,
-        day: &DayKey,
-        intent: OrdinaryIntent,
-    ) -> Result<ValidatedProposal, ConvergenceError> {
-        let _ = intent;
-        match self.load_day(days, day)? {
-            LoadDay::Genesis => Ok(ValidatedProposal {
-                day: day.clone(),
-                instance: days.instance().to_owned(),
-                prior: None,
-            }),
-            LoadDay::Published(snapshot) => {
-                let dirs = open_store_dirs(self.root())?
-                    .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
-                let record = load_record(&dirs, day)?.ok_or(ConvergenceError::Unknown {
-                    role: DurableRole::Record,
-                })?;
-                let _ = snapshot;
-                Ok(ValidatedProposal {
-                    day: day.clone(),
-                    instance: days.instance().to_owned(),
-                    prior: Some(record),
-                })
-            }
-            LoadDay::PublicationPending { .. } => Err(ConvergenceError::Unknown {
-                role: DurableRole::Head,
-            }),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn publish(
-        &self,
-        days: &DayLockSet,
-        day: &DayKey,
-        authority: &mut OrdinaryAuthority,
-    ) -> Result<PublishOutcome, ConvergenceError> {
-        if authority.used {
-            return Err(ConvergenceError::Refused(Refusal::ReusedAuthority));
-        }
-        if authority.instance != days.instance() {
-            return Err(ConvergenceError::Refused(Refusal::StaleLease));
-        }
-        if &authority.day != day || !days.contains(day) {
-            return Err(ConvergenceError::Refused(Refusal::WrongDay {
-                expected: day.as_str().to_owned(),
-                observed: authority.day.as_str().to_owned(),
-            }));
-        }
-        let dirs = open_store_dirs(self.root())?
-            .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
-        let adoption = load_adoption(&dirs, day)?.ok_or(ConvergenceError::Unknown {
-            role: DurableRole::Adoption,
-        })?;
-        if authority.record.adoption_id.is_empty() {
-            authority.record.adoption_id = adoption.adoption_id.clone();
-        }
-        let next = sealed::PublicationKind::next_record(authority, None)?;
-        publish_record(self, days, day, &next, Some(&mut authority.used))
-    }
 }
 
 fn unheaded_witness(
@@ -280,7 +128,14 @@ pub(crate) fn inspect_day(
     let head = read_json::<Head>(&dirs.days, &head_name(day), DurableRole::Head)?;
     let record = load_record(&dirs, day)?;
     match (ever.as_ref(), head.as_ref(), record.as_ref()) {
-        (None, None, None) => return Ok(LoadDay::Genesis),
+        (None, None, None) => {
+            if probe_extra_revision_witness(&dirs, day, 1)?.is_some() {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::EverWitness,
+                });
+            }
+            return Ok(LoadDay::Genesis);
+        }
         (Some(ever), None, None) => {
             return unheaded_witness(&dirs, day, ever);
         }
@@ -343,10 +198,8 @@ pub(crate) fn inspect_day(
             role: DurableRole::Head,
         });
     }
-    if probe_extra_revision_witness(&dirs, day, height + 1)?.is_some() {
-        return Ok(LoadDay::PublicationPending {
-            kind: PendingKind::WitnessAheadOfHead,
-        });
+    if let Some(pending) = classify_higher_witnesses(&dirs, day, height, tail_digest.as_hex())? {
+        return Ok(pending);
     }
     let Some(record) = record else {
         if height == 1 {
@@ -400,6 +253,73 @@ pub(crate) fn inspect_day(
     })
 }
 
+/// Classify current store state against an intent's proposed revision (AC4).
+pub(crate) fn inspect_against_proposed(
+    store: &ConvergenceStore,
+    days: &DayLockSet,
+    day: &DayKey,
+    proposed_revision: u64,
+) -> Result<LoadDay, ConvergenceError> {
+    if proposed_revision == 0 {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::Head,
+        });
+    }
+    match store.load_day(days, day)? {
+        LoadDay::Published(snapshot) if snapshot.record_revision == proposed_revision => {
+            Ok(LoadDay::Published(snapshot))
+        }
+        LoadDay::Published(snapshot) if snapshot.record_revision + 1 == proposed_revision => {
+            Ok(LoadDay::Published(snapshot))
+        }
+        LoadDay::Published(snapshot) if snapshot.record_revision > proposed_revision => {
+            Ok(LoadDay::HeadedDescendant {
+                head_revision: snapshot.record_revision,
+                proposed_revision,
+            })
+        }
+        LoadDay::Genesis if proposed_revision == 1 => Ok(LoadDay::Genesis),
+        LoadDay::PublicationPending {
+            kind: PendingKind::WitnessAheadOfHead,
+        } => {
+            // Unheaded higher witness is not supersession (AC4 / 10.149).
+            Ok(LoadDay::PublicationPending {
+                kind: PendingKind::WitnessAheadOfHead,
+            })
+        }
+        other => Ok(other),
+    }
+}
+
+fn classify_higher_witnesses(
+    dirs: &StoreDirs,
+    day: &DayKey,
+    height: u64,
+    tail_digest: &str,
+) -> Result<Option<LoadDay>, ConvergenceError> {
+    let Some(next) = probe_extra_revision_witness(dirs, day, height + 1)? else {
+        if probe_extra_revision_witness(dirs, day, height + 2)?.is_some() {
+            return Err(ConvergenceError::Unknown {
+                role: DurableRole::RevisionWitness,
+            });
+        }
+        return Ok(None);
+    };
+    if next.prior_witness_digest != tail_digest || next.record_revision != height + 1 {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::RevisionWitness,
+        });
+    }
+    if probe_extra_revision_witness(dirs, day, height + 2)?.is_some() {
+        return Err(ConvergenceError::Unknown {
+            role: DurableRole::RevisionWitness,
+        });
+    }
+    Ok(Some(LoadDay::PublicationPending {
+        kind: PendingKind::WitnessAheadOfHead,
+    }))
+}
+
 pub(crate) fn publish_record(
     store: &ConvergenceStore,
     days: &DayLockSet,
@@ -422,7 +342,7 @@ pub(crate) fn publish_record(
     let current = match inspect_day(store, day)? {
         LoadDay::Genesis => None,
         LoadDay::Published(_) => load_record(&dirs, day)?,
-        LoadDay::PublicationPending { .. } => {
+        LoadDay::PublicationPending { .. } | LoadDay::HeadedDescendant { .. } => {
             return Err(ConvergenceError::Unknown {
                 role: DurableRole::Head,
             });
@@ -713,6 +633,8 @@ fn publish_g1(
     if let Some(source) = uncertain(head_outcome) {
         return Ok(uncertain_outcome(day, next, record_hex, source));
     }
+    #[cfg(test)]
+    injected_abort(crate::test_support::PublishFault::AfterHead)?;
     publish_gate(
         store,
         locks,
@@ -727,6 +649,8 @@ fn publish_g1(
         },
     )?;
     write_record_file(dirs, day, next)?;
+    #[cfg(test)]
+    injected_abort(crate::test_support::PublishFault::AfterRecord)?;
     Ok(published(day, next, record_hex))
 }
 
@@ -813,6 +737,8 @@ fn publish_next(
     if let Some(source) = uncertain(head_outcome) {
         return Ok(uncertain_outcome(day, next, record_hex, source));
     }
+    #[cfg(test)]
+    injected_abort(crate::test_support::PublishFault::AfterHead)?;
     publish_gate(
         store,
         locks,
@@ -827,6 +753,8 @@ fn publish_next(
         },
     )?;
     write_record_file(dirs, day, next)?;
+    #[cfg(test)]
+    injected_abort(crate::test_support::PublishFault::AfterRecord)?;
     Ok(published(day, next, record_hex))
 }
 
@@ -916,7 +844,7 @@ pub(crate) fn publish_kind_for_test<K: sealed::PublicationKind>(
             let dirs = open_store_dirs(store.root())?.unwrap();
             load_record(&dirs, day)?
         }
-        LoadDay::PublicationPending { .. } => {
+        LoadDay::PublicationPending { .. } | LoadDay::HeadedDescendant { .. } => {
             return Err(ConvergenceError::Unknown {
                 role: DurableRole::Head,
             });
@@ -970,21 +898,17 @@ mod tests {
     use super::*;
     use crate::error::Refusal;
     use crate::layout::DayKey;
-    use crate::publish::OrdinaryIntent;
     use crate::store::{LoadDay, PendingKind};
     use crate::test_support::{
-        after_witness, days_dir, dirty, fail_after_ever, fail_after_witness, fail_next_dir_sync,
-        initialized_store, records_dir, sample_day,
+        PublishFault, admit_days, after_witness, continue_ok, continue_with_fault, days_dir,
+        fail_after_witness, fail_next_dir_sync, records_dir, sample_day,
     };
+    use crate::transaction::HeldDays;
     use std::fs;
     use std::path::Path;
 
-    fn published_snapshot(
-        store: &ConvergenceStore,
-        locks: &DayLockSet,
-        day: &DayKey,
-    ) -> crate::store::DaySnapshot {
-        match store.load_day(locks, day).unwrap() {
+    fn published_snapshot(held: &HeldDays<'_>, day: &DayKey) -> crate::store::DaySnapshot {
+        match held.inspect_day(day).unwrap() {
             LoadDay::Published(snapshot) => snapshot,
             other => panic!("{other:?}"),
         }
@@ -998,16 +922,8 @@ mod tests {
 
     #[test]
     fn g1_creates_ever_before_witness() {
-        let (temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let proof = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
-        let _inject = fail_after_ever();
-        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
+        let (temporary, admitted) = admit_days("g1-ever", &["20260823"]);
+        let (_held, error) = continue_with_fault(&admitted, PublishFault::AfterEver);
         assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         let days = days_dir(&temporary);
         assert!(days.join("20260823.ever.wit.json").exists());
@@ -1022,20 +938,13 @@ mod tests {
 
     #[test]
     fn publish_order_is_witness_then_head_then_record() {
-        let (temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
+        let (temporary, admitted) = admit_days("order", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let days = days_dir(&temporary);
         let old_head = fs::read(days.join("20260823.head.json")).unwrap();
         let old_record = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
-        let proof = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
         let _inject = fail_after_witness();
-        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
+        let error = held.advance_dirty().unwrap_err();
         assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         assert!(days.join("20260823.rev.2.wit.json").exists());
         assert_eq!(fs::read(days.join("20260823.head.json")).unwrap(), old_head);
@@ -1047,38 +956,31 @@ mod tests {
 
     #[test]
     fn ever_created_once_at_g1_and_immutable() {
-        let (temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
+        let (temporary, admitted) = admit_days("ever-once", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let ever_path = days_dir(&temporary).join("20260823.ever.wit.json");
         let before = fs::read(&ever_path).unwrap();
-        dirty(&store, &locks, &day);
+        held.advance_dirty().unwrap();
         assert_eq!(before, fs::read(&ever_path).unwrap());
     }
 
     #[test]
     fn adoption_immutable_outside_records() {
-        let (temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        store.allocate(&locks).unwrap();
+        let (temporary, admitted) = admit_days("adopt-imm", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let adoption = days_dir(&temporary).join("20260823.adopt.json");
         assert!(adoption.exists());
         assert!(!records_dir(&temporary).join("20260823.adopt.json").exists());
         let before = fs::read(&adoption).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
+        held.advance_dirty().unwrap();
         assert_eq!(before, fs::read(&adoption).unwrap());
     }
 
     #[test]
     fn revision_witness_has_prior_digest_chain() {
-        let (temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
+        let (temporary, admitted) = admit_days("wit-chain", &["20260823"]);
+        let mut held = continue_ok(&admitted);
+        held.advance_dirty().unwrap();
         let days = days_dir(&temporary);
         let rev1: RevisionWitness = read_json_file(&days.join("20260823.rev.1.wit.json"));
         let rev2: RevisionWitness = read_json_file(&days.join("20260823.rev.2.wit.json"));
@@ -1090,10 +992,8 @@ mod tests {
 
     #[test]
     fn rev1_prior_is_ever_digest() {
-        let (temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
+        let (temporary, admitted) = admit_days("rev1-ever", &["20260823"]);
+        let _held = continue_ok(&admitted);
         let days = days_dir(&temporary);
         let ever: EverWitness = read_json_file(&days.join("20260823.ever.wit.json"));
         let rev1: RevisionWitness = read_json_file(&days.join("20260823.rev.1.wit.json"));
@@ -1106,10 +1006,8 @@ mod tests {
 
     #[test]
     fn head_carries_witness_and_record_digest() {
-        let (temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
+        let (temporary, admitted) = admit_days("head-digests", &["20260823"]);
+        let _held = continue_ok(&admitted);
         let days = days_dir(&temporary);
         let head: Head = read_json_file(&days.join("20260823.head.json"));
         let rev1: RevisionWitness = read_json_file(&days.join("20260823.rev.1.wit.json"));
@@ -1121,35 +1019,34 @@ mod tests {
 
     #[test]
     fn head_is_read_directly_not_from_directory_tail() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("head-direct", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         let days = days_dir(&temporary);
         fs::copy(
             days.join("20260823.rev.1.wit.json"),
             days.join("20260823.rev.2.wit.json"),
         )
         .unwrap();
-        match store.load_day(&locks, &day).unwrap() {
-            LoadDay::PublicationPending {
-                kind: PendingKind::WitnessAheadOfHead,
-            } => {}
-            other => panic!("{other:?}"),
-        }
+        // Identical R1 bytes planted as R2 are a malformed extra, not pending (AC3.26 / 10.149).
+        assert!(matches!(
+            held.inspect_day(&day).unwrap_err(),
+            ConvergenceError::Unknown {
+                role: DurableRole::RevisionWitness
+            }
+        ));
     }
 
     #[test]
     fn gapped_witness_chain_is_unknown() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("gap-wit", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
+        held.advance_dirty().unwrap();
+        held.advance_dirty().unwrap();
         fs::remove_file(days_dir(&temporary).join("20260823.rev.2.wit.json")).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown {
                 role: DurableRole::RevisionWitness
             }
@@ -1158,17 +1055,16 @@ mod tests {
 
     #[test]
     fn conflicting_witness_digest_is_unknown() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("conflict-wit", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
+        held.advance_dirty().unwrap();
         let path = days_dir(&temporary).join("20260823.rev.2.wit.json");
         let mut witness: RevisionWitness = read_json_file(&path);
         witness.prior_witness_digest = "ab".repeat(32);
         fs::write(&path, serde_json::to_vec(&witness).unwrap()).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown {
                 role: DurableRole::RevisionWitness
             }
@@ -1177,17 +1073,16 @@ mod tests {
 
     #[test]
     fn contiguous_chain_must_match_head() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("chain-head", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
+        held.advance_dirty().unwrap();
         let path = days_dir(&temporary).join("20260823.head.json");
         let mut head: Head = read_json_file(&path);
         head.witness_digest = "cd".repeat(32);
         fs::write(&path, serde_json::to_vec(&head).unwrap()).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown {
                 role: DurableRole::Head
             }
@@ -1196,62 +1091,46 @@ mod tests {
 
     #[test]
     fn crash_before_witness_preserves_prior() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("before-wit", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        let before = published_snapshot(&store, &locks, &day);
+        let before = published_snapshot(&held, &day);
         fs::create_dir(days_dir(&temporary).join("20260823.rev.2.wit.json")).unwrap();
-        let proof = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
-        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
+        let error = held.advance_dirty().unwrap_err();
         assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
-        assert_eq!(
-            published_snapshot(&store, &locks, &day).digest,
-            before.digest
-        );
+        assert_eq!(published_snapshot(&held, &day).digest, before.digest);
     }
 
     #[test]
     fn pre_witness_failure_does_not_consume_authority() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("retry-wit", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         let blocker = days_dir(&temporary).join("20260823.rev.2.wit.json");
         fs::create_dir(&blocker).unwrap();
-        let proof = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
-        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
+        let error = held.advance_dirty().unwrap_err();
         assert!(matches!(error, ConvergenceError::PreservedPrior { .. }));
         fs::remove_dir(&blocker).unwrap();
-        store.publish(&locks, &day, &mut authority).unwrap();
-        assert_eq!(published_snapshot(&store, &locks, &day).record_revision, 2);
+        held.proceed().unwrap();
+        assert_eq!(published_snapshot(&held, &day).record_revision, 2);
     }
 
     #[test]
     fn crash_after_witness_before_head_is_pending() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("after-wit", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         let days = days_dir(&temporary);
         let head1 = fs::read(days.join("20260823.head.json")).unwrap();
         let record1 = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
-        dirty(&store, &locks, &day);
+        held.advance_dirty().unwrap();
         fs::write(days.join("20260823.head.json"), head1).unwrap();
         fs::write(
             records_dir(&temporary).join("20260823/record.json"),
             record1,
         )
         .unwrap();
-        match store.load_day(&locks, &day).unwrap() {
+        match held.inspect_day(&day).unwrap() {
             LoadDay::PublicationPending {
                 kind: PendingKind::WitnessAheadOfHead,
             } => {}
@@ -1261,13 +1140,12 @@ mod tests {
 
     #[test]
     fn witness_without_head_is_pending() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("wit-no-head", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         fs::remove_file(days_dir(&temporary).join("20260823.head.json")).unwrap();
         fs::remove_file(records_dir(&temporary).join("20260823/record.json")).unwrap();
-        match store.load_day(&locks, &day).unwrap() {
+        match held.inspect_day(&day).unwrap() {
             LoadDay::PublicationPending {
                 kind: PendingKind::WitnessAheadOfHead,
             } => {}
@@ -1277,39 +1155,34 @@ mod tests {
 
     #[test]
     fn head_durability_uncertain_does_not_write_record() {
-        let (temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
+        let (temporary, admitted) = admit_days("head-unc", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let record_path = records_dir(&temporary).join("20260823/record.json");
         let before = fs::read(&record_path).unwrap();
         let _inject = fail_next_dir_sync();
-        let proof = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
-        match store.publish(&locks, &day, &mut authority).unwrap() {
-            PublishOutcome::PublishedDurabilityUncertain { .. } => {}
-            other => panic!("{other:?}"),
-        }
+        let error = held.advance_dirty().unwrap_err();
+        assert!(matches!(
+            error,
+            ConvergenceError::Unknown {
+                role: DurableRole::Head
+            }
+        ));
         assert_eq!(before, fs::read(&record_path).unwrap());
     }
 
     #[test]
     fn crash_after_head_before_record_is_pending_mismatch() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("after-head", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         let record1 = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
-        dirty(&store, &locks, &day);
+        held.advance_dirty().unwrap();
         fs::write(
             records_dir(&temporary).join("20260823/record.json"),
             record1,
         )
         .unwrap();
-        match store.load_day(&locks, &day).unwrap() {
+        match held.inspect_day(&day).unwrap() {
             LoadDay::PublicationPending {
                 kind: PendingKind::HeadAheadOfRecord,
             } => {}
@@ -1319,16 +1192,15 @@ mod tests {
 
     #[test]
     fn g1_crash_after_ever_before_witness_is_unknown() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("after-ever", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         let days = days_dir(&temporary);
         fs::remove_file(days.join("20260823.rev.1.wit.json")).unwrap();
         fs::remove_file(days.join("20260823.head.json")).unwrap();
         fs::remove_file(records_dir(&temporary).join("20260823/record.json")).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown {
                 role: DurableRole::EverWitness
             }
@@ -1337,34 +1209,38 @@ mod tests {
 
     #[test]
     fn ever_or_head_missing_is_unknown() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("missing-head", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         fs::remove_file(days_dir(&temporary).join("20260823.head.json")).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown { .. }
         ));
-        let (temporary, store) = initialized_store();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
+        drop(held);
+        let (temporary, admitted) = admit_days("missing-ever", &["20260823"]);
+        let held = continue_ok(&admitted);
         fs::remove_file(days_dir(&temporary).join("20260823.ever.wit.json")).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown { .. }
         ));
     }
 
     #[test]
     fn same_generation_completion_preserves_both_serials() {
-        let (_temporary, store) = initialized_store();
+        let (_temporary, admitted) = admit_days("complete", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        let dirty_snap = published_snapshot(&store, &locks, &day);
-        publish_kind_for_test(&store, &locks, &day, PreparedCompletionAuthority).unwrap();
-        let done = published_snapshot(&store, &locks, &day);
+        let dirty_snap = published_snapshot(&held, &day);
+        publish_kind_for_test(
+            admitted.store(),
+            held.lock_set(),
+            &day,
+            PreparedCompletionAuthority,
+        )
+        .unwrap();
+        let done = published_snapshot(&held, &day);
         assert_eq!(
             done.first_transition_serial,
             dirty_snap.first_transition_serial
@@ -1380,18 +1256,24 @@ mod tests {
 
     #[test]
     fn g5_dirty_then_same_g5_completed() {
-        let (_temporary, store) = initialized_store();
+        let (_temporary, admitted) = admit_days("g5", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        for _ in 0..5 {
-            dirty(&store, &locks, &day);
+        for _ in 0..4 {
+            held.advance_dirty().unwrap();
         }
-        let dirty_snap = published_snapshot(&store, &locks, &day);
+        let dirty_snap = published_snapshot(&held, &day);
         assert_eq!(dirty_snap.dirty_generation, 5);
         assert_eq!(dirty_snap.completed_generation, 0);
         assert_eq!(dirty_snap.record_revision, 5);
-        publish_kind_for_test(&store, &locks, &day, PreparedCompletionAuthority).unwrap();
-        let done = published_snapshot(&store, &locks, &day);
+        publish_kind_for_test(
+            admitted.store(),
+            held.lock_set(),
+            &day,
+            PreparedCompletionAuthority,
+        )
+        .unwrap();
+        let done = published_snapshot(&held, &day);
         assert_eq!(done.dirty_generation, 5);
         assert_eq!(done.completed_generation, 5);
         assert_eq!(done.record_revision, 6);
@@ -1407,14 +1289,13 @@ mod tests {
 
     #[test]
     fn migration_authority_uses_shared_path() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("migrate", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        let first = published_snapshot(&store, &locks, &day).first_transition_serial;
+        let first = published_snapshot(&held, &day).first_transition_serial;
         publish_kind_for_test(
-            &store,
-            &locks,
+            admitted.store(),
+            held.lock_set(),
             &day,
             MigrationAuthority {
                 inventory_first_serial: first,
@@ -1432,14 +1313,14 @@ mod tests {
                 .join("20260823/record.json")
                 .exists()
         );
-        let done = published_snapshot(&store, &locks, &day);
+        let done = published_snapshot(&held, &day);
         assert_eq!(done.completed_generation, done.dirty_generation);
         assert_eq!(done.record_revision, 2);
         assert_eq!(done.first_transition_serial, first);
         assert!(matches!(
             publish_kind_for_test(
-                &store,
-                &locks,
+                admitted.store(),
+                held.lock_set(),
                 &day,
                 MigrationAuthority {
                     inventory_first_serial: first + 1,
@@ -1451,20 +1332,24 @@ mod tests {
 
     #[test]
     fn fixtures_cannot_skip_head_validation() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("skip-head", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        let first = published_snapshot(&store, &locks, &day).first_transition_serial;
+        let first = published_snapshot(&held, &day).first_transition_serial;
         fs::remove_file(days_dir(&temporary).join("20260823.head.json")).unwrap();
         assert!(matches!(
-            publish_kind_for_test(&store, &locks, &day, PreparedCompletionAuthority),
+            publish_kind_for_test(
+                admitted.store(),
+                held.lock_set(),
+                &day,
+                PreparedCompletionAuthority
+            ),
             Err(ConvergenceError::Unknown { .. })
         ));
         assert!(matches!(
             publish_kind_for_test(
-                &store,
-                &locks,
+                admitted.store(),
+                held.lock_set(),
                 &day,
                 MigrationAuthority {
                     inventory_first_serial: first,
@@ -1476,18 +1361,23 @@ mod tests {
 
     #[test]
     fn replay_older_completed_or_dirty_record_is_unknown() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("replay", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         let g1 = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
         for _ in 0..4 {
-            dirty(&store, &locks, &day);
+            held.advance_dirty().unwrap();
         }
-        publish_kind_for_test(&store, &locks, &day, PreparedCompletionAuthority).unwrap();
+        publish_kind_for_test(
+            admitted.store(),
+            held.lock_set(),
+            &day,
+            PreparedCompletionAuthority,
+        )
+        .unwrap();
         fs::write(records_dir(&temporary).join("20260823/record.json"), g1).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown {
                 role: DurableRole::Record
             }
@@ -1496,62 +1386,58 @@ mod tests {
 
     #[test]
     fn deleted_tail_witness_and_rolled_record_is_unknown() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("del-tail", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         let g1 = fs::read(records_dir(&temporary).join("20260823/record.json")).unwrap();
-        dirty(&store, &locks, &day);
+        held.advance_dirty().unwrap();
         fs::remove_file(days_dir(&temporary).join("20260823.rev.2.wit.json")).unwrap();
         fs::write(records_dir(&temporary).join("20260823/record.json"), g1).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown { .. }
         ));
     }
 
     #[test]
     fn head_deleted_is_unknown() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("head-del", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
         fs::remove_file(days_dir(&temporary).join("20260823.head.json")).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown { .. }
         ));
     }
 
     #[test]
     fn head_rewound_is_unknown() {
-        let (temporary, store) = initialized_store();
+        let (temporary, admitted) = admit_days("head-rewound", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
+        held.advance_dirty().unwrap();
         let path = days_dir(&temporary).join("20260823.head.json");
         let mut head: Head = read_json_file(&path);
         head.record_revision = 1;
         fs::write(&path, serde_json::to_vec(&head).unwrap()).unwrap();
         assert!(matches!(
-            store.load_day(&locks, &day).unwrap_err(),
+            held.inspect_day(&day).unwrap_err(),
             ConvergenceError::Unknown { .. }
         ));
     }
 
     #[test]
     fn authority_reuse_after_witness_refused() {
-        let (_temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        let proof = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
-        store.publish(&locks, &day, &mut authority).unwrap();
-        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
+        let (_temporary, admitted) = admit_days("reuse", &["20260823"]);
+        let owner = crate::owner::OwnerBinding::issue_from_base(&admitted).unwrap();
+        let mut held = admitted.begin(owner).unwrap();
+        let proof = crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        held.continue_with(proof).unwrap();
+        let mut reused =
+            crate::owner::ClaimAdmission::issue_from_base(&held, held.owner()).unwrap();
+        reused.consume().unwrap();
+        let error = held.continue_with(reused).unwrap_err();
         assert!(matches!(
             error,
             ConvergenceError::Refused(Refusal::ReusedAuthority)
@@ -1560,16 +1446,10 @@ mod tests {
 
     #[test]
     fn publish_day_not_in_lock_set_refused() {
-        let (_temporary, store) = initialized_store();
-        let day_a = DayKey::parse("20260823").unwrap();
+        let (_temporary, admitted) = admit_days("wrong-day-pub", &["20260823"]);
+        let held = continue_ok(&admitted);
         let day_b = DayKey::parse("20260824").unwrap();
-        let locks = store.acquire_days(std::slice::from_ref(&day_a)).unwrap();
-        let proof = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day_a, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
-        let error = store.publish(&locks, &day_b, &mut authority).unwrap_err();
+        let error = held.inspect_day(&day_b).unwrap_err();
         assert!(matches!(
             error,
             ConvergenceError::Refused(Refusal::WrongDay { .. })
@@ -1589,12 +1469,12 @@ mod tests {
                 Ok(record)
             }
         }
-        let (_temporary, store) = initialized_store();
+        let (_temporary, admitted) = admit_days("rev-rollback", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
-        let error = publish_kind_for_test(&store, &locks, &day, LowerRevision).unwrap_err();
+        held.advance_dirty().unwrap();
+        let error = publish_kind_for_test(admitted.store(), held.lock_set(), &day, LowerRevision)
+            .unwrap_err();
         assert!(matches!(
             error,
             ConvergenceError::Refused(Refusal::RevisionRollback { .. })
@@ -1615,12 +1495,12 @@ mod tests {
                 Ok(record)
             }
         }
-        let (_temporary, store) = initialized_store();
+        let (_temporary, admitted) = admit_days("gen-rollback", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
-        dirty(&store, &locks, &day);
-        let error = publish_kind_for_test(&store, &locks, &day, LowerGeneration).unwrap_err();
+        held.advance_dirty().unwrap();
+        let error = publish_kind_for_test(admitted.store(), held.lock_set(), &day, LowerGeneration)
+            .unwrap_err();
         assert!(matches!(
             error,
             ConvergenceError::Refused(Refusal::GenerationRollback { .. })
@@ -1629,23 +1509,16 @@ mod tests {
 
     #[test]
     fn revalidates_before_witness_head_and_record() {
-        let (temporary, store) = initialized_store();
-        let day = sample_day();
-        let locks = store.acquire_days(std::slice::from_ref(&day)).unwrap();
-        dirty(&store, &locks, &day);
+        let (temporary, admitted) = admit_days("reval", &["20260823"]);
+        let mut held = continue_ok(&admitted);
         let head_path = days_dir(&temporary).join("20260823.head.json");
         let original_head = fs::read(&head_path).unwrap();
-        let proof = store.allocate(&locks).unwrap();
-        let proposal = store
-            .propose(&locks, &day, OrdinaryIntent::AdvanceDirty)
-            .unwrap();
-        let mut authority = OrdinaryAuthority::bind(proposal, proof).unwrap();
         let _inject = after_witness(move || {
             let mut head: Head = read_json_file(&head_path);
             head.witness_digest = "ff".repeat(32);
             fs::write(&head_path, serde_json::to_vec(&head).unwrap()).unwrap();
         });
-        let error = store.publish(&locks, &day, &mut authority).unwrap_err();
+        let error = held.advance_dirty().unwrap_err();
         assert!(matches!(
             error,
             ConvergenceError::Unknown {
