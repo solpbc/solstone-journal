@@ -43,7 +43,7 @@ pub fn sweep_orphans(journal: &Path, grace: Duration) -> OrphanSweepOutcome {
         ..OrphanSweepReport::default()
     };
     let source = SystemProcessInstanceSource;
-    let term = partition_by_liveness(&targets, &source);
+    let term = partition_by_observation(&targets, &source);
     report.reaped += term.already_gone;
     report.unproven += term.unverifiable;
     for instance in &term.confirmed {
@@ -58,7 +58,7 @@ pub fn sweep_orphans(journal: &Path, grace: Duration) -> OrphanSweepOutcome {
     {
         std::thread::sleep(Duration::from_millis(10));
     }
-    let kill = partition_by_liveness(&term.confirmed, &source);
+    let kill = partition_by_observation(&term.confirmed, &source);
     report.reaped += kill.already_gone;
     report.unproven += kill.unverifiable;
     report.survivors += kill.confirmed.len();
@@ -206,17 +206,17 @@ fn journal_for(path: &str) -> Option<std::path::PathBuf> {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-struct Partition {
+struct LivenessPartition {
     confirmed: Vec<ProcessInstance>,
     already_gone: usize,
     unverifiable: usize,
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn partition_by_liveness(
+fn partition_by_observation(
     targets: &[ProcessInstance],
     source: &dyn ProcessInstanceSource,
-) -> Partition {
+) -> LivenessPartition {
     let mut confirmed = Vec::new();
     let mut already_gone = 0;
     let mut unverifiable = 0;
@@ -227,7 +227,7 @@ fn partition_by_liveness(
             InstanceVerdict::Unverifiable => unverifiable += 1,
         }
     }
-    Partition {
+    LivenessPartition {
         confirmed,
         already_gone,
         unverifiable,
@@ -236,7 +236,7 @@ fn partition_by_liveness(
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests {
-    use super::{Partition, partition_by_liveness};
+    use super::{LivenessPartition, partition_by_observation};
     use crate::process::{
         ExecutionState, InspectResult, InstanceCensus, ProcessBirth, ProcessInstance,
         ProcessInstanceSource,
@@ -272,11 +272,11 @@ mod tests {
                 pgid: Some(42),
             },
         };
-        let Partition {
+        let LivenessPartition {
             confirmed,
             already_gone,
             unverifiable,
-        } = partition_by_liveness(&[instance], &source);
+        } = partition_by_observation(&[instance], &source);
         assert_eq!(confirmed, vec![instance]);
         assert_eq!(already_gone, 0);
         assert_eq!(unverifiable, 0);
@@ -298,11 +298,11 @@ mod tests {
                 pgid: Some(42),
             },
         };
-        let Partition {
+        let LivenessPartition {
             confirmed,
             already_gone,
             unverifiable,
-        } = partition_by_liveness(&[instance], &source);
+        } = partition_by_observation(&[instance], &source);
         assert!(confirmed.is_empty());
         assert_eq!(already_gone, 1);
         assert_eq!(unverifiable, 0);
@@ -314,11 +314,11 @@ mod tests {
         let source = FakeSource {
             result: InspectResult::Unverifiable,
         };
-        let Partition {
+        let LivenessPartition {
             confirmed,
             already_gone,
             unverifiable,
-        } = partition_by_liveness(&[instance], &source);
+        } = partition_by_observation(&[instance], &source);
         assert!(confirmed.is_empty());
         assert_eq!(already_gone, 0);
         assert_eq!(unverifiable, 1);
