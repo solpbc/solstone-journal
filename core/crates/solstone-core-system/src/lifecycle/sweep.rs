@@ -8,7 +8,7 @@ use std::time::Instant;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use crate::process::{
-    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
+    InspectResult, InstanceCensus, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
     SystemProcessInstanceSource,
 };
 
@@ -36,10 +36,11 @@ pub enum OrphanSweepOutcome {
 pub fn sweep_orphans(journal: &Path, grace: Duration) -> OrphanSweepOutcome {
     use nix::sys::signal::Signal;
 
-    let (targets, skipped_unresolvable) = sweep_targets(journal);
+    let (targets, skipped_unresolvable, qualification_unproven) = sweep_targets(journal);
     let mut report = OrphanSweepReport {
         targeted: targets.len(),
         skipped_unresolvable,
+        unproven: qualification_unproven,
         ..OrphanSweepReport::default()
     };
     let source = SystemProcessInstanceSource;
@@ -69,18 +70,25 @@ pub fn sweep_orphans(journal: &Path, grace: Duration) -> OrphanSweepOutcome {
 }
 
 #[cfg(target_os = "linux")]
-fn sweep_targets(journal: &Path) -> (Vec<ProcessInstance>, usize) {
+fn sweep_targets(journal: &Path) -> (Vec<ProcessInstance>, usize, usize) {
     let Ok(journal) = journal.canonicalize() else {
-        return (Vec::new(), 1);
+        return (Vec::new(), 1, 0);
     };
     let own_pid = std::process::id();
-    let own_uid = uid_for("/proc/self/status");
+    let Some(own_uid) = uid_for("/proc/self/status") else {
+        return (Vec::new(), 1, 0);
+    };
     let Ok(entries) = std::fs::read_dir("/proc") else {
-        return (Vec::new(), 0);
+        return (Vec::new(), 0, 1);
     };
     let mut targets = Vec::new();
     let mut skipped_unresolvable = 0;
-    for entry in entries.flatten() {
+    let mut unproven = 0;
+    for entry in entries {
+        let Ok(entry) = entry else {
+            unproven += 1;
+            continue;
+        };
         let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
             continue;
         };
@@ -94,10 +102,19 @@ fn sweep_targets(journal: &Path) -> (Vec<ProcessInstance>, usize) {
         if !sweepable_name(comm.trim_end()) {
             continue;
         }
-        let Some(instance) = qualify_orphan_instance(pid) else {
+        let instance = match qualify_orphan_observation(SystemProcessInstanceSource.inspect(pid)) {
+            OrphanQualification::Eligible(instance) => instance,
+            OrphanQualification::NotEligible => continue,
+            OrphanQualification::Unproven => {
+                unproven += 1;
+                continue;
+            }
+        };
+        let Some(candidate_uid) = uid_for(&format!("{base}/status")) else {
+            skipped_unresolvable += 1;
             continue;
         };
-        if uid_for(&format!("{base}/status")) != own_uid {
+        if candidate_uid != own_uid {
             continue;
         }
         let Some(candidate) = journal_for(&format!("{base}/environ")) else {
@@ -113,35 +130,42 @@ fn sweep_targets(journal: &Path) -> (Vec<ProcessInstance>, usize) {
         }
         targets.push(instance);
     }
-    (targets, skipped_unresolvable)
+    (targets, skipped_unresolvable, unproven)
 }
 
 #[cfg(target_os = "macos")]
-fn sweep_targets(_journal: &Path) -> (Vec<ProcessInstance>, usize) {
+fn sweep_targets(_journal: &Path) -> (Vec<ProcessInstance>, usize, usize) {
+    let source = SystemProcessInstanceSource;
+    let InstanceCensus::Complete(census) = source.census() else {
+        return (Vec::new(), 0, 1);
+    };
     let Some(rows) = crate::process::macos_sweep_table() else {
-        return (Vec::new(), 0);
+        return (Vec::new(), 0, 1);
     };
     let own_pid = std::process::id();
     let own_uid = nix::unistd::geteuid().as_raw();
-    let source = SystemProcessInstanceSource;
-    let targets = rows
-        .into_iter()
-        .filter(|row| {
-            row.pid != own_pid
-                && row.ppid == 1
-                && row.uid == own_uid
-                && command_name(&row.command).is_some_and(sweepable_name)
-        })
-        .filter_map(|row| match source.inspect(row.pid) {
-            InspectResult::Present {
-                instance,
-                ppid: Some(1),
-                ..
-            } => Some(instance),
-            _ => None,
-        })
-        .collect();
-    (targets, 0)
+    let mut targets = Vec::new();
+    let mut skipped_unresolvable = 0;
+    for row in rows {
+        if row.pid == own_pid || row.ppid != 1 || row.uid != own_uid {
+            continue;
+        }
+        let Some(name) = command_name(&row.command) else {
+            skipped_unresolvable += 1;
+            continue;
+        };
+        if !sweepable_name(name) {
+            continue;
+        }
+        let Some(candidate) = census
+            .iter()
+            .find(|candidate| candidate.instance.pid == row.pid && candidate.ppid == 1)
+        else {
+            continue;
+        };
+        targets.push(candidate.instance);
+    }
+    (targets, skipped_unresolvable, 0)
 }
 
 #[cfg(target_os = "macos")]
@@ -169,15 +193,24 @@ fn sweepable_name(name: &str) -> bool {
         || matches!(name, "llama-server" | "parakeet-server" | "mlx-vlm-server")
 }
 
-#[cfg(target_os = "linux")]
-fn qualify_orphan_instance(pid: u32) -> Option<ProcessInstance> {
-    match SystemProcessInstanceSource.inspect(pid) {
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OrphanQualification {
+    Eligible(ProcessInstance),
+    NotEligible,
+    Unproven,
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn qualify_orphan_observation(observation: InspectResult) -> OrphanQualification {
+    match observation {
         InspectResult::Present {
             instance,
             ppid: Some(1),
             ..
-        } => Some(instance),
-        _ => None,
+        } => OrphanQualification::Eligible(instance),
+        InspectResult::Present { .. } | InspectResult::Absent => OrphanQualification::NotEligible,
+        InspectResult::Unverifiable => OrphanQualification::Unproven,
     }
 }
 
@@ -236,7 +269,10 @@ fn partition_by_observation(
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests {
-    use super::{LivenessPartition, partition_by_observation};
+    use super::{
+        LivenessPartition, OrphanQualification, partition_by_observation,
+        qualify_orphan_observation,
+    };
     use crate::process::{
         ExecutionState, InspectResult, InstanceCensus, ProcessBirth, ProcessInstance,
         ProcessInstanceSource,
@@ -322,5 +358,45 @@ mod tests {
         assert!(confirmed.is_empty());
         assert_eq!(already_gone, 0);
         assert_eq!(unverifiable, 1);
+    }
+
+    #[test]
+    fn qualification_unverifiable_is_carried_as_unproven() {
+        assert_eq!(
+            qualify_orphan_observation(InspectResult::Unverifiable),
+            OrphanQualification::Unproven
+        );
+    }
+
+    #[test]
+    fn qualification_present_orphan_retains_its_birth_identity() {
+        let instance = live_instance(ProcessBirth::linux(10, 100, 100));
+        assert_eq!(
+            qualify_orphan_observation(InspectResult::Present {
+                instance,
+                execution: ExecutionState::Running,
+                ppid: Some(1),
+                pgid: Some(42),
+            }),
+            OrphanQualification::Eligible(instance)
+        );
+    }
+
+    #[test]
+    fn qualification_present_non_orphan_and_absent_are_not_candidates() {
+        let instance = live_instance(ProcessBirth::linux(10, 100, 100));
+        assert_eq!(
+            qualify_orphan_observation(InspectResult::Present {
+                instance,
+                execution: ExecutionState::Running,
+                ppid: Some(2),
+                pgid: Some(42),
+            }),
+            OrphanQualification::NotEligible
+        );
+        assert_eq!(
+            qualify_orphan_observation(InspectResult::Absent),
+            OrphanQualification::NotEligible
+        );
     }
 }

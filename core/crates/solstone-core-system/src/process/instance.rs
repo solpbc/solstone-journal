@@ -418,6 +418,7 @@ fn execution_from_state_token(state: &str) -> Option<(ExecutionState, bool)> {
 fn parse_macos_inspect_line(line: &str) -> Option<InspectResult> {
     let mut parts = line.split_whitespace();
     let pid: u32 = parts.next()?.parse().ok()?;
+    let ppid: u32 = parts.next()?.parse().ok()?;
     let state = parts.next()?;
     let pgid: i32 = parts.next()?.parse().ok()?;
     let lstart = parts.collect::<Vec<_>>().join(" ");
@@ -432,7 +433,7 @@ fn parse_macos_inspect_line(line: &str) -> Option<InspectResult> {
             birth: ProcessBirth::macos(epoch_seconds),
         },
         execution,
-        ppid: None,
+        ppid: Some(ppid),
         pgid: Some(pgid),
     })
 }
@@ -472,7 +473,12 @@ fn parse_macos_census_line(line: &str) -> Option<MacosCensusLine> {
 #[cfg(target_os = "macos")]
 fn inspect_macos(pid: u32) -> InspectResult {
     let output = match std::process::Command::new("/bin/ps")
-        .args(["-p", &pid.to_string(), "-o", "pid=,state=,pgid=,lstart="])
+        .args([
+            "-p",
+            &pid.to_string(),
+            "-o",
+            "pid=,ppid=,state=,pgid=,lstart=",
+        ])
         .env("LC_ALL", "C")
         .output()
     {
@@ -789,16 +795,18 @@ mod tests {
 
     #[test]
     fn macos_inspect_line_puts_lstart_last() {
-        let line = "99 T 99 Mon Aug 10 12:34:56 2026";
+        let line = "99 1 T 99 Mon Aug 10 12:34:56 2026";
         match parse_macos_inspect_line(line) {
             Some(InspectResult::Present {
                 instance,
                 execution,
+                ppid,
                 pgid,
                 ..
             }) => {
                 assert_eq!(instance.pid, 99);
                 assert_eq!(execution, ExecutionState::Stopped);
+                assert_eq!(ppid, Some(1));
                 assert_eq!(pgid, Some(99));
                 assert_eq!(
                     instance.birth,
@@ -807,7 +815,7 @@ mod tests {
             }
             other => panic!("expected Present, got {other:?}"),
         }
-        assert!(parse_macos_inspect_line("99 S 99 not-an-lstart").is_none());
+        assert!(parse_macos_inspect_line("99 1 S 99 not-an-lstart").is_none());
     }
 
     #[test]
