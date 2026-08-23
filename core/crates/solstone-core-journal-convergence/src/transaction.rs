@@ -20,6 +20,7 @@ use crate::layout::DayKey;
 use crate::lock::{DayLockSet, acquire_days_with_timeout, hold_topology_with_timeout};
 use crate::owner::{ClaimAdmission, OwnerBinding};
 use crate::preflight::Admitted;
+use crate::projection::{project_day, refuse_mutated_projection};
 use crate::publish::{PublishOutcome, inspect_against_proposed, publish_record};
 use crate::schema::{
     Active, Adoption, DayRecord, Intent, ROLE_ACTIVE, SCHEMA_VERSION, now_rfc3339,
@@ -275,13 +276,12 @@ impl HeldDays<'_> {
                     if existing.predecessors != expected.predecessors {
                         return Err(ConvergenceError::Refused(Refusal::ChangedPredecessor));
                     }
-                    if existing.projections != expected.projections
-                        && self
-                            .days
-                            .iter()
-                            .all(|day| day_is_store_genesis(&dirs, day).unwrap_or(false))
+                    if existing
+                        .prior_day_revisions
+                        .values()
+                        .all(|revision| *revision == 0)
                     {
-                        return Err(ConvergenceError::Refused(Refusal::ChangedProjection));
+                        refuse_mutated_projection(&existing, &expected)?;
                     }
                     verify_intent_matches_claim(&existing, &entry.intent_digest)?;
                     existing
@@ -437,7 +437,10 @@ fn publish_from_intent(
             role: DurableRole::Adoption,
         })?;
     let next = match inspect_against_proposed(store, locks, day, proposed_rev)? {
-        LoadDay::Published(snapshot) if snapshot.record_revision == proposed_rev => return Ok(()),
+        LoadDay::Published(snapshot) if snapshot.record_revision == proposed_rev => {
+            project_day(store, locks, day, intent)?;
+            return Ok(());
+        }
         LoadDay::Published(snapshot) if snapshot.record_revision + 1 == proposed_rev => DayRecord {
             schema_version: SCHEMA_VERSION,
             journal_id: intent.journal_id.clone(),
@@ -477,19 +480,24 @@ fn publish_from_intent(
         }
     };
     match publish_record(store, locks, day, &next, None)? {
-        PublishOutcome::Published { .. } => Ok(()),
+        PublishOutcome::Published { .. } => {}
         PublishOutcome::PublishedDurabilityUncertain { .. } => match store.load_day(locks, day)? {
-            LoadDay::Published(snapshot) if snapshot.record_revision == proposed_rev => Ok(()),
+            LoadDay::Published(snapshot) if snapshot.record_revision == proposed_rev => {}
             LoadDay::PublicationPending {
                 kind: crate::store::PendingKind::HeadAheadOfRecord,
-            } => Err(ConvergenceError::Unknown {
-                role: DurableRole::Head,
-            }),
-            _ => Err(ConvergenceError::Unknown {
-                role: DurableRole::Head,
-            }),
+            } => {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::Head,
+                });
+            }
+            _ => {
+                return Err(ConvergenceError::Unknown {
+                    role: DurableRole::Head,
+                });
+            }
         },
     }
+    project_day(store, locks, day, intent)
 }
 
 #[cfg(test)]

@@ -8,6 +8,9 @@ use solstone_core_journal_io::is_day_key;
 use crate::error::{ConvergenceError, Refusal};
 
 pub(crate) const HEALTH: &str = "health";
+pub(crate) const CHRONICLE: &str = "chronicle";
+pub(crate) const STREAM_UPDATED: &str = "stream.updated";
+pub(crate) const DAILY_UPDATED: &str = "daily.updated";
 pub(crate) const CONVERGENCE: &str = "convergence";
 pub(crate) const DAYS: &str = "days";
 pub(crate) const RECORDS: &str = "records";

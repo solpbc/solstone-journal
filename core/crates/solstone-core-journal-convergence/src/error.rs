@@ -66,9 +66,7 @@ pub enum DurableRole {
     #[allow(dead_code)]
     ConsumptionWitness,
     StreamUpdated,
-    #[allow(dead_code)]
     DailyUpdated,
-    #[allow(dead_code)]
     ChronicleHealth,
 }
 
@@ -115,17 +113,12 @@ pub enum Refusal {
     ClaimAncestry,
     NotVirgin,
     CleanupOnly,
-    #[allow(dead_code)]
     ConflictingProjection,
     #[allow(dead_code)]
     ConflictingTerminal,
-    #[allow(dead_code)]
     WrongGenerationMarker,
-    #[allow(dead_code)]
     OldAuthorMarker,
-    #[allow(dead_code)]
     OldProjectionDigest,
-    #[allow(dead_code)]
     ProjectionByteMismatch,
     #[allow(dead_code)]
     WrongOutcome,

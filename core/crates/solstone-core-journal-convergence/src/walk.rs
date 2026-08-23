@@ -94,7 +94,6 @@ pub(crate) fn open_file(
     Ok(Some(fd))
 }
 
-#[allow(dead_code)]
 pub(crate) fn unlink_bound(
     parent: &impl AsFd,
     name: &OsStr,

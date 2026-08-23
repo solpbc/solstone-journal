@@ -24,6 +24,7 @@ mod layout;
 mod lock;
 mod owner;
 mod preflight;
+mod projection;
 mod publish;
 mod recover;
 mod schema;
@@ -100,6 +101,7 @@ mod architecture {
             include_str!("lock.rs"),
             include_str!("owner.rs"),
             include_str!("preflight.rs"),
+            include_str!("projection.rs"),
             include_str!("publish.rs"),
             include_str!("recover.rs"),
             include_str!("schema.rs"),

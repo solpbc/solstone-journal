@@ -236,6 +236,11 @@ pub(crate) struct VirginProof {
     pub day: String,
 }
 
+/// Canonical `stream.updated` payload.
+///
+/// Deliberately omits `intent_digest`. The final intent hashes this marker's
+/// exact bytes and digest (`Present { bytes, digest }`); putting the intent
+/// digest on the marker would cycle the digest graph.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StreamUpdated {

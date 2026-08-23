@@ -6,14 +6,15 @@ use std::os::fd::OwnedFd;
 
 use solstone_core_journal_io::create_directory_bound;
 
-use crate::digest::{canonical_json_bytes, digest_bytes, digest_value};
+use crate::digest::digest_value;
 use crate::error::{ConvergenceError, DurableRole, Refusal};
 use crate::init::StoreDirs;
 use crate::layout::{DayKey, INTENTS, intent_name};
+use crate::projection::{marker_present, verify_projection_binding};
 use crate::schema::{
     Active, Adoption, Intent, OPERATION_ADVANCE_DIRTY, Predecessor, PresentAbsent,
-    ProjectionBinding, ROLE_INTENT, ROLE_STREAM_UPDATED, ROLE_VIRGIN, SCHEMA_VERSION,
-    StreamUpdated, VirginProof, day_set_subdigest, intent_digest, read_json, write_json_exclusive,
+    ProjectionBinding, ROLE_INTENT, ROLE_VIRGIN, SCHEMA_VERSION, VirginProof, day_set_subdigest,
+    intent_digest, read_json, write_json_exclusive,
 };
 use crate::store::ConvergenceStore;
 use crate::walk::open_dir;
@@ -95,35 +96,6 @@ pub(crate) fn day_is_store_genesis(
     Ok(ever.is_none() && head.is_none() && record_dir.is_none())
 }
 
-fn marker_present(
-    store: &ConvergenceStore,
-    adoption: &Adoption,
-    day: &DayKey,
-    dirty_generation: u64,
-    serial: u64,
-) -> Result<PresentAbsent, ConvergenceError> {
-    let marker = StreamUpdated {
-        role: ROLE_STREAM_UPDATED.to_owned(),
-        schema_version: SCHEMA_VERSION,
-        journal_id: store.journal_id().to_owned(),
-        root_id: store.root_id().to_owned(),
-        adoption_id: adoption.adoption_id.clone(),
-        day: day.as_str().to_owned(),
-        dirty_generation,
-        author_serial: serial,
-    };
-    let bytes = canonical_json_bytes(&marker)?;
-    let digest = digest_bytes(&bytes);
-    Ok(PresentAbsent::Present {
-        bytes: String::from_utf8(bytes).map_err(|source| ConvergenceError::Io {
-            operation: "encode stream marker",
-            role: DurableRole::StreamUpdated,
-            source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
-        })?,
-        digest: digest.as_hex().to_owned(),
-    })
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_virgin_intent(
     store: &ConvergenceStore,
@@ -155,15 +127,14 @@ pub(crate) fn build_virgin_intent(
                 digest: virgin_digest(store, adoption, day)?,
             },
         );
-        projections.insert(
-            day.as_str().to_owned(),
-            ProjectionBinding {
-                prior_stream: PresentAbsent::Absent,
-                prior_daily: PresentAbsent::Absent,
-                proposed_stream: marker_present(store, adoption, day, 1, serial)?,
-                proposed_daily: PresentAbsent::Absent,
-            },
-        );
+        let binding = ProjectionBinding {
+            prior_stream: PresentAbsent::Absent,
+            prior_daily: PresentAbsent::Absent,
+            proposed_stream: marker_present(store, adoption, day, 1, serial)?,
+            proposed_daily: PresentAbsent::Absent,
+        };
+        verify_projection_binding(&binding)?;
+        projections.insert(day.as_str().to_owned(), binding);
     }
     let mut intent = Intent {
         role: ROLE_INTENT.to_owned(),
@@ -229,21 +200,26 @@ pub(crate) fn build_later_intent(
                 .cloned()
                 .ok_or(ConvergenceError::Refused(Refusal::ChangedPredecessor))?,
         );
-        projections.insert(
-            day.as_str().to_owned(),
-            ProjectionBinding {
-                prior_stream: PresentAbsent::Absent,
-                prior_daily: PresentAbsent::Absent,
-                proposed_stream: marker_present(
-                    store,
-                    adoption,
-                    day,
-                    snapshot.dirty_generation + 1,
-                    serial,
-                )?,
-                proposed_daily: PresentAbsent::Absent,
-            },
-        );
+        let binding = ProjectionBinding {
+            prior_stream: marker_present(
+                store,
+                adoption,
+                day,
+                snapshot.dirty_generation,
+                snapshot.dirty_by_transition_serial,
+            )?,
+            prior_daily: PresentAbsent::Absent,
+            proposed_stream: marker_present(
+                store,
+                adoption,
+                day,
+                snapshot.dirty_generation + 1,
+                serial,
+            )?,
+            proposed_daily: PresentAbsent::Absent,
+        };
+        verify_projection_binding(&binding)?;
+        projections.insert(day.as_str().to_owned(), binding);
     }
     let mut intent = Intent {
         role: ROLE_INTENT.to_owned(),

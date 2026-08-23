@@ -74,6 +74,10 @@ pub(crate) enum PublishFault {
     AfterClaimHead,
     AfterIntent,
     AfterActive,
+    AfterHealthDir,
+    AfterProjectionStream,
+    AfterDailyUnlink,
+    AfterProjectionSync,
 }
 
 /// Clears TLS injects if a test panics between arm and take.
