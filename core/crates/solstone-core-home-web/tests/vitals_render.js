@@ -41,10 +41,8 @@ const dotNeutral = css.match(/\.pulse-vitals-dot\.neutral\s*\{[^}]*background:\s
 const verdictNeutral = css.match(/\.pulse-vitals-verdict\.neutral\s*\{[^}]*color:\s*([^;]+);/);
 assert(dotNeutral, 'neutral dot has no background');
 assert(verdictNeutral, 'neutral verdict has no color');
-for (const forbidden of ['#4ade80', '#fbbf24', '#dc2626', '#166534', '#b45309', '#b91c1c']) {
-  assert.notStrictEqual(dotNeutral[1].trim(), forbidden, 'neutral dot reuses an alert color');
-  assert.notStrictEqual(verdictNeutral[1].trim(), forbidden, 'neutral verdict reuses an alert color');
-}
+assert.strictEqual(dotNeutral[1].trim(), 'var(--ink-faint)', 'neutral dot must use the design-system neutral token');
+assert.strictEqual(verdictNeutral[1].trim(), 'var(--ink-soft)', 'neutral verdict must use the design-system neutral token');
 
 const calm = renderVitalsHtml({
   health_glance: {

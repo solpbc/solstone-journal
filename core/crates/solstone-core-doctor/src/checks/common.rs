@@ -56,8 +56,8 @@ pub fn enabled(records: Vec<ObserverRecord>) -> Vec<ObserverRecord> {
 
 pub(crate) fn delivery_reach_clause(reach: Reach) -> &'static str {
     match reach {
-        Reach::Active | Reach::Stale => "still running, but not adding",
-        Reach::Offline => "appears offline and may be asleep",
+        Reach::Active | Reach::Stale => "it is still running, but it isn't adding to your journal",
+        Reach::Offline => "the device appears offline and may be asleep",
     }
 }
 

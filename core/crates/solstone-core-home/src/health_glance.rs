@@ -16,9 +16,9 @@ const EMPTY_REGISTRY_HEADLINE: &str =
     "no devices are running the solstone app yet. set one up to start your journal.";
 const AWAITING_FIRST_HEADLINE: &str =
     "the solstone app on one of your devices hasn't added anything to your journal yet.";
-const RESIDUE_HEADLINE: &str = "a device was set up but never started adding to your journal.";
+const RESIDUE_HEADLINE: &str = "nothing needs your attention right now.";
 const NO_ELIGIBLE_HEADLINE: &str =
-    "none of your devices are set up to add to your journal right now.";
+    "none of your devices have the solstone app set up to add to your journal right now.";
 const RUNNING_REACH_SENTENCE: &str =
     "the app is still running, but it isn't adding to your journal.";
 const ASLEEP_REACH_SENTENCE: &str = "the device appears offline and may just be asleep.";
@@ -470,13 +470,19 @@ mod tests {
             !glance(&residue_offline)["headline"]
                 .as_str()
                 .unwrap()
-                .contains("no devices are running")
+                .contains("device")
         );
         assert!(
             !glance(&residue_stale)["headline"]
                 .as_str()
                 .unwrap()
-                .contains("no devices are running")
+                .contains("device")
+        );
+        assert!(
+            glance(&no_eligible)["headline"]
+                .as_str()
+                .unwrap()
+                .contains("solstone app")
         );
 
         let invalid_active = json!({

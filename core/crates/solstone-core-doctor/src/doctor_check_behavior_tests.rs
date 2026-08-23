@@ -1712,6 +1712,15 @@ fn reach_clause_replaces_last_contact_and_matches_across_checks() {
         now - 1_000,
         Some(now - 89 * hour),
     );
+    let stale = fixture();
+    let now = stale.now.timestamp_millis();
+    write_device(
+        &stale,
+        "abcdefgh",
+        "phone",
+        now - 60_000,
+        Some(now - 89 * hour),
+    );
     let asleep = fixture();
     let now = asleep.now.timestamp_millis();
     write_device(
@@ -1724,11 +1733,15 @@ fn reach_clause_replaces_last_contact_and_matches_across_checks() {
 
     let running_capture = result("capture_health", &running);
     let running_stall = result("observer_delivery_stall", &running);
+    let stale_capture = result("capture_health", &stale);
+    let stale_stall = result("observer_delivery_stall", &stale);
     let asleep_capture = result("capture_health", &asleep);
     let asleep_stall = result("observer_delivery_stall", &asleep);
 
     assert_eq!(running_capture.status, Status::Warn);
     assert_eq!(running_stall.status, Status::Warn);
+    assert_eq!(stale_capture.status, Status::Warn);
+    assert_eq!(stale_stall.status, Status::Warn);
     assert_eq!(asleep_capture.status, Status::Warn);
     assert_eq!(asleep_stall.status, Status::Warn);
     assert_eq!(
@@ -1736,22 +1749,37 @@ fn reach_clause_replaces_last_contact_and_matches_across_checks() {
         running_stall.observer_delivery
     );
     assert_eq!(
+        stale_capture.observer_delivery,
+        stale_stall.observer_delivery
+    );
+    assert_eq!(
         asleep_capture.observer_delivery,
         asleep_stall.observer_delivery
     );
+    assert_eq!(running_capture.fix, stale_capture.fix);
+    assert_eq!(running_capture.fix, asleep_capture.fix);
+    assert_eq!(running_stall.fix, stale_stall.fix);
+    assert_eq!(running_stall.fix, asleep_stall.fix);
     assert!(!running_stall.detail.contains("last contact"));
+    assert!(!stale_stall.detail.contains("last contact"));
     assert!(!asleep_stall.detail.contains("last contact"));
     assert!(running_stall.detail.contains("still running"));
     assert!(running_stall.detail.contains("not adding"));
     assert!(running_capture.detail.contains("still running"));
-    assert!(asleep_stall.detail.contains("asleep"));
-    assert!(asleep_capture.detail.contains("asleep"));
+    assert!(stale_stall.detail.contains("still running"));
+    assert!(stale_capture.detail.contains("still running"));
+    assert!(asleep_stall.detail.contains("the device appears offline"));
+    assert!(asleep_stall.detail.contains("may be asleep"));
+    assert!(asleep_capture.detail.contains("the device appears offline"));
+    assert!(asleep_capture.detail.contains("may be asleep"));
     assert!(running_capture.detail.contains("rollup=attention"));
     assert!(running_capture.detail.contains("phone"));
 
     let running_facts = serde_json::to_value(&running_capture.observer_delivery).unwrap();
+    let stale_facts = serde_json::to_value(&stale_capture.observer_delivery).unwrap();
     let asleep_facts = serde_json::to_value(&asleep_capture.observer_delivery).unwrap();
     assert_eq!(running_facts["assessed"][0]["reach"], "active");
+    assert_eq!(stale_facts["assessed"][0]["reach"], "stale");
     assert_eq!(asleep_facts["assessed"][0]["reach"], "offline");
     let strip_reach = |value: &serde_json::Value| {
         let mut stripped = value.clone();
@@ -1764,6 +1792,7 @@ fn reach_clause_replaces_last_contact_and_matches_across_checks() {
         }
         stripped
     };
+    assert_eq!(strip_reach(&running_facts), strip_reach(&stale_facts));
     assert_eq!(strip_reach(&running_facts), strip_reach(&asleep_facts));
 }
 

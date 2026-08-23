@@ -145,8 +145,8 @@ Health uses a **fail-fast model**: observers exit if they detect problems, and s
 when the journal has recorded an active observer ingest rejection, but never
 blocks. Remediation is to update or restart the observer, then confirm a valid
 upload clears the active rejection.
-`journal doctor` reports `capture_health` and `observer_delivery_stall` from whether sol on each device is still adding to the journal, not from whether a process recently checked in.
-Their JSON and JSONL payloads also include registry completeness and any parsed devices that are not yet part of that delivery assessment; owner-facing text is unchanged.
+`journal doctor` reports `capture_health` and `observer_delivery_stall` from whether the solstone app on each assessed device is still adding to the journal, not from whether a process recently checked in.
+Their JSON and JSONL payloads also include registry completeness, delivery state, reach, and any parsed devices that are not yet part of that delivery assessment. Human warnings use reach only to distinguish an app that is still running but not adding from a device that appears offline and may be asleep; machine reason tokens remain in JSON and JSONL.
 
 | Signal | Healthy when | Stale when |
 |--------|--------------|------------|
