@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 pub const RECOVERY_KEY: &str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+pub const PORTAL_BASE: &str = "https://services.solstone.app";
 pub const DEVICE_TOTAL_BYTES: u64 = 1_000_000_000_000;
 pub const DEVICE_FREE_BYTES: u64 = 250_000_000_000;
 pub fn corpus() -> Value {
@@ -88,12 +89,19 @@ fn backup(phase: &str) -> Value {
 
 pub fn hosted_binding() -> HostedBinding {
     HostedBinding {
-        broker_endpoint: "https://broker.example".into(),
+        broker_endpoint: PORTAL_BASE.into(),
         account_id: "account".into(),
         instance_id: "instance".into(),
         bucket: "bucket".into(),
         prefix: "owner/prefix".into(),
         broker_token: "broker-token-secret".into(),
+    }
+}
+
+pub fn hosted_binding_wrong_origin() -> HostedBinding {
+    HostedBinding {
+        broker_endpoint: "https://broker.example".into(),
+        ..hosted_binding()
     }
 }
 

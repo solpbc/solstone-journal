@@ -2,15 +2,18 @@
 // Copyright (c) 2026 sol pbc
 
 use std::panic::{self, AssertUnwindSafe};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 use solstone_core_backup::HostedBinding;
 use solstone_core_backup_runtime::hosted_runtime::HttpError;
 use solstone_core_backup_runtime::{HttpRequest, HttpResponse};
 
 use crate::operation::{self, SharedOperationSlot};
+use crate::validation;
 use crate::{BackupWebDeps, persist_and_consume_hosted};
 
 pub const HANDOFF_POLL_TIMEOUT: Duration = Duration::from_secs(15);
@@ -35,10 +38,35 @@ pub(crate) fn poll_url(portal_base: &str, nonce: &str) -> String {
     )
 }
 
+struct PollLease {
+    flag: Arc<AtomicBool>,
+}
+
+impl PollLease {
+    fn try_acquire(flag: &Arc<AtomicBool>) -> Option<Self> {
+        flag.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| Self {
+                flag: Arc::clone(flag),
+            })
+    }
+}
+
+impl Drop for PollLease {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::Release);
+    }
+}
+
 pub(crate) fn spawn(deps: BackupWebDeps, nonce: String, generation: u64) {
+    let Some(lease) = PollLease::try_acquire(&deps.handoff_poll_lease) else {
+        operation::finish(&deps.operations, generation, "error", Some("failed".into()));
+        return;
+    };
     let poll_deps = deps.clone();
     let poll_nonce = nonce;
     thread::spawn(move || {
+        let _lease = lease;
         let panicked = panic::catch_unwind(AssertUnwindSafe(|| {
             poll_loop(&poll_deps, &poll_nonce, generation);
         }));
@@ -102,7 +130,7 @@ fn poll_loop(deps: &BackupWebDeps, nonce: &str, generation: u64) {
             }
             Ok(HttpResponse {
                 status: 200, body, ..
-            }) => match parse_poll_body(&body) {
+            }) => match parse_poll_body(&body, &deps.portal_base) {
                 Ok(HandoffPollOutcome::Approved(binding)) => {
                     apply_approved(deps, nonce, generation, binding);
                     return;
@@ -219,43 +247,31 @@ fn apply_needs_subscription(deps: &BackupWebDeps, nonce: &str, generation: u64) 
     }
 }
 
-fn parse_poll_body(body: &[u8]) -> Result<HandoffPollOutcome, ()> {
+fn parse_poll_body(body: &[u8], portal_base: &str) -> Result<HandoffPollOutcome, ()> {
     let value = serde_json::from_slice::<Value>(body).map_err(|_| ())?;
     let object = value.as_object().ok_or(())?;
     match object.get("status").and_then(Value::as_str) {
-        Some("approved") => Ok(HandoffPollOutcome::Approved(binding_from_object(object)?)),
+        Some("approved") => Ok(HandoffPollOutcome::Approved(approved_binding(
+            object,
+            portal_base,
+        )?)),
         Some("needs_subscription") => {
-            let url = object
-                .get("subscribe_url")
-                .and_then(Value::as_str)
-                .ok_or(())?;
-            if !url.starts_with("https://") {
-                return Err(());
-            }
+            let _ = approved_binding(object, portal_base)?;
+            let url = validation::nonempty_string(object, "subscribe_url").map_err(|_| ())?;
+            validation::require_https_portal_url(&url, portal_base).map_err(|_| ())?;
             Ok(HandoffPollOutcome::NeedsSubscription)
         }
         _ => Err(()),
     }
 }
 
-fn binding_from_object(object: &Map<String, Value>) -> Result<HostedBinding, ()> {
-    let field = |name: &str| {
-        object
-            .get(name)
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .ok_or(())
-    };
-    Ok(HostedBinding {
-        broker_endpoint: field("broker_endpoint")?,
-        account_id: field("account_id")?,
-        instance_id: field("instance_id")?,
-        bucket: field("bucket")?,
-        prefix: field("prefix")?,
-        broker_token: field("broker_token")?,
-    })
+fn approved_binding(
+    object: &serde_json::Map<String, Value>,
+    portal_base: &str,
+) -> Result<HostedBinding, ()> {
+    let binding = validation::hosted_binding(object).map_err(|_| ())?;
+    validation::require_portal_origin(&binding.broker_endpoint, portal_base).map_err(|_| ())?;
+    Ok(binding)
 }
 
 #[cfg(test)]
@@ -267,7 +283,21 @@ mod tests {
         serde_json::to_vec(&json!({
             "status": "approved",
             "nonce": "SHOULD-BE-IGNORED",
-            "broker_endpoint": "https://broker.example",
+            "broker_endpoint": crate::test_support::PORTAL_BASE,
+            "account_id": "account",
+            "instance_id": "instance",
+            "bucket": "bucket",
+            "prefix": "owner/prefix",
+            "broker_token": "broker-token-secret"
+        }))
+        .unwrap()
+    }
+
+    fn needs_subscription_body() -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "status": "needs_subscription",
+            "subscribe_url": format!("{}/services/backup", crate::test_support::PORTAL_BASE),
+            "broker_endpoint": crate::test_support::PORTAL_BASE,
             "account_id": "account",
             "instance_id": "instance",
             "bucket": "bucket",
@@ -290,7 +320,8 @@ mod tests {
 
     #[test]
     fn parse_ignores_body_nonce_on_approved() {
-        let HandoffPollOutcome::Approved(binding) = parse_poll_body(&approved_body()).unwrap()
+        let HandoffPollOutcome::Approved(binding) =
+            parse_poll_body(&approved_body(), crate::test_support::PORTAL_BASE).unwrap()
         else {
             panic!("expected approved");
         };
@@ -300,25 +331,25 @@ mod tests {
 
     #[test]
     fn needs_subscription_cannot_carry_broker_token() {
-        let body = serde_json::to_vec(&json!({
-            "status": "needs_subscription",
-            "subscribe_url": "https://services.solstone.app/services/backup",
-            "broker_token": "broker-token-secret",
-            "bucket": "bucket",
-            "prefix": "owner/prefix"
-        }))
-        .unwrap();
         assert!(matches!(
-            parse_poll_body(&body),
+            parse_poll_body(&needs_subscription_body(), crate::test_support::PORTAL_BASE),
             Ok(HandoffPollOutcome::NeedsSubscription)
         ));
+    }
+
+    #[test]
+    fn needs_subscription_missing_binding_field_is_rejected() {
+        let mut value = serde_json::from_slice::<Value>(&needs_subscription_body()).unwrap();
+        value.as_object_mut().unwrap().remove("bucket");
+        let body = serde_json::to_vec(&value).unwrap();
+        assert!(parse_poll_body(&body, crate::test_support::PORTAL_BASE).is_err());
     }
 
     #[test]
     fn approved_blank_required_field_is_rejected() {
         let body = serde_json::to_vec(&json!({
             "status": "approved",
-            "broker_endpoint": "https://broker.example",
+            "broker_endpoint": crate::test_support::PORTAL_BASE,
             "account_id": "account",
             "instance_id": "instance",
             "bucket": " ",
@@ -326,6 +357,6 @@ mod tests {
             "broker_token": "broker-token-secret"
         }))
         .unwrap();
-        assert!(parse_poll_body(&body).is_err());
+        assert!(parse_poll_body(&body, crate::test_support::PORTAL_BASE).is_err());
     }
 }

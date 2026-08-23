@@ -1,7 +1,17 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
 use axum::{body::Bytes, response::Response};
 use serde_json::{Map, Value};
+use solstone_core_backup::HostedBinding;
 
 use crate::response;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HandoffFieldError {
+    Missing(&'static str),
+    InvalidValue,
+}
 
 pub fn object(
     body: &Bytes,
@@ -21,6 +31,96 @@ pub fn required_string(value: &Map<String, Value>, key: &str) -> Result<String, 
         .map(ToOwned::to_owned)
         .ok_or_else(|| response::missing(&format!("missing {key}")))
 }
+
+pub(crate) fn nonempty_string(
+    object: &Map<String, Value>,
+    key: &'static str,
+) -> Result<String, HandoffFieldError> {
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or(HandoffFieldError::Missing(key))
+}
+
+pub(crate) fn hosted_binding(
+    object: &Map<String, Value>,
+) -> Result<HostedBinding, HandoffFieldError> {
+    Ok(HostedBinding {
+        broker_endpoint: nonempty_string(object, "broker_endpoint")?,
+        account_id: nonempty_string(object, "account_id")?,
+        instance_id: nonempty_string(object, "instance_id")?,
+        bucket: nonempty_string(object, "bucket")?,
+        prefix: nonempty_string(object, "prefix")?,
+        broker_token: nonempty_string(object, "broker_token")?,
+    })
+}
+
+fn canonical_origin(value: &str) -> Option<String> {
+    let (scheme, rest) = value.split_once("://")?;
+    if scheme != "http" && scheme != "https" {
+        return None;
+    }
+    if rest.contains(['@', '?', '#']) {
+        return None;
+    }
+    let rest = rest.strip_suffix('/').unwrap_or(rest);
+    if rest.contains('/') {
+        return None;
+    }
+    let (host, port) = match rest.split_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (rest, None),
+    };
+    if host.is_empty()
+        || !host
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+    {
+        return None;
+    }
+    if let Some(port) = port
+        && (!(1..=5).contains(&port.len()) || !port.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return None;
+    }
+    Some(format!("{scheme}://{rest}"))
+}
+
+pub(crate) fn require_portal_origin(
+    candidate: &str,
+    portal_base: &str,
+) -> Result<(), HandoffFieldError> {
+    let Some(base) = canonical_origin(portal_base) else {
+        return Err(HandoffFieldError::InvalidValue);
+    };
+    let Some(origin) = canonical_origin(candidate) else {
+        return Err(HandoffFieldError::InvalidValue);
+    };
+    if origin == base {
+        Ok(())
+    } else {
+        Err(HandoffFieldError::InvalidValue)
+    }
+}
+
+pub(crate) fn require_https_portal_url(
+    url: &str,
+    portal_base: &str,
+) -> Result<(), HandoffFieldError> {
+    let Some(after) = url.strip_prefix("https://") else {
+        return Err(HandoffFieldError::InvalidValue);
+    };
+    let authority_end = after.find(['/', '?', '#']).unwrap_or(after.len());
+    let authority = &after[..authority_end];
+    if authority.contains('@') {
+        return Err(HandoffFieldError::InvalidValue);
+    }
+    require_portal_origin(&format!("https://{authority}"), portal_base)
+}
+
 pub fn destination(value: &Map<String, Value>) -> Result<(), Response> {
     let _ = required_string(value, "repository")?;
     let backend = required_string(value, "backend")?;
@@ -117,4 +217,127 @@ pub fn restore_day(value: &Map<String, Value>) -> Result<(), Response> {
             "",
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const PORTAL: &str = "https://services.solstone.app";
+    const HOSTED_BINDING_FIELDS: [&str; 6] = [
+        "broker_endpoint",
+        "account_id",
+        "instance_id",
+        "bucket",
+        "prefix",
+        "broker_token",
+    ];
+
+    fn binding_object() -> Map<String, Value> {
+        json!({
+            "broker_endpoint": PORTAL,
+            "account_id": "account",
+            "instance_id": "instance",
+            "bucket": "bucket",
+            "prefix": "owner/prefix",
+            "broker_token": "broker-token-secret"
+        })
+        .as_object()
+        .unwrap()
+        .clone()
+    }
+
+    #[test]
+    fn hosted_binding_requires_each_nonempty_string_field() {
+        for field in HOSTED_BINDING_FIELDS {
+            let mut missing = binding_object();
+            missing.remove(field);
+            assert_eq!(
+                hosted_binding(&missing),
+                Err(HandoffFieldError::Missing(field)),
+                "{field} absent"
+            );
+            let mut blank = binding_object();
+            blank.insert(field.to_owned(), json!(" "));
+            assert_eq!(
+                hosted_binding(&blank),
+                Err(HandoffFieldError::Missing(field)),
+                "{field} blank"
+            );
+            let mut wrong_type = binding_object();
+            wrong_type.insert(field.to_owned(), json!(1));
+            assert_eq!(
+                hosted_binding(&wrong_type),
+                Err(HandoffFieldError::Missing(field)),
+                "{field} non-string"
+            );
+        }
+        assert!(hosted_binding(&binding_object()).is_ok());
+    }
+
+    #[test]
+    fn portal_origin_accepts_exact_and_one_trailing_slash() {
+        assert!(require_portal_origin(PORTAL, PORTAL).is_ok());
+        assert!(require_portal_origin("https://services.solstone.app/", PORTAL).is_ok());
+        assert!(require_portal_origin(PORTAL, "https://services.solstone.app/").is_ok());
+    }
+
+    #[test]
+    fn portal_origin_rejects_path_query_fragment_userinfo_and_extra_slash() {
+        for candidate in [
+            "https://services.solstone.app//",
+            "https://services.solstone.app/backup",
+            "https://user:pass@services.solstone.app",
+            "https://services.solstone.app?x=1",
+            "https://services.solstone.app#f",
+            "http://services.solstone.app",
+            "https://broker.example",
+            "HTTPS://services.solstone.app",
+        ] {
+            assert_eq!(
+                require_portal_origin(candidate, PORTAL),
+                Err(HandoffFieldError::InvalidValue),
+                "{candidate}"
+            );
+        }
+    }
+
+    #[test]
+    fn misconfigured_portal_base_validates_nothing() {
+        let bad = "https://services.solstone.app/foo";
+        assert_eq!(
+            require_portal_origin(bad, bad),
+            Err(HandoffFieldError::InvalidValue)
+        );
+        assert_eq!(
+            require_portal_origin(PORTAL, bad),
+            Err(HandoffFieldError::InvalidValue)
+        );
+    }
+
+    #[test]
+    fn subscribe_url_must_be_https_at_portal_origin() {
+        assert!(
+            require_https_portal_url("https://services.solstone.app/services/backup", PORTAL)
+                .is_ok()
+        );
+        assert!(require_https_portal_url("https://services.solstone.app/", PORTAL).is_ok());
+        assert!(require_https_portal_url(PORTAL, PORTAL).is_ok());
+        assert_eq!(
+            require_https_portal_url("http://services.solstone.app/services/backup", PORTAL),
+            Err(HandoffFieldError::InvalidValue)
+        );
+        assert_eq!(
+            require_https_portal_url("https://evil.example/subscribe", PORTAL),
+            Err(HandoffFieldError::InvalidValue)
+        );
+        assert_eq!(
+            require_https_portal_url(
+                "https://user:pass@services.solstone.app/services/backup",
+                PORTAL
+            ),
+            Err(HandoffFieldError::InvalidValue)
+        );
+    }
 }

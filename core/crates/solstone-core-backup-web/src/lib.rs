@@ -9,6 +9,7 @@
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
@@ -61,6 +62,7 @@ pub struct BackupWebDeps {
     pub rclone_install_dir: Option<PathBuf>,
     pub portal_base: String,
     pub version: &'static str,
+    pub handoff_poll_lease: Arc<AtomicBool>,
 }
 
 struct ProductionClock;
@@ -93,6 +95,7 @@ impl BackupWebDeps {
             rclone_install_dir: None,
             portal_base: "https://services.solstone.app".into(),
             version: env!("CARGO_PKG_VERSION"),
+            handoff_poll_lease: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1052,10 +1055,14 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
     };
     let generation = operation::generation_of(&deps.operations).unwrap_or(0);
     if payload.get("needs_subscription") == Some(&Value::Bool(true)) {
+        if let Err(error) = validate_needs_subscription(&payload, &deps.portal_base) {
+            operation::finish(&deps.operations, generation, "error", Some("failed".into()));
+            return error;
+        }
         operation::mark_needs_subscription(&deps.operations, generation);
         return status_response(&deps);
     }
-    let binding = match hosted_binding_from_payload(&payload) {
+    let binding = match hosted_binding_from_payload(&payload, &deps.portal_base) {
         Ok(binding) => binding,
         Err(error) => {
             operation::finish(&deps.operations, generation, "error", Some("failed".into()));
@@ -1078,16 +1085,37 @@ async fn handoff_route(deps: BackupWebDeps, body: Bytes) -> axum::response::Resp
 
 fn hosted_binding_from_payload(
     payload: &Map<String, Value>,
+    portal_base: &str,
 ) -> Result<HostedBinding, axum::response::Response> {
-    let field = |name: &'static str| validation::required_string(payload, name);
-    Ok(HostedBinding {
-        broker_endpoint: field("broker_endpoint")?,
-        account_id: field("account_id")?,
-        instance_id: field("instance_id")?,
-        bucket: field("bucket")?,
-        prefix: field("prefix")?,
-        broker_token: field("broker_token")?,
-    })
+    let binding = validation::hosted_binding(payload).map_err(handoff_field_response)?;
+    validation::require_portal_origin(&binding.broker_endpoint, portal_base)
+        .map_err(handoff_field_response)?;
+    Ok(binding)
+}
+
+fn validate_needs_subscription(
+    payload: &Map<String, Value>,
+    portal_base: &str,
+) -> Result<(), axum::response::Response> {
+    let binding = validation::hosted_binding(payload).map_err(handoff_field_response)?;
+    validation::require_portal_origin(&binding.broker_endpoint, portal_base)
+        .map_err(handoff_field_response)?;
+    let url =
+        validation::nonempty_string(payload, "subscribe_url").map_err(handoff_field_response)?;
+    validation::require_https_portal_url(&url, portal_base).map_err(handoff_field_response)?;
+    Ok(())
+}
+
+fn handoff_field_response(error: validation::HandoffFieldError) -> axum::response::Response {
+    match error {
+        validation::HandoffFieldError::Missing(key) => response::missing(&format!("missing {key}")),
+        validation::HandoffFieldError::InvalidValue => response::error(
+            axum::http::StatusCode::BAD_REQUEST,
+            "I couldn't use one of those values.",
+            "invalid_request_value",
+            "",
+        ),
+    }
 }
 
 pub(crate) fn persist_and_consume_hosted(
