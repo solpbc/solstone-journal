@@ -31,17 +31,21 @@ pub fn admissible_resolution_entities(pool: &[&JournalEntity]) -> Vec<EntityReso
         .collect()
 }
 
-/// Return whether a saved ambiguity choice names an unblocked non-Person.
+/// Return whether a saved ambiguity choice should skip resolution.
 ///
-/// `true` means the caller must treat the query as unmatched and must not call
-/// resolution: the named entity is present in the unblocked roster but excluded
-/// by Person admission. Missing rows and IDs absent from that roster return
-/// `false` so the existing `ResolvedChoiceEntityAbsent` path still runs.
+/// `entities` is the blocked-inclusive journal roster, not a pre-filtered
+/// unblocked slice. Outcomes:
+/// - no saved-choice row, or a row with no `resolved_entity_id` → `false`
+/// - named ID absent from `entities` → `false` (caller proceeds to resolution,
+///   which raises `ResolvedChoiceEntityAbsent`)
+/// - named ID present and blocked → `true` (excluded regardless of type)
+/// - named ID present, unblocked, and not a Person → `true`
+/// - named ID present, unblocked, and a Person → `false`
 pub fn saved_choice_excluded_by_admission(
     journal_root: &Path,
     scope: &Value,
     query: &str,
-    unblocked_entities: &[&JournalEntity],
+    entities: &[&JournalEntity],
 ) -> Result<bool, EntityStoreError> {
     let normalized = normalize_resolution_query(query);
     let Some(row) = load_resolved_ambiguity_choice(journal_root, scope, &normalized)? else {
@@ -50,13 +54,16 @@ pub fn saved_choice_excluded_by_admission(
     let Some(entity_id) = row.get("resolved_entity_id").and_then(Value::as_str) else {
         return Ok(false);
     };
-    let Some(entity) = unblocked_entities
+    let Some(entity) = entities
         .iter()
         .copied()
         .find(|entity| entity.id == entity_id)
     else {
         return Ok(false);
     };
+    if entity.is_blocked() {
+        return Ok(true);
+    }
     Ok(!is_admissible_person(entity.entity_type()))
 }
 
@@ -195,41 +202,46 @@ mod tests {
     }
 
     #[test]
-    fn saved_choice_absent_from_unblocked_slice_is_not_excluded() {
+    fn saved_choice_absent_from_roster_is_not_excluded() {
         let temporary = TempDir::new();
         write_resolved_choice(temporary.path(), "Sarah", "sarah_lee");
         let other = journal_entity("sarah_connor", "Sarah Connor", Some("Person"), false, false);
-        let unblocked = [&other];
+        let roster = [&other];
         assert!(
             !saved_choice_excluded_by_admission(
                 temporary.path(),
                 &journal_scope(),
                 "Sarah",
-                &unblocked,
+                &roster,
             )
             .expect("absent saved choice is not excluded")
         );
     }
 
     #[test]
-    fn saved_choice_for_blocked_and_therefore_absent_id_is_not_excluded() {
-        let temporary = TempDir::new();
-        write_resolved_choice(temporary.path(), "Sarah", "sarah_lee");
-        let blocked = journal_entity("sarah_lee", "Sarah Lee", Some("Person"), false, true);
-        let unblocked = [&blocked]
-            .into_iter()
-            .filter(|entity| !entity.is_blocked())
-            .collect::<Vec<_>>();
-        assert!(unblocked.is_empty());
-        assert!(
-            !saved_choice_excluded_by_admission(
-                temporary.path(),
-                &journal_scope(),
-                "Sarah",
-                &unblocked,
-            )
-            .expect("blocked IDs stay on the absent path")
-        );
+    fn saved_choice_for_blocked_id_is_excluded() {
+        for (id, name, entity_type) in [
+            ("sarah_lee", "Sarah Lee", Some("Person")),
+            ("tool", "Terminal", Some("Tool")),
+            ("project", "Atlas", Some("Project")),
+            ("company", "Acme", Some("Company")),
+            ("untyped", "Untyped", None),
+        ] {
+            let temporary = TempDir::new();
+            write_resolved_choice(temporary.path(), name, id);
+            let blocked = journal_entity(id, name, entity_type, false, true);
+            let roster = [&blocked];
+            assert!(
+                saved_choice_excluded_by_admission(
+                    temporary.path(),
+                    &journal_scope(),
+                    name,
+                    &roster,
+                )
+                .expect("blocked IDs are excluded"),
+                "{id} must be excluded"
+            );
+        }
     }
 
     #[test]

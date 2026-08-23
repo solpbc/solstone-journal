@@ -124,6 +124,7 @@ fn apply(
             screen_names: &[],
             meeting_names: &[],
             entities,
+            all_entities: entities,
             non_owner_sids: &[1],
             margin_declined_sids,
             journal_root: temporary.path(),
@@ -410,6 +411,35 @@ fn saved_choice_naming_a_present_tool_is_unmatched_without_error() {
         &HashSet::new(),
     )
     .expect("saved Tool choice must not raise");
+    assert_eq!(result.labels[&1].speaker, None);
+    assert!(result.candidate_entity_ids.is_empty());
+    assert!(result.resolved_candidate_names.is_empty());
+}
+
+#[test]
+fn saved_choice_naming_a_blocked_person_is_unmatched_without_error() {
+    let temporary = TempDir::new();
+    let path = temporary
+        .path()
+        .join("entities")
+        .join("alice")
+        .join("entity.json");
+    fs::create_dir_all(path.parent().expect("entity parent")).expect("create entity parent");
+    fs::write(
+        path,
+        json!({"id": "alice", "name": "Alice", "type": "Person", "blocked": true}).to_string(),
+    )
+    .expect("write blocked entity");
+    write_resolved_choice(temporary.path(), "Alice", "alice");
+    let speakers = ["Alice".to_owned()];
+    let result = apply(
+        &temporary,
+        &speakers,
+        &[],
+        &journal_entities(temporary.path()),
+        &HashSet::new(),
+    )
+    .expect("saved blocked choice must not raise");
     assert_eq!(result.labels[&1].speaker, None);
     assert!(result.candidate_entity_ids.is_empty());
     assert!(result.resolved_candidate_names.is_empty());

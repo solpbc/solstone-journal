@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
-use solstone_core_entity::{EncoderIdentity, VoiceprintItem, save_voiceprints_batch};
+use solstone_core_entity::{EncoderIdentity, VoiceprintItem, ambiguity_id, save_voiceprints_batch};
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::resolve::{ResolveOutcome, resolve};
 use zip::write::SimpleFileOptions;
@@ -94,6 +94,36 @@ fn entity_flags(
         object.insert("blocked".to_owned(), Value::Bool(true));
     }
     fs::write(path.join("entity.json"), value.to_string()).expect("identity");
+}
+fn write_resolved_choice(root: &Path, query: &str, entity_id: &str) {
+    let normalized = solstone_core_entity_matching::normalize_resolution_query(query);
+    let row = json!({
+        "schema_version": 1,
+        "ambiguity_id": ambiguity_id(&format!("journal|{normalized}")),
+        "scope": {"kind": "journal"},
+        "normalized_query": normalized,
+        "original_query": query,
+        "latest_query": query,
+        "first_seen": "2026-08-01T00:00:00Z",
+        "last_seen": "2026-08-01T00:00:00Z",
+        "observed_tier": 8,
+        "status": "resolved",
+        "resolved_entity_id": entity_id,
+        "resolved_at": "2026-08-01T00:00:00Z",
+        "ranked_candidates": [{
+            "id": entity_id,
+            "name": query,
+            "tier": 8,
+            "score": 90.0
+        }],
+        "origins": [{"lane": "test"}],
+        "origin_keys": ["test"],
+        "occurrence_count": 1,
+        "audit": {"prior_choices": []}
+    });
+    let path = root.join("entities/ambiguities.jsonl");
+    fs::create_dir_all(path.parent().expect("ambiguities parent")).expect("create entities");
+    fs::write(&path, format!("{row}\n")).expect("write resolved choice");
 }
 fn owner(root: &Path) {
     write_owner_centroid(root, false);
@@ -246,6 +276,52 @@ fn ac5_resolve_candidates_contain_only_admitted_person_names() {
             .labels
             .iter()
             .any(|label| label.speaker.as_deref() == Some("tool"))
+    );
+}
+
+#[test]
+fn saved_choice_naming_a_blocked_entity_is_unmatched_without_rewriting_speakers() {
+    let temporary = TempDir::new();
+    let segment = segment(temporary.path());
+    seed_owner(temporary.path());
+    entity_flags(
+        temporary.path(),
+        "alice",
+        "Alice",
+        Some("Person"),
+        false,
+        true,
+    );
+    write_resolved_choice(temporary.path(), "Alice", "alice");
+    embeddings(
+        &segment.join("mic_audio.npz"),
+        &[1, 2],
+        &[embedding(1.0, 0.0), embedding(0.0, 1.0)],
+    );
+    let speakers_path = segment.join("talents/speakers.json");
+    fs::write(&speakers_path, "[\"Alice\"]").expect("speakers");
+    let speakers_before = fs::read(&speakers_path).expect("read speakers before resolve");
+    let outcome =
+        resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve");
+    let ResolveOutcome::Resolved(output) = outcome else {
+        panic!("expected resolved");
+    };
+    assert_eq!(
+        fs::read(&speakers_path).expect("read speakers after resolve"),
+        speakers_before,
+        "resolve must not rewrite talents/speakers.json"
+    );
+    assert!(
+        !output
+            .candidates
+            .iter()
+            .any(|candidate| candidate == "Alice")
+    );
+    assert!(
+        !output
+            .labels
+            .iter()
+            .any(|label| label.speaker.as_deref() == Some("alice"))
     );
 }
 

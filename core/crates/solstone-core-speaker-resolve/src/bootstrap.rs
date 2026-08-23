@@ -141,9 +141,12 @@ pub fn bootstrap_voiceprints(
         return Ok(BootstrapOutcome::NoOwnerCentroid);
     };
 
-    let mut entities = load_all_journal_entities(&request.journal_root)?;
-    entities.retain(|entity| !entity.is_blocked());
-    let unblocked = entities.iter().collect::<Vec<_>>();
+    let entities = load_all_journal_entities(&request.journal_root)?;
+    let all_entities = entities.iter().collect::<Vec<_>>();
+    let unblocked = entities
+        .iter()
+        .filter(|entity| !entity.is_blocked())
+        .collect::<Vec<_>>();
     let pool = admissible_person_pool(&unblocked);
     let resolution_entities = admissible_resolution_entities(&pool);
     let scope = json!({"kind": "journal"});
@@ -159,7 +162,12 @@ pub fn bootstrap_voiceprints(
         }
         stats.single_speaker_segments += 1;
         let speaker = &segment.speakers[0];
-        if saved_choice_excluded_by_admission(&request.journal_root, &scope, speaker, &unblocked)? {
+        if saved_choice_excluded_by_admission(
+            &request.journal_root,
+            &scope,
+            speaker,
+            &all_entities,
+        )? {
             if !stats.speakers_unmatched.contains(speaker) {
                 stats.speakers_unmatched.push(speaker.clone());
             }
@@ -282,9 +290,12 @@ pub fn seed_from_imports(
         return Ok(SeedFromImportsOutcome::NoOwnerCentroid);
     };
 
-    let mut entities = load_all_journal_entities(&request.journal_root)?;
-    entities.retain(|entity| !entity.is_blocked());
-    let unblocked = entities.iter().collect::<Vec<_>>();
+    let entities = load_all_journal_entities(&request.journal_root)?;
+    let all_entities = entities.iter().collect::<Vec<_>>();
+    let unblocked = entities
+        .iter()
+        .filter(|entity| !entity.is_blocked())
+        .collect::<Vec<_>>();
     let pool = admissible_person_pool(&unblocked);
     let resolution_entities = admissible_resolution_entities(&pool);
     let scope = json!({"kind": "journal"});
@@ -339,7 +350,7 @@ pub fn seed_from_imports(
                         &request.journal_root,
                         &scope,
                         speaker_name,
-                        &unblocked,
+                        &all_entities,
                     )? {
                         None
                     } else {

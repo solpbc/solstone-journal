@@ -133,6 +133,7 @@ pub fn compute_segment_candidate_evidence_readonly(
             .chain(&meeting_names),
     );
     let entities = load_all_journal_entities(journal_root)?;
+    let all_entities = entities.iter().collect::<Vec<_>>();
     let unblocked = entities
         .iter()
         .filter(|entity| !entity.is_blocked())
@@ -142,7 +143,7 @@ pub fn compute_segment_candidate_evidence_readonly(
     let scope = json!({"kind": "journal"});
     let mut name_entity_ids = HashMap::new();
     for name in candidate_names {
-        match saved_choice_excluded_by_admission(journal_root, &scope, &name, &unblocked) {
+        match saved_choice_excluded_by_admission(journal_root, &scope, &name, &all_entities) {
             Ok(true) => continue,
             Ok(false) => {}
             Err(_) => {

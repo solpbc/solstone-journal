@@ -378,6 +378,7 @@ pub fn apply_result(
             if let Some(items) = items.and_then(Value::as_array) {
                 let loaded = solstone_core_entity::load_all_journal_entities(journal)
                     .map_err(|error| error.to_string())?;
+                let all_entities = loaded.iter().collect::<Vec<_>>();
                 let unblocked = loaded
                     .iter()
                     .filter(|entity| !entity.is_blocked())
@@ -394,7 +395,7 @@ pub fn apply_result(
                     ) else {
                         continue;
                     };
-                    if saved_choice_excluded_by_admission(journal, &scope, speaker, &unblocked)
+                    if saved_choice_excluded_by_admission(journal, &scope, speaker, &all_entities)
                         .map_err(|error| error.to_string())?
                     {
                         continue;
@@ -852,6 +853,16 @@ mod tests {
         let labels = layer4_labels(root.path(), "Terminal");
         assert!(labels["labels"][0]["speaker"].is_null());
         assert!(!root.path().join("entities/tool/voiceprints.npz").exists());
+    }
+
+    #[test]
+    fn apply_result_saved_choice_naming_a_blocked_entity_is_unmatched() {
+        let root = tempfile::tempdir().unwrap();
+        write_layer4_entity(root.path(), "alice", "Alice", Some("Person"), true);
+        write_resolved_choice(root.path(), "Alice", "alice");
+        let labels = layer4_labels(root.path(), "Alice");
+        assert!(labels["labels"][0]["speaker"].is_null());
+        assert!(!root.path().join("entities/alice/voiceprints.npz").exists());
     }
 
     #[test]

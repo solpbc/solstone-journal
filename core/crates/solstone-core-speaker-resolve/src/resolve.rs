@@ -161,9 +161,11 @@ pub fn resolve(
         });
     }
 
-    let entities = load_all_journal_entities(journal_root)?
-        .into_iter()
+    let all_entities = load_all_journal_entities(journal_root)?;
+    let entities = all_entities
+        .iter()
         .filter(|entity| !entity.is_blocked())
+        .cloned()
         .collect::<Vec<_>>();
     let unblocked = entities.iter().collect::<Vec<_>>();
     let margin_ids = admissible_person_pool(&unblocked)
@@ -210,6 +212,7 @@ pub fn resolve(
             screen_names: &screen_names,
             meeting_names: &meeting_names,
             entities: &entities,
+            all_entities: &all_entities,
             non_owner_sids: &layer1.non_owner_sids,
             margin_declined_sids: &layer1.margin_declined_sids,
             journal_root,

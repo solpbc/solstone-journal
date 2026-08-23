@@ -342,7 +342,7 @@ fn saved_choice_naming_a_tool_is_silent() {
 }
 
 #[test]
-fn saved_choice_naming_an_absent_or_blocked_entity_is_stale() {
+fn saved_choice_naming_an_absent_entity_is_stale() {
     let absent = TempDir::new();
     write_resolved_choice(absent.path(), "Alice", "missing");
     let (evidence, gaps) = evidence_for_speakers(&absent, r#"["Alice"]"#);
@@ -353,16 +353,14 @@ fn saved_choice_naming_an_absent_or_blocked_entity_is_stale() {
             .collect::<Vec<_>>(),
         [("resolution", "stale_resolution")]
     );
+}
 
-    let blocked = TempDir::new();
-    write_entity_typed(blocked.path(), "alice", "Alice", Some("Person"), true);
-    write_resolved_choice(blocked.path(), "Alice", "alice");
-    let (evidence, gaps) = evidence_for_speakers(&blocked, r#"["Alice"]"#);
+#[test]
+fn saved_choice_naming_a_blocked_entity_is_silent() {
+    let temporary = TempDir::new();
+    write_entity_typed(temporary.path(), "alice", "Alice", Some("Person"), true);
+    write_resolved_choice(temporary.path(), "Alice", "alice");
+    let (evidence, gaps) = evidence_for_speakers(&temporary, r#"["Alice"]"#);
     assert!(evidence.is_empty());
-    assert_eq!(
-        gaps.iter()
-            .map(|gap| (gap.source.as_str(), gap.reason.as_str()))
-            .collect::<Vec<_>>(),
-        [("resolution", "stale_resolution")]
-    );
+    assert!(gaps.is_empty());
 }

@@ -28,6 +28,7 @@ pub struct Layer2Inputs<'a> {
     pub screen_names: &'a [String],
     pub meeting_names: &'a [String],
     pub entities: &'a [JournalEntity],
+    pub all_entities: &'a [JournalEntity],
     pub non_owner_sids: &'a [i64],
     pub margin_declined_sids: &'a HashSet<i64>,
     pub journal_root: &'a Path,
@@ -69,6 +70,7 @@ pub fn apply_structural_heuristics(
         .iter()
         .filter(|entity| !entity.is_blocked())
         .collect::<Vec<_>>();
+    let all_entity_refs = inputs.all_entities.iter().collect::<Vec<_>>();
     let pool = admissible_person_pool(&available_entities);
     let resolution_entities = admissible_resolution_entities(&pool);
     let mut candidate_entity_ids = BTreeSet::new();
@@ -77,7 +79,7 @@ pub fn apply_structural_heuristics(
     for name in &candidate_names {
         if let Some(entity) = resolve_entity(
             &inputs,
-            &available_entities,
+            &all_entity_refs,
             &pool,
             &resolution_entities,
             name,
@@ -98,7 +100,7 @@ pub fn apply_structural_heuristics(
     if inputs.speakers.len() == 1 {
         if let Some(entity) = resolve_entity(
             &inputs,
-            &available_entities,
+            &all_entity_refs,
             &pool,
             &resolution_entities,
             &inputs.speakers[0],
@@ -116,7 +118,7 @@ pub fn apply_structural_heuristics(
         && inputs.setting_names.len() == 1
         && let Some(entity) = resolve_entity(
             &inputs,
-            &available_entities,
+            &all_entity_refs,
             &pool,
             &resolution_entities,
             &inputs.setting_names[0],
@@ -142,14 +144,14 @@ pub fn apply_structural_heuristics(
 
 fn resolve_entity<'a>(
     inputs: &Layer2Inputs<'_>,
-    unblocked: &[&JournalEntity],
+    all_entities: &[&JournalEntity],
     pool: &[&'a JournalEntity],
     resolution_entities: &[EntityResolutionEntity],
     name: &str,
     field: &str,
 ) -> Result<Option<&'a JournalEntity>, EntityResolutionError> {
     let scope = json!({"kind": "journal"});
-    if saved_choice_excluded_by_admission(inputs.journal_root, &scope, name, unblocked)? {
+    if saved_choice_excluded_by_admission(inputs.journal_root, &scope, name, all_entities)? {
         return Ok(None);
     }
     let resolution = record_entity_resolution_from_name_evidence(

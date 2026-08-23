@@ -369,6 +369,39 @@ fn bootstrap_saved_choice_naming_a_tool_is_unmatched_without_a_new_row() {
 }
 
 #[test]
+fn bootstrap_saved_choice_naming_a_blocked_entity_is_unmatched_without_a_new_row() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    let blocked = temporary.path().join("entities/alice");
+    fs::create_dir_all(&blocked).unwrap();
+    fs::write(
+        blocked.join("entity.json"),
+        json!({"id": "alice", "name": "Alice", "type": "Person", "is_principal": false, "blocked": true})
+            .to_string(),
+    )
+    .unwrap();
+    write_owner(temporary.path());
+    write_resolved_choice(temporary.path(), "Alice", "alice");
+    segment(temporary.path(), "120000_300", "Alice");
+    let before = ambiguity_row_count(temporary.path());
+
+    let BootstrapOutcome::Completed(stats) =
+        bootstrap_voiceprints(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+    assert_eq!(stats.speakers_unmatched, ["Alice"]);
+    assert_eq!(stats.embeddings_saved, 0);
+    assert_eq!(ambiguity_row_count(temporary.path()), before);
+    assert!(
+        !temporary
+            .path()
+            .join("entities/alice/voiceprints.npz")
+            .exists()
+    );
+}
+
+#[test]
 fn seed_from_imports_same_name_person_and_tool_saves_the_person() {
     let temporary = Temp::new();
     entity(temporary.path(), "principal", "Principal", "Person", true);
@@ -420,6 +453,39 @@ fn seed_from_imports_saved_choice_naming_a_tool_is_unmatched_without_a_new_row()
         !temporary
             .path()
             .join("entities/tool/voiceprints.npz")
+            .exists()
+    );
+}
+
+#[test]
+fn seed_from_imports_saved_choice_naming_a_blocked_entity_is_unmatched_without_a_new_row() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    let blocked = temporary.path().join("entities/alice");
+    fs::create_dir_all(&blocked).unwrap();
+    fs::write(
+        blocked.join("entity.json"),
+        json!({"id": "alice", "name": "Alice", "type": "Person", "is_principal": false, "blocked": true})
+            .to_string(),
+    )
+    .unwrap();
+    write_owner(temporary.path());
+    write_resolved_choice(temporary.path(), "Alice", "alice");
+    import_segment(temporary.path(), "import.granola", "120000_300", "Alice");
+    let before = ambiguity_row_count(temporary.path());
+
+    let SeedFromImportsOutcome::Completed(stats) =
+        seed_from_imports(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+    assert_eq!(stats.speakers_unmatched, ["Alice"]);
+    assert_eq!(stats.embeddings_saved, 0);
+    assert_eq!(ambiguity_row_count(temporary.path()), before);
+    assert!(
+        !temporary
+            .path()
+            .join("entities/alice/voiceprints.npz")
             .exists()
     );
 }
