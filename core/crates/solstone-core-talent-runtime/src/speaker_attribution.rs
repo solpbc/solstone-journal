@@ -8,6 +8,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use serde_json::{Map, Value, json};
+use solstone_core_speaker_resolve::admission::{
+    admissible_person_pool, admissible_resolution_entities, saved_choice_excluded_by_admission,
+};
 use solstone_core_speaker_resolve::resolve::{ResolveMetadata, ResolveOutcome, ResolveOutput};
 use solstone_core_speaker_resolve::voiceprint_accumulation::{
     AccumulationEmbedding, AccumulationLabel, AccumulationRequest, accumulate_voiceprints,
@@ -373,12 +376,15 @@ pub fn apply_result(
                 .and_then(|object| object.get("attributions"))
                 .or_else(|| parsed.as_array().map(|_| &parsed));
             if let Some(items) = items.and_then(Value::as_array) {
-                let entities = solstone_core_entity::load_all_journal_entities(journal)
-                    .map_err(|error| error.to_string())?
-                    .into_iter()
-                    .map(|entity| entity.resolution_entity())
-                    .filter(|entity| !entity.blocked)
+                let loaded = solstone_core_entity::load_all_journal_entities(journal)
+                    .map_err(|error| error.to_string())?;
+                let unblocked = loaded
+                    .iter()
+                    .filter(|entity| !entity.is_blocked())
                     .collect::<Vec<_>>();
+                let pool = admissible_person_pool(&unblocked);
+                let resolution_entities = admissible_resolution_entities(&pool);
+                let scope = json!({"kind":"journal"});
                 for item in items.iter().filter_map(Value::as_object) {
                     let (Some(sentence_id), Some(speaker)) = (
                         item.get("sentence_id").and_then(Value::as_i64),
@@ -388,11 +394,16 @@ pub fn apply_result(
                     ) else {
                         continue;
                     };
+                    if saved_choice_excluded_by_admission(journal, &scope, speaker, &unblocked)
+                        .map_err(|error| error.to_string())?
+                    {
+                        continue;
+                    }
                     let resolution = solstone_core_entity::record_entity_resolution(
                         journal,
                         speaker,
-                        &entities,
-                        json!({"kind":"journal"}),
+                        &resolution_entities,
+                        scope.clone(),
                         json!({"lane":"talent.speaker_attribution","day":day,"segment_id":segment,"field":"layer4.speaker"}),
                         90.0,
                         false,
@@ -401,7 +412,7 @@ pub fn apply_result(
                     if resolution.outcome == solstone_core_entity::EntityResolutionOutcome::Resolved
                         && let Some(id) = resolution
                             .entity_index
-                            .and_then(|index| entities[index].id.clone())
+                            .and_then(|index| pool.get(index).map(|entity| entity.id.clone()))
                     {
                         layer4.insert(sentence_id, id);
                     }
@@ -621,6 +632,150 @@ mod tests {
         .unwrap();
         assert_eq!(labels["labels"][0]["speaker"], "ada");
         assert_eq!(labels["labels"][0]["method"], "contextual");
+    }
+
+    fn write_layer4_entity(
+        root: &Path,
+        id: &str,
+        name: &str,
+        entity_type: Option<&str>,
+        blocked: bool,
+    ) {
+        let entity = root.join("entities").join(id);
+        std::fs::create_dir_all(&entity).unwrap();
+        let mut value = json!({"id": id, "name": name});
+        let object = value.as_object_mut().expect("entity object");
+        if let Some(entity_type) = entity_type {
+            object.insert("type".to_owned(), Value::String(entity_type.to_owned()));
+        }
+        if blocked {
+            object.insert("blocked".to_owned(), Value::Bool(true));
+        }
+        std::fs::write(entity.join("entity.json"), value.to_string()).unwrap();
+    }
+
+    fn write_resolved_choice(root: &Path, query: &str, entity_id: &str) {
+        let normalized = solstone_core_entity_matching::normalize_resolution_query(query);
+        let row = json!({
+            "schema_version": 1,
+            "ambiguity_id": solstone_core_entity::ambiguity_id(&format!("journal|{normalized}")),
+            "scope": {"kind": "journal"},
+            "normalized_query": normalized,
+            "original_query": query,
+            "latest_query": query,
+            "first_seen": "2026-08-01T00:00:00Z",
+            "last_seen": "2026-08-01T00:00:00Z",
+            "observed_tier": 8,
+            "status": "resolved",
+            "resolved_entity_id": entity_id,
+            "resolved_at": "2026-08-01T00:00:00Z",
+            "ranked_candidates": [{
+                "id": entity_id,
+                "name": query,
+                "tier": 8,
+                "score": 90.0
+            }],
+            "origins": [{"lane": "test"}],
+            "origin_keys": ["test"],
+            "occurrence_count": 1,
+            "audit": {"prior_choices": []}
+        });
+        let path = root.join("entities/ambiguities.jsonl");
+        std::fs::create_dir_all(path.parent().expect("ambiguities parent")).unwrap();
+        std::fs::write(&path, format!("{row}\n")).unwrap();
+    }
+
+    fn layer4_labels(root: &Path, speaker: &str) -> Value {
+        let state = SpeakerAttributionState {
+            resolved: output(vec![7]),
+        };
+        apply_result(
+            root,
+            &format!(r#"{{"attributions":[{{"sentence_id":7,"speaker":"{speaker}"}}]}}"#),
+            "20260101",
+            "090000_300",
+            "main",
+            &state,
+        )
+        .unwrap();
+        serde_json::from_str(
+            &std::fs::read_to_string(
+                root.join("chronicle/20260101/main/090000_300/talents/speaker_labels.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn apply_result_does_not_label_non_person_or_unresolved_speakers() {
+        for (id, name, entity_type, blocked, speaker) in [
+            ("tool", "Terminal", Some("Tool"), false, "Terminal"),
+            ("project", "Atlas", Some("Project"), false, "Atlas"),
+            ("company", "Acme", Some("Company"), false, "Acme"),
+            ("blocked", "Blocked", Some("Person"), true, "Blocked"),
+            ("untyped", "Untyped", None, false, "Untyped"),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            write_layer4_entity(root.path(), id, name, entity_type, blocked);
+            let labels = layer4_labels(root.path(), speaker);
+            assert!(
+                labels["labels"][0]["speaker"].is_null(),
+                "{speaker} must stay unlabeled"
+            );
+            assert!(
+                !root
+                    .path()
+                    .join("entities")
+                    .join(id)
+                    .join("voiceprints.npz")
+                    .exists(),
+                "{id} must not receive a voiceprint"
+            );
+        }
+
+        let ambiguous = tempfile::tempdir().unwrap();
+        write_layer4_entity(
+            ambiguous.path(),
+            "sam-one",
+            "Sam Person",
+            Some("Person"),
+            false,
+        );
+        write_layer4_entity(
+            ambiguous.path(),
+            "sam-two",
+            "Sam Person",
+            Some("Person"),
+            false,
+        );
+        let labels = layer4_labels(ambiguous.path(), "Sam Person");
+        assert!(labels["labels"][0]["speaker"].is_null());
+
+        let unmatched = tempfile::tempdir().unwrap();
+        write_layer4_entity(unmatched.path(), "ada", "Ada", Some("Person"), false);
+        let labels = layer4_labels(unmatched.path(), "Nobody");
+        assert!(labels["labels"][0]["speaker"].is_null());
+    }
+
+    #[test]
+    fn apply_result_same_name_person_and_tool_labels_the_person() {
+        let root = tempfile::tempdir().unwrap();
+        write_layer4_entity(root.path(), "alex", "Alex", Some("Person"), false);
+        write_layer4_entity(root.path(), "tool", "Alex", Some("Tool"), false);
+        let labels = layer4_labels(root.path(), "Alex");
+        assert_eq!(labels["labels"][0]["speaker"], "alex");
+        assert_eq!(labels["labels"][0]["method"], "contextual");
+    }
+
+    #[test]
+    fn apply_result_saved_choice_naming_a_tool_is_unmatched() {
+        let root = tempfile::tempdir().unwrap();
+        write_layer4_entity(root.path(), "tool", "Terminal", Some("Tool"), false);
+        write_resolved_choice(root.path(), "Terminal", "tool");
+        let labels = layer4_labels(root.path(), "Terminal");
+        assert!(labels["labels"][0]["speaker"].is_null());
+        assert!(!root.path().join("entities/tool/voiceprints.npz").exists());
     }
 
     fn accumulation_fixture(root: &Path) -> Box<ResolveOutput> {
