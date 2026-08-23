@@ -50,7 +50,10 @@ fn fixture_make_command(root: &Path, shims: &Path, target: &str) -> Command {
 
 #[test]
 fn make_ci_never_executes_forbidden_interpreters() {
-    assert_gate_never_executes_forbidden_interpreters("ci", &["fmt", "run", "clippy", "test"]);
+    assert_gate_never_executes_forbidden_interpreters(
+        "ci",
+        &["run", "fmt", "run", "clippy", "test"],
+    );
 }
 
 #[test]

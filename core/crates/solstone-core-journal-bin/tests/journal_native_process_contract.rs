@@ -34,6 +34,10 @@ exit 97
 const STORAGE_OPS_REFERENCE_GRAMMAR: &str =
     include_str!("../../../fixtures/journal-storage-ops-reference-grammar.txt");
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+// Maintenance bodies perform real filesystem scans and backup-tool probes.
+// Keep their correctness contract bounded without coupling it to the stricter
+// parser-probe latency budget used by the rest of this suite.
+const MAINTENANCE_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 const CHECK_USAGE_ANCHOR: &[u8] = CHECK_USAGE.as_bytes();
 const INSTALL_MODELS_USAGE_ANCHOR: &[u8] = INSTALL_MODELS_USAGE.as_bytes();
 const INSTALL_PROVIDER_USAGE_ANCHOR: &[u8] = INSTALL_PROVIDER_USAGE.as_bytes();
@@ -1465,10 +1469,14 @@ fn native_maintenance_bodies_reach_real_native_owners_without_python() {
             "no day-level timeline.json",
         ),
     ] {
-        let output =
-            run_dispatcher_with_bounded_output(&context, "maintenance", argv, PROBE_TIMEOUT)
-                .expect("dispatch native maintenance body")
-                .expect("native maintenance body completes before deadline");
+        let output = run_dispatcher_with_bounded_output(
+            &context,
+            "maintenance",
+            argv,
+            MAINTENANCE_PROBE_TIMEOUT,
+        )
+        .expect("dispatch native maintenance body")
+        .unwrap_or_else(|| panic!("maintenance {argv:?} completes before deadline"));
         assert_eq!(
             output.status.code(),
             Some(expected_exit),

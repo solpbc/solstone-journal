@@ -1027,15 +1027,19 @@ mod tests {
         .unwrap();
     }
 
+    struct ObserverStamp<'a> {
+        segment: &'a str,
+        day: &'a str,
+        received_at: i64,
+    }
+
     fn seed_observer_stamped(
         root: &Path,
         prefix: &str,
         name: &str,
         did: &str,
         stream: &str,
-        last_segment: &str,
-        last_segment_day: &str,
-        last_segment_received_at: i64,
+        stamp: ObserverStamp<'_>,
     ) {
         let directory = root.join("apps/observer/observers");
         fs::create_dir_all(&directory).unwrap();
@@ -1048,9 +1052,9 @@ mod tests {
                 "created_at": 4,
                 "revoked": false,
                 "device_binding": {"device": did, "kind": "cert"},
-                "last_segment": last_segment,
-                "last_segment_day": last_segment_day,
-                "last_segment_received_at": last_segment_received_at,
+                "last_segment": stamp.segment,
+                "last_segment_day": stamp.day,
+                "last_segment_received_at": stamp.received_at,
             })
             .to_string(),
         )
@@ -1516,9 +1520,11 @@ mod tests {
             "Desk",
             DID_A,
             "desk",
-            "090000_1",
-            "20260803",
-            FROZEN_NOW_MS - 3_600_000,
+            ObserverStamp {
+                segment: "090000_1",
+                day: "20260803",
+                received_at: FROZEN_NOW_MS - 3_600_000,
+            },
         );
         let spy = SpyNotifier::succeeding();
         let (_now, clock) = frozen_clock(FROZEN_NOW_MS);
@@ -1618,9 +1624,11 @@ mod tests {
             "Desk",
             DID_A,
             "desk",
-            "090000_1",
-            "20260803",
-            FROZEN_NOW_MS - 3_600_000,
+            ObserverStamp {
+                segment: "090000_1",
+                day: "20260803",
+                received_at: FROZEN_NOW_MS - 3_600_000,
+            },
         );
         let spy = SpyNotifier::succeeding();
         let (now, clock) = frozen_clock(FROZEN_NOW_MS);

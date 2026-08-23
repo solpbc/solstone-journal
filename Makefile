@@ -759,8 +759,15 @@ check-rust-test:
 check-rust-describe-cli-stubs:
 	@$(REQUIRE_CARGO)
 	@set -eu; \
-		output="$$(cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --features test-stubs --test cli --locked -- --test-threads=1 2>&1)"; \
+		if output="$$(cargo test --manifest-path $(RUST_MANIFEST) -p solstone-core-describe --features test-stubs --test cli --locked -- --test-threads=1 2>&1)"; then \
+			cargo_status=0; \
+		else \
+			cargo_status=$$?; \
+		fi; \
 		printf '%s\n' "$$output"; \
+		if [ "$$cargo_status" -ne 0 ]; then \
+			exit "$$cargo_status"; \
+		fi; \
 		if [ -n "$${SOLSTONE_CI_CARGO_LOG:-}" ]; then \
 			echo "check-rust-describe-cli-stubs: recording Cargo shim active (SOLSTONE_CI_CARGO_LOG is set); the leg ran but emits no test output, so the stub census is skipped for this traversal only"; \
 			exit 0; \

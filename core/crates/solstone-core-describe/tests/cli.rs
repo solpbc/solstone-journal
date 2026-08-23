@@ -1273,7 +1273,9 @@ fn tier_one_temp_is_nonempty_before_atomic_promotion_and_is_removed_afterward() 
     // races against how fast masking runs on this machine: it only needs to
     // distinguish "still working" from "genuinely stuck or dead", so the cap
     // is a hang-prevention ceiling, not a performance-calibrated margin.
-    let deadline = Instant::now() + Duration::from_secs(60);
+    // A clean full gate may still be compiling or paging the media stack while
+    // this subprocess begins. This remains a hang ceiling, not a latency SLA.
+    let deadline = Instant::now() + Duration::from_secs(120);
     let saw_nonempty = loop {
         let nonempty = fs::read_dir(&root)
             .expect("read root")
