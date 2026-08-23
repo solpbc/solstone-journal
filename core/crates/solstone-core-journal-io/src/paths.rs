@@ -12,6 +12,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 
 use chrono::Local;
+use serde::{Deserialize, Serialize};
 
 use crate::errors::{PathError, PathEscapeError, SegmentIdentityError};
 
@@ -70,11 +71,42 @@ impl StreamLocation {
     }
 }
 
+/// Explicit on-disk chronicle-segment layout.
+///
+/// Distinguishes a day-child segment ([`Direct`](Self::Direct)) from a child of
+/// a stream directory ([`Named`](Self::Named)), including a directory literally
+/// named `_default`. This is lossless; [`RecordIdentity`] is not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SegmentLayout {
+    /// Segment directory sits directly under the chronicle day.
+    Direct,
+    /// Segment directory sits under a stream-directory basename.
+    Named,
+}
+
 /// UTF-8 view of a segment for durable or wire records that already emit
 /// `(stream, key)` with `_default` as the direct-layout spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecordIdentity<'a> {
     /// `_default` for [`StreamLocation::Direct`], otherwise the UTF-8 stream directory.
+    pub stream: &'a str,
+    /// Parsed `HHMMSS_LEN` key (time metadata / existing record spelling).
+    pub key: &'a str,
+    /// Exact UTF-8 segment-directory basename.
+    pub name: &'a str,
+}
+
+/// Lossless UTF-8 view of a discovered segment's on-disk layout.
+///
+/// [`Direct`](SegmentLayout::Direct) still spells [`stream`](Self::stream) as
+/// [`DEFAULT_STREAM`]. A [`Named`](SegmentLayout::Named) directory whose UTF-8
+/// name is `_default` is representable here; [`RecordIdentity`] refuses it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SegmentLocatorIdentity<'a> {
+    /// Explicit on-disk layout. Never inferred from the stream spelling.
+    pub layout: SegmentLayout,
+    /// `_default` for [`SegmentLayout::Direct`], otherwise the UTF-8 stream directory.
     pub stream: &'a str,
     /// Parsed `HHMMSS_LEN` key (time metadata / existing record spelling).
     pub key: &'a str,
@@ -147,6 +179,36 @@ impl Segment {
             });
         };
         Ok(RecordIdentity {
+            stream,
+            key: &self.key,
+            name,
+        })
+    }
+
+    /// Fallible lossless UTF-8 identity with an explicit [`SegmentLayout`].
+    ///
+    /// `Direct` spells `stream` as [`DEFAULT_STREAM`]. A `Named` directory whose
+    /// UTF-8 name is `_default` is representable. Non-UTF-8 stream directories
+    /// or basenames are [`SegmentIdentityError::NotUtf8`].
+    pub fn locator_identity(&self) -> Result<SegmentLocatorIdentity<'_>, SegmentIdentityError> {
+        let (layout, stream) = match &self.stream {
+            StreamLocation::Direct => (SegmentLayout::Direct, DEFAULT_STREAM),
+            StreamLocation::Named(name) => {
+                let Some(name) = name.to_str() else {
+                    return Err(SegmentIdentityError::NotUtf8 {
+                        path: self.path.clone(),
+                    });
+                };
+                (SegmentLayout::Named, name)
+            }
+        };
+        let Some(name) = self.name.to_str() else {
+            return Err(SegmentIdentityError::NotUtf8 {
+                path: self.path.clone(),
+            });
+        };
+        Ok(SegmentLocatorIdentity {
+            layout,
             stream,
             key: &self.key,
             name,
@@ -934,6 +996,90 @@ mod tests {
         assert!(utf8_identities(&lone_segments).is_err());
     }
 
+    #[test]
+    fn locator_identity_is_lossless_and_leaves_record_identity_unchanged() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        let day = journal.join("chronicle/20260101");
+        fs::create_dir_all(day.join("080000_300")).unwrap();
+        fs::create_dir_all(day.join("_default/090000_300")).unwrap();
+        fs::create_dir_all(day.join("main/093000_300_summary")).unwrap();
+
+        let segments = iter_segments(&journal, PathOrDay::Day("20260101")).unwrap();
+        assert_eq!(segments.len(), 3);
+        let direct = segments
+            .iter()
+            .find(|segment| segment.stream().is_direct())
+            .unwrap();
+        let named_default = segments
+            .iter()
+            .find(|segment| segment.stream().directory() == Some(OsStr::new(DEFAULT_STREAM)))
+            .unwrap();
+        let named_main = segments
+            .iter()
+            .find(|segment| segment.stream().directory() == Some(OsStr::new("main")))
+            .unwrap();
+
+        let direct_id = direct.locator_identity().unwrap();
+        assert_eq!(direct_id.layout, SegmentLayout::Direct);
+        assert_eq!(direct_id.stream, DEFAULT_STREAM);
+        assert_eq!(direct_id.key, "080000_300");
+        assert_eq!(direct_id.name, "080000_300");
+
+        let named_default_id = named_default.locator_identity().unwrap();
+        assert_eq!(named_default_id.layout, SegmentLayout::Named);
+        assert_eq!(named_default_id.stream, DEFAULT_STREAM);
+        assert_eq!(named_default_id.key, "090000_300");
+        assert_eq!(named_default_id.name, "090000_300");
+
+        let named_main_id = named_main.locator_identity().unwrap();
+        assert_eq!(named_main_id.layout, SegmentLayout::Named);
+        assert_eq!(named_main_id.stream, "main");
+        assert_eq!(named_main_id.key, "093000_300");
+        assert_eq!(named_main_id.name, "093000_300_summary");
+
+        let record = direct.record_identity().unwrap();
+        assert_eq!(record.stream, DEFAULT_STREAM);
+        assert_eq!(record.key, "080000_300");
+        assert_eq!(record.name, "080000_300");
+        assert_eq!(
+            named_default.record_identity(),
+            Err(SegmentIdentityError::AmbiguousNamedDefault {
+                path: named_default.path().to_path_buf(),
+            })
+        );
+        let main_record = named_main.record_identity().unwrap();
+        assert_eq!(main_record.stream, "main");
+        assert_eq!(main_record.key, "093000_300");
+        assert_eq!(main_record.name, "093000_300_summary");
+    }
+
+    #[test]
+    fn segment_layout_serde_round_trips_lowercase_and_refuses_unknown_or_case_varied() {
+        assert_eq!(
+            serde_json::to_string(&SegmentLayout::Direct).unwrap(),
+            "\"direct\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SegmentLayout::Named).unwrap(),
+            "\"named\""
+        );
+        assert_eq!(
+            serde_json::from_str::<SegmentLayout>("\"direct\"").unwrap(),
+            SegmentLayout::Direct
+        );
+        assert_eq!(
+            serde_json::from_str::<SegmentLayout>("\"named\"").unwrap(),
+            SegmentLayout::Named
+        );
+        for invalid in ["\"foo\"", "\"Direct\"", "\"DIRECT\"", "\"Named\""] {
+            assert!(
+                serde_json::from_str::<SegmentLayout>(invalid).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn non_utf8_named_default_shaped_bytes_are_not_utf8() {
@@ -949,6 +1095,41 @@ mod tests {
         assert_eq!(
             segment.record_identity(),
             Err(SegmentIdentityError::NotUtf8 { path })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locator_identity_refuses_non_utf8_stream_or_basename() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        let day = journal.join("chronicle/20260101");
+        fs::create_dir_all(day.join(OsStr::from_bytes(b"s\xff")).join("080000_300")).unwrap();
+        fs::create_dir_all(day.join(OsStr::from_bytes(b"090000_300\xff"))).unwrap();
+
+        let segments = iter_segments(&journal, PathOrDay::Day("20260101")).unwrap();
+        assert_eq!(segments.len(), 2);
+        let named = segments
+            .iter()
+            .find(|segment| !segment.stream().is_direct())
+            .unwrap();
+        let direct = segments
+            .iter()
+            .find(|segment| segment.stream().is_direct())
+            .unwrap();
+        assert_eq!(
+            named.locator_identity(),
+            Err(SegmentIdentityError::NotUtf8 {
+                path: named.path().to_path_buf(),
+            })
+        );
+        assert_eq!(
+            direct.locator_identity(),
+            Err(SegmentIdentityError::NotUtf8 {
+                path: direct.path().to_path_buf(),
+            })
         );
     }
 

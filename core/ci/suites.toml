@@ -2924,6 +2924,19 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-journal-io::segment_locator"
+package = "solstone-core-journal-io"
+target = "segment_locator"
+set = "component"
+areas = ["journal"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-local::frozen_local_oracles"
 package = "solstone-core-local"
 target = "frozen_local_oracles"

@@ -122,7 +122,17 @@ and mutation.
 ## Strict segment admission
 
 `preflight_segment_admission`, `create_segment_strict`, `resolve_stream_exact`,
-and `resolve_segment_exact` are a strict-admission / exact-read preparatory API
-with stable pre-existing checks. They are not authoritative across namespace
-races until the following root-bound caller cutover. They are not Windows
-support.
+`resolve_segment_exact`, and `resolve_segment_locator_exact` are a
+strict-admission / exact-read preparatory API with stable pre-existing checks.
+They are not authoritative across namespace races until the following
+root-bound caller cutover. They are not Windows support.
+
+`RecordIdentity` / `record_identity()` is the legacy sentinel: Direct spells as
+`_default`, and a literal Named `_default` directory is unrepresentable and
+refused. `SegmentLocatorIdentity` / `locator_identity()` is lossless: it always
+carries an explicit `SegmentLayout` alongside the stream spelling, so Direct
+and Named-`_default` are never conflated. Disk occupancy alone cannot recover
+which layout produced an already-written `_default`-stream record — that
+record has no retained layout tag — so callers of
+`resolve_segment_locator_exact` must supply `SegmentLayout` rather than have
+it inferred.

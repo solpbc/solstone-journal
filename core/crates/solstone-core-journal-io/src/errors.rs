@@ -256,6 +256,8 @@ impl Error for ReadError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SegmentIdentityError {
     /// Stream directory or segment basename is not UTF-8.
+    ///
+    /// Shared by `record_identity()` and `locator_identity()`.
     NotUtf8 { path: PathBuf },
     /// A directory literally named `_default` cannot share Direct's record spelling.
     AmbiguousNamedDefault { path: PathBuf },

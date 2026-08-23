@@ -15,7 +15,7 @@ use crate::name_admission::{
     StreamName, check_lookup_component, check_portable_component, classify_no_follow, escape_name,
     escape_path, scan_directory_conflicts,
 };
-use crate::paths::{day_path, realpath_non_strict};
+use crate::paths::{DEFAULT_STREAM, SegmentLayout, day_path, realpath_non_strict};
 
 const CHRONICLE_DIR: &str = "chronicle";
 
@@ -101,6 +101,11 @@ pub enum ExactLookupError {
         path: PathBuf,
         kind: NoFollowEntryKind,
     },
+    /// Direct layout was requested with a stream other than `_default`.
+    LayoutMismatch {
+        /// Offending stream spelling.
+        stream: String,
+    },
 }
 
 impl fmt::Display for ExactLookupError {
@@ -120,6 +125,10 @@ impl fmt::Display for ExactLookupError {
                 "{} is not a directory ({kind:?})",
                 escape_path(path)
             ),
+            Self::LayoutMismatch { stream } => write!(
+                formatter,
+                "direct layout requires stream {DEFAULT_STREAM:?}, got {stream:?}"
+            ),
         }
     }
 }
@@ -129,7 +138,9 @@ impl Error for ExactLookupError {
         match self {
             Self::Io { source, .. } => Some(source),
             Self::Containment(error) => Some(error),
-            Self::InvalidComponent { .. } | Self::WrongKind { .. } => None,
+            Self::InvalidComponent { .. }
+            | Self::WrongKind { .. }
+            | Self::LayoutMismatch { .. } => None,
         }
     }
 }
@@ -193,6 +204,28 @@ pub fn resolve_segment_exact(
     segment: &str,
 ) -> Result<Option<PathBuf>, ExactLookupError> {
     descend(journal_root, &[day, stream, segment])
+}
+
+/// Resolve an existing segment directory for an explicit layout without following
+/// symlinks.
+pub fn resolve_segment_locator_exact(
+    journal_root: &Path,
+    day: &str,
+    stream: &str,
+    segment: &str,
+    layout: SegmentLayout,
+) -> Result<Option<PathBuf>, ExactLookupError> {
+    match layout {
+        SegmentLayout::Direct => {
+            if stream != DEFAULT_STREAM {
+                return Err(ExactLookupError::LayoutMismatch {
+                    stream: stream.to_string(),
+                });
+            }
+            descend(journal_root, &[day, segment])
+        }
+        SegmentLayout::Named => descend(journal_root, &[day, stream, segment]),
+    }
 }
 
 fn admit_segment(
@@ -346,11 +379,11 @@ fn lookup_from_path_error(error: PathError) -> ExactLookupError {
 mod tests {
     use super::{
         ExactLookupError, StrictCreateError, create_segment_strict, preflight_segment_admission,
-        resolve_segment_exact, resolve_stream_exact,
+        resolve_segment_exact, resolve_segment_locator_exact, resolve_stream_exact,
     };
     use crate::errors::PathError;
     use crate::name_admission::{NameAdmissionError, NameAdmissionReason, NoFollowEntryKind};
-    use crate::paths::{DEFAULT_STREAM, day_path, segment_path};
+    use crate::paths::{DEFAULT_STREAM, SegmentLayout, day_path, segment_path};
     use crate::test_support::TempDir;
     use std::fs;
 
@@ -598,18 +631,213 @@ mod tests {
             Err(PathError::InvalidRelativePath { .. })
         ));
     }
+
+    #[test]
+    fn resolve_segment_locator_exact_selects_direct_and_named_default_without_aliasing() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        let twin_day = journal.join("chronicle").join(DAY);
+        let direct = twin_day.join("080000_300");
+        let named_default = twin_day.join(DEFAULT_STREAM).join("090000_300");
+        fs::create_dir_all(&direct).unwrap();
+        fs::create_dir_all(&named_default).unwrap();
+
+        assert_eq!(
+            resolve_segment_locator_exact(
+                &journal,
+                DAY,
+                DEFAULT_STREAM,
+                "080000_300",
+                SegmentLayout::Direct,
+            )
+            .unwrap()
+            .as_deref(),
+            Some(direct.as_path())
+        );
+        assert_eq!(
+            resolve_segment_locator_exact(
+                &journal,
+                DAY,
+                DEFAULT_STREAM,
+                "090000_300",
+                SegmentLayout::Named,
+            )
+            .unwrap()
+            .as_deref(),
+            Some(named_default.as_path())
+        );
+        assert_eq!(
+            resolve_segment_locator_exact(
+                &journal,
+                DAY,
+                DEFAULT_STREAM,
+                "090000_300",
+                SegmentLayout::Direct,
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            resolve_segment_locator_exact(
+                &journal,
+                DAY,
+                DEFAULT_STREAM,
+                "080000_300",
+                SegmentLayout::Named,
+            )
+            .unwrap(),
+            None
+        );
+
+        let only_direct_day = "20240104";
+        let only_direct = journal
+            .join("chronicle")
+            .join(only_direct_day)
+            .join("080000_300");
+        fs::create_dir_all(&only_direct).unwrap();
+        assert_eq!(
+            resolve_segment_locator_exact(
+                &journal,
+                only_direct_day,
+                DEFAULT_STREAM,
+                "080000_300",
+                SegmentLayout::Named,
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            resolve_segment_locator_exact(
+                &journal,
+                only_direct_day,
+                DEFAULT_STREAM,
+                "080000_300",
+                SegmentLayout::Direct,
+            )
+            .unwrap()
+            .as_deref(),
+            Some(only_direct.as_path())
+        );
+
+        let only_named_day = "20240105";
+        let only_named = journal
+            .join("chronicle")
+            .join(only_named_day)
+            .join(DEFAULT_STREAM)
+            .join("080000_300");
+        fs::create_dir_all(&only_named).unwrap();
+        assert_eq!(
+            resolve_segment_locator_exact(
+                &journal,
+                only_named_day,
+                DEFAULT_STREAM,
+                "080000_300",
+                SegmentLayout::Direct,
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            resolve_segment_locator_exact(
+                &journal,
+                only_named_day,
+                DEFAULT_STREAM,
+                "080000_300",
+                SegmentLayout::Named,
+            )
+            .unwrap()
+            .as_deref(),
+            Some(only_named.as_path())
+        );
+
+        match resolve_segment_locator_exact(
+            &journal,
+            DAY,
+            "somestream",
+            SEGMENT,
+            SegmentLayout::Direct,
+        ) {
+            Err(ExactLookupError::LayoutMismatch { stream }) => {
+                assert_eq!(stream, "somestream");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_segment_locator_exact_reads_legacy_forbidden_utf8_names() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        let names = ["con", "CON", "Main", "a:b", "foo.", "foo ", "café", "a\tb"];
+        let direct_day = journal.join("chronicle").join(DAY);
+        for name in names {
+            let path = direct_day.join(name);
+            fs::create_dir_all(&path).unwrap();
+            assert_eq!(
+                resolve_segment_locator_exact(
+                    &journal,
+                    DAY,
+                    DEFAULT_STREAM,
+                    name,
+                    SegmentLayout::Direct,
+                )
+                .unwrap()
+                .as_deref(),
+                Some(path.as_path()),
+                "direct {name:?}"
+            );
+        }
+
+        let named_day = "20240104";
+        let named_day_dir = journal.join("chronicle").join(named_day);
+        for name in names {
+            let stream_path = named_day_dir.join(name).join(SEGMENT);
+            fs::create_dir_all(&stream_path).unwrap();
+            assert_eq!(
+                resolve_segment_locator_exact(
+                    &journal,
+                    named_day,
+                    name,
+                    SEGMENT,
+                    SegmentLayout::Named,
+                )
+                .unwrap()
+                .as_deref(),
+                Some(stream_path.as_path()),
+                "named stream {name:?}"
+            );
+
+            let segment_path = named_day_dir.join(STREAM).join(name);
+            fs::create_dir_all(&segment_path).unwrap();
+            assert_eq!(
+                resolve_segment_locator_exact(
+                    &journal,
+                    named_day,
+                    STREAM,
+                    name,
+                    SegmentLayout::Named,
+                )
+                .unwrap()
+                .as_deref(),
+                Some(segment_path.as_path()),
+                "named segment {name:?}"
+            );
+        }
+    }
 }
 
 #[cfg(all(test, unix))]
 mod unix_tests {
     use super::{
-        ExactLookupError, create_segment_strict, resolve_segment_exact, resolve_stream_exact,
+        ExactLookupError, create_segment_strict, resolve_segment_exact,
+        resolve_segment_locator_exact, resolve_stream_exact,
     };
-    use crate::name_admission::{NameAdmissionError, NoFollowEntryKind};
+    use crate::name_admission::{NameAdmissionError, NameAdmissionReason, NoFollowEntryKind};
+    use crate::paths::{DEFAULT_STREAM, SegmentLayout};
     use crate::test_support::TempDir;
     use std::fs;
     use std::os::unix::fs::symlink;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     const DAY: &str = "20240103";
     const STREAM: &str = "import.apple_health";
@@ -708,6 +936,158 @@ mod unix_tests {
             Err(ExactLookupError::Io { .. }) => {}
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn resolve_segment_locator_exact_symlink_realpath_io_is_not_wrong_kind() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        let day = journal.join("chronicle").join(DAY);
+        fs::create_dir_all(&day).unwrap();
+        let looped = day.join("looped");
+        symlink(&looped, &looped).unwrap();
+        match resolve_segment_locator_exact(&journal, DAY, "looped", SEGMENT, SegmentLayout::Named)
+        {
+            Err(ExactLookupError::Io { .. }) => {}
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_segment_locator_exact_absent_or_refused_does_not_create() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        fs::create_dir(&journal).unwrap();
+        let before = snapshot_tree(&journal);
+
+        assert_eq!(
+            resolve_segment_locator_exact(
+                &journal,
+                DAY,
+                DEFAULT_STREAM,
+                SEGMENT,
+                SegmentLayout::Direct,
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(before, snapshot_tree(&journal));
+
+        assert_eq!(
+            resolve_segment_locator_exact(&journal, DAY, STREAM, SEGMENT, SegmentLayout::Named,)
+                .unwrap(),
+            None
+        );
+        assert_eq!(before, snapshot_tree(&journal));
+
+        match resolve_segment_locator_exact(
+            &journal,
+            DAY,
+            "somestream",
+            SEGMENT,
+            SegmentLayout::Direct,
+        ) {
+            Err(ExactLookupError::LayoutMismatch { stream }) => {
+                assert_eq!(stream, "somestream");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(before, snapshot_tree(&journal));
+
+        match resolve_segment_locator_exact(&journal, DAY, "a/b", SEGMENT, SegmentLayout::Named) {
+            Err(ExactLookupError::InvalidComponent {
+                reason: NameAdmissionReason::Separator,
+                ..
+            }) => {}
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(before, snapshot_tree(&journal));
+
+        match resolve_segment_locator_exact(
+            &journal,
+            DAY,
+            DEFAULT_STREAM,
+            ".",
+            SegmentLayout::Direct,
+        ) {
+            Err(ExactLookupError::InvalidComponent {
+                reason: NameAdmissionReason::DotComponent,
+                ..
+            }) => {}
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(before, snapshot_tree(&journal));
+
+        match resolve_segment_locator_exact(&journal, DAY, "", SEGMENT, SegmentLayout::Named) {
+            Err(ExactLookupError::InvalidComponent {
+                reason: NameAdmissionReason::Empty,
+                ..
+            }) => {}
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(before, snapshot_tree(&journal));
+    }
+
+    #[test]
+    fn resolve_segment_locator_exact_backslash_is_not_a_separator() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        let name = r"foo\bar";
+        let direct = journal.join("chronicle").join(DAY).join(name);
+        fs::create_dir_all(&direct).unwrap();
+        assert_eq!(
+            resolve_segment_locator_exact(
+                &journal,
+                DAY,
+                DEFAULT_STREAM,
+                name,
+                SegmentLayout::Direct,
+            )
+            .unwrap()
+            .as_deref(),
+            Some(direct.as_path())
+        );
+
+        let named_day = "20240104";
+        let named = journal
+            .join("chronicle")
+            .join(named_day)
+            .join(name)
+            .join(SEGMENT);
+        fs::create_dir_all(&named).unwrap();
+        assert_eq!(
+            resolve_segment_locator_exact(
+                &journal,
+                named_day,
+                name,
+                SEGMENT,
+                SegmentLayout::Named,
+            )
+            .unwrap()
+            .as_deref(),
+            Some(named.as_path())
+        );
+    }
+
+    fn snapshot_tree(root: &Path) -> Vec<(PathBuf, bool)> {
+        fn walk(root: &Path, dir: &Path, out: &mut Vec<(PathBuf, bool)>) {
+            let mut entries: Vec<_> = fs::read_dir(dir)
+                .unwrap()
+                .map(|entry| entry.unwrap())
+                .collect();
+            entries.sort_by_key(|entry| entry.file_name());
+            for entry in entries {
+                let path = entry.path();
+                let is_dir = entry.file_type().unwrap().is_dir();
+                out.push((path.strip_prefix(root).unwrap().to_path_buf(), is_dir));
+                if is_dir {
+                    walk(root, &path, out);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(root, root, &mut out);
+        out
     }
 
     #[test]

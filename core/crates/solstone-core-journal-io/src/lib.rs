@@ -83,11 +83,11 @@ pub use name_admission::{
 #[cfg(unix)]
 pub use paths::create_directory_bound;
 pub use paths::{
-    DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, RecordIdentity, Segment, StreamLocation,
-    check_record_identities, check_unique_record_keys, contained_path, create_directory_with_mode,
-    day_dirs, day_path, ensure_directory, is_day_key, iter_segments, list_dir_entries,
-    list_dir_entries_bounded, path_lexists, realpath_non_strict, resolve_configured_journal,
-    resolve_journal_path, segment_path, utf8_identities,
+    DEFAULT_STREAM, DirEntry, DirEntryKind, PathOrDay, RecordIdentity, Segment, SegmentLayout,
+    SegmentLocatorIdentity, StreamLocation, check_record_identities, check_unique_record_keys,
+    contained_path, create_directory_with_mode, day_dirs, day_path, ensure_directory, is_day_key,
+    iter_segments, list_dir_entries, list_dir_entries_bounded, path_lexists, realpath_non_strict,
+    resolve_configured_journal, resolve_journal_path, segment_path, utf8_identities,
 };
 #[cfg(unix)]
 pub use readers::read_bytes_bound;
@@ -104,5 +104,5 @@ pub use snapshot::{
 pub use staged::{StagedDirOptions, StagedWriteError, publish_staged_dir};
 pub use strict_segment::{
     ExactLookupError, StrictCreateError, create_segment_strict, preflight_segment_admission,
-    resolve_segment_exact, resolve_stream_exact,
+    resolve_segment_exact, resolve_segment_locator_exact, resolve_stream_exact,
 };
