@@ -428,6 +428,19 @@ fn parse_statements(value: &Value) -> Result<Vec<Statement>, SpeakerTranscriptWr
             let text = string(required_statement(object, "text", statement_index)?, "text")
                 .map_err(|error| invalid_statement(statement_index, error))?
                 .to_owned();
+            // ASCII whitespace only: Unicode trim would refuse U+0085/U+2028/U+2029,
+            // which hazard_bytes_are_not_present_raw pins as publishable (escaped).
+            if text
+                .trim_matches(|character: char| character.is_ascii_whitespace())
+                .is_empty()
+            {
+                return Err(invalid_statement(
+                    statement_index,
+                    SpeakerTranscriptWriteError::MalformedRequest {
+                        detail: "text must be a nonempty string".to_owned(),
+                    },
+                ));
+            }
             let speaker = match object.get("speaker") {
                 None | Some(Value::Null) => None,
                 Some(Value::String(value)) => Some(Value::String(value.clone())),

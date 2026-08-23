@@ -145,6 +145,43 @@ fn ac1_every_written_sentence_id_is_persisted() {
 }
 
 #[test]
+fn blank_statement_text_refuses_before_publication() {
+    let directory = TempDir::new();
+    for text in ["", "   "] {
+        let value = request(
+            &directory,
+            json!([{"id": 1, "text": text}]),
+            json!([]),
+            json!([]),
+            0,
+        );
+        assert!(
+            matches!(
+                write(value),
+                Err(SpeakerTranscriptWriteError::InvalidStatement {
+                    statement_index: 0,
+                    detail,
+                }) if detail == "text must be a nonempty string"
+            ),
+            "{text:?}"
+        );
+        assert!(!directory.path().join("segment.jsonl").exists());
+        assert!(!directory.path().join("segment.npz").exists());
+    }
+    let line_separator = char::from_u32(0x2028).expect("u2028").to_string();
+    write(request(
+        &directory,
+        json!([{"id": 1, "text": line_separator}]),
+        json!([]),
+        json!([]),
+        0,
+    ))
+    .expect("unicode whitespace-only text still publishes");
+    assert!(directory.path().join("segment.jsonl").is_file());
+    assert!(!directory.path().join("segment.npz").exists());
+}
+
+#[test]
 fn ac2_missing_id_refuses_before_publication() {
     let directory = TempDir::new();
     let value = request(
