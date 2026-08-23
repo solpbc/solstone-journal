@@ -11,7 +11,7 @@ Exported items a relocated test actually calls:
 - `spawn_one` — sibling-selection, cwd (via controller), stdin-failure/reap
 - `stop_group_with_grace` — process-group, graceful stop, forced cleanup, immediate stop
 - `CortexState`, `CortexStore`, `Work` — construct and drive those cases
-- `RunningUse` — `pgid` from `CortexState::running` for `RunningUsesGuard` / immediate-stop
+- `RunningUse` — shared `LaunchAuthority` from `CortexState::running` for `RunningUsesGuard` / immediate-stop
 - `new_state` — constructs `CortexState` without exposing `Outbound` (its `new` cannot be `pub`)
 
 Not exported (no relocating test calls them): `spawn_worker`, `ResolvedTalent`,
@@ -19,9 +19,11 @@ Not exported (no relocating test calls them): `spawn_worker`, `ResolvedTalent`,
 
 ### `stop_group` dead-code check
 
-Production callers remain: `spawn_one` timeout path (`process.rs`),
-`terminate_and_reap`, `cancel_worker`, and `run_until_with` immediate shutdown
-(`service.rs:218`). The 10 s wrapper is **kept**:
+Production callers remain: the `spawn_one` launch terminate closure
+(`process.rs`), which the timeout thread, `cancel_worker`, and
+`run_until_with` immediate shutdown all reach via
+`authority.lock().terminate(...)`. `terminate_and_reap` was deleted. The
+10 s wrapper is **kept**:
 
 `stop_group(pgid)` → `stop_group_with_grace(pgid, Duration::from_secs(10))`.
 
@@ -78,7 +80,7 @@ Both identities below were merged into
 | `worker_caps_a_multi_hour_planned_wait_at_sixty_seconds` | injected Wait records 60s | `src/renewal.rs` same test | **retained** (already compliant) | scheduling retained |
 | `dispatch_filters_only_at_service_boundary` | dispatch ignore | `src/service.rs` same test | **retained** (already compliant) | scheduling retained |
 | `renewal_handle` | production handle helper | `src/service.rs` same helper | **retained** | scheduling retained |
-| `running_state` | state + real `/bin/sh` | helper kept in `src/service.rs` **without** `Command` (dummy pgid); live child in integration | **split** | process deleted; scheduling retained |
+| `running_state` | state + real `/bin/sleep` `LaunchAuthority` | helper and its drain/immediate-stop-without-signaling tests in `tests/cortex_child_supervisor.rs` (`test-hooks`) | **moved** (real spawn cannot live under `--lib`) | process/scheduling now in integration |
 | `service_starts_one_renewal_worker_once_even_when_start_requested_twice` | one worker | `src/service.rs` same test | **retained** (already compliant) | scheduling retained |
 | `startup_refresh_is_emitted_before_the_single_renewal_worker_starts` | lifecycle order | `src/service.rs` same test | **retained** (already compliant) | scheduling retained |
 | `compare_and_take_finalization_allows_only_one_terminal_owner` | CAS finalize | `src/state.rs` same test | **retained** (already compliant) | scheduling retained |
@@ -94,14 +96,14 @@ Both identities below were merged into
 | Symbol | Landing |
 |---|---|
 | `spawn_and_read_child_cwd` | deleted from src; logic in integration `run_cwd_case` |
-| `running_state` | kept as dummy-pgid helper in `src/service.rs`; live child in integration |
+| `running_state` | `tests/cortex_child_supervisor.rs` (`test-hooks`); constructs a real `LaunchAuthority` |
 | `fake`, `handle`, `mismatch`, `run_two_worker_iterations` | retained in `src/renewal.rs` |
 | `renewal_handle` | retained in `src/service.rs` |
 | `cogitate_with_declared_journal_cwd` | `declared_cogitate_runs_in_journal_root` |
 | `generate_talent_does_not_set_child_cwd` | `generate_inherits_controller_fixture_directory` |
 | `cogitate_without_declared_cwd_does_not_set_child_cwd` | `undeclared_cogitate_inherits_controller_fixture_directory` |
-| `drain_keeps_running_use_alive_until_its_own_exit_then_becomes_idle` | split: `drain_becomes_idle_after_finish` (src) + `drain_keeps_running_use_alive_until_its_own_exit` (integration) |
-| `immediate_stop_terminalizes_queue_and_signals_running_group` | split: `immediate_stop_returns_running_uses_without_signaling` (src) + `immediate_stop_signals_the_running_group` (integration) |
+| `drain_keeps_running_use_alive_until_its_own_exit_then_becomes_idle` | split: `drain_becomes_idle_after_finish` (integration) + `drain_keeps_running_use_alive_until_its_own_exit` (integration) |
+| `immediate_stop_terminalizes_queue_and_signals_running_group` | split: `immediate_stop_returns_running_uses_without_signaling` (integration) + `immediate_stop_signals_the_running_group` (integration) |
 
 ## Boundary reconciliation
 
@@ -168,6 +170,11 @@ Command 8 discovered exactly the criterion-9 set:
 `stop_group_records_term_and_does_not_kill_a_responsive_child`,
 `stop_group_records_term_then_kills_an_ignoring_child`,
 `undeclared_cogitate_inherits_controller_fixture_directory`.
+
+After the process-authority migration, `drain_becomes_idle_after_finish` and
+`immediate_stop_returns_running_uses_without_signaling` also live in this
+file: a `LaunchAuthority` requires a real spawn, which the routine `--lib`
+harness must not author.
 
 ### Lint fixes applied during validation
 
