@@ -3347,6 +3347,7 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
+ "solstone-core-assets",
  "solstone-core-local",
  "solstone-core-system",
 ]
@@ -4210,6 +4211,7 @@ dependencies = [
  "solstone-core-artifact-download",
  "solstone-core-assets",
  "solstone-core-brain",
+ "solstone-core-ced-sys",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "tar",
@@ -4654,7 +4656,9 @@ version = "2.0.0"
 dependencies = [
  "log",
  "serde_json",
+ "solstone-core-assets",
  "solstone-core-ced-sys",
+ "solstone-core-local",
  "tempfile",
 ]
 

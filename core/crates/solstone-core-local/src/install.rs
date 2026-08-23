@@ -12,7 +12,9 @@
 //! held lease so callers can distinguish busy from an internal failure.
 
 pub mod archive;
+pub mod ced_fixture;
 pub mod ced_install;
+pub mod ced_readiness;
 pub mod coreml_install;
 pub mod fingerprint;
 pub mod fit_report;

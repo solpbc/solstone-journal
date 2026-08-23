@@ -68,7 +68,7 @@ fn root(journal: &Path) -> PathBuf {
 fn sidecar(journal: &Path) -> PathBuf {
     root(journal).join(SIDECAR)
 }
-fn engine_dir(journal: &Path, key: &str) -> PathBuf {
+pub(crate) fn engine_dir(journal: &Path, key: &str) -> PathBuf {
     root(journal).join("engine").join(key)
 }
 pub fn ced_model_path(journal: &Path) -> PathBuf {
@@ -78,7 +78,10 @@ pub fn ced_model_path(journal: &Path) -> PathBuf {
         .join(MODEL_REVISION)
         .join(MODEL_FILE)
 }
-fn library_name(key: &str) -> &'static str {
+pub fn ced_library_path(journal: &Path, key: &str) -> PathBuf {
+    engine_dir(journal, key).join(library_name(key))
+}
+pub(crate) fn library_name(key: &str) -> &'static str {
     if key == "macos-metal-arm64" {
         "libced.dylib"
     } else {
@@ -120,7 +123,7 @@ fn engine_artifact(key: &str) -> Result<&'static Artifact, CedInstallError> {
         )
     })
 }
-fn model_artifact() -> Result<&'static Artifact, CedInstallError> {
+pub(crate) fn model_artifact() -> Result<&'static Artifact, CedInstallError> {
     select_artifact(MODEL_UNIT, None, None, None, Some(MODEL_FILE)).map_err(|error| {
         CedInstallError::new(
             "artifact_registry_mismatch",
@@ -149,7 +152,7 @@ fn expected_files(key: &str) -> Result<BTreeMap<String, String>, CedInstallError
         ),
     ]))
 }
-fn record(key: &str) -> Result<CedRecord, CedInstallError> {
+pub(crate) fn record(key: &str) -> Result<CedRecord, CedInstallError> {
     Ok(CedRecord {
         artifact_key: key.to_owned(),
         engine_version: ENGINE_VERSION.to_owned(),
@@ -205,7 +208,7 @@ fn nonempty(path: &Path, label: &str) -> Result<(), CedInstallError> {
     }
     Ok(())
 }
-fn write_sidecar(journal: &Path, key: &str) -> Result<(), CedInstallError> {
+pub(crate) fn write_sidecar(journal: &Path, key: &str) -> Result<(), CedInstallError> {
     let path = sidecar(journal);
     fs::create_dir_all(path.parent().expect("sidecar parent"))
         .map_err(|error| CedInstallError::new("install_failed", error.to_string(), 74))?;
