@@ -36,7 +36,10 @@ pub fn tag_audio(audio: &[f32], journal_path: &Path) -> Option<Value> {
     let paths = match asset_paths(journal_path) {
         Ok(paths) => paths,
         Err(detail) => {
-            log::warn!("sound tagger disabled: {detail}");
+            log::warn!(
+                "sound tagger disabled: {detail} (run `journal install-models` to install; \
+                 it only runs automatically as part of `journal setup`)"
+            );
             return None;
         }
     };
