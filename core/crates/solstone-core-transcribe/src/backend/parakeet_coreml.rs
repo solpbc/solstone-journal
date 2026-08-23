@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Map, Value};
 use solstone_core_journal_config::{JournalConfigRead, parakeet_coreml::parakeet_coreml_cache_dir};
 use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes};
+use solstone_core_system::process::{Disposition, LaunchAuthority, LaunchError, launch};
 
 use crate::TranscribeError;
 use crate::backend::parakeet_cpp::{ModelInfo, TranscriptionResponse, TranscriptionWord};
@@ -270,17 +271,34 @@ fn spawn_helper(helper: &Path, arguments: &[String]) -> io::Result<Child> {
     )
 }
 
-fn helper_pgid(child: &Child) -> io::Result<rustix::process::Pid> {
-    i32::try_from(child.id())
-        .ok()
-        .and_then(rustix::process::Pid::from_raw)
-        .ok_or_else(|| io::Error::other("invalid child pid"))
-}
-
 fn kill_helper_group(pgid: rustix::process::Pid) -> io::Result<()> {
     match rustix::process::kill_process_group(pgid, rustix::process::Signal::KILL) {
         Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
         Err(error) => Err(io::Error::from(error)),
+    }
+}
+
+fn terminate_helper_child(child: &mut Child, _timeout: Duration) -> Result<(), LaunchError> {
+    match i32::try_from(child.id())
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+    {
+        Some(pgid) => kill_helper_group(pgid).map_err(LaunchError::Terminate),
+        None => child.kill().map_err(LaunchError::Terminate),
+    }
+}
+
+// Inverts signal_aware_exit_code: non-negative = normal exit, negative = -signal,
+// back into the raw Unix wait-status encoding ExitStatus::from_raw expects.
+fn exit_status_from_code(code: i32) -> ExitStatus {
+    use std::os::unix::process::ExitStatusExt;
+
+    if (0..=255).contains(&code) {
+        ExitStatus::from_raw(code << 8)
+    } else if code < 0 {
+        ExitStatus::from_raw(-code)
+    } else {
+        ExitStatus::from_raw(code)
     }
 }
 
@@ -293,8 +311,9 @@ trait HelperSupervisor {
 }
 
 struct LiveHelper {
-    child: Child,
+    authority: LaunchAuthority,
     pgid: rustix::process::Pid,
+    timeout: Duration,
     stdout_reader: Option<thread::JoinHandle<Result<String, HelperRunError>>>,
     stderr_reader: Option<thread::JoinHandle<Result<String, HelperRunError>>>,
 }
@@ -314,16 +333,18 @@ impl HelperSupervisor for LiveHelper {
     }
 
     fn kill_group(&mut self) -> io::Result<()> {
-        kill_helper_group(self.pgid)
+        self.authority
+            .terminate(self.timeout)
+            .map_err(|error| io::Error::other(error))
     }
 
     fn close_owned_pipes(&mut self) {
-        drop(self.child.stdout.take());
-        drop(self.child.stderr.take());
+        drop(self.authority.take_stdout());
+        drop(self.authority.take_stderr());
     }
 
     fn reap_root(&mut self) -> io::Result<ExitStatus> {
-        retry_interrupted(|| self.child.wait())
+        retry_interrupted(|| self.authority.wait().map(exit_status_from_code))
     }
 
     fn join_readers(&mut self) -> Result<(String, String), HelperRunError> {
@@ -358,30 +379,33 @@ fn run_helper(
     arguments: &[String],
     timeout: Duration,
 ) -> Result<HelperOutput, HelperRunError> {
-    let mut child = spawn_helper(helper, arguments)
-        .map_err(|error| HelperRunError::Spawn(error.to_string()))?;
-    let pgid = match helper_pgid(&child) {
-        Ok(pgid) => pgid,
-        Err(error) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(HelperRunError::Wait(error.to_string()));
-        }
+    let authority = launch(
+        Disposition::IndependentBoundedHelper { timeout },
+        || spawn_helper(helper, arguments),
+        Box::new(terminate_helper_child),
+    )
+    .map_err(|error| HelperRunError::Spawn(error.to_string()))?;
+    let Some(pgid) = i32::try_from(authority.pid())
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+    else {
+        return Err(HelperRunError::Wait("invalid child pid".to_owned()));
     };
     let mut session = LiveHelper {
-        child,
+        authority,
         pgid,
+        timeout,
         stdout_reader: None,
         stderr_reader: None,
     };
-    let stdout = match session.child.stdout.take() {
+    let stdout = match session.authority.take_stdout() {
         Some(stdout) => stdout,
         None => {
             let _ = conclude_helper(&mut session);
             return Err(HelperRunError::Read("missing stdout pipe".to_owned()));
         }
     };
-    let stderr = match session.child.stderr.take() {
+    let stderr = match session.authority.take_stderr() {
         Some(stderr) => stderr,
         None => {
             drop(stdout);
@@ -714,14 +738,40 @@ mod tests {
 
     use super::{
         CoremlResponseError, HELPER_RELATIVE, HELPER_SPAWN_RETRY_DELAY, HelperOutput,
-        HelperRunError, HelperSupervisor, conclude_helper, kill_helper_group, map_helper_exit,
-        map_helper_run_error, parse_coreml_response, parse_version_response, read_child_stream,
-        retry_busy_spawn, transcribe_helper_arguments, transcribe_with_helper,
+        HelperRunError, HelperSupervisor, conclude_helper, exit_status_from_code,
+        kill_helper_group, map_helper_exit, map_helper_run_error, parse_coreml_response,
+        parse_version_response, read_child_stream, retry_busy_spawn, transcribe_helper_arguments,
+        transcribe_with_helper,
     };
     use crate::TranscribeError;
 
     const SUCCESS: &str = r#"{"transcript":"hello world!","audio_sec":1.0,"transcribe_ms":2,"rtfx":3.0,"token_timings":[{"token":"▁hel","token_id":1,"start":0.0,"end":0.1,"confidence":0.9},{"token":"lo","token_id":2,"start":0.1,"end":0.2,"confidence":0.6},{"token":"▁world","token_id":3,"start":0.2,"end":0.4,"confidence":0.8},{"token":"!","token_id":4,"start":0.4,"end":0.5,"confidence":0.7}]}"#;
     const VERSION: &str = r#"{"fluidaudio_version":"0.14.0","model_version_default":"v3","swift_version":"Swift","hardware":"M4","macos_version":"26"}"#;
+
+    #[test]
+    fn exit_status_from_code_round_trips_signal_aware_codes() {
+        let zero = exit_status_from_code(0);
+        assert!(zero.success());
+        assert_eq!(zero.code(), Some(0));
+
+        let one = exit_status_from_code(1);
+        assert!(!one.success());
+        assert_eq!(one.code(), Some(1));
+
+        let max_byte = exit_status_from_code(255);
+        assert!(!max_byte.success());
+        assert_eq!(max_byte.code(), Some(255));
+
+        let sigkill = exit_status_from_code(-9);
+        assert!(!sigkill.success());
+        assert_eq!(sigkill.code(), None);
+        assert_eq!(sigkill.signal(), Some(9));
+
+        let sigterm = exit_status_from_code(-15);
+        assert!(!sigterm.success());
+        assert_eq!(sigterm.code(), None);
+        assert_eq!(sigterm.signal(), Some(15));
+    }
 
     #[test]
     fn helper_package_lives_next_to_this_crate() {
