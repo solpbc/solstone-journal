@@ -1017,6 +1017,9 @@ fn rejection_without_last_sent_warns_capture() {
     assert_eq!(capture.status, Status::Warn);
     assert_ne!(stall.status, Status::Skip);
     assert_eq!(stall.status, Status::Ok);
+    assert!(capture.detail.contains("having trouble adding"));
+    assert!(!capture.detail.contains("still running"));
+    assert!(!capture.detail.contains("asleep"));
     assert_eq!(capture.observer_delivery, stall.observer_delivery);
     let facts = capture.observer_delivery.as_ref().expect("facts");
     assert_eq!(facts.assessed.len(), 1);
@@ -1576,25 +1579,22 @@ fn stall_warn_omits_duplicate_and_queue_clauses() {
     assert!(!row.detail.contains("pending queue"));
 }
 
-#[test]
-fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
-    let context = fixture();
+fn write_stalled_fleet(context: &CheckContext, name: impl Fn(usize) -> String, seen_age: i64) {
     let now = context.now.timestamp_millis();
-    let long = "x".repeat(66);
     for (index, prefix) in ["abcdefgh", "ijklmnop", "qrstuvwx", "yzabcdef"]
         .into_iter()
         .enumerate()
     {
         write_device(
-            &context,
+            context,
             prefix,
-            &format!("{long}{index}"),
-            now - 200_000,
+            &name(index),
+            now - seen_age,
             Some(now - 41 * 3_600_000),
         );
     }
     write_observer(
-        &context,
+        context,
         "residu01",
         serde_json::json!({
             "key": "residu01-key",
@@ -1604,21 +1604,9 @@ fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
             "last_seen": now - 1,
         }),
     );
-    let capture = result("capture_health", &context);
-    let stall = result("observer_delivery_stall", &context);
-    assert_eq!(capture.status, Status::Warn);
-    assert_eq!(stall.status, Status::Warn);
-    assert!(
-        capture.detail.contains("+1 more"),
-        "join_capped must fire: {}",
-        capture.detail
-    );
-    assert!(
-        stall.detail.ends_with("...") && stall.detail.len() == 400,
-        "truncate must fire: len={} detail={}",
-        stall.detail.len(),
-        stall.detail
-    );
+}
+
+fn assert_facts_survive_in_json_and_not_text(capture: &CheckResult, stall: &CheckResult) {
     assert_eq!(capture.observer_delivery, stall.observer_delivery);
     let facts = capture.observer_delivery.as_ref().expect("facts");
     assert_eq!(facts.assessed.len(), 4);
@@ -1632,7 +1620,7 @@ fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
     let mut bytes = Vec::new();
     output::emit_jsonl_to(
         &mut bytes,
-        std::slice::from_ref(&stall),
+        std::slice::from_ref(stall),
         "2026-01-01T00:00:00Z",
         1,
         5015,
@@ -1644,13 +1632,13 @@ fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
     }
     assert!(jsonl.contains("observer_delivery"));
     assert!(
-        serde_json::to_value(&stall)
+        serde_json::to_value(stall)
             .unwrap()
             .get("observer_delivery")
             .is_some()
     );
     let mut text = Vec::new();
-    output::emit_text_to(&mut text, std::slice::from_ref(&stall), false).unwrap();
+    output::emit_text_to(&mut text, std::slice::from_ref(stall), false).unwrap();
     let text = String::from_utf8(text).unwrap();
     assert!(!text.contains("unseen-residue"), "{text}");
     for token in [
@@ -1665,6 +1653,118 @@ fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
     ] {
         assert!(!text.contains(token), "{token} leaked into text: {text}");
     }
+}
+
+#[test]
+fn delivery_facts_survive_truncated_detail_and_are_absent_from_text() {
+    let context = fixture();
+    write_stalled_fleet(&context, |index| format!("d{index}"), 200_000);
+    let capture = result("capture_health", &context);
+    let stall = result("observer_delivery_stall", &context);
+    assert_eq!(capture.status, Status::Warn);
+    assert_eq!(stall.status, Status::Warn);
+    assert!(
+        capture.detail.contains("+1 more"),
+        "join_capped must fire: {}",
+        capture.detail
+    );
+    assert!(
+        stall.detail.contains("+1 more"),
+        "join_capped must fire: {}",
+        stall.detail
+    );
+    assert_facts_survive_in_json_and_not_text(&capture, &stall);
+}
+
+#[test]
+fn delivery_facts_survive_400_truncation_with_reach_clause() {
+    let context = fixture();
+    let long = "x".repeat(66);
+    write_stalled_fleet(&context, |index| format!("{long}{index}"), 200_000);
+    let capture = result("capture_health", &context);
+    let stall = result("observer_delivery_stall", &context);
+    assert_eq!(capture.status, Status::Warn);
+    assert_eq!(stall.status, Status::Warn);
+    assert!(
+        stall.detail.ends_with("...") && stall.detail.len() == 400,
+        "truncate must fire: len={} detail={}",
+        stall.detail.len(),
+        stall.detail
+    );
+    assert!(
+        capture.detail.ends_with("...") && capture.detail.len() == 400,
+        "truncate must fire: len={} detail={}",
+        capture.detail.len(),
+        capture.detail
+    );
+    assert_facts_survive_in_json_and_not_text(&capture, &stall);
+}
+
+#[test]
+fn reach_clause_replaces_last_contact_and_matches_across_checks() {
+    let hour = 3_600_000;
+    let running = fixture();
+    let now = running.now.timestamp_millis();
+    write_device(
+        &running,
+        "abcdefgh",
+        "phone",
+        now - 1_000,
+        Some(now - 89 * hour),
+    );
+    let asleep = fixture();
+    let now = asleep.now.timestamp_millis();
+    write_device(
+        &asleep,
+        "abcdefgh",
+        "phone",
+        now - 200_000,
+        Some(now - 89 * hour),
+    );
+
+    let running_capture = result("capture_health", &running);
+    let running_stall = result("observer_delivery_stall", &running);
+    let asleep_capture = result("capture_health", &asleep);
+    let asleep_stall = result("observer_delivery_stall", &asleep);
+
+    assert_eq!(running_capture.status, Status::Warn);
+    assert_eq!(running_stall.status, Status::Warn);
+    assert_eq!(asleep_capture.status, Status::Warn);
+    assert_eq!(asleep_stall.status, Status::Warn);
+    assert_eq!(
+        running_capture.observer_delivery,
+        running_stall.observer_delivery
+    );
+    assert_eq!(
+        asleep_capture.observer_delivery,
+        asleep_stall.observer_delivery
+    );
+    assert!(!running_stall.detail.contains("last contact"));
+    assert!(!asleep_stall.detail.contains("last contact"));
+    assert!(running_stall.detail.contains("still running"));
+    assert!(running_stall.detail.contains("not adding"));
+    assert!(running_capture.detail.contains("still running"));
+    assert!(asleep_stall.detail.contains("asleep"));
+    assert!(asleep_capture.detail.contains("asleep"));
+    assert!(running_capture.detail.contains("rollup=attention"));
+    assert!(running_capture.detail.contains("phone"));
+
+    let running_facts = serde_json::to_value(&running_capture.observer_delivery).unwrap();
+    let asleep_facts = serde_json::to_value(&asleep_capture.observer_delivery).unwrap();
+    assert_eq!(running_facts["assessed"][0]["reach"], "active");
+    assert_eq!(asleep_facts["assessed"][0]["reach"], "offline");
+    let strip_reach = |value: &serde_json::Value| {
+        let mut stripped = value.clone();
+        for key in ["assessed", "unassessed"] {
+            if let Some(rows) = stripped[key].as_array_mut() {
+                for row in rows {
+                    row.as_object_mut().unwrap().remove("reach");
+                }
+            }
+        }
+        stripped
+    };
+    assert_eq!(strip_reach(&running_facts), strip_reach(&asleep_facts));
 }
 
 #[test]

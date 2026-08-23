@@ -70,8 +70,5 @@ fn stall_clause(row: &DeliveryAssessment) -> String {
         row.name,
         added / MINUTE_MS
     );
-    match row.last_seen_age_ms {
-        Some(age) => format!("{body}; last contact {}m ago", age / MINUTE_MS),
-        None => body,
-    }
+    format!("{body}; {}", common::delivery_reach_clause(row.reach))
 }

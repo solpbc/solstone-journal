@@ -63,12 +63,17 @@ pub(crate) fn result_from_assessment(inspection: DeliveryInspection, check: Chec
 }
 
 fn capture_clause(row: &DeliveryAssessment) -> String {
-    match row.last_segment_received_age_ms {
+    let base = match row.last_segment_received_age_ms {
         Some(age) => format!(
             "the solstone app on {} last added {}h ago",
             row.name,
             age / HOUR_MS
         ),
         None => format!("the solstone app on {} is having trouble adding", row.name),
+    };
+    if matches!(row.state, OwnerState::Stale | OwnerState::Offline) {
+        format!("{base}; {}", common::delivery_reach_clause(row.reach))
+    } else {
+        base
     }
 }

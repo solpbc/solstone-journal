@@ -575,6 +575,28 @@ mod tests {
         *expected_pulse
             .pointer_mut("/health_glance/cta/href")
             .unwrap() = json!("/app/network/");
+        assert_eq!(
+            expected_pulse.pointer("/health_glance/verdict"),
+            Some(&json!("ok"))
+        );
+        assert_eq!(
+            payload.pointer("/health_glance/verdict"),
+            Some(&json!("calm"))
+        );
+        *expected_pulse
+            .pointer_mut("/health_glance/verdict")
+            .unwrap() = json!("calm");
+        assert_eq!(
+            expected_pulse.pointer("/health_glance/severity"),
+            Some(&json!("green"))
+        );
+        assert_eq!(
+            payload.pointer("/health_glance/severity"),
+            Some(&json!("neutral"))
+        );
+        *expected_pulse
+            .pointer_mut("/health_glance/severity")
+            .unwrap() = json!("neutral");
         assert_payload_fields(
             &payload,
             &expected_pulse,

@@ -11,6 +11,36 @@ use crate::needs_you::format_degraded_capture_line;
 
 pub const BACKLOG_FRESHNESS_MAX_AGE_HOURS: i64 = 36;
 
+const UNAVAILABLE_HEADLINE: &str = "i don't know the status of your devices right now.";
+const EMPTY_REGISTRY_HEADLINE: &str =
+    "no devices are running the solstone app yet. set one up to start your journal.";
+const AWAITING_FIRST_HEADLINE: &str =
+    "the solstone app on one of your devices hasn't added anything to your journal yet.";
+const RESIDUE_HEADLINE: &str = "a device was set up but never started adding to your journal.";
+const NO_ELIGIBLE_HEADLINE: &str =
+    "none of your devices are set up to add to your journal right now.";
+const RUNNING_REACH_SENTENCE: &str =
+    "the app is still running, but it isn't adding to your journal.";
+const ASLEEP_REACH_SENTENCE: &str = "the device appears offline and may just be asleep.";
+const STALE_ISSUE: &str =
+    "the solstone app on one of your devices has not added anything to your journal recently.";
+const OFFLINE_ISSUE: &str = "the solstone app hasn't added anything to your journal recently.";
+
+#[derive(Clone, Copy)]
+enum CalmKind {
+    EmptyRegistry,
+    AwaitingFirst,
+    Residue,
+    NoEligible,
+}
+
+#[derive(Clone, Copy)]
+enum CaptureDisposition {
+    Active,
+    Calm(CalmKind),
+    Unavailable,
+}
+
 pub fn build_health_glance(
     capture: &Value,
     pipeline: &Value,
@@ -38,9 +68,9 @@ pub fn build_health_glance(
         let count = issues.len();
         return json!({"verdict":"attention","severity":severity,"headline":if count == 1 { "1 thing needs your attention".to_owned() } else { format!("{count} things need your attention") },"last_observation":null,"cta":null,"issues":issues});
     }
-    let status = observer_state(capture);
-    if status != "active" && status != "no_observers" {
-        return json!({"verdict":"unavailable","severity":"amber","headline":"i don't know the status of your devices right now.","last_observation":null,"cta":null,"issues":[]});
+    let disposition = capture_disposition(capture);
+    if matches!(disposition, CaptureDisposition::Unavailable) {
+        return unavailable_json();
     }
     if brain.get("state").and_then(Value::as_str) == Some("checking") {
         return json!({"verdict":"checking","severity":"amber","headline":brain.get("headline").cloned().unwrap_or(Value::Null),"last_observation":null,"cta":null,"issues":[]});
@@ -50,10 +80,12 @@ pub fn build_health_glance(
     {
         return json!({"verdict":"progressing","severity":"amber","headline":brain.get("headline").cloned().unwrap_or(Value::Null),"last_observation":null,"cta":null,"issues":[]});
     }
-    if status == "active" {
-        json!({"verdict":"ok","severity":"green","headline":"everything's working","last_observation":last_observe,"cta":null,"issues":[]})
-    } else {
-        json!({"verdict":"ok","severity":"green","headline":"no devices are running the solstone app yet. set one up to start your journal.","last_observation":null,"cta":{"text":"set one up →","href":"/app/network/"},"issues":[]})
+    match disposition {
+        CaptureDisposition::Active => {
+            json!({"verdict":"ok","severity":"green","headline":"everything's working","last_observation":last_observe,"cta":null,"issues":[]})
+        }
+        CaptureDisposition::Calm(kind) => calm_json(kind),
+        CaptureDisposition::Unavailable => unavailable_json(),
     }
 }
 
@@ -64,6 +96,133 @@ pub fn observer_state(capture: &Value) -> &'static str {
         _ => "unknown",
     }
 }
+
+fn capture_disposition(capture: &Value) -> CaptureDisposition {
+    let status = observer_state(capture);
+    if status != "active" && status != "no_observers" {
+        return CaptureDisposition::Unavailable;
+    }
+    if unassessed_has_reason(capture, "invalid_delivery_evidence") {
+        return CaptureDisposition::Unavailable;
+    }
+    if capture.get("registry").and_then(Value::as_str) == Some("partial_registry")
+        && assessed_empty_or_all_active(capture)
+    {
+        return CaptureDisposition::Unavailable;
+    }
+    if status == "no_observers" {
+        match capture.get("registry").and_then(Value::as_str) {
+            Some("registry_empty" | "no_eligible_records" | "registry_complete") => {
+                CaptureDisposition::Calm(calm_kind(capture))
+            }
+            _ => CaptureDisposition::Unavailable,
+        }
+    } else {
+        CaptureDisposition::Active
+    }
+}
+
+fn calm_kind(capture: &Value) -> CalmKind {
+    match capture.get("registry").and_then(Value::as_str) {
+        Some("registry_empty") => CalmKind::EmptyRegistry,
+        Some("no_eligible_records") => CalmKind::NoEligible,
+        _ => {
+            if unassessed_has_reason(capture, "awaiting_first_delivery") {
+                CalmKind::AwaitingFirst
+            } else {
+                CalmKind::Residue
+            }
+        }
+    }
+}
+
+fn unassessed_has_reason(capture: &Value, reason: &str) -> bool {
+    capture
+        .get("unassessed")
+        .and_then(Value::as_array)
+        .is_some_and(|rows| {
+            rows.iter()
+                .any(|row| row.get("reason").and_then(Value::as_str) == Some(reason))
+        })
+}
+
+fn assessed_empty_or_all_active(capture: &Value) -> bool {
+    let Some(observers) = capture.get("observers").and_then(Value::as_array) else {
+        return true;
+    };
+    observers.is_empty()
+        || observers
+            .iter()
+            .all(|row| row.get("status").and_then(Value::as_str) == Some("active"))
+}
+
+fn affected_reach_sentence(capture: &Value) -> Option<&'static str> {
+    let observers = capture.get("observers").and_then(Value::as_array)?;
+    let affected: Vec<&Value> = observers
+        .iter()
+        .filter(|row| {
+            matches!(
+                row.get("status").and_then(Value::as_str),
+                Some("stale" | "offline")
+            )
+        })
+        .collect();
+    if affected.is_empty() {
+        return None;
+    }
+    if affected.iter().any(|row| {
+        matches!(
+            row.get("reach").and_then(Value::as_str),
+            Some("active" | "stale")
+        )
+    }) {
+        Some(RUNNING_REACH_SENTENCE)
+    } else {
+        Some(ASLEEP_REACH_SENTENCE)
+    }
+}
+
+fn unavailable_json() -> Value {
+    json!({"verdict":"unavailable","severity":"amber","headline":UNAVAILABLE_HEADLINE,"last_observation":null,"cta":null,"issues":[]})
+}
+
+fn calm_json(kind: CalmKind) -> Value {
+    match kind {
+        CalmKind::EmptyRegistry => json!({
+            "verdict": "calm",
+            "severity": "neutral",
+            "headline": EMPTY_REGISTRY_HEADLINE,
+            "last_observation": null,
+            "cta": {"text": "set one up →", "href": "/app/network/"},
+            "issues": [],
+        }),
+        CalmKind::AwaitingFirst => json!({
+            "verdict": "calm",
+            "severity": "neutral",
+            "headline": AWAITING_FIRST_HEADLINE,
+            "last_observation": null,
+            "cta": null,
+            "issues": [],
+        }),
+        CalmKind::Residue => json!({
+            "verdict": "calm",
+            "severity": "neutral",
+            "headline": RESIDUE_HEADLINE,
+            "last_observation": null,
+            "cta": null,
+            "issues": [],
+        }),
+        CalmKind::NoEligible => json!({
+            "verdict": "calm",
+            "severity": "neutral",
+            "headline": NO_ELIGIBLE_HEADLINE,
+            "last_observation": null,
+            "cta": null,
+            "issues": [],
+        }),
+    }
+}
+
 fn backlog_issues(source: &BacklogSource, now: DateTime<Utc>) -> Vec<Value> {
     if source.validity != BacklogValidity::Valid {
         return vec![unknown_backlog()];
@@ -99,18 +258,23 @@ fn unknown_backlog() -> Value {
     json!({"text":"i can't tell if your journal is caught up right now.","severity":"amber","href":"/app/health"})
 }
 fn capture_issue(capture: &Value) -> Option<Value> {
-    match capture.get("status").and_then(Value::as_str) {
-        Some("degraded") => Some(
-            json!({"text":format_degraded_capture_line(capture).expect("degraded"),"severity":"red","href":"/app/health"}),
+    let (base, severity) = match capture.get("status").and_then(Value::as_str) {
+        Some("degraded") => (
+            format_degraded_capture_line(capture).expect("degraded"),
+            "red",
         ),
-        Some("offline") => Some(
-            json!({"text":"the solstone app hasn't added anything to your journal recently.","severity":"red","href":"/app/health"}),
-        ),
-        Some("stale") => Some(
-            json!({"text":"the solstone app on one of your devices has not added anything to your journal recently.","severity":"amber","href":"/app/health"}),
-        ),
-        _ => None,
-    }
+        Some("offline") => (OFFLINE_ISSUE.to_owned(), "red"),
+        Some("stale") => (STALE_ISSUE.to_owned(), "amber"),
+        _ => return None,
+    };
+    let text = match capture.get("status").and_then(Value::as_str) {
+        Some("stale" | "offline") => match affected_reach_sentence(capture) {
+            Some(sentence) => format!("{base} {sentence}"),
+            None => base,
+        },
+        _ => base,
+    };
+    Some(json!({"text":text,"severity":severity,"href":"/app/health"}))
 }
 fn pipeline_issue(pipeline: &Value) -> Option<Value> {
     if !pipeline.is_object() || pipeline.as_object().is_some_and(|row| row.is_empty()) {
@@ -173,15 +337,51 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::model::{BacklogSource, BacklogValidity};
 
-    #[test]
-    fn injected_inputs_produce_active_and_unavailable_verdicts() {
-        let backlog = BacklogSource {
+    fn fresh_backlog() -> BacklogSource {
+        BacklogSource {
             backlog: Some(json!({"stuck_days":0}).as_object().unwrap().clone()),
             validity: BacklogValidity::Valid,
             generated_at: Some("2026-05-14T12:00:00+00:00".to_owned()),
-        };
-        let now = Utc.with_ymd_and_hms(2026, 5, 14, 15, 30, 0).unwrap();
+        }
+    }
+
+    fn now() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 5, 14, 15, 30, 0).unwrap()
+    }
+
+    fn glance(capture: &Value) -> Value {
+        glance_at(capture, None, &Value::Null, now())
+    }
+
+    fn glance_at(
+        capture: &Value,
+        last_observe: Option<&str>,
+        brain: &Value,
+        at: DateTime<Utc>,
+    ) -> Value {
+        build_health_glance(
+            capture,
+            &json!({}),
+            last_observe,
+            &fresh_backlog(),
+            brain,
+            at,
+        )
+    }
+
+    fn unassessed(name: &str, reason: &str, reach: &str) -> Value {
+        json!({"name": name, "reason": reason, "reach": reach})
+    }
+
+    fn observer(name: &str, status: &str, reach: &str) -> Value {
+        json!({"name": name, "status": status, "reach": reach})
+    }
+
+    #[test]
+    fn injected_inputs_produce_active_and_unavailable_verdicts() {
+        let backlog = fresh_backlog();
         assert_eq!(
             build_health_glance(
                 &json!({"status":"active"}),
@@ -189,7 +389,7 @@ mod tests {
                 Some("29 seconds ago"),
                 &backlog,
                 &Value::Null,
-                now
+                now()
             )["verdict"],
             "ok"
         );
@@ -200,9 +400,352 @@ mod tests {
                 None,
                 &backlog,
                 &Value::Null,
-                now
+                now()
             )["verdict"],
             "attention"
         );
+    }
+
+    #[test]
+    fn owner_signal_matrix() {
+        let empty = json!({
+            "status": "no_observers",
+            "observers": [],
+            "unassessed": [],
+            "registry": "registry_empty",
+        });
+        let awaiting = json!({
+            "status": "no_observers",
+            "observers": [],
+            "unassessed": [unassessed("phone", "awaiting_first_delivery", "active")],
+            "registry": "registry_complete",
+        });
+        let residue_offline = json!({
+            "status": "no_observers",
+            "observers": [],
+            "unassessed": [unassessed("old", "registration_residue", "offline")],
+            "registry": "registry_complete",
+        });
+        let residue_stale = json!({
+            "status": "no_observers",
+            "observers": [],
+            "unassessed": [unassessed("old", "registration_residue", "stale")],
+            "registry": "registry_complete",
+        });
+        let no_eligible = json!({
+            "status": "no_observers",
+            "observers": [],
+            "unassessed": [],
+            "registry": "no_eligible_records",
+        });
+
+        let g = glance(&empty);
+        assert_eq!(g["verdict"], "calm");
+        assert_eq!(g["severity"], "neutral");
+        assert_eq!(g["cta"]["href"], "/app/network/");
+        assert_eq!(g["issues"].as_array().unwrap().len(), 0);
+        assert!(g["headline"].as_str().unwrap().contains("set one up"));
+
+        for capture in [&awaiting, &residue_offline, &residue_stale, &no_eligible] {
+            let g = glance(capture);
+            assert_eq!(g["verdict"], "calm");
+            assert_eq!(g["severity"], "neutral");
+            assert!(g["cta"].is_null());
+            assert_eq!(g["issues"].as_array().unwrap().len(), 0);
+        }
+        let awaiting_g = glance(&awaiting);
+        assert!(
+            awaiting_g["headline"]
+                .as_str()
+                .unwrap()
+                .contains("hasn't added")
+        );
+        assert!(
+            !awaiting_g["headline"]
+                .as_str()
+                .unwrap()
+                .contains("no devices are running")
+        );
+        assert!(
+            !glance(&residue_offline)["headline"]
+                .as_str()
+                .unwrap()
+                .contains("no devices are running")
+        );
+        assert!(
+            !glance(&residue_stale)["headline"]
+                .as_str()
+                .unwrap()
+                .contains("no devices are running")
+        );
+
+        let invalid_active = json!({
+            "status": "no_observers",
+            "observers": [],
+            "unassessed": [unassessed("bad", "invalid_delivery_evidence", "active")],
+            "registry": "registry_complete",
+        });
+        let invalid_offline = json!({
+            "status": "no_observers",
+            "observers": [],
+            "unassessed": [unassessed("bad", "invalid_delivery_evidence", "offline")],
+            "registry": "registry_complete",
+        });
+        let unknown = json!({
+            "status": "unknown",
+            "observers": [],
+            "unassessed": [],
+            "registry": "registry_unknown",
+        });
+        let partial_empty = json!({
+            "status": "no_observers",
+            "observers": [],
+            "unassessed": [],
+            "registry": "partial_registry",
+        });
+        let partial_all_active = json!({
+            "status": "active",
+            "observers": [observer("peer", "active", "active")],
+            "unassessed": [],
+            "registry": "partial_registry",
+        });
+        let invalid_beside_active = json!({
+            "status": "active",
+            "observers": [observer("peer", "active", "active")],
+            "unassessed": [unassessed("bad", "invalid_delivery_evidence", "active")],
+            "registry": "registry_complete",
+        });
+        let missing_registry = json!({
+            "status": "no_observers",
+            "observers": [],
+            "unassessed": [],
+        });
+
+        let invalid_g = glance(&invalid_active);
+        assert_eq!(invalid_g["verdict"], "unavailable");
+        assert_eq!(invalid_g["severity"], "amber");
+        assert!(invalid_g["cta"].is_null());
+        assert_eq!(invalid_g["issues"].as_array().unwrap().len(), 0);
+        assert!(
+            invalid_g["headline"]
+                .as_str()
+                .unwrap()
+                .contains("i don't know the status")
+        );
+        assert_eq!(glance(&invalid_offline)["verdict"], invalid_g["verdict"]);
+        assert_eq!(glance(&invalid_offline)["severity"], invalid_g["severity"]);
+        assert_eq!(glance(&invalid_offline)["headline"], invalid_g["headline"]);
+        assert_eq!(glance(&invalid_offline)["cta"], invalid_g["cta"]);
+        assert_eq!(glance(&invalid_offline)["issues"], invalid_g["issues"]);
+        for capture in [
+            &unknown,
+            &partial_empty,
+            &partial_all_active,
+            &invalid_beside_active,
+            &missing_registry,
+        ] {
+            let g = glance(capture);
+            assert_eq!(g["verdict"], "unavailable", "{capture}");
+            assert_eq!(g["severity"], "amber");
+            assert!(g["last_observation"].is_null());
+        }
+
+        let stale_with_invalid = json!({
+            "status": "stale",
+            "observers": [observer("phone", "stale", "offline")],
+            "unassessed": [unassessed("bad", "invalid_delivery_evidence", "active")],
+            "registry": "registry_complete",
+        });
+        let stale_g = glance(&stale_with_invalid);
+        assert_eq!(stale_g["verdict"], "attention");
+        assert_eq!(stale_g["severity"], "amber");
+        assert_eq!(stale_g["issues"].as_array().unwrap().len(), 1);
+        assert_eq!(stale_g["issues"][0]["href"], "/app/health");
+        assert!(
+            stale_g["issues"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("has not added anything to your journal recently")
+        );
+
+        let offline_partial = json!({
+            "status": "offline",
+            "observers": [observer("phone", "offline", "offline")],
+            "unassessed": [],
+            "registry": "partial_registry",
+        });
+        let offline_g = glance(&offline_partial);
+        assert_eq!(offline_g["verdict"], "attention");
+        assert_eq!(offline_g["severity"], "red");
+        assert_eq!(offline_g["issues"].as_array().unwrap().len(), 1);
+        assert!(
+            offline_g["issues"][0]["text"]
+                .as_str()
+                .unwrap()
+                .starts_with(OFFLINE_ISSUE)
+        );
+
+        let degraded_invalid = json!({
+            "status": "degraded",
+            "observers": [observer("rej", "degraded", "active")],
+            "unassessed": [unassessed("bad", "invalid_delivery_evidence", "active")],
+            "registry": "registry_complete",
+        });
+        let degraded_g = glance(&degraded_invalid);
+        assert_eq!(degraded_g["verdict"], "attention");
+        assert_eq!(degraded_g["severity"], "red");
+        let degraded_text = degraded_g["issues"][0]["text"].as_str().unwrap();
+        assert!(degraded_text.contains("having trouble adding"));
+        assert!(!degraded_text.contains("still running"));
+        assert!(!degraded_text.contains("asleep"));
+
+        let missing_backlog = BacklogSource {
+            backlog: None,
+            validity: BacklogValidity::Missing,
+            generated_at: None,
+        };
+        let backlog_over_invalid = build_health_glance(
+            &invalid_active,
+            &json!({}),
+            None,
+            &missing_backlog,
+            &Value::Null,
+            now(),
+        );
+        assert_eq!(backlog_over_invalid["verdict"], "attention");
+        assert!(
+            backlog_over_invalid["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|issue| issue["text"]
+                    .as_str()
+                    .unwrap()
+                    .contains("i can't tell if your journal is caught up"))
+        );
+
+        let active_awaiting = json!({
+            "status": "active",
+            "observers": [observer("phone", "active", "active")],
+            "unassessed": [unassessed("new", "awaiting_first_delivery", "active")],
+            "registry": "registry_complete",
+        });
+        let active_residue = json!({
+            "status": "active",
+            "observers": [observer("phone", "active", "active")],
+            "unassessed": [unassessed("old", "registration_residue", "offline")],
+            "registry": "registry_complete",
+        });
+        let active_g = glance_at(
+            &active_awaiting,
+            Some("29 seconds ago"),
+            &Value::Null,
+            now(),
+        );
+        assert_eq!(active_g["verdict"], "ok");
+        assert_eq!(active_g["severity"], "green");
+        assert_eq!(active_g["last_observation"], "29 seconds ago");
+        assert!(active_g["cta"].is_null());
+        let residue_active =
+            glance_at(&active_residue, Some("29 seconds ago"), &Value::Null, now());
+        assert_eq!(residue_active["verdict"], "ok");
+        assert_eq!(residue_active["severity"], "green");
+
+        let mut running = json!({
+            "status": "stale",
+            "observers": [observer("phone", "stale", "active")],
+            "unassessed": [],
+            "registry": "registry_complete",
+        });
+        let mut asleep = running.clone();
+        asleep["observers"][0]["reach"] = json!("offline");
+        let running_g = glance(&running);
+        let asleep_g = glance(&asleep);
+        assert_eq!(running_g["verdict"], asleep_g["verdict"]);
+        assert_eq!(running_g["severity"], asleep_g["severity"]);
+        assert_eq!(running_g["headline"], asleep_g["headline"]);
+        assert_eq!(
+            running_g["issues"].as_array().unwrap().len(),
+            asleep_g["issues"].as_array().unwrap().len()
+        );
+        assert_eq!(
+            running_g["issues"][0]["href"],
+            asleep_g["issues"][0]["href"]
+        );
+        assert_eq!(running_g["verdict"], "attention");
+        assert_eq!(running_g["severity"], "amber");
+        assert_eq!(running_g["headline"], "1 thing needs your attention");
+        let running_text = running_g["issues"][0]["text"].as_str().unwrap();
+        let asleep_text = asleep_g["issues"][0]["text"].as_str().unwrap();
+        assert!(running_text.contains("still running"));
+        assert!(running_text.contains("isn't adding"));
+        assert!(asleep_text.contains("asleep"));
+        assert!(!running_text.contains("reach"));
+        assert!(!asleep_text.contains("contact"));
+        assert!(!running_text.contains("heartbeat"));
+
+        running["observers"][0]["reach"] = json!("stale");
+        let stale_reach_g = glance(&running);
+        assert!(
+            stale_reach_g["issues"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("still running")
+        );
+
+        let mixed = json!({
+            "status": "stale",
+            "observers": [
+                observer("alpha", "stale", "active"),
+                observer("bravo", "stale", "offline"),
+            ],
+            "unassessed": [],
+            "registry": "registry_complete",
+        });
+        assert!(
+            glance(&mixed)["issues"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("still running")
+        );
+
+        let corpus_shaped = json!({"status": "stale", "observers": [{"name": "laptop"}]});
+        assert_eq!(glance(&corpus_shaped)["issues"][0]["text"], STALE_ISSUE);
+
+        let checking = glance_at(
+            &empty,
+            None,
+            &json!({"state": "checking", "headline": "checking thinking"}),
+            now(),
+        );
+        assert_eq!(checking["verdict"], "checking");
+        assert_eq!(checking["severity"], "amber");
+
+        let progressing = glance_at(
+            &empty,
+            None,
+            &json!({"state": "blocked", "headline": "installing", "progressing": true}),
+            now(),
+        );
+        assert_eq!(progressing["verdict"], "progressing");
+        assert_eq!(progressing["severity"], "amber");
+
+        let later = now() + Duration::days(30);
+        let at_clock = |at: DateTime<Utc>| {
+            let backlog = BacklogSource {
+                backlog: Some(json!({"stuck_days":0}).as_object().unwrap().clone()),
+                validity: BacklogValidity::Valid,
+                generated_at: Some(at.to_rfc3339()),
+            };
+            build_health_glance(&awaiting, &json!({}), None, &backlog, &Value::Null, at)
+        };
+        let first = at_clock(now());
+        let second = at_clock(later);
+        assert_eq!(first["verdict"], "calm", "{first}");
+        assert_eq!(second["verdict"], "calm", "{second}");
+        assert_eq!(first["severity"], "neutral");
+        assert_eq!(second["severity"], "neutral");
+        assert!(first["cta"].is_null());
+        assert!(second["cta"].is_null());
     }
 }

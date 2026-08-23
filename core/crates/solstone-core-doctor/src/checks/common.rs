@@ -5,7 +5,7 @@ use solstone_core_journal_config::read_journal_config;
 use solstone_core_observer::store::record::ObserverRecord;
 use solstone_core_observer::store::reload::{load_observers, load_observers_with_inventory};
 use solstone_core_observer::{
-    AssessedObserverFact, DeliveryInspection, ObserverDeliveryFacts, inspect_loaded,
+    AssessedObserverFact, DeliveryInspection, ObserverDeliveryFacts, Reach, inspect_loaded,
 };
 pub fn config_backend(context: &CheckContext) -> Result<Option<String>, String> {
     let read = read_journal_config(&context.journal_path).map_err(|error| error.to_string())?;
@@ -52,6 +52,13 @@ pub fn enabled(records: Vec<ObserverRecord>) -> Vec<ObserverRecord> {
         .into_iter()
         .filter(|record| !record.revoked() && record.enabled() != Some(false))
         .collect()
+}
+
+pub(crate) fn delivery_reach_clause(reach: Reach) -> &'static str {
+    match reach {
+        Reach::Active | Reach::Stale => "still running, but not adding",
+        Reach::Offline => "appears offline and may be asleep",
+    }
 }
 
 pub(crate) fn join_capped(clauses: &[String], separator: &str) -> String {

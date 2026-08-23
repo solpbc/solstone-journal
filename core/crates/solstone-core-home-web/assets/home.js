@@ -226,7 +226,7 @@
 
   function renderVitalsHtml(pulse) {
     const g = pulse.health_glance || {};
-    const severity = g.severity || 'amber';
+    const severity = g.severity || 'amber'; // 'neutral' is truthy; do not fold it into this fallback
     let html = '<div class="pulse-vitals" id="pulse-vitals" data-home-surface="vitals" role="status" aria-live="polite">'
       + '<div class="pulse-vitals-item"><span class="pulse-vitals-dot ' + esc(severity) + '" aria-hidden="true"></span>'
       + '<span class="pulse-vitals-verdict ' + esc(severity) + '">' + esc(g.headline || '') + '</span></div>';

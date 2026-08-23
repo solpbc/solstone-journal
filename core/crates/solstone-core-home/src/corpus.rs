@@ -245,8 +245,9 @@ fn replay_convey_home_corpus() {
             input["pipeline"].as_str().unwrap(),
         ));
         if cta_divergence_case {
-            // Four named corpus cases retain the reference CTA. Count both sides:
-            // 2146 + 4 reference assertions + 4 native assertions = 2154.
+            // Four named corpus cases retain the reference CTA, verdict, and
+            // severity. Count both sides of each patched field:
+            // 2146 + 4×2 href + 4×2 verdict + 4×2 severity = 2170.
             assert_eq!(
                 expected.pointer("/cta/href"),
                 Some(&json!("/app/observer/"))
@@ -255,6 +256,16 @@ fn replay_convey_home_corpus() {
             assert_eq!(actual.pointer("/cta/href"), Some(&json!("/app/network/")));
             asserted += 1;
             *expected.pointer_mut("/cta/href").unwrap() = json!("/app/network/");
+            assert_eq!(expected.pointer("/verdict"), Some(&json!("ok")));
+            asserted += 1;
+            assert_eq!(actual.pointer("/verdict"), Some(&json!("calm")));
+            asserted += 1;
+            *expected.pointer_mut("/verdict").unwrap() = json!("calm");
+            assert_eq!(expected.pointer("/severity"), Some(&json!("green")));
+            asserted += 1;
+            assert_eq!(actual.pointer("/severity"), Some(&json!("neutral")));
+            asserted += 1;
+            *expected.pointer_mut("/severity").unwrap() = json!("neutral");
         }
         eq(&actual, &expected, "health glance");
         asserted += 1;
@@ -276,7 +287,7 @@ fn replay_convey_home_corpus() {
         );
         asserted += 1;
     }
-    assert_eq!(asserted, 2154);
+    assert_eq!(asserted, 2170);
 }
 
 fn rewrite_sol_urls_in_value(value: &mut Value) {
@@ -388,7 +399,9 @@ fn valid(value: Value, generated_at: Option<&str>) -> BacklogSource {
 fn capture(name: &str) -> Value {
     match name {
         "none" => Value::Null,
-        "no_observers" => json!({"status":"no_observers","observers":[]}),
+        "no_observers" => {
+            json!({"status":"no_observers","observers":[],"unassessed":[],"registry":"registry_empty"})
+        }
         "active" | "stale" | "offline" | "degraded" | "unknown" => {
             json!({"status":name,"observers":[{"name":"laptop"}]})
         }
