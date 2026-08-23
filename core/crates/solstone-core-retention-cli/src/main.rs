@@ -274,10 +274,11 @@ fn run_remove_segments(args: &Args) -> ExitCode {
         Ok(value) => PathBuf::from(value),
         Err(error) => return fail(&error),
     };
-    let at = match args.required("--at") {
+    let at = match parse_rfc3339_flag(args, "--at") {
         Ok(value) => value,
         Err(error) => return fail(&error),
     };
+    let at_stamp = at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let did = match args.required("--did") {
         Ok(value) => value,
         Err(error) => return fail(&error),
@@ -297,14 +298,14 @@ fn run_remove_segments(args: &Args) -> ExitCode {
             Err(error) => return fail(&error),
         }
     }
-    let outcome = remove_segments(&journal, &targets, at, reason, did);
+    let outcome = remove_segments(&journal, &targets, &at_stamp, reason, did);
     // An integration test cannot cleanly fail only the register write after a real
     // removal. Preserve the completed outcome even if that secondary write fails.
     let mut register_errors = Vec::new();
     for target_outcome in &outcome.targets {
         let Some(failure) = target_outcome.not_removed.iter().find_map(|item| {
             item.staged.as_ref().map(|staged| Failure {
-                at: at.to_owned(),
+                at: String::new(),
                 reason: item.reason.clone(),
                 staged: Some(staged.clone()),
             })
@@ -337,10 +338,11 @@ fn run_recover(args: &Args) -> ExitCode {
         Ok(value) => PathBuf::from(value),
         Err(error) => return fail(&error),
     };
-    let at = match args.required("--at") {
+    let at = match parse_rfc3339_flag(args, "--at") {
         Ok(value) => value,
         Err(error) => return fail(&error),
     };
+    let at_stamp = at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let did = match args.required("--did") {
         Ok(value) => value,
         Err(error) => return fail(&error),
@@ -349,7 +351,7 @@ fn run_recover(args: &Args) -> ExitCode {
         Ok(reason) => reason,
         Err(error) => return fail(&error),
     };
-    let outcome = recover(&journal, at, reason, did);
+    let outcome = recover(&journal, &at_stamp, reason, did);
     if let Err(error) = reconcile_recovered(&journal) {
         return emit(
             serde_json::json!({ "ok": false, "verb": "recover", "error": error.to_string() }),
@@ -373,7 +375,7 @@ fn run_release_raw(args: &Args) -> ExitCode {
         Ok(value) => PathBuf::from(value),
         Err(error) => return fail(&error),
     };
-    let at = match args.required("--at") {
+    let at = match parse_rfc3339_flag(args, "--at") {
         Ok(value) => value,
         Err(error) => return fail(&error),
     };
@@ -426,7 +428,7 @@ fn run_release_raw(args: &Args) -> ExitCode {
     for target_outcome in &outcome.targets {
         let Some(failure) = target_outcome.not_removed.iter().find_map(|item| {
             item.staged.as_ref().map(|staged| Failure {
-                at: at.to_owned(),
+                at: String::new(),
                 reason: item.reason.clone(),
                 staged: Some(staged.clone()),
             })
@@ -787,12 +789,16 @@ fn parse_today(args: &Args) -> Result<NaiveDate, String> {
     })
 }
 
-fn parse_now(args: &Args) -> Result<DateTime<Utc>, String> {
-    args.required("--now").and_then(|value| {
+fn parse_rfc3339_flag(args: &Args, flag: &str) -> Result<DateTime<Utc>, String> {
+    args.required(flag).and_then(|value| {
         DateTime::parse_from_rfc3339(value)
             .map(|when| when.with_timezone(&Utc))
-            .map_err(|_| format!("--now must be an RFC 3339 instant, not `{value}`"))
+            .map_err(|_| format!("{flag} must be an RFC 3339 instant, not `{value}`"))
     })
+}
+
+fn parse_now(args: &Args) -> Result<DateTime<Utc>, String> {
+    parse_rfc3339_flag(args, "--now")
 }
 
 /// Report a command-specific argument refusal without losing the verb identifier.
@@ -879,12 +885,7 @@ fn run_mark(args: &Args) -> ExitCode {
                 .map(|mark| (mark.target.clone(), mark.proposal.clone())),
         );
     }
-    match reconcile(
-        &journal,
-        RemovalClass::PolicyRawRelease,
-        &proposals,
-        args.required("--now").unwrap_or_default(),
-    ) {
+    match reconcile(&journal, RemovalClass::PolicyRawRelease, &proposals, now) {
         Ok(register) => emit(
             serde_json::json!({ "ok": true, "verb": "mark", "marks": register, "plan": plan_json(&plan) }),
             EXIT_OK,
@@ -930,7 +931,7 @@ fn run_mark_offload(args: &Args) -> ExitCode {
         Ok(value) => value,
         Err(error) => return verb_fail("mark-offload", &error),
     };
-    let now = match args.required("--now") {
+    let now = match parse_now(args) {
         Ok(value) => value,
         Err(error) => return verb_fail("mark-offload", &error),
     };
@@ -1052,10 +1053,6 @@ fn run_remove_marked(args: &Args) -> ExitCode {
         Ok(value) => value,
         Err(error) => return verb_fail("remove-marked", &error),
     };
-    let at = match args.required("--now") {
-        Ok(value) => value,
-        Err(error) => return verb_fail("remove-marked", &error),
-    };
     let ids = match args
         .all("--mark")
         .into_iter()
@@ -1075,15 +1072,7 @@ fn run_remove_marked(args: &Args) -> ExitCode {
         }
     };
     let mut register_errors = Vec::new();
-    let outcome = remove_marked(
-        &journal,
-        &marks,
-        &policy,
-        today,
-        now,
-        at,
-        &mut register_errors,
-    );
+    let outcome = remove_marked(&journal, &marks, &policy, today, now, &mut register_errors);
     finish(
         &journal,
         outcome,

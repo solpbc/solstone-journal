@@ -17,6 +17,20 @@ use std::process::{Child, Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
+
+fn mark_at(label: &str) -> DateTime<Utc> {
+    let raw = match label {
+        "first" => "2026-08-06T12:00:00Z",
+        "second" => "2026-08-06T12:00:01Z",
+        "third" => "2026-08-06T12:00:02Z",
+        other => other,
+    };
+    DateTime::parse_from_rfc3339(raw)
+        .unwrap()
+        .with_timezone(&Utc)
+}
+
 use serde_json::{Value, json};
 use solstone_core_retention::Target;
 use solstone_core_retention::marks::{
@@ -821,7 +835,7 @@ fn remove_marked_stops_at_a_locked_later_mark_without_losing_completed_rows() {
             (first.clone(), first_proposal.clone()),
             (second.clone(), second_proposal.clone()),
         ],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let first_id = MarkId::derive(
@@ -882,7 +896,7 @@ fn remove_marked_reports_halted_before_start_when_the_first_mark_is_locked() {
         bed.journal(),
         RemovalClass::PolicyRawRelease,
         &[(target(), proposed.clone())],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let id = marked.marks.keys().next().unwrap().as_str().to_owned();
@@ -1039,7 +1053,7 @@ fn remove_marked_refuses_not_required_and_failed_marks_before_touching_disk() {
         bed.journal(),
         RemovalClass::OwnerSegmentRemoval,
         &[(owner, proposal(Vec::new()))],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let owner_id = owner_register
@@ -1063,7 +1077,7 @@ fn remove_marked_refuses_not_required_and_failed_marks_before_touching_disk() {
             reason: "needs recovery".to_owned(),
             staged: Some("set-aside/segment".to_owned()),
         },
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let failed_id = failed_register
@@ -1294,7 +1308,7 @@ fn remove_marked_reports_current_policy_and_processing_proof_refusals() {
         missing_anchor_bed.journal(),
         RemovalClass::PolicyRawRelease,
         &[(missing_target, proposal(vec!["audio.flac".to_owned()]))],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let missing_id = register.marks.keys().next().unwrap().as_str().to_owned();
@@ -1345,7 +1359,7 @@ fn remove_marked_reports_freshly_proven_files_outside_the_approval() {
                 names: vec!["audio.flac".to_owned()],
             },
         )],
-        "2026-08-06T00:00:00Z",
+        mark_at("2026-08-06T00:00:00Z"),
     )
     .unwrap();
     let id = register.marks.keys().next().unwrap().as_str().to_owned();
@@ -1412,7 +1426,7 @@ fn remove_marked_accounts_for_a_proposal_file_that_is_already_gone() {
             target(),
             proposal(vec!["audio.flac".to_owned(), "other.wav".to_owned()]),
         )],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let id = register.marks.keys().next().unwrap().as_str().to_owned();
@@ -1472,14 +1486,14 @@ fn decline_drops_only_the_named_offload_mark_without_touching_media() {
         bed.journal(),
         RemovalClass::PolicyRawRelease,
         &[(target(), policy_proposal.clone())],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     reconcile(
         bed.journal(),
         RemovalClass::OffloadRawRelease,
         &[(offload_target.clone(), offload_proposal.clone())],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let policy_id = MarkId::derive(
@@ -1525,7 +1539,7 @@ fn decline_refusals_leave_the_register_unchanged() {
         missing.journal(),
         RemovalClass::PolicyRawRelease,
         &[(target(), proposal(vec!["audio.flac".to_owned()]))],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let missing_before = register_json(&missing);
@@ -1551,7 +1565,7 @@ fn decline_refusals_leave_the_register_unchanged() {
         not_required.journal(),
         RemovalClass::OwnerRawRelease,
         &[(target(), proposal(vec!["audio.flac".to_owned()]))],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let not_required_id = not_required_register
@@ -1589,7 +1603,7 @@ fn decline_refusals_leave_the_register_unchanged() {
             reason: "needs recovery".to_owned(),
             staged: Some("set-aside/segment".to_owned()),
         },
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let failed_id = failed_register
@@ -1621,7 +1635,7 @@ fn decline_refusals_leave_the_register_unchanged() {
         duplicate.journal(),
         RemovalClass::PolicyRawRelease,
         &[(target(), proposal(vec!["audio.flac".to_owned()]))],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let duplicate_id = duplicate_register
@@ -1660,7 +1674,7 @@ fn mark_does_not_change_marks_owned_by_other_classes() {
         bed.journal(),
         RemovalClass::OffloadRawRelease,
         &[(target(), proposal(vec!["audio.flac".to_owned()]))],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let failed_target = Target {
@@ -1677,7 +1691,7 @@ fn mark_does_not_change_marks_owned_by_other_classes() {
             reason: "staged".to_owned(),
             staged: Some("set-aside".to_owned()),
         },
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let before = serde_json::to_value(load(bed.journal()).unwrap()).unwrap();

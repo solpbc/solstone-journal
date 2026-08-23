@@ -15,6 +15,20 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use chrono::{DateTime, Utc};
+
+fn mark_at(label: &str) -> DateTime<Utc> {
+    let raw = match label {
+        "first" => "2026-08-06T12:00:00Z",
+        "second" => "2026-08-06T12:00:01Z",
+        "third" => "2026-08-06T12:00:02Z",
+        other => other,
+    };
+    DateTime::parse_from_rfc3339(raw)
+        .unwrap()
+        .with_timezone(&Utc)
+}
+
 use serde_json::json;
 use solstone_core_journal_io::{LockOptions, hold_lock};
 use solstone_core_retention::Target;
@@ -164,7 +178,7 @@ fn register_round_trips_marked_and_failed_entries() {
         bed.path(),
         RemovalClass::OwnerRawRelease,
         &[(marked_target.clone(), proposal("owner requested it"))],
-        "2026-08-06T12:00:00Z",
+        mark_at("2026-08-06T12:00:00Z"),
     )
     .unwrap();
     let expected = record_failure(
@@ -173,7 +187,7 @@ fn register_round_trips_marked_and_failed_entries() {
         &failed_target,
         &proposal("failed").names,
         failure(Some("set-aside/070100_17")),
-        "2026-08-06T12:01:00Z",
+        mark_at("2026-08-06T12:01:00Z"),
     )
     .unwrap();
     assert_ne!(marked, expected);
@@ -188,10 +202,16 @@ fn reconcile_removes_a_stale_marked_entry() {
         bed.path(),
         RemovalClass::PolicyRawRelease,
         &[(held, proposal("old"))],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
-    let after = reconcile(bed.path(), RemovalClass::PolicyRawRelease, &[], "second").unwrap();
+    let after = reconcile(
+        bed.path(),
+        RemovalClass::PolicyRawRelease,
+        &[],
+        mark_at("second"),
+    )
+    .unwrap();
     assert!(after.marks.is_empty());
 }
 
@@ -208,7 +228,7 @@ fn upsert_preserves_other_offload_marks() {
         RemovalClass::OffloadRawRelease,
         &first,
         proposal("first"),
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let after = upsert(
@@ -216,7 +236,7 @@ fn upsert_preserves_other_offload_marks() {
         RemovalClass::OffloadRawRelease,
         &second,
         proposal("second"),
-        "second",
+        mark_at("second"),
     )
     .unwrap();
 
@@ -235,11 +255,17 @@ fn reconcile_keeps_a_stale_failed_entry_and_its_staged_path() {
         &held,
         &proposal("held").names,
         failure(Some("set-aside/070000_17")),
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let id = mark_id(RemovalClass::PolicyRawRelease, &held);
-    let after = reconcile(bed.path(), RemovalClass::PolicyRawRelease, &[], "second").unwrap();
+    let after = reconcile(
+        bed.path(),
+        RemovalClass::PolicyRawRelease,
+        &[],
+        mark_at("second"),
+    )
+    .unwrap();
     assert_eq!(after, after_failure);
     assert_eq!(
         after.marks[&id].state,
@@ -258,18 +284,18 @@ fn reconcile_keeps_a_failed_mark_but_refreshes_its_proposal() {
         &held,
         &proposal("current").names,
         failure(Some("set-aside/070000_17")),
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let after = reconcile(
         bed.path(),
         RemovalClass::PolicyRawRelease,
         &[(held, proposal("current"))],
-        "second",
+        mark_at("second"),
     )
     .unwrap();
     assert_eq!(after.marks.len(), 1);
-    assert_eq!(after.marks[&id].marked_at, "first");
+    assert_eq!(after.marks[&id].marked_at, "2026-08-06T12:00:00Z");
     assert_eq!(after.marks[&id].proposal, proposal("current"));
     assert_eq!(
         after.marks[&id].state,
@@ -285,14 +311,14 @@ fn reconcile_preserves_marked_at_for_an_existing_marked_entry() {
         bed.path(),
         RemovalClass::PolicyRawRelease,
         &[(held.clone(), proposal("current"))],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let second = reconcile(
         bed.path(),
         RemovalClass::PolicyRawRelease,
         &[(held, proposal("current"))],
-        "second",
+        mark_at("second"),
     )
     .unwrap();
     assert_eq!(first, second);
@@ -307,7 +333,7 @@ fn reconcile_leaves_other_classes_unchanged() {
         bed.path(),
         RemovalClass::OwnerRawRelease,
         &[(owner.clone(), proposal("owner"))],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let owner_id = mark_id(RemovalClass::OwnerRawRelease, &owner);
@@ -316,7 +342,7 @@ fn reconcile_leaves_other_classes_unchanged() {
         bed.path(),
         RemovalClass::PolicyRawRelease,
         &[(policy, proposal("policy"))],
-        "second",
+        mark_at("second"),
     )
     .unwrap();
     assert_eq!(after.marks[&owner_id], owner_mark);
@@ -334,7 +360,7 @@ fn duplicate_proposals_are_rejected() {
                 (held.clone(), proposal("first")),
                 (held, proposal("second"))
             ],
-            "first",
+            mark_at("first"),
         ),
         Err(StoreError::DuplicateProposal { .. })
     ));
@@ -350,7 +376,7 @@ fn record_failure_converts_a_marked_entry_and_creates_a_missing_one() {
         bed.path(),
         RemovalClass::PolicyRawRelease,
         &[(marked_target.clone(), proposal("current"))],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let marked_id = mark_id(RemovalClass::PolicyRawRelease, &marked_target);
@@ -360,13 +386,20 @@ fn record_failure_converts_a_marked_entry_and_creates_a_missing_one() {
         &marked_target,
         &proposal("current").names,
         failure(None),
-        "second",
+        mark_at("second"),
     )
     .unwrap();
-    assert_eq!(converted.marks[&marked_id].marked_at, "first");
+    assert_eq!(
+        converted.marks[&marked_id].marked_at,
+        "2026-08-06T12:00:00Z"
+    );
     assert_eq!(
         converted.marks[&marked_id].state,
-        MarkState::Failed(failure(None))
+        MarkState::Failed(Failure {
+            at: "2026-08-06T12:00:01Z".to_owned(),
+            reason: "the staged directory needs recovery".to_owned(),
+            staged: None,
+        })
     );
 
     let missing_id = MarkId::derive(RemovalClass::OwnerSegmentRemoval, &missing_target, &[]);
@@ -376,10 +409,10 @@ fn record_failure_converts_a_marked_entry_and_creates_a_missing_one() {
         &missing_target,
         &Vec::new(),
         failure(Some("set-aside/070100_17")),
-        "third",
+        mark_at("third"),
     )
     .unwrap();
-    assert_eq!(created.marks[&missing_id].marked_at, "third");
+    assert_eq!(created.marks[&missing_id].marked_at, "2026-08-06T12:00:02Z");
     assert!(created.marks[&missing_id].proposal.names.is_empty());
     assert_eq!(created.marks[&missing_id].proposal.bytes, 0);
 }
@@ -393,7 +426,7 @@ fn resolve_removes_an_existing_mark_and_persists_the_result() {
         bed.path(),
         RemovalClass::PolicyRawRelease,
         &[(held, proposal("current"))],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     let after = resolve(bed.path(), &id).unwrap();
@@ -415,7 +448,7 @@ fn reconcile_recovered_removes_only_failed_marks_whose_staging_is_gone() {
         &present,
         &proposal("present").names,
         failure(Some("set-aside/present")),
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     record_failure(
@@ -424,7 +457,7 @@ fn reconcile_recovered_removes_only_failed_marks_whose_staging_is_gone() {
         &gone,
         &proposal("gone").names,
         failure(Some("set-aside/gone")),
-        "first",
+        mark_at("first"),
     )
     .unwrap();
 
@@ -473,7 +506,7 @@ fn mutations_use_the_register_lock() {
             target("20260805", "field.audio", "070000_17"),
             proposal("current"),
         )],
-        "first",
+        mark_at("first"),
     )
     .unwrap_err();
     assert!(matches!(error, StoreError::Lock(_)));
@@ -494,7 +527,7 @@ fn every_reconcile_branch_is_exercised_in_one_fixture() {
             (stale_marked.clone(), proposal("stale")),
             (matching_marked.clone(), proposal("old marked")),
         ],
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     record_failure(
@@ -503,7 +536,7 @@ fn every_reconcile_branch_is_exercised_in_one_fixture() {
         &stale_failed,
         &proposal("stale-failed").names,
         failure(Some("stale-failed")),
-        "first",
+        mark_at("first"),
     )
     .unwrap();
     record_failure(
@@ -512,7 +545,7 @@ fn every_reconcile_branch_is_exercised_in_one_fixture() {
         &matching_failed,
         &proposal("matching-failed").names,
         failure(Some("matching-failed")),
-        "first",
+        mark_at("first"),
     )
     .unwrap();
 
@@ -524,7 +557,7 @@ fn every_reconcile_branch_is_exercised_in_one_fixture() {
             (matching_marked.clone(), proposal("new marked")),
             (new_target.clone(), proposal("new")),
         ],
-        "second",
+        mark_at("second"),
     )
     .unwrap();
     assert!(
@@ -544,7 +577,7 @@ fn every_reconcile_branch_is_exercised_in_one_fixture() {
         MarkState::Failed(_)
     ));
     let marked_id = mark_id(RemovalClass::PolicyRawRelease, &matching_marked);
-    assert_eq!(after.marks[&marked_id].marked_at, "first");
+    assert_eq!(after.marks[&marked_id].marked_at, "2026-08-06T12:00:00Z");
     let new_id = mark_id(RemovalClass::PolicyRawRelease, &new_target);
-    assert_eq!(after.marks[&new_id].marked_at, "second");
+    assert_eq!(after.marks[&new_id].marked_at, "2026-08-06T12:00:01Z");
 }

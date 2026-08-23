@@ -849,7 +849,9 @@ fn mark_pass_records_empty_audio_and_removes_nothing() {
         &bed.root,
         RemovalClass::PolicyRawRelease,
         &proposals,
-        "2026-08-05T00:00:00Z",
+        DateTime::parse_from_rfc3339("2026-08-05T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc),
     )
     .expect("reconcile");
     assert_eq!(register.marks.len(), 1);

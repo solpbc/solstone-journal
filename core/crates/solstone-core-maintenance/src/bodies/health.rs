@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use chrono::{NaiveDate, SecondsFormat};
+use chrono::NaiveDate;
 use serde_json::{Map, Value};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_retention::content::{ClosedHandlerSet, JournalMedia};
@@ -76,7 +76,6 @@ fn mark_raw(journal: &Path, services: &HealthServices<'_>) -> CliRun {
     // Python uses no-argument `datetime.astimezone()` here: this is host-local,
     // not the configured owner timezone used by timeline rollups.
     let today = host_local_date(services.now, services.host_timezone);
-    let stamp = services.now.to_rfc3339_opts(SecondsFormat::Secs, true);
     let before = match load(journal) {
         Ok(register) => register,
         Err(_) => return mark_refused(),
@@ -124,7 +123,12 @@ fn mark_raw(journal: &Path, services: &HealthServices<'_>) -> CliRun {
                 .map(|mark| (mark.target.clone(), mark.proposal.clone())),
         );
     }
-    let after = match reconcile(journal, RemovalClass::PolicyRawRelease, &proposals, &stamp) {
+    let after = match reconcile(
+        journal,
+        RemovalClass::PolicyRawRelease,
+        &proposals,
+        services.now,
+    ) {
         Ok(register) => register,
         Err(_) => return mark_refused(),
     };

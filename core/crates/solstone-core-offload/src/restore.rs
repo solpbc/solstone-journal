@@ -588,7 +588,7 @@ mod tests {
             vec!["raw.webm".into()],
             bytes.len() as u64,
             "restic-snapshot:snapshot".into(),
-            "1",
+            chrono::DateTime::<chrono::Utc>::from_timestamp(1, 0).unwrap(),
         )
         .unwrap();
         segment
@@ -938,7 +938,7 @@ mod tests {
             vec!["large.webm".into()],
             unavailable_bytes,
             "restic-snapshot:snapshot".into(),
-            "1",
+            chrono::DateTime::<chrono::Utc>::from_timestamp(1, 0).unwrap(),
         )
         .unwrap();
         let runner = empty_runner();

@@ -13,6 +13,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
@@ -24,6 +25,24 @@ use crate::receipt::Target;
 const REGISTER_VERSION: u32 = 1;
 const REGISTER_FILE: &str = "retention-marks.json";
 const UNRECORDED_PROPOSAL_REASON: &str = "removal failed before a proposal was recorded";
+
+fn format_marked_at(at: DateTime<Utc>) -> String {
+    at.to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
+#[cfg(test)]
+pub(crate) fn mark_at(label: &str) -> DateTime<Utc> {
+    let raw = match label {
+        "first" => "2026-08-06T12:00:00Z",
+        "second" => "2026-08-06T12:00:01Z",
+        "third" => "2026-08-06T12:00:02Z",
+        other => other,
+    };
+    match DateTime::parse_from_rfc3339(raw) {
+        Ok(when) => when.with_timezone(&Utc),
+        Err(_) => DateTime::<Utc>::UNIX_EPOCH,
+    }
+}
 
 /// Who originated a removal proposal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -207,7 +226,7 @@ pub fn upsert_offload(
     names: Vec<String>,
     bytes: u64,
     reason: String,
-    now: &str,
+    now: DateTime<Utc>,
 ) -> Result<Register, StoreError> {
     upsert(
         journal,
@@ -381,7 +400,7 @@ pub fn reconcile(
     journal: &Path,
     class: RemovalClass,
     proposals: &[(Target, Proposal)],
-    at: &str,
+    at: DateTime<Utc>,
 ) -> Result<Register, StoreError> {
     let proposals = index_proposals(class, proposals)?;
     mutate(journal, |register| {
@@ -416,7 +435,7 @@ pub fn reconcile(
                             id,
                             class,
                             target,
-                            marked_at: at.to_owned(),
+                            marked_at: format_marked_at(at),
                             proposal,
                             state: MarkState::Marked,
                         },
@@ -439,7 +458,7 @@ pub fn upsert(
     class: RemovalClass,
     target: &Target,
     proposal: Proposal,
-    at: &str,
+    at: DateTime<Utc>,
 ) -> Result<Register, StoreError> {
     validate_proposal(&proposal)?;
     let id = MarkId::derive(class, target, &proposal.names);
@@ -460,7 +479,7 @@ pub fn upsert(
                         id,
                         class,
                         target: target.clone(),
-                        marked_at: at.to_owned(),
+                        marked_at: format_marked_at(at),
                         proposal,
                         state: MarkState::Marked,
                     },
@@ -478,9 +497,10 @@ pub fn record_failure(
     class: RemovalClass,
     target: &Target,
     names: &[String],
-    failure: Failure,
-    at: &str,
+    mut failure: Failure,
+    at: DateTime<Utc>,
 ) -> Result<Register, StoreError> {
+    failure.at = format_marked_at(at);
     mutate(journal, |register| {
         let id = MarkId::derive(class, target, names);
         match register.marks.get_mut(&id) {
@@ -498,7 +518,7 @@ pub fn record_failure(
                         id,
                         class,
                         target: target.clone(),
-                        marked_at: at.to_owned(),
+                        marked_at: format_marked_at(at),
                         proposal: Proposal {
                             bytes: 0,
                             reason: UNRECORDED_PROPOSAL_REASON.to_owned(),

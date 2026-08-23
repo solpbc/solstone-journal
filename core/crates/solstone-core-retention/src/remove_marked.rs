@@ -35,7 +35,6 @@ struct RemovalContext<'a> {
     policy: &'a Policy,
     today: NaiveDate,
     now: DateTime<Utc>,
-    at: &'a str,
     register_errors: &'a mut Vec<String>,
 }
 
@@ -49,14 +48,12 @@ pub fn remove_marked(
     policy: &Policy,
     today: NaiveDate,
     now: DateTime<Utc>,
-    at: &str,
     register_errors: &mut Vec<String>,
 ) -> Outcome {
     let mut context = RemovalContext {
         policy,
         today,
         now,
-        at,
         register_errors,
     };
     let mut outcome = Outcome {
@@ -209,11 +206,11 @@ fn remove_one(
             target,
             &mark.proposal.names,
             Failure {
-                at: context.at.to_owned(),
+                at: String::new(),
                 reason,
                 staged: Some(staged),
             },
-            context.at,
+            context.now,
         )
     {
         context.register_errors.push(error.to_string());
@@ -361,7 +358,7 @@ mod tests {
             journal.path(),
             RemovalClass::PolicyRawRelease,
             &[(target.clone(), proposal.clone())],
-            "first",
+            crate::marks::mark_at("first"),
         )
         .unwrap();
         let id = register.marks.keys().next().unwrap().clone();
@@ -385,7 +382,6 @@ mod tests {
             &policy,
             today,
             now,
-            "2026-08-06T00:00:00Z",
             &mut register_errors,
         );
 
@@ -473,7 +469,7 @@ mod tests {
             journal,
             RemovalClass::PolicyRawRelease,
             &[(target, proposal)],
-            "first",
+            crate::marks::mark_at("first"),
         )
         .unwrap();
         let id = register.marks.keys().next().unwrap().clone();
@@ -481,15 +477,7 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2026, 8, 6).unwrap();
         let now = Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap();
         let mut register_errors = Vec::new();
-        let outcome = remove_marked(
-            journal,
-            &marks,
-            policy,
-            today,
-            now,
-            "2026-08-06T00:00:00Z",
-            &mut register_errors,
-        );
+        let outcome = remove_marked(journal, &marks, policy, today, now, &mut register_errors);
         (outcome, register_errors)
     }
 
