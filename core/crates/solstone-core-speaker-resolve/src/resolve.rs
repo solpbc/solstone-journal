@@ -15,6 +15,7 @@ use solstone_core_entity::{
 };
 use solstone_core_journal_io::PathError;
 
+use crate::admission::admissible_person_pool;
 use crate::evidence::{
     CandidateEvidence, EvidenceError, EvidenceGap, extract_meeting_participants_with_gaps,
     extract_screen_participants_with_gaps, load_segment_speakers_with_gaps,
@@ -164,8 +165,9 @@ pub fn resolve(
         .into_iter()
         .filter(|entity| !entity.is_blocked())
         .collect::<Vec<_>>();
-    let margin_ids = entities
-        .iter()
+    let unblocked = entities.iter().collect::<Vec<_>>();
+    let margin_ids = admissible_person_pool(&unblocked)
+        .into_iter()
         .filter(|entity| entity.id != owner_entity_id && !entity.is_principal())
         .map(|entity| entity.id.clone())
         .collect::<BTreeSet<_>>()
