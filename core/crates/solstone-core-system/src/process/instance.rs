@@ -279,7 +279,7 @@ fn parse_linux_stat(stat: &str) -> Option<LinuxStat> {
     })
 }
 
-#[cfg(any(target_os = "linux", test))]
+#[cfg(target_os = "linux")]
 fn parse_boot_time(stat: &str) -> Option<u64> {
     stat.lines()
         .find_map(|line| line.strip_prefix("btime "))?

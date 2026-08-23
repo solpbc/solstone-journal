@@ -22,12 +22,12 @@ pub use descendants::{Descendant, ProcessTreeSnapshot};
 pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
 #[cfg(target_os = "linux")]
 pub(crate) use instance::hold_while_instance_live;
+#[cfg(target_os = "macos")]
+pub(crate) use instance::macos_sweep_table;
 pub use instance::{
     CensusRow, ExecutionState, InspectResult, InstanceCensus, InstanceVerdict, ProcessBirth,
     ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,
 };
-#[cfg(target_os = "macos")]
-pub(crate) use instance::{MacosSweepRow, macos_sweep_table};
 pub use log::DailyLogWriter;
 pub use observation::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
 pub use pdeathsig::apply_parent_death_kill;
