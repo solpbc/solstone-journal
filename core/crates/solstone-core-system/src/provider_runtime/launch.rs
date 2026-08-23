@@ -29,7 +29,7 @@ use solstone_core_local::{ConnectInput, ConnectOutcome, LoopbackAddr, connect};
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use crate::process::apply_parent_death_kill;
-use crate::process::{SERVICE_SHUTDOWN_TIMEOUT, terminate};
+use crate::process::{Disposition, LaunchError, SERVICE_SHUTDOWN_TIMEOUT};
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use super::model::ManagedProcess;
@@ -738,16 +738,24 @@ fn start_local(
         PlanOutcome::Rejected { .. } => return launch_failed(),
     };
     let port = reservation.release_for_spawn();
-    let mut child = match spawn_plan(&plan) {
-        Ok(child) => child,
+    let mut authority = match crate::process::launch(
+        Disposition::IndependentLongLived,
+        || spawn_plan(&plan),
+        Box::new(|child, timeout| {
+            crate::process::terminate(child, timeout)
+                .map(|_| ())
+                .map_err(|error| LaunchError::Terminate(std::io::Error::other(error)))
+        }),
+    ) {
+        Ok(authority) => authority,
         Err(_) => return launch_failed(),
     };
     let started_at = Instant::now();
-    let process_id = format!("local:{}", child.id());
-    let pid = child.id();
+    let process_id = format!("local:{}", authority.pid());
+    let pid = authority.pid();
     let deadline = clock.monotonic_seconds() + warmup_timeout.as_secs_f64();
     loop {
-        if let Ok(Some(_)) = child.try_wait() {
+        if let Ok(Some(_)) = authority.poll() {
             return ProviderLaunchOutcome {
                 status: LaunchOutcomeStatus::Exited,
                 reason_code: ReasonCode::known("process-exited"),
@@ -764,7 +772,7 @@ fn start_local(
             };
             shared.register_ready_process(
                 fence,
-                child,
+                authority,
                 ReadyProcess {
                     process_id,
                     process_name: "local".into(),
@@ -787,7 +795,7 @@ fn start_local(
                 running: true,
                 fence: None,
             };
-            shared.retain_child(process_id, child);
+            shared.retain_child(process_id, authority);
             return ProviderLaunchOutcome {
                 status: LaunchOutcomeStatus::WarmupTimeout,
                 reason_code: ReasonCode::known("warmup-timeout"),
@@ -851,13 +859,13 @@ fn stop_local(
     }
     let request = request.expect("checked above");
     let fence = request.managed.fence.as_ref();
-    let child = match fence {
+    let taken = match fence {
         Some(fence) => shared.take_ready_child(fence),
         None => shared
             .take_child(&request.managed.id)
-            .map(|child| (request.managed.id.clone(), child)),
+            .map(|authority| (request.managed.id.clone(), authority)),
     };
-    let Some((process_id, mut child)) = child else {
+    let Some((process_id, mut authority)) = taken else {
         if let Some(fence) = fence {
             shared.remove_ready_process(fence);
         }
@@ -867,8 +875,8 @@ fn stop_local(
             managed: None,
         };
     };
-    match terminate(&mut child, termination_timeout) {
-        Ok(_) => {
+    match authority.terminate(termination_timeout) {
+        Ok(()) => {
             if let Some(fence) = fence {
                 shared.remove_ready_process(fence);
             }
@@ -880,9 +888,9 @@ fn stop_local(
         }
         Err(_) => {
             if let Some(fence) = fence {
-                shared.retain_ready_child(fence, process_id, child);
+                shared.retain_ready_child(fence, process_id, authority);
             } else {
-                shared.retain_child(process_id, child);
+                shared.retain_child(process_id, authority);
             }
             ProviderStopCleanupOutcome {
                 status: StopCleanupStatus::CleanupFailed,

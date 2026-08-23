@@ -6,7 +6,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Child;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -17,7 +16,9 @@ use solstone_core_journal_io::{
     AtomicWriteOptions, JsonWriteOptions, LockOptions, hold_lock, write_json, write_text,
 };
 
-use crate::process::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
+use crate::process::{
+    LaunchAuthority, ProcessObservation, ProcessObservationTuple, classify_process_observation,
+};
 
 use super::launch::LocalLaunchConfig;
 use super::model::{
@@ -100,7 +101,7 @@ pub(crate) struct ReadyChildIdentity {
 #[derive(Debug)]
 pub(crate) struct ReadyChild {
     pub process_id: String,
-    pub child: Child,
+    pub authority: LaunchAuthority,
 }
 
 pub(crate) fn insert_ready_tuple<T>(
@@ -204,7 +205,7 @@ pub struct LocalRuntimeShared {
     results: Mutex<LocalRuntimeResults>,
     result_available: Condvar,
     ready_children: Mutex<BTreeMap<FenceKey, ReadyChild>>,
-    children: Mutex<BTreeMap<String, Child>>,
+    children: Mutex<BTreeMap<String, LaunchAuthority>>,
 }
 
 #[derive(Debug, Default)]
@@ -401,7 +402,7 @@ impl LocalRuntimeShared {
     pub(crate) fn register_ready_process(
         &self,
         fence: &ProviderFence,
-        child: Child,
+        authority: LaunchAuthority,
         process: ReadyProcess,
         started_at: Instant,
     ) {
@@ -420,7 +421,7 @@ impl LocalRuntimeShared {
             process.clone(),
             ReadyChild {
                 process_id: process.process_id.clone(),
-                child,
+                authority,
             },
             started_at,
             &mut ready_processes,
@@ -429,39 +430,48 @@ impl LocalRuntimeShared {
         );
     }
 
-    pub(crate) fn retain_child(&self, process_id: String, child: Child) {
+    pub(crate) fn retain_child(&self, process_id: String, authority: LaunchAuthority) {
         self.children
             .lock()
             .expect("local runtime shared lock")
-            .insert(process_id, child);
+            .insert(process_id, authority);
     }
 
-    pub(crate) fn take_child(&self, process_id: &str) -> Option<Child> {
+    pub(crate) fn take_child(&self, process_id: &str) -> Option<LaunchAuthority> {
         self.children
             .lock()
             .expect("local runtime shared lock")
             .remove(process_id)
     }
 
-    pub(crate) fn take_ready_child(&self, fence: &ProviderFence) -> Option<(String, Child)> {
+    pub(crate) fn take_ready_child(
+        &self,
+        fence: &ProviderFence,
+    ) -> Option<(String, LaunchAuthority)> {
         let mut ready_children = self
             .ready_children
             .lock()
             .expect("local runtime shared lock");
         let ready_child = ready_children.remove(&FenceKey::from(fence))?;
-        Some((ready_child.process_id, ready_child.child))
+        Some((ready_child.process_id, ready_child.authority))
     }
 
     pub(crate) fn retain_ready_child(
         &self,
         fence: &ProviderFence,
         process_id: String,
-        child: Child,
+        authority: LaunchAuthority,
     ) {
         self.ready_children
             .lock()
             .expect("local runtime shared lock")
-            .insert(FenceKey::from(fence), ReadyChild { process_id, child });
+            .insert(
+                FenceKey::from(fence),
+                ReadyChild {
+                    process_id,
+                    authority,
+                },
+            );
     }
 
     pub(crate) fn remove_ready_process(&self, fence: &ProviderFence) {
@@ -507,7 +517,7 @@ impl LocalRuntimeShared {
                     key.clone(),
                     ReadyChildIdentity {
                         process_id: child.process_id.clone(),
-                        pid: child.child.id(),
+                        pid: child.authority.pid(),
                     },
                 )
             })
@@ -535,7 +545,7 @@ impl LocalRuntimeShared {
                         reference: ready.process_id,
                         pid: ready.pid,
                         started_at,
-                        poll: child.child.try_wait(),
+                        poll: child.authority.poll(),
                     }),
                     now,
                 )

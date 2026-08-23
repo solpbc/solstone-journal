@@ -29,8 +29,10 @@ use std::collections::BTreeSet;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use crate::process::apply_parent_death_kill;
-use crate::process::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
-use crate::process::{SERVICE_SHUTDOWN_TIMEOUT, terminate};
+use crate::process::{
+    Disposition, LaunchAuthority, LaunchError, ProcessObservation, ProcessObservationTuple,
+    SERVICE_SHUTDOWN_TIMEOUT, classify_process_observation,
+};
 
 use super::model::{
     LaunchOutcomeStatus, ManagedProcess, ProviderFence, ProviderLaunchOutcome,
@@ -104,7 +106,7 @@ pub struct ParakeetRuntimeShared {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     ready_children: Mutex<BTreeMap<FenceKey, ReadyChild>>,
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    children: Mutex<BTreeMap<String, Child>>,
+    children: Mutex<BTreeMap<String, LaunchAuthority>>,
 }
 
 impl ParakeetRuntimeShared {
@@ -293,7 +295,7 @@ impl ParakeetRuntimeShared {
     fn register_ready_process(
         &self,
         fence: &ProviderFence,
-        child: Child,
+        authority: LaunchAuthority,
         process: ReadyProcess,
         started_at: Instant,
     ) {
@@ -315,7 +317,7 @@ impl ParakeetRuntimeShared {
             process.clone(),
             ReadyChild {
                 process_id: process.process_id.clone(),
-                child,
+                authority,
             },
             started_at,
             &mut ready_processes,
@@ -325,15 +327,15 @@ impl ParakeetRuntimeShared {
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    fn retain_child(&self, process_id: String, child: Child) {
+    fn retain_child(&self, process_id: String, authority: LaunchAuthority) {
         self.children
             .lock()
             .expect("parakeet runtime shared lock")
-            .insert(process_id, child);
+            .insert(process_id, authority);
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    fn take_child(&self, process_id: &str) -> Option<Child> {
+    fn take_child(&self, process_id: &str) -> Option<LaunchAuthority> {
         self.children
             .lock()
             .expect("parakeet runtime shared lock")
@@ -341,21 +343,32 @@ impl ParakeetRuntimeShared {
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    fn take_ready_child(&self, fence: &ProviderFence) -> Option<(String, Child)> {
+    fn take_ready_child(&self, fence: &ProviderFence) -> Option<(String, LaunchAuthority)> {
         let mut ready_children = self
             .ready_children
             .lock()
             .expect("parakeet runtime shared lock");
         let ready_child = ready_children.remove(&FenceKey::from(fence))?;
-        Some((ready_child.process_id, ready_child.child))
+        Some((ready_child.process_id, ready_child.authority))
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    fn retain_ready_child(&self, fence: &ProviderFence, process_id: String, child: Child) {
+    fn retain_ready_child(
+        &self,
+        fence: &ProviderFence,
+        process_id: String,
+        authority: LaunchAuthority,
+    ) {
         self.ready_children
             .lock()
             .expect("parakeet runtime shared lock")
-            .insert(FenceKey::from(fence), ReadyChild { process_id, child });
+            .insert(
+                FenceKey::from(fence),
+                ReadyChild {
+                    process_id,
+                    authority,
+                },
+            );
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -420,7 +433,7 @@ impl ParakeetRuntimeShared {
                         key.clone(),
                         ReadyChildIdentity {
                             process_id: child.process_id.clone(),
-                            pid: child.child.id(),
+                            pid: child.authority.pid(),
                         },
                     )
                 })
@@ -448,7 +461,7 @@ impl ParakeetRuntimeShared {
                             reference: ready.process_id,
                             pid: ready.pid,
                             started_at,
-                            poll: child.child.try_wait(),
+                            poll: child.authority.poll(),
                         }),
                         now,
                     )
@@ -730,16 +743,24 @@ fn start_parakeet(
         port,
         launch.threads,
     );
-    let mut child = match spawn_parakeet(&cmd, &launch.env_updates) {
-        Ok(child) => child,
+    let mut authority = match crate::process::launch(
+        Disposition::IndependentLongLived,
+        || spawn_parakeet(&cmd, &launch.env_updates),
+        Box::new(|child, timeout| {
+            crate::process::terminate(child, timeout)
+                .map(|_| ())
+                .map_err(|error| LaunchError::Terminate(std::io::Error::other(error)))
+        }),
+    ) {
+        Ok(authority) => authority,
         Err(_) => return launch_failed(),
     };
     let started_at = Instant::now();
-    let process_id = format!("parakeet:{}", child.id());
-    let pid = child.id();
+    let process_id = format!("parakeet:{}", authority.pid());
+    let pid = authority.pid();
     let deadline = std::time::Instant::now() + warmup_timeout;
     loop {
-        if let Ok(Some(_)) = child.try_wait() {
+        if let Ok(Some(_)) = authority.poll() {
             return ProviderLaunchOutcome {
                 status: LaunchOutcomeStatus::Exited,
                 reason_code: ReasonCode::known("process-exited"),
@@ -756,7 +777,7 @@ fn start_parakeet(
             };
             shared.register_ready_process(
                 fence,
-                child,
+                authority,
                 ReadyProcess {
                     process_id,
                     process_name: PARAKEET_SERVER_PROCESS_NAME.into(),
@@ -779,7 +800,7 @@ fn start_parakeet(
                 running: true,
                 fence: None,
             };
-            shared.retain_child(process_id, child);
+            shared.retain_child(process_id, authority);
             return ProviderLaunchOutcome {
                 status: LaunchOutcomeStatus::WarmupTimeout,
                 reason_code: ReasonCode::known("warmup-timeout"),
@@ -868,13 +889,13 @@ fn stop_parakeet(
     {
         let request = request.expect("checked above");
         let fence = request.managed.fence.as_ref();
-        let child = match fence {
+        let taken = match fence {
             Some(fence) => shared.take_ready_child(fence),
             None => shared
                 .take_child(&request.managed.id)
-                .map(|child| (request.managed.id.clone(), child)),
+                .map(|authority| (request.managed.id.clone(), authority)),
         };
-        let Some((process_id, mut child)) = child else {
+        let Some((process_id, mut authority)) = taken else {
             if let Some(fence) = fence {
                 shared.remove_ready_process(fence);
             }
@@ -884,8 +905,8 @@ fn stop_parakeet(
                 managed: None,
             };
         };
-        match terminate(&mut child, termination_timeout) {
-            Ok(_) => {
+        match authority.terminate(termination_timeout) {
+            Ok(()) => {
                 if let Some(fence) = fence {
                     shared.remove_ready_process(fence);
                 }
@@ -897,9 +918,9 @@ fn stop_parakeet(
             }
             Err(_) => {
                 if let Some(fence) = fence {
-                    shared.retain_ready_child(fence, process_id, child);
+                    shared.retain_ready_child(fence, process_id, authority);
                 } else {
-                    shared.retain_child(process_id, child);
+                    shared.retain_child(process_id, authority);
                 }
                 ProviderStopCleanupOutcome {
                     status: StopCleanupStatus::CleanupFailed,

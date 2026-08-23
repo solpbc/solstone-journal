@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::fmt;
 use std::io;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Output};
 use std::time::Duration;
@@ -56,6 +57,16 @@ enum Inner {
 pub struct LaunchAuthority {
     inner: Option<Inner>,
     disposition: Disposition,
+}
+
+impl fmt::Debug for LaunchAuthority {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug = formatter.debug_struct("LaunchAuthority");
+        if self.inner.is_some() {
+            debug.field("pid", &self.pid());
+        }
+        debug.field("disposition", &self.disposition).finish()
+    }
 }
 
 impl LaunchAuthority {
