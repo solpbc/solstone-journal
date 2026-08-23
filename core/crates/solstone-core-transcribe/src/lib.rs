@@ -58,6 +58,7 @@ use solstone_core_spp_ratls::AttestationStateStore;
 pub struct CliRun {
     pub exit_code: i32,
     pub summary: Option<String>,
+    pub stderr: Option<String>,
 }
 
 /// A CLI-renderable failure without moving pipeline behavior into the binary crate.
@@ -173,14 +174,22 @@ where
     F: FnMut(&Path) -> Result<stage::ProcessOutcome, TranscribeError>,
 {
     let (mut processed, mut skipped, mut failed, mut deferred) = (0_u64, 0_u64, 0_u64, 0_u64);
+    let mut failed_lines = Vec::new();
     for audio_path in audio_paths {
         if args::should_skip_batch_processed(&audio_path, redo) {
             skipped += 1;
             continue;
         }
         match process(&audio_path) {
+            Ok(stage::ProcessOutcome::Failed) => {
+                failed += 1;
+                failed_lines.push(format!("{}: transcription failed", audio_path.display()));
+            }
             Ok(_) => processed += 1,
-            Err(TranscribeError::SpeakerAnalysis(_)) => failed += 1,
+            Err(TranscribeError::SpeakerAnalysis(error)) => {
+                failed += 1;
+                failed_lines.push(format!("{}: {error}", audio_path.display()));
+            }
             Err(error) if error.exit_code() == 69 => deferred += 1,
             Err(error) => return Err(CliRunError::Transcribe(error)),
         }
@@ -194,9 +203,18 @@ where
     if failed > 0 {
         summary.push_str(&format!(", {failed} failed"));
     }
+    let stderr = (failed > 0).then(|| {
+        let mut block = format!("transcription: {failed} failed\n");
+        for line in &failed_lines {
+            block.push_str(line);
+            block.push('\n');
+        }
+        block
+    });
     Ok(CliRun {
-        exit_code: 0,
+        exit_code: if failed > 0 { 1 } else { 0 },
         summary: Some(summary),
+        stderr,
     })
 }
 
@@ -514,6 +532,12 @@ mod tests {
     use super::{ModelAssetError, TranscribeError, run_all_with};
     use crate::speakers::SpeakerAnalyzeError;
 
+    fn write_audio(temporary: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
+        let path = temporary.path().join(name);
+        fs::write(&path, b"audio").unwrap();
+        path
+    }
+
     #[test]
     fn model_asset_errors_are_configuration_failures() {
         let error = TranscribeError::from(ModelAssetError::AssetNotFound {
@@ -531,7 +555,7 @@ mod tests {
         let speaker = temporary.path().join("speaker.wav");
         fs::write(&deferred, b"audio").unwrap();
         fs::write(&speaker, b"audio").unwrap();
-        let result = run_all_with(vec![deferred, speaker], false, |path| {
+        let result = run_all_with(vec![deferred.clone(), speaker.clone()], false, |path| {
             if path.file_stem().unwrap() == "deferred" {
                 return Err(TranscribeError::ParakeetCppDeferred {
                     reason: "server_not_ready".to_owned(),
@@ -546,13 +570,110 @@ mod tests {
             )))
         })
         .unwrap();
-        assert_eq!(result.exit_code, 0);
+        assert_eq!(result.exit_code, 1);
         assert_eq!(
             result.summary.as_deref(),
             Some(
                 "0 processed, 0 skipped (already transcribed), 1 deferred (provider not ready, will retry), 1 failed"
             )
         );
+        let stderr = result.stderr.expect("failed items must report a cause");
+        assert!(stderr.contains("transcription: 1 failed"), "{stderr}");
+        assert!(
+            stderr.contains(&format!(
+                "{}: speaker analysis failed: invoke/timeout",
+                speaker.display()
+            )),
+            "{stderr}"
+        );
+        assert!(
+            !stderr.contains(&deferred.display().to_string()),
+            "{stderr}"
+        );
+    }
+
+    #[test]
+    fn batch_one_failed_exits_one_and_reports_the_path() {
+        let temporary = tempfile::tempdir().unwrap();
+        let failed = write_audio(&temporary, "failed.wav");
+        let result = run_all_with(vec![failed.clone()], false, |_| {
+            Ok(crate::stage::ProcessOutcome::Failed)
+        })
+        .unwrap();
+        assert_eq!(result.exit_code, 1);
+        assert_eq!(
+            result.summary.as_deref(),
+            Some("0 processed, 0 skipped (already transcribed), 1 failed")
+        );
+        let stderr = result.stderr.expect("failed items must report a cause");
+        assert!(stderr.contains("transcription: 1 failed"), "{stderr}");
+        assert!(
+            stderr.contains(&format!("{}: transcription failed", failed.display())),
+            "{stderr}"
+        );
+    }
+
+    #[test]
+    fn batch_multi_failed_exits_one_and_reports_both_paths() {
+        let temporary = tempfile::tempdir().unwrap();
+        let first = write_audio(&temporary, "first.wav");
+        let second = write_audio(&temporary, "second.wav");
+        let result = run_all_with(vec![first.clone(), second.clone()], false, |_| {
+            Ok(crate::stage::ProcessOutcome::Failed)
+        })
+        .unwrap();
+        assert_eq!(result.exit_code, 1);
+        assert_eq!(
+            result.summary.as_deref(),
+            Some("0 processed, 0 skipped (already transcribed), 2 failed")
+        );
+        let stderr = result.stderr.expect("failed items must report a cause");
+        assert!(stderr.contains("transcription: 2 failed"), "{stderr}");
+        assert!(
+            stderr.contains(&format!("{}: transcription failed", first.display())),
+            "{stderr}"
+        );
+        assert!(
+            stderr.contains(&format!("{}: transcription failed", second.display())),
+            "{stderr}"
+        );
+    }
+
+    #[test]
+    fn batch_all_success_exits_zero_without_stderr() {
+        let temporary = tempfile::tempdir().unwrap();
+        let transcribed = write_audio(&temporary, "ok.wav");
+        let result = run_all_with(vec![transcribed], false, |_| {
+            Ok(crate::stage::ProcessOutcome::Transcribed)
+        })
+        .unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            result.summary.as_deref(),
+            Some("1 processed, 0 skipped (already transcribed)")
+        );
+        assert_eq!(result.stderr, None);
+    }
+
+    #[test]
+    fn batch_deferred_only_exits_zero_without_stderr() {
+        let temporary = tempfile::tempdir().unwrap();
+        let deferred = write_audio(&temporary, "deferred.wav");
+        let result = run_all_with(vec![deferred], false, |_| {
+            Err(TranscribeError::ParakeetCppDeferred {
+                reason: "server_not_ready".to_owned(),
+                detail: "test".to_owned(),
+            })
+        })
+        .unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            result.summary.as_deref(),
+            Some(
+                "0 processed, 0 skipped (already transcribed), 1 deferred (provider not ready, will retry)"
+            )
+        );
+        assert_eq!(result.stderr, None);
     }
 
     #[test]

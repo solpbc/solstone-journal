@@ -669,6 +669,9 @@ fn run_transcribe(options: TranscribeOptions) -> ExitCode {
             if let Some(summary) = result.summary {
                 println!("{summary}");
             }
+            if let Some(stderr) = result.stderr {
+                eprint!("{stderr}");
+            }
             ExitCode::from(result.exit_code as u8)
         }
         Err(CliRunError::Cli(CliError::Usage { message })) => {
