@@ -286,7 +286,11 @@ pub enum TranscribeError {
         detail: String,
     },
     /// The VAD helper violated its JSON wire contract.
-    VadResponse { detail: String },
+    VadResponse {
+        helper_exit_code: Option<i32>,
+        stderr: String,
+        detail: String,
+    },
     /// No configured, confidential, or resource-admissible STT backend exists.
     SttSurface {
         available_bytes: Option<u64>,
@@ -419,12 +423,31 @@ impl std::fmt::Display for TranscribeError {
                 ),
                 None => write!(formatter, "could not prepare transcript payload: {detail}"),
             },
-            Self::VadBinary { detail }
-            | Self::VadTemporary { detail }
-            | Self::VadResponse { detail } => formatter.write_str(detail),
-            Self::VadHelper { reason, detail, .. } => {
-                write!(formatter, "VAD helper {reason}: {detail}")
+            Self::VadBinary { detail } | Self::VadTemporary { detail } => {
+                formatter.write_str(detail)
             }
+            Self::VadResponse {
+                helper_exit_code,
+                stderr,
+                detail,
+            } => match helper_exit_code {
+                Some(code) => write!(
+                    formatter,
+                    "VAD helper contract error (exit {code}): {detail}: {stderr}"
+                ),
+                None => write!(
+                    formatter,
+                    "VAD helper contract error (no exit code): {detail}: {stderr}"
+                ),
+            },
+            Self::VadHelper {
+                helper_exit_code,
+                reason,
+                detail,
+            } => write!(
+                formatter,
+                "VAD helper {reason} (exit {helper_exit_code}): {detail}"
+            ),
             Self::SttSurface {
                 available_bytes,
                 floor_bytes,

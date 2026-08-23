@@ -11,6 +11,7 @@ use std::process::{Command, Stdio};
 use serde_json::{Value, json};
 use solstone_core_observe_audio::{AudioReduction, VadResult, reduce_audio, write_f32le_exclusive};
 use solstone_core_system::process::{Disposition, LaunchError, launch};
+use solstone_core_system_health::sanitize_os_bytes_for_terminal_bounded;
 
 use crate::{TranscribeError, resolve_model_asset};
 
@@ -150,8 +151,12 @@ fn vad_request(
         "models": { "silero_vad_onnx_path": model_path },
         "min_speech_seconds": min_speech_seconds,
     }))
-    .map_err(|error| TranscribeError::VadResponse {
-        detail: format!("could not serialize VAD request: {error}"),
+    .map_err(|error| {
+        vad_contract_error(
+            None,
+            b"",
+            format!("could not serialize VAD request: {error}"),
+        )
     })
 }
 
@@ -186,67 +191,63 @@ fn invoke_vad_helper(binary: &Path, request: &[u8]) -> Result<VadResult, Transcr
         })?;
 
     if output.status.success() {
-        parse_vad_response(json_line(&output.stdout, "VAD response")?)
+        match json_line(&output.stdout, "VAD response") {
+            Ok(line) => parse_vad_response(line)
+                .map_err(|detail| vad_contract_error(Some(0), &output.stdout, detail)),
+            Err(detail) => Err(vad_contract_error(Some(0), &output.stdout, detail)),
+        }
     } else if let Some(exit_code) = output.status.code() {
-        Err(parse_vad_error(
-            exit_code,
-            json_line(&output.stderr, "VAD error response")?,
-        ))
+        Err(parse_vad_error(Some(exit_code), &output.stderr))
     } else {
-        Err(TranscribeError::VadTemporary {
-            detail: "VAD helper terminated without an exit code".to_owned(),
-        })
+        Err(vad_contract_error(
+            None,
+            &output.stderr,
+            "VAD helper terminated without an exit code".to_owned(),
+        ))
     }
 }
 
-fn json_line<'a>(bytes: &'a [u8], context: &str) -> Result<&'a str, TranscribeError> {
-    let text = std::str::from_utf8(bytes).map_err(|error| TranscribeError::VadResponse {
-        detail: format!("{context} was not UTF-8: {error}"),
-    })?;
+fn json_line<'a>(bytes: &'a [u8], context: &str) -> Result<&'a str, String> {
+    let text =
+        std::str::from_utf8(bytes).map_err(|error| format!("{context} was not UTF-8: {error}"))?;
     let mut lines = text.lines();
     let line = lines
         .next()
         .filter(|line| !line.is_empty())
-        .ok_or_else(|| TranscribeError::VadResponse {
-            detail: format!("{context} was empty"),
-        })?;
+        .ok_or_else(|| format!("{context} was empty"))?;
     if lines.next().is_some() {
-        return Err(TranscribeError::VadResponse {
-            detail: format!("{context} contained more than one line"),
-        });
+        return Err(format!("{context} contained more than one line"));
     }
     Ok(line)
 }
 
-fn parse_vad_response(line: &str) -> Result<VadResult, TranscribeError> {
-    let value: Value =
-        serde_json::from_str(line).map_err(|error| TranscribeError::VadResponse {
-            detail: format!("VAD response was not JSON: {error}"),
-        })?;
+fn vad_contract_error(exit: Option<i32>, raw: &[u8], detail: String) -> TranscribeError {
+    TranscribeError::VadResponse {
+        helper_exit_code: exit,
+        stderr: sanitize_os_bytes_for_terminal_bounded(raw),
+        detail,
+    }
+}
+
+fn parse_vad_response(line: &str) -> Result<VadResult, String> {
+    let value: Value = serde_json::from_str(line)
+        .map_err(|error| format!("VAD response was not JSON: {error}"))?;
     let object = value
         .as_object()
-        .ok_or_else(|| TranscribeError::VadResponse {
-            detail: "VAD response must be an object".to_owned(),
-        })?;
+        .ok_or_else(|| "VAD response must be an object".to_owned())?;
     if required_string(object, "schema")? != RESPONSE_SCHEMA {
-        return Err(TranscribeError::VadResponse {
-            detail: "VAD response has an unknown schema".to_owned(),
-        });
+        return Err("VAD response has an unknown schema".to_owned());
     }
     let duration_s = required_f64(object, "duration")?;
     let speech_duration_s = required_f64(object, "speech_duration")?;
     let has_speech = object
         .get("has_speech")
         .and_then(Value::as_bool)
-        .ok_or_else(|| TranscribeError::VadResponse {
-            detail: "VAD response has no boolean has_speech".to_owned(),
-        })?;
+        .ok_or_else(|| "VAD response has no boolean has_speech".to_owned())?;
     let speech = object
         .get("speech")
         .and_then(Value::as_array)
-        .ok_or_else(|| TranscribeError::VadResponse {
-            detail: "VAD response has no speech array".to_owned(),
-        })?;
+        .ok_or_else(|| "VAD response has no speech array".to_owned())?;
     let speech_segments = speech
         .iter()
         .map(parse_speech_segment)
@@ -264,18 +265,14 @@ fn parse_vad_response(line: &str) -> Result<VadResult, TranscribeError> {
     })
 }
 
-fn parse_speech_segment(value: &Value) -> Result<(f64, f64), TranscribeError> {
+fn parse_speech_segment(value: &Value) -> Result<(f64, f64), String> {
     let object = value
         .as_object()
-        .ok_or_else(|| TranscribeError::VadResponse {
-            detail: "VAD speech entry must be an object".to_owned(),
-        })?;
+        .ok_or_else(|| "VAD speech entry must be an object".to_owned())?;
     let start = required_sample_index(object, "start")?;
     let end = required_sample_index(object, "end")?;
     if end < start {
-        return Err(TranscribeError::VadResponse {
-            detail: "VAD speech entry ends before it starts".to_owned(),
-        });
+        return Err("VAD speech entry ends before it starts".to_owned());
     }
     Ok((start as f64 / SAMPLE_RATE_HZ, end as f64 / SAMPLE_RATE_HZ))
 }
@@ -283,69 +280,79 @@ fn parse_speech_segment(value: &Value) -> Result<(f64, f64), TranscribeError> {
 fn required_string<'a>(
     object: &'a serde_json::Map<String, Value>,
     field: &str,
-) -> Result<&'a str, TranscribeError> {
+) -> Result<&'a str, String> {
     object
         .get(field)
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| TranscribeError::VadResponse {
-            detail: format!("VAD response has no non-empty {field}"),
-        })
+        .ok_or_else(|| format!("VAD response has no non-empty {field}"))
 }
 
-fn required_f64(
-    object: &serde_json::Map<String, Value>,
-    field: &str,
-) -> Result<f64, TranscribeError> {
+fn required_f64(object: &serde_json::Map<String, Value>, field: &str) -> Result<f64, String> {
     object
         .get(field)
         .and_then(Value::as_f64)
         .filter(|value| value.is_finite() && *value >= 0.0)
-        .ok_or_else(|| TranscribeError::VadResponse {
-            detail: format!("VAD response has no non-negative finite {field}"),
-        })
+        .ok_or_else(|| format!("VAD response has no non-negative finite {field}"))
 }
 
 fn required_sample_index(
     object: &serde_json::Map<String, Value>,
     field: &str,
-) -> Result<usize, TranscribeError> {
+) -> Result<usize, String> {
     object
         .get(field)
         .and_then(Value::as_u64)
         .and_then(|value| usize::try_from(value).ok())
-        .ok_or_else(|| TranscribeError::VadResponse {
-            detail: format!("VAD speech entry has no valid {field} sample index"),
-        })
+        .ok_or_else(|| format!("VAD speech entry has no valid {field} sample index"))
 }
 
-fn parse_vad_error(exit_code: i32, line: &str) -> TranscribeError {
+fn parse_vad_error(exit: Option<i32>, stderr: &[u8]) -> TranscribeError {
+    let Some(exit_code) = exit else {
+        return vad_contract_error(
+            None,
+            stderr,
+            "VAD helper terminated without an exit code".to_owned(),
+        );
+    };
+    let line = match json_line(stderr, "VAD error response") {
+        Ok(line) => line,
+        Err(detail) => return vad_contract_error(Some(exit_code), stderr, detail),
+    };
     let value: Value = match serde_json::from_str(line) {
         Ok(value) => value,
         Err(error) => {
-            return TranscribeError::VadResponse {
-                detail: format!("VAD error response was not JSON: {error}"),
-            };
+            return vad_contract_error(
+                Some(exit_code),
+                stderr,
+                format!("VAD error response was not JSON: {error}"),
+            );
         }
     };
     let Some(object) = value.as_object() else {
-        return TranscribeError::VadResponse {
-            detail: "VAD error response must be an object".to_owned(),
-        };
+        return vad_contract_error(
+            Some(exit_code),
+            stderr,
+            "VAD error response must be an object".to_owned(),
+        );
     };
     let (Some(schema), Some(reason), Some(detail)) = (
         object.get("schema").and_then(Value::as_str),
         object.get("reason").and_then(Value::as_str),
         object.get("detail").and_then(Value::as_str),
     ) else {
-        return TranscribeError::VadResponse {
-            detail: "VAD error response lacks schema, reason, or detail".to_owned(),
-        };
+        return vad_contract_error(
+            Some(exit_code),
+            stderr,
+            "VAD error response lacks schema, reason, or detail".to_owned(),
+        );
     };
     if schema != ERROR_SCHEMA || reason.is_empty() || detail.is_empty() {
-        return TranscribeError::VadResponse {
-            detail: "VAD error response violates its schema".to_owned(),
-        };
+        return vad_contract_error(
+            Some(exit_code),
+            stderr,
+            "VAD error response violates its schema".to_owned(),
+        );
     }
     TranscribeError::VadHelper {
         helper_exit_code: exit_code,
@@ -491,16 +498,132 @@ mod tests {
 
     fn helper_error(exit_code: i32) -> TranscribeError {
         let error = parse_vad_error(
-            exit_code,
-            &json!({
+            Some(exit_code),
+            json!({
                 "schema": ERROR_SCHEMA,
                 "reason": "injected",
                 "detail": "injected helper failure",
             })
-            .to_string(),
+            .to_string()
+            .as_bytes(),
         );
         assert!(matches!(error, TranscribeError::VadHelper { .. }));
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains(&format!("exit {exit_code}")),
+            "{rendered}"
+        );
         error
+    }
+
+    fn assert_retains_exit(error: TranscribeError, exit: i32, stderr_needle: &str) {
+        match &error {
+            TranscribeError::VadResponse {
+                helper_exit_code,
+                stderr,
+                ..
+            } => {
+                assert_eq!(*helper_exit_code, Some(exit));
+                assert!(
+                    stderr.contains(stderr_needle),
+                    "stderr {stderr:?} missing {stderr_needle:?}"
+                );
+            }
+            other => panic!("expected VadResponse, got {other:?}"),
+        }
+        assert_eq!(error.exit_code(), 1);
+        let rendered = error.to_string();
+        assert_eq!(rendered.lines().count(), 1, "{rendered}");
+    }
+
+    #[test]
+    fn malformed_vad_stderr_retains_helper_exit_code() {
+        assert_retains_exit(parse_vad_error(Some(42), b"not-json"), 42, "not-json");
+    }
+
+    #[test]
+    fn invalid_utf8_stderr_retains_helper_exit_code() {
+        assert_retains_exit(parse_vad_error(Some(7), b"bad\xffstderr"), 7, "\\xff");
+    }
+
+    #[test]
+    fn empty_stderr_retains_helper_exit_code() {
+        assert_retains_exit(parse_vad_error(Some(3), b""), 3, "");
+    }
+
+    #[test]
+    fn multiline_stderr_retains_helper_exit_code() {
+        assert_retains_exit(parse_vad_error(Some(11), b"one\ntwo\n"), 11, "one");
+    }
+
+    #[test]
+    fn non_object_json_stderr_retains_helper_exit_code() {
+        assert_retains_exit(parse_vad_error(Some(5), b"[1]"), 5, "[1]");
+    }
+
+    #[test]
+    fn missing_fields_stderr_retains_helper_exit_code() {
+        assert_retains_exit(parse_vad_error(Some(8), b"{\"schema\":\"x\"}"), 8, "schema");
+    }
+
+    #[test]
+    fn schema_invalid_stderr_retains_helper_exit_code() {
+        let body = json!({
+            "schema": "wrong",
+            "reason": "injected",
+            "detail": "injected",
+        })
+        .to_string();
+        assert_retains_exit(parse_vad_error(Some(9), body.as_bytes()), 9, "wrong");
+    }
+
+    #[test]
+    fn signal_termination_has_no_exit_code_and_keeps_stderr() {
+        let error = parse_vad_error(None, b"killed\n");
+        match &error {
+            TranscribeError::VadResponse {
+                helper_exit_code,
+                stderr,
+                detail,
+            } => {
+                assert_eq!(*helper_exit_code, None);
+                assert!(stderr.contains("killed"), "{stderr}");
+                assert!(
+                    detail.contains("terminated without an exit code"),
+                    "{detail}"
+                );
+            }
+            other => panic!("expected VadResponse, got {other:?}"),
+        }
+        assert_eq!(error.exit_code(), 1);
+        let rendered = error.to_string();
+        assert!(rendered.contains("no exit code"), "{rendered}");
+        assert_eq!(rendered.lines().count(), 1, "{rendered}");
+    }
+
+    #[test]
+    fn hostile_stderr_display_is_one_sanitized_record() {
+        let error = parse_vad_error(Some(12), b"bad\n\r\x1b[31mtext");
+        let rendered = error.to_string();
+        assert_eq!(rendered.lines().count(), 1, "{rendered}");
+        assert!(!rendered.contains('\n'), "{rendered:?}");
+        assert!(!rendered.contains('\r'), "{rendered:?}");
+        assert!(!rendered.contains('\x1b'), "{rendered:?}");
+        assert!(rendered.contains("\\n"), "{rendered}");
+        assert!(rendered.contains("\\r"), "{rendered}");
+        assert!(rendered.contains("\\x1b"), "{rendered}");
+    }
+
+    #[test]
+    fn oversize_stderr_is_capped_at_2048_scalars() {
+        let error = parse_vad_error(Some(4), "a".repeat(3000).as_bytes());
+        let TranscribeError::VadResponse { stderr, .. } = &error else {
+            panic!("expected VadResponse, got {error:?}");
+        };
+        assert!(stderr.contains("…[truncated]"), "{stderr}");
+        assert!(stderr.chars().count() <= 2048, "{}", stderr.chars().count());
+        let rendered = error.to_string();
+        assert_eq!(rendered.lines().count(), 1, "{rendered}");
     }
 
     #[test]
