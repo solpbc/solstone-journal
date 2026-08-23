@@ -30,6 +30,13 @@ const COMMA: &str = "Lovelace, Ada";
 const PADDED: &str = "\u{001c}  Ada Lovelace  \u{001f}";
 const CONTROL: &str = "Ada\u{0001}Lovelace";
 const NUL: &str = "Ada\0Lovelace";
+const USER_NUL: &str = "ada\0hopper";
+const TZ_CONTROL: &str = "America\u{0001}Denver";
+const TZ_NUL: &str = "America\0Denver";
+const UNICODE_REAL_PADDED: &str = "  Ada Löveläce 好  ";
+const UNICODE_REAL: &str = "Ada Löveläce 好";
+const UNICODE_USER_PADDED: &str = "\u{001c}  adá  \u{001f}";
+const UNICODE_USER: &str = "adá";
 
 type ScriptedResult = Result<String, IdentityError>;
 
@@ -313,12 +320,60 @@ fn materialization_handles_independent_os_source_failures() {
 }
 
 #[test]
+fn fallback_identity_rejects_timezone_nul_and_control_without_touching_names() {
+    assert_fallback(ok(REAL_ONLY), ok(USER), ok(TZ_NUL), REAL_ONLY, USER, "");
+    assert_fallback(ok(REAL_ONLY), ok(USER), ok(TZ_CONTROL), REAL_ONLY, USER, "");
+}
+
+#[test]
+fn materialized_defaults_reject_timezone_nul_and_control_without_touching_names() {
+    let _guard = install(ok(REAL_ONLY), ok(USER), ok(TZ_NUL));
+    assert_identity(&materialized_defaults(), REAL_ONLY, USER, "");
+    drop(_guard);
+    let _guard = install(ok(REAL_ONLY), ok(USER), ok(TZ_CONTROL));
+    assert_identity(&materialized_defaults(), REAL_ONLY, USER, "");
+}
+
+#[test]
+fn fallback_identity_rejects_username_nul_and_empty_without_erasing_real_name() {
+    assert_fallback(ok(REAL_ONLY), ok(USER_NUL), ok(TZ), REAL_ONLY, "", TZ);
+    assert_fallback(ok(REAL_ONLY), ok(""), ok(TZ), REAL_ONLY, "", TZ);
+}
+
+#[test]
+fn materialized_defaults_reject_username_nul_and_empty_without_erasing_real_name() {
+    let _guard = install(ok(REAL_ONLY), ok(USER_NUL), ok(TZ));
+    assert_identity(&materialized_defaults(), REAL_ONLY, "", TZ);
+    drop(_guard);
+    let _guard = install(ok(REAL_ONLY), ok(""), ok(TZ));
+    assert_identity(&materialized_defaults(), REAL_ONLY, "", TZ);
+}
+
+#[test]
 fn fallback_identity_normalizes_and_rejects_control_empty_and_keeps_comma() {
     assert_fallback(ok(PADDED), ok(USER), ok(TZ), REAL, USER, TZ);
     assert_fallback(ok("   "), ok(USER), ok(TZ), USER, USER, TZ);
     assert_fallback(ok(CONTROL), ok(USER), ok(TZ), USER, USER, TZ);
     assert_fallback(ok(NUL), ok(USER), ok(TZ), USER, USER, TZ);
     assert_fallback(ok(COMMA), ok(USER), ok(TZ), COMMA, USER, TZ);
+}
+
+#[test]
+fn fallback_identity_preserves_non_ascii_apart_from_edge_trimming() {
+    assert_fallback(
+        ok(UNICODE_REAL_PADDED),
+        ok(UNICODE_USER_PADDED),
+        ok(TZ),
+        UNICODE_REAL,
+        UNICODE_USER,
+        TZ,
+    );
+}
+
+#[test]
+fn materialized_defaults_preserve_non_ascii_identity_apart_from_edge_trimming() {
+    let _guard = install(ok(UNICODE_REAL_PADDED), ok(UNICODE_USER_PADDED), ok(TZ));
+    assert_identity(&materialized_defaults(), UNICODE_REAL, UNICODE_USER, TZ);
 }
 
 #[test]
