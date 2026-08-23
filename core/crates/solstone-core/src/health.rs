@@ -9,7 +9,11 @@ use std::time::Duration;
 
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
+use solstone_core_assets::canonical_host_pair;
 use solstone_core_callosum::{CallosumEnvelope, CallosumSocketConnection};
+use solstone_core_local::install::ced_readiness::{
+    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedReadiness, evaluate_ced_readiness,
+};
 use solstone_core_system_health::sanitize_for_terminal;
 use tokio::time::{Instant, timeout};
 
@@ -26,69 +30,124 @@ pub(super) fn run(verbose: bool, debug: bool) -> std::process::ExitCode {
         Ok(journal) => journal.path,
         Err(error) => return super::print_journal_error(error),
     };
+    let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
+    let ced = evaluate_ced_readiness(&journal, os, arch);
     let socket_path = journal.join("health").join("callosum.sock");
-    match inspect_socket(&socket_path) {
-        SocketInspection::InvalidUtf8 => {
-            eprintln!("Cannot connect: callosum socket path is not valid UTF-8");
-            return std::process::ExitCode::FAILURE;
-        }
-        SocketInspection::NotFound => {
-            eprintln!(
-                "Cannot connect: callosum socket not found at {}",
-                sanitize_for_terminal(socket_path.to_str().expect("checked before inspection"))
-            );
-            return std::process::ExitCode::FAILURE;
-        }
+    let fetch = match inspect_socket(&socket_path) {
+        SocketInspection::InvalidUtf8 => Err(PresentedHealthError::InvalidUtf8),
+        SocketInspection::NotFound => Err(PresentedHealthError::NotFound {
+            path: socket_path
+                .to_str()
+                .expect("checked before inspection")
+                .to_owned(),
+        }),
         SocketInspection::NotInspectable(reason) => {
-            eprintln!(
-                "Cannot connect: callosum socket is not inspectable: {}",
-                sanitize_for_terminal(&reason)
-            );
-            return std::process::ExitCode::FAILURE;
+            Err(PresentedHealthError::NotInspectable { reason })
         }
-        SocketInspection::Present => {}
-    }
-
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            eprintln!(
-                "Cannot connect: health runtime unavailable: {}",
-                sanitize_for_terminal(&error.to_string())
-            );
-            return std::process::ExitCode::FAILURE;
+        SocketInspection::Present => {
+            match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime
+                    .block_on(fetch_status(&socket_path, deadline))
+                    .map_err(PresentedHealthError::Fetch),
+                Err(error) => Err(PresentedHealthError::RuntimeUnavailable {
+                    message: error.to_string(),
+                }),
+            }
         }
     };
-    match runtime.block_on(fetch_status(&socket_path, deadline)) {
-        Ok(status) => {
-            print!("{}", render_status(&status));
-            std::process::ExitCode::SUCCESS
+    let (stdout, stderr, code) = present_health(&ced, fetch);
+    print!("{stdout}");
+    eprint!("{stderr}");
+    code
+}
+
+enum PresentedHealthError {
+    InvalidUtf8,
+    NotFound { path: String },
+    NotInspectable { reason: String },
+    RuntimeUnavailable { message: String },
+    Fetch(HealthFetchError),
+}
+
+fn ced_line(ced: &CedReadiness) -> String {
+    match ced {
+        CedReadiness::Ready { .. } => CED_READY_DETAIL.to_owned(),
+        CedReadiness::Degraded { .. } => CED_UNAVAILABLE_GUIDANCE.to_owned(),
+        CedReadiness::Unsupported { os, arch } => {
+            format!("ced install: unsupported platform {os}/{arch}; skipping ced sound-tag assets")
         }
-        Err(HealthFetchError::TimedOut) => {
-            eprintln!("Timed out waiting for supervisor status (10s)");
-            std::process::ExitCode::FAILURE
-        }
-        Err(HealthFetchError::MalformedFrames(count)) => {
-            eprintln!(
-                "Timed out waiting for supervisor status (10s; dropped {count} malformed frame(s))"
-            );
-            std::process::ExitCode::FAILURE
-        }
-        Err(HealthFetchError::StatusError { service, reason }) => {
-            eprintln!(
-                "Cannot connect: supervisor status error: {}: {}",
+    }
+}
+
+fn present_health(
+    ced: &CedReadiness,
+    fetch: Result<SupervisorStatus, PresentedHealthError>,
+) -> (String, String, std::process::ExitCode) {
+    let stdout = format!("{}\n", ced_line(ced));
+    match fetch {
+        Ok(status) => (
+            format!("{stdout}{}", render_status(&status)),
+            String::new(),
+            std::process::ExitCode::SUCCESS,
+        ),
+        Err(PresentedHealthError::InvalidUtf8) => (
+            stdout,
+            "Cannot connect: callosum socket path is not valid UTF-8\n".to_owned(),
+            std::process::ExitCode::FAILURE,
+        ),
+        Err(PresentedHealthError::NotFound { path }) => (
+            stdout,
+            format!(
+                "Cannot connect: callosum socket not found at {}\n",
+                sanitize_for_terminal(&path)
+            ),
+            std::process::ExitCode::FAILURE,
+        ),
+        Err(PresentedHealthError::NotInspectable { reason }) => (
+            stdout,
+            format!(
+                "Cannot connect: callosum socket is not inspectable: {}\n",
+                sanitize_for_terminal(&reason)
+            ),
+            std::process::ExitCode::FAILURE,
+        ),
+        Err(PresentedHealthError::RuntimeUnavailable { message }) => (
+            stdout,
+            format!(
+                "Cannot connect: health runtime unavailable: {}\n",
+                sanitize_for_terminal(&message)
+            ),
+            std::process::ExitCode::FAILURE,
+        ),
+        Err(PresentedHealthError::Fetch(HealthFetchError::TimedOut)) => (
+            stdout,
+            "Timed out waiting for supervisor status (10s)\n".to_owned(),
+            std::process::ExitCode::FAILURE,
+        ),
+        Err(PresentedHealthError::Fetch(HealthFetchError::MalformedFrames(count))) => (
+            stdout,
+            format!(
+                "Timed out waiting for supervisor status (10s; dropped {count} malformed frame(s))\n"
+            ),
+            std::process::ExitCode::FAILURE,
+        ),
+        Err(PresentedHealthError::Fetch(HealthFetchError::StatusError { service, reason })) => (
+            stdout,
+            format!(
+                "Cannot connect: supervisor status error: {}: {}\n",
                 sanitize_for_terminal(&service),
                 sanitize_for_terminal(&reason)
-            );
-            std::process::ExitCode::FAILURE
-        }
-        Err(HealthFetchError::InvalidStatus { path }) => {
-            eprintln!("{}", invalid_status_message(&path));
-            std::process::ExitCode::FAILURE
-        }
+            ),
+            std::process::ExitCode::FAILURE,
+        ),
+        Err(PresentedHealthError::Fetch(HealthFetchError::InvalidStatus { path })) => (
+            stdout,
+            format!("{}\n", invalid_status_message(&path)),
+            std::process::ExitCode::FAILURE,
+        ),
     }
 }
 
@@ -499,6 +558,42 @@ mod tests {
             render_status(&status),
             "Services:\n  convey\\n          pid 3  uptime 1h 1m\n\nCrashed:\n  local            2 restart attempts\n\nTasks:\n  daily\\t           21s  SLOW (cap 20s)\n  queued z\\x1b        1\n\nHeartbeat: STALE (host (path\\r))\nCallosum: 2 clients\n"
         );
+    }
+
+    #[test]
+    fn present_health_prefixes_ced_on_success() {
+        let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
+        let rendered = render_status(&status);
+        let ced = CedReadiness::Ready {
+            library: PathBuf::from("libced.so"),
+            model: PathBuf::from("model.gguf"),
+        };
+        let (stdout, stderr, code) = present_health(&ced, Ok(status));
+        assert!(stdout.starts_with(&format!("{CED_READY_DETAIL}\n")));
+        assert!(stdout.contains("Services:"));
+        assert!(stderr.is_empty());
+        assert_eq!(code, std::process::ExitCode::SUCCESS);
+        assert_eq!(&stdout[CED_READY_DETAIL.len() + 1..], rendered);
+    }
+
+    #[test]
+    fn present_health_prefixes_ced_on_connection_failure() {
+        let ced = CedReadiness::Degraded {
+            cause: solstone_core_local::install::ced_readiness::CedDegradedCause::Absent,
+            detail: "sidecar missing".to_owned(),
+        };
+        let (stdout, stderr, code) = present_health(
+            &ced,
+            Err(PresentedHealthError::NotFound {
+                path: "/journal/health/callosum.sock".to_owned(),
+            }),
+        );
+        assert_eq!(stdout, format!("{CED_UNAVAILABLE_GUIDANCE}\n"));
+        assert_eq!(
+            stderr,
+            "Cannot connect: callosum socket not found at /journal/health/callosum.sock\n"
+        );
+        assert_eq!(code, std::process::ExitCode::FAILURE);
     }
 
     #[test]

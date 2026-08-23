@@ -10,6 +10,11 @@ use std::process::Command;
 use nix::sys::statvfs::statvfs;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use solstone_core_assets::canonical_host_pair;
+use solstone_core_local::install::ced_readiness::{
+    CED_READY_DETAIL, CED_UNAVAILABLE_GUIDANCE, CedDegradedCause, CedReadiness,
+    evaluate_ced_readiness,
+};
 use solstone_core_local::{
     VulkanDevice, cpu_placement_suffix, discrete_hardware_gpu_count, is_discrete, select_device,
 };
@@ -35,6 +40,18 @@ pub struct CheckInputs {
     pub render_nodes_present_but_inaccessible: bool,
     pub gpu_evaluation_error: Option<String>,
     pub version: String,
+    #[serde(default)]
+    pub ced: CedCheckInput,
+}
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum CedCheckInput {
+    #[default]
+    Omit,
+    Ready,
+    Degraded {
+        cause: CedDegradedCause,
+    },
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlatformInput {
@@ -267,6 +284,17 @@ pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
         )),
         gpu_evaluation_error: None,
         version: version.into(),
+        ced: {
+            let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
+            ced_input_from(evaluate_ced_readiness(journal, os, arch))
+        },
+    }
+}
+fn ced_input_from(readiness: CedReadiness) -> CedCheckInput {
+    match readiness {
+        CedReadiness::Ready { .. } => CedCheckInput::Ready,
+        CedReadiness::Degraded { cause, .. } => CedCheckInput::Degraded { cause },
+        CedReadiness::Unsupported { .. } => CedCheckInput::Omit,
     }
 }
 fn check(
@@ -363,6 +391,9 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
     if inputs.platform.os == "Darwin" {
         checks.push(mac_memory(&inputs.memory));
         checks.push(disk(inputs));
+        if let Some(ced) = ced_check(inputs) {
+            checks.push(ced);
+        }
         return CheckReport {
             platform,
             overall: overall(&checks),
@@ -374,12 +405,28 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
     checks.push(gpu(inputs));
     checks.push(ram(&inputs.memory));
     checks.push(disk(inputs));
+    if let Some(ced) = ced_check(inputs) {
+        checks.push(ced);
+    }
     CheckReport {
         platform,
         overall: overall(&checks),
         checks,
         recommended_package: Some("solstone-journal"),
         version: inputs.version.clone(),
+    }
+}
+fn ced_check(inputs: &CheckInputs) -> Option<Check> {
+    match &inputs.ced {
+        CedCheckInput::Omit => None,
+        CedCheckInput::Ready => Some(check("ced", Severity::Ok, CED_READY_DETAIL, None, None)),
+        CedCheckInput::Degraded { .. } => Some(check(
+            "ced",
+            Severity::Warning,
+            CED_UNAVAILABLE_GUIDANCE,
+            None,
+            None,
+        )),
     }
 }
 fn mac_memory(memory: &MemoryInput) -> Check {
@@ -683,6 +730,7 @@ mod tests {
             render_nodes_present_but_inaccessible: false,
             gpu_evaluation_error: None,
             version: "x".into(),
+            ced: CedCheckInput::Omit,
         };
         let report = build_check_report(&inputs);
         assert_eq!(report.recommended_package, Some("solstone-journal"));
@@ -718,6 +766,7 @@ mod tests {
             render_nodes_present_but_inaccessible: false,
             gpu_evaluation_error: None,
             version: "x".into(),
+            ced: CedCheckInput::Omit,
         };
         assert!(json_output(&build_check_report(&inputs)).contains("\"python\": null"));
     }
@@ -764,6 +813,7 @@ mod tests {
             render_nodes_present_but_inaccessible: false,
             gpu_evaluation_error: None,
             version: "x".into(),
+            ced: CedCheckInput::Omit,
         };
         let report = build_check_report(&inputs);
         assert_eq!(

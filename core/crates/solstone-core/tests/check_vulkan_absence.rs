@@ -38,6 +38,7 @@ fn inputs(probe_ok: bool) -> CheckInputs {
         render_nodes_present_but_inaccessible: false,
         gpu_evaluation_error: None,
         version: "x".into(),
+        ced: solstone_core_check::CedCheckInput::Omit,
     }
 }
 #[test]

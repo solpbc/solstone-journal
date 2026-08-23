@@ -4,11 +4,14 @@
 //! Best-effort ambient sound tagging over the runtime-installed ced.cpp engine.
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::{Map, Value, json};
+use solstone_core_assets::canonical_host_pair;
 use solstone_core_ced_sys::CedLibrary;
+use solstone_core_local::install::ced_readiness::{
+    CED_UNAVAILABLE_GUIDANCE, CedReadiness, evaluate_ced_readiness,
+};
 
 pub const SCORE_FLOOR: f64 = 0.1;
 pub const WINDOW_S: usize = 10;
@@ -18,42 +21,50 @@ pub const ABI_VERSION: i32 = 1;
 pub const ENGINE: &str = "ced.cpp v0.1.0";
 pub const MODEL: &str = "ced-tiny-q8_0";
 pub const AGG: &str = "max";
-pub const MODEL_REVISION: &str = "b5e9a4aad6438763c8da16079d77563fbed35c65";
-
-const ENGINE_VERSION: &str = "v0.1.0";
-const MODEL_REPOSITORY_DIRECTORY: &str = "mudler__ced-gguf";
-const MODEL_SIZE_BYTES: u64 = 6_211_616;
 
 /// Tag PCM audio using the locally installed ced.cpp model.
 ///
 /// All tagger failures are best-effort and therefore represented as `None`.
 pub fn tag_audio(audio: &[f32], journal_path: &Path) -> Option<Value> {
+    let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
+    tag_audio_with_readiness(audio, evaluate_ced_readiness(journal_path, os, arch))
+}
+
+/// Tag PCM using an already-computed CED verdict.
+///
+/// Production [`tag_audio`] supplies the catalog verdict. Tests supply a
+/// verdict against a fixture digest so classify can run without the 6 MiB pin.
+pub fn tag_audio_with_readiness(audio: &[f32], readiness: CedReadiness) -> Option<Value> {
     let spans = window_spans(audio.len());
     if spans.is_empty() {
         return None;
     }
 
-    let paths = match asset_paths(journal_path) {
-        Ok(paths) => paths,
-        Err(detail) => {
-            log::warn!(
-                "sound tagger disabled: {detail} (run `journal install-models` to install; \
-                 it only runs automatically as part of `journal setup`)"
-            );
+    let (library, model) = match readiness {
+        CedReadiness::Ready { library, model } => (library, model),
+        CedReadiness::Unsupported { os, arch } => {
+            log::warn!("sound tagger disabled: ced assets unsupported on {os}/{arch}");
+            return None;
+        }
+        CedReadiness::Degraded { cause, detail } => {
+            log::warn!("{CED_UNAVAILABLE_GUIDANCE}");
+            log::debug!("ced readiness {cause:?}: {detail}");
             return None;
         }
     };
-    let library = match CedLibrary::open(&paths.library) {
+    let library = match CedLibrary::open(&library) {
         Ok(library) => library,
         Err(error) => {
-            log::warn!("sound tagger disabled: {error}");
+            log::warn!("{CED_UNAVAILABLE_GUIDANCE}");
+            log::debug!("ced engine open failed: {error}");
             return None;
         }
     };
-    let context = match library.load_model(&paths.model) {
+    let context = match library.load_model(&model) {
         Ok(context) => context,
         Err(error) => {
-            log::warn!("sound tagger disabled: ced model load failed: {error}");
+            log::warn!("{CED_UNAVAILABLE_GUIDANCE}");
+            log::debug!("ced model load failed: {error}");
             return None;
         }
     };
@@ -96,63 +107,6 @@ pub fn tag_audio(audio: &[f32], journal_path: &Path) -> Option<Value> {
         "windows": per_window.len(),
         "tags": tags,
     }))
-}
-
-fn asset_paths(journal_path: &Path) -> Result<AssetPaths, String> {
-    let artifact = artifact_key().ok_or_else(|| "ced assets unsupported here".to_owned())?;
-    let root = journal_path
-        .join("cache")
-        .join("providers")
-        .join("ced")
-        .join(ENGINE_VERSION);
-    let library_name = if std::env::consts::OS == "macos" {
-        "libced.dylib"
-    } else {
-        "libced.so"
-    };
-    let library = root.join("engine").join(artifact).join(library_name);
-    let header = root.join("engine").join(artifact).join("ced_capi.h");
-    let model = root
-        .join("models")
-        .join(MODEL_REPOSITORY_DIRECTORY)
-        .join(MODEL_REVISION)
-        .join("ced-tiny-q8_0.gguf");
-
-    require_nonempty(&library, "ced engine library")?;
-    require_nonempty(&header, "ced C API header")?;
-    let metadata =
-        fs::metadata(&model).map_err(|_| format!("ced model missing: {}", model.display()))?;
-    if !metadata.is_file() {
-        return Err(format!("ced model missing: {}", model.display()));
-    }
-    if metadata.len() != MODEL_SIZE_BYTES {
-        return Err(format!(
-            "ced model size mismatch: expected {MODEL_SIZE_BYTES}, got {}",
-            metadata.len()
-        ));
-    }
-    Ok(AssetPaths { library, model })
-}
-
-fn require_nonempty(path: &Path, label: &str) -> Result<(), String> {
-    let metadata =
-        fs::metadata(path).map_err(|_| format!("{label} missing: {}", path.display()))?;
-    if !metadata.is_file() {
-        return Err(format!("{label} missing: {}", path.display()));
-    }
-    if metadata.len() == 0 {
-        return Err(format!("{label} is empty: {}", path.display()));
-    }
-    Ok(())
-}
-
-fn artifact_key() -> Option<&'static str> {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => Some("linux-cpu-x64"),
-        ("linux", "aarch64") => Some("linux-cpu-arm64"),
-        ("macos", "aarch64") => Some("macos-metal-arm64"),
-        _ => None,
-    }
 }
 
 fn window_spans(n_samples: usize) -> Vec<(usize, usize)> {
@@ -229,11 +183,6 @@ fn aggregate(per_window: &[BTreeMap<String, f64>]) -> Map<String, Value> {
             );
             tags
         })
-}
-
-struct AssetPaths {
-    library: PathBuf,
-    model: PathBuf,
 }
 
 #[cfg(test)]

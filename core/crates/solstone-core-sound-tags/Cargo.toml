@@ -12,7 +12,9 @@ publish = false
 [dependencies]
 log = { workspace = true }
 serde_json = { workspace = true }
+solstone-core-assets = { workspace = true }
 solstone-core-ced-sys = { workspace = true }
+solstone-core-local = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.24.0"

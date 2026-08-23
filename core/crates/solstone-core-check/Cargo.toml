@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+solstone-core-assets.workspace = true
 solstone-core-local.workspace = true
 solstone-core-system.workspace = true
 

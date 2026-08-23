@@ -2,47 +2,62 @@
 // Copyright (c) 2026 sol pbc
 
 use std::collections::BTreeMap;
-use std::fs::{self, File};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::json;
-use solstone_core_sound_tags::tag_audio;
-
-const MODEL_SIZE_BYTES: u64 = 6_211_616;
+use solstone_core_assets::canonical_host_pair;
+use solstone_core_local::install::ced_fixture::{
+    ced_model_digest, write_ced_model_bytes, write_complete_ced_install,
+};
+use solstone_core_local::install::ced_install::{
+    ced_artifact_key, ced_library_path, ced_model_path,
+};
+use solstone_core_local::install::ced_readiness::{
+    CedDegradedCause, CedReadiness, evaluate_ced_readiness, evaluate_ced_readiness_against,
+};
+use solstone_core_sound_tags::{tag_audio, tag_audio_with_readiness};
 
 #[test]
 fn missing_assets_degrade_to_none() {
     let journal = tempfile::tempdir().expect("temporary journal");
-
     assert_eq!(tag_audio(&one_second(), journal.path()), None);
 }
 
 #[test]
-fn invalid_assets_degrade_to_none() {
-    let Some(stub_assets) = assets(1) else {
+fn integrity_invalid_model_degrades() {
+    let Some(key) = host_key() else {
         return;
     };
-    fs::remove_file(&stub_assets.library).expect("remove library");
-    assert_eq!(tag_audio(&one_second(), stub_assets.journal()), None);
+    let journal = tempfile::tempdir().expect("temporary journal");
+    write_complete_ced_install(journal.path(), key).expect("complete install");
+    match evaluate_ced_readiness(journal.path(), host_os(), host_arch()) {
+        CedReadiness::Degraded {
+            cause: CedDegradedCause::IntegrityInvalid,
+            ..
+        } => {}
+        other => panic!("expected integrity-invalid, got {other:?}"),
+    }
+    assert_eq!(tag_audio(&one_second(), journal.path()), None);
+}
 
-    let Some(stub_assets) = assets(1) else {
+#[test]
+fn unloadable_null_load_degrades() {
+    let Some(assets) = assets(1) else {
         return;
     };
-    fs::remove_file(&stub_assets.model).expect("remove model");
-    assert_eq!(tag_audio(&one_second(), stub_assets.journal()), None);
-
-    let Some(stub_assets) = assets(2) else {
-        return;
-    };
-    write_model(&stub_assets.model, None);
-    assert_eq!(tag_audio(&one_second(), stub_assets.journal()), None);
-
-    let Some(stub_assets) = assets(1) else {
-        return;
-    };
-    write_model(&stub_assets.model, Some("NULL_LOAD"));
-    assert_eq!(tag_audio(&one_second(), stub_assets.journal()), None);
+    write_ced_model_bytes(assets.journal(), b"NULL_LOAD").expect("null-load marker");
+    let digest = ced_model_digest(assets.journal()).expect("fixture digest");
+    let (os, arch) = (host_os(), host_arch());
+    match evaluate_ced_readiness_against(assets.journal(), os, arch, &digest) {
+        CedReadiness::Degraded {
+            cause: CedDegradedCause::Unloadable,
+            ..
+        } => {}
+        other => panic!("expected unloadable, got {other:?}"),
+    }
+    assert_eq!(tag_audio(&one_second(), assets.journal()), None);
 }
 
 #[test]
@@ -50,9 +65,7 @@ fn successful_tags_match_the_python_contract_and_free_every_result() {
     let Some(assets) = assets(1) else {
         return;
     };
-    write_model(&assets.model, None);
-
-    let tags = tag_audio(&one_second(), assets.journal()).expect("stub tags");
+    let tags = tag_audio_with_readiness(&one_second(), ready_verdict(&assets)).expect("stub tags");
     assert_eq!(
         tags,
         json!({
@@ -76,17 +89,48 @@ fn a_failed_window_keeps_successful_windows_without_freeing_null() {
     let Some(assets) = assets(1) else {
         return;
     };
-    write_model(&assets.model, None);
     let mut audio = vec![-1.0; 160_000];
     audio.extend(one_second());
 
-    let tags = tag_audio(&audio, assets.journal()).expect("one successful tail window");
+    let tags = tag_audio_with_readiness(&audio, ready_verdict(&assets))
+        .expect("one successful tail window");
     assert_eq!(tags["windows"], 1);
     assert_eq!(tags["tags"]["Music"], 0.9);
     let counters = counters(&assets.model);
     assert_eq!(counters["classify"], 2);
     assert_eq!(counters["free_string"], 1);
     assert_eq!(counters["context_free"], 1);
+}
+
+#[test]
+fn ready_layout_maps_linux_x64_linux_arm64_and_macos_metal() {
+    let Some(_) = host_key() else {
+        return;
+    };
+    for (os, arch, key) in [
+        ("linux", "x86_64", "linux-cpu-x64"),
+        ("linux", "arm64", "linux-cpu-arm64"),
+        ("darwin", "arm64", "macos-metal-arm64"),
+    ] {
+        let journal = tempfile::tempdir().expect("temporary journal");
+        write_complete_ced_install(journal.path(), key).expect("complete install");
+        let library = ced_library_path(journal.path(), key);
+        if !compile_stub(&library, 1) {
+            return;
+        }
+        let digest = ced_model_digest(journal.path()).expect("fixture digest");
+        match evaluate_ced_readiness_against(journal.path(), os, arch, &digest) {
+            CedReadiness::Ready {
+                library: ready_library,
+                model,
+            } => {
+                assert_eq!(ready_library, library);
+                assert_eq!(model, ced_model_path(journal.path()));
+            }
+            other => panic!("{os}/{arch} expected ready, got {other:?}"),
+        }
+        assert_eq!(ced_artifact_key(os, arch), Some(key));
+    }
 }
 
 struct Assets {
@@ -103,29 +147,17 @@ impl Assets {
 
 fn assets(abi: i32) -> Option<Assets> {
     let journal = tempfile::tempdir().expect("temporary journal");
-    let root = journal.path().join("cache/providers/ced/v0.1.0");
-    let Some(artifact) = artifact_key() else {
+    let Some(key) = host_key() else {
         eprintln!("skipping CED stub test: unsupported host platform");
         return None;
     };
-    let Some(library_name) = library_name() else {
-        eprintln!("skipping CED stub test: unsupported host platform");
-        return None;
-    };
-    let engine = root.join("engine").join(artifact);
-    fs::create_dir_all(&engine).expect("engine directory");
-    let model = root
-        .join("models/mudler__ced-gguf")
-        .join("b5e9a4aad6438763c8da16079d77563fbed35c65")
-        .join("ced-tiny-q8_0.gguf");
-    fs::create_dir_all(model.parent().expect("model parent")).expect("model directory");
-    write_model(&model, None);
-    let library = engine.join(library_name);
+    write_complete_ced_install(journal.path(), key).expect("complete install");
+    let library = ced_library_path(journal.path(), key);
     if !compile_stub(&library, abi) {
         eprintln!("skipping CED stub test: no usable C compiler");
         return None;
     }
-    fs::write(engine.join("ced_capi.h"), b"/* test header */\n").expect("stub header");
+    let model = ced_model_path(journal.path());
     Some(Assets {
         journal,
         library,
@@ -133,13 +165,10 @@ fn assets(abi: i32) -> Option<Assets> {
     })
 }
 
-fn write_model(path: &Path, marker: Option<&str>) {
-    let file = File::create(path).expect("model file");
-    file.set_len(MODEL_SIZE_BYTES).expect("model size");
-    if let Some(marker) = marker {
-        use std::io::Write;
-        let mut file = file;
-        file.write_all(marker.as_bytes()).expect("model marker");
+fn ready_verdict(assets: &Assets) -> CedReadiness {
+    CedReadiness::Ready {
+        library: assets.library.clone(),
+        model: assets.model.clone(),
     }
 }
 
@@ -170,21 +199,17 @@ fn compile_stub(output: &Path, abi: i32) -> bool {
     true
 }
 
-fn artifact_key() -> Option<&'static str> {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => Some("linux-cpu-x64"),
-        ("linux", "aarch64") => Some("linux-cpu-arm64"),
-        ("macos", "aarch64") => Some("macos-metal-arm64"),
-        _ => None,
-    }
+fn host_key() -> Option<&'static str> {
+    let (os, arch) = canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH);
+    ced_artifact_key(os, arch)
 }
 
-fn library_name() -> Option<&'static str> {
-    match std::env::consts::OS {
-        "linux" => Some("libced.so"),
-        "macos" => Some("libced.dylib"),
-        _ => None,
-    }
+fn host_os() -> &'static str {
+    canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH).0
+}
+
+fn host_arch() -> &'static str {
+    canonical_host_pair(std::env::consts::OS, std::env::consts::ARCH).1
 }
 
 fn one_second() -> Vec<f32> {
