@@ -2,8 +2,8 @@ version = 1
 target = "x86_64-pc-windows-msvc"
 
 [baseline]
-workspace_packages = 130
-library_packages = 123
+workspace_packages = 133
+library_packages = 126
 
 [[exclusions]]
 package = "solstone-core-journal-io"
@@ -15,7 +15,19 @@ expected_stderr = ["could not compile `solstone-core-journal-io`", "std::os::fd"
 package = "solstone-core-journal-archive"
 class = "sibling-owned-platform-backend"
 reason = "Lane 2 owns archive traversal and metadata preservation; Lane 1 may not replace the Unix implementation with a no-op."
-expected_stderr = ["could not compile `solstone-core-journal-archive`", "std::os::unix"]
+expected_stderr = ["could not compile `solstone-core-journal-io`", "std::os::fd"]
+
+[[exclusions]]
+package = "solstone-core-journal-convergence"
+class = "sibling-owned-platform-backend"
+reason = "Lane 2 owns the journal-bound convergence record store; Lane 1 may not replace the Unix implementation with a no-op."
+expected_stderr = ["could not compile `solstone-core-journal-io`", "std::os::fd"]
+
+[[exclusions]]
+package = "solstone-core-journal-convergence-harness"
+class = "sibling-owned-platform-backend"
+reason = "Lane 2 owns the journal-bound convergence store consumer; Lane 1 may not replace the Unix implementation with a no-op."
+expected_stderr = ["could not compile `solstone-core-journal-io`", "std::os::fd"]
 
 [[exclusions]]
 package = "solstone-core-system"
@@ -33,7 +45,7 @@ expected_stderr = ["failed to run custom build command for `ring v0.17.14`", "fa
 package = "solstone-core-cogitate-tools"
 class = "preserved-production-guarantee"
 reason = "The current implementation rejects Unix special files and kills whole process groups; a Windows backend is later port work, not a compile-only stub."
-expected_stderr = ["could not compile `solstone-core-cogitate-tools`", "std::os::unix"]
+expected_stderr = ["failed to run custom build command for `ring v0.17.14`", "failed to find tool \"lib.exe\""]
 
 [[exclusions]]
 package = "solstone-core-pdf"

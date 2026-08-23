@@ -6,5 +6,7 @@
 # normal or build edge. dev-dependencies never confer reachability.
 
 [allow]
+solstone-core-journal-convergence = "journal- and lineage-bound convergence record store; no shipped product path depends on it. Remove this row when a production crate takes a normal dependency."
+solstone-core-journal-convergence-harness = "external public-API consumer for the convergence store; no shipped product path depends on it. Remove this row if the harness crate is deleted, not merely because the store became reachable."
 solstone-core-origin = "repository origin-artifact verify/mirror tooling; no shipped product path depends on it"
 solstone-core-talents = "talent-layout and run-log migration library; no shipped path calls it (talent-runtime and talent-cli are separate crates)"

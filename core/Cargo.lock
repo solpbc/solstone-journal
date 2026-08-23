@@ -4164,6 +4164,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-journal-convergence"
+version = "2.0.0"
+dependencies = [
+ "chrono",
+ "getrandom 0.3.4",
+ "nix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "solstone-core-journal-io",
+]
+
+[[package]]
+name = "solstone-core-journal-convergence-harness"
+version = "2.0.0"
+dependencies = [
+ "solstone-core-journal-convergence",
+ "solstone-core-journal-io",
+]
+
+[[package]]
 name = "solstone-core-journal-io"
 version = "2.0.0"
 dependencies = [
