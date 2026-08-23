@@ -17,9 +17,11 @@ use solstone_core_journal_io::{PathOrDay, SegmentIdentityError, day_dirs, iter_s
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
 
+use crate::admission::{
+    admissible_person_pool, admissible_resolution_entities, saved_choice_excluded_by_admission,
+};
 use crate::evidence::load_segment_speakers_with_gaps;
 use crate::owner_centroid::load_owner_centroid;
-use crate::person_guard::is_admissible_person;
 use crate::voiceprint_metadata::VoiceprintMetadata;
 
 /// Kept verbatim from `solstone/apps/speakers/bootstrap.py`; consumed by the
@@ -141,14 +143,10 @@ pub fn bootstrap_voiceprints(
 
     let mut entities = load_all_journal_entities(&request.journal_root)?;
     entities.retain(|entity| !entity.is_blocked());
-    let entity_types = entities
-        .iter()
-        .filter_map(|entity| {
-            entity
-                .entity_type()
-                .map(|kind| (entity.id.clone(), kind.to_owned()))
-        })
-        .collect::<HashMap<_, _>>();
+    let unblocked = entities.iter().collect::<Vec<_>>();
+    let pool = admissible_person_pool(&unblocked);
+    let resolution_entities = admissible_resolution_entities(&pool);
+    let scope = json!({"kind": "journal"});
     let mut existing_keys = HashMap::<String, HashSet<String>>::new();
     let mut batches = BTreeMap::<String, Vec<VoiceprintItem>>::new();
     let mut entity_names = HashMap::<String, String>::new();
@@ -161,15 +159,17 @@ pub fn bootstrap_voiceprints(
         }
         stats.single_speaker_segments += 1;
         let speaker = &segment.speakers[0];
-        let resolution_entities = entities
-            .iter()
-            .map(JournalEntity::resolution_entity)
-            .collect::<Vec<_>>();
+        if saved_choice_excluded_by_admission(&request.journal_root, &scope, speaker, &unblocked)? {
+            if !stats.speakers_unmatched.contains(speaker) {
+                stats.speakers_unmatched.push(speaker.clone());
+            }
+            continue;
+        }
         let resolution = record_entity_resolution_from_name_evidence(
             &request.journal_root,
             speaker,
             &resolution_entities,
-            json!({"kind": "journal"}),
+            scope.clone(),
             json!({"lane": "speaker_resolve.bootstrap", "day": segment.day, "segment_id": segment.key}),
             RESOLUTION_FUZZY_THRESHOLD,
             false,
@@ -177,7 +177,7 @@ pub fn bootstrap_voiceprints(
         let (entity_id, entity_name) = match resolution.outcome {
             EntityResolutionOutcome::Resolved => resolution
                 .entity_index
-                .and_then(|index| entities.get(index))
+                .and_then(|index| pool.get(index).copied())
                 .map(|entity| {
                     (
                         entity.id.clone(),
@@ -189,7 +189,7 @@ pub fn bootstrap_voiceprints(
                             .to_owned(),
                     )
                 })
-                .expect("resolved entity index belongs to supplied entity list"),
+                .expect("resolved entity index belongs to admitted Person pool"),
             EntityResolutionOutcome::Ambiguous => {
                 if !stats.speakers_unmatched.contains(speaker) {
                     stats.speakers_unmatched.push(speaker.clone());
@@ -253,12 +253,6 @@ pub fn bootstrap_voiceprints(
     }
 
     for (entity_id, items) in batches {
-        if !is_admissible_person(entity_types.get(&entity_id).map(String::as_str)) {
-            stats
-                .errors
-                .push(format!("Skipped non-Person entity {entity_id}"));
-            continue;
-        }
         if request.dry_run {
             stats.embeddings_saved += items.len();
             continue;
@@ -290,18 +284,10 @@ pub fn seed_from_imports(
 
     let mut entities = load_all_journal_entities(&request.journal_root)?;
     entities.retain(|entity| !entity.is_blocked());
-    let entity_types = entities
-        .iter()
-        .filter_map(|entity| {
-            entity
-                .entity_type()
-                .map(|kind| (entity.id.clone(), kind.to_owned()))
-        })
-        .collect::<HashMap<_, _>>();
-    let resolution_entities = entities
-        .iter()
-        .map(JournalEntity::resolution_entity)
-        .collect::<Vec<_>>();
+    let unblocked = entities.iter().collect::<Vec<_>>();
+    let pool = admissible_person_pool(&unblocked);
+    let resolution_entities = admissible_resolution_entities(&pool);
+    let scope = json!({"kind": "journal"});
     let mut speaker_entity_cache = HashMap::<String, Option<(String, String)>>::new();
     let mut existing_keys = HashMap::<String, HashSet<String>>::new();
     let mut batches = BTreeMap::<String, Vec<VoiceprintItem>>::new();
@@ -349,33 +335,42 @@ pub fn seed_from_imports(
                     continue;
                 };
                 if !speaker_entity_cache.contains_key(speaker_name) {
-                    let resolution = record_entity_resolution_from_name_evidence(
+                    let entity = if saved_choice_excluded_by_admission(
                         &request.journal_root,
+                        &scope,
                         speaker_name,
-                        &resolution_entities,
-                        json!({"kind": "journal"}),
-                        json!({"lane": "apps.speakers.seed_from_imports", "day": segment.day, "segment_id": segment.key, "field": "speaker"}),
-                        RESOLUTION_FUZZY_THRESHOLD,
-                        false,
-                    )?;
-                    let entity = (resolution.outcome == EntityResolutionOutcome::Resolved)
-                        .then(|| {
-                            resolution
-                                .entity_index
-                                .and_then(|index| entities.get(index))
-                                .map(|entity| {
-                                    (
-                                        entity.id.clone(),
-                                        entity
-                                            .value
-                                            .get("name")
-                                            .and_then(Value::as_str)
-                                            .unwrap_or(speaker_name)
-                                            .to_owned(),
-                                    )
-                                })
-                        })
-                        .flatten();
+                        &unblocked,
+                    )? {
+                        None
+                    } else {
+                        let resolution = record_entity_resolution_from_name_evidence(
+                            &request.journal_root,
+                            speaker_name,
+                            &resolution_entities,
+                            scope.clone(),
+                            json!({"lane": "apps.speakers.seed_from_imports", "day": segment.day, "segment_id": segment.key, "field": "speaker"}),
+                            RESOLUTION_FUZZY_THRESHOLD,
+                            false,
+                        )?;
+                        (resolution.outcome == EntityResolutionOutcome::Resolved)
+                            .then(|| {
+                                resolution
+                                    .entity_index
+                                    .and_then(|index| pool.get(index).copied())
+                                    .map(|entity| {
+                                        (
+                                            entity.id.clone(),
+                                            entity
+                                                .value
+                                                .get("name")
+                                                .and_then(Value::as_str)
+                                                .unwrap_or(speaker_name)
+                                                .to_owned(),
+                                        )
+                                    })
+                            })
+                            .flatten()
+                    };
                     speaker_entity_cache.insert(speaker_name.to_owned(), entity);
                 }
                 let entity = speaker_entity_cache
@@ -431,12 +426,6 @@ pub fn seed_from_imports(
     }
 
     for (entity_id, items) in batches {
-        if !is_admissible_person(entity_types.get(&entity_id).map(String::as_str)) {
-            stats
-                .errors
-                .push(format!("Skipped non-Person entity {entity_id}"));
-            continue;
-        }
         if request.dry_run {
             stats.embeddings_saved += items.len();
             continue;

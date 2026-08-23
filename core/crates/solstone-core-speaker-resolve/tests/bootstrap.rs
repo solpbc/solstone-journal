@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 use solstone_core_entity::{
-    EncoderIdentity, EntityResolutionEntity, EntityResolutionOutcome, VoiceprintItem,
+    EncoderIdentity, EntityResolutionEntity, EntityResolutionOutcome, VoiceprintItem, ambiguity_id,
     load_entity_voiceprints_file, read_entity_identity,
     record_entity_resolution_from_name_evidence, save_voiceprints_batch,
 };
@@ -193,6 +193,49 @@ fn import_segment(root: &Path, stream: &str, key: &str, speaker: &str) {
     .unwrap();
 }
 
+fn write_resolved_choice(root: &Path, query: &str, entity_id: &str) {
+    let normalized = solstone_core_entity_matching::normalize_resolution_query(query);
+    let row = json!({
+        "schema_version": 1,
+        "ambiguity_id": ambiguity_id(&format!("journal|{normalized}")),
+        "scope": {"kind": "journal"},
+        "normalized_query": normalized,
+        "original_query": query,
+        "latest_query": query,
+        "first_seen": "2026-08-01T00:00:00Z",
+        "last_seen": "2026-08-01T00:00:00Z",
+        "observed_tier": 8,
+        "status": "resolved",
+        "resolved_entity_id": entity_id,
+        "resolved_at": "2026-08-01T00:00:00Z",
+        "ranked_candidates": [{
+            "id": entity_id,
+            "name": query,
+            "tier": 8,
+            "score": 90.0
+        }],
+        "origins": [{"lane": "test"}],
+        "origin_keys": ["test"],
+        "occurrence_count": 1,
+        "audit": {"prior_choices": []}
+    });
+    let path = root.join("entities/ambiguities.jsonl");
+    fs::create_dir_all(path.parent().expect("ambiguities parent")).unwrap();
+    fs::write(&path, format!("{row}\n")).unwrap();
+}
+
+fn ambiguity_row_count(root: &Path) -> usize {
+    let path = root.join("entities/ambiguities.jsonl");
+    if !path.exists() {
+        return 0;
+    }
+    fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count()
+}
+
 fn request(root: &Path) -> BootstrapRequest {
     BootstrapRequest {
         journal_root: root.to_path_buf(),
@@ -217,7 +260,7 @@ fn bootstrap_stats_json(stats: &BootstrapStats) -> Value {
 }
 
 #[test]
-fn ac4_ac22_bootstrap_guards_non_person_and_continues_after_entity_write_failure() {
+fn ac4_ac22_bootstrap_skips_non_person_and_continues_after_entity_write_failure() {
     let temporary = Temp::new();
     entity(temporary.path(), "principal", "Principal", "Person", true);
     entity(temporary.path(), "good", "Good Person", "Person", false);
@@ -244,6 +287,12 @@ fn ac4_ac22_bootstrap_guards_non_person_and_continues_after_entity_write_failure
     );
     assert!(
         stats
+            .speakers_unmatched
+            .iter()
+            .any(|name| name == "Tool Speaker")
+    );
+    assert!(
+        !stats
             .errors
             .iter()
             .any(|error| error.contains("Skipped non-Person entity tool"))
@@ -255,6 +304,118 @@ fn ac4_ac22_bootstrap_guards_non_person_and_continues_after_entity_write_failure
             .is_file()
     );
     assert_eq!(fs::read(&bad_path).unwrap(), b"not-an-npz");
+    assert!(
+        !temporary
+            .path()
+            .join("entities/tool/voiceprints.npz")
+            .exists()
+    );
+}
+
+#[test]
+fn bootstrap_same_name_person_and_tool_saves_the_person() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(temporary.path(), "alex", "Alex", "Person", false);
+    entity(temporary.path(), "tool", "Alex", "Tool", false);
+    write_owner(temporary.path());
+    segment(temporary.path(), "120000_300", "Alex");
+
+    let BootstrapOutcome::Completed(stats) =
+        bootstrap_voiceprints(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+    assert!(stats.speakers_unmatched.is_empty());
+    assert_eq!(stats.embeddings_saved, 1);
+    assert!(
+        temporary
+            .path()
+            .join("entities/alex/voiceprints.npz")
+            .is_file()
+    );
+    assert!(
+        !temporary
+            .path()
+            .join("entities/tool/voiceprints.npz")
+            .exists()
+    );
+}
+
+#[test]
+fn bootstrap_saved_choice_naming_a_tool_is_unmatched_without_a_new_row() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(temporary.path(), "tool", "Terminal", "Tool", false);
+    write_owner(temporary.path());
+    write_resolved_choice(temporary.path(), "Terminal", "tool");
+    segment(temporary.path(), "120000_300", "Terminal");
+    let before = ambiguity_row_count(temporary.path());
+
+    let BootstrapOutcome::Completed(stats) =
+        bootstrap_voiceprints(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+    assert_eq!(stats.speakers_unmatched, ["Terminal"]);
+    assert_eq!(stats.embeddings_saved, 0);
+    assert_eq!(ambiguity_row_count(temporary.path()), before);
+    assert!(
+        !temporary
+            .path()
+            .join("entities/tool/voiceprints.npz")
+            .exists()
+    );
+}
+
+#[test]
+fn seed_from_imports_same_name_person_and_tool_saves_the_person() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(temporary.path(), "alex", "Alex", "Person", false);
+    entity(temporary.path(), "tool", "Alex", "Tool", false);
+    write_owner(temporary.path());
+    import_segment(temporary.path(), "import.granola", "120000_300", "Alex");
+
+    let SeedFromImportsOutcome::Completed(stats) =
+        seed_from_imports(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+    assert!(stats.speakers_unmatched.is_empty());
+    assert_eq!(stats.embeddings_saved, 1);
+    assert!(
+        temporary
+            .path()
+            .join("entities/alex/voiceprints.npz")
+            .is_file()
+    );
+    assert!(
+        !temporary
+            .path()
+            .join("entities/tool/voiceprints.npz")
+            .exists()
+    );
+}
+
+#[test]
+fn seed_from_imports_saved_choice_naming_a_tool_is_unmatched_without_a_new_row() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "principal", "Principal", "Person", true);
+    entity(temporary.path(), "tool", "Terminal", "Tool", false);
+    write_owner(temporary.path());
+    write_resolved_choice(temporary.path(), "Terminal", "tool");
+    import_segment(temporary.path(), "import.granola", "120000_300", "Terminal");
+    let before = ambiguity_row_count(temporary.path());
+
+    let SeedFromImportsOutcome::Completed(stats) =
+        seed_from_imports(&request(temporary.path())).unwrap()
+    else {
+        panic!("owner centroid is present");
+    };
+    assert_eq!(stats.speakers_unmatched, ["Terminal"]);
+    assert_eq!(stats.embeddings_saved, 0);
+    assert_eq!(ambiguity_row_count(temporary.path()), before);
     assert!(
         !temporary
             .path()
