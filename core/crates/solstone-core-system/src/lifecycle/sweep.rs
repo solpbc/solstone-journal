@@ -6,9 +6,11 @@ use std::time::Duration;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::time::Instant;
 
+#[cfg(target_os = "macos")]
+use crate::process::InstanceCensus;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use crate::process::{
-    InspectResult, InstanceCensus, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
+    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
     SystemProcessInstanceSource,
 };
 
