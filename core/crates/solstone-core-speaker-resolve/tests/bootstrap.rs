@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
@@ -51,6 +52,29 @@ impl Drop for Temp {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+fn content_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn collect(root: &Path, directory: &Path, snapshot: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(directory).expect("journal directory reads") {
+            let entry = entry.expect("journal entry reads");
+            let path = entry.path();
+            if path.is_dir() {
+                collect(root, &path, snapshot);
+            } else if path.is_file() {
+                snapshot.insert(
+                    path.strip_prefix(root)
+                        .expect("snapshot path is relative")
+                        .to_path_buf(),
+                    fs::read(path).expect("journal file reads"),
+                );
+            }
+        }
+    }
+
+    let mut snapshot = BTreeMap::new();
+    collect(root, root, &mut snapshot);
+    snapshot
 }
 
 fn encoder() -> EncoderIdentity {
@@ -262,6 +286,7 @@ fn bootstrap_stats_json(stats: &BootstrapStats) -> Value {
 #[test]
 fn bootstrap_and_seed_distinguish_invalid_owner_identity() {
     let temporary = Temp::new();
+    let before = content_snapshot(temporary.path());
 
     assert!(matches!(
         bootstrap_voiceprints(&request(temporary.path())).unwrap(),
@@ -271,6 +296,7 @@ fn bootstrap_and_seed_distinguish_invalid_owner_identity() {
         seed_from_imports(&request(temporary.path())).unwrap(),
         SeedFromImportsOutcome::IdentityInvalid
     ));
+    assert_eq!(content_snapshot(temporary.path()), before);
 }
 
 #[test]

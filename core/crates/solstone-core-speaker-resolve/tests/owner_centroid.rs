@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
@@ -38,6 +39,29 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+fn content_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn collect(root: &Path, directory: &Path, snapshot: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(directory).expect("journal directory reads") {
+            let entry = entry.expect("journal entry reads");
+            let path = entry.path();
+            if path.is_dir() {
+                collect(root, &path, snapshot);
+            } else if path.is_file() {
+                snapshot.insert(
+                    path.strip_prefix(root)
+                        .expect("snapshot path is relative")
+                        .to_path_buf(),
+                    fs::read(path).expect("journal file reads"),
+                );
+            }
+        }
+    }
+
+    let mut snapshot = BTreeMap::new();
+    collect(root, root, &mut snapshot);
+    snapshot
 }
 
 fn seed_principal(temporary: &TempDir) -> PathBuf {
@@ -159,6 +183,7 @@ fn ac3_absent_centroid_returns_none() {
 fn foreign_centroid_target_is_refused_without_creating_or_retargeting_an_artifact() {
     let temporary = TempDir::new();
     let principal_path = seed_principal(&temporary);
+    let before = content_snapshot(temporary.path());
 
     let error = write_owner_centroid(
         temporary.path(),
@@ -178,6 +203,7 @@ fn foreign_centroid_target_is_refused_without_creating_or_retargeting_an_artifac
     ));
     assert!(!principal_path.exists());
     assert!(!temporary.path().join("entities/foreign").exists());
+    assert_eq!(content_snapshot(temporary.path()), before);
 }
 
 #[test]

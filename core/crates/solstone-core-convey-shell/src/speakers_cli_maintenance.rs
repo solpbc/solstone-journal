@@ -52,6 +52,12 @@ async fn bootstrap_call(root: Arc<JournalRoot>, request: Request, imports: bool)
             .map(bootstrap_value)
     };
     match result {
+        Ok(value) if value["error"] == "speaker_owner_identity_invalid" => err(
+            "speaker_owner_identity_invalid",
+            "I couldn't run that speaker command because your configured owner identity needs attention.",
+            "configured owner identity is not admitted",
+            StatusCode::BAD_REQUEST,
+        ),
         Ok(value) => Json(value).into_response(),
         Err(error) => err(
             "speaker_command_failed",

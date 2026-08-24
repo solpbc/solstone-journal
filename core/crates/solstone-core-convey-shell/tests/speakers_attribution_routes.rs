@@ -484,6 +484,27 @@ async fn owner_identity_invalid_refuses_every_owner_surface_without_writes() {
 }
 
 #[tokio::test]
+async fn bootstrap_routes_refuse_invalid_owner_identity_without_writes() {
+    for mode in [
+        PersonAdmissionMode::MissingTypePrincipal,
+        PersonAdmissionMode::CollisionLoserPrincipal,
+    ] {
+        let journal = build_person_admission_journal(mode);
+        for path in [
+            "/app/speakers/api/bootstrap",
+            "/app/speakers/api/seed-from-imports",
+        ] {
+            let before = content_snapshot(journal.root());
+            let (status, response) =
+                call(router(journal.root().to_path_buf()), path, json!({})).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {response}");
+            assert_eq!(response["reason_code"], "speaker_owner_identity_invalid");
+            assert_eq!(content_snapshot(journal.root()), before, "{path}");
+        }
+    }
+}
+
+#[tokio::test]
 async fn owner_detect_generates_candidate_from_the_native_candidate_pool() {
     let journal = Journal::new();
     journal.entity("owner", true);

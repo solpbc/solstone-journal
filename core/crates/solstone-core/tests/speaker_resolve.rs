@@ -3,8 +3,9 @@
 
 //! Process-level reachability coverage for native speaker-resolve verbs.
 
+use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -23,6 +24,29 @@ fn root(name: &str) -> PathBuf {
     ));
     std::fs::create_dir_all(root.join("chronicle")).expect("create temporary journal");
     root
+}
+
+fn content_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn collect(root: &Path, directory: &Path, snapshot: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in std::fs::read_dir(directory).expect("journal directory reads") {
+            let entry = entry.expect("journal entry reads");
+            let path = entry.path();
+            if path.is_dir() {
+                collect(root, &path, snapshot);
+            } else if path.is_file() {
+                snapshot.insert(
+                    path.strip_prefix(root)
+                        .expect("snapshot path is relative")
+                        .to_path_buf(),
+                    std::fs::read(path).expect("journal file reads"),
+                );
+            }
+        }
+    }
+
+    let mut snapshot = BTreeMap::new();
+    collect(root, root, &mut snapshot);
+    snapshot
 }
 
 fn encoder() -> Value {
@@ -418,6 +442,7 @@ fn ac1_seed_from_imports_cli_reaches_native_orchestrator() {
 fn write_owner_centroid_refuses_a_foreign_target_without_retargeting() {
     let journal = root("owner-target-mismatch");
     create_entity(&journal, "owner");
+    let before = content_snapshot(&journal);
     let mut child = Command::new(env!("CARGO_BIN_EXE_solstone-core"))
         .args(["speaker-resolve", "write-owner-centroid"])
         .stdin(Stdio::piped())
@@ -449,6 +474,7 @@ fn write_owner_centroid_refuses_a_foreign_target_without_retargeting() {
     );
     assert!(!journal.join("entities/owner/owner_centroid.npz").exists());
     assert!(!journal.join("entities/foreign").exists());
+    assert_eq!(content_snapshot(&journal), before);
 }
 
 #[test]

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -39,6 +40,29 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+fn content_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn collect(root: &Path, directory: &Path, snapshot: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(directory).expect("journal directory reads") {
+            let entry = entry.expect("journal entry reads");
+            let path = entry.path();
+            if path.is_dir() {
+                collect(root, &path, snapshot);
+            } else if path.is_file() {
+                snapshot.insert(
+                    path.strip_prefix(root)
+                        .expect("snapshot path is relative")
+                        .to_path_buf(),
+                    fs::read(path).expect("journal file reads"),
+                );
+            }
+        }
+    }
+
+    let mut snapshot = BTreeMap::new();
+    collect(root, root, &mut snapshot);
+    snapshot
 }
 
 fn encoder() -> EncoderIdentity {
@@ -148,6 +172,7 @@ fn ac3_absent_owner_centroid_writes_nothing_with_a_specific_outcome() {
 fn invalid_owner_identity_writes_nothing_with_a_distinct_outcome() {
     let t = TempDir::new();
     entity(&t, "alice", "Person", false);
+    let before = content_snapshot(t.path());
     let result = accumulate_voiceprints(&request(
         &t,
         vec![label(1, "alice")],
@@ -160,6 +185,7 @@ fn invalid_owner_identity_writes_nothing_with_a_distinct_outcome() {
         AccumulationOutcome::IdentityInvalid { .. }
     ));
     assert!(load_entity_voiceprints_file(t.path(), "alice").is_none());
+    assert_eq!(content_snapshot(t.path()), before);
 }
 
 #[test]
