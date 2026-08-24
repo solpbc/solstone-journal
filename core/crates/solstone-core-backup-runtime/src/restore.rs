@@ -847,7 +847,7 @@ mod tests {
     #[test]
     fn failure_replaces_a_prior_successful_last_restore_without_stale_fields() {
         let journal = tempfile::tempdir().expect("journal");
-        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
         solstone_core_backup::record_restore_result(
             journal.path(),
             "ok",
