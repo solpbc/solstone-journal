@@ -149,7 +149,29 @@ fn main() {
                 std::thread::sleep(Duration::from_millis(2));
             }
         }
+        "ready-park" => {
+            let ready_path = args.next().expect("ready path");
+            std::fs::write(ready_path, fixture_ready_marker()).expect("signal readiness");
+            loop {
+                std::thread::park();
+            }
+        }
         "always-exit" => std::process::exit(1),
+        "fail-five-then-once-then-park" => {
+            let state_path = args.next().expect("state path");
+            let attempts = std::fs::read_to_string(&state_path)
+                .ok()
+                .and_then(|value| value.trim().parse::<u32>().ok())
+                .unwrap_or(0)
+                + 1;
+            std::fs::write(&state_path, attempts.to_string()).expect("record fixture attempt");
+            if attempts <= 6 {
+                std::process::exit(1);
+            }
+            loop {
+                std::thread::park();
+            }
+        }
         "never-ready" => loop {
             std::thread::park();
         },
