@@ -2232,6 +2232,7 @@ let facetEntityCounts = {};
 let scopeMetadataDirty = true;
 let scopeNotice = '';
 let scopeOutsideClick = null;
+let entitiesInitialized = false;
 let currentDetailEntity = null;
 let detailObservationOpenToken = 0;
 let detailObservationState = {
@@ -4896,7 +4897,7 @@ async function loadEntityScopeMetadata() {
     }));
     document
       .querySelector('#entities-loading .surface-state-retry')
-      ?.addEventListener('click', initEntities);
+      ?.addEventListener('click', () => (entitiesInitialized ? loadEntities() : initEntities()));
     return false;
   }
 }
@@ -4984,6 +4985,7 @@ async function initEntities() {
       closeDetachConfirmModal();
     }
   };
+  entitiesInitialized = true;
 }
 
 if (document.readyState === 'loading') {
