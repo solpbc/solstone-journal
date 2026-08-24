@@ -5372,11 +5372,9 @@ fn search_request(
     let order = match order {
         "relevance" => Order::Relevance,
         "recency" => Order::Recency,
-        "reranked" => Order::Reranked,
         _ => return Err(()),
     };
-    let mut request =
-        SearchRequest::new(options.query.clone().unwrap_or_default(), order).map_err(|_| ())?;
+    let mut request = SearchRequest::new(options.query.clone().unwrap_or_default(), order);
     request.limit = limit;
     request.offset = offset;
     request.day = options.day.clone();

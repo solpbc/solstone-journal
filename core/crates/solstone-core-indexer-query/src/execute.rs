@@ -330,7 +330,7 @@ impl QueryConnection {
     ) -> Result<Vec<SearchHit>, IndexAccessError> {
         let ordering = match order {
             Order::Relevance => "ORDER BY bm25(chunks) ASC, rowid ASC",
-            Order::Recency | Order::Reranked => "ORDER BY day DESC, rowid DESC",
+            Order::Recency => "ORDER BY day DESC, rowid DESC",
         };
         let sql = format!(
             "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks) \

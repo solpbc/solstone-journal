@@ -138,8 +138,7 @@ fn parse_prompt(prompt: &str) -> EntityDescribePreState {
 }
 
 fn render_evidence(entity_name: &str, facet: &str, journal: &std::path::Path) -> String {
-    let mut request =
-        SearchRequest::new(entity_name, Default::default()).expect("default order is valid");
+    let mut request = SearchRequest::new(entity_name, Default::default());
     request.limit = 5;
     request.facet = (!facet.is_empty()).then_some(facet.to_owned());
     match search(journal, &request, Utc::now().date_naive()) {

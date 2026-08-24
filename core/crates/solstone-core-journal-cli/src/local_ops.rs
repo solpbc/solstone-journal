@@ -376,8 +376,7 @@ fn run_one_indexer_query(
     query: &str,
     options: &IndexerQuery,
 ) -> Result<String, (String, u8)> {
-    let mut request =
-        SearchRequest::new(query, Order::Relevance).expect("relevance is a request order");
+    let mut request = SearchRequest::new(query, Order::Relevance);
     request.limit = options.limit;
     request.offset = options.offset;
     request.day = options.day.clone();

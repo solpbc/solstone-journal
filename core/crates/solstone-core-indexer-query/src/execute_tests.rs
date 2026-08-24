@@ -97,7 +97,7 @@ fn seed_complete_state(connection: &Connection) {
 }
 
 fn request(query: &str) -> SearchRequest {
-    SearchRequest::new(query, Order::Relevance).expect("valid request")
+    SearchRequest::new(query, Order::Relevance)
 }
 
 fn building_degraded(files: u64, chunks: u64) -> IndexDegraded {
@@ -112,14 +112,14 @@ fn building_degraded(files: u64, chunks: u64) -> IndexDegraded {
 }
 
 #[test]
-fn request_deserialization_rejects_response_only_reranked_order() {
+fn request_deserialization_rejects_unknown_order() {
     let valid: SearchRequest =
         serde_json::from_str(r#"{"query":"needle","limit":10,"offset":0,"order":"recency"}"#)
             .expect("recency is a request order");
     assert_eq!(valid.order, Order::Recency);
     assert!(
         serde_json::from_str::<SearchRequest>(
-            r#"{"query":"needle","limit":10,"offset":0,"order":"reranked"}"#
+            r#"{"query":"needle","limit":10,"offset":0,"order":"unexpected_order"}"#
         )
         .is_err()
     );

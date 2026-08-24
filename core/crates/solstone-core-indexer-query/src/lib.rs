@@ -28,7 +28,7 @@ pub use predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 pub use temporal::{TemporalExtraction, extract_temporal_references};
 pub use types::{
     CountsResponse, CoverageResponse, CoverageState, IndexAccessError, IndexBuildCounts,
-    IndexDegraded, Order, RequestError, SearchHit, SearchMetadata, SearchRequest, SearchResponse,
+    IndexDegraded, Order, SearchHit, SearchMetadata, SearchRequest, SearchResponse,
 };
 
 #[cfg(test)]
