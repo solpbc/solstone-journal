@@ -155,7 +155,7 @@
 
   function launcherToggle(currentApp, visibleApps) {
     const isCurrent = !visibleApps.some((app) => app.name === currentApp.name);
-    const label = `journal apps, current: ${currentApp.label}`;
+    const label = isCurrent ? `journal apps, current: ${currentApp.label}` : 'journal apps';
     return (
       `<button type="button" class="app-launcher-toggle${isCurrent ? ' is-current' : ''}"` +
       ` data-app-launcher-toggle aria-expanded="false" aria-controls="app-launcher"` +
@@ -261,6 +261,7 @@
       '<img class="status-indicator status-indicator--connecting" src="/static/sol-status/mark-connecting.svg" width="22" height="22" alt="" aria-hidden="true">' +
       '<span id="quiet-notif-badge" class="quiet-notif-badge" style="display:none"></span>' +
       '</button>' +
+      '<span class="status-label" aria-hidden="true">connecting</span>' +
       '<span id="status-live-region" role="status" class="visually-hidden"></span>';
   }
 

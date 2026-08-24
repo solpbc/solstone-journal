@@ -17,6 +17,8 @@ window.whenShellReady(() => {
     const label = window.appEvents?.statusLabel || 'connecting';
     statusIcon.setAttribute('aria-label', label);
     statusIcon.setAttribute('title', label);
+    const visibleLabel = document.querySelector('#status-instrument .status-label');
+    if (visibleLabel) visibleLabel.textContent = label;
     if (liveRegion) liveRegion.textContent = label;
   };
 

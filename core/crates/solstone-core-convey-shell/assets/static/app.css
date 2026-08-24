@@ -148,6 +148,13 @@ body.has-managed-dialog .workspace {
 }
 
 /* In-flow facet strip */
+/* A hidden strip reserves nothing. `display: flex` below otherwise beats the UA
+   `[hidden] { display: none }` rule, which reserved an empty 64px band on every
+   app without facet controls. */
+.facet-bar[hidden] {
+  display: none;
+}
+
 .facet-bar {
   position: relative;
   margin-left: var(--app-rail-width);
@@ -180,19 +187,24 @@ body:has(.status-pane.visible) .facet-bar::after {
   right: var(--status-pane-width);
 }
 
+/* The instrument is the mark AND its state label, laid out as one row and
+   shrink-wrapped to their content. A fixed `width` here clamped the box to the
+   mark, so the label wrapped onto a second line and ran off the right edge. */
 #status-instrument {
   position: fixed;
   top: var(--status-instrument-inset);
   right: var(--status-instrument-inset);
-  width: var(--status-instrument-size);
+  display: flex;
+  align-items: center;
+  gap: 8px;
   height: var(--status-instrument-size);
   z-index: var(--z-notifications);
 }
 
 #status-instrument .status-icon {
   font-size: 20px;
-  width: 100%;
-  height: 100%;
+  width: var(--status-instrument-size);
+  height: var(--status-instrument-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2055,4 +2067,23 @@ body.presentation-mode .surface-state-heading {
 }
 body.presentation-mode .surface-state-desc {
   font-size: 1.1rem;
+}
+
+/* Journal-status state label — sits beside the mark at wide widths, and is
+   visually hidden (but still announced) once the viewport is narrow. */
+.status-label {
+  font-size: 13px;
+  color: var(--ink-soft, #5b5246);
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .status-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
