@@ -42,6 +42,9 @@ use super::tick;
 
 const APP_FIXTURE_ENABLED_ENV: &str = "SOLSTONE_SUPERVISOR_APP_FIXTURE";
 const APP_FIXTURE_BINARY_ENV: &str = "SOLSTONE_SUPERVISOR_APP_BINARY";
+/// Enables short scheduling intervals for the app-process integration fixture.
+/// This is only honored while the fixture binary itself is enabled.
+const APP_FIXTURE_FAST_TIMING_ENV: &str = "SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_TIMING";
 const PARAKEET_FIXTURE_ENV: &str = "SOLSTONE_SUPERVISOR_PARAKEET_FIXTURE";
 /// Fixture Convey argv override; test-constructed paths must not contain spaces.
 const APP_FIXTURE_CONVEY_ARGV_ENV: &str = "SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV";
@@ -50,8 +53,30 @@ const CONVEY_READY_INTERVAL: Duration = Duration::from_millis(100);
 const CONVEY_READY_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
 const FIXTURE_CONVEY_READY_WINDOW: Duration = Duration::from_secs(3);
 const FIXTURE_CONVEY_READY_INTERVAL: Duration = Duration::from_millis(20);
+const FAST_FIXTURE_CONVEY_READY_WINDOW: Duration = Duration::from_millis(100);
+const FAST_FIXTURE_CONVEY_READY_INTERVAL: Duration = Duration::from_millis(5);
 const CALLOSUM_CONNECTION_READY_WINDOW: Duration = Duration::from_secs(2);
 const CALLOSUM_CONNECTION_READY_INTERVAL: Duration = Duration::from_millis(5);
+
+pub(crate) struct SupervisorTiming {
+    pub tick_interval: Duration,
+    pub status_interval: Duration,
+}
+
+impl SupervisorTiming {
+    fn for_app_fixture(fast: bool) -> Self {
+        if fast {
+            return Self {
+                tick_interval: Duration::from_millis(10),
+                status_interval: Duration::from_millis(50),
+            };
+        }
+        Self {
+            tick_interval: Duration::from_secs(1),
+            status_interval: Duration::from_secs(5),
+        }
+    }
+}
 
 pub(crate) struct SupervisorState {
     pub journal: PathBuf,
@@ -73,6 +98,7 @@ pub(crate) struct SupervisorState {
     pub flush: FlushState,
     pub daily: DailyState,
     pub wedge: WedgeState,
+    pub timing: SupervisorTiming,
 }
 
 #[derive(Default)]
@@ -155,6 +181,7 @@ pub(crate) struct ManagedAppProcess {
     pub started_at: Option<Instant>,
     pub restart_policy: RestartPolicy,
     pub restart_at: Option<Instant>,
+    fast_fixture_timing: bool,
     pub restart_requested: bool,
     /// Correlates an accepted app restart with all ensuing app-process events.
     pub restart_id: Arc<Mutex<Option<String>>>,
@@ -171,6 +198,7 @@ impl ManagedAppProcess {
         fixture_binary: Option<&str>,
         journal_binary: Option<&Path>,
         convey_port: u16,
+        fast_fixture_timing: bool,
     ) -> Self {
         let argv = fixture_binary.map_or_else(
             || {
@@ -188,6 +216,7 @@ impl ManagedAppProcess {
             started_at: None,
             restart_policy: RestartPolicy::default(),
             restart_at: None,
+            fast_fixture_timing,
             restart_requested: false,
             restart_id: Arc::new(Mutex::new(None)),
             terminal: None,
@@ -236,6 +265,11 @@ impl ManagedAppProcess {
         };
         match self.restart_policy.decide_after_exit(policy_code, uptime) {
             RestartDecision::Retry(delay) => {
+                let delay = if self.fast_fixture_timing {
+                    delay.min(Duration::from_millis(10))
+                } else {
+                    delay
+                };
                 self.restart_at = Some(Instant::now() + delay);
                 self.terminal = None;
                 RestartDecision::Retry(delay)
@@ -343,7 +377,7 @@ fn fixture_argv(service: AppService, binary: &str, journal: &Path) -> Vec<String
         return argv;
     }
     argv.extend([
-        "continuous-lines".to_owned(),
+        "ready-park".to_owned(),
         fixture_marker_path(journal, service),
     ]);
     argv
@@ -410,7 +444,9 @@ impl ConveyReadinessProbe for TcpConveyReadinessProbe {
     }
 }
 
-struct FixtureConveyReadinessProbe;
+struct FixtureConveyReadinessProbe {
+    fast_timing: bool,
+}
 
 impl ConveyReadinessProbe for FixtureConveyReadinessProbe {
     fn is_ready(&self, _: &Path, convey_argv: &[String]) -> bool {
@@ -418,11 +454,19 @@ impl ConveyReadinessProbe for FixtureConveyReadinessProbe {
     }
 
     fn wait_window(&self) -> Duration {
-        FIXTURE_CONVEY_READY_WINDOW
+        if self.fast_timing {
+            FAST_FIXTURE_CONVEY_READY_WINDOW
+        } else {
+            FIXTURE_CONVEY_READY_WINDOW
+        }
     }
 
     fn poll_interval(&self) -> Duration {
-        FIXTURE_CONVEY_READY_INTERVAL
+        if self.fast_timing {
+            FAST_FIXTURE_CONVEY_READY_INTERVAL
+        } else {
+            FIXTURE_CONVEY_READY_INTERVAL
+        }
     }
 }
 
@@ -513,9 +557,14 @@ fn app_fixture_binary() -> Option<String> {
     std::env::var(APP_FIXTURE_BINARY_ENV).ok()
 }
 
-fn convey_readiness_probe(fixture_binary: Option<&str>) -> Box<dyn ConveyReadinessProbe> {
+fn convey_readiness_probe(
+    fixture_binary: Option<&str>,
+    fast_fixture_timing: bool,
+) -> Box<dyn ConveyReadinessProbe> {
     if fixture_binary.is_some() {
-        return Box::new(FixtureConveyReadinessProbe);
+        return Box::new(FixtureConveyReadinessProbe {
+            fast_timing: fast_fixture_timing,
+        });
     }
     Box::new(TcpConveyReadinessProbe)
 }
@@ -526,6 +575,7 @@ fn app_processes(
     fixture_binary: Option<&str>,
     journal_binary: Option<&Path>,
     convey_port: u16,
+    fast_fixture_timing: bool,
 ) -> Vec<ManagedAppProcess> {
     let remote = options.remote.as_deref().is_some_and(|url| !url.is_empty());
     [
@@ -543,6 +593,7 @@ fn app_processes(
             fixture_binary,
             journal_binary,
             convey_port,
+            fast_fixture_timing,
         )
     })
     .collect()
@@ -836,7 +887,9 @@ pub(crate) async fn boot_and_tick(
     } else {
         None
     };
-    let readiness_probe = convey_readiness_probe(fixture_binary.as_deref());
+    let fast_fixture_timing = fixture_binary.is_some()
+        && std::env::var(APP_FIXTURE_FAST_TIMING_ENV).as_deref() == Ok("1");
+    let readiness_probe = convey_readiness_probe(fixture_binary.as_deref(), fast_fixture_timing);
     let convey_port = if options.port != 0 {
         options.port
     } else {
@@ -851,6 +904,7 @@ pub(crate) async fn boot_and_tick(
         fixture_binary.as_deref(),
         journal_binary.as_deref(),
         convey_port,
+        fast_fixture_timing,
     );
     start_app_stack(
         &mut app_processes,
@@ -890,6 +944,7 @@ pub(crate) async fn boot_and_tick(
             last_day: Some(chrono::Local::now().date_naive()),
         },
         wedge: WedgeState::default(),
+        timing: SupervisorTiming::for_app_fixture(fast_fixture_timing),
     };
     let sync_conflict = tick::run(&mut state, &mut shutdown_signals).await;
     Ok(SupervisorOutcome {

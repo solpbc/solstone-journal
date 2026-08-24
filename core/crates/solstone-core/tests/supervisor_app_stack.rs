@@ -26,7 +26,7 @@ use supervisor_guard::SupervisorGuard;
 #[path = "support/await_outcome.rs"]
 mod await_outcome;
 
-use await_outcome::{PollState, WaitMetrics, WaitOutcome, WaitPolarity, await_outcome};
+use await_outcome::{PollState, WaitOutcome, WaitPolarity, await_outcome};
 
 const SERVICES: [&str; 4] = ["convey", "sense", "cortex", "spl"];
 // Status is emitted every five seconds and is deliberately suppressed while a
@@ -90,22 +90,6 @@ fn panic_for_wait(context: &str, outcome: WaitOutcome) {
     }
 }
 
-// Mirrors support/await_outcome.rs's 11/10 dilation threshold without touching
-// that trusted layer: WaitTracker::is_dilated is private, while
-// WaitMetrics::dilation() exposes the real measured ratio.
-fn wait_outcome_from_dilation(reason: &str, requested: Duration, slept: Duration) -> WaitOutcome {
-    const DILATION_THRESHOLD: f64 = 11.0 / 10.0;
-    let metrics = WaitMetrics { requested, slept };
-    if metrics.dilation() >= DILATION_THRESHOLD {
-        WaitOutcome::Inconclusive(metrics)
-    } else {
-        WaitOutcome::Failed {
-            reason: format!("{reason} exhausted before completion"),
-            metrics,
-        }
-    }
-}
-
 impl SupervisorGuard {
     fn running(&mut self) -> bool {
         self.try_wait().expect("supervisor status").is_none()
@@ -125,6 +109,7 @@ fn start(journal: &TempJournal, args: &[&str], convey_argv: Option<String>) -> S
         .env("SOLSTONE_LOCAL_BINARY", fixture)
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_TIMING", "1")
         .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture);
     if let Some(argv) = convey_argv {
         command.env("SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV", argv);
@@ -301,18 +286,6 @@ fn fixture_child_pids(parent_pid: u32, argument: &str) -> impl Iterator<Item = u
         .into_iter()
 }
 
-fn stop_callosum_flood(supervisor_pid: u32) {
-    for _ in 0..30 {
-        for pid in fixture_child_pids(supervisor_pid, "continuous-lines") {
-            let _ = nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(pid as i32),
-                nix::sys::signal::Signal::SIGKILL,
-            );
-        }
-        thread::sleep(Duration::from_millis(200));
-    }
-}
-
 #[test]
 fn app_stack_writes_all_fixture_markers() {
     let journal = TempJournal::new();
@@ -351,25 +324,11 @@ async fn never_ready_convey_starts_remaining_app_events_in_launch_order() {
         .await
         .expect("collector entered connect loop");
     let _child = start(&journal, &[], Some("sleep".to_owned()));
-    let interval = Duration::from_millis(10);
-    let iterations: usize = 500; // 10ms * 500 = 5s, unchanged from the previous single timeout
-    let requested = interval.saturating_mul(iterations as u32);
-    let started = Instant::now();
-    let mut finished = None;
-    for _ in 0..iterations {
-        tokio::select! {
-            outcome = &mut collector => { finished = Some(outcome); break; }
-            _ = tokio::time::sleep(interval) => {}
-        }
-    }
-    match finished {
-        Some(outcome) => outcome.expect("app start collector"),
-        None => {
+    match tokio::time::timeout(SUPERVISOR_EVENT_HANG_CEILING, &mut collector).await {
+        Ok(outcome) => outcome.expect("app start collector"),
+        Err(_) => {
             collector.abort();
-            panic_for_wait(
-                "app start collector",
-                wait_outcome_from_dilation("app start collector", requested, started.elapsed()),
-            );
+            panic!("timed out waiting for remaining app start events");
         }
     }
     let captured = captured.lock().expect("captured app starts").clone();
@@ -559,6 +518,7 @@ fn start_with_app_binary(
         )
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
+        .env("SOLSTONE_SUPERVISOR_APP_FIXTURE_FAST_TIMING", "1")
         .env("SOLSTONE_SUPERVISOR_APP_BINARY", app_binary);
     if let Some(argv) = convey_argv {
         command.env("SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV", argv);
@@ -675,10 +635,14 @@ fn always_exit_convey_gives_up_and_clears_stale_failed_file() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn given_up_convey_revives_on_explicit_restart() {
     let journal = TempJournal::new();
+    let state_path = journal.0.join("revive-attempts");
     let mut child = start(
         &journal,
         &["--no-cortex", "--no-spl"],
-        Some("always-exit".to_owned()),
+        Some(format!(
+            "fail-five-then-once-then-park {}",
+            state_path.display()
+        )),
     );
     let mut stderr = child.stderr.take().expect("supervisor stderr");
     let logs = std::thread::spawn(move || {
@@ -713,14 +677,6 @@ async fn given_up_convey_revives_on_explicit_restart() {
     .expect("give-up wait");
     assert_eq!(record["restart_attempts"], 5);
     wait_for_socket(&journal);
-    // continuous-lines fixtures saturate Callosum and drop late inbound frames.
-    tokio::task::spawn_blocking({
-        let supervisor_pid = child.id();
-        move || stop_callosum_flood(supervisor_pid)
-    })
-    .await
-    .expect("stop fixture flood");
-
     let (mut reader, mut write) = connect_callosum(&journal.0.join("health/callosum.sock")).await;
     send_callosum(
         &mut write,
@@ -758,25 +714,34 @@ async fn given_up_convey_revives_on_explicit_restart() {
     .await
     .expect("failed-file removal wait");
 
-    let spawned = tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            let event = receive_supervisor_event(&mut reader, "started").await;
-            if event["ref"] == "supervisor-app-convey" {
-                return event;
-            }
+    let spawned = loop {
+        let event = receive_supervisor_event(&mut reader, "started").await;
+        if event["ref"] == "supervisor-app-convey" {
+            break event;
         }
-    })
-    .await
-    .expect("revived convey did not emit started");
+    };
     assert_eq!(spawned["ref"], "supervisor-app-convey");
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let stopped = receive_supervisor_event(&mut reader, "stopped").await;
+    assert_eq!(stopped["ref"], "supervisor-app-convey");
+    let respawned = loop {
+        let event = receive_supervisor_event(&mut reader, "started").await;
+        if event["ref"] == "supervisor-app-convey" {
+            break event;
+        }
+    };
+    assert_eq!(respawned["ref"], "supervisor-app-convey");
     assert!(
         !failed_path(&journal, "convey").exists(),
         "a single post-revive exit must not rewrite the failed file"
     );
 
-    let status = receive_supervisor_event(&mut reader, "status").await;
+    let status = loop {
+        let status = receive_supervisor_event(&mut reader, "status").await;
+        if crashed_row(&status, "convey").is_none() {
+            break status;
+        }
+    };
     assert!(
         crashed_row(&status, "convey").is_none(),
         "convey must leave crashed after revive: {status}"

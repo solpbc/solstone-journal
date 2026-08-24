@@ -44,8 +44,6 @@ use super::runtime::{
     SupervisorState, apply_app_exit,
 };
 
-const STATUS_INTERVAL: Duration = Duration::from_secs(5);
-const TICK_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_INBOUND_PER_TICK: usize = 256;
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(3600);
 
@@ -184,7 +182,7 @@ fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan 
 }
 
 pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSignals) -> bool {
-    let mut last_status = Instant::now() - STATUS_INTERVAL;
+    let mut last_status = Instant::now() - state.timing.status_interval;
     let mut last_sync = Instant::now() - Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS);
     loop {
         let app_samples = reconcile_app_processes(state);
@@ -235,7 +233,7 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
             }
             last_sync = Instant::now();
         }
-        if last_status.elapsed() >= STATUS_INTERVAL {
+        if last_status.elapsed() >= state.timing.status_interval {
             let status_now = Instant::now();
             let app_observations = app_samples
                 .into_iter()
@@ -310,7 +308,7 @@ pub(crate) async fn run(state: &mut SupervisorState, shutdown: &mut ShutdownSign
             last_status = status_now;
         }
         tokio::select! {
-            _ = tokio::time::sleep(TICK_INTERVAL) => {},
+            _ = tokio::time::sleep(state.timing.tick_interval) => {},
             _ = shutdown.wait() => return false,
         }
     }
