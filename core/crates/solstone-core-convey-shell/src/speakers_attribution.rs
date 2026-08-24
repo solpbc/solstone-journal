@@ -17,6 +17,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_entity::{EncoderIdentity, normalize_embedding};
 use solstone_core_journal_io::{DEFAULT_STREAM, SegmentLayout};
+use solstone_core_speaker_resolve::OWNER_IDENTITY_INVALID_REASON;
 use solstone_core_speaker_resolve::owner_admission::{OwnerAdmission, admitted_owner_id};
 use solstone_core_speaker_resolve::owner_contamination_screen::{
     ContaminationProbe, ContaminationScreen, screen_owner_contamination,
@@ -45,7 +46,7 @@ const OWNER_DAMAGED: (&str, &str, StatusCode) = (
     StatusCode::CONFLICT,
 );
 const OWNER_IDENTITY_INVALID: (&str, &str, StatusCode) = (
-    "speaker_owner_identity_invalid",
+    OWNER_IDENTITY_INVALID_REASON,
     "I couldn't run that speaker command because your configured owner identity needs attention.",
     StatusCode::BAD_REQUEST,
 );
@@ -357,13 +358,24 @@ fn propagation_offer(
             "segment_count":0,
         });
     };
-    let Ok(result) = propagate_speaker_correction(root, old_speaker, new_speaker, false) else {
-        return json!({
-            "available":false,
-            "reason":"preview_failed",
-            "statement_count":0,
-            "segment_count":0,
-        });
+    let result = match propagate_speaker_correction(root, old_speaker, new_speaker, false) {
+        Ok(result) => result,
+        Err(PropagationError::OwnerIdentityInvalid) => {
+            return json!({
+                "available":false,
+                "reason":OWNER_IDENTITY_INVALID_REASON,
+                "statement_count":0,
+                "segment_count":0,
+            });
+        }
+        Err(PropagationError::UnsupportedLayout | PropagationError::Failed(_)) => {
+            return json!({
+                "available":false,
+                "reason":"preview_failed",
+                "statement_count":0,
+                "segment_count":0,
+            });
+        }
     };
     let statement_count = result["statement_count"].as_u64().unwrap_or(0);
     let segment_count = result["segment_count"].as_u64().unwrap_or(0);
@@ -473,8 +485,28 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         return response;
     }
     let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
+    let _trust = if commit {
+        match solstone_core_entity::hold_entity_trust_lock(&root.0) {
+            Ok(lock) => Some(lock),
+            Err(error) => return write_error(error.to_string(), true),
+        }
+    } else {
+        None
+    };
+    if admitted_owner(&root.0).is_none() {
+        return owner_refusal(
+            OWNER_IDENTITY_INVALID,
+            "configured owner identity is not admitted",
+        );
+    }
     let result = match propagate_speaker_correction(&root.0, old_speaker, new_speaker, commit) {
         Ok(result) => result,
+        Err(PropagationError::OwnerIdentityInvalid) => {
+            return owner_refusal(
+                OWNER_IDENTITY_INVALID,
+                "configured owner identity is not admitted",
+            );
+        }
         Err(PropagationError::UnsupportedLayout) => {
             return err(
                 UNSUPPORTED_LAYOUT_REASON,
@@ -501,6 +533,7 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
 
 enum PropagationError {
     UnsupportedLayout,
+    OwnerIdentityInvalid,
     Failed(String),
 }
 
@@ -572,17 +605,24 @@ fn propagate_speaker_correction(
             Utc::now().timestamp_millis(),
         )
         .map_err(|error| PropagationError::Failed(error.to_string()))?;
-        if commit
-            && matches!(
-                outcome,
-                solstone_core_speaker_resolve::resolve::ResolveOutcome::SegmentMissing
-                    | solstone_core_speaker_resolve::resolve::ResolveOutcome::IdentityInvalid
-                    | solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid
-            )
-        {
-            return Err(PropagationError::Failed(
-                "speaker propagation preflight was incomplete".to_owned(),
-            ));
+        match &outcome {
+            solstone_core_speaker_resolve::resolve::ResolveOutcome::IdentityInvalid => {
+                return Err(PropagationError::OwnerIdentityInvalid);
+            }
+            solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid if commit => {
+                return Err(PropagationError::Failed(
+                    "owner centroid unavailable".to_owned(),
+                ));
+            }
+            solstone_core_speaker_resolve::resolve::ResolveOutcome::SegmentMissing if commit => {
+                return Err(PropagationError::Failed(
+                    "speaker propagation segment disappeared".to_owned(),
+                ));
+            }
+            solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(_)
+            | solstone_core_speaker_resolve::resolve::ResolveOutcome::Empty { .. }
+            | solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid
+            | solstone_core_speaker_resolve::resolve::ResolveOutcome::SegmentMissing => {}
         }
         targets.push(Target {
             segment,
@@ -654,8 +694,10 @@ fn propagate_speaker_correction(
             solstone_core_speaker_resolve::resolve::ResolveOutcome::Empty { source } => {
                 results.push(json!({"status":"skipped","day":segment.day,"stream_layout":"named","stream":segment.stream,"segment_key":segment.name,"source":source,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"no_embeddings"}));
             }
-            solstone_core_speaker_resolve::resolve::ResolveOutcome::IdentityInvalid
-            | solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid => {
+            solstone_core_speaker_resolve::resolve::ResolveOutcome::IdentityInvalid => {
+                return Err(PropagationError::OwnerIdentityInvalid);
+            }
+            solstone_core_speaker_resolve::resolve::ResolveOutcome::NoOwnerCentroid => {
                 let error = "owner centroid unavailable".to_owned();
                 errors.push(format!(
                     "{}/{}/{}: {error}",
@@ -1241,10 +1283,81 @@ fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response 
 #[cfg(test)]
 mod tests {
     use super::{
-        OWNER_DAMAGED, OWNER_IDENTITY_INVALID, OWNER_NOT_ENOUGH, classify_indeterminate,
-        classify_owner_tier,
+        Fields, OWNER_DAMAGED, OWNER_IDENTITY_INVALID, OWNER_NOT_ENOUGH, classify_indeterminate,
+        classify_owner_tier, contamination_allowed, propagation_offer,
     };
+    use axum::body::to_bytes;
+    use serde_json::{Value, json};
+    use solstone_core_journal_io::SegmentLayout;
+    use solstone_core_speaker_resolve::OWNER_IDENTITY_INVALID_REASON;
     use solstone_core_speaker_resolve::owner_provisional::OwnerTierReason;
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TestJournal(PathBuf);
+
+    impl TestJournal {
+        fn owner_identity_invalid() -> Self {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos();
+            let root = PathBuf::from("/var/tmp").join(format!(
+                "solstone-propagation-offer-{}-{nanos}",
+                std::process::id()
+            ));
+            fs::create_dir_all(root.join("entities/owner")).expect("owner directory");
+            fs::create_dir_all(root.join("entities/new")).expect("new directory");
+            fs::create_dir_all(root.join("chronicle/20260808/main/120000_1/talents"))
+                .expect("segment directory");
+            fs::write(
+                root.join("entities/owner/entity.json"),
+                json!({"id":"owner","name":"Owner","is_principal":true}).to_string(),
+            )
+            .expect("invalid owner entity");
+            fs::write(
+                root.join("entities/new/entity.json"),
+                json!({"id":"new","name":"New","type":"Person"}).to_string(),
+            )
+            .expect("new entity");
+            fs::write(
+                root.join("chronicle/20260808/main/120000_1/talents/speaker_labels.json"),
+                json!({"labels":[{"sentence_id":1,"speaker":"old"}]}).to_string(),
+            )
+            .expect("labels");
+            Self(root)
+        }
+    }
+
+    impl Drop for TestJournal {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn snapshot_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+        fn collect(root: &Path, directory: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+            for entry in fs::read_dir(directory).expect("journal directory") {
+                let path = entry.expect("journal entry").path();
+                if path.is_dir() {
+                    collect(root, &path, files);
+                } else if path.is_file() {
+                    files.insert(
+                        path.strip_prefix(root)
+                            .expect("journal-relative file")
+                            .to_path_buf(),
+                        fs::read(path).expect("journal file"),
+                    );
+                }
+            }
+        }
+
+        let mut files = BTreeMap::new();
+        collect(root, root, &mut files);
+        files
+    }
 
     #[test]
     fn every_indeterminate_owner_tier_is_refused_by_an_exhaustive_mapping() {
@@ -1284,5 +1397,39 @@ mod tests {
             Ok(class) if class == OWNER_IDENTITY_INVALID
         ));
         assert!(classify_indeterminate("unknown_reason").is_err());
+    }
+
+    #[tokio::test]
+    async fn propagation_offer_preserves_an_owner_identity_refusal() {
+        // `correct` refuses at contamination_allowed before it asks for this offer, so the
+        // helper is the only reachable level that can prove this distinct offer reason.
+        let journal = TestJournal::owner_identity_invalid();
+        let before = snapshot_files(&journal.0);
+
+        let offer = propagation_offer(&journal.0, Some("old"), "new");
+        assert_eq!(offer["available"], false, "{offer}");
+        assert_eq!(offer["reason"], OWNER_IDENTITY_INVALID_REASON, "{offer}");
+        assert_eq!(snapshot_files(&journal.0), before);
+
+        let fields = Fields {
+            day: "20260808".to_owned(),
+            layout: SegmentLayout::Named,
+            stream: "main".to_owned(),
+            segment_key: "120000_1".to_owned(),
+            source: "audio".to_owned(),
+            sentence_id: 1,
+            speaker: "new".to_owned(),
+        };
+        let response = contamination_allowed(&journal.0, &fields, &[1.0; 256])
+            .expect_err("the direct correction gate remains independently refused");
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+        let body: Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("refusal body"),
+        )
+        .expect("refusal json");
+        assert_eq!(body["reason_code"], OWNER_IDENTITY_INVALID_REASON);
+        assert_eq!(snapshot_files(&journal.0), before);
     }
 }

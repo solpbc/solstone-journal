@@ -8,7 +8,9 @@ use std::fs;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
@@ -20,7 +22,8 @@ use tower::ServiceExt;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
-use super::support::{PersonAdmissionMode, build_person_admission_journal};
+use super::support::{PersonAdmissionMode, build_person_admission_journal, snapshot_files};
+use solstone_core_speaker_resolve::OWNER_IDENTITY_INVALID_REASON;
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const DAY: &str = "20260808";
@@ -848,6 +851,10 @@ async fn propagate_allows_legacy_old_speakers_but_requires_an_admitted_new_speak
             "blocked",
             Some(json!({"id":"blocked","name":"blocked","type":"Person","blocked":true})),
         ),
+        (
+            "missing_type",
+            Some(json!({"id":"missing_type","name":"missing type","is_principal":false})),
+        ),
         ("missing", None),
     ] {
         let journal = Journal::new();
@@ -873,7 +880,45 @@ async fn propagate_allows_legacy_old_speakers_but_requires_an_admitted_new_speak
             response["statement_count"].as_u64().unwrap_or(0) > 0,
             "{old_speaker}: {response}"
         );
+        assert!(
+            !journal
+                .0
+                .join("entities")
+                .join(old_speaker)
+                .join("voiceprints.npz")
+                .exists(),
+            "propagation must not create a voiceprint for the historical selection key"
+        );
     }
+
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.entity("new", false);
+    journal.owner_centroid();
+    journal.segment_at(
+        SEGMENT,
+        json!({"labels":[{"sentence_id":1,"speaker":"legacy","confidence":"medium","method":"acoustic"}]}),
+        unit(0.0, 1.0),
+    );
+
+    let (status, response) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/propagate-correction",
+        json!({"old_speaker":"legacy","new_speaker":"new","commit":false}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["status"], "preview", "{response}");
+    assert_eq!(
+        response["changes"][0]["to_speaker"],
+        Value::Null,
+        "propagation must re-resolve an unmatched legacy label instead of relabeling it to new"
+    );
+    assert!(
+        !journal.0.join("entities/legacy/voiceprints.npz").exists(),
+        "propagation must not create a voiceprint for the legacy value"
+    );
 
     let journal = Journal::new();
     journal.entity("owner", true);
@@ -895,6 +940,196 @@ async fn propagate_allows_legacy_old_speakers_but_requires_an_admitted_new_speak
     assert_eq!(status, StatusCode::BAD_REQUEST, "{response}");
     assert_eq!(response["reason_code"], "speaker_not_person");
     assert_eq!(content_snapshot(&journal.0), before);
+}
+
+#[tokio::test]
+async fn propagate_refuses_an_invalid_owner_without_writes_in_preview_or_commit() {
+    for commit in [false, true] {
+        let journal = build_person_admission_journal(PersonAdmissionMode::MissingTypePrincipal);
+        fs::write(
+            journal.segment().join("talents/speaker_labels.json"),
+            json!({"labels":[{"sentence_id":1,"speaker":"legacy","confidence":"high","method":"user_assigned"}]}).to_string(),
+        )
+        .expect("labels");
+        let trust = solstone_core_entity::hold_entity_trust_lock(journal.root())
+            .expect("initialize entity trust lock");
+        drop(trust);
+        let before = snapshot_files(journal.root());
+
+        let (status, refused) = call(
+            router(journal.root().to_path_buf()),
+            "/app/speakers/api/propagate-correction",
+            json!({"old_speaker":"legacy","new_speaker":"person","commit":commit}),
+        )
+        .await;
+
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "commit={commit}: {refused}"
+        );
+        assert_eq!(
+            refused["reason_code"], OWNER_IDENTITY_INVALID_REASON,
+            "commit={commit}: {refused}"
+        );
+        for field in [
+            "status",
+            "statement_count",
+            "segment_count",
+            "changes",
+            "segments",
+        ] {
+            assert!(
+                refused.get(field).is_none(),
+                "commit={commit} returned a non-top-level refusal field {field}: {refused}"
+            );
+        }
+        assert_eq!(
+            snapshot_files(journal.root()),
+            before,
+            "commit={commit} mutated the journal"
+        );
+    }
+}
+
+#[test]
+fn propagation_commit_waits_for_the_entity_trust_lock() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.entity("new", false);
+    journal.owner_centroid();
+    journal.voiceprint("new", unit(0.0, 1.0));
+    journal.segment_at(
+        SEGMENT,
+        json!({"labels":[{"sentence_id":1,"speaker":"legacy","confidence":"medium","method":"acoustic"}]}),
+        unit(0.0, 1.0),
+    );
+    let trust =
+        solstone_core_entity::hold_entity_trust_lock(&journal.0).expect("hold entity trust lock");
+    let root = journal.0.clone();
+    let (started_sender, started_receiver) = mpsc::channel();
+    let (result_sender, result_receiver) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        started_sender.send(()).expect("worker starts");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("worker runtime");
+        result_sender
+            .send(runtime.block_on(call(
+                router(root),
+                "/app/speakers/api/propagate-correction",
+                json!({"old_speaker":"legacy","new_speaker":"new","commit":true}),
+            )))
+            .expect("worker reports propagation result");
+    });
+    started_receiver
+        .recv_timeout(StdDuration::from_secs(1))
+        .expect("worker starts before the lock assertion");
+    assert_eq!(
+        result_receiver.recv_timeout(StdDuration::from_millis(100)),
+        Err(mpsc::RecvTimeoutError::Timeout),
+        "commit propagation must wait for the entity trust lock"
+    );
+
+    drop(trust);
+    let (status, result) = result_receiver
+        .recv_timeout(StdDuration::from_secs(2))
+        .expect("commit finishes after the lock releases");
+    worker.join().expect("propagation worker joins");
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["status"], "applied", "{result}");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn propagation_keeps_owner_reconfiguration_outside_the_operation_boundary() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.entity("new", false);
+    journal.owner_centroid();
+    journal.voiceprint("new", unit(0.0, 1.0));
+    journal.segment_at(
+        SEGMENT,
+        json!({"labels":[{"sentence_id":1,"speaker":"legacy","confidence":"medium","method":"acoustic"}]}),
+        unit(0.0, 1.0),
+    );
+
+    // The route is synchronous after parsing, so this holds the same reentrant lock
+    // around the exact helper, segment writes, and action append that the route uses.
+    let trust =
+        solstone_core_entity::hold_entity_trust_lock(&journal.0).expect("hold entity trust lock");
+    let root = journal.0.clone();
+    let (started_sender, started_receiver) = mpsc::channel();
+    let (changed_sender, changed_receiver) = mpsc::channel();
+    let reconfigure = thread::spawn(move || {
+        started_sender.send(()).expect("reconfiguration starts");
+        let _trust = solstone_core_entity::hold_entity_trust_lock(&root)
+            .expect("reconfiguration holds entity trust lock");
+        fs::write(
+            root.join("entities/owner/entity.json"),
+            json!({"id":"owner","name":"owner","is_principal":true}).to_string(),
+        )
+        .expect("owner reconfiguration writes identity");
+        changed_sender
+            .send(())
+            .expect("reconfiguration reports change");
+    });
+    started_receiver
+        .recv_timeout(StdDuration::from_secs(1))
+        .expect("reconfiguration starts before propagation");
+
+    let (status, applied) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/propagate-correction",
+        json!({"old_speaker":"legacy","new_speaker":"new","commit":true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{applied}");
+    assert_eq!(applied["status"], "applied", "{applied}");
+    assert_eq!(applied["statement_count"], 1, "{applied}");
+    let labels: Value = serde_json::from_slice(
+        &fs::read(
+            journal
+                .0
+                .join("chronicle")
+                .join(DAY)
+                .join(STREAM)
+                .join(SEGMENT)
+                .join("talents/speaker_labels.json"),
+        )
+        .expect("propagated labels"),
+    )
+    .expect("propagated labels parse");
+    assert_eq!(
+        labels["labels"][0]["speaker"], applied["changes"][0]["to_speaker"],
+        "the completed write must be exactly the resolver's result"
+    );
+    assert_eq!(
+        changed_receiver.recv_timeout(StdDuration::from_millis(100)),
+        Err(mpsc::RecvTimeoutError::Timeout),
+        "owner reconfiguration must remain blocked through the operation boundary"
+    );
+
+    drop(trust);
+    changed_receiver
+        .recv_timeout(StdDuration::from_secs(1))
+        .expect("owner reconfiguration completes after propagation");
+    reconfigure.join().expect("reconfiguration worker joins");
+    let before_next_operation = snapshot_files(&journal.0);
+
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/propagate-correction",
+        json!({"old_speaker":"legacy","new_speaker":"new","commit":false}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+    assert_eq!(refused["reason_code"], OWNER_IDENTITY_INVALID_REASON);
+    assert_eq!(
+        snapshot_files(&journal.0),
+        before_next_operation,
+        "the next identity-invalid operation must not leave a stale partial write"
+    );
 }
 
 #[tokio::test]
@@ -1026,8 +1261,10 @@ async fn assign_confirm_and_correct_refuse_direct_layout_without_writes() {
 async fn propagation_preflights_direct_and_mixed_targets_before_resolver_or_writes() {
     for mixed in [false, true] {
         let journal = Journal::new();
+        journal.entity("owner", true);
         journal.entity("old", false);
         journal.entity("new", false);
+        journal.owner_centroid();
         if mixed {
             journal.segment(json!({"labels":[{"sentence_id":1,"speaker":"old"}]}));
             fs::write(
@@ -1047,6 +1284,9 @@ async fn propagation_preflights_direct_and_mixed_targets_before_resolver_or_writ
             "120000_1",
             json!({"labels":[{"sentence_id":1,"speaker":"old"}]}),
         );
+        let trust = solstone_core_entity::hold_entity_trust_lock(&journal.0)
+            .expect("initialize entity trust lock");
+        drop(trust);
         let before = crate::support::snapshot_files(&journal.0);
         let (status, refused) = call(
             router(journal.0.clone()),
