@@ -1715,6 +1715,51 @@ mod tests {
     }
 
     #[test]
+    fn later_dirty_after_all_members_before_barrier_forces_decisioned_supersession() {
+        let (temporary, admitted) = admit_days("supersede-members-before-barrier", &["20260823"]);
+        let mut held = continue_ok_with(&admitted, &two());
+        let serial = held.serial.unwrap();
+        let permit = held.proceed().unwrap();
+        let guard = fail_after(PublishFault::AfterGrantMember { index: 1 });
+        assert!(matches!(
+            permit.commit(),
+            Err(ConvergenceError::Io {
+                role: DurableRole::GrantMember,
+                ..
+            })
+        ));
+        drop(guard);
+        assert_eq!(member_files(&temporary, serial).len(), 2);
+        assert!(!barrier_exists(&temporary, serial, ACTIVE_BARRIER_SUFFIX));
+
+        let permit = held.proceed().unwrap();
+        publish_kind_for_test(
+            &permit.held.admitted.store,
+            &permit.held.locks,
+            &DayKey::parse("20260823").unwrap(),
+            PreparedLaterDirtyAuthority,
+        )
+        .unwrap();
+        assert!(matches!(
+            permit.commit(),
+            Err(ConvergenceError::Refused(Refusal::Superseded))
+        ));
+        assert_eq!(read_reconcile(&temporary, serial).serial, serial);
+        for name in member_files(&temporary, serial) {
+            assert_eq!(
+                read_member_file(&temporary, serial, &name).state,
+                MemberState::Superseded
+            );
+        }
+        assert!(barrier_exists(
+            &temporary,
+            serial,
+            SUPERSEDED_BARRIER_SUFFIX
+        ));
+        drop(held);
+    }
+
+    #[test]
     fn later_dirty_after_all_active_barrier_supersedes_and_retains_history() {
         let (temporary, admitted) = admit_days("supersede-after-barrier", &["20260823"]);
         let mut held = continue_ok_with(&admitted, &ONE);

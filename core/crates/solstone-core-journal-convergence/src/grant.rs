@@ -1236,6 +1236,52 @@ mod tests {
         (owner, link)
     }
 
+    fn expected_active_outbox_tokens(
+        admitted: &Admitted,
+        operation: &OperationId,
+        selector: &GrantRequestSelector,
+    ) -> Vec<String> {
+        let owner = OwnerBinding::prepare(
+            admitted,
+            operation,
+            crate::selector::TransactionClass::AdvanceDirty,
+            selector,
+        )
+        .unwrap();
+        let dirs = open_store_dirs(admitted.store().root()).unwrap().unwrap();
+        crate::access::with_registry(&dirs, admitted.lock_timeout(), |section| {
+            let secret = load_journal_secret(section.registry())?.expect("journal secret");
+            let LinkResolution::Exact(link) = resolve_owner_intent_link(section, &owner)? else {
+                panic!("exact owner-intent link")
+            };
+            let decision = load_decision(section, link.serial)?.expect("commit decision");
+            let barrier = load_barrier(section, link.serial, ACTIVE_BARRIER_SUFFIX)?
+                .expect("all-active barrier");
+            let authority = ParentAuthority {
+                journal_id: admitted.store().journal_id().to_owned(),
+                root_id: admitted.store().root_id().to_owned(),
+                operation_id: operation.as_hex().to_owned(),
+                owner_binding_digest: owner.digest_hex().to_owned(),
+                selector_digest: owner.selector_digest().to_owned(),
+                serial: link.serial,
+                intent_digest: link.intent_digest.clone(),
+                key_hex: secret.key_hex,
+            };
+            decision
+                .tuples
+                .iter()
+                .map(|tuple| {
+                    let member = load_member(section, link.serial, tuple)?.expect("active member");
+                    Ok(authority
+                        .seal(&member, &barrier.barrier_digest)?
+                        .as_hex()
+                        .to_owned())
+                })
+                .collect()
+        })
+        .unwrap()
+    }
+
     fn append_claim(
         admitted: &Admitted,
         owner: &OwnerBinding,
@@ -2194,6 +2240,7 @@ mod tests {
                 .join("health/convergence/registry/grants/barriers/1.active.json"),
         )
         .unwrap();
+        let expected_tokens = expected_active_outbox_tokens(&admitted, &operation, &selector);
         drop(held);
 
         // Delivery acquires the day set, so it runs after the lease drops. The
@@ -2260,12 +2307,14 @@ mod tests {
             .unwrap(),
             "terminal publication must not replace the prepared outbox"
         );
-        assert!(
-            admitted
-                .deliver_grants(&operation, &selector)
-                .unwrap()
-                .is_ready()
-        );
+        let reissued: Vec<String> = admitted
+            .deliver_grants(&operation, &selector)
+            .unwrap()
+            .tokens()
+            .iter()
+            .map(|token| token.as_hex().to_owned())
+            .collect();
+        assert_eq!(reissued, expected_tokens);
     }
 
     #[test]
