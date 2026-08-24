@@ -68,7 +68,6 @@ fn flipped_origin_artifacts() -> Vec<&'static Artifact> {
 fn installer_modules_do_not_read_compile_time_host_platform() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let modules = [
-        manifest_dir.join("src/install/rerank_install.rs"),
         manifest_dir.join("src/install/ced_install.rs"),
         manifest_dir.join("src/install/rfdetr_install.rs"),
     ];
@@ -92,12 +91,9 @@ fn installer_modules_do_not_read_compile_time_host_platform() {
 }
 
 #[test]
-fn rerank_and_ced_do_not_construct_fit_reports() {
+fn ced_does_not_construct_fit_reports() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let modules = [
-        manifest_dir.join("src/install/rerank_install.rs"),
-        manifest_dir.join("src/install/ced_install.rs"),
-    ];
+    let modules = [manifest_dir.join("src/install/ced_install.rs")];
     assert!(modules.iter().all(|path| path.is_file()));
     let texts = modules
         .iter()

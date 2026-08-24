@@ -286,7 +286,7 @@ fn search_agent(
     context: &ExecutionContext,
     gaps: &mut Vec<String>,
 ) -> (u64, Vec<SearchHit>) {
-    let mut request = SearchRequest::new("", Default::default()).expect("default order is valid");
+    let mut request = SearchRequest::new("", Default::default());
     request.limit = 10;
     request.day = Some(day.into());
     request.agent = Some(agent.into());

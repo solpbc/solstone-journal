@@ -78,3 +78,39 @@ fn target(base_url: &str) -> Option<(RatlsEndpoint, String)> {
         .unwrap_or((authority, 443));
     (!host.is_empty()).then(|| (RatlsEndpoint::new(host, port), authority.to_owned()))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::Path, time::Duration};
+
+    use super::perform_fresh_reattest;
+    use crate::{AttestationFailureKind, AttestationStateStore, test_support::TempDir};
+
+    fn assert_prerequisite_failure(nvattest_dir: &Path, reason_code: &'static str) {
+        let state = AttestationStateStore::new();
+        let failure = match perform_fresh_reattest(
+            &state,
+            "not-a-channel-target",
+            nvattest_dir,
+            Duration::from_millis(1),
+        ) {
+            Err(failure) => failure,
+            Ok(_) => panic!("readiness refusal must not establish a channel"),
+        };
+        assert_eq!(failure.kind, AttestationFailureKind::Failed);
+        assert_eq!(failure.reason_code, reason_code);
+        assert_eq!(state.get_attestation_state().failure, Some(failure));
+    }
+
+    #[test]
+    fn fresh_reattest_records_the_locator_cause_before_channel_establishment() {
+        let root = TempDir::new("fresh");
+        assert_prerequisite_failure(&root.path().join("missing"), "nvattest_unavailable");
+        assert_prerequisite_failure(root.path(), "nvattest_unavailable");
+
+        fs::create_dir_all(root.path().join("bin")).expect("create binary directory");
+        fs::create_dir_all(root.path().join("lib")).expect("create library directory");
+        fs::write(root.path().join("bin/nvattest"), "placeholder").expect("write binary");
+        assert_prerequisite_failure(root.path(), "nvattest_integrity_failed");
+    }
+}

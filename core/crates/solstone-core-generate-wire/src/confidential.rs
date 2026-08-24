@@ -1027,7 +1027,7 @@ mod tests {
                 runtime: &runtime,
                 now: UNIX_EPOCH,
             },
-            |_| NvattestEnsureStatus::InstallFailed,
+            |_| NvattestEnsureStatus::Unavailable,
             |_, _| {
                 attempts.fetch_add(1, Ordering::SeqCst);
                 Err("tls_handshake_failed")
@@ -1035,6 +1035,15 @@ mod tests {
         );
         assert!(matches!(result, ConfidentialResult::AttestationNotVerified));
         assert_eq!(attempts.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            runtime
+                .attestation_state()
+                .get_attestation_state()
+                .failure
+                .as_ref()
+                .map(|failure| failure.reason_code),
+            Some("nvattest_unavailable")
+        );
         let _ = std::fs::remove_dir_all(path);
     }
 
@@ -1119,7 +1128,7 @@ mod tests {
                 runtime: &runtime,
                 now: UNIX_EPOCH,
             },
-            |_| NvattestEnsureStatus::InstallFailed,
+            |_| NvattestEnsureStatus::IntegrityFailed,
             |_, _| {
                 attempts.fetch_add(1, Ordering::SeqCst);
                 Err("tls_handshake_failed")
@@ -1128,6 +1137,15 @@ mod tests {
         .expect_err("attestation prerequisite failure");
         assert_eq!(failure.reason_code, "attestation_not_yet_verified");
         assert_eq!(attempts.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            runtime
+                .attestation_state()
+                .get_attestation_state()
+                .failure
+                .as_ref()
+                .map(|failure| failure.reason_code),
+            Some("nvattest_integrity_failed")
+        );
         let _ = std::fs::remove_dir_all(path);
     }
 

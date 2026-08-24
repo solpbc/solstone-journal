@@ -279,7 +279,7 @@ fn search_day_evidence(
     day: &str,
     gaps: &mut Vec<String>,
 ) -> Vec<Item> {
-    let mut request = SearchRequest::new("", Order::Relevance).expect("valid order");
+    let mut request = SearchRequest::new("", Order::Relevance);
     request.limit = INDEX_RESULTS_PER_AGENT;
     request.day = Some(day.to_owned());
     request.facet = Some(facet.to_owned());
@@ -527,7 +527,7 @@ fn search_facet_entities(
     day: &str,
     gaps: &mut Vec<String>,
 ) -> Vec<Item> {
-    let mut request = SearchRequest::new("", Order::Relevance).expect("valid order");
+    let mut request = SearchRequest::new("", Order::Relevance);
     request.limit = MAX_ENTITY_RESULTS;
     request.day = Some(day.to_owned());
     request.facet = Some(facet.to_owned());

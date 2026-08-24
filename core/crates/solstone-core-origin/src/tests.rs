@@ -85,7 +85,7 @@ fn mlx_shaped_unknown_key_refuses_by_default() {
 #[test]
 fn head_only_key_names_head_unreleased() {
     let assessment = assess_prune_with_current_support(
-        "assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/onnx/model.onnx",
+        "assets/ced-model/b5e9a4aad6438763c8da16079d77563fbed35c65/ced-tiny-q8_0.gguf",
     )
     .unwrap();
     assert_eq!(

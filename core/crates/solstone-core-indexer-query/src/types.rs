@@ -13,7 +13,6 @@ pub enum Order {
     #[default]
     Relevance,
     Recency,
-    Reranked,
 }
 
 impl<'de> Deserialize<'de> for Order {
@@ -25,9 +24,6 @@ impl<'de> Deserialize<'de> for Order {
         match value.as_str() {
             "relevance" => Ok(Self::Relevance),
             "recency" => Ok(Self::Recency),
-            "reranked" => Err(serde::de::Error::custom(
-                "reranked is a response-only order value",
-            )),
             _ => Err(serde::de::Error::unknown_variant(
                 &value,
                 &["relevance", "recency"],
@@ -85,23 +81,13 @@ impl Default for SearchRequest {
 }
 
 impl SearchRequest {
-    /// Construct a request while rejecting the response-only reranked value.
-    pub fn new(query: impl Into<String>, order: Order) -> Result<Self, RequestError> {
-        if order == Order::Reranked {
-            return Err(RequestError::RerankedOrderIsResponseOnly);
-        }
-        Ok(Self {
+    pub fn new(query: impl Into<String>, order: Order) -> Self {
+        Self {
             query: query.into(),
             order,
             ..Self::default()
-        })
+        }
     }
-}
-
-/// Request-construction failures reported as CLI usage errors.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RequestError {
-    RerankedOrderIsResponseOnly,
 }
 
 /// One FTS row, shaped like the Python journal search result.

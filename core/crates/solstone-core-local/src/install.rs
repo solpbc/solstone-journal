@@ -24,7 +24,6 @@ pub mod metal_candidate;
 pub mod migration;
 pub mod pins;
 pub mod readiness;
-pub mod rerank_install;
 pub mod rfdetr_install;
 pub mod status;
 

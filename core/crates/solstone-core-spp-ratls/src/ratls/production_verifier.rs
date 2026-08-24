@@ -96,7 +96,11 @@ pub fn verify_composite_with_gpu_appraiser(
 pub fn check_nvattest_readiness(nvattest_dir: &Path) -> NvattestEnsureStatus {
     match locate_nvattest(nvattest_dir) {
         Ok(_) => NvattestEnsureStatus::AlreadyInstalled,
-        Err(_) => NvattestEnsureStatus::InstallFailed,
+        Err(GpuAppraisalReason::NvattestUnavailable) => NvattestEnsureStatus::Unavailable,
+        Err(GpuAppraisalReason::NvattestIntegrityFailed) => NvattestEnsureStatus::IntegrityFailed,
+        Err(GpuAppraisalReason::GpuNonceMismatch | GpuAppraisalReason::GpuAppraisalFailed) => {
+            NvattestEnsureStatus::InstallFailed
+        }
     }
 }
 
@@ -155,6 +159,7 @@ fn composite_error(reason_code: &'static str) -> CompositeVerificationError {
 mod tests {
     use std::{
         collections::BTreeMap,
+        fs,
         path::Path,
         sync::atomic::{AtomicBool, Ordering},
         time::SystemTime,
@@ -167,7 +172,10 @@ mod tests {
     };
 
     use super::{check_nvattest_readiness, verify_composite_with_gpu_appraiser};
-    use crate::{CompositeVerificationInput, NvattestEnsureStatus};
+    use crate::{
+        CompositeVerificationInput, NvattestEnsureStatus, classify_nvattest_prerequisite,
+        test_support::TempDir,
+    };
 
     struct FixtureGpuAppraiser {
         result: Result<GpuAppraisal, solstone_core_spp_attest::error::GpuAppraisalReason>,
@@ -499,10 +507,34 @@ mod tests {
     }
 
     #[test]
-    fn readiness_uses_the_existing_install_failed_status_for_missing_payload() {
+    fn readiness_preserves_each_locator_cause() {
+        let root = TempDir::new("readiness");
         assert_eq!(
-            check_nvattest_readiness(Path::new("definitely-not-an-nvattest-payload")),
-            NvattestEnsureStatus::InstallFailed
+            check_nvattest_readiness(&root.path().join("missing")),
+            NvattestEnsureStatus::Unavailable
+        );
+        assert_eq!(
+            check_nvattest_readiness(root.path()),
+            NvattestEnsureStatus::Unavailable
+        );
+
+        fs::create_dir_all(root.path().join("bin")).expect("create binary directory");
+        fs::create_dir_all(root.path().join("lib")).expect("create library directory");
+        fs::write(root.path().join("bin/nvattest"), "placeholder").expect("write binary");
+        assert_eq!(
+            check_nvattest_readiness(root.path()),
+            NvattestEnsureStatus::IntegrityFailed
+        );
+
+        fs::create_dir_all(root.path().join("share/ca")).expect("create CA directory");
+        fs::write(root.path().join("share/ca/ca-bundle.pem"), "CA").expect("write CA bundle");
+        assert_eq!(
+            check_nvattest_readiness(root.path()),
+            NvattestEnsureStatus::AlreadyInstalled
+        );
+        assert_eq!(
+            classify_nvattest_prerequisite(NvattestEnsureStatus::AlreadyInstalled),
+            None
         );
     }
 }

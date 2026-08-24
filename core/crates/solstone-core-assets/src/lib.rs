@@ -664,32 +664,6 @@ static ARTIFACTS: &[Artifact] = &[
         extracted_binary_sha256: None,
     },
     Artifact {
-        unit: "rerank-model",
-        version: "a09144355adeed5f58c8ed011d209bf8ee5a1fec",
-        filename: "onnx/model.onnx",
-        sha256: "c623d0bcb99f4622beb413eaef00cfbe5db20df9f1dd982da4b4f26022881870",
-        size_bytes: 90992115,
-        upstream_url: "https://huggingface.co/Xenova/ms-marco-MiniLM-L-6-v2/resolve/a09144355adeed5f58c8ed011d209bf8ee5a1fec/onnx/model.onnx",
-        origin_key: "assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/onnx/model.onnx",
-        artifact_key: None,
-        platform: None,
-        backend: None,
-        extracted_binary_sha256: None,
-    },
-    Artifact {
-        unit: "rerank-model",
-        version: "a09144355adeed5f58c8ed011d209bf8ee5a1fec",
-        filename: "tokenizer.json",
-        sha256: "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
-        size_bytes: 711396,
-        upstream_url: "https://huggingface.co/Xenova/ms-marco-MiniLM-L-6-v2/resolve/a09144355adeed5f58c8ed011d209bf8ee5a1fec/tokenizer.json",
-        origin_key: "assets/rerank-model/a09144355adeed5f58c8ed011d209bf8ee5a1fec/tokenizer.json",
-        artifact_key: None,
-        platform: None,
-        backend: None,
-        extracted_binary_sha256: None,
-    },
-    Artifact {
         unit: "rfdetr-engine",
         version: "v0.1.0-solpbc.5",
         filename: "rfdetr-v0.1.0-solpbc.5-bin-linux-cpu-x64.tar.gz",
@@ -1185,14 +1159,6 @@ mod tests {
                 36864577,
             ),
             (
-                "c623d0bcb99f4622beb413eaef00cfbe5db20df9f1dd982da4b4f26022881870",
-                90992115,
-            ),
-            (
-                "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
-                711396,
-            ),
-            (
                 "56231d6675395ed790dba882e0335e4c79616427af558b1820975951cd9d14a7",
                 952974,
             ),
@@ -1407,7 +1373,7 @@ mod tests {
             .iter()
             .map(|artifact| (artifact.sha256, artifact.size_bytes))
             .collect();
-        assert_eq!(catalog().len(), 45);
+        assert_eq!(catalog().len(), 43);
         assert!(resolve("mlx-snapshot", None, None).is_empty());
         assert_eq!(actual, expected);
     }
@@ -1452,7 +1418,6 @@ mod tests {
             BTreeSet::from(["Qwen3.5-4B-Q4_K_M.gguf", "mmproj-F16.gguf"])
         );
         assert!(resolve("local-model", Some(Platform::MacosArm64), None).is_empty());
-        assert_eq!(resolve("rerank-model", None, None).len(), 2);
         assert_eq!(
             resolve("llama-server-cuda", Some(Platform::LinuxX64), None).len(),
             1
@@ -1497,7 +1462,7 @@ mod tests {
             "b5e9a4aad6438763c8da16079d77563fbed35c65",
             "e87f176479d0855a907a41277aca2f8ee7a09523",
             "bf0af9f425fa01809cadec671b3cb672709d13e9",
-            "a09144355adeed5f58c8ed011d209bf8ee5a1fec",
+            "aed02740059203c4a87495924f685de3722ae9ce",
             "c3dc0c037df499f5503545247df6618415fca643",
         ] {
             assert_eq!(check_version(version), Ok(()));
