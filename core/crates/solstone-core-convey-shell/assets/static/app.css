@@ -898,6 +898,26 @@ body:has(.status-pane.visible) .facet-bar::after {
   .app-dock-link,
   #app-dock .app-launcher-toggle {
     width: 100%;
+    min-height: 46px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+  }
+
+  /* The dock names its places. `.app-chrome-label` is visually hidden globally
+     because the rail shows labels on hover; the dock has no hover and the
+     contract gives it four named places, so it un-hides them here. */
+  #app-dock .app-chrome-label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    font-size: 10px;
+    line-height: 1.2;
   }
 
   .facet-bar,

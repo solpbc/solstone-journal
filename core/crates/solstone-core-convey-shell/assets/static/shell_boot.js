@@ -160,7 +160,8 @@
       `<button type="button" class="app-launcher-toggle${isCurrent ? ' is-current' : ''}"` +
       ` data-app-launcher-toggle aria-expanded="false" aria-controls="app-launcher"` +
       ` aria-haspopup="dialog" aria-label="${escapeHtml(label)}">` +
-      '<span aria-hidden="true">⌘</span>' +
+      '<span class="app-chrome-icon" aria-hidden="true">⌘</span>' +
+      `<span class="app-chrome-label" aria-hidden="true">${escapeHtml(isCurrent ? currentApp.label : 'more')}</span>` +
       '</button>'
     );
   }
