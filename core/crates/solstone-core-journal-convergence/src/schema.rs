@@ -32,6 +32,7 @@ pub(crate) const ROLE_CONSUMPTION: &str = "solstone.convergence.consumption-witn
 pub(crate) const ROLE_JOURNAL_SECRET: &str = "solstone.convergence.journal-secret.v1";
 pub(crate) const ROLE_GRANT_SELECTOR: &str = "solstone.convergence.grant-selector.v1";
 pub(crate) const ROLE_PREPARED_OWNER: &str = "solstone.convergence.prepared-owner.v1";
+pub(crate) const ROLE_OWNER_INTENT_LINK: &str = "solstone.convergence.owner-intent-link.v1";
 /// Domain-separation prefix for the secret-authenticated owner-binding digest.
 pub(crate) const MAC_OWNER_BINDING: &[u8] = b"solstone.convergence.owner-binding.v1\0";
 pub(crate) const OPERATION_ADVANCE_DIRTY: &str = "advance_dirty";
@@ -365,6 +366,23 @@ pub(crate) struct JournalSecret {
     pub root_id: String,
     pub key_hex: String,
     pub auxiliary_time: String,
+}
+
+/// Immutable binding of a prepared owner to one exact intent. Create-only.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OwnerIntentLink {
+    pub role: String,
+    pub schema_version: u32,
+    pub journal_id: String,
+    pub root_id: String,
+    pub operation_id: String,
+    pub owner_binding_digest: String,
+    pub serial: u64,
+    pub intent_digest: String,
+    pub day_set: Vec<String>,
+    pub day_set_subdigest: String,
+    pub selector_digest: String,
 }
 
 /// Lifecycle of a prepared owner-operation record.
