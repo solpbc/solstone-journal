@@ -721,6 +721,22 @@ body:has(.status-pane.visible) .facet-bar::after {
 .app-dock-link.is-current {
   background: color-mix(in srgb, var(--facet-color) 18%, transparent);
   color: var(--facet-color);
+  position: relative;
+}
+
+/* The rail's active item carries a left-edge indicator as well as the ground
+   change, so being current is not signalled by a tint alone. */
+#app-rail .app-launcher-toggle.is-current::before,
+#app-rail .app-rail-link.is-current::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 24px;
+  transform: translateY(-50%);
+  border-radius: 0 2px 2px 0;
+  background: var(--facet-color);
 }
 
 .app-chrome-icon {
