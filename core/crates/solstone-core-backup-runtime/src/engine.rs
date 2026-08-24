@@ -11,7 +11,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use solstone_core_backup::{
     Destination, assemble_backend_env, get_backup_config, record_backup_result,
-    record_prune_result, record_verification_result,
+    record_prune_result, record_restore_result, record_verification_result,
 };
 
 use crate::hosted_runtime::{
@@ -59,6 +59,61 @@ pub const BACKUP_EXCLUDES: [&str; 19] = [
 pub trait Clock {
     fn now_unix(&self) -> i64;
     fn iso_week(&self) -> u8;
+}
+
+/// Write boundary for whole-journal restore attempts.
+pub trait RestoreRecorder {
+    #[allow(clippy::too_many_arguments)] // Mirrors backup's owner-owned record API.
+    fn record(
+        &self,
+        journal: &Path,
+        status: &str,
+        time: Value,
+        reason: Value,
+        scope: &str,
+        day: Value,
+        segments_selected: Value,
+        segments_restored: Value,
+        files_expected: Value,
+        files_restored: Value,
+        bytes_expected: Value,
+        bytes_restored: Value,
+    ) -> Result<(), solstone_core_backup::BackupError>;
+}
+
+/// Production restore-attempt writer. Backup remains the sole state owner.
+pub struct NativeRestoreRecorder;
+impl RestoreRecorder for NativeRestoreRecorder {
+    fn record(
+        &self,
+        journal: &Path,
+        status: &str,
+        time: Value,
+        reason: Value,
+        scope: &str,
+        day: Value,
+        segments_selected: Value,
+        segments_restored: Value,
+        files_expected: Value,
+        files_restored: Value,
+        bytes_expected: Value,
+        bytes_restored: Value,
+    ) -> Result<(), solstone_core_backup::BackupError> {
+        record_restore_result(
+            journal,
+            status,
+            time,
+            reason,
+            scope,
+            day,
+            segments_selected,
+            segments_restored,
+            files_expected,
+            files_restored,
+            bytes_expected,
+            bytes_restored,
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
