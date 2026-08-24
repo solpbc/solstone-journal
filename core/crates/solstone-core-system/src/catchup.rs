@@ -12,8 +12,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
-    JsonWriteOptions, LockOptions, PathError, PathOrDay, day_dirs, hold_lock, iter_segments,
-    write_json,
+    HealthMarkerError, HealthMarkerKind, HealthMarkerState, JsonWriteOptions, LockOptions,
+    PathError, PathOrDay, day_dirs, day_marker_pair_status, hold_lock, iter_segments,
+    read_health_marker, write_json,
 };
 use thiserror::Error;
 
@@ -135,6 +136,64 @@ fn as_usize(value: Option<&Value>) -> usize {
     value.and_then(Value::as_u64).unwrap_or(0) as usize
 }
 
+fn reset_after_fingerprint_change(record: &mut Map<String, Value>, reset_attempts: bool) {
+    for field in ["consecutive_non_completion", "next_retry_at"] {
+        record.insert(field.to_owned(), json!(0));
+    }
+    if reset_attempts {
+        record.insert("attempts".to_owned(), json!(0));
+    }
+    for field in [
+        "entered_backoff_at",
+        "notified_at",
+        "reason_code",
+        "timeout_seconds",
+        "bounded",
+        "cleared",
+        "remaining",
+        "exit_reason",
+    ] {
+        record.insert(field.to_owned(), Value::Null);
+    }
+    record.insert("last_outcome".to_owned(), json!(""));
+}
+
+fn apply_no_progress_backoff(record: &mut Map<String, Value>, ended_at: f64) {
+    record.insert("cleared".to_owned(), Value::Null);
+    record.insert("remaining".to_owned(), Value::Null);
+    record.insert("exit_reason".to_owned(), Value::Null);
+    let consecutive = as_usize(record.get("consecutive_non_completion")) + 1;
+    record.insert("consecutive_non_completion".to_owned(), json!(consecutive));
+    record.insert(
+        "next_retry_at".to_owned(),
+        json!(
+            ended_at
+                + (600_u64
+                    .saturating_mul(2_u64.saturating_pow((consecutive.saturating_sub(1)) as u32))
+                    .min(86_400) as f64)
+        ),
+    );
+    if consecutive >= 3 && record.get("entered_backoff_at").is_none_or(Value::is_null) {
+        record.insert("entered_backoff_at".to_owned(), json!(ended_at));
+        record.insert("notified_at".to_owned(), json!(ended_at));
+    }
+}
+
+fn marker_generation(journal: &Path, day: &str, kind: HealthMarkerKind) -> u64 {
+    match read_health_marker(journal, day, kind) {
+        Ok(HealthMarkerState::Versioned { marker, .. }) => marker.generation,
+        Ok(
+            HealthMarkerState::Absent
+            | HealthMarkerState::LegacyEmpty { .. }
+            | HealthMarkerState::MalformedNonEmpty { .. },
+        ) => 0,
+        Err(error) => {
+            eprintln!("failed to read {kind:?} health marker for {day}: {error}");
+            0
+        }
+    }
+}
+
 fn prune(entries: &mut Map<String, Value>, journal: &Path) {
     let days = match day_dirs(journal) {
         Ok(days) => days,
@@ -218,6 +277,117 @@ pub fn record_daily_catchup_progress(journal: &Path, day: &str, cleared: usize, 
     });
 }
 
+/// Record an automatic whole-day catchup dispatch before its worker can start.
+pub fn record_daily_catchup_attempt(
+    journal: &Path,
+    day: &str,
+    reference: &str,
+    started_at: f64,
+    admitted_generation: u64,
+    fingerprint: &str,
+) {
+    update_catchup_state(journal, false, |entries| {
+        let key = catchup_state_key(day, KIND_DAILY_CATCHUP);
+        let mut record = record_from_entry(entries.get(&key), day, KIND_DAILY_CATCHUP);
+        if record.get("fingerprint").and_then(Value::as_str) != Some(fingerprint) {
+            reset_after_fingerprint_change(&mut record, true);
+        }
+        let attempts = as_usize(record.get("attempts")) + 1;
+        record.insert("fingerprint".to_owned(), json!(fingerprint));
+        record.insert("attempts".to_owned(), json!(attempts));
+        record.insert("last_attempt_at".to_owned(), json!(started_at));
+        record.insert("admitted_generation".to_owned(), json!(admitted_generation));
+        record.insert("exit_code".to_owned(), Value::Null);
+        record.insert("exit_status".to_owned(), Value::Null);
+        record.insert(
+            "active".to_owned(),
+            json!({"ref": reference, "started_at": started_at}),
+        );
+        entries.insert(key, Value::Object(record));
+        true
+    });
+}
+
+/// The process-level terminal data associated with one daily-catchup dispatch.
+#[derive(Debug, Clone)]
+pub struct DailyCatchupOutcome {
+    pub success: bool,
+    pub timed_out: bool,
+    pub timeout_seconds: Option<f64>,
+    pub ended_at: f64,
+    pub exit_code: i32,
+    pub exit_status: String,
+}
+
+/// Record a daily-catchup completion using marker generation as durable proof.
+pub fn record_daily_catchup_outcome(
+    journal: &Path,
+    day: &str,
+    admitted_generation: u64,
+    outcome: DailyCatchupOutcome,
+) {
+    let daily_generation = marker_generation(journal, day, HealthMarkerKind::Daily);
+    let stream_generation = marker_generation(journal, day, HealthMarkerKind::Stream);
+    update_catchup_state(journal, false, |entries| {
+        let key = catchup_state_key(day, KIND_DAILY_CATCHUP);
+        let mut record = record_from_entry(entries.get(&key), day, KIND_DAILY_CATCHUP);
+        record.insert("active".to_owned(), Value::Null);
+        record.insert("admitted_generation".to_owned(), json!(admitted_generation));
+        record.insert("exit_code".to_owned(), json!(outcome.exit_code));
+        record.insert("exit_status".to_owned(), json!(outcome.exit_status));
+
+        if daily_generation >= admitted_generation {
+            record.insert("attempts".to_owned(), json!(0));
+            record.insert("consecutive_non_completion".to_owned(), json!(0));
+            record.insert("next_retry_at".to_owned(), json!(0));
+            record.insert("entered_backoff_at".to_owned(), Value::Null);
+            record.insert("notified_at".to_owned(), Value::Null);
+            record.insert("reason_code".to_owned(), Value::Null);
+            record.insert("timeout_seconds".to_owned(), Value::Null);
+            record.insert("bounded".to_owned(), json!(false));
+            record.insert("last_outcome".to_owned(), json!("completed"));
+        } else if stream_generation > admitted_generation {
+            record.insert("consecutive_non_completion".to_owned(), json!(0));
+            record.insert("next_retry_at".to_owned(), json!(0));
+            record.insert("entered_backoff_at".to_owned(), Value::Null);
+            record.insert("notified_at".to_owned(), Value::Null);
+            record.insert("reason_code".to_owned(), json!("stream_advanced"));
+            record.insert("timeout_seconds".to_owned(), Value::Null);
+            record.insert("bounded".to_owned(), json!(false));
+            record.insert("last_outcome".to_owned(), json!("superseded"));
+        } else {
+            let reason = if outcome.timed_out {
+                "wall_clock_exceeded"
+            } else {
+                "daily_catchup_failed"
+            };
+            record.insert(
+                "last_outcome".to_owned(),
+                json!(if outcome.timed_out {
+                    "timeout"
+                } else {
+                    "error"
+                }),
+            );
+            record.insert("reason_code".to_owned(), json!(reason));
+            record.insert(
+                "timeout_seconds".to_owned(),
+                if outcome.timed_out {
+                    outcome
+                        .timeout_seconds
+                        .map_or(Value::Null, |value| json!(value))
+                } else {
+                    Value::Null
+                },
+            );
+            record.insert("bounded".to_owned(), json!(outcome.timed_out));
+            apply_no_progress_backoff(&mut record, outcome.ended_at);
+        }
+        entries.insert(key, Value::Object(record));
+        true
+    });
+}
+
 /// Record the beginning of a segment repair and its raw-input fingerprint.
 pub fn record_segment_repair_attempt(journal: &Path, day: &str, started_at: f64) {
     let Ok(fingerprint) = read_raw_input_fingerprint(journal, day) else {
@@ -228,22 +398,7 @@ pub fn record_segment_repair_attempt(journal: &Path, day: &str, started_at: f64)
         let key = catchup_state_key(day, KIND_SEGMENT_REPAIR);
         let mut record = record_from_entry(entries.get(&key), day, KIND_SEGMENT_REPAIR);
         if record.get("fingerprint").and_then(Value::as_str) != Some(fingerprint.as_str()) {
-            for field in ["consecutive_non_completion", "next_retry_at"] {
-                record.insert(field.to_owned(), json!(0));
-            }
-            for field in [
-                "entered_backoff_at",
-                "notified_at",
-                "reason_code",
-                "timeout_seconds",
-                "bounded",
-                "cleared",
-                "remaining",
-                "exit_reason",
-            ] {
-                record.insert(field.to_owned(), Value::Null);
-            }
-            record.insert("last_outcome".to_owned(), json!(""));
+            reset_after_fingerprint_change(&mut record, false);
         }
         let attempts = as_usize(record.get("attempts")) + 1;
         record.insert("fingerprint".to_owned(), json!(fingerprint));
@@ -314,26 +469,7 @@ pub fn record_segment_repair_outcome(journal: &Path, day: &str, outcome: Segment
             record.insert("remaining".to_owned(), json!(outcome.remaining));
             record.insert("exit_reason".to_owned(), json!(reason));
         } else {
-            record.insert("cleared".to_owned(), Value::Null);
-            record.insert("remaining".to_owned(), Value::Null);
-            record.insert("exit_reason".to_owned(), Value::Null);
-            let consecutive = as_usize(record.get("consecutive_non_completion")) + 1;
-            record.insert("consecutive_non_completion".to_owned(), json!(consecutive));
-            record.insert(
-                "next_retry_at".to_owned(),
-                json!(
-                    outcome.ended_at
-                        + (600_u64
-                            .saturating_mul(
-                                2_u64.saturating_pow((consecutive.saturating_sub(1)) as u32)
-                            )
-                            .min(86_400) as f64)
-                ),
-            );
-            if consecutive >= 3 && record.get("entered_backoff_at").is_none_or(Value::is_null) {
-                record.insert("entered_backoff_at".to_owned(), json!(outcome.ended_at));
-                record.insert("notified_at".to_owned(), json!(outcome.ended_at));
-            }
+            apply_no_progress_backoff(&mut record, outcome.ended_at);
         }
         entries.insert(key, Value::Object(record));
         true
@@ -348,25 +484,22 @@ pub enum CatchupError {
     Io { path: PathBuf, source: io::Error },
     #[error("catchup state is malformed: {0}")]
     State(String),
+    #[error("catchup marker error: {0}")]
+    Marker(#[from] HealthMarkerError),
 }
 
-/// Return ascending day keys whose stream marker is newer than their daily marker.
+/// Return ascending day keys whose stream marker has not been completed.
 pub fn updated_days(
     journal: &Path,
     exclude: &BTreeSet<String>,
 ) -> Result<Vec<String>, CatchupError> {
     let days = day_dirs(journal)?;
     let mut updated = Vec::new();
-    for (day, path) in days {
+    for (day, _) in days {
         if exclude.contains(&day) {
             continue;
         }
-        let stream = path.join("health/stream.updated");
-        if !stream.is_file() {
-            continue;
-        }
-        let daily = path.join("health/daily.updated");
-        if !daily.is_file() || modified(&daily)? < modified(&stream)? {
+        if !day_marker_pair_status(journal, &day)?.is_complete() {
             updated.push(day);
         }
     }
@@ -466,7 +599,7 @@ pub fn eligible_catchup_days(
     let natural = updated_days(journal, exclude)?;
     let eligible_natural = natural
         .into_iter()
-        .filter(|day| eligible_or_fail_open(journal, day, now))
+        .filter(|day| eligible_or_fail_open(journal, day, false, now))
         .collect::<Vec<_>>();
     let freshest = eligible_natural
         .into_iter()
@@ -475,14 +608,17 @@ pub fn eligible_catchup_days(
         .collect::<BTreeSet<_>>();
     let mut merged = freshest;
     for day in force_days {
-        if eligible_or_fail_open(journal, day, now) {
+        if eligible_or_fail_open(journal, day, true, now) {
             merged.insert(day.clone());
         }
     }
     Ok(merged.into_iter().collect())
 }
 
-fn eligible_or_fail_open(journal: &Path, day: &str, now: SystemTime) -> bool {
+fn eligible_or_fail_open(journal: &Path, day: &str, force: bool, now: SystemTime) -> bool {
+    if force {
+        return true;
+    }
     match (|| {
         Ok::<_, CatchupError>(
             day_eligible_to_drain(journal, day, CatchupKind::DailyCatchup, now)?
@@ -497,6 +633,41 @@ fn eligible_or_fail_open(journal: &Path, day: &str, now: SystemTime) -> bool {
             true
         }
     }
+}
+
+/// Return days with a persisted, expired retry watermark without fingerprint work.
+pub fn days_with_expired_retry(
+    journal: &Path,
+    exclude: &BTreeSet<String>,
+    now: SystemTime,
+) -> Result<Vec<String>, CatchupError> {
+    let now = now
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+    let mut days = BTreeSet::new();
+    for entry in read_entries(journal)?.into_values() {
+        let Some(record) = entry.as_object() else {
+            continue;
+        };
+        let Some(day) = record.get("day").and_then(Value::as_str) else {
+            continue;
+        };
+        let kind = record.get("command_kind").and_then(Value::as_str);
+        if !matches!(kind, Some(KIND_DAILY_CATCHUP | KIND_SEGMENT_REPAIR))
+            || exclude.contains(day)
+            || record.get("active").is_some_and(json_truthy)
+        {
+            continue;
+        }
+        let Some(retry_at) = record.get("next_retry_at").and_then(Value::as_f64) else {
+            continue;
+        };
+        if retry_at > 0.0 && now >= retry_at {
+            days.insert(day.to_owned());
+        }
+    }
+    Ok(days.into_iter().collect())
 }
 
 fn read_entries(journal: &Path) -> Result<Map<String, Value>, CatchupError> {
@@ -614,15 +785,6 @@ fn metadata(path: &Path) -> Result<fs::Metadata, CatchupError> {
     })
 }
 
-fn modified(path: &Path) -> Result<SystemTime, CatchupError> {
-    metadata(path)?
-        .modified()
-        .map_err(|source| CatchupError::Io {
-            path: path.to_path_buf(),
-            source,
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -668,7 +830,7 @@ mod tests {
                 Path::new("chronicle")
                     .join(day)
                     .join("health/stream.updated"),
-                b"stream",
+                br#"{"version":1,"generation":1,"fingerprint":null}"#,
             );
         }
     }
@@ -692,6 +854,112 @@ mod tests {
 
     fn empty_fingerprint() -> String {
         digest(b"[]")
+    }
+
+    fn daily_outcome(ended_at: f64, exit_code: i32) -> DailyCatchupOutcome {
+        DailyCatchupOutcome {
+            success: exit_code == 0,
+            timed_out: false,
+            timeout_seconds: None,
+            ended_at,
+            exit_code,
+            exit_status: if exit_code == 0 {
+                "ok".to_owned()
+            } else {
+                "error".to_owned()
+            },
+        }
+    }
+
+    #[test]
+    fn daily_catchup_attempt_records_admitted_generation_and_active_reference() {
+        let bed = Bed::new("daily-attempt");
+        record_daily_catchup_attempt(
+            &bed.root,
+            "20260101",
+            "supervisor-catchup-20260101",
+            10.0,
+            7,
+            "fp",
+        );
+
+        let state: Value =
+            serde_json::from_slice(&fs::read(catchup_state_path(&bed.root)).unwrap()).unwrap();
+        let daily = &state["entries"][catchup_state_key("20260101", KIND_DAILY_CATCHUP)];
+        assert_eq!(daily["command_kind"], KIND_DAILY_CATCHUP);
+        assert_eq!(daily["attempts"], 1);
+        assert_eq!(daily["fingerprint"], "fp");
+        assert_eq!(daily["admitted_generation"], 7);
+        assert_eq!(
+            daily["active"],
+            json!({"ref": "supervisor-catchup-20260101", "started_at": 10.0})
+        );
+    }
+
+    #[test]
+    fn daily_catchup_completion_uses_generation_proof_over_exit_status() {
+        let bed = Bed::new("daily-complete");
+        record_daily_catchup_attempt(&bed.root, "20260101", "catchup", 10.0, 2, "fp");
+        bed.write(
+            "chronicle/20260101/health/daily.updated",
+            br#"{"version":1,"generation":2,"fingerprint":null}"#,
+        );
+        record_daily_catchup_outcome(&bed.root, "20260101", 2, daily_outcome(20.0, 1));
+
+        let state: Value =
+            serde_json::from_slice(&fs::read(catchup_state_path(&bed.root)).unwrap()).unwrap();
+        let daily = &state["entries"][catchup_state_key("20260101", KIND_DAILY_CATCHUP)];
+        assert_eq!(daily["last_outcome"], "completed");
+        assert_eq!(daily["attempts"], 0);
+        assert_eq!(daily["active"], Value::Null);
+        assert_eq!(daily["next_retry_at"], 0);
+        assert_eq!(daily["exit_status"], "error");
+    }
+
+    #[test]
+    fn daily_catchup_newer_stream_generation_skips_backoff() {
+        let bed = Bed::new("daily-superseded");
+        record_daily_catchup_attempt(&bed.root, "20260101", "catchup", 10.0, 1, "fp");
+        bed.write(
+            "chronicle/20260101/health/stream.updated",
+            br#"{"version":1,"generation":2,"fingerprint":null}"#,
+        );
+        record_daily_catchup_outcome(&bed.root, "20260101", 1, daily_outcome(20.0, 1));
+
+        let state: Value =
+            serde_json::from_slice(&fs::read(catchup_state_path(&bed.root)).unwrap()).unwrap();
+        let daily = &state["entries"][catchup_state_key("20260101", KIND_DAILY_CATCHUP)];
+        assert_eq!(daily["last_outcome"], "superseded");
+        assert_eq!(daily["consecutive_non_completion"], 0);
+        assert_eq!(daily["next_retry_at"], 0);
+        assert_eq!(daily["active"], Value::Null);
+    }
+
+    #[test]
+    fn daily_catchup_no_progress_applies_backoff_and_stuck_projection() {
+        let bed = Bed::new("daily-backoff");
+        record_daily_catchup_attempt(&bed.root, "20260101", "catchup", 10.0, 1, "fp");
+        bed.write(
+            "chronicle/20260101/health/stream.updated",
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        );
+        record_daily_catchup_outcome(&bed.root, "20260101", 1, daily_outcome(20.0, 1));
+        let state: Value =
+            serde_json::from_slice(&fs::read(catchup_state_path(&bed.root)).unwrap()).unwrap();
+        let daily = &state["entries"][catchup_state_key("20260101", KIND_DAILY_CATCHUP)];
+        assert_eq!(daily["consecutive_non_completion"], 1);
+        assert_eq!(daily["next_retry_at"], 620.0);
+        record_daily_catchup_outcome(&bed.root, "20260101", 1, daily_outcome(30.0, 1));
+        record_daily_catchup_outcome(&bed.root, "20260101", 1, daily_outcome(40.0, 1));
+
+        let state: Value =
+            serde_json::from_slice(&fs::read(catchup_state_path(&bed.root)).unwrap()).unwrap();
+        let daily = &state["entries"][catchup_state_key("20260101", KIND_DAILY_CATCHUP)];
+        assert_eq!(daily["consecutive_non_completion"], 3);
+        assert_eq!(daily["next_retry_at"], 2440.0);
+        assert_eq!(daily["entered_backoff_at"], 40.0);
+        assert_eq!(daily["notified_at"], 40.0);
+        assert_eq!(daily["active"], Value::Null);
     }
 
     #[test]
@@ -1046,31 +1314,84 @@ mod tests {
     }
 
     #[test]
+    fn forced_days_bypass_both_catchup_kind_gates() {
+        let bed = Bed::new("forced-bypass");
+        bed.write(
+            "health/catchup-state.json",
+            r#"{"version":1,"entries":{"20260101:daily-catchup":{"day":"20260101","command_kind":"daily-catchup","active":{"ref":"daily"},"next_retry_at":9999,"fingerprint":"unchanged"},"20260101:segment-repair":{"day":"20260101","command_kind":"segment-repair","active":{"ref":"repair"},"next_retry_at":9999,"fingerprint":"unchanged"}}}"#,
+        );
+
+        assert_eq!(
+            eligible_catchup_days(
+                &bed.root,
+                &["20260101".to_owned()],
+                &BTreeSet::new(),
+                UNIX_EPOCH,
+            )
+            .expect("forced day"),
+            vec!["20260101".to_owned()]
+        );
+    }
+
+    #[test]
+    fn expired_retry_days_are_watermark_only_and_honor_exclusion() {
+        let bed = Bed::new("expired-retry");
+        bed.write(
+            "health/catchup-state.json",
+            r#"{"version":1,"entries":{"20260101:daily-catchup":{"day":"20260101","command_kind":"daily-catchup","active":null,"next_retry_at":10,"fingerprint":"would-not-hash"},"20260102:segment-repair":{"day":"20260102","command_kind":"segment-repair","active":null,"next_retry_at":20,"fingerprint":"would-not-hash"},"20260103:daily-catchup":{"day":"20260103","command_kind":"daily-catchup","active":{"ref":"active"},"next_retry_at":1},"20260104:daily-catchup":{"day":"20260104","command_kind":"daily-catchup","active":null,"next_retry_at":0},"20260105:daily-catchup":{"day":"20260105","command_kind":"daily-catchup","active":null,"next_retry_at":30}}}"#,
+        );
+
+        assert_eq!(
+            days_with_expired_retry(
+                &bed.root,
+                &BTreeSet::from(["20260102".to_owned()]),
+                UNIX_EPOCH + Duration::from_secs(20),
+            )
+            .expect("expired retry days"),
+            vec!["20260101".to_owned()]
+        );
+    }
+
+    #[test]
     fn updated_days_honors_exclusion_and_marker_order() {
         let bed = Bed::new("updated-days");
         bed.updated_day("20260101");
-        bed.write("chronicle/20260102/health/daily.updated", b"daily first");
-        bed.updated_day("20260102");
-        bed.updated_day("20260103");
-        bed.write("chronicle/20260103/health/daily.updated", b"daily second");
-        let health = |day: &str| bed.root.join("chronicle").join(day).join("health");
-        let stamp = |path: &Path, seconds: i64| {
-            filetime::set_file_mtime(path, filetime::FileTime::from_unix_time(seconds, 0))
-                .expect("set fixture mtime");
-        };
-        let base = 1_700_000_000;
-        stamp(&health("20260102").join("daily.updated"), base);
-        stamp(&health("20260102").join("stream.updated"), base + 1);
-        stamp(&health("20260103").join("stream.updated"), base);
-        stamp(&health("20260103").join("daily.updated"), base + 1);
+        bed.write(
+            "chronicle/20260102/health/daily.updated",
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        );
+        bed.write(
+            "chronicle/20260102/health/stream.updated",
+            br#"{"version":1,"generation":2,"fingerprint":null}"#,
+        );
+        bed.write(
+            "chronicle/20260103/health/stream.updated",
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        );
+        bed.write(
+            "chronicle/20260103/health/daily.updated",
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        );
+        bed.write(
+            "chronicle/20260104/health/stream.updated",
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        );
+        bed.write(
+            "chronicle/20260104/health/daily.updated",
+            br#"{"version":1,"generation":2,"fingerprint":null}"#,
+        );
         assert_eq!(
             updated_days(&bed.root, &BTreeSet::new()).expect("updated days"),
-            vec!["20260101".to_owned(), "20260102".to_owned()]
+            vec![
+                "20260101".to_owned(),
+                "20260102".to_owned(),
+                "20260104".to_owned(),
+            ]
         );
         assert_eq!(
             updated_days(&bed.root, &BTreeSet::from(["20260101".to_owned()]))
                 .expect("updated days"),
-            vec!["20260102".to_owned()]
+            vec!["20260102".to_owned(), "20260104".to_owned()]
         );
     }
 }

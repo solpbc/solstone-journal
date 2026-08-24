@@ -174,7 +174,8 @@ fn native_library_paths_never_spawn_python() {
 fn invoke_native_library_paths(journal: &std::path::Path) {
     use solstone_core_system::activity_state::ActivityStateMachine;
     use solstone_core_system::catchup::{
-        SegmentRepairOutcome, record_daily_catchup_progress, record_segment_repair_attempt,
+        DailyCatchupOutcome, SegmentRepairOutcome, record_daily_catchup_attempt,
+        record_daily_catchup_outcome, record_daily_catchup_progress, record_segment_repair_attempt,
         record_segment_repair_outcome,
     };
     use solstone_core_system::memory_admission::{
@@ -188,6 +189,20 @@ fn invoke_native_library_paths(journal: &std::path::Path) {
     fs::create_dir_all(&prior).expect("create prior");
 
     record_daily_catchup_progress(journal, "20260101", 1, 2);
+    record_daily_catchup_attempt(journal, "20260101", "catchup", 1.0, 0, "fingerprint");
+    record_daily_catchup_outcome(
+        journal,
+        "20260101",
+        0,
+        DailyCatchupOutcome {
+            success: false,
+            timed_out: false,
+            timeout_seconds: None,
+            ended_at: 2.0,
+            exit_code: 1,
+            exit_status: "error".to_owned(),
+        },
+    );
     record_segment_repair_attempt(journal, "20260101", 1.0);
     record_segment_repair_outcome(
         journal,

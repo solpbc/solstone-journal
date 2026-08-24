@@ -12,6 +12,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::cap::CapResolver;
+use crate::catchup::{
+    DailyCatchupOutcome, record_daily_catchup_attempt, record_daily_catchup_outcome,
+};
 use crate::partition::Partition;
 use crate::process::{
     CAP_TERMINATION_TIMEOUT, Disposition, ExecutionState, InspectResult, LaunchAuthority,
@@ -19,7 +22,7 @@ use crate::process::{
     SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
     exit_status_for_code, launch_managed,
 };
-use crate::request::{ActiveTaskSnapshot, ExecutionRequest};
+use crate::request::{ActiveTaskSnapshot, DailyCatchupProvenance, ExecutionRequest};
 
 /// The byte-identical Python status label consumed downstream for deadline termination.
 pub const TIMEOUT_EXIT_STATUS: &str = "timeout";
@@ -289,6 +292,7 @@ struct Submission {
     reference: String,
     day: Option<String>,
     scheduler_name: Option<String>,
+    daily_catchup_provenance: Option<DailyCatchupProvenance>,
 }
 
 #[derive(Clone)]
@@ -297,6 +301,7 @@ struct QueuedEntry {
     command: Vec<String>,
     day: Option<String>,
     scheduler_name: Option<String>,
+    daily_catchup_provenance: Option<DailyCatchupProvenance>,
 }
 
 #[derive(Clone)]
@@ -748,6 +753,7 @@ fn normalize_request(request: ExecutionRequest) -> Submission {
             reference: request.reference,
             day: request.day,
             scheduler_name: request.scheduler_name,
+            daily_catchup_provenance: request.daily_catchup_provenance,
         },
         ExecutionRequest::Scheduled(request) => Submission {
             partition: request.cmd.partition(),
@@ -755,6 +761,7 @@ fn normalize_request(request: ExecutionRequest) -> Submission {
             reference: request.reference,
             day: request.day,
             scheduler_name: Some(request.scheduler_name),
+            daily_catchup_provenance: None,
         },
     }
 }
@@ -778,12 +785,14 @@ fn admit_locked(
             entry.references.push(submission.reference);
             return (SubmitOutcome::Coalesced, None);
         }
-        // Coalesced callers add only refs: the first queued submitter owns day/scheduler metadata.
+        // Coalesced callers add only refs: the first queued submitter owns its
+        // day, scheduler, and automatic-catchup provenance.
         queue.push_back(QueuedEntry {
             references: vec![submission.reference.clone()],
             command: submission.command.clone(),
             day: submission.day.clone(),
             scheduler_name: submission.scheduler_name.clone(),
+            daily_catchup_provenance: submission.daily_catchup_provenance.clone(),
         });
         return (SubmitOutcome::Queued, None);
     }
@@ -807,6 +816,16 @@ fn start_dispatch(inner: Arc<QueueInner>, dispatch: Dispatch) {
     let reference = dispatch.submission.reference.clone();
     let worker_inner = Arc::clone(&inner);
     let rollback = dispatch.clone();
+    if let Some(provenance) = &dispatch.submission.daily_catchup_provenance {
+        record_daily_catchup_attempt(
+            &inner.options.journal_root,
+            &provenance.day,
+            &provenance.reference,
+            unix_seconds_f64(),
+            provenance.admitted_generation,
+            &provenance.fingerprint,
+        );
+    }
     let spawned = thread::Builder::new().spawn(move || {
         let _lease = WorkerLease {
             inner: worker_inner.clone(),
@@ -830,6 +849,7 @@ fn start_dispatch(inner: Arc<QueueInner>, dispatch: Dispatch) {
             drop(handle);
         }
         Err(_) => {
+            record_completion(&inner, &rollback, -1, "error".to_owned());
             let next = finish_worker(
                 &inner,
                 &rollback.submission.partition,
@@ -956,7 +976,28 @@ fn record_completion(
         inner.reaped.notify_all();
         status
     };
-    let _ = status;
+    if let Some(provenance) = &dispatch.submission.daily_catchup_provenance {
+        let timed_out = status == TIMEOUT_EXIT_STATUS;
+        record_daily_catchup_outcome(
+            &inner.options.journal_root,
+            &provenance.day,
+            provenance.admitted_generation,
+            DailyCatchupOutcome {
+                success: exit_code == 0 && !timed_out,
+                timed_out,
+                timeout_seconds: timed_out.then(|| {
+                    inner
+                        .options
+                        .cap_resolver
+                        .cap_for(&dispatch.submission.partition)
+                        .as_secs_f64()
+                }),
+                ended_at: unix_seconds_f64(),
+                exit_code,
+                exit_status: status,
+            },
+        );
+    }
     for reference in &dispatch.references {
         emit_queue_event(
             &inner.options.queue_sink,
@@ -996,6 +1037,7 @@ fn finish_worker(inner: &QueueInner, partition: &Partition, reference: &str) -> 
                     reference: entry.references[0].clone(),
                     day: entry.day,
                     scheduler_name: entry.scheduler_name,
+                    daily_catchup_provenance: entry.daily_catchup_provenance,
                 };
                 state.running.insert(
                     partition.clone(),
@@ -1115,6 +1157,13 @@ fn unix_seconds() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn unix_seconds_f64() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64()
 }
 
 #[cfg(test)]
@@ -1456,6 +1505,7 @@ mod tests {
                 reference: reference.to_owned(),
                 day: None,
                 scheduler_name: None,
+                daily_catchup_provenance: None,
             },
             references: vec![reference.to_owned()],
         }
@@ -1491,6 +1541,7 @@ mod tests {
             day: None,
             scheduler_name: None,
             queue_if_active_cmd_differs: false,
+            daily_catchup_provenance: None,
         })
     }
 
@@ -1513,6 +1564,7 @@ mod tests {
                     command: vec!["svc".to_owned()],
                     day: None,
                     scheduler_name: None,
+                    daily_catchup_provenance: None,
                 }]),
             );
         let now = Instant::now();

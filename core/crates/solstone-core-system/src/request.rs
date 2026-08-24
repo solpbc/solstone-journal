@@ -119,6 +119,18 @@ pub struct WireTaskRequest {
     pub queue_if_active_cmd_differs: bool,
 }
 
+/// Internal provenance attached only to automatic whole-day catchup dispatches.
+///
+/// This deliberately has no wire representation. Bus decoders always leave it
+/// absent, so an inbound callosum request cannot claim automatic-catchup state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DailyCatchupProvenance {
+    pub day: String,
+    pub reference: String,
+    pub admitted_generation: u64,
+    pub fingerprint: String,
+}
+
 /// A decoded ordinary bus request. It cannot carry a schedule-only argv.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BusTaskRequest {
@@ -127,6 +139,7 @@ pub struct BusTaskRequest {
     pub day: Option<String>,
     pub scheduler_name: Option<String>,
     pub queue_if_active_cmd_differs: bool,
+    pub daily_catchup_provenance: Option<DailyCatchupProvenance>,
 }
 
 impl BusTaskRequest {
@@ -144,6 +157,7 @@ impl BusTaskRequest {
             day: wire.day,
             scheduler_name: wire.scheduler_name,
             queue_if_active_cmd_differs: wire.queue_if_active_cmd_differs,
+            daily_catchup_provenance: None,
         })
     }
 }
@@ -273,4 +287,31 @@ pub fn classify_request(
         cmd: cmd.to_vec(),
         scheduler_name: request.scheduler_name.clone(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{BusTaskRequest, WireTaskRequest};
+
+    #[test]
+    fn wire_decode_cannot_supply_daily_catchup_provenance() {
+        let wire: WireTaskRequest = serde_json::from_value(json!({
+            "cmd": ["journal", "think", "--day", "20260101"],
+            "daily_catchup_provenance": {
+                "day": "20260101",
+                "reference": "forged",
+                "admitted_generation": 99,
+                "fingerprint": "forged"
+            }
+        }))
+        .expect("wire request");
+        assert!(
+            BusTaskRequest::decode(wire, "fallback")
+                .expect("decoded request")
+                .daily_catchup_provenance
+                .is_none()
+        );
+    }
 }

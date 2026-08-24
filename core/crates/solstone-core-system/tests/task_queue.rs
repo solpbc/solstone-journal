@@ -202,6 +202,7 @@ fn request(
         day: day.map(str::to_owned),
         scheduler_name: scheduler_name.map(str::to_owned),
         queue_if_active_cmd_differs: false,
+        daily_catchup_provenance: None,
     })
 }
 
