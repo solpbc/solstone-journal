@@ -1337,7 +1337,10 @@ mod tests {
         assert!(permit.commit().is_err());
         drop(guard);
         let proof = admit_proof(&held, held.owner()).unwrap();
-        held.advance_dirty(proof).unwrap();
+        assert!(matches!(
+            held.advance_dirty(proof),
+            Err(ConvergenceError::Refused(Refusal::Superseded))
+        ));
         drop(held);
         assert_eq!(
             admitted.revoke_owner(&operation, &selector).unwrap(),

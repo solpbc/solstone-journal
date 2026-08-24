@@ -1094,7 +1094,7 @@ pub(crate) fn abort_with_decision(
 mod tests {
     use super::*;
     use crate::layout::{DayKey, SUPERSEDED_BARRIER_SUFFIX};
-    use crate::owner::OwnerBinding;
+    use crate::owner::{AdmitOutcome, ClaimAdmission, OwnerBinding};
     use crate::permit::TerminalOutcome;
     use crate::publish::{
         PreparedCompletionAuthority, PreparedLaterDirtyAuthority, publish_kind_for_test,
@@ -1183,6 +1183,32 @@ mod tests {
         )
         .unwrap();
         serde_json::from_slice(bytes.strip_suffix(b"\n").unwrap_or(&bytes)).unwrap()
+    }
+
+    fn reopen(temporary: &TempDir) -> crate::preflight::Admitted {
+        let root = solstone_core_journal_io::JournalRoot::open(&temporary.journal_path()).unwrap();
+        match crate::preflight::preflight(["20260823"]).unwrap() {
+            crate::preflight::Preflight::Ready(set) => set.admit(root).unwrap(),
+            crate::preflight::Preflight::Empty => panic!("expected admitted day"),
+        }
+    }
+
+    fn resume_linked_claim(
+        admitted: &crate::preflight::Admitted,
+        owner: OwnerBinding,
+    ) -> crate::transaction::HeldDays<'_> {
+        let dirs = crate::init::open_store_dirs(admitted.store().root())
+            .unwrap()
+            .unwrap();
+        let entry = match crate::claim::classify(admitted.store(), &dirs).unwrap() {
+            crate::claim::ClaimView::Headed(body) => body
+                .table
+                .get("20260823")
+                .cloned()
+                .expect("linked claim retains every held day"),
+            _ => panic!("expected headed linked claim"),
+        };
+        admitted.resume_pending_owner(owner, entry).unwrap()
     }
 
     fn exact_barrier() -> (
@@ -1435,6 +1461,115 @@ mod tests {
     }
 
     #[test]
+    fn process_loss_after_commit_decision_allows_only_its_committed_terminal() {
+        let (temporary, admitted) = admit_days("restart-commit-decision", &["20260823"]);
+        let mut held = continue_ok_with(&admitted, &ONE);
+        let operation = crate::selector::OperationId::parse(held.owner().operation_id()).unwrap();
+        let selector = held.owner().selector().clone();
+        let serial = held.serial.unwrap();
+        let permit = held.proceed().unwrap();
+        let guard = fail_after(PublishFault::AfterDecision);
+        assert!(matches!(
+            permit.commit(),
+            Err(ConvergenceError::Io {
+                role: DurableRole::Decision,
+                ..
+            })
+        ));
+        drop(guard);
+        assert_eq!(read_decision(&temporary, serial).kind, DecisionKind::Commit);
+        assert!(matches!(
+            held.proceed().unwrap().abort(),
+            Err(ConvergenceError::Refused(Refusal::OppositeTerminal))
+        ));
+
+        drop(held);
+        let resumed_admitted = reopen(&temporary);
+        let owner = OwnerBinding::prepare(
+            &resumed_admitted,
+            &operation,
+            crate::selector::TransactionClass::AdvanceDirty,
+            &selector,
+        )
+        .unwrap();
+        let mut resumed = resume_linked_claim(&resumed_admitted, owner);
+        let proof = match ClaimAdmission::admit(&resumed, resumed.owner()).unwrap() {
+            AdmitOutcome::Proof(proof) => proof,
+            AdmitOutcome::ExistingLink => {
+                panic!("recovered allocation accepts its exact successor")
+            }
+        };
+        assert!(matches!(
+            resumed.advance_dirty(proof),
+            Err(ConvergenceError::Refused(Refusal::Superseded))
+        ));
+        assert!(matches!(
+            resumed.proceed().unwrap().abort(),
+            Err(ConvergenceError::Refused(Refusal::OppositeTerminal))
+        ));
+        assert_eq!(
+            resumed.proceed().unwrap().commit().unwrap().outcome,
+            TerminalOutcome::Committed
+        );
+    }
+
+    #[test]
+    fn process_loss_after_abort_decision_allows_only_its_aborted_terminal() {
+        let (temporary, admitted) = admit_days("restart-abort-decision", &["20260823"]);
+        let mut held = continue_ok_with(&admitted, &ONE);
+        let operation = crate::selector::OperationId::parse(held.owner().operation_id()).unwrap();
+        let selector = held.owner().selector().clone();
+        let serial = held.serial.unwrap();
+        let permit = held.proceed().unwrap();
+        let guard = fail_after(PublishFault::AfterDecision);
+        assert!(matches!(
+            permit.abort(),
+            Err(ConvergenceError::Io {
+                role: DurableRole::Decision,
+                ..
+            })
+        ));
+        drop(guard);
+        assert_eq!(
+            read_decision(&temporary, serial).kind,
+            DecisionKind::AbortNoOpen
+        );
+        assert!(matches!(
+            held.proceed().unwrap().commit(),
+            Err(ConvergenceError::Refused(Refusal::OppositeTerminal))
+        ));
+
+        drop(held);
+        let resumed_admitted = reopen(&temporary);
+        let owner = OwnerBinding::prepare(
+            &resumed_admitted,
+            &operation,
+            crate::selector::TransactionClass::AdvanceDirty,
+            &selector,
+        )
+        .unwrap();
+        let mut resumed = resume_linked_claim(&resumed_admitted, owner);
+        let proof = match ClaimAdmission::admit(&resumed, resumed.owner()).unwrap() {
+            AdmitOutcome::Proof(proof) => proof,
+            AdmitOutcome::ExistingLink => {
+                panic!("recovered allocation accepts its exact successor")
+            }
+        };
+        assert!(matches!(
+            resumed.advance_dirty(proof),
+            Err(ConvergenceError::Refused(Refusal::Superseded))
+        ));
+        assert!(matches!(
+            resumed.proceed().unwrap().commit(),
+            Err(ConvergenceError::Refused(Refusal::OppositeTerminal))
+        ));
+        assert_eq!(
+            resumed.proceed().unwrap().abort().unwrap().outcome,
+            TerminalOutcome::Aborted
+        );
+    }
+
+    #[test]
     fn crash_after_first_member_resumes_the_remaining_members() {
         let (temporary, admitted) = admit_days("crash-member", &["20260823"]);
         let mut held = continue_ok_with(&admitted, &two());
@@ -1532,6 +1667,51 @@ mod tests {
         // The base publishes the superseded terminal from owner-free recovery.
         let report = admitted.inspect().unwrap();
         assert_eq!(report.terminal_outcome(), Some(TerminalOutcome::Superseded));
+    }
+
+    #[test]
+    fn later_dirty_after_a_partial_member_prefix_forces_decisioned_supersession() {
+        let (temporary, admitted) = admit_days("supersede-partial-member", &["20260823"]);
+        let mut held = continue_ok_with(&admitted, &two());
+        let serial = held.serial.unwrap();
+        let permit = held.proceed().unwrap();
+        let guard = fail_after(PublishFault::AfterGrantMember { index: 0 });
+        assert!(matches!(
+            permit.commit(),
+            Err(ConvergenceError::Io {
+                role: DurableRole::GrantMember,
+                ..
+            })
+        ));
+        drop(guard);
+        assert_eq!(member_files(&temporary, serial).len(), 1);
+
+        let permit = held.proceed().unwrap();
+        publish_kind_for_test(
+            &permit.held.admitted.store,
+            &permit.held.locks,
+            &DayKey::parse("20260823").unwrap(),
+            PreparedLaterDirtyAuthority,
+        )
+        .unwrap();
+        assert!(matches!(
+            permit.commit(),
+            Err(ConvergenceError::Refused(Refusal::Superseded))
+        ));
+        assert_eq!(read_decision(&temporary, serial).kind, DecisionKind::Commit);
+        assert_eq!(read_reconcile(&temporary, serial).serial, serial);
+        for name in member_files(&temporary, serial) {
+            assert_eq!(
+                read_member_file(&temporary, serial, &name).state,
+                MemberState::Superseded
+            );
+        }
+        assert!(barrier_exists(
+            &temporary,
+            serial,
+            SUPERSEDED_BARRIER_SUFFIX
+        ));
+        drop(held);
     }
 
     #[test]

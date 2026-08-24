@@ -317,8 +317,19 @@ impl<'a> HeldDays<'a> {
     /// transition. A revoked or revocation-pending owner therefore cannot keep
     /// allocating.
     pub fn advance_dirty(&mut self, proof: ClaimAdmission) -> Result<(), ConvergenceError> {
-        if self.serial.is_none() {
-            return Err(ConvergenceError::Refused(Refusal::NoPermit));
+        let serial = self
+            .serial
+            .ok_or(ConvergenceError::Refused(Refusal::NoPermit))?;
+        let dirs = open_store_dirs(self.admitted.store.root())?
+            .ok_or(ConvergenceError::Refused(Refusal::Uninitialized))?;
+        // A durable terminal decision fences all successor mutation before the
+        // one-shot proof is consumed. Its only legal continuation is the
+        // decision-bound terminal path, never a later dirty allocation.
+        let decided = crate::access::with_registry(&dirs, self.timeout, |section| {
+            Ok(crate::decision::load_decision(section, serial)?.is_some())
+        })?;
+        if decided {
+            return Err(ConvergenceError::Refused(Refusal::Superseded));
         }
         self.bind_proof(proof)?;
         self.serial = None;
