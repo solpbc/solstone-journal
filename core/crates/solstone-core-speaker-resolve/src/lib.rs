@@ -26,6 +26,7 @@ pub mod layer1;
 pub mod layer2;
 pub mod layer3;
 pub mod name_variant_scan;
+pub mod owner_admission;
 pub mod owner_candidate;
 pub mod owner_centroid;
 pub mod owner_contamination_screen;

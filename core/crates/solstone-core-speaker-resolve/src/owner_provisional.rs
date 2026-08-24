@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use solstone_core_entity::{
     EntityLifecycleError, VoiceprintArchive, entity_memory_path, normalize_embedding,
-    read_journal_principal, try_load_entity_voiceprints_file,
+    try_load_entity_voiceprints_file,
 };
 use solstone_core_journal_io::{day_path, segment_path};
 use solstone_core_speaker_id::calibration::{
@@ -20,6 +20,7 @@ use solstone_core_speaker_id::calibration::{
 };
 use solstone_core_speaker_id::embeddings::{EmbeddingsFile, load_embeddings_file};
 
+use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
 
 const MANUAL_OWNER_METHODS: [&str; 3] = ["user_assigned", "user_corrected", "user_confirmed"];
@@ -27,7 +28,6 @@ const MANUAL_OWNER_METHODS: [&str; 3] = ["user_assigned", "user_corrected", "use
 /// Terminal and continuation reasons for owner-tier resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OwnerTierReason {
-    NoPrincipal,
     ConfirmedAbsent,
     ConfirmedUnreadable,
     ConfirmedIncomplete,
@@ -40,8 +40,7 @@ pub enum OwnerTierReason {
 }
 
 impl OwnerTierReason {
-    pub const ALL: [Self; 10] = [
-        Self::NoPrincipal,
+    pub const ALL: [Self; 9] = [
         Self::ConfirmedAbsent,
         Self::ConfirmedUnreadable,
         Self::ConfirmedIncomplete,
@@ -59,20 +58,20 @@ impl OwnerTierReason {
 pub enum OwnerTierOutcome {
     Confirmed(OwnerCentroid),
     Provisional(Vec<f32>),
+    IdentityInvalid,
     None(OwnerTierReason),
 }
 
 /// Unrecoverable setup failure while resolving an owner tier.
 #[derive(Debug)]
 pub enum OwnerProvisionalError {
-    Principal(EntityLifecycleError),
     EntityPath(EntityLifecycleError),
 }
 
 impl fmt::Display for OwnerProvisionalError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Principal(error) | Self::EntityPath(error) => error.fmt(formatter),
+            Self::EntityPath(error) => error.fmt(formatter),
         }
     }
 }
@@ -142,30 +141,25 @@ enum ConfirmedGate {
 
 /// Resolve the journal owner's confirmed or provisional centroid tier.
 pub fn resolve_owner_tier(journal_root: &Path) -> Result<OwnerTierOutcome, OwnerProvisionalError> {
-    let principal =
-        read_journal_principal(journal_root).map_err(OwnerProvisionalError::Principal)?;
-    let Some(principal_id) = principal
-        .as_ref()
-        .and_then(|principal| principal.get("id"))
-        .and_then(Value::as_str)
-    else {
-        return Ok(OwnerTierOutcome::None(OwnerTierReason::NoPrincipal));
+    let principal_id = match admitted_owner_id(journal_root) {
+        OwnerAdmission::Admitted(id) => id,
+        OwnerAdmission::Invalid => return Ok(OwnerTierOutcome::IdentityInvalid),
     };
 
-    match evaluate_confirmed_tier(journal_root, principal_id)? {
+    match evaluate_confirmed_tier(journal_root, &principal_id)? {
         ConfirmedGate::Resolved(centroid) => return Ok(OwnerTierOutcome::Confirmed(centroid)),
         ConfirmedGate::Suppressed(reason) => return Ok(OwnerTierOutcome::None(reason)),
         ConfirmedGate::Absent => {}
     }
 
-    let directory = entity_memory_path(journal_root, principal_id, false)
+    let directory = entity_memory_path(journal_root, &principal_id, false)
         .map_err(OwnerProvisionalError::EntityPath)?;
     let voiceprints_path = directory.join("voiceprints.npz");
     if !voiceprints_path.exists() {
         return Ok(OwnerTierOutcome::None(OwnerTierReason::VoiceprintsAbsent));
     }
 
-    let archive = match try_load_entity_voiceprints_file(journal_root, principal_id) {
+    let archive = match try_load_entity_voiceprints_file(journal_root, &principal_id) {
         Ok(Some(archive)) => archive,
         Ok(None) => return Ok(OwnerTierOutcome::None(OwnerTierReason::VoiceprintsAbsent)),
         Err(_) => {
@@ -174,7 +168,7 @@ pub fn resolve_owner_tier(journal_root: &Path) -> Result<OwnerTierOutcome, Owner
             ));
         }
     };
-    let rows = collect_manual_tag_rows(journal_root, principal_id, &archive);
+    let rows = collect_manual_tag_rows(journal_root, &principal_id, &archive);
     if rows.len() < OWNER_BOOTSTRAP_PROVISIONAL_GUARD_MIN_TAGS {
         return Ok(OwnerTierOutcome::None(OwnerTierReason::BelowRowFloor));
     }

@@ -114,7 +114,8 @@ fn seed_principal(root: &Path) {
     fs::create_dir_all(&directory).expect("create entity");
     fs::write(
         directory.join("entity.json"),
-        json!({"id":"principal","name":"Synthetic","is_principal":true}).to_string(),
+        json!({"id":"principal","name":"Synthetic","type":"Person","is_principal":true})
+            .to_string(),
     )
     .expect("write principal");
 }
@@ -217,7 +218,6 @@ fn seed_provisional(root: &Path) {
 #[test]
 fn ac1_all_tier_reasons_are_indeterminate_with_stable_strings() {
     let expected = [
-        "no_principal",
         "confirmed_absent",
         "confirmed_unreadable",
         "confirmed_incomplete",
@@ -236,6 +236,12 @@ fn ac1_all_tier_reasons_are_indeterminate_with_stable_strings() {
             })
         );
     }
+    assert_eq!(
+        classify_tier(OwnerTierOutcome::IdentityInvalid),
+        Err(ContaminationScreen::Indeterminate {
+            reason: "speaker_owner_identity_invalid".to_owned()
+        })
+    );
 }
 
 #[test]

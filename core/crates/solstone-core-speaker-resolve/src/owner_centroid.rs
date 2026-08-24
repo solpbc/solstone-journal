@@ -24,6 +24,8 @@ use solstone_core_speaker_id::calibration::{
     OWNER_REBUILD_MIN_CLUSTER_SIZE_RATIO, OWNER_THRESHOLD,
 };
 
+use crate::owner_admission::{OwnerAdmissionFailure, require_admitted_owner_target};
+
 /// One normalized owner centroid and the calibration stored beside it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OwnerCentroid {
@@ -41,8 +43,16 @@ pub struct OwnerCentroid {
 /// Failure while reading an owner-centroid NPZ record.
 #[derive(Debug)]
 pub enum OwnerCentroidError {
+    IdentityInvalid,
+    TargetMismatch {
+        requested_id: String,
+        admitted_id: String,
+    },
     EntityPath(solstone_core_entity::EntityLifecycleError),
-    Io { path: PathBuf, detail: String },
+    Io {
+        path: PathBuf,
+        detail: String,
+    },
     Archive(String),
     MissingRequiredMember(String),
     Invalid(String),
@@ -51,6 +61,16 @@ pub enum OwnerCentroidError {
 impl fmt::Display for OwnerCentroidError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::IdentityInvalid => {
+                formatter.write_str("configured owner identity is not admitted")
+            }
+            Self::TargetMismatch {
+                requested_id,
+                admitted_id,
+            } => write!(
+                formatter,
+                "requested owner target {requested_id:?} does not match the journal's admitted owner {admitted_id:?}"
+            ),
             Self::EntityPath(error) => error.fmt(formatter),
             Self::Io { path, detail } => write!(formatter, "{}: {detail}", path.display()),
             Self::Archive(detail) | Self::MissingRequiredMember(detail) | Self::Invalid(detail) => {
@@ -94,6 +114,11 @@ pub enum OwnerCentroidRebuildOutcome {
 /// Failure while writing an owner-centroid record.
 #[derive(Debug)]
 pub enum OwnerCentroidWriteError {
+    IdentityInvalid,
+    TargetMismatch {
+        requested_id: String,
+        admitted_id: String,
+    },
     EntityPath(solstone_core_entity::EntityLifecycleError),
     Lock(LockError),
     Write(AtomicWriteError),
@@ -105,6 +130,16 @@ pub enum OwnerCentroidWriteError {
 impl fmt::Display for OwnerCentroidWriteError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::IdentityInvalid => {
+                formatter.write_str("configured owner identity is not admitted")
+            }
+            Self::TargetMismatch {
+                requested_id,
+                admitted_id,
+            } => write!(
+                formatter,
+                "requested owner target {requested_id:?} does not match the journal's admitted owner {admitted_id:?}"
+            ),
             Self::EntityPath(error) => error.fmt(formatter),
             Self::Lock(LockError::Timeout(_)) => {
                 formatter.write_str("voiceprint storage is busy; try again")
@@ -140,11 +175,39 @@ impl From<OwnerCentroidError> for OwnerCentroidWriteError {
     }
 }
 
+fn load_admission_failure(error: OwnerAdmissionFailure) -> OwnerCentroidError {
+    match error {
+        OwnerAdmissionFailure::IdentityInvalid => OwnerCentroidError::IdentityInvalid,
+        OwnerAdmissionFailure::TargetMismatch {
+            requested_id,
+            admitted_id,
+        } => OwnerCentroidError::TargetMismatch {
+            requested_id,
+            admitted_id,
+        },
+    }
+}
+
+fn write_admission_failure(error: OwnerAdmissionFailure) -> OwnerCentroidWriteError {
+    match error {
+        OwnerAdmissionFailure::IdentityInvalid => OwnerCentroidWriteError::IdentityInvalid,
+        OwnerAdmissionFailure::TargetMismatch {
+            requested_id,
+            admitted_id,
+        } => OwnerCentroidWriteError::TargetMismatch {
+            requested_id,
+            admitted_id,
+        },
+    }
+}
+
 /// Load and normalize an owner's persisted centroid, if present.
 pub fn load_owner_centroid(
     journal_root: &Path,
     principal_entity_id: &str,
 ) -> Result<Option<OwnerCentroid>, OwnerCentroidError> {
+    require_admitted_owner_target(journal_root, principal_entity_id)
+        .map_err(load_admission_failure)?;
     let directory = entity_memory_path(journal_root, principal_entity_id, false)
         .map_err(OwnerCentroidError::EntityPath)?;
     let path = directory.join("owner_centroid.npz");
@@ -224,6 +287,8 @@ pub fn write_owner_centroid(
     principal_entity_id: &str,
     input: &OwnerCentroidWriteInput,
 ) -> Result<(), OwnerCentroidWriteError> {
+    require_admitted_owner_target(journal_root, principal_entity_id)
+        .map_err(write_admission_failure)?;
     let centroid = normalize_embedding(&input.centroid).ok_or_else(|| {
         OwnerCentroidWriteError::Invalid("owner centroid must have nonzero norm".to_owned())
     })?;
@@ -244,6 +309,8 @@ pub fn rebuild_owner_centroid(
     principal_entity_id: &str,
     input: &OwnerCentroidRebuildInput,
 ) -> Result<OwnerCentroidRebuildOutcome, OwnerCentroidWriteError> {
+    require_admitted_owner_target(journal_root, principal_entity_id)
+        .map_err(write_admission_failure)?;
     let candidate = normalize_embedding(&input.centroid).ok_or_else(|| {
         OwnerCentroidWriteError::Invalid("owner centroid must have nonzero norm".to_owned())
     })?;

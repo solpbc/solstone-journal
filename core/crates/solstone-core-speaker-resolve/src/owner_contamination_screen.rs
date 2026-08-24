@@ -78,7 +78,6 @@ impl OwnerTierReason {
     /// Stable wire representation for an indeterminate owner tier.
     pub fn wire_str(&self) -> &'static str {
         match self {
-            Self::NoPrincipal => "no_principal",
             Self::ConfirmedAbsent => "confirmed_absent",
             Self::ConfirmedUnreadable => "confirmed_unreadable",
             Self::ConfirmedIncomplete => "confirmed_incomplete",
@@ -105,6 +104,9 @@ pub fn classify_tier(
         OwnerTierOutcome::Provisional(centroid) => {
             Ok(("provisional".to_owned(), centroid, OWNER_THRESHOLD))
         }
+        OwnerTierOutcome::IdentityInvalid => Err(ContaminationScreen::Indeterminate {
+            reason: "speaker_owner_identity_invalid".to_owned(),
+        }),
         OwnerTierOutcome::None(reason) => Err(ContaminationScreen::Indeterminate {
             reason: reason.wire_str().to_owned(),
         }),

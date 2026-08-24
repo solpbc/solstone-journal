@@ -49,7 +49,8 @@ fn seed_principal(temporary: &TempDir) {
     fs::create_dir_all(&entity_dir).expect("create principal directory");
     fs::write(
         entity_dir.join("entity.json"),
-        json!({"id":"principal","name":"Principal","is_principal":true}).to_string(),
+        json!({"id":"principal","name":"Principal","type":"Person","is_principal":true})
+            .to_string(),
     )
     .expect("write principal identity");
 }
@@ -599,11 +600,10 @@ fn r10_extra_voiceprint_metadata_does_not_block_resolution() {
 }
 
 #[test]
-fn reasons_are_complete_and_no_principal_is_terminal() {
+fn reasons_are_complete_and_identity_invalid_is_terminal() {
     assert_eq!(
         OwnerTierReason::ALL,
         [
-            OwnerTierReason::NoPrincipal,
             OwnerTierReason::ConfirmedAbsent,
             OwnerTierReason::ConfirmedUnreadable,
             OwnerTierReason::ConfirmedIncomplete,
@@ -619,6 +619,6 @@ fn reasons_are_complete_and_no_principal_is_terminal() {
     let temporary = TempDir::new();
     assert_eq!(
         resolve_owner_tier(temporary.path()).unwrap(),
-        OwnerTierOutcome::None(OwnerTierReason::NoPrincipal)
+        OwnerTierOutcome::IdentityInvalid
     );
 }

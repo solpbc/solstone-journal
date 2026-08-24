@@ -8,7 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
 use solstone_core_npy::write_npy;
-use solstone_core_speaker_resolve::owner_centroid::load_owner_centroid;
+use solstone_core_speaker_resolve::owner_centroid::{
+    OwnerCentroidWriteError, OwnerCentroidWriteInput, load_owner_centroid, write_owner_centroid,
+};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -43,7 +45,8 @@ fn seed_principal(temporary: &TempDir) -> PathBuf {
     fs::create_dir_all(&entity_dir).expect("create principal directory");
     fs::write(
         entity_dir.join("entity.json"),
-        json!({"id": "principal", "name": "Principal", "is_principal": true}).to_string(),
+        json!({"id": "principal", "name": "Principal", "type":"Person", "is_principal": true})
+            .to_string(),
     )
     .expect("write principal identity");
     entity_dir.join("owner_centroid.npz")
@@ -150,6 +153,31 @@ fn ac3_absent_centroid_returns_none() {
             .expect("load absent centroid")
             .is_none()
     );
+}
+
+#[test]
+fn foreign_centroid_target_is_refused_without_creating_or_retargeting_an_artifact() {
+    let temporary = TempDir::new();
+    let principal_path = seed_principal(&temporary);
+
+    let error = write_owner_centroid(
+        temporary.path(),
+        "foreign",
+        &OwnerCentroidWriteInput {
+            centroid: vec![1.0, 0.0],
+            cluster_size: 1,
+            timestamp: "2026-08-08T12:00:00Z".to_owned(),
+            evidence_tier: "standard".to_owned(),
+        },
+    )
+    .expect_err("foreign target is refused");
+
+    assert!(matches!(
+        error,
+        OwnerCentroidWriteError::TargetMismatch { .. }
+    ));
+    assert!(!principal_path.exists());
+    assert!(!temporary.path().join("entities/foreign").exists());
 }
 
 #[test]
