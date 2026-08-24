@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration as StdDuration, SystemTime};
+use std::time::SystemTime;
 
 use chrono::{DateTime, Duration, Utc};
 use serde_json::json;
@@ -339,18 +339,13 @@ fn day_complete_follows_marker_presence_and_inclusive_order() {
     let health = day_path(root).join("health");
     fs::create_dir_all(&health).unwrap();
     let stream = health.join("stream.updated");
-    fs::write(&stream, "stream\n").unwrap();
+    fs::write(
+        &stream,
+        r#"{"version":1,"generation":1,"fingerprint":null}"#,
+    )
+    .unwrap();
     assert!(!day_is_complete(root, DAY).unwrap());
     let daily = health.join("daily.updated");
-    fs::write(&daily, "daily\n").unwrap();
-    let stamp = SystemTime::now() - StdDuration::from_secs(10);
-    fs::File::open(&stream)
-        .unwrap()
-        .set_times(fs::FileTimes::new().set_modified(stamp))
-        .unwrap();
-    fs::File::open(&daily)
-        .unwrap()
-        .set_times(fs::FileTimes::new().set_modified(stamp))
-        .unwrap();
+    fs::write(&daily, r#"{"version":1,"generation":1,"fingerprint":null}"#).unwrap();
     assert!(day_is_complete(root, DAY).unwrap());
 }

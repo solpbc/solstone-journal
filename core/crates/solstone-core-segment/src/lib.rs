@@ -169,7 +169,7 @@ mod architecture_tests {
                     assert!(source.contains("remove_file"));
                 }
                 Source::StreamRepair => {
-                    for primitive in ["hold_lock", "write_stream_record", "atomic_replace"] {
+                    for primitive in ["hold_lock", "write_stream_record", "bump_stream_marker"] {
                         assert!(
                             source.contains(primitive),
                             "missing permitted journal-io write primitive {primitive}"

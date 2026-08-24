@@ -15,6 +15,8 @@ pub enum HealthError {
     JournalIo(#[from] solstone_core_journal_io::ReadError),
     #[error("journal path error: {0}")]
     JournalPath(#[from] solstone_core_journal_io::PathError),
+    #[error("health marker error: {0}")]
+    HealthMarker(#[from] solstone_core_journal_io::HealthMarkerError),
     #[error("cannot read directory {path}: {message}")]
     Directory { path: PathBuf, message: String },
     #[error("cannot read file metadata {path}: {message}")]

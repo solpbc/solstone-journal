@@ -20,6 +20,8 @@ pub mod deconflict;
 pub mod entry;
 pub mod errors;
 #[cfg(unix)]
+pub mod health_marker;
+#[cfg(unix)]
 pub mod journal_root;
 #[cfg(unix)]
 pub mod lease;
@@ -57,6 +59,12 @@ pub use entry::{Removed, remove_file, rename_within, sync_dir};
 pub use errors::{
     AppendError, AtomicWriteError, ExistingParentLockError, LeaseError, LockError, LockTimeout,
     MalformedDataError, PathError, PathEscapeError, ReadError, SegmentIdentityError, SnapshotError,
+};
+#[cfg(unix)]
+pub use health_marker::{
+    DayMarkerPairStatus, HealthMarker, HealthMarkerError, HealthMarkerKind, HealthMarkerState,
+    PublishOutcome, bump_stream_marker, day_marker_pair_status, health_marker_path,
+    publish_daily_marker_if_current, read_health_marker,
 };
 #[cfg(all(unix, feature = "test-hooks"))]
 pub use journal_root::{AcquisitionPrimitive, run_with_acquisition_fault};

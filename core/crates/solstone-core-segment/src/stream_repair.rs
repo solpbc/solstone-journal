@@ -14,8 +14,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, JsonWriteOptions, LockError, LockOptions,
-    MalformedPolicy, hold_lock, read_json, write_json,
+    AtomicWriteError, JsonWriteOptions, LockError, LockOptions, MalformedPolicy,
+    bump_stream_marker, hold_lock, read_json, write_json,
 };
 
 use crate::stream_record::{registry_json_paths, stream_record_path, write_stream_record};
@@ -169,15 +169,7 @@ pub fn touch_stream_health_marker(
     journal: &Path,
     day: &str,
 ) -> Result<(), solstone_core_journal_io::AtomicWriteError> {
-    solstone_core_journal_io::atomic_replace(
-        journal
-            .join("chronicle")
-            .join(day)
-            .join("health")
-            .join("stream.updated"),
-        b"",
-        AtomicWriteOptions::default(),
-    )
+    bump_stream_marker(journal, day).map(|_| ())
 }
 
 fn read_stream_record_value(path: &Path) -> Result<Option<Value>, SegmentError> {
@@ -1233,12 +1225,18 @@ mod tests {
     fn health_marker_creates_its_parent_and_surfaces_failure() {
         let temporary = TempDir::new();
         touch_stream_health_marker(temporary.path(), "20260101").unwrap();
-        assert!(
-            temporary
-                .path()
-                .join("chronicle/20260101/health/stream.updated")
-                .is_file()
-        );
+        assert!(matches!(
+            solstone_core_journal_io::read_health_marker(
+                temporary.path(),
+                "20260101",
+                solstone_core_journal_io::HealthMarkerKind::Stream,
+            )
+            .unwrap(),
+            solstone_core_journal_io::HealthMarkerState::Versioned {
+                marker: solstone_core_journal_io::HealthMarker { generation: 1, .. },
+                ..
+            }
+        ));
 
         let blocked = TempDir::new();
         let health = blocked.path().join("chronicle/20260102/health");

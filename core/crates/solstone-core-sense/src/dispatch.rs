@@ -892,19 +892,14 @@ fn complete(
         }
     };
     if let Some(segment) = completed {
-        if !segment.context.batch {
-            let health = journal
-                .join("chronicle")
-                .join(&segment.context.key.day)
-                .join("health");
-            let _ = std::fs::create_dir_all(&health);
-            let _ = std::fs::File::create(health.join("stream.updated"));
-        }
         let _ = outbound.send(Outbound {
             tract: "observe",
             event: "observed",
             fields: events::observed(&segment, note),
         });
+        if !segment.context.batch {
+            let _ = solstone_core_journal_io::bump_stream_marker(journal, &segment.context.key.day);
+        }
     }
 }
 
