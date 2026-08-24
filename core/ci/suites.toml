@@ -902,28 +902,6 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
-id = "package::solstone-core-journal-convergence"
-package = "solstone-core-journal-convergence"
-set = "component"
-areas = ["journal"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
-id = "package::solstone-core-journal-convergence-harness"
-package = "solstone-core-journal-convergence-harness"
-set = "component"
-areas = ["journal"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
 id = "package::solstone-core-journal-io"
 package = "solstone-core-journal-io"
 set = "component"

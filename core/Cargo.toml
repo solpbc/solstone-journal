@@ -20,8 +20,6 @@ members = [
     "crates/solstone-core-journal-config",
     "crates/solstone-core-journal-config-write",
     "crates/solstone-core-journal-archive",
-    "crates/solstone-core-journal-convergence",
-    "crates/solstone-core-journal-convergence-harness",
     "crates/solstone-core-journal-io",
     "crates/solstone-core-transfer",
     "crates/solstone-core-transfer-manifest",
@@ -165,8 +163,6 @@ solstone-core-ingest-contract = { path = "crates/solstone-core-ingest-contract" 
 solstone-core-ingest-resolve = { path = "crates/solstone-core-ingest-resolve" }
 solstone-core-journal = { path = "crates/solstone-core-journal" }
 solstone-core-journal-archive = { path = "crates/solstone-core-journal-archive" }
-solstone-core-journal-convergence = { path = "crates/solstone-core-journal-convergence" }
-solstone-core-journal-convergence-harness = { path = "crates/solstone-core-journal-convergence-harness" }
 solstone-core-journal-cli = { path = "crates/solstone-core-journal-cli" }
 solstone-core-cli-boundary = { path = "crates/solstone-core-cli-boundary" }
 solstone-core-journal-config = { path = "crates/solstone-core-journal-config" }

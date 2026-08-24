@@ -98,7 +98,7 @@ directory descriptor (`AsFd`) and a single normal name. They never open a parent
 and never treat a stored pathname as source authority. `BoundAtomicOutcome` is `Published` or
 `PublishedDurabilityUncertain` only; pathname-identity outcomes stay on `atomic_replace_detailed`.
 `acquire_existing_parent_lock_bound` returns `BoundParentLock`, which has no `path()`.
-Descendant walks remain the caller's (archive inventory, convergence store).
+Descendant walks remain the caller's (archive inventory).
 `is_day_key` is the single 8-digit day-key predicate.
 
 ## Lock sidecar naming
