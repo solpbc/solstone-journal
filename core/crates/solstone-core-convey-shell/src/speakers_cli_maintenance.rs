@@ -15,6 +15,7 @@ use axum::{Extension, Json};
 use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_entity::{is_admissible_person, load_all_journal_entities};
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
@@ -318,11 +319,22 @@ pub async fn backfill_last_seen(
     };
     let encoder = encoder();
     let mut errors = Vec::new();
+    let admitted_entity_ids = load_all_journal_entities(&root.0)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(is_admissible_person)
+        .map(|entity| entity.id)
+        .collect::<BTreeSet<_>>();
     let mut rows_written = 0usize;
     let mut rows_scanned = 0usize;
     let mut rows_pending = 0usize;
     let mut pending = BTreeMap::new();
+    let mut skipped_ineligible = Vec::new();
     for (entity_id, max_ts) in &entity_max_ts {
+        if !admitted_entity_ids.contains(entity_id) {
+            skipped_ineligible.push(entity_id.clone());
+            continue;
+        }
         let Some(rows) = solstone_core_entity::load_entity_voiceprints_file(&root.0, entity_id)
         else {
             continue;
@@ -377,7 +389,8 @@ pub async fn backfill_last_seen(
             Err(error) => errors.push(format!("{entity_id}: {error}")),
         }
     }
-    Json(json!({"dry_run":dry_run,"labels_read":labels_read,"entities_seen":entity_max_ts.len(),"entities_pending":pending.len(),"rows_scanned":rows_scanned,"rows_pending":rows_pending,"rows_written":rows_written,"pending":pending,"errors":errors})).into_response()
+    let skipped_ineligible_count = skipped_ineligible.len();
+    Json(json!({"dry_run":dry_run,"labels_read":labels_read,"entities_seen":entity_max_ts.len(),"entities_pending":pending.len(),"rows_scanned":rows_scanned,"rows_pending":rows_pending,"rows_written":rows_written,"pending":pending,"skipped_ineligible":skipped_ineligible,"skipped_ineligible_count":skipped_ineligible_count,"errors":errors})).into_response()
 }
 
 pub(crate) fn accumulate(
