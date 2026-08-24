@@ -3,7 +3,7 @@
 
 /**
  * App System JavaScript
- * Handles facet selection, menu interactions, and responsive shell UI
+ * Handles facet selection and shared shell UI behavior
  *
  * Requires:
  * - window.facetsData - Array of facet objects from the hosting shell
@@ -351,11 +351,10 @@
   function setupDragDrop(config) {
     const {
       container,           // Container element
-      itemSelector,        // '.menu-item' or '.facet-pill'
-      dataAttribute,       // 'appName' or 'facetName'
+      itemSelector,        // '.facet-pill'
+      dataAttribute,       // 'facetName'
       onReorder,          // Callback with new order array
-      preventDefault,     // Optional click prevention
-      constrainDrop       // Optional constraint function(draggedItem, targetItem, items) -> constrainedTarget
+      preventDefault      // Optional click prevention
     } = config;
 
     let draggedItem = null;
@@ -397,21 +396,6 @@
 
     // Mouse drag-and-drop
     container.addEventListener('dragstart', (e) => {
-      // For menu items, only allow drag from the drag handle
-      if (itemSelector === '.menu-item') {
-        const dragHandle = e.target.closest('.drag-handle');
-        if (!dragHandle) {
-          e.preventDefault();
-          return;
-        }
-
-        // Only allow drag when menu is full
-        if (!document.body.classList.contains('menu-full')) {
-          e.preventDefault();
-          return;
-        }
-      }
-
       const target = e.target.closest(itemSelector);
       if (!target) return;
 
@@ -445,12 +429,6 @@
       if (!target || target === draggedItem) return;
 
       const items = Array.from(container.querySelectorAll(itemSelector));
-
-      // Apply constraint if provided
-      if (constrainDrop) {
-        target = constrainDrop(draggedItem, target, items);
-        if (!target || target === draggedItem) return;
-      }
 
       // Remove drag-over from all items
       container.querySelectorAll(itemSelector).forEach(item => item.classList.remove('drag-over'));
@@ -493,19 +471,6 @@
 
     // Touch drag-and-drop
     container.addEventListener('touchstart', (e) => {
-      // For menu items, only allow drag from the drag handle
-      if (itemSelector === '.menu-item') {
-        const dragHandle = e.target.closest('.drag-handle');
-        if (!dragHandle) {
-          return;
-        }
-
-        // Only allow drag when menu is full
-        if (!document.body.classList.contains('menu-full')) {
-          return;
-        }
-      }
-
       const target = e.target.closest(itemSelector);
       if (!target) return;
 
@@ -532,12 +497,6 @@
 
       if (target && target !== touchedItem) {
         const items = Array.from(container.querySelectorAll(itemSelector));
-
-        // Apply constraint if provided
-        if (constrainDrop) {
-          target = constrainDrop(touchedItem, target, items);
-          if (!target || target === touchedItem) return;
-        }
 
         // Remove drag-over from all items
         container.querySelectorAll(itemSelector).forEach(item => item.classList.remove('drag-over'));
@@ -582,144 +541,6 @@
     }, { passive: true });
   }
 
-  // App starring state
-  let starredApps = [];
-
-  // Load starred apps from server-rendered data
-  function loadStarredApps() {
-    // Extract from menu items
-    const menuItems = document.querySelectorAll('.menu-item[data-starred="true"]');
-    starredApps = Array.from(menuItems).map(item => item.dataset.appName);
-  }
-
-  // Reorder menu items based on starred status
-  function reorderMenuItems() {
-    const menuItemsContainer = document.querySelector('.menu-bar .menu-items');
-    if (!menuItemsContainer) return;
-
-    const menuItems = Array.from(menuItemsContainer.querySelectorAll('.menu-item'));
-
-    // Separate starred and unstarred items
-    const starredItems = menuItems.filter(item =>
-      starredApps.includes(item.dataset.appName)
-    );
-    const unstarredItems = menuItems.filter(item =>
-      !starredApps.includes(item.dataset.appName)
-    );
-
-    // Reorder: starred first, then unstarred
-    const orderedItems = [...starredItems, ...unstarredItems];
-
-    // Update DOM order
-    orderedItems.forEach(item => {
-      menuItemsContainer.appendChild(item);
-    });
-
-    // Update separator
-    updateLastStarredSeparator();
-    // Refresh scroll shadows after visibility changes
-    updateScrollShadows();
-  }
-
-  function setAppStarState(appName, menuItem, starToggle, isStarred) {
-    if (isStarred) {
-      if (!starredApps.includes(appName)) {
-        starredApps.push(appName);
-      }
-    } else {
-      starredApps = starredApps.filter(name => name !== appName);
-    }
-
-    menuItem.dataset.starred = String(isStarred);
-    starToggle.textContent = isStarred ? '★' : '☆';
-    starToggle.setAttribute('aria-pressed', String(isStarred));
-    reorderMenuItems();
-  }
-
-  // Toggle star status for an app
-  async function toggleAppStar(appName) {
-    const isStarred = starredApps.includes(appName);
-    const newStarredStatus = !isStarred;
-
-    // Optimistically update UI
-    const menuItem = document.querySelector(`.menu-item[data-app-name="${appName}"]`);
-    if (!menuItem) return;
-
-    const starToggle = menuItem.querySelector('.star-toggle');
-    if (!starToggle) return;
-
-    const previousState = {
-      starredApps: [...starredApps],
-      starred: menuItem.dataset.starred,
-      text: starToggle.textContent,
-      pressed: starToggle.getAttribute('aria-pressed')
-    };
-
-    setAppStarState(appName, menuItem, starToggle, newStarredStatus);
-
-    try {
-      await window.saveControl({
-        el: starToggle,
-        fetchArgs: ['/api/config/apps/star', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ app: appName, starred: newStarredStatus })
-        }],
-        onError: (error) => {
-          console.error('Failed to toggle app star:', error);
-          if (window.AppServices?.notifications) {
-            window.AppServices.notifications.show({
-              app: 'system',
-              title: 'Failed to save star status',
-              message: error.message,
-              autoDismiss: 5000
-            });
-          }
-        },
-        readValue: () => previousState,
-        writeValue: (_el, snapshot) => {
-          starredApps = [...snapshot.starredApps];
-          menuItem.dataset.starred = snapshot.starred;
-          starToggle.textContent = snapshot.text;
-          starToggle.setAttribute('aria-pressed', snapshot.pressed);
-          reorderMenuItems();
-        }
-      });
-    } catch (error) {
-      // saveControl already reverted UI state and surfaced the failure.
-    }
-  }
-
-  // Update the last-starred class on menu items
-  function updateLastStarredSeparator() {
-    const menuItems = Array.from(document.querySelectorAll('.menu-item'));
-
-    // Remove all last-starred classes
-    menuItems.forEach(item => item.classList.remove('last-starred'));
-
-    // Find last starred item
-    let lastStarredIndex = -1;
-    menuItems.forEach((item, index) => {
-      if (item.dataset.starred === 'true') {
-        lastStarredIndex = index;
-      }
-    });
-
-    // Add class to last starred item
-    if (lastStarredIndex >= 0 && starredApps.length > 0) {
-      menuItems[lastStarredIndex].classList.add('last-starred');
-    }
-  }
-
-  // Update scroll overflow shadow indicators on .menu-items
-  function updateScrollShadows() {
-    const menuItems = document.querySelector('.menu-bar .menu-items');
-    if (!menuItems) return;
-    const { scrollTop, scrollHeight, clientHeight } = menuItems;
-    menuItems.classList.toggle('scroll-shadow-top', scrollTop > 0);
-    menuItems.classList.toggle('scroll-shadow-bottom', scrollTop + clientHeight < scrollHeight - 1);
-  }
-
   // Fade the facet strip's trailing edge while there is more of the row to scroll to.
   function updateFacetScrollAffordance() {
     const container = document.querySelector('.facet-bar .facet-pills-container');
@@ -728,51 +549,10 @@
     container.classList.toggle('scroll-fade-end', scrollLeft + clientWidth < scrollWidth - 1);
   }
 
-  // Persist sidebar state to localStorage
-  function saveMenuState() {
-    const state = document.body.classList.contains('menu-full') ? 'full' :
-                  document.body.classList.contains('menu-all') ? 'all' : 'minimal';
-    try { localStorage.setItem('solstone:menu-state', state); } catch (e) {}
-  }
-
   // Initialize
   function init() {
-    // Keyboard reorder state
-    let movingItem = null;       // The .menu-item being moved, or null
-    let originalNextSibling = null; // For cancel: restore position
-    let originalAriaLabel = null;   // For restoring drag handle's aria-label
-    let saveAppOrder = null;
-    let announceReorder = () => {};
-    let getMenuItems = () => [];
-    let getPositionText = () => '';
-    let getAppLabel = item => item?.dataset.appName || '';
-    let exitMoveMode = () => {};
-    let cancelMoveMode = () => {};
-    let canMove = () => false;
-    const mobileQuery = window.matchMedia('(max-width: 768px)');
-
     // window.selectedFacet is initialized by the hosting shell before init runs.
-    // Load facet chooser
     loadFacetChooser();
-
-    // Load starred apps
-    loadStarredApps();
-
-    // Restore sidebar UI state (body class set by inline FOUC script; update controls here)
-    {
-      if (document.body.classList.contains('menu-all')) {
-        const exp = document.querySelector('.menu-expander');
-        if (exp) {
-          exp.textContent = '«';
-          exp.setAttribute('aria-expanded', 'true');
-          exp.setAttribute('aria-label', 'show fewer apps');
-        }
-      }
-      if (document.body.classList.contains('menu-full')) {
-        const ham = document.getElementById('hamburger');
-        if (ham) ham.setAttribute('aria-expanded', 'true');
-      }
-    }
 
     // Setup facet pill drag-and-drop
     const facetPillsContainer = document.querySelector('.facet-pills-container');
@@ -842,516 +622,12 @@
       });
     }
 
-    // Hamburger and menu-bar elements
-    const hamburger = document.getElementById('hamburger');
-    const menuBar = document.querySelector('.menu-bar');
-    let menuBackdrop = null;
-    let focusTrapHandler = null;
-
-    function getVisibleMenuLinks() {
-      return Array.from(menuBar.querySelectorAll('.menu-item-link'))
-        .filter(link => link.closest('.menu-item').offsetHeight > 0);
-    }
-
-    function activateMenuSubControls(link) {
-      menuBar.querySelectorAll('.star-toggle, .drag-handle').forEach(el => { el.tabIndex = -1; });
-      const item = link.closest('.menu-item');
-      const star = item.querySelector('.star-toggle');
-      const drag = item.querySelector('.drag-handle');
-      if (star) star.tabIndex = 0;
-      if (drag) drag.tabIndex = 0;
-    }
-
-    function normalizeRovingTabindex() {
-      const activeLink = menuBar.querySelector('.menu-item-link[tabindex="0"]');
-      if (activeLink && activeLink.closest('.menu-item').offsetHeight > 0) return;
-      const visibleLinks = getVisibleMenuLinks();
-      if (visibleLinks.length === 0) return;
-      if (activeLink) activeLink.tabIndex = -1;
-      const currentLink = visibleLinks.find(l => l.closest('.menu-item').classList.contains('current'));
-      const newActive = currentLink || visibleLinks[0];
-      newActive.tabIndex = 0;
-      activateMenuSubControls(newActive);
-    }
-
-    // Hamburger menu interactions
-    if (hamburger && menuBar) {
-      function openMobileMenu() {
-        document.body.classList.add('menu-full');
-        hamburger.setAttribute('aria-expanded', 'true');
-
-        // Create backdrop lazily, reuse thereafter
-        if (!menuBackdrop) {
-          menuBackdrop = document.createElement('div');
-          menuBackdrop.className = 'menu-backdrop';
-          menuBackdrop.addEventListener('click', closeMobileMenu);
-          document.body.appendChild(menuBackdrop);
-        }
-        // Trigger transition by deferring the class add
-        requestAnimationFrame(() => menuBackdrop.classList.add('visible'));
-
-        // Focus current menu item, or first if none
-        const focusTarget = menuBar.querySelector('.menu-item.current .menu-item-link')
-                         || menuBar.querySelector('.menu-item-link');
-        if (focusTarget) {
-          focusTarget.focus();
-          activateMenuSubControls(focusTarget);
-        }
-
-        // Focus trap + Escape handler
-        focusTrapHandler = (e) => {
-          if (e.key === 'Escape') {
-            closeMobileMenu();
-            return;
-          }
-          if (e.key !== 'Tab') return;
-
-          const focusable = Array.from(
-            menuBar.querySelectorAll('.menu-item-link, .star-toggle, .drag-handle')
-          ).filter(el => el.offsetParent !== null && el.tabIndex >= 0);
-          if (focusable.length === 0) return;
-
-          const first = focusable[0];
-          const last = focusable[focusable.length - 1];
-
-          if (e.shiftKey && document.activeElement === first) {
-            e.preventDefault();
-            last.focus();
-          } else if (!e.shiftKey && document.activeElement === last) {
-            e.preventDefault();
-            first.focus();
-          }
-        };
-        document.addEventListener('keydown', focusTrapHandler);
-
-        saveMenuState();
-        updateScrollShadows();
-        setTimeout(updateScrollShadows, 350);
-      }
-
-      function closeMobileMenu() {
-        document.body.classList.remove('menu-full');
-        hamburger.setAttribute('aria-expanded', 'false');
-
-        if (menuBackdrop) menuBackdrop.classList.remove('visible');
-
-        if (focusTrapHandler) {
-          document.removeEventListener('keydown', focusTrapHandler);
-          focusTrapHandler = null;
-        }
-
-        hamburger.focus();
-        saveMenuState();
-        updateScrollShadows();
-        setTimeout(updateScrollShadows, 350);
-      }
-
-      hamburger.addEventListener('click', (e) => {
-        e.stopPropagation();
-        // If menu-all is active, remove it before toggling to menu-full
-        if (document.body.classList.contains('menu-all')) {
-          document.body.classList.remove('menu-all');
-          const menuExpander = document.querySelector('.menu-expander');
-          if (menuExpander) {
-            menuExpander.textContent = '›';
-            menuExpander.setAttribute('aria-expanded', 'false');
-            menuExpander.setAttribute('aria-label', 'show all apps');
-          }
-        }
-
-        if (mobileQuery.matches) {
-          if (document.body.classList.contains('menu-full')) {
-            closeMobileMenu();
-          } else {
-            openMobileMenu();
-          }
-        } else {
-          const nowFull = !document.body.classList.contains('menu-full');
-          document.body.classList.toggle('menu-full', nowFull);
-          hamburger.setAttribute('aria-expanded', nowFull ? 'true' : 'false');
-          saveMenuState();
-          updateScrollShadows();
-          setTimeout(updateScrollShadows, 350);
-        }
-      });
-
-      // Close menu when clicking outside
-      document.addEventListener('click', (e) => {
-        if (mobileQuery.matches && document.body.classList.contains('menu-full')) {
-          if (!menuBar.contains(e.target) && !hamburger.contains(e.target)) {
-            closeMobileMenu();
-          }
-        }
-        // Also close menu-all when clicking outside
-        if (document.body.classList.contains('menu-all')) {
-          const menuExpander = document.querySelector('.menu-expander');
-          if (!menuBar.contains(e.target) && (!menuExpander || !menuExpander.contains(e.target))) {
-            document.body.classList.remove('menu-all');
-            if (menuExpander) {
-              menuExpander.textContent = '›';
-              menuExpander.setAttribute('aria-expanded', 'false');
-              menuExpander.setAttribute('aria-label', 'show all apps');
-            }
-            saveMenuState();
-            updateScrollShadows();
-            setTimeout(updateScrollShadows, 350);
-          }
-        }
-      });
-
-      mobileQuery.addEventListener('change', (e) => {
-        if (!e.matches) {
-          if (menuBackdrop?.classList.contains('visible')) {
-            menuBackdrop.classList.remove('visible');
-            document.removeEventListener('keydown', focusTrapHandler);
-            focusTrapHandler = null;
-          }
-          hamburger.setAttribute(
-            'aria-expanded',
-            document.body.classList.contains('menu-full') ? 'true' : 'false'
-          );
-        } else if (document.body.classList.contains('menu-full')) {
-          closeMobileMenu();
-        }
-      });
-
-      // Star toggle click handlers
-      menuBar.addEventListener('click', (e) => {
-        const starToggle = e.target.closest('.star-toggle');
-        if (starToggle) {
-          const appName = starToggle.dataset.appName;
-          if (appName) {
-            toggleAppStar(appName);
-            setTimeout(normalizeRovingTabindex, 350);
-          }
-        }
-      });
-
-      // Keyboard reorder: Enter/Space on drag handle enters move mode
-      menuBar.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        const handle = e.target.closest('.drag-handle');
-        if (!handle) return;
-        e.preventDefault();
-
-        // Only in menu-full mode (matches mouse drag constraint)
-        if (!document.body.classList.contains('menu-full')) return;
-
-        const item = handle.closest('.menu-item');
-        if (!item || !menuItemsContainer) return;
-
-        if (movingItem) {
-          // Already moving - Enter confirms
-          if (e.key === 'Enter' || e.key === ' ') {
-            const items = getMenuItems();
-            const order = items.map(i => i.dataset.appName);
-            saveAppOrder(order);
-            updateLastStarredSeparator();
-            const label = getAppLabel(movingItem);
-            exitMoveMode(movingItem, `${label}, dropped, ${getPositionText(movingItem)}`);
-          }
-        } else {
-          // Enter move mode
-          movingItem = item;
-          originalNextSibling = item.nextElementSibling;
-          originalAriaLabel = handle.getAttribute('aria-label');
-          item.classList.add('reordering');
-          const label = getAppLabel(item);
-          handle.setAttribute('aria-label', `moving ${label}, use arrow keys to reorder, Enter to confirm, Escape to cancel`);
-          announceReorder(`${label}, grabbed, ${getPositionText(item)}`);
-        }
-      });
-
-      // Keyboard reorder: arrow keys move, Escape cancels
-      menuBar.addEventListener('keydown', (e) => {
-        if (!movingItem) return;
-
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          cancelMoveMode();
-          return;
-        }
-
-        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-          e.preventDefault();
-          e.stopPropagation();
-          const direction = e.key === 'ArrowUp' ? -1 : 1;
-
-          if (!canMove(movingItem, direction)) {
-            const label = getAppLabel(movingItem);
-            announceReorder(`${label}, cannot move ${direction === -1 ? 'up' : 'down'}, boundary reached`);
-            movingItem.classList.add('boundary-hit');
-            movingItem.addEventListener('animationend', () => {
-              movingItem.classList.remove('boundary-hit');
-            }, { once: true });
-            return;
-          }
-
-          const items = getMenuItems();
-          const index = items.indexOf(movingItem);
-          const targetIndex = index + direction;
-          const target = items[targetIndex];
-
-          if (direction === 1) {
-            menuItemsContainer.insertBefore(movingItem, target.nextElementSibling);
-          } else {
-            menuItemsContainer.insertBefore(movingItem, target);
-          }
-
-          const label = getAppLabel(movingItem);
-          announceReorder(`${label}, ${getPositionText(movingItem)}`);
-
-          // Keep focus on the drag handle
-          const handle = movingItem.querySelector('.drag-handle');
-          if (handle) handle.focus();
-        }
-      });
-
-      // Cancel keyboard reorder on focus loss
-      document.addEventListener('focusin', (e) => {
-        if (!movingItem) return;
-        // If focus moved outside the moving item's drag handle, cancel
-        const handle = movingItem.querySelector('.drag-handle');
-        if (e.target !== handle) {
-          cancelMoveMode();
-        }
-      });
-
-      // Roving tabindex for menu item navigation
-      menuBar.addEventListener('keydown', (e) => {
-        if (movingItem) return;
-        const link = e.target.closest('.menu-item-link');
-        if (!link) return;
-
-        let nextIndex;
-        const links = getVisibleMenuLinks();
-        const currentIndex = links.indexOf(link);
-        if (currentIndex === -1) return;
-
-        if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-          nextIndex = (currentIndex + 1) % links.length;
-        } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-          nextIndex = (currentIndex - 1 + links.length) % links.length;
-        } else if (e.key === 'Home') {
-          nextIndex = 0;
-        } else if (e.key === 'End') {
-          nextIndex = links.length - 1;
-        } else {
-          return;
-        }
-
-        e.preventDefault();
-        link.tabIndex = -1;
-        links[nextIndex].tabIndex = 0;
-        activateMenuSubControls(links[nextIndex]);
-        links[nextIndex].focus();
-      });
-
-      // Initialize sub-controls for the active menu item
-      const activeMenuLink = menuBar.querySelector('.menu-item-link[tabindex="0"]');
-      if (activeMenuLink) activateMenuSubControls(activeMenuLink);
-
-      menuBar.addEventListener('focusin', (e) => {
-        const subControl = e.target.closest('.star-toggle, .drag-handle');
-        if (!subControl) return;
-        const link = subControl.closest('.menu-item')?.querySelector('.menu-item-link');
-        if (!link) return;
-        const currentActive = menuBar.querySelector('.menu-item-link[tabindex="0"]');
-        if (currentActive && currentActive !== link) currentActive.tabIndex = -1;
-        link.tabIndex = 0;
-        activateMenuSubControls(link);
-      });
-    }
-
-    // Menu expander click (toggle menu-all state)
-    const menuExpander = document.querySelector('.menu-expander');
-    if (menuExpander && menuBar) {
-      menuExpander.addEventListener('click', (e) => {
-        e.stopPropagation();
-        document.body.classList.toggle('menu-all');
-
-        const isExpanded = document.body.classList.contains('menu-all');
-        menuExpander.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-        menuExpander.setAttribute('aria-label', isExpanded ? 'show fewer apps' : 'show all apps');
-        menuExpander.textContent = isExpanded ? '«' : '›';
-        saveMenuState();
-        updateScrollShadows();
-        setTimeout(updateScrollShadows, 350);
-        setTimeout(normalizeRovingTabindex, 350);
-      });
-    }
-
-    // Scroll shadow listeners
-    const menuItemsScroll = document.querySelector('.menu-bar .menu-items');
-    if (menuItemsScroll) {
-      menuItemsScroll.addEventListener('scroll', updateScrollShadows, { passive: true });
-      window.addEventListener('resize', updateScrollShadows);
-      updateScrollShadows();
-    }
-
     // Facet strip horizontal fade listeners
     const facetPillsScroll = document.querySelector('.facet-bar .facet-pills-container');
     if (facetPillsScroll) {
       facetPillsScroll.addEventListener('scroll', updateFacetScrollAffordance, { passive: true });
       window.addEventListener('resize', updateFacetScrollAffordance);
       updateFacetScrollAffordance();
-    }
-
-    // App ordering via drag-and-drop
-    const menuItemsContainer = document.querySelector('.menu-bar .menu-items');
-    if (menuItemsContainer) {
-      // Helper: Save app order to config with starred/unstarred grouping
-      saveAppOrder = async function(order) {
-        try {
-          // Separate into starred and unstarred groups
-          const starredOrder = order.filter(name => starredApps.includes(name));
-          const unstarredOrder = order.filter(name => !starredApps.includes(name));
-
-          // Combine: starred first, then unstarred
-          const finalOrder = [...starredOrder, ...unstarredOrder];
-
-          const response = await fetch('/api/config/apps/order', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ order: finalOrder })
-          });
-
-          if (!response.ok) {
-            throw new Error('Failed to save app order');
-          }
-
-          // No reload needed - DOM already updated during drag
-
-        } catch (error) {
-          console.error('Failed to save app order:', error);
-          if (window.AppServices?.notifications) {
-            window.AppServices.notifications.show({
-              app: 'system',
-              title: 'Failed to save app order',
-              message: error.message,
-              autoDismiss: 5000
-            });
-          }
-        }
-      };
-
-      // Persistent live region for keyboard reorder announcements
-      const reorderLiveRegion = document.createElement('div');
-      reorderLiveRegion.setAttribute('aria-live', 'assertive');
-      reorderLiveRegion.setAttribute('aria-atomic', 'true');
-      reorderLiveRegion.className = 'visually-hidden';
-      document.body.appendChild(reorderLiveRegion);
-
-      announceReorder = function(message) {
-        reorderLiveRegion.textContent = '';
-        // Force screen reader to re-announce by clearing then setting
-        requestAnimationFrame(() => {
-          reorderLiveRegion.textContent = message;
-        });
-      };
-
-      getMenuItems = function() {
-        return Array.from(menuItemsContainer.querySelectorAll('.menu-item'));
-      };
-
-      getPositionText = function(item) {
-        const items = getMenuItems();
-        const index = items.indexOf(item);
-        return `position ${index + 1} of ${items.length}`;
-      };
-
-      getAppLabel = function(item) {
-        const label = item.querySelector('.label');
-        return label ? label.textContent.trim() : item.dataset.appName;
-      };
-
-      exitMoveMode = function(item, announce) {
-        if (!item) return;
-        item.classList.remove('reordering');
-        const handle = item.querySelector('.drag-handle');
-        if (handle && originalAriaLabel) {
-          handle.setAttribute('aria-label', originalAriaLabel);
-        }
-        if (handle) handle.focus();
-        if (announce) announceReorder(announce);
-        movingItem = null;
-        originalNextSibling = null;
-        originalAriaLabel = null;
-      };
-
-      cancelMoveMode = function() {
-        if (!movingItem) return;
-        // Restore original position
-        const container = movingItem.closest('.menu-items');
-        if (originalNextSibling) {
-          container.insertBefore(movingItem, originalNextSibling);
-        } else {
-          container.appendChild(movingItem);
-        }
-        updateLastStarredSeparator();
-        const label = getAppLabel(movingItem);
-        exitMoveMode(movingItem, `${label}, reorder cancelled`);
-      };
-
-      canMove = function(item, direction) {
-        const items = getMenuItems();
-        const index = items.indexOf(item);
-        const targetIndex = index + direction; // -1 for up, +1 for down
-        if (targetIndex < 0 || targetIndex >= items.length) return false;
-
-        const itemIsStarred = starredApps.includes(item.dataset.appName);
-        const targetIsStarred = starredApps.includes(items[targetIndex].dataset.appName);
-
-        // Cannot cross starred/unstarred boundary
-        return itemIsStarred === targetIsStarred;
-      };
-
-      // Setup drag-and-drop using shared helper with boundary constraints
-      setupDragDrop({
-        container: menuItemsContainer,
-        itemSelector: '.menu-item',
-        dataAttribute: 'appName',
-        preventDefault: true,
-        onReorder: saveAppOrder,
-        // Constraint function: prevent crossing starred/unstarred boundary
-        constrainDrop: (draggedItem, targetItem, items) => {
-          const draggedApp = draggedItem.dataset.appName;
-          const targetApp = targetItem.dataset.appName;
-
-          const draggedIsStarred = starredApps.includes(draggedApp);
-          const targetIsStarred = starredApps.includes(targetApp);
-
-          // Find boundary index (first unstarred item)
-          const boundaryIndex = items.findIndex(item =>
-            !starredApps.includes(item.dataset.appName)
-          );
-
-          // If no boundary (all starred or all unstarred), allow any drop
-          if (boundaryIndex === -1 || boundaryIndex === 0) {
-            return targetItem;
-          }
-
-          // Get indices
-          const draggedIndex = items.indexOf(draggedItem);
-          const targetIndex = items.indexOf(targetItem);
-
-          // Prevent starred from going below boundary
-          if (draggedIsStarred && targetIndex >= boundaryIndex) {
-            // Clamp to last starred position
-            return items[boundaryIndex - 1];
-          }
-
-          // Prevent unstarred from going above boundary
-          if (!draggedIsStarred && targetIndex < boundaryIndex) {
-            // Clamp to first unstarred position
-            return items[boundaryIndex];
-          }
-
-          // Same group, allow drop
-          return targetItem;
-        }
-      });
     }
 
     // Initialize history state for back button support
@@ -1365,10 +641,9 @@
         selectFacet(e.state.facet, true);  // true = from popstate, don't push new state
       }
     });
-
   }
 
-  // Expose selectFacet globally for notifications and other services
+  // Expose selectFacet globally
   window.selectFacet = selectFacet;
 
   // ========== FACET CREATION MODAL ==========
@@ -1859,16 +1134,7 @@ window.AppServices = {
     }
   },
 
-  markBackgroundFailing(appName, _error) {
-    const name = String(appName || '');
-    if (!name) {
-      return;
-    }
-    const menuItem = document.querySelector(`.menu-item[data-app-name="${name}"]`);
-    if (menuItem) {
-      menuItem.classList.add('menu-item-bg-failing');
-    }
-  },
+  markBackgroundFailing(_appName, _error) {},
 
   registerTask(appName, taskName, {
     run,
@@ -1896,13 +1162,6 @@ window.AppServices = {
     };
     this._tasks[appName][taskName] = health;
 
-    const getMenuItem = () => document.querySelector(`.menu-item[data-app-name="${appName}"]`);
-    const clearFailingClassIfHealthy = () => {
-      const records = Object.values(this._tasks[appName] || {});
-      if (!records.some(record => record && record.failing)) {
-        getMenuItem()?.classList.remove('menu-item-bg-failing');
-      }
-    };
     const apiJsonForTask = (url, opts) => window.apiJson(url, { ...(opts || {}), noAuthRedirect: true });
 
     const runTask = async () => {
@@ -1916,7 +1175,6 @@ window.AppServices = {
         health.consecutiveFailures = 0;
         if (health.failing) {
           health.failing = false;
-          clearFailingClassIfHealthy();
         }
         if (typeof onSuccess === 'function') {
           onSuccess(result);
@@ -1929,7 +1187,6 @@ window.AppServices = {
         if (error instanceof window.ApiError && error.status === 403) {
           health.disabled = true;
           health.failing = false;
-          clearFailingClassIfHealthy();
           if (health.intervalId) {
             window.clearInterval(health.intervalId);
             health.intervalId = null;
@@ -1948,32 +1205,31 @@ window.AppServices = {
 
         if (health.consecutiveFailures >= failuresBeforeFailing && !health.failing) {
           health.failing = true;
-	          getMenuItem()?.classList.add('menu-item-bg-failing');
-	          this.notifications.show({
-	            app: 'system',
-	            title: `${String(appName).toLowerCase()} background task`,
-	            message,
-	            dismissible: true,
-	            autoDismiss: false,
-	            buttons: [
-	              {
-	                label: 'Try now',
-	                onClick: () => runNow(),
-	                dismiss: false
-	              },
-	              {
-	                label: 'Disable',
-	                onClick: () => {
-	                  health.disabled = true;
-	                  if (health.intervalId) {
-	                    window.clearInterval(health.intervalId);
-	                    health.intervalId = null;
-	                  }
-	                }
-	              }
-	            ]
-	          });
-	        }
+          this.notifications.show({
+            app: 'system',
+            title: `${String(appName).toLowerCase()} background task`,
+            message,
+            dismissible: true,
+            autoDismiss: false,
+            buttons: [
+              {
+                label: 'Try now',
+                onClick: () => runNow(),
+                dismiss: false
+              },
+              {
+                label: 'Disable',
+                onClick: () => {
+                  health.disabled = true;
+                  if (health.intervalId) {
+                    window.clearInterval(health.intervalId);
+                    health.intervalId = null;
+                  }
+                }
+              }
+            ]
+          });
+        }
 
         throw error;
       }
@@ -2681,12 +1937,12 @@ window.AppServices = {
   },
 
   /**
-   * Badge system for app icons and facet pills
+   * Badge system for apps and facet pills
    * Unified API with parallel app/facet namespaces
    */
   badges: {
     /**
-     * App icon badges in the menu bar
+     * App badge state for background producers.
      */
     app: {
       _data: {},  // {appName: count}
@@ -2702,7 +1958,6 @@ window.AppServices = {
         } else {
           delete this._data[appName];
         }
-        this._render(appName);
       },
 
       /**
@@ -2711,7 +1966,6 @@ window.AppServices = {
        */
       clear(appName) {
         delete this._data[appName];
-        this._render(appName);
       },
 
       /**
@@ -2722,46 +1976,6 @@ window.AppServices = {
       get(appName) {
         return this._data[appName] || 0;
       },
-
-      /**
-       * Render badge for an app
-       * @private
-       */
-      _render(appName) {
-        // Defer render if DOM not ready
-        if (document.readyState === 'loading') {
-          const self = this;
-          document.addEventListener('DOMContentLoaded', function() {
-            self._render(appName);
-          });
-          return;
-        }
-
-        const menuItem = document.querySelector(`.menu-item[data-app-name="${appName}"]`);
-        if (!menuItem) return;
-
-        // Find the icon container
-        const iconContainer = menuItem.querySelector('.icon');
-        if (!iconContainer) return;
-
-        // Find or create badge element
-        let badge = iconContainer.querySelector('.menu-badge');
-        const count = this._data[appName];
-        if (!count || count <= 0) {
-          if (badge) badge.remove();
-          return;
-        }
-
-        if (!badge) {
-          badge = document.createElement('span');
-          badge.className = 'menu-badge';
-          badge.setAttribute('aria-live', 'polite');
-          iconContainer.appendChild(badge);
-        }
-
-        badge.textContent = count;
-        badge.setAttribute('aria-label', count + ' notifications');
-      }
     },
 
     /**
