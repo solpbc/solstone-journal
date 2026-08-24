@@ -118,6 +118,10 @@ pub(crate) fn prepared_owner_name(operation_id: &str) -> OsString {
     OsString::from(format!("{operation_id}.json"))
 }
 
+pub(crate) fn link_name(serial: u64) -> OsString {
+    OsString::from(format!("{serial}.json"))
+}
+
 pub(crate) fn operation_links_dir(operation_id: &str) -> String {
     operation_id.to_owned()
 }

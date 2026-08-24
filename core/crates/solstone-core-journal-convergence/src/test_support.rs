@@ -95,6 +95,8 @@ pub(crate) enum PublishFault {
     AfterConsumeUnlink,
     AfterConsumeSync,
     AfterPreparedOwner,
+    AfterOwnerIntentLink,
+    AfterOwnerIntentLinkSync,
 }
 
 /// Clears TLS injects if a test panics between arm and take.

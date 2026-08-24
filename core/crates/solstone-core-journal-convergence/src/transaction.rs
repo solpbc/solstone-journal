@@ -40,6 +40,12 @@ pub struct HeldDays<'a> {
     pub(crate) days: Vec<DayKey>,
     timeout: Duration,
     proof_consumed: bool,
+    /// True once this lease has published a claim introduction. It separates
+    /// the operation's **first** admission, which requires an exactly empty
+    /// link set, from a later-dirty **successor** admission on the same live
+    /// lease, whose predecessor link is already durable and must not be
+    /// rewritten.
+    had_allocation: bool,
     pub(crate) serial: Option<u64>,
     claim_revision: Option<u64>,
     pub(crate) intent_digest: Option<String>,
@@ -80,6 +86,7 @@ impl Admitted {
             days: self.days().to_vec(),
             timeout: self.lock_timeout(),
             proof_consumed: false,
+            had_allocation: false,
             serial: None,
             claim_revision: None,
             intent_digest: None,
@@ -132,7 +139,12 @@ impl ClaimAdmission {
                 return Err(ConvergenceError::Refused(Refusal::ConflictingSelector));
             }
             require_active(&record)?;
-            if crate::link::operation_link_present(&section, owner.operation_id())? {
+            // Absence is required only for the operation's first admission. A
+            // lease that has already allocated is asking for a later-dirty
+            // successor, and its predecessor link is legitimately present.
+            if !held.had_allocation()
+                && crate::link::operation_link_present(&section, owner.operation_id())?
+            {
                 return Ok(AdmitOutcome::ExistingLink);
             }
         }
@@ -151,6 +163,10 @@ impl ClaimAdmission {
 impl<'a> HeldDays<'a> {
     pub fn owner(&self) -> &OwnerBinding {
         &self.owner
+    }
+
+    pub(crate) fn had_allocation(&self) -> bool {
+        self.had_allocation
     }
 
     pub fn continue_with(
@@ -494,6 +510,16 @@ impl<'a> HeldDays<'a> {
         } else {
             return Err(ConvergenceError::Refused(Refusal::Busy));
         };
+
+        // Hook C. The global lock is already released in every arm above, so
+        // this is the only brief days-to-registry section of the allocation.
+        // It runs before any day-artifact consumption so no scan happens while
+        // the registry guard is held.
+        {
+            let section = enter_registry(&dirs)?;
+            crate::link::create_owner_intent_link(&section, &self.owner, &intent)?;
+        }
+        self.had_allocation = true;
 
         ancestry_preserves(
             store,
