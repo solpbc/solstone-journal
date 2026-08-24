@@ -182,6 +182,11 @@ pub async fn review(
         .iter()
         .map(|(entity_id, entity)| (entity_id.clone(), entity))
         .collect::<BTreeMap<_, _>>();
+    let admitted_speaker_ids = entities
+        .iter()
+        .filter(|(_, entity)| is_admissible_speaker_entity(entity))
+        .map(|(entity_id, _)| entity_id.clone())
+        .collect::<BTreeSet<_>>();
 
     let mut review_sentences = sentences
         .into_iter()
@@ -205,7 +210,11 @@ pub async fn review(
         } else {
             add_empty_label_fields(sentence_object);
         }
-        let needs_review = speaker_sentence_needs_review(label.copied(), labels_data.as_ref());
+        let needs_review = speaker_sentence_needs_review(
+            label.copied(),
+            labels_data.as_ref(),
+            &admitted_speaker_ids,
+        );
         sentence_object.insert("needs_review".to_owned(), json!(needs_review));
 
         let is_correction = sentence_object
@@ -232,7 +241,7 @@ pub async fn review(
 
     let mut all_entities = entities
         .iter()
-        .filter(|(_, entity)| !entity.get("blocked").is_some_and(value_truthy))
+        .filter(|(_, entity)| is_admissible_speaker_entity(entity))
         .map(|(entity_id, entity)| {
             json!({
                 "entity_id": entity_id,
@@ -438,7 +447,12 @@ fn add_label_fields(
     principal_id: Option<&str>,
 ) {
     let entity_id = label.get("speaker").and_then(Value::as_str);
-    if let Some(entity_id) = entity_id.filter(|entity_id| !entity_id.is_empty()) {
+    if let Some(entity_id) = entity_id.filter(|entity_id| {
+        !entity_id.is_empty()
+            && entities
+                .get(*entity_id)
+                .is_some_and(|entity| is_admissible_speaker_entity(entity))
+    }) {
         let (name, is_owner) = entity_display(entity_id, entities, principal_id);
         sentence.insert("speaker_entity_id".to_owned(), json!(entity_id));
         sentence.insert("speaker_name".to_owned(), json!(name));
@@ -611,6 +625,10 @@ pub(crate) fn find_matching_entity<'a>(
     detected_name: &str,
     entities: &'a [(String, Value)],
 ) -> Option<&'a Value> {
+    let entities = entities
+        .iter()
+        .filter(|(_, entity)| is_admissible_speaker_entity(entity))
+        .collect::<Vec<_>>();
     let candidates = entities
         .iter()
         .map(|(_, entity)| EntityNameCandidate {
@@ -631,7 +649,13 @@ pub(crate) fn find_matching_entity<'a>(
     let matched = match_entity_name(detected_name, &candidates, 90.0)?;
     entities
         .get(matched.candidate_index)
-        .map(|(_, entity)| entity)
+        .map(|entity| &entity.1)
+}
+
+/// Raw entity JSON admission for speaker read surfaces.
+pub(crate) fn is_admissible_speaker_entity(entity: &Value) -> bool {
+    entity.get("type").and_then(Value::as_str) == Some("Person")
+        && !entity.get("blocked").is_some_and(value_truthy)
 }
 
 fn string_values(entity: &Value, field: &str) -> Vec<String> {
@@ -643,4 +667,67 @@ fn string_values(entity: &Value, field: &str) -> Vec<String> {
         .filter_map(Value::as_str)
         .map(str::to_owned)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use serde_json::json;
+
+    use super::{add_label_fields, find_matching_entity};
+
+    #[test]
+    fn matching_excludes_non_person_and_blocked_entities() {
+        let entities = vec![
+            (
+                "tool".to_owned(),
+                json!({"id":"tool","name":"Deploy Bot","type":"Tool"}),
+            ),
+            (
+                "blocked".to_owned(),
+                json!({"id":"blocked","name":"Blocked Ada","type":"Person","blocked":true}),
+            ),
+            (
+                "person".to_owned(),
+                json!({"id":"person","name":"Ada Lovelace","type":"Person"}),
+            ),
+        ];
+
+        assert!(find_matching_entity("Deploy Bot", &entities).is_none());
+        assert!(find_matching_entity("Blocked Ada", &entities).is_none());
+        assert_eq!(
+            find_matching_entity("Ada Lovelace", &entities)
+                .and_then(|entity| entity.get("id"))
+                .and_then(serde_json::Value::as_str),
+            Some("person")
+        );
+    }
+
+    #[test]
+    fn active_label_fields_exclude_ineligible_speakers() {
+        let tool = json!({"id":"tool","name":"Deploy Bot","type":"Tool"});
+        let person = json!({"id":"person","name":"Ada Lovelace","type":"Person"});
+        let entities = BTreeMap::from([("tool".to_owned(), &tool), ("person".to_owned(), &person)]);
+
+        let mut ineligible = serde_json::Map::new();
+        add_label_fields(
+            &mut ineligible,
+            &json!({"speaker":"tool","confidence":"high","method":"legacy"}),
+            &entities,
+            None,
+        );
+        assert_eq!(ineligible["speaker_entity_id"], serde_json::Value::Null);
+        assert_eq!(ineligible["speaker_name"], serde_json::Value::Null);
+
+        let mut admitted = serde_json::Map::new();
+        add_label_fields(
+            &mut admitted,
+            &json!({"speaker":"person","confidence":"high"}),
+            &entities,
+            None,
+        );
+        assert_eq!(admitted["speaker_entity_id"], "person");
+        assert_eq!(admitted["speaker_name"], "Ada Lovelace");
+    }
 }

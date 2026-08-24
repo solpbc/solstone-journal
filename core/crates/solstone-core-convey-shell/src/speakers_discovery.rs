@@ -22,7 +22,7 @@ use crate::speakers_calendar::{
     journal_principal_id, load_all_journal_entities, load_segment_speakers, load_speaker_labels,
     value_truthy,
 };
-use crate::speakers_review::{audio_info, find_matching_entity};
+use crate::speakers_review::{audio_info, find_matching_entity, is_admissible_speaker_entity};
 use crate::speakers_segment_catalog::{
     DirectSupport, SegmentLookup, decode_stream_layout_value, lookup_segment,
 };
@@ -653,24 +653,26 @@ fn segment_evidence(segment_dir: &Path, entities: &[(String, Value)]) -> (Eviden
     if let Some(labels) = load_speaker_labels(segment_dir)
         && labels.get("candidate_evidence").is_some()
     {
-        let evidence = labels
+        let candidate_evidence = labels
             .get("candidate_evidence")
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
             .filter_map(|item| {
                 let entity_id = item.get("entity_id")?.as_str()?.to_owned();
-                let sources = item
-                    .get("sources")?
-                    .as_array()?
-                    .iter()
+                let sources: Vec<String> = item
+                    .get("sources")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
                     .filter_map(Value::as_str)
                     .map(str::to_owned)
                     .collect();
                 Some((entity_id, sources))
             })
-            .collect();
-        let gaps = labels
+            .collect::<Vec<_>>();
+        let mut evidence = Vec::new();
+        let mut gaps = labels
             .get("candidate_evidence_gaps")
             .and_then(Value::as_array)
             .into_iter()
@@ -681,18 +683,35 @@ fn segment_evidence(segment_dir: &Path, entities: &[(String, Value)]) -> (Eviden
                     gap.get("reason")?.as_str()?.to_owned(),
                 ))
             })
-            .collect();
+            .collect::<EvidenceGaps>();
+        for (entity_id, sources) in candidate_evidence {
+            if entities
+                .iter()
+                .any(|(id, entity)| id == &entity_id && is_admissible_speaker_entity(entity))
+            {
+                evidence.push((entity_id, sources));
+            } else {
+                if sources.is_empty() {
+                    gaps.push((
+                        "candidate_evidence".to_owned(),
+                        "candidate_evidence_entity_not_admissible_person".to_owned(),
+                    ));
+                } else {
+                    gaps.extend(sources.into_iter().map(|source| {
+                        (
+                            source,
+                            "candidate_evidence_entity_not_admissible_person".to_owned(),
+                        )
+                    }));
+                }
+            }
+        }
         return (evidence, gaps);
     }
-    let entities = entities
-        .iter()
-        .filter(|(_, entity)| !entity.get("blocked").is_some_and(value_truthy))
-        .cloned()
-        .collect::<Vec<_>>();
     let evidence = load_segment_speakers(segment_dir)
         .into_iter()
         .filter_map(|name| {
-            let entity = find_matching_entity(&name, &entities)?;
+            let entity = find_matching_entity(&name, entities)?;
             entity
                 .get("id")
                 .and_then(Value::as_str)
@@ -836,6 +855,107 @@ fn dismissal_suppressed(root: &Path, members: &[Member]) -> Result<bool, String>
     Ok(dismissals.into_iter().any(|dismissed| {
         !dismissed.is_empty() && candidate.intersection(&dismissed).count() * 2 >= candidate.len()
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use serde_json::json;
+
+    use super::segment_evidence;
+
+    #[test]
+    fn persisted_candidate_evidence_keeps_only_admitted_people_and_reports_gaps() {
+        let temporary = tempfile::tempdir().expect("temporary journal");
+        let talents = temporary.path().join("talents");
+        fs::create_dir_all(&talents).expect("talents directory");
+        fs::write(
+            talents.join("speaker_labels.json"),
+            json!({
+                "candidate_evidence": [
+                    {"entity_id":"person","sources":["speakers"]},
+                    {"entity_id":"tool","sources":["setting"]},
+                    {"entity_id":"blocked","sources":["screen"]},
+                    {"entity_id":"missing","sources":[]}
+                ],
+                "candidate_evidence_gaps": [
+                    {"source":"legacy","reason":"already_recorded"}
+                ]
+            })
+            .to_string(),
+        )
+        .expect("speaker labels");
+        let entities = vec![
+            (
+                "person".to_owned(),
+                json!({"id":"person","name":"Person","type":"Person"}),
+            ),
+            (
+                "tool".to_owned(),
+                json!({"id":"tool","name":"Tool","type":"Tool"}),
+            ),
+            (
+                "blocked".to_owned(),
+                json!({"id":"blocked","name":"Blocked","type":"Person","blocked":true}),
+            ),
+        ];
+
+        let (evidence, gaps) = segment_evidence(temporary.path(), &entities);
+
+        assert_eq!(
+            evidence,
+            vec![("person".to_owned(), vec!["speakers".to_owned()])]
+        );
+        assert_eq!(
+            gaps,
+            vec![
+                ("legacy".to_owned(), "already_recorded".to_owned()),
+                (
+                    "setting".to_owned(),
+                    "candidate_evidence_entity_not_admissible_person".to_owned(),
+                ),
+                (
+                    "screen".to_owned(),
+                    "candidate_evidence_entity_not_admissible_person".to_owned(),
+                ),
+                (
+                    "candidate_evidence".to_owned(),
+                    "candidate_evidence_entity_not_admissible_person".to_owned(),
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn fallback_name_matching_uses_the_admitted_person_filter() {
+        let temporary = tempfile::tempdir().expect("temporary journal");
+        let talents = temporary.path().join("talents");
+        fs::create_dir_all(&talents).expect("talents directory");
+        fs::write(
+            talents.join("speakers.json"),
+            json!(["Deploy Bot", "Ada Lovelace"]).to_string(),
+        )
+        .expect("speakers");
+        let entities = vec![
+            (
+                "tool".to_owned(),
+                json!({"id":"tool","name":"Deploy Bot","type":"Tool"}),
+            ),
+            (
+                "person".to_owned(),
+                json!({"id":"person","name":"Ada Lovelace","type":"Person"}),
+            ),
+        ];
+
+        let (evidence, gaps) = segment_evidence(temporary.path(), &entities);
+
+        assert_eq!(
+            evidence,
+            vec![("person".to_owned(), vec!["speakers".to_owned()])]
+        );
+        assert!(gaps.is_empty());
+    }
 }
 
 impl Member {

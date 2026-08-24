@@ -701,6 +701,7 @@ async fn pair_dismiss(State(root): State<PathBuf>, body: Bytes) -> Response {
     pair_transition(&root, body, false)
 }
 fn pair_transition(root: &Path, body: Value, accept: bool) -> Response {
+    // This merges candidate anchors only; it never selects or writes an active speaker identity.
     let (_, a, b) = match pair_fields(&body) {
         Ok(value) => value,
         Err(response) => return *response,

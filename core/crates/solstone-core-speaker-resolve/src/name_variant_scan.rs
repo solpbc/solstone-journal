@@ -8,7 +8,8 @@ use std::path::Path;
 use serde::Serialize;
 use solstone_core_entity::{
     EncoderIdentity, EntityMergeOptions, EntityStoreError, commit_entity_merge,
-    load_all_journal_entities, load_entity_voiceprints_file, normalize_embedding,
+    is_admissible_person, load_all_journal_entities, load_entity_voiceprints_file,
+    normalize_embedding,
 };
 use solstone_core_entity_matching::is_name_variant_match;
 
@@ -84,7 +85,7 @@ pub fn detect_name_variant_candidates(
 ) -> Result<NameVariantScan, EntityStoreError> {
     let mut centroids = Vec::new();
     for entity in load_all_journal_entities(journal_root)? {
-        if entity.is_blocked() || entity.is_principal() {
+        if !is_admissible_person(&entity) || entity.is_principal() {
             continue;
         }
         let name = entity

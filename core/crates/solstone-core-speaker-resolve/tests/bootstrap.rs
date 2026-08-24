@@ -924,6 +924,25 @@ fn ac1_blocked_entity_is_excluded_from_name_variant_pairs() {
 }
 
 #[test]
+fn ac4_non_person_entity_is_excluded_from_name_variant_pairs() {
+    let temporary = Temp::new();
+    entity(temporary.path(), "alias", "Alex", "Person", false);
+    entity(temporary.path(), "canonical", "Alex Smith", "Person", false);
+    entity(temporary.path(), "legacy_tool", "Alex Smith", "Tool", false);
+    for id in ["alias", "canonical", "legacy_tool"] {
+        write_voiceprints(temporary.path(), id, vec![vector(0.0, 1.0)]);
+    }
+
+    let scan = detect_name_variant_candidates(temporary.path()).unwrap();
+
+    assert_eq!(scan.entities_with_voiceprints, 2);
+    assert_eq!(scan.pairs_compared, 1);
+    assert_eq!(scan.candidates.len(), 1);
+    assert_eq!(scan.candidates[0].source_id, "alias");
+    assert_eq!(scan.candidates[0].target_id, "canonical");
+}
+
+#[test]
 fn ac1_principal_entity_is_excluded_from_name_variant_pairs() {
     let temporary = Temp::new();
     entity(
